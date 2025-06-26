@@ -2,5 +2,5 @@
 
 | Project | Description | Status |
 |---------|-------------|--------|
-| [runtime-mvp](https://github.com/contenox/runtime-mvp) | Production-ready edge agent runtime | `Active Development` |
+| [runtime-mvp](https://github.com/contenox/runtime-mvp) | MVP for the contenox-runtime | `Active Development` |
 
