@@ -20,7 +20,6 @@ import (
 	"github.com/contenox/runtime/serverapi"
 	"github.com/contenox/runtime/store"
 	"github.com/contenox/runtime/taskengine"
-	"github.com/contenox/runtime/tasksrecipes"
 )
 
 var (
@@ -177,10 +176,6 @@ func main() {
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("initializing API handler failed: %v", err)
-	}
-	err = tasksrecipes.InitializeDefaultChains(ctx, dbInstance)
-	if err != nil {
-		log.Fatalf("initializing default tasks failed: %v", err)
 	}
 
 	mux := http.NewServeMux()
