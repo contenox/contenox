@@ -1,0 +1,98 @@
+services:
+  runtime:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+      args:
+        CORE_VERSION: "dev-build"
+        TENANT_ID: "e60604b5-77ba-4547-aff0-b1eceb0dabfc"
+    container_name: contenox-runtime
+    environment:
+      - DATABASE_URL=postgres://username:password@postgres:5432/postgres?sslmode=disable
+      - PORT=8080
+      - NATS_URL=nats://natsuser:natspassword@nats:4222
+      - NATS_USER=natsuser
+      - NATS_PASSWORD=natspassword
+      - SECURITY_ENABLED=true
+      - TOKENIZER_SERVICE_URL=http://tokenizer:50051
+      - EMBED_MODEL=nomic-embed-text:latest
+      - WORKER_USER_EMAIL=worker@example.com
+      - TASKS_MODEL=qwen3:4b
+      - KV_HOST=valkey:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    ports:
+      - "8081:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/api/health || exit 1"]
+      interval: 1s
+      timeout: 1s
+      retries: 20
+  tokenizer:
+    image: ghcr.io/contenox/ollamatokenizer-api:v0.0.7
+    container_name: contenox-ollama-tokenizer
+    environment:
+      - PRELOAD_MODELS=granite-embedding-30m,tiny
+      - TOKENIZER_TIMEOUT=30s
+      - FALLBACK_MODEL=granite-embedding-30m
+      - USE_DEFAULT_URLS=true
+      - ADDR=:50051
+    ports:
+      - "50051:50051"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:50051/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      - POSTGRES_USER=username
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U username -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # volumes:
+    #   - postgres-data:/var/lib/postgresql/data
+  nats:
+    image: nats:latest
+    command: "-js"
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    environment:
+      - NATS_USER=natsuser
+      - NATS_PASSWORD=natspassword
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  valkey:
+    image: valkey/valkey:alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 1s
+      timeout: 3s
+      retries: 50
+volumes:
+  # postgres-data:
+  ollama-data:

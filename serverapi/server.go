@@ -1,0 +1,160 @@
+package serverapi
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/contenox/activitytracker"
+	libbus "github.com/contenox/bus"
+	libdb "github.com/contenox/dbexec"
+	libkv "github.com/contenox/kvstore"
+	"github.com/contenox/routine"
+	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/backendapi"
+	"github.com/contenox/runtime/backendservice"
+	"github.com/contenox/runtime/chainsapi"
+	"github.com/contenox/runtime/chainservice"
+	"github.com/contenox/runtime/dispatchapi"
+	"github.com/contenox/runtime/dispatchservice"
+	"github.com/contenox/runtime/downloadservice"
+	"github.com/contenox/runtime/execapi"
+	"github.com/contenox/runtime/execservice"
+	"github.com/contenox/runtime/llmrepo"
+	"github.com/contenox/runtime/modelservice"
+	"github.com/contenox/runtime/poolapi"
+	"github.com/contenox/runtime/poolservice"
+	"github.com/contenox/runtime/providerapi"
+	"github.com/contenox/runtime/providerservice"
+	"github.com/contenox/runtime/runtimestate"
+	"github.com/contenox/runtime/taskengine"
+)
+
+func New(
+	ctx context.Context,
+	config *Config,
+	dbInstance libdb.DBManager,
+	pubsub libbus.Messenger,
+	embedder llmrepo.ModelRepo,
+	execmodelrepo llmrepo.ModelRepo,
+	environmentExec taskengine.EnvExecutor,
+	state *runtimestate.State,
+	hookRegistry taskengine.HookRegistry,
+	kvManager libkv.KVManager,
+) (http.Handler, func() error, error) {
+	cleanup := func() error { return nil }
+	mux := http.NewServeMux()
+	var handler http.Handler = mux
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		// OK
+	})
+	tracker := taskengine.NewKVActivityTracker(kvManager)
+	stdOuttracker := activitytracker.NewLogActivityTracker(slog.Default())
+	serveropsChainedTracker := activitytracker.ChainedTracker{
+		tracker,
+		stdOuttracker,
+	}
+	backendService := backendservice.New(dbInstance)
+	backendService = backendservice.WithActivityTracker(backendService, serveropsChainedTracker)
+	backendapi.AddBackendRoutes(mux, backendService, state)
+	poolservice := poolservice.New(dbInstance)
+	poolapi.AddPoolRoutes(mux, poolservice)
+	// Get circuit breaker pool instance
+	pool := routine.GetPool()
+
+	// Start managed loops using the pool
+
+	pool.StartLoop(
+		ctx,
+		&routine.LoopConfig{
+			Key:          "backendCycle",
+			Threshold:    3,
+			ResetTimeout: 10 * time.Second,
+			Interval:     10 * time.Second,
+			Operation:    state.RunBackendCycle,
+		},
+	)
+
+	pool.StartLoop(
+		ctx,
+		&routine.LoopConfig{
+			Key:          "downloadCycle",
+			Threshold:    3,
+			ResetTimeout: 10 * time.Second,
+			Interval:     10 * time.Second,
+			Operation:    state.RunDownloadCycle,
+		},
+	)
+
+	downloadService := downloadservice.New(dbInstance, pubsub)
+	downloadService = downloadservice.WithActivityTracker(downloadService, serveropsChainedTracker)
+	backendapi.AddQueueRoutes(mux, downloadService)
+	modelService := modelservice.New(dbInstance, config.EmbedModel)
+	modelService = modelservice.WithActivityTracker(modelService, serveropsChainedTracker)
+	backendapi.AddModelRoutes(mux, modelService, downloadService)
+
+	execService := execservice.NewExec(ctx, execmodelrepo, dbInstance)
+	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
+	taskService := execservice.NewTasksEnv(ctx, environmentExec, dbInstance, hookRegistry)
+	execapi.AddExecRoutes(mux, execService, taskService)
+	dispatchService := dispatchservice.New(dbInstance)
+	dispatchapi.AddDispatchRoutes(mux, dispatchService)
+	providerService := providerservice.New(dbInstance)
+	providerService = providerservice.WithActivityTracker(providerService, serveropsChainedTracker)
+	providerapi.AddProviderRoutes(mux, providerService)
+
+	chainService := chainservice.New(dbInstance)
+	chainsapi.AddChainRoutes(mux, chainService)
+
+	handler = apiframework.RequestIDMiddleware(handler)
+
+	return handler, cleanup, nil
+}
+
+type Config struct {
+	DatabaseURL         string `json:"database_url"`
+	Port                string `json:"port"`
+	Addr                string `json:"addr"`
+	NATSURL             string `json:"nats_url"`
+	NATSUser            string `json:"nats_user"`
+	NATSPassword        string `json:"nats_password"`
+	TokenizerServiceURL string `json:"tokenizer_service_url"`
+	EmbedModel          string `json:"embed_model"`
+	TasksModel          string `json:"tasks_model"`
+	VectorStoreURL      string `json:"vector_store_url"`
+	KVBackend           string `json:"kv_backend"`
+	KVHost              string `json:"kv_host"`
+	KVPassword          string `json:"kv_password"`
+}
+
+func LoadConfig[T any](cfg *T) error {
+	config := map[string]string{}
+	for _, kvPair := range os.Environ() {
+		ar := strings.SplitN(kvPair, "=", 2)
+		if len(ar) < 2 {
+			continue
+		}
+		key := strings.ToLower(ar[0])
+		value := ar[1]
+		config[key] = value
+	}
+
+	b, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal env vars: %w", err)
+	}
+	err = json.Unmarshal(b, cfg)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal into config struct: %w", err)
+	}
+
+	return nil
+}
