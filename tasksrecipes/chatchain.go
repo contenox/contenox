@@ -9,11 +9,6 @@ import (
 	"github.com/contenox/runtime/taskengine"
 )
 
-const (
-	OpenAIChatChainID   = "openai_chat_chain"
-	StandardChatChainID = "chat_chain"
-)
-
 const ChainKeyPrefix = "chain:"
 
 func SetChainDefinition(ctx context.Context, tx libdb.Exec, chain *taskengine.ChainDefinition) error {
