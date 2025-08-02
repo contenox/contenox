@@ -36,3 +36,24 @@ def test_list_backends(base_url):
     assert_status_code(response, 200)
     backends = response.json()
     assert isinstance(backends, list)
+
+def test_update_backend(base_url, create_backend_and_assign_to_pool):
+    backend_id = create_backend_and_assign_to_pool["backend_id"]
+    update_payload = {
+        "name": "Updated Backend",
+        "baseUrl": "http://new-url:11434",
+        "type": "ollama"
+    }
+    response = requests.put(f"{base_url}/backends/{backend_id}", json=update_payload)
+    assert_status_code(response, 200)
+    updated = response.json()
+    assert updated["name"] == "Updated Backend"
+    assert updated["baseUrl"] == "http://new-url:11434"
+
+def test_backend_state_details(base_url, create_backend_and_assign_to_pool):
+    backend_id = create_backend_and_assign_to_pool["backend_id"]
+    response = requests.get(f"{base_url}/backends/{backend_id}")
+    assert_status_code(response, 200)
+    backend = response.json()
+    assert "models" in backend
+    assert "pulledModels" in backend
