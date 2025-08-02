@@ -16,6 +16,8 @@ var (
 	ErrImmutableModel        = errors.New("serverops: immutable model")
 	ErrImmutablePool         = errors.New("serverops: immutable pool")
 	ErrMissingParameter      = errors.New("serverops: missing parameter")
+	ErrEmptyRequest          = errors.New("serverops: empty request")
+	ErrEmptyRequestBody      = errors.New("serverops: empty request body")
 )
 
 // ErrFileSizeLimitExceeded indicates the specific file exceeded its allowed size limit.
@@ -80,6 +82,13 @@ func mapErrorToStatus(op Operation, err error) int {
 		errors.Is(err, libauth.ErrUnexpectedSigningMethod) ||
 		errors.Is(err, libauth.ErrTokenParsingFailed) ||
 		errors.Is(err, libauth.ErrTokenSigningFailed) {
+		return http.StatusBadRequest // 400
+	}
+
+	if errors.Is(err, ErrEmptyRequest) {
+		return http.StatusBadRequest // 400
+	}
+	if errors.Is(err, ErrEmptyRequestBody) {
 		return http.StatusBadRequest // 400
 	}
 

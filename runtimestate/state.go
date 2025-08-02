@@ -378,7 +378,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *store.Backend
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: nil,
+			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
 			Error:        "Invalid URL: " + err.Error(),
 		}
@@ -395,7 +395,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *store.Backend
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: nil,
+			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
 			Error:        err.Error(),
 		}
@@ -467,7 +467,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *store.Backend
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: nil,
+			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
 			Error:        err.Error(),
 		}
@@ -504,7 +504,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: nil,
+			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Failed to create request: %v", err),
 		})
@@ -517,7 +517,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: nil,
+			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("HTTP request failed: %v", err),
 		})
@@ -530,7 +530,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: nil,
+			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Unexpected status: %d", resp.StatusCode),
 		})
@@ -549,7 +549,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: nil,
+			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Failed to decode response: %v", err),
 		})
@@ -561,7 +561,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: nil,
+			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
 			Error:        "No models found in response",
 		})
@@ -587,10 +587,11 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 
 func (s *State) processGeminiBackend(ctx context.Context, backend *store.Backend, _ []*store.Model) {
 	stateInstance := &LLMState{
-		ID:      backend.ID,
-		Name:    backend.Name,
-		Backend: *backend,
-		apiKey:  "",
+		ID:           backend.ID,
+		Name:         backend.Name,
+		Backend:      *backend,
+		PulledModels: []api.ListModelResponse{},
+		apiKey:       "",
 	}
 
 	// Retrieve API key configuration
@@ -676,9 +677,10 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *store.Backend
 
 func (s *State) processOpenAIBackend(ctx context.Context, backend *store.Backend, _ []*store.Model) {
 	stateInstance := &LLMState{
-		ID:      backend.ID,
-		Name:    backend.Name,
-		Backend: *backend,
+		ID:           backend.ID,
+		Name:         backend.Name,
+		PulledModels: []api.ListModelResponse{},
+		Backend:      *backend,
 	}
 
 	// Retrieve API key configuration

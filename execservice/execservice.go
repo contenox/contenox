@@ -7,6 +7,7 @@ import (
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/modelprovider/llmresolver"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/llmrepo"
 	"github.com/google/uuid"
 )
@@ -37,6 +38,13 @@ type TaskResponse struct {
 }
 
 func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
+	if request == nil {
+		return nil, apiframework.ErrEmptyRequest
+	}
+	if request.Prompt == "" {
+		return nil, fmt.Errorf("prompt is empty %w", apiframework.ErrEmptyRequestBody)
+	}
+
 	provider, err := s.promptRepo.GetDefaultSystemProvider(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider: %w", err)

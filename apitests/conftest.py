@@ -62,6 +62,14 @@ def create_backend_and_assign_to_pool(base_url, with_ollama_backend):
 
     logger.info("Backend %s assigned to pool %s", backend_id, pool_id)
 
+    # pool_id = "internal_tasks_pool"
+    # assign_url = f"{base_url}/backend-associations/{pool_id}/backends/{backend_id}"
+    # response = requests.post(assign_url)
+    # response.raise_for_status()
+    # assert response.json() == "backend assigned"
+
+    # logger.info("Backend %s assigned to pool %s", backend_id, pool_id)
+
     yield {
         "backend_id": backend_id,
         "pool_id": pool_id,
@@ -100,16 +108,13 @@ def create_model_and_assign_to_pool(base_url):
 @pytest.fixture(scope="session")
 def wait_for_model_in_backend(base_url):
     """
-    Fixture that waits until a specific model appears in a backend's pulledModels list.
-
-    Usage:
-        def test_something(wait_for_model_in_backend):
-            backend_data = wait_for_model_in_backend(model_name="smollm2:135m", backend_id="...")
-            assert any(m['name'] == "smollm2:135m" for m in backend_data["pulledModels"])
+    Enhanced fixture that waits for model download with error handling and progress tracking
     """
     def _wait_for_model(*, model_name, backend_id, timeout=DEFAULT_TIMEOUT, poll_interval=DEFAULT_POLL_INTERVAL):
         url = f"{base_url}/backends/{backend_id}"
         start_time = time.time()
+        last_status = None
+        download_started = False
 
         while True:
             try:
@@ -121,19 +126,57 @@ def wait_for_model_in_backend(base_url):
 
                 data = response.json()
                 pulled_models = data.get("pulledModels", [])
-                logger.debug("Pulled models: %s", [m.get('name') for m in pulled_models])
 
-                if any(m.get('name') == model_name for m in pulled_models):
-                    logger.info("✅ Model '%s' found in backend '%s'", model_name, backend_id)
-                    return data
+                # Check for backend errors
+                if data.get("error"):
+                    error_msg = data["error"]
+                    if "no such host" in error_msg.lower():
+                        pytest.fail(f"Backend connection failed: {error_msg}")
+                    elif "connection refused" in error_msg.lower():
+                        pytest.fail(f"Backend unreachable: {error_msg}")
+                    else:
+                        logger.error("Backend error: %s", error_msg)
 
-                if time.time() - start_time > timeout:
-                    raise TimeoutError(
-                        f"⏰ Timed out waiting for model '{model_name}' to appear in backend '{backend_id}'. "
-                        f"Last response: {data}"
+                # Check if download has started
+                if not download_started and any(m.get('name') == model_name for m in pulled_models):
+                    logger.info("✅ Model download started for '%s'", model_name)
+                    download_started = True
+
+                # Check for completed download
+                model_details = next((m for m in pulled_models if m.get('name') == model_name), None)
+                if model_details:
+                    # Verify successful download
+                    if model_details.get("size") > 0 and not model_details.get("error"):
+                        logger.info("✅ Model '%s' fully downloaded to backend '%s'", model_name, backend_id)
+                        return data
+                    elif model_details.get("error"):
+                        pytest.fail(f"Model download failed: {model_details['error']}")
+
+                # Report progress if available
+                if model_details and model_details.get("progress"):
+                    progress = model_details["progress"]
+                    if progress != last_status:
+                        logger.info("📥 Download progress: %s", progress)
+                        last_status = progress
+
+                # Handle timeout
+                elapsed = time.time() - start_time
+                if elapsed > timeout:
+                    # Check queue status if timeout occurs
+                    queue_url = f"{base_url}/queue"
+                    queue_resp = requests.get(queue_url)
+                    queue_status = "Unknown"
+                    if queue_resp.status_code == 200:
+                        queue_data = queue_resp.json()
+                        queue_status = f"Queue: {len(queue_data)} items"
+
+                    pytest.fail(
+                        f"⏰ Timed out waiting for model '{model_name}' in backend '{backend_id}'\n"
+                        f"Elapsed: {elapsed:.0f}s | Last backend status: {data}\n"
+                        f"{queue_status}"
                     )
 
-                logger.info("⏳ Waiting for model '%s' to appear in backend '%s'...", model_name, backend_id)
+                logger.info("⏳ Waiting for model '%s' in backend '%s'...", model_name, backend_id)
                 time.sleep(poll_interval)
 
             except requests.RequestException as e:

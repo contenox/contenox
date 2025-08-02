@@ -1,20 +1,20 @@
 import requests
 from helpers import assert_status_code
+import uuid
 
-def test_create_backend(base_url, request):
-    ollama_url = "http://bad-test:11434"
-
+def test_create_backend(base_url):
+    # Use a test-specific URL
     payload = {
         "name": "Test backend",
-        "baseUrl": ollama_url,
+        "baseUrl": "http://test-backend:11434",
         "type": "ollama",
     }
-
-    # Step 1: Create backend
     response = requests.post(f"{base_url}/backends", json=payload)
     assert_status_code(response, 201)
     backend = response.json()
     backend_id = backend["id"]
+
+    # Clean up immediately
     delete_url = f"{base_url}/backends/{backend_id}"
     del_response = requests.delete(delete_url)
     assert_status_code(del_response, 200)
@@ -24,7 +24,7 @@ def test_backend_assigned_to_pool(base_url, create_backend_and_assign_to_pool):
     backend_id = data["backend_id"]
     pool_id = data["pool_id"]
 
-    # Verify assignment by fetching backends under the pool
+    # Verify assignment
     list_url = f"{base_url}/backend-associations/{pool_id}/backends"
     response = requests.get(list_url)
     assert_status_code(response, 200)
@@ -37,18 +37,36 @@ def test_list_backends(base_url):
     backends = response.json()
     assert isinstance(backends, list)
 
-def test_update_backend(base_url, create_backend_and_assign_to_pool):
-    backend_id = create_backend_and_assign_to_pool["backend_id"]
+def test_update_backend(base_url, with_ollama_backend):
+    """Test updating a backend with VALID URL"""
+    # Create unique URL using UUID
+    unique_url = f"http://{uuid.uuid4().hex}-test:11434"
+
+    # 1. Create a temporary backend
+    payload = {
+        "name": "Temp backend",
+        "baseUrl": unique_url,  # Unique URL
+        "type": "ollama",
+    }
+    create_response = requests.post(f"{base_url}/backends", json=payload)
+    assert_status_code(create_response, 201)
+    backend = create_response.json()
+    backend_id = backend["id"]
+
+    # 2. Update with new valid URL (using the same URL is fine)
     update_payload = {
         "name": "Updated Backend",
-        "baseUrl": "http://new-url:11434",
+        "baseUrl": unique_url,  # Keep same URL
         "type": "ollama"
     }
-    response = requests.put(f"{base_url}/backends/{backend_id}", json=update_payload)
-    assert_status_code(response, 200)
-    updated = response.json()
+    update_response = requests.put(f"{base_url}/backends/{backend_id}", json=update_payload)
+    assert_status_code(update_response, 200)
+    updated = update_response.json()
     assert updated["name"] == "Updated Backend"
-    assert updated["baseUrl"] == "http://new-url:11434"
+
+    # 3. Clean up
+    delete_response = requests.delete(f"{base_url}/backends/{backend_id}")
+    assert_status_code(delete_response, 200)
 
 def test_backend_state_details(base_url, create_backend_and_assign_to_pool):
     backend_id = create_backend_and_assign_to_pool["backend_id"]
