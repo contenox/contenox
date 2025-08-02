@@ -18,8 +18,6 @@ import (
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendapi"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/chainsapi"
-	"github.com/contenox/runtime/chainservice"
 	"github.com/contenox/runtime/dispatchapi"
 	"github.com/contenox/runtime/dispatchservice"
 	"github.com/contenox/runtime/downloadservice"
@@ -110,10 +108,6 @@ func New(
 	providerService := providerservice.New(dbInstance)
 	providerService = providerservice.WithActivityTracker(providerService, serveropsChainedTracker)
 	providerapi.AddProviderRoutes(mux, providerService)
-
-	chainService := chainservice.New(dbInstance)
-	chainsapi.AddChainRoutes(mux, chainService)
-
 	handler = apiframework.RequestIDMiddleware(handler)
 
 	return handler, cleanup, nil
