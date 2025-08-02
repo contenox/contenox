@@ -1,0 +1,9 @@
+{
+  "venvPath": "./apitests",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Linux",
+  "typeCheckingMode": "basic",
+  "include": ["apitests", "workers"],
+  "exclude": ["**/__pycache__", "**/*.pyc"]
+}

@@ -7,6 +7,7 @@ services:
         CORE_VERSION: "dev-build"
         TENANT_ID: "e60604b5-77ba-4547-aff0-b1eceb0dabfc"
     container_name: contenox-runtime
+
     environment:
       - DATABASE_URL=postgres://username:password@postgres:5432/postgres?sslmode=disable
       - PORT=8080

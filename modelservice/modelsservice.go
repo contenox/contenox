@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	libdb "github.com/contenox/dbexec"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/store"
 )
 
@@ -45,7 +46,7 @@ func (s *service) List(ctx context.Context) ([]*store.Model, error) {
 func (s *service) Delete(ctx context.Context, modelName string) error {
 	tx := s.dbInstance.WithoutTransaction()
 	if modelName == s.immutableEmbedModelName {
-		return fmt.Errorf("immutable model cannot be deleted")
+		return apiframework.ErrImmutableModel
 	}
 	return store.New(tx).DeleteModel(ctx, modelName)
 }

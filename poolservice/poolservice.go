@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	libdb "github.com/contenox/dbexec"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/llmrepo"
 	"github.com/contenox/runtime/store"
 	"github.com/google/uuid"
@@ -111,7 +112,7 @@ func (s *service) AssignModel(ctx context.Context, poolID, modelID string) error
 
 func (s *service) RemoveModel(ctx context.Context, poolID, modelID string) error {
 	if poolID == llmrepo.EmbedPoolID {
-		return fmt.Errorf("cannot remove model from immutable pool")
+		return apiframework.ErrImmutablePool
 	}
 	tx := s.dbInstance.WithoutTransaction()
 	return store.New(tx).RemoveModelFromPool(ctx, poolID, modelID)
