@@ -201,8 +201,8 @@ type MessageConfig struct {
 // HookCall represents an external integration or side-effect triggered during a task.
 // Hooks allow tasks to interact with external systems (e.g., "send_email", "update_db").
 type HookCall struct {
-	// Type is the registered hook name to invoke (e.g., "send_email").
-	Type string `yaml:"type" json:"type"`
+	// Name is the registered hook name to invoke (e.g., "send_email").
+	Name string `yaml:"name" json:"name"`
 
 	// Args are key-value pairs to parameterize the hook call.
 	// Example: {"to": "user@example.com", "subject": "Notification"}

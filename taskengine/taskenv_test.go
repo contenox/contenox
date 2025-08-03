@@ -284,7 +284,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
 				Handler:  taskengine.HandleHook,
 				InputVar: "input", // Use original input despite moderation
 				Hook: &taskengine.HookCall{
-					Type: "store_message",
+					Name: "store_message",
 				},
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
