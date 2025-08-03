@@ -229,7 +229,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 				"task_attempt",
 				currentTask.ID,
 				"retry", retry,
-				"task_type", currentTask.Type,
+				"task_type", currentTask.Handler,
 			)
 			defer endAttempt()
 
@@ -250,7 +250,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 			// Record execution step
 			step := CapturedStateUnit{
 				TaskID:     currentTask.ID,
-				TaskType:   currentTask.Type.String(),
+				TaskType:   currentTask.Handler.String(),
 				InputType:  taskInputType,
 				OutputType: outputType,
 				Transition: transitionEval,

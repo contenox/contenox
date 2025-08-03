@@ -24,8 +24,8 @@ func TestUnit_ComposeOverride(t *testing.T) {
 	chain := &taskengine.ChainDefinition{
 		Tasks: []taskengine.ChainTask{
 			{
-				ID:   "task1",
-				Type: taskengine.RawString,
+				ID:      "task1",
+				Handler: taskengine.HandleRawString,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
 						{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -33,8 +33,8 @@ func TestUnit_ComposeOverride(t *testing.T) {
 				},
 			},
 			{
-				ID:   "task2",
-				Type: taskengine.RawString,
+				ID:      "task2",
+				Handler: taskengine.HandleRawString,
 				Compose: &taskengine.ComposeTask{
 					WithVar:  "task1",
 					Strategy: "override",
@@ -75,8 +75,8 @@ func TestUnit_ComposeAppendStringToChatHistory(t *testing.T) {
 	chain := &taskengine.ChainDefinition{
 		Tasks: []taskengine.ChainTask{
 			{
-				ID:   "task1",
-				Type: taskengine.RawString,
+				ID:      "task1",
+				Handler: taskengine.HandleRawString,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
 						{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -84,8 +84,8 @@ func TestUnit_ComposeAppendStringToChatHistory(t *testing.T) {
 				},
 			},
 			{
-				ID:   "task2",
-				Type: taskengine.RawString,
+				ID:      "task2",
+				Handler: taskengine.HandleRawString,
 				Compose: &taskengine.ComposeTask{
 					WithVar:  "task1",
 					Strategy: "append_string_to_chat_history",
@@ -138,8 +138,8 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 	chain := &taskengine.ChainDefinition{
 		Tasks: []taskengine.ChainTask{
 			{
-				ID:   "task1",
-				Type: taskengine.RawString,
+				ID:      "task1",
+				Handler: taskengine.HandleRawString,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
 						{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -147,8 +147,8 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 				},
 			},
 			{
-				ID:   "task2",
-				Type: taskengine.RawString,
+				ID:      "task2",
+				Handler: taskengine.HandleRawString,
 				Compose: &taskengine.ComposeTask{
 					WithVar:  "task1",
 					Strategy: "merge_chat_histories",
@@ -193,8 +193,8 @@ func TestUnit_ComposeAutoStrategy(t *testing.T) {
 		chain := &taskengine.ChainDefinition{
 			Tasks: []taskengine.ChainTask{
 				{
-					ID:   "task1",
-					Type: taskengine.RawString,
+					ID:      "task1",
+					Handler: taskengine.HandleRawString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -202,8 +202,8 @@ func TestUnit_ComposeAutoStrategy(t *testing.T) {
 					},
 				},
 				{
-					ID:   "task2",
-					Type: taskengine.RawString,
+					ID:      "task2",
+					Handler: taskengine.HandleRawString,
 					Compose: &taskengine.ComposeTask{
 						WithVar: "task1", // Strategy omitted for auto
 					},
@@ -238,8 +238,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		chain := &taskengine.ChainDefinition{
 			Tasks: []taskengine.ChainTask{
 				{
-					ID:   "task1",
-					Type: taskengine.RawString,
+					ID:      "task1",
+					Handler: taskengine.HandleRawString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -247,8 +247,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 					},
 				},
 				{
-					ID:   "task2",
-					Type: taskengine.RawString,
+					ID:      "task2",
+					Handler: taskengine.HandleRawString,
 					Compose: &taskengine.ComposeTask{
 						WithVar:  "task1",
 						Strategy: "invalid_strategy",
@@ -278,8 +278,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		chain := &taskengine.ChainDefinition{
 			Tasks: []taskengine.ChainTask{
 				{
-					ID:   "task1",
-					Type: taskengine.RawString,
+					ID:      "task1",
+					Handler: taskengine.HandleRawString,
 					Compose: &taskengine.ComposeTask{
 						WithVar: "nonexistent",
 					},
@@ -308,8 +308,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		chain := &taskengine.ChainDefinition{
 			Tasks: []taskengine.ChainTask{
 				{
-					ID:   "task1",
-					Type: taskengine.RawString,
+					ID:      "task1",
+					Handler: taskengine.HandleRawString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -317,8 +317,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 					},
 				},
 				{
-					ID:   "task2",
-					Type: taskengine.RawString,
+					ID:      "task2",
+					Handler: taskengine.HandleRawString,
 					Compose: &taskengine.ComposeTask{
 						WithVar:  "task1",
 						Strategy: "append_string_to_chat_history",
@@ -353,8 +353,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		chain := &taskengine.ChainDefinition{
 			Tasks: []taskengine.ChainTask{
 				{
-					ID:   "task1",
-					Type: taskengine.RawString,
+					ID:      "task1",
+					Handler: taskengine.HandleRawString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -362,8 +362,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 					},
 				},
 				{
-					ID:   "task2",
-					Type: taskengine.RawString,
+					ID:      "task2",
+					Handler: taskengine.HandleRawString,
 					Compose: &taskengine.ComposeTask{
 						WithVar:  "task1",
 						Strategy: "merge_chat_histories",

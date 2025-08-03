@@ -8,43 +8,43 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// TaskType defines the expected output format of a task.
+// TaskHandler defines the expected output format of a task.
 // It determines how the LLM's response will be interpreted.
-type TaskType string
+type TaskHandler string
 
 const (
-	// ConditionKey interprets the response as a condition key,
+	// HandleConditionKey interprets the response as a condition key,
 	// used to determine which transition to follow.
-	ConditionKey TaskType = "condition_key"
+	HandleConditionKey TaskHandler = "condition_key"
 
-	// ParseNumber expects a numeric response and parses it into an integer.
-	ParseNumber TaskType = "parse_number"
+	// HandleParseNumber expects a numeric response and parses it into an integer.
+	HandleParseNumber TaskHandler = "parse_number"
 
-	// ParseScore expects a floating-point score (e.g., quality rating).
-	ParseScore TaskType = "parse_score"
+	// HandleParseScore expects a floating-point score (e.g., quality rating).
+	HandleParseScore TaskHandler = "parse_score"
 
-	// ParseRange expects a numeric range like "5-7", or defaults to N-N for single numbers.
-	ParseRange TaskType = "parse_range"
+	// HandleParseRange expects a numeric range like "5-7", or defaults to N-N for single numbers.
+	HandleParseRange TaskHandler = "parse_range"
 
-	// RawString returns the raw string result from the LLM.
-	RawString TaskType = "raw_string"
+	// HandleRawString returns the raw string result from the LLM.
+	HandleRawString TaskHandler = "raw_string"
 
-	// RaiseError raises an error with the provided message.
-	RaiseError TaskType = "raise_error"
+	// HandleRaiseError raises an error with the provided message.
+	HandleRaiseError TaskHandler = "raise_error"
 
-	// ModelExecution will execute the system default or specified model on a chathistory.
-	ModelExecution TaskType = "model_execution"
+	// HandleModelExecution will execute the system default or specified model on a chathistory.
+	HandleModelExecution TaskHandler = "model_execution"
 
-	// ParseTransition will attempt to parse a transition command from the input and strip the transition prefix if it exists.
-	ParseTransition TaskType = "parse_transition"
+	// HandleParseTransition will attempt to parse a transition command from the input and strip the transition prefix if it exists.
+	HandleParseTransition TaskHandler = "parse_transition"
 
-	Noop TaskType = "noop"
+	HandleNoop TaskHandler = "noop"
 
-	// Hook indicates this task should execute an external action rather than calling the LLM.
-	Hook TaskType = "hook"
+	// HandleHook indicates this task should execute an external action rather than calling the LLM.
+	HandleHook TaskHandler = "hook"
 )
 
-func (t TaskType) String() string {
+func (t TaskHandler) String() string {
 	return string(t)
 }
 
@@ -208,7 +208,7 @@ type HookCall struct {
 }
 
 // ChainTask represents a single step in a workflow.
-// Each task has a type that dictates how its prompt will be processed.
+// Each task has a handler that dictates how its prompt will be processed.
 //
 // Field validity by task type:
 // | Field               | ConditionKey | ParseNumber | ParseScore | ParseRange | RawString | Hook  | Noop  |
@@ -229,8 +229,8 @@ type ChainTask struct {
 	// Description is a human-readable summary of what the task does.
 	Description string `yaml:"description" json:"description"`
 
-	// Type determines how the LLM output (or hook) will be interpreted.
-	Type TaskType `yaml:"type" json:"type"`
+	// Handler determines how the LLM output (or hook) will be interpreted.
+	Handler TaskHandler `yaml:"handler" json:"handler"`
 
 	// SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.
 	SystemInstruction string `yaml:"system_instruction,omitempty" json:"system_instruction,omitempty"`
@@ -334,7 +334,7 @@ const (
 //	      description: Run manually via API
 //	  tasks:
 //	    - id: get_length
-//	      type: parse_number
+//	      handler: parse_number
 //	      prompt_template: "How many words should the article be?"
 //	      transition:
 //	        branches:
@@ -342,7 +342,7 @@ const (
 //	            goto: generate_article
 //
 //	    - id: generate_article
-//	      type: raw_string
+//	      handler: raw_string
 //	      prompt_template: "Write a {{ .get_length }}-word article about {{ .input }}"
 //	      print: "Generated article:\n{{ .previous_output }}"
 //	      transition:
@@ -351,7 +351,7 @@ const (
 //	            goto: end
 //
 //	    - id: end
-//	      type: raw_string
+//	      handler: raw_string
 //	      prompt_template: "{{ .generate_article }}"
 //
 // Parse and execute it:

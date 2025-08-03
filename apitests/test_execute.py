@@ -71,7 +71,7 @@ def test_execute_taskchain(
         "tasks": [
             {
                 "id": "capital_task",
-                "type": "raw_string",
+                "handler": "raw_string",
                 "prompt_template": "What is the capital of France? Respond ONLY with the city name.",
                 "transition": {
                     "branches": [
@@ -136,7 +136,7 @@ def test_multi_step_taskchain(
         "tasks": [
             {
                 "id": "get_country",
-                "type": "raw_string",
+                "handler": "raw_string",
                 "prompt_template": "What country is Paris the capital of?",
                 "transition": {
                     "branches": [{"operator": "default", "goto": "capital_task"}]
@@ -144,7 +144,7 @@ def test_multi_step_taskchain(
             },
             {
                 "id": "capital_task",
-                "type": "raw_string",
+                "handler": "raw_string",
                 "prompt_template": "What is the capital of {{.get_country}}?",
                 "transition": {
                     "branches": [{"operator": "default", "goto": "format_response"}]
@@ -152,7 +152,7 @@ def test_multi_step_taskchain(
             },
             {
                 "id": "format_response",
-                "type": "raw_string",
+                "handler": "raw_string",
                 "prompt_template": "Format this nicely: The capital of {{.get_country}} is {{.capital_task}}",
                 "transition": {
                     "branches": [{"operator": "default", "goto": "end"}]
@@ -189,7 +189,7 @@ def test_conditional_branching(
         "tasks": [
             {
                 "id": "check_france",
-                "type": "condition_key",
+                "handler": "condition_key",
                 "valid_conditions": {"yes": True, "no": False},
                 "prompt_template": "Is Paris the capital of France? Answer only 'yes' or 'no'.",
                 "transition": {
@@ -201,7 +201,7 @@ def test_conditional_branching(
             },
             {
                 "id": "correct_response",
-                "type": "noop",
+                "handler": "noop",
                 "prompt_template": "That's correct!",
                 "transition": {
                     "branches": [{"operator": "default", "goto": "end"}]
@@ -209,7 +209,7 @@ def test_conditional_branching(
             },
             {
                 "id": "incorrect_response",
-                "type": "noop",
+                "handler": "noop",
                 "prompt_template": "That's incorrect!",
                 "transition": {
                     "branches": [{"operator": "default", "goto": "end"}]
@@ -271,7 +271,7 @@ def test_model_execution_task(
         "tasks": [
             {
                 "id": "chat_task",
-                "type": "model_execution",
+                "handler": "model_execution",
                 "system_instruction": "You are a helpful assistant",
                 "execute_config": {
                                     "model": model_name,

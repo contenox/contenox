@@ -18,7 +18,7 @@ func TestUnit_TaskExec_PromptToString(t *testing.T) {
 	}
 
 	task := &taskengine.ChainTask{
-		Type: taskengine.RawString,
+		Handler: taskengine.HandleRawString,
 	}
 
 	output, _, rawResp, err := mockExec.TaskExec(context.Background(), time.Now(), llmresolver.Randomly, 100, task, "What is 2+2?", taskengine.DataTypeString)

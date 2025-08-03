@@ -193,7 +193,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 	var taskErr error
 	var output any = input
 	var outputType DataType = dataType
-	if currentTask.Type == Noop {
+	if currentTask.Handler == HandleNoop {
 		return output, outputType, "noop", nil
 	}
 	// Unified prompt extraction function
@@ -221,14 +221,14 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 			return history.Messages[len(history.Messages)-1].Content, nil
 		default:
-			return "", fmt.Errorf("getPrompt unsupported input type for task %v: %v", currentTask.Type.String(), outputType.String())
+			return "", fmt.Errorf("getPrompt unsupported input type for task %v: %v", currentTask.Handler.String(), outputType.String())
 		}
 	}
-	if len(currentTask.Type) == 0 {
+	if len(currentTask.Handler) == 0 {
 		return output, dataType, transitionEval, fmt.Errorf("%w: task-type is empty", ErrUnsupportedTaskType)
 	}
-	switch currentTask.Type {
-	case RawString, ConditionKey, ParseNumber, ParseScore, ParseRange, ParseTransition, RaiseError:
+	switch currentTask.Handler {
+	case HandleRawString, HandleConditionKey, HandleParseNumber, HandleParseScore, HandleParseRange, HandleParseTransition, HandleRaiseError:
 		prompt, err := getPrompt()
 		if err != nil {
 			return nil, DataTypeAny, "", err
@@ -242,45 +242,45 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			currentTask.ExecuteConfig = &LLMExecutionConfig{}
 		}
 
-		switch currentTask.Type {
-		case RawString:
+		switch currentTask.Handler {
+		case HandleRawString:
 			transitionEval, taskErr = exe.Prompt(taskCtx, resolver, *currentTask.ExecuteConfig, prompt)
 			output = transitionEval
 			outputType = DataTypeString
-		case ConditionKey:
+		case HandleConditionKey:
 			var hit bool
 			hit, taskErr = exe.condition(taskCtx, resolver, *currentTask.ExecuteConfig, currentTask.ValidConditions, prompt)
 			output = hit
 			outputType = DataTypeBool
 			transitionEval = strconv.FormatBool(hit)
-		case ParseNumber:
+		case HandleParseNumber:
 			var number int
 			number, taskErr = exe.number(taskCtx, resolver, *currentTask.ExecuteConfig, prompt)
 			output = number
 			outputType = DataTypeInt
 			transitionEval = strconv.FormatInt(int64(number), 10)
-		case ParseScore:
+		case HandleParseScore:
 			var score float64
 			score, taskErr = exe.score(taskCtx, resolver, *currentTask.ExecuteConfig, prompt)
 			output = score
 			outputType = DataTypeFloat
 			transitionEval = strconv.FormatFloat(score, 'f', 2, 64)
-		case ParseRange:
+		case HandleParseRange:
 			transitionEval, taskErr = exe.rang(taskCtx, resolver, *currentTask.ExecuteConfig, prompt)
 			outputType = DataTypeString
 			output = transitionEval
-		case ParseTransition:
+		case HandleParseTransition:
 			transitionEval, taskErr = exe.parseTransition(prompt)
 			// output = output // pass as is to the next task
 			// outputType = outputType
-		case RaiseError:
+		case HandleRaiseError:
 			message, err := getPrompt()
 			if err != nil {
 				return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
 			}
 			return nil, DataTypeAny, "", errors.New(message)
 		}
-	case ModelExecution:
+	case HandleModelExecution:
 		if currentTask.ExecuteConfig == nil {
 			return nil, DataTypeAny, "", fmt.Errorf("missing llm_execution config")
 		}
@@ -321,7 +321,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			currentTask.ExecuteConfig,
 		)
 
-	case Hook:
+	case HandleHook:
 		if currentTask.Hook == nil {
 			taskErr = fmt.Errorf("hook task missing hook definition")
 		} else {
@@ -339,7 +339,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		}
 
 	default:
-		taskErr = fmt.Errorf("unknown task type: %w -- %s", ErrUnsupportedTaskType, currentTask.Type.String())
+		taskErr = fmt.Errorf("unknown task type: %w -- %s", ErrUnsupportedTaskType, currentTask.Handler.String())
 	}
 
 	return output, outputType, transitionEval, taskErr
