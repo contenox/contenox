@@ -27,6 +27,7 @@ type TaskExecutor interface {
 // and delegation to registered hooks.
 type SimpleExec struct {
 	repo         llmrepo.ModelRepo
+	embedRepo    llmrepo.ModelRepo
 	hookProvider HookRepo
 	tracker      activitytracker.ActivityTracker
 }
@@ -35,6 +36,7 @@ type SimpleExec struct {
 func NewExec(
 	_ context.Context,
 	repo llmrepo.ModelRepo,
+	embedRepo llmrepo.ModelRepo,
 	hookProvider HookRepo,
 	tracker activitytracker.ActivityTracker,
 ) (TaskExecutor, error) {
@@ -47,6 +49,7 @@ func NewExec(
 	return &SimpleExec{
 		hookProvider: hookProvider,
 		repo:         repo,
+		embedRepo:    embedRepo,
 		tracker:      tracker,
 	}, nil
 }
@@ -122,6 +125,91 @@ func (exe *SimpleExec) Prompt(ctx context.Context, resolver llmresolver.Policy, 
 	}
 
 	return strings.TrimSpace(response), nil
+}
+
+// Prompt resolves a model client using the resolver policy and sends the prompt
+// to be executed. Returns the trimmed response string or an error.
+func (exe *SimpleExec) Embed(ctx context.Context, resolver llmresolver.Policy, llmCall LLMExecutionConfig, prompt string) ([]float64, error) {
+	reportErr, reportChange, end := exe.tracker.Start(ctx, "SimpleExec", "Embed",
+		"model_name", llmCall.Model,
+		"model_names", llmCall.Models,
+		"provider_types", llmCall.Providers,
+		"provider_type", llmCall.Provider,
+	)
+	defer end()
+
+	if prompt == "" {
+		err := fmt.Errorf("unprocessable empty prompt")
+		reportErr(err)
+		return nil, err
+	}
+	providerNames := []string{}
+	if llmCall.Provider != "" {
+		providerNames = append(providerNames, llmCall.Provider)
+	}
+	if llmCall.Providers != nil {
+		providerNames = append(providerNames, llmCall.Providers...)
+	}
+	modelNames := []string{}
+	if llmCall.Model != "" {
+		modelNames = append(modelNames, llmCall.Model)
+	}
+	if llmCall.Models != nil {
+		modelNames = append(modelNames, llmCall.Models...)
+	}
+
+	runtimeStateResolution := exe.repo.GetRuntime(ctx)
+	if len(modelNames) == 0 && len(providerNames) == 0 {
+		provider, err := exe.repo.GetDefaultSystemProvider(ctx)
+		if err != nil {
+			err = fmt.Errorf("failed to get providers: %w", err)
+			reportErr(err)
+			return nil, err
+		}
+		modelNames = append(modelNames, provider.ModelName())
+		providerNames = append(providerNames, provider.GetType())
+		runtimeStateResolution = func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error) {
+			ids := []string{provider.GetID()}
+			reportChange("available_providers", ids)
+			return []libmodelprovider.Provider{provider}, nil // Use direct providers list
+		}
+	}
+	if len(providerNames) > 1 {
+		return nil, fmt.Errorf("multiple providers specified")
+	}
+	if len(providerNames) == 0 {
+		return nil, fmt.Errorf("no provider specified")
+	}
+	if len(modelNames) == 0 {
+		return nil, fmt.Errorf("no model specified")
+	}
+	if len(modelNames) > 1 {
+		return nil, fmt.Errorf("multiple models specified")
+	}
+	// Resolve client using available providers
+	client, err := llmresolver.Embed(ctx,
+		llmresolver.EmbedRequest{
+			ProviderType: providerNames[0],
+			ModelName:    modelNames[0],
+			// Tracker:      exe.tracker,
+		},
+		runtimeStateResolution,
+		resolver,
+	)
+	if err != nil {
+		err = fmt.Errorf("client resolution failed: %w", err)
+		reportErr(err)
+		return nil, err
+	}
+
+	response, err := client.Embed(ctx, prompt)
+	if err != nil {
+		err = fmt.Errorf("prompt execution failed: %w", err)
+		reportErr(err)
+		return nil, err
+	}
+
+	return response, nil
 }
 
 // rang executes the prompt and attempts to parse the response as a range string (e.g. "6-8").
@@ -228,7 +316,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		return output, dataType, transitionEval, fmt.Errorf("%w: task-type is empty", ErrUnsupportedTaskType)
 	}
 	switch currentTask.Handler {
-	case HandleRawString, HandleConditionKey, HandleParseNumber, HandleParseScore, HandleParseRange, HandleParseTransition, HandleRaiseError:
+	case HandleRawString, HandleConditionKey, HandleParseNumber, HandleParseScore, HandleParseRange, HandleParseTransition, HandleEmbedding, HandleRaiseError:
 		prompt, err := getPrompt()
 		if err != nil {
 			return nil, DataTypeAny, "", err
@@ -273,6 +361,14 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			transitionEval, taskErr = exe.parseTransition(prompt)
 			// output = output // pass as is to the next task
 			// outputType = outputType
+		case HandleEmbedding:
+			message, err := getPrompt()
+			if err != nil {
+				return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
+			}
+			output, taskErr = exe.Embed(taskCtx, resolver, *currentTask.ExecuteConfig, message)
+			outputType = DataTypeVector
+			transitionEval = "ok"
 		case HandleRaiseError:
 			message, err := getPrompt()
 			if err != nil {

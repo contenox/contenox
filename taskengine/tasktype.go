@@ -29,6 +29,8 @@ const (
 	// HandleRawString returns the raw string result from the LLM.
 	HandleRawString TaskHandler = "raw_string"
 
+	HandleEmbedding TaskHandler = "embedding"
+
 	// HandleRaiseError raises an error with the provided message.
 	HandleRaiseError TaskHandler = "raise_error"
 

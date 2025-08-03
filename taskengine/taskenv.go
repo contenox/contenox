@@ -32,6 +32,7 @@ const (
 	DataTypeBool
 	DataTypeInt
 	DataTypeFloat
+	DataTypeVector
 	DataTypeSearchResults
 	DataTypeJSON
 	DataTypeChatHistory
@@ -51,6 +52,8 @@ func (d *DataType) String() string {
 		return "int"
 	case DataTypeFloat:
 		return "float"
+	case DataTypeVector:
+		return "vector"
 	case DataTypeSearchResults:
 		return "search_results"
 	case DataTypeJSON:
@@ -78,6 +81,8 @@ func DataTypeFromString(s string) (DataType, error) {
 		return DataTypeInt, nil
 	case "float":
 		return DataTypeFloat, nil
+	case "vector":
+		return DataTypeVector, nil
 	case "search_results":
 		return DataTypeSearchResults, nil
 	case "json":

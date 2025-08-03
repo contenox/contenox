@@ -164,7 +164,7 @@ func main() {
 
 	// Combine all hooks into one registry
 	hooks := hooks.NewSimpleProvider(map[string]taskengine.HookRepo{})
-	exec, err := taskengine.NewExec(ctx, execRepo, hooks, serveropsChainedTracker)
+	exec, err := taskengine.NewExec(ctx, execRepo, embedder, hooks, serveropsChainedTracker)
 	if err != nil {
 		log.Fatalf("initializing task engine engine failed: %v", err)
 	}
