@@ -111,6 +111,16 @@ type KV struct {
 	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
+type RemoteHook struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	EndpointURL string    `json:"endpointUrl"`
+	Method      string    `json:"method"`
+	TimeoutMs   int       `json:"timeoutMs"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 type Store interface {
 	CreateBackend(ctx context.Context, backend *Backend) error
 	GetBackend(ctx context.Context, id string) (*Backend, error)
@@ -165,6 +175,13 @@ type Store interface {
 	DeleteKV(ctx context.Context, key string) error
 	ListKV(ctx context.Context) ([]*KV, error)
 	ListKVPrefix(ctx context.Context, prefix string) ([]*KV, error)
+
+	CreateRemoteHook(ctx context.Context, hook *RemoteHook) error
+	GetRemoteHook(ctx context.Context, id string) (*RemoteHook, error)
+	GetRemoteHookByName(ctx context.Context, name string) (*RemoteHook, error)
+	UpdateRemoteHook(ctx context.Context, hook *RemoteHook) error
+	DeleteRemoteHook(ctx context.Context, id string) error
+	ListRemoteHooks(ctx context.Context) ([]*RemoteHook, error)
 }
 
 //go:embed schema.sql

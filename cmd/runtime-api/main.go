@@ -162,9 +162,9 @@ func main() {
 		stdOuttracker,
 	}
 
-	// Combine all hooks into one registry
-	hooks := hooks.NewSimpleProvider(map[string]taskengine.HookRepo{})
-	exec, err := taskengine.NewExec(ctx, execRepo, embedder, hooks, serveropsChainedTracker)
+	// Create persistent hook repo
+	hookRepo := hooks.NewPersistentRepo(map[string]taskengine.HookRepo{}, dbInstance)
+	exec, err := taskengine.NewExec(ctx, execRepo, embedder, hookRepo, serveropsChainedTracker)
 	if err != nil {
 		log.Fatalf("initializing task engine engine failed: %v", err)
 	}
@@ -173,7 +173,7 @@ func main() {
 		log.Fatalf("initializing task engine failed: %v", err)
 	}
 	cleanups = append(cleanups, cleanup)
-	apiHandler, cleanup, err := serverapi.New(ctx, config, dbInstance, ps, embedder, execRepo, environmentExec, state, hooks, kvManager)
+	apiHandler, cleanup, err := serverapi.New(ctx, config, dbInstance, ps, embedder, execRepo, environmentExec, state, hookRepo, kvManager)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("initializing API handler failed: %v", err)

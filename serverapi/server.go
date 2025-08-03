@@ -23,6 +23,8 @@ import (
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/execapi"
 	"github.com/contenox/runtime/execservice"
+	"github.com/contenox/runtime/hookproviderservice"
+	"github.com/contenox/runtime/hooksapi"
 	"github.com/contenox/runtime/llmrepo"
 	"github.com/contenox/runtime/modelservice"
 	"github.com/contenox/runtime/poolapi"
@@ -107,6 +109,10 @@ func New(
 	providerService := providerservice.New(dbInstance)
 	providerService = providerservice.WithActivityTracker(providerService, serveropsChainedTracker)
 	providerapi.AddProviderRoutes(mux, providerService)
+	hookproviderService := hookproviderservice.New(dbInstance)
+	hookproviderService = hookproviderservice.WithActivityTracker(hookproviderService, serveropsChainedTracker)
+	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
+	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
 	handler = apiframework.RequestIDMiddleware(handler)
 
 	return handler, cleanup, nil
