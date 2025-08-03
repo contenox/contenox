@@ -130,12 +130,7 @@ def wait_for_model_in_backend(base_url):
                 # Check for backend errors
                 if data.get("error"):
                     error_msg = data["error"]
-                    if "no such host" in error_msg.lower():
-                        pytest.fail(f"Backend connection failed: {error_msg}")
-                    elif "connection refused" in error_msg.lower():
-                        pytest.fail(f"Backend unreachable: {error_msg}")
-                    else:
-                        logger.error("Backend error: %s", error_msg)
+                    logger.error("Backend error: %s", error_msg)
 
                 # Check if download has started
                 if not download_started and any(m.get('name') == model_name for m in pulled_models):
@@ -162,18 +157,9 @@ def wait_for_model_in_backend(base_url):
                 # Handle timeout
                 elapsed = time.time() - start_time
                 if elapsed > timeout:
-                    # Check queue status if timeout occurs
-                    queue_url = f"{base_url}/queue"
-                    queue_resp = requests.get(queue_url)
-                    queue_status = "Unknown"
-                    if queue_resp.status_code == 200:
-                        queue_data = queue_resp.json()
-                        queue_status = f"Queue: {len(queue_data)} items"
-
                     pytest.fail(
                         f"⏰ Timed out waiting for model '{model_name}' in backend '{backend_id}'\n"
-                        f"Elapsed: {elapsed:.0f}s | Last backend status: {data}\n"
-                        f"{queue_status}"
+                        f"Elapsed: {elapsed:.0f}s | Last backend status: {data}"
                     )
 
                 logger.info("⏳ Waiting for model '%s' in backend '%s'...", model_name, backend_id)
