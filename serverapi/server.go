@@ -112,7 +112,6 @@ func New(
 	hookproviderService := hookproviderservice.New(dbInstance)
 	hookproviderService = hookproviderservice.WithActivityTracker(hookproviderService, serveropsChainedTracker)
 	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
-	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
 	handler = apiframework.RequestIDMiddleware(handler)
 
 	return handler, cleanup, nil
