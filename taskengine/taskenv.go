@@ -255,7 +255,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 			// Record execution step
 			step := CapturedStateUnit{
 				TaskID:     currentTask.ID,
-				TaskType:   currentTask.Handler.String(),
+				TaskHandler:   currentTask.Handler.String(),
 				InputType:  taskInputType,
 				OutputType: outputType,
 				Transition: transitionEval,

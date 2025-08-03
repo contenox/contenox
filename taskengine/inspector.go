@@ -36,15 +36,15 @@ type ExecutionState struct {
 }
 
 type CapturedStateUnit struct {
-	TaskID     string        `json:"taskID"`
-	TaskType   string        `json:"taskType"`
-	InputType  DataType      `json:"inputType"`
-	OutputType DataType      `json:"outputType"`
-	Transition string        `json:"transition"`
-	Duration   time.Duration `json:"duration"`
-	Error      ErrorResponse `json:"error"`
-	Input      string        `json:"Input"`
-	Output     string        `json:"Output"`
+	TaskID      string        `json:"taskID"`
+	TaskHandler string        `json:"taskHandler"`
+	InputType   DataType      `json:"inputType"`
+	OutputType  DataType      `json:"outputType"`
+	Transition  string        `json:"transition"`
+	Duration    time.Duration `json:"duration"`
+	Error       ErrorResponse `json:"error"`
+	Input       string        `json:"Input"`
+	Output      string        `json:"Output"`
 }
 
 type ErrorResponse struct {

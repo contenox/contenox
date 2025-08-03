@@ -158,9 +158,9 @@ func (exe *SimpleExec) Embed(ctx context.Context, resolver llmresolver.Policy, l
 		modelNames = append(modelNames, llmCall.Models...)
 	}
 
-	runtimeStateResolution := exe.repo.GetRuntime(ctx)
+	runtimeStateResolution := exe.embedRepo.GetRuntime(ctx)
 	if len(modelNames) == 0 && len(providerNames) == 0 {
-		provider, err := exe.repo.GetDefaultSystemProvider(ctx)
+		provider, err := exe.embedRepo.GetDefaultSystemProvider(ctx)
 		if err != nil {
 			err = fmt.Errorf("failed to get providers: %w", err)
 			reportErr(err)

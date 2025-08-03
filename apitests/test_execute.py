@@ -108,7 +108,7 @@ def test_execute_taskchain(
     first_task = data["state"][0]
 
     assert first_task["taskID"] == "capital_task", "First task should be capital_task"
-    assert first_task["taskType"] == "raw_string", "Task type should be raw_string"
+    assert first_task["taskHandler"] == "raw_string", "Task type should be raw_string"
     assert first_task["inputType"] == "string", "Input type should be string"
     assert first_task["outputType"] == "string", "Output type should be string"
 
@@ -316,3 +316,73 @@ def test_model_execution_task(
     # Check if "Paris" is in the assistant's response
     assert "Paris" in assistant_message["content"], \
         f"Expected 'Paris' in response, got: {assistant_message['content']}"
+
+def test_embedding_handler(
+    base_url,
+    with_ollama_backend,
+    create_model_and_assign_to_pool,
+    create_backend_and_assign_to_pool,
+    wait_for_model_in_backend
+):
+    model_info = create_model_and_assign_to_pool
+    backend_info = create_backend_and_assign_to_pool
+    model_name = model_info["model_name"]
+    backend_id = backend_info["backend_id"]
+    _ = wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)
+
+    # Define task chain with embedding handler
+    task_chain = {
+        "id": "embedding-test-chain",
+        "debug": True,
+        "description": "Test chain for embedding handler",
+        "tasks": [
+            {
+                "id": "embed_task",
+                "handler": "embedding",
+                "prompt_template": "{{.input}}",
+                "execute_config": {
+                },
+                "transition": {
+                    "branches": [
+                        {
+                            "operator": "default",
+                            "goto": "end"
+                        }
+                    ]
+                }
+            }
+        ],
+        "token_limit": 4096
+    }
+
+    payload = {
+        "input": "Hello world",
+        "inputType": "string",
+        "chain": task_chain
+    }
+
+    # Send request to execute the task chain
+    response = requests.post(f"{base_url}/tasks", json=payload)
+    assert_status_code(response, 200)
+
+    data = response.json()
+
+    # Validate response structure
+    assert "response" in data, "Response missing response field"
+    assert "state" in data, "Response missing state field"
+
+    # Validate embedding response is a non-empty list of floats
+    embedding_vector = data["response"]
+    assert isinstance(embedding_vector, list), "Embedding should be a list"
+    assert len(embedding_vector) > 0, "Embedding vector should not be empty"
+    assert all(isinstance(x, float) for x in embedding_vector), \
+        "All elements should be floats"
+
+    # Validate execution state
+    assert len(data["state"]) == 1, "Should have exactly one task in state"
+    task_state = data["state"][0]
+
+    assert task_state["taskID"] == "embed_task", "Task ID mismatch"
+    assert task_state["taskHandler"] == "embedding", "Handler type mismatch"
+    assert task_state["inputType"] == "string", "Input type should be string"
+    assert task_state["outputType"] == "vector", "Output type should be vector"
