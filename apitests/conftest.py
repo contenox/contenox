@@ -62,13 +62,13 @@ def create_backend_and_assign_to_pool(base_url, with_ollama_backend):
 
     logger.info("Backend %s assigned to pool %s", backend_id, pool_id)
 
-    # pool_id = "internal_tasks_pool"
-    # assign_url = f"{base_url}/backend-associations/{pool_id}/backends/{backend_id}"
-    # response = requests.post(assign_url)
-    # response.raise_for_status()
-    # assert response.json() == "backend assigned"
+    pool_id = "internal_tasks_pool"
+    assign_url = f"{base_url}/backend-associations/{pool_id}/backends/{backend_id}"
+    response = requests.post(assign_url)
+    response.raise_for_status()
+    assert response.json() == "backend assigned"
 
-    # logger.info("Backend %s assigned to pool %s", backend_id, pool_id)
+    logger.info("Backend %s assigned to pool %s", backend_id, pool_id)
 
     yield {
         "backend_id": backend_id,
@@ -83,7 +83,7 @@ def create_model_and_assign_to_pool(base_url):
     Returns: dict containing model_id and pool_id
     """
     model_name = "smollm2:135m"
-    pool_id = "internal_embed_pool"
+    pool_id = "internal_tasks_pool"
 
     payload = {"model": model_name}
     create_url = f"{base_url}/models"

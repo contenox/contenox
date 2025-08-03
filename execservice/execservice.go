@@ -17,14 +17,14 @@ type ExecService interface {
 }
 
 type execService struct {
-	promptRepo llmrepo.ModelRepo
-	db         libdb.DBManager
+	modelRepo llmrepo.ModelRepo
+	db        libdb.DBManager
 }
 
-func NewExec(ctx context.Context, promptRepo llmrepo.ModelRepo, dbInstance libdb.DBManager) ExecService {
+func NewExec(ctx context.Context, modelRepo llmrepo.ModelRepo, dbInstance libdb.DBManager) ExecService {
 	return &execService{
-		promptRepo: promptRepo,
-		db:         dbInstance,
+		modelRepo: modelRepo,
+		db:        dbInstance,
 	}
 }
 
@@ -45,14 +45,13 @@ func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*TaskR
 		return nil, fmt.Errorf("prompt is empty %w", apiframework.ErrEmptyRequestBody)
 	}
 
-	provider, err := s.promptRepo.GetDefaultSystemProvider(ctx)
+	provider, err := s.modelRepo.GetDefaultSystemProvider(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get provider: %w", err)
+		return nil, fmt.Errorf("failed to get default system provider: %w", err)
 	}
-
 	promptClient, err := llmresolver.PromptExecute(ctx, llmresolver.PromptRequest{
 		ModelNames: []string{provider.ModelName()},
-	}, s.promptRepo.GetRuntime(ctx), llmresolver.Randomly)
+	}, s.modelRepo.GetRuntime(ctx), llmresolver.Randomly)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve prompt client: %w", err)
 	}

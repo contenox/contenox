@@ -18,6 +18,7 @@ var (
 	ErrMissingParameter      = errors.New("serverops: missing parameter")
 	ErrEmptyRequest          = errors.New("serverops: empty request")
 	ErrEmptyRequestBody      = errors.New("serverops: empty request body")
+	ErrBadRequest            = errors.New("serverops: bad request")
 )
 
 // ErrFileSizeLimitExceeded indicates the specific file exceeded its allowed size limit.
@@ -89,6 +90,9 @@ func mapErrorToStatus(op Operation, err error) int {
 		return http.StatusBadRequest // 400
 	}
 	if errors.Is(err, ErrEmptyRequestBody) {
+		return http.StatusBadRequest // 400
+	}
+	if errors.Is(err, ErrBadRequest) {
 		return http.StatusBadRequest // 400
 	}
 

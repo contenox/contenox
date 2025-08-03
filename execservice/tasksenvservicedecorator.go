@@ -2,6 +2,7 @@ package execservice
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/contenox/activitytracker"
 	"github.com/contenox/runtime/taskengine"
@@ -12,7 +13,7 @@ type activityTrackerTaskEnvDecorator struct {
 	tracker activitytracker.ActivityTracker
 }
 
-func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input string) (any, []taskengine.CapturedStateUnit, error) {
+func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, []taskengine.CapturedStateUnit, error) {
 	// Extract useful metadata from the chain
 	chainID := chain.ID
 
@@ -21,15 +22,16 @@ func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *ta
 		"execute",
 		"task-chain",
 		"chainID", chainID,
-		"inputLength", len(input),
+		"inputLength", len(fmt.Sprintf("%v", input)),
+		"inputType", inputType.String(),
 	)
 	defer endFn()
 
-	result, stacktrace, err := d.service.Execute(ctx, chain, input)
+	result, stacktrace, err := d.service.Execute(ctx, chain, input, inputType)
 	if err != nil {
 		reportErrFn(err)
 	} else {
-		reportChangeFn(chainID, map[string]interface{}{
+		reportChangeFn(chainID, map[string]any{
 			"input":      input,
 			"result":     result,
 			"chainID":    chainID,

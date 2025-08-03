@@ -13,6 +13,7 @@ import (
 	"dario.cat/mergo"
 	"github.com/contenox/activitytracker"
 	"github.com/contenox/modelprovider/llmresolver"
+	"github.com/contenox/runtime/apiframework"
 )
 
 const (
@@ -62,6 +63,33 @@ func (d *DataType) String() string {
 		return "openai_chat_response"
 	default:
 		return "unknown"
+	}
+}
+
+func DataTypeFromString(s string) (DataType, error) {
+	switch strings.ToLower(s) {
+	case "any":
+		return DataTypeAny, nil
+	case "string":
+		return DataTypeString, nil
+	case "bool":
+		return DataTypeBool, nil
+	case "int":
+		return DataTypeInt, nil
+	case "float":
+		return DataTypeFloat, nil
+	case "search_results":
+		return DataTypeSearchResults, nil
+	case "json":
+		return DataTypeJSON, nil
+	case "chat_history":
+		return DataTypeChatHistory, nil
+	case "openai_chat":
+		return DataTypeOpenAIChat, nil
+	case "openai_chat_response":
+		return DataTypeOpenAIChatResponse, nil
+	default:
+		return DataTypeAny, fmt.Errorf("unknown data type: %s", s)
 	}
 }
 
@@ -551,15 +579,15 @@ func findTaskByID(tasks []ChainTask, id string) (*ChainTask, error) {
 
 func validateChain(tasks []ChainTask) error {
 	if len(tasks) == 0 {
-		return fmt.Errorf("chain has no tasks")
+		return fmt.Errorf("chain has no tasks %w", apiframework.ErrBadRequest)
 	}
 	for _, ct := range tasks {
 		if ct.ID == "" || ct.ID == TermEnd {
 			if ct.ID == "" {
-				return fmt.Errorf("task ID cannot be empty")
+				return fmt.Errorf("task ID cannot be empty %w", apiframework.ErrBadRequest)
 			}
 			if ct.ID == TermEnd {
-				return fmt.Errorf("task ID cannot be '%s'", TermEnd)
+				return fmt.Errorf("task ID cannot be '%s' %w", TermEnd, apiframework.ErrBadRequest)
 			}
 		}
 	}

@@ -26,7 +26,7 @@ type TaskExecutor interface {
 // It supports prompt-to-string, number, score, range, boolean condition evaluation,
 // and delegation to registered hooks.
 type SimpleExec struct {
-	promptExec   llmrepo.ModelRepo
+	repo         llmrepo.ModelRepo
 	hookProvider HookRepo
 	tracker      activitytracker.ActivityTracker
 }
@@ -34,19 +34,19 @@ type SimpleExec struct {
 // NewExec creates a new SimpleExec instance
 func NewExec(
 	_ context.Context,
-	promptExec llmrepo.ModelRepo,
+	repo llmrepo.ModelRepo,
 	hookProvider HookRepo,
 	tracker activitytracker.ActivityTracker,
 ) (TaskExecutor, error) {
 	if hookProvider == nil {
 		return nil, fmt.Errorf("hook provider is nil")
 	}
-	if promptExec == nil {
-		return nil, fmt.Errorf("prompt executor is nil")
+	if repo == nil {
+		return nil, fmt.Errorf("repo executor is nil")
 	}
 	return &SimpleExec{
 		hookProvider: hookProvider,
-		promptExec:   promptExec,
+		repo:         repo,
 		tracker:      tracker,
 	}, nil
 }
@@ -58,7 +58,8 @@ func (exe *SimpleExec) Prompt(ctx context.Context, resolver llmresolver.Policy, 
 		"model_name", llmCall.Model,
 		"model_names", llmCall.Models,
 		"provider_types", llmCall.Providers,
-		"provider_type", llmCall.Provider)
+		"provider_type", llmCall.Provider,
+	)
 	defer end()
 
 	if prompt == "" {
@@ -80,32 +81,21 @@ func (exe *SimpleExec) Prompt(ctx context.Context, resolver llmresolver.Policy, 
 	if llmCall.Models != nil {
 		modelNames = append(modelNames, llmCall.Models...)
 	}
-	var runtimeStateResolution llmresolver.ProviderFromRuntimeState
+
+	runtimeStateResolution := exe.repo.GetRuntime(ctx)
 	if len(modelNames) == 0 && len(providerNames) == 0 {
-		reportChange("runtime_state_resolution", "no explicit model/provider, using default system provider (Ollama)")
-		defaultProvider, err := exe.promptExec.GetDefaultSystemProvider(ctx) // Fetch the actual default provider
-		if err != nil {
-			reportErr(fmt.Errorf("failed to get default system provider: %w", err))
-			return "", fmt.Errorf("failed to get default system provider: %w", err)
-		}
-		// Populate the request fields with the default provider's model and type
-		modelNames = append(modelNames, defaultProvider.ModelName())
-		providerNames = append(providerNames, defaultProvider.GetType())
-		runtimeStateResolution = exe.promptExec.GetRuntime(ctx)
-	} else {
-		providers, err := exe.promptExec.GetAvailableProviders(ctx)
+		provider, err := exe.repo.GetDefaultSystemProvider(ctx)
 		if err != nil {
 			err = fmt.Errorf("failed to get providers: %w", err)
 			reportErr(err)
 			return "", err
 		}
+		modelNames = append(modelNames, provider.ModelName())
+		providerNames = append(providerNames, provider.GetType())
 		runtimeStateResolution = func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error) {
-			ids := []string{}
-			for _, p := range providers {
-				ids = append(ids, p.GetID())
-			}
+			ids := []string{provider.GetID()}
 			reportChange("available_providers", ids)
-			return providers, nil // Use direct providers list
+			return []libmodelprovider.Provider{provider}, nil // Use direct providers list
 		}
 	}
 	// Resolve client using available providers
@@ -295,11 +285,11 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			return nil, DataTypeAny, "", fmt.Errorf("missing llm_execution config")
 		}
 		if dataType != DataTypeChatHistory {
-			return nil, DataTypeAny, "", fmt.Errorf("llm_execution requires chat history input")
+			return nil, DataTypeAny, "", fmt.Errorf("llm_execution requires chat history input was %s", dataType.String())
 		}
 		chatHistory, ok := input.(ChatHistory)
 		if !ok {
-			return nil, DataTypeAny, "", fmt.Errorf("llm_execution requires chat history input")
+			return nil, DataTypeAny, "", fmt.Errorf("llm_execution requires chat history input was claimed as %s but actually %T", dataType.String(), input)
 		}
 		if currentTask.SystemInstruction != "" {
 			// Check if the exact system instruction already exists in the messages
@@ -388,7 +378,23 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 	if llmCall.Providers != nil {
 		providerNames = append(providerNames, llmCall.Providers...)
 	}
-	tokenizer, err := exe.promptExec.GetTokenizer(ctx, llmCall.Model)
+	runtimeStateResolution := exe.repo.GetRuntime(ctx)
+	if len(llmCall.Models) == 0 && len(providerNames) == 0 {
+		provider, err := exe.repo.GetDefaultSystemProvider(ctx)
+		if err != nil {
+			err = fmt.Errorf("failed to get providers: %w", err)
+			reportErr(err)
+			return nil, DataTypeAny, "", err
+		}
+		llmCall.Models = append(llmCall.Models, provider.ModelName())
+		providerNames = append(providerNames, provider.GetType())
+		runtimeStateResolution = func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error) {
+			ids := []string{provider.GetID()}
+			reportChange("available_providers", ids)
+			return []libmodelprovider.Provider{provider}, nil // Use direct providers list
+		}
+	}
+	tokenizer, err := exe.repo.GetTokenizer(ctx, llmCall.Model)
 	if err != nil {
 		reportErr(fmt.Errorf("tokenizer failed: %w", err))
 		return nil, DataTypeAny, "", fmt.Errorf("tokenizer failed: %w", err)
@@ -415,25 +421,7 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 	if llmCall.Models != nil {
 		modelNames = append(modelNames, llmCall.Models...)
 	}
-	var runtimeStateResolution llmresolver.ProviderFromRuntimeState
-	if len(modelNames) == 0 && len(providerNames) == 0 {
-		reportChange("runtime_state_resolution", "no explicit model/provider, using default system provider (Ollama)")
-		runtimeStateResolution = exe.promptExec.GetRuntime(ctx)
-	} else {
-		providers, err := exe.promptExec.GetAvailableProviders(ctx)
-		ids := []string{}
-		for _, p := range providers {
-			ids = append(ids, p.GetID())
-		}
-		reportChange("available_providers", ids)
-		if err != nil {
-			reportErr(fmt.Errorf("failed to get providers: %w", err))
-			return nil, DataTypeAny, "", fmt.Errorf("failed to get providers: %w", err)
-		}
-		runtimeStateResolution = func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error) {
-			return providers, nil // Use direct providers list
-		}
-	}
+
 	// Resolve client using available providers
 	client, _, err := llmresolver.Chat(ctx,
 		llmresolver.Request{

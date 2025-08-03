@@ -8,7 +8,7 @@ import (
 )
 
 type TasksEnvService interface {
-	Execute(ctx context.Context, chain *taskengine.ChainDefinition, input string) (any, []taskengine.CapturedStateUnit, error)
+	Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, []taskengine.CapturedStateUnit, error)
 	taskengine.HookRegistry
 }
 
@@ -26,8 +26,8 @@ func NewTasksEnv(ctx context.Context, environmentExec taskengine.EnvExecutor, db
 	}
 }
 
-func (s *tasksEnvService) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input string) (any, []taskengine.CapturedStateUnit, error) {
-	return s.environmentExec.ExecEnv(ctx, chain, input, taskengine.DataTypeAny)
+func (s *tasksEnvService) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, []taskengine.CapturedStateUnit, error) {
+	return s.environmentExec.ExecEnv(ctx, chain, input, inputType)
 }
 
 func (s *tasksEnvService) Supports(ctx context.Context) ([]string, error) {

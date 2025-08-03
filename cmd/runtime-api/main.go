@@ -104,13 +104,14 @@ func main() {
 		log.Fatalf("initializing OpenSearch failed: %v", err)
 	}
 	state, err := runtimestate.New(ctx, dbInstance, ps, runtimestate.WithPools())
+	// state, err := runtimestate.New(ctx, dbInstance, ps)
 	if err != nil {
 		log.Fatalf("initializing runtime state failed: %v", err)
 	}
 	embedder, err := llmrepo.NewEmbedder(ctx, &llmrepo.Config{
 		DatabaseURL: config.DatabaseURL,
 		EmbedModel:  config.EmbedModel,
-		TasksModel:  config.TasksModel,
+		TaskModel:   config.TaskModel,
 		TenantID:    TenantID,
 	}, dbInstance, state)
 	if err != nil {
@@ -126,8 +127,8 @@ func main() {
 
 	execRepo, err := llmrepo.NewExecRepo(ctx, &llmrepo.Config{
 		DatabaseURL: config.DatabaseURL,
+		TaskModel:   config.TaskModel,
 		EmbedModel:  config.EmbedModel,
-		TasksModel:  config.TasksModel,
 		TenantID:    TenantID,
 	}, dbInstance, state, tokenizerSvc)
 	if err != nil {

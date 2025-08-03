@@ -1,8 +1,11 @@
 package taskengine
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TaskType defines the expected output format of a task.
@@ -43,6 +46,14 @@ const (
 
 func (t TaskType) String() string {
 	return string(t)
+}
+
+func (d DataType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.String())
+}
+
+func (d DataType) MarshalYAML() ([]byte, error) {
+	return yaml.Marshal(d.String())
 }
 
 // TriggerType defines the type of trigger that starts a chain.

@@ -74,11 +74,11 @@ func NewExecRepo(ctx context.Context, config *Config, dbInstance libdb.DBManager
 	}
 	defer r()
 
-	pool, err := initEmbedPool(ctx, config, tx, false)
+	pool, err := initTaskPool(ctx, config, tx, false)
 	if err != nil {
 		return nil, fmt.Errorf("init pool: %w", err)
 	}
-	model, err := initTasksModel(ctx, config, tx, false)
+	model, err := initTaskModel(ctx, config, tx, false)
 	if err != nil {
 		return nil, fmt.Errorf("init model: %w", err)
 	}
@@ -109,15 +109,8 @@ type modelManager struct {
 
 // GetRuntime implements Embedder.
 func (e *modelManager) GetRuntime(ctx context.Context) llmresolver.ProviderFromRuntimeState {
-	provider, err := e.GetDefaultSystemProvider(ctx)
-
-	return func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error) {
-		if err != nil {
-			return nil, err
-		}
-
-		return []libmodelprovider.Provider{provider}, nil
-	}
+	state := e.runtime.Get(ctx)
+	return runtimestate.LocalProviderAdapter(ctx, state)
 }
 
 func (e *modelManager) GetDefaultSystemProvider(ctx context.Context) (libmodelprovider.Provider, error) {
@@ -246,7 +239,7 @@ func initEmbedPool(ctx context.Context, config *Config, tx libdb.Exec, created b
 	return pool, nil
 }
 
-func initTasksPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*store.Pool, error) {
+func initTaskPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*store.Pool, error) {
 	pool, err := store.New(tx).GetPool(ctx, TasksPoolID)
 	if !created && errors.Is(err, libdb.ErrNotFound) {
 		err = store.New(tx).CreatePool(ctx, &store.Pool{
@@ -257,7 +250,7 @@ func initTasksPool(ctx context.Context, config *Config, tx libdb.Exec, created b
 		if err != nil {
 			return nil, err
 		}
-		return initTasksPool(ctx, config, tx, true)
+		return initTaskPool(ctx, config, tx, true)
 	}
 	if err != nil {
 		return nil, err
@@ -291,27 +284,27 @@ func initEmbedModel(ctx context.Context, config *Config, tx libdb.Exec, created 
 	return model, nil
 }
 
-func initTasksModel(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*store.Model, error) {
+func initTaskModel(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*store.Model, error) {
 	tenantID, err := uuid.Parse(config.TenantID)
 	if err != nil {
 		return nil, err
 	}
-	modelID := uuid.NewSHA1(tenantID, []byte(config.TasksModel))
+	modelID := uuid.NewSHA1(tenantID, []byte(config.TaskModel))
 	storeInstance := store.New(tx)
 
-	model, err := storeInstance.GetModelByName(ctx, config.TasksModel)
+	model, err := storeInstance.GetModelByName(ctx, config.TaskModel)
 	if err != nil && !errors.Is(err, libdb.ErrNotFound) {
 		return nil, fmt.Errorf("get model: %w", err)
 	}
 	if !created && errors.Is(err, libdb.ErrNotFound) {
 		err = storeInstance.AppendModel(ctx, &store.Model{
-			Model: config.TasksModel,
+			Model: config.TaskModel,
 			ID:    modelID.String(),
 		})
 		if err != nil {
 			return nil, err
 		}
-		return initTasksModel(ctx, config, tx, true)
+		return initTaskModel(ctx, config, tx, true)
 	}
 	return model, nil
 }
@@ -337,6 +330,6 @@ func assignModelToPool(ctx context.Context, _ *Config, tx libdb.Exec, model *sto
 type Config struct {
 	DatabaseURL string `json:"database_url"`
 	EmbedModel  string `json:"embed_model"`
-	TasksModel  string `json:"tasks_model"`
+	TaskModel   string `json:"task_model"`
 	TenantID    string `json:"tenant_id"`
 }

@@ -98,7 +98,6 @@ func New(
 	modelService := modelservice.New(dbInstance, config.EmbedModel)
 	modelService = modelservice.WithActivityTracker(modelService, serveropsChainedTracker)
 	backendapi.AddModelRoutes(mux, modelService, downloadService)
-
 	execService := execservice.NewExec(ctx, execmodelrepo, dbInstance)
 	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
 	taskService := execservice.NewTasksEnv(ctx, environmentExec, dbInstance, hookRegistry)
@@ -122,7 +121,7 @@ type Config struct {
 	NATSPassword        string `json:"nats_password"`
 	TokenizerServiceURL string `json:"tokenizer_service_url"`
 	EmbedModel          string `json:"embed_model"`
-	TasksModel          string `json:"tasks_model"`
+	TaskModel           string `json:"task_model"`
 	VectorStoreURL      string `json:"vector_store_url"`
 	KVBackend           string `json:"kv_backend"`
 	KVHost              string `json:"kv_host"`
