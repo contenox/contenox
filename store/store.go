@@ -56,28 +56,11 @@ type Pool struct {
 type Job struct {
 	ID           string    `json:"id"`
 	TaskType     string    `json:"taskType"`
-	Operation    string    `json:"operation"`
-	Subject      string    `json:"subject"`
-	EntityID     string    `json:"entityId"`
-	EntityType   string    `json:"entityType"`
 	Payload      []byte    `json:"payload"`
 	ScheduledFor int64     `json:"scheduledFor"`
 	ValidUntil   int64     `json:"validUntil"`
 	RetryCount   int       `json:"retryCount"`
 	CreatedAt    time.Time `json:"createdAt"`
-}
-
-type LeasedJob struct {
-	Job
-	Leaser          string    `json:"leaser"`
-	LeaseExpiration time.Time `json:"leaseExpiration"`
-}
-
-type Resource struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // KV represents a key-value pair in the database
@@ -138,13 +121,6 @@ type Store interface {
 	PopJobForType(ctx context.Context, taskType string) (*Job, error)
 	GetJobsForType(ctx context.Context, taskType string) ([]*Job, error)
 	ListJobs(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Job, error)
-	DeleteJobsByEntity(ctx context.Context, entityID, entityType string) error
-
-	AppendLeasedJob(ctx context.Context, job Job, duration time.Duration, leaser string) error
-	GetLeasedJob(ctx context.Context, id string) (*LeasedJob, error)
-	DeleteLeasedJob(ctx context.Context, id string) error
-	ListLeasedJobs(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*LeasedJob, error)
-	DeleteLeasedJobs(ctx context.Context, entityID, entityType string) error
 
 	SetKV(ctx context.Context, key string, value json.RawMessage) error
 	UpdateKV(ctx context.Context, key string, value json.RawMessage) error

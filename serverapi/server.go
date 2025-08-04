@@ -18,8 +18,6 @@ import (
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendapi"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/dispatchapi"
-	"github.com/contenox/runtime/dispatchservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/execapi"
 	"github.com/contenox/runtime/execservice"
@@ -104,8 +102,6 @@ func New(
 	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
 	taskService := execservice.NewTasksEnv(ctx, environmentExec, dbInstance, hookRegistry)
 	execapi.AddExecRoutes(mux, execService, taskService)
-	dispatchService := dispatchservice.New(dbInstance)
-	dispatchapi.AddDispatchRoutes(mux, dispatchService)
 	providerService := providerservice.New(dbInstance)
 	providerService = providerservice.WithActivityTracker(providerService, serveropsChainedTracker)
 	providerapi.AddProviderRoutes(mux, providerService)
