@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/modelprovider/llmresolver"
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/llmrepo"
+	"github.com/contenox/runtime/llmresolver"
 	"github.com/google/uuid"
 )
 

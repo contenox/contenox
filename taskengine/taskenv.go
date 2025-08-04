@@ -13,8 +13,8 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/contenox/activitytracker"
-	"github.com/contenox/modelprovider/llmresolver"
 	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/llmresolver"
 )
 
 const (

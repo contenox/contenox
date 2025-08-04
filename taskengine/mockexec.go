@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/contenox/modelprovider/llmresolver"
+	"github.com/contenox/runtime/llmresolver"
 )
 
 // MockTaskExecutor is a mock implementation of taskengine.TaskExecutor.

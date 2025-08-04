@@ -28,7 +28,7 @@ require (
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/contenox/bus v0.0.2
 	github.com/contenox/kvstore v0.0.1
-	github.com/contenox/modelprovider v0.0.2
+	github.com/contenox/modelprovider v0.0.3
 	github.com/contenox/routine v0.0.1
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

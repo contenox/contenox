@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	libmodelprovider "github.com/contenox/modelprovider"
-	"github.com/contenox/modelprovider/llmresolver"
+	"github.com/contenox/runtime/llmresolver"
 )
 
 type MockModelRepo struct {

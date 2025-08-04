@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	libmodelprovider "github.com/contenox/modelprovider"
-	"github.com/contenox/modelprovider/llmresolver"
+	"github.com/contenox/runtime/llmresolver"
 	"github.com/google/uuid"
 
 	libdb "github.com/contenox/dbexec"
