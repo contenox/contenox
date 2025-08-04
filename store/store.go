@@ -80,29 +80,6 @@ type Resource struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-const (
-	ResourceTypeSystem = "system"
-	ResourceTypeFiles  = "files"
-	ResourceTypeFile   = "file"
-	ResourceTypeBlobs  = "blobs"
-	ResourceTypeChunks = "chunks"
-)
-
-var ResourceTypes = []string{
-	ResourceTypeSystem,
-	ResourceTypeFiles,
-	ResourceTypeBlobs,
-	ResourceTypeChunks,
-}
-
-type Blob struct {
-	ID        string    `json:"id"`
-	Meta      []byte    `json:"meta"`
-	Data      []byte    `json:"data"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
 // KV represents a key-value pair in the database
 type KV struct {
 	Key       string          `json:"key"`
