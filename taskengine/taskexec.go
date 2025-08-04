@@ -565,7 +565,10 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 func (exe *SimpleExec) hookengine(ctx context.Context, startingTime time.Time, input any, dataType DataType, transition string, hook *HookCall) (any, DataType, string, error) {
 	status, res, dataType, transition, err := exe.hookProvider.Exec(ctx, startingTime, input, dataType, transition, hook)
 	if status != StatusSuccess {
-		return res, dataType, transition, fmt.Errorf("hook execution failed bad status: %v %w", status, err)
+		if err != nil {
+			return res, dataType, transition, fmt.Errorf("hook execution failed bad status: %v %w", status, err)
+		}
+		return res, dataType, transition, fmt.Errorf("hook execution failed bad status: %v", status)
 	}
 	return res, dataType, transition, err
 }

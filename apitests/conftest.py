@@ -3,6 +3,8 @@ import uuid
 import requests
 import logging
 import time
+from pytest_httpserver import HTTPServer
+from typing import Generator, Any
 
 
 BASE_URL = "http://localhost:8081"
@@ -188,3 +190,36 @@ def create_test_chain(base_url):
     # Teardown
     requests.delete(
         f"{base_url}/chains/{payload['id']}")
+
+# Define a mock hook response for testing
+MOCK_HOOK_RESPONSE = {
+    "output": "Hook executed successfully",
+    "dataType": "string",
+    "transition": "ok"
+}
+
+@pytest.fixture(scope="session")
+def httpserver(request) -> Generator[HTTPServer, Any, Any]:
+    """
+    Session-scoped httpserver fixture.
+    This overrides the default function-scoped httpserver from pytest-httpserver.
+    It allows other session-scoped fixtures to configure the server.
+    """
+    server = HTTPServer(host="0.0.0.0", port=0) # Initialize with 0.0.0.0 and dynamic port
+    logger.info(f"Attempting to start HTTPServer on {server.host}:{server.port}...")
+    server.start()
+    logger.info(f"HTTPServer is running and accessible at: {server.url_for('/')}")
+    yield server
+    server.stop()
+    server.clear()
+
+@pytest.fixture(scope="function")
+def mock_hook_server(httpserver: HTTPServer):
+    endpoint = "/test-hook-endpoint"
+    httpserver.expect_request(endpoint, method="POST").respond_with_json(MOCK_HOOK_RESPONSE)
+    full_mock_url = httpserver.url_for(suffix=endpoint)
+    logger.info(f"Mock hook server endpoint registered at: {full_mock_url}")
+    return {
+        "url": full_mock_url,
+        "server": httpserver
+    }

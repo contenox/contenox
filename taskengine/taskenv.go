@@ -254,13 +254,13 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 			}
 			// Record execution step
 			step := CapturedStateUnit{
-				TaskID:     currentTask.ID,
-				TaskHandler:   currentTask.Handler.String(),
-				InputType:  taskInputType,
-				OutputType: outputType,
-				Transition: transitionEval,
-				Duration:   duration,
-				Error:      errState,
+				TaskID:      currentTask.ID,
+				TaskHandler: currentTask.Handler.String(),
+				InputType:   taskInputType,
+				OutputType:  outputType,
+				Transition:  transitionEval,
+				Duration:    duration,
+				Error:       errState,
 			}
 			if chain.Debug {
 				step.Input = fmt.Sprintf("%v", taskInput)

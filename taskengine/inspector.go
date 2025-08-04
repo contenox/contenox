@@ -43,8 +43,8 @@ type CapturedStateUnit struct {
 	Transition  string        `json:"transition"`
 	Duration    time.Duration `json:"duration"`
 	Error       ErrorResponse `json:"error"`
-	Input       string        `json:"Input"`
-	Output      string        `json:"Output"`
+	Input       string        `json:"input"`
+	Output      string        `json:"output"`
 }
 
 type ErrorResponse struct {

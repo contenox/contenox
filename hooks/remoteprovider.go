@@ -108,35 +108,34 @@ func (p *PersistentRepo) execRemoteHook(
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, transition,
+		return taskengine.StatusError, nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 			fmt.Errorf("remote hook returned status: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, transition,
+		return taskengine.StatusError, nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 			fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	response := struct {
-		Status     int    `json:"status"`
 		Output     any    `json:"output"`
 		DataType   string `json:"dataType"`
 		Transition string `json:"transition"`
 	}{}
 
 	if err := json.Unmarshal(body, &response); err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, transition,
+		return taskengine.StatusError, nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 			fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	dt, err := taskengine.DataTypeFromString(response.DataType)
 	if err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, transition,
+		return taskengine.StatusError, nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 			fmt.Errorf("invalid data type in response: %s", response.DataType)
 	}
 
-	return response.Status, response.Output, dt, response.Transition, nil
+	return taskengine.StatusSuccess, response.Output, dt, response.Transition, nil
 }
 
 func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
