@@ -1,5 +1,4 @@
 import requests
-import time
 from helpers import assert_status_code
 
 def test_parse_number_handler(
