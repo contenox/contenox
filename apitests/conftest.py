@@ -5,6 +5,8 @@ import logging
 import time
 from pytest_httpserver import HTTPServer
 from typing import Generator, Any
+import json
+from werkzeug.wrappers import Response
 
 
 BASE_URL = "http://localhost:8081"
@@ -223,3 +225,25 @@ def mock_hook_server(httpserver: HTTPServer):
         "url": full_mock_url,
         "server": httpserver
     }
+
+@pytest.fixture
+def configurable_mock_hook_server(httpserver: HTTPServer):
+    def _setup_mock(status_code=200, response_json=None, delay_seconds=0):
+        if response_json is None:
+            response_json = MOCK_HOOK_RESPONSE
+
+        endpoint = f"/test-hook-endpoint-{uuid.uuid4().hex[:8]}"
+
+        def handler(request):
+            if delay_seconds > 0:
+                time.sleep(delay_seconds)
+            # Use Response from werkzeug.wrappers
+            return Response(json.dumps(response_json), status_code, {"Content-Type": "application/json"})
+
+        httpserver.expect_request(endpoint, method="POST").respond_with_handler(handler)
+        return {
+            "url": httpserver.url_for(endpoint),
+            "server": httpserver
+        }
+
+    return _setup_mock

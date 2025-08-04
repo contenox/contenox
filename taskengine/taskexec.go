@@ -219,32 +219,41 @@ func (exe *SimpleExec) rang(ctx context.Context, resolver llmresolver.Policy, ll
 	if err != nil {
 		return "", err
 	}
-	rangeStr := strings.TrimSpace(response)
-	clean := strings.ReplaceAll(rangeStr, " ", "")
 
-	// Check for a range format like "6-8"
+	return parseRangeString(response, prompt, response)
+}
+
+// parseRangeString parses and validates a string as either a range ("6-8") or a single number.
+// Returns the normalized range string (e.g., "6-8" or "6-6") or an error.
+// parseRangeString parses and validates a string as either a range ("6-8") or a single number.
+// Returns the normalized range string (e.g., "6-8" or "6-6") or an error.
+func parseRangeString(input, prompt, response string) (string, error) {
+	clean := strings.TrimSpace(input)
+	clean = strings.ReplaceAll(clean, " ", "")
+	clean = strings.ReplaceAll(clean, "\"", "")
+	clean = strings.ReplaceAll(clean, "'", "")
+
 	if strings.Contains(clean, "-") {
 		parts := strings.Split(clean, "-")
 		if len(parts) != 2 {
-			return "", fmt.Errorf("invalid range format: prompt %s", rangeStr)
+			return "", fmt.Errorf("invalid range format: %q", input)
 		}
-		_, err = strconv.Atoi(parts[0])
-		if err != nil {
-			return "", err
+		_, err1 := parseNumber(parts[0])
+		_, err2 := parseNumber(parts[1])
+		if err1 != nil {
+			return "", fmt.Errorf("invalid number format: prompt %s answer %s invalid part %q %w", prompt, response, parts[0], err1)
 		}
-		_, err = strconv.Atoi(parts[1])
-		if err != nil {
-			return "", err
+		if err2 != nil {
+			return "", fmt.Errorf("invalid number format: prompt %s answer %s invalid part %q %w", prompt, response, parts[1], err2)
 		}
-		return strings.Join(parts, "-"), nil
+		return parts[0] + "-" + parts[1], nil // return normalized (already clean)
 	}
 
-	// Fallback: try parsing as a single number
-	if _, err := strconv.Atoi(clean); err != nil {
+	// Try as single number
+	if _, err := parseNumber(clean); err != nil {
 		return "", fmt.Errorf("invalid number format: prompt %s answer %s %w", prompt, response, err)
 	}
 
-	// Treat a single number as a degenerate range like "6-6"
 	return clean + "-" + clean, nil
 }
 
@@ -254,11 +263,18 @@ func (exe *SimpleExec) number(ctx context.Context, resolver llmresolver.Policy, 
 	if err != nil {
 		return 0, err
 	}
-	i, err := strconv.Atoi(response)
+
+	num, err := parseNumber(response)
 	if err != nil {
 		return 0, fmt.Errorf("invalid number format: prompt %s answer %s %w", prompt, response, err)
 	}
-	return i, nil
+
+	// Check if the float is actually a whole number
+	if num != float64(int(num)) {
+		return 0, fmt.Errorf("parsed number is not an integer: %g", num)
+	}
+
+	return int(num), nil
 }
 
 // score executes the prompt and parses the response as a floating-point score.
@@ -267,10 +283,9 @@ func (exe *SimpleExec) score(ctx context.Context, resolver llmresolver.Policy, l
 	if err != nil {
 		return 0, err
 	}
-	cleaned := strings.ReplaceAll(response, " ", "")
-	f, err := strconv.ParseFloat(cleaned, 64)
+	f, err := parseNumber(response)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("invalid number format: prompt %s answer %s %w", prompt, response, err)
 	}
 	return f, nil
 }

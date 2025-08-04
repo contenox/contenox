@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -507,12 +508,33 @@ func (exe SimpleEnv) evaluateTransitions(ctx context.Context, taskID string, tra
 
 // parseNumber attempts to parse a string as either an integer or float.
 func parseNumber(s string) (float64, error) {
-	// Try int first
-	if i, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return float64(i), nil
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "\"", "")
+	s = strings.ReplaceAll(s, "'", "")
+	s = strings.ReplaceAll(s, " ", "")
+
+	// Handle empty string
+	if s == "" {
+		return 0, fmt.Errorf("cannot parse number from empty string")
 	}
-	// Fallback to float
-	return strconv.ParseFloat(s, 64)
+
+	// If it looks like a float or int, parse it
+	if num, err := strconv.ParseFloat(s, 64); err == nil {
+		return num, nil
+	}
+
+	// Try to extract first number from the string (in case of garbage prefix/suffix)
+	re := regexp.MustCompile(`[-+]?\d*\.?\d+`)
+	match := re.FindString(s)
+	if match == "" {
+		return 0, fmt.Errorf("no valid number found in %q", s)
+	}
+
+	num, err := strconv.ParseFloat(match, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse number from %q (extracted %q): %w", s, match, err)
+	}
+	return num, nil
 }
 
 // compare applies a logical operator to a model response and a target value.
@@ -552,20 +574,28 @@ func compare(operator OperatorTerm, response, when string) (bool, error) {
 	case OpInRange:
 		parts := strings.Split(when, "-")
 		if len(parts) != 2 {
-			return false, fmt.Errorf("invalid between range format: %s", when)
+			return false, fmt.Errorf("invalid inrange format: %s (expected 'min-max')", when)
 		}
+
 		lower, err := parseNumber(strings.TrimSpace(parts[0]))
 		if err != nil {
-			return false, fmt.Errorf("invalid lower bound: %v", err)
+			return false, fmt.Errorf("invalid lower bound in range %q: %w", when, err)
 		}
+
 		upper, err := parseNumber(strings.TrimSpace(parts[1]))
 		if err != nil {
-			return false, fmt.Errorf("invalid upper bound: %v", err)
+			return false, fmt.Errorf("invalid upper bound in range %q: %w", when, err)
 		}
+
+		if lower > upper {
+			return false, fmt.Errorf("invalid range: lower bound %f > upper bound %f", lower, upper)
+		}
+
 		resNum, err := parseNumber(response)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("failed to parse response as number: %q: %w", response, err)
 		}
+
 		return resNum >= lower && resNum <= upper, nil
 	default:
 		return false, fmt.Errorf("unsupported operator: %s", operator)
