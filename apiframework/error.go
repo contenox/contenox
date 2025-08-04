@@ -19,6 +19,7 @@ var (
 	ErrEmptyRequest          = errors.New("serverops: empty request")
 	ErrEmptyRequestBody      = errors.New("serverops: empty request body")
 	ErrBadRequest            = errors.New("serverops: bad request")
+	ErrUnprocessableEntity   = errors.New("serverops: unprocessable entity")
 )
 
 // ErrFileSizeLimitExceeded indicates the specific file exceeded its allowed size limit.

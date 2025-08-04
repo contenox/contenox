@@ -31,7 +31,6 @@ func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
 	}
-
 	if err := s.service.Create(ctx, &hook); err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return

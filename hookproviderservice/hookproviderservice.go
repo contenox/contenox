@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	libdb "github.com/contenox/dbexec"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/store"
 )
 
@@ -71,13 +72,13 @@ func (s *service) List(ctx context.Context) ([]*store.RemoteHook, error) {
 func validate(hook *store.RemoteHook) error {
 	switch {
 	case hook.Name == "":
-		return fmt.Errorf("%w: name is required", ErrInvalidHook)
+		return fmt.Errorf("%w %w: name is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	case hook.EndpointURL == "":
-		return fmt.Errorf("%w: endpoint URL is required", ErrInvalidHook)
+		return fmt.Errorf("%w %w: endpoint URL is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	case hook.Method == "":
-		return fmt.Errorf("%w: HTTP method is required", ErrInvalidHook)
+		return fmt.Errorf("%w %w: HTTP method is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	case hook.TimeoutMs <= 0:
-		return fmt.Errorf("%w: timeout must be positive", ErrInvalidHook)
+		return fmt.Errorf("%w %w: timeout must be positive", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	}
 	return nil
 }

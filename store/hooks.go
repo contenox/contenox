@@ -7,13 +7,16 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
+	"github.com/google/uuid"
 )
 
 func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 	now := time.Now().UTC()
 	hook.CreatedAt = now
 	hook.UpdatedAt = now
-
+	if hook.ID == "" {
+		hook.ID = uuid.NewString()
+	}
 	_, err := s.Exec.ExecContext(ctx, `
 		INSERT INTO remote_hooks
 		(id, name, endpoint_url, method, timeout_ms, created_at, updated_at)
