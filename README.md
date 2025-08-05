@@ -4,7 +4,7 @@
 |---------|-------------|--------|
 | [runtime](https://github.com/contenox/runtime) | The state machine for the DSL and core runtime system managing state reconciliation, model downloads, and operational state for the llm backends | `Active Development` |
 | [modelprovider](https://github.com/contenox/modelprovider) | Library for resolving and providing access to various LLM providers (Ollama, OpenAI, Gemini, vLLM) with unified interface | `Active Development` |
-| [runtime-mvp](https://github.com/contenox/runtime-mvp) | MVP for the complete contenox-platform: platform for agent-based applications, conversational interfaces, and knowledge-grounded automation | `Active Development` |
+| [runtime-mvp](https://github.com/contenox/runtime-mvp) | MVP for the complete contenox-platform for agent-based applications, conversational interfaces, and knowledge-grounded automation | `Active Development` |
 | [authz](https://github.com/contenox/authz) | Authentication and authorization library handling access control, user permissions, and security enforcement across services | `Active Development` |
 | [routine](https://github.com/contenox/routine) | Goroutine management utilities including circuit breaker patterns and concurrency control mechanisms | `Stable` |
 | [dbexec](https://github.com/contenox/dbexec) | Database abstraction layer for PostgreSQL operations with transaction management and schema management capabilities | `Stable` |
