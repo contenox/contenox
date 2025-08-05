@@ -51,6 +51,14 @@ func (s *service) SetProviderConfig(ctx context.Context, providerType string, re
 	defer r()
 
 	storeInstance := store.New(tx)
+	count, err := storeInstance.EstimateKVCount(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to estimate KV count: %w", err)
+	}
+	err = storeInstance.EnforceMaxRowCount(ctx, count)
+	if err != nil {
+		return err
+	}
 	key := runtimestate.ProviderKeyPrefix + providerType
 
 	// Check existence if not replacing
