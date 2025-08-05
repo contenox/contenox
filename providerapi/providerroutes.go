@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	libdb "github.com/contenox/dbexec"
@@ -20,7 +21,10 @@ func AddProviderRoutes(mux *http.ServeMux, providerService providerservice.Servi
 	mux.HandleFunc("POST /providers/gemini/configure", p.configure("gemini"))
 	mux.HandleFunc("GET /providers/openai/status", p.status("openai"))
 	mux.HandleFunc("GET /providers/gemini/status", p.status("gemini"))
-	// mux.HandleFunc("GET /providers", p.listProviders)
+	mux.HandleFunc("DELETE /providers/{providerType}/config", p.deleteConfig)
+	mux.HandleFunc("GET /providers/configs", p.listConfigs)
+	mux.HandleFunc("GET /providers/{providerType}/config", p.get)
+
 }
 
 type providerManager struct {
@@ -86,4 +90,74 @@ func (p *providerManager) status(providerType string) func(w http.ResponseWriter
 			Provider:   providerType,
 		})
 	}
+}
+
+func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
+	providerType := r.PathValue("providerType")
+	if providerType == "" {
+		_ = serverops.Error(w, r, errors.New("providerType is required in path"), serverops.DeleteOperation)
+		return
+	}
+
+	if err := p.providerService.DeleteProviderConfig(r.Context(), providerType); err != nil {
+		_ = serverops.Error(w, r, err, serverops.DeleteOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, map[string]string{"message": "Provider config deleted successfully"})
+}
+
+type ListConfigsResponse struct {
+	Providers []*runtimestate.ProviderConfig `json:"providers"`
+}
+
+func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse pagination parameters from query string
+	var cursor *time.Time
+	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+		t, err := time.Parse(time.RFC3339Nano, cursorStr)
+		if err != nil {
+			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
+			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			return
+		}
+		cursor = &t
+	}
+
+	limit := 100 // Default limit
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		i, err := strconv.Atoi(limitStr)
+		if err != nil {
+			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
+			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			return
+		}
+		limit = i
+	}
+
+	configs, err := p.providerService.ListProviderConfigs(ctx, cursor, limit)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, configs)
+}
+
+func (p *providerManager) get(w http.ResponseWriter, r *http.Request) {
+	providerType := r.PathValue("providerType")
+	if providerType == "" {
+		_ = serverops.Error(w, r, errors.New("providerType is required in path"), serverops.GetOperation)
+		return
+	}
+
+	config, err := p.providerService.GetProviderConfig(r.Context(), providerType)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.GetOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, config)
 }
