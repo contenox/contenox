@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/apiframework"
@@ -19,7 +20,7 @@ type service struct {
 
 type Service interface {
 	Append(ctx context.Context, model *store.Model) error
-	List(ctx context.Context) ([]*store.Model, error)
+	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Model, error)
 	Delete(ctx context.Context, modelName string) error
 }
 
@@ -31,16 +32,26 @@ func New(db libdb.DBManager, embedModel string) Service {
 }
 
 func (s *service) Append(ctx context.Context, model *store.Model) error {
+
 	if err := validate(model); err != nil {
 		return err
 	}
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).AppendModel(ctx, model)
+	storeInstance := store.New(tx)
+	count, err := storeInstance.EstimateModelCount(ctx)
+	if err != nil {
+		return err
+	}
+	err = storeInstance.EnforceMaxRowCount(ctx, count)
+	if err != nil {
+		return err
+	}
+	return storeInstance.AppendModel(ctx, model)
 }
 
-func (s *service) List(ctx context.Context) ([]*store.Model, error) {
+func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Model, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).ListModels(ctx)
+	return store.New(tx).ListModels(ctx, createdAtCursor, limit)
 }
 
 func (s *service) Delete(ctx context.Context, modelName string) error {

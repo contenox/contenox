@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/runtimestate"
@@ -20,7 +21,7 @@ type Service interface {
 	SetProviderConfig(ctx context.Context, providerType string, upsert bool, config *runtimestate.ProviderConfig) error
 	GetProviderConfig(ctx context.Context, providerType string) (*runtimestate.ProviderConfig, error)
 	DeleteProviderConfig(ctx context.Context, providerType string) error
-	ListProviderConfigs(ctx context.Context) ([]*runtimestate.ProviderConfig, error)
+	ListProviderConfigs(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimestate.ProviderConfig, error)
 }
 
 type service struct {
@@ -125,11 +126,11 @@ func (s *service) DeleteProviderConfig(ctx context.Context, providerType string)
 	return storeInstance.DeleteKV(ctx, key)
 }
 
-func (s *service) ListProviderConfigs(ctx context.Context) ([]*runtimestate.ProviderConfig, error) {
+func (s *service) ListProviderConfigs(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimestate.ProviderConfig, error) {
 	tx := s.dbInstance.WithoutTransaction()
 	storeInstance := store.New(tx)
 
-	kvs, err := storeInstance.ListKVPrefix(ctx, runtimestate.ProviderKeyPrefix)
+	kvs, err := storeInstance.ListKVPrefix(ctx, runtimestate.ProviderKeyPrefix, createdAtCursor, limit)
 	if err != nil {
 		return nil, err
 	}

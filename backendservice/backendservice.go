@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/store"
@@ -16,7 +17,7 @@ type Service interface {
 	Get(ctx context.Context, id string) (*store.Backend, error)
 	Update(ctx context.Context, backend *store.Backend) error
 	Delete(ctx context.Context, id string) error
-	List(ctx context.Context) ([]*store.Backend, error)
+	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Backend, error)
 }
 
 type service struct {
@@ -32,7 +33,18 @@ func (s *service) Create(ctx context.Context, backend *store.Backend) error {
 	if err := validate(backend); err != nil {
 		return err
 	}
-	return store.New(tx).CreateBackend(ctx, backend)
+	storeInstance := store.New(tx)
+	count, err := storeInstance.EstimateBackendCount(ctx)
+	if err != nil {
+		return err
+	}
+	if err := storeInstance.EnforceMaxRowCount(ctx, count); err != nil {
+		err := fmt.Errorf("too many rows in the system: %w", err)
+		fmt.Printf("SERVER ERROR: creation blocked: limit reached current %d %v", count, err)
+		return err
+	}
+
+	return storeInstance.CreateBackend(ctx, backend)
 }
 
 func (s *service) Get(ctx context.Context, id string) (*store.Backend, error) {
@@ -53,9 +65,9 @@ func (s *service) Delete(ctx context.Context, id string) error {
 	return store.New(tx).DeleteBackend(ctx, id)
 }
 
-func (s *service) List(ctx context.Context) ([]*store.Backend, error) {
+func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Backend, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).ListBackends(ctx)
+	return store.New(tx).ListBackends(ctx, createdAtCursor, limit)
 }
 
 func validate(backend *store.Backend) error {

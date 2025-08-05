@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -117,7 +118,7 @@ func TestUnitKV(t *testing.T) {
 		require.ErrorIs(t, err, libdb.ErrNotFound)
 	})
 
-	t.Run("ListKV", func(t *testing.T) {
+	t.Run("ListKV and ListKVPrefix", func(t *testing.T) {
 		// Create some test data
 		prefix := "list-test-" + uuid.NewString()
 		keys := []string{
@@ -134,13 +135,13 @@ func TestUnitKV(t *testing.T) {
 			defer s.DeleteKV(ctx, key) // Cleanup
 		}
 
-		// Test ListKV
-		allItems, err := s.ListKV(ctx)
+		// Test ListKV (paginated)
+		allItems, err := s.ListKV(ctx, nil, 100)
 		require.NoError(t, err)
 		require.GreaterOrEqual(t, len(allItems), len(keys))
 
-		// Test ListKVPrefix
-		prefixedItems, err := s.ListKVPrefix(ctx, prefix)
+		// Test ListKVPrefix (paginated)
+		prefixedItems, err := s.ListKVPrefix(ctx, prefix, nil, 100)
 		require.NoError(t, err)
 		require.Len(t, prefixedItems, 3) // Should match our 3 prefixed keys
 
@@ -154,6 +155,129 @@ func TestUnitKV(t *testing.T) {
 			err := json.Unmarshal(item.Value, &str)
 			require.NoError(t, err)
 			require.Equal(t, "value", str)
+		}
+	})
+
+	t.Run("ListKV_Pagination", func(t *testing.T) {
+		// Create 5 key-value pairs with a small delay to ensure distinct creation times.
+		for i := 0; i < 5; i++ {
+			kv := &store.KV{
+				Key:   fmt.Sprintf("pagination-test-%d", i),
+				Value: json.RawMessage(`"value"`),
+			}
+			err := s.SetKV(ctx, kv.Key, kv.Value)
+			require.NoError(t, err)
+			time.Sleep(1 * time.Millisecond)
+		}
+
+		// Paginate through the results with a limit of 2.
+		var receivedKVs []*store.KV
+		var lastCursor *time.Time
+		limit := 2
+
+		// Fetch first page
+		page1, err := s.ListKV(ctx, lastCursor, limit)
+		require.NoError(t, err)
+		require.Len(t, page1, 2)
+		receivedKVs = append(receivedKVs, page1...)
+
+		lastCursor = &page1[len(page1)-1].CreatedAt
+
+		// Fetch second page
+		page2, err := s.ListKV(ctx, lastCursor, limit)
+		require.NoError(t, err)
+		require.Len(t, page2, 2)
+		receivedKVs = append(receivedKVs, page2...)
+
+		lastCursor = &page2[len(page2)-1].CreatedAt
+
+		// Fetch third page (the last one)
+		page3, err := s.ListKV(ctx, lastCursor, limit)
+		require.NoError(t, err)
+		require.Len(t, page3, 1)
+		receivedKVs = append(receivedKVs, page3...)
+
+		// Fetch a fourth page, which should be empty
+		page4, err := s.ListKV(ctx, &page3[0].CreatedAt, limit)
+		require.NoError(t, err)
+		require.Empty(t, page4)
+
+		// Verify all key-value pairs were retrieved in the correct order.
+		require.Len(t, receivedKVs, 5)
+
+		// The order is newest to oldest.
+		require.Contains(t, receivedKVs[0].Key, "4")
+		require.Contains(t, receivedKVs[1].Key, "3")
+		require.Contains(t, receivedKVs[2].Key, "2")
+		require.Contains(t, receivedKVs[3].Key, "1")
+		require.Contains(t, receivedKVs[4].Key, "0")
+
+		// Clean up the created items
+		for i := 0; i < 5; i++ {
+			s.DeleteKV(ctx, fmt.Sprintf("pagination-test-%d", i))
+		}
+	})
+
+	t.Run("ListKVPrefix_Pagination", func(t *testing.T) {
+		prefix := "list-prefix-test-" + uuid.NewString()
+		otherPrefix := "other-prefix-" + uuid.NewString()
+
+		// Create 5 key-value pairs with the test prefix
+		for i := 0; i < 5; i++ {
+			key := fmt.Sprintf("%s-%d", prefix, i)
+			value := json.RawMessage(`"prefixed value"`)
+			err := s.SetKV(ctx, key, value)
+			require.NoError(t, err)
+			defer s.DeleteKV(ctx, key)
+			time.Sleep(1 * time.Millisecond)
+		}
+		// Create a key with a different prefix
+		s.SetKV(ctx, otherPrefix, json.RawMessage(`"other value"`))
+		defer s.DeleteKV(ctx, otherPrefix)
+
+		// Paginate through the results with a limit of 2, filtering by prefix.
+		var receivedKVs []*store.KV
+		var lastCursor *time.Time
+		limit := 2
+
+		// Fetch first page
+		page1, err := s.ListKVPrefix(ctx, prefix, lastCursor, limit)
+		require.NoError(t, err)
+		require.Len(t, page1, 2)
+		receivedKVs = append(receivedKVs, page1...)
+		lastCursor = &page1[len(page1)-1].CreatedAt
+
+		// Fetch second page
+		page2, err := s.ListKVPrefix(ctx, prefix, lastCursor, limit)
+		require.NoError(t, err)
+		require.Len(t, page2, 2)
+		receivedKVs = append(receivedKVs, page2...)
+		lastCursor = &page2[len(page2)-1].CreatedAt
+
+		// Fetch third page (the last one)
+		page3, err := s.ListKVPrefix(ctx, prefix, lastCursor, limit)
+		require.NoError(t, err)
+		require.Len(t, page3, 1)
+		receivedKVs = append(receivedKVs, page3...)
+
+		// Fetch a fourth page, which should be empty
+		page4, err := s.ListKVPrefix(ctx, prefix, &page3[0].CreatedAt, limit)
+		require.NoError(t, err)
+		require.Empty(t, page4)
+
+		// Verify all key-value pairs with the correct prefix were retrieved.
+		require.Len(t, receivedKVs, 5)
+
+		// The order is newest to oldest.
+		require.Contains(t, receivedKVs[0].Key, "4")
+		require.Contains(t, receivedKVs[1].Key, "3")
+		require.Contains(t, receivedKVs[2].Key, "2")
+		require.Contains(t, receivedKVs[3].Key, "1")
+		require.Contains(t, receivedKVs[4].Key, "0")
+
+		// Verify the other prefix was never returned
+		for _, kv := range receivedKVs {
+			require.NotContains(t, kv.Key, "other-prefix")
 		}
 	})
 
@@ -188,8 +312,8 @@ func TestUnitKV(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, testValue{Field1: "updated", Field2: 2}, tv)
 
-		// Verify updated_at changed
-		items, err := s.ListKVPrefix(ctx, key)
+		// Verify updated_at changed using the new paginated method
+		items, err := s.ListKVPrefix(ctx, key, nil, 1)
 		require.NoError(t, err)
 		require.Len(t, items, 1)
 		require.True(t, items[0].UpdatedAt.After(items[0].CreatedAt))
@@ -203,9 +327,9 @@ func TestUnitKV(t *testing.T) {
 		require.NoError(t, err)
 		defer s.DeleteKV(ctx, key)
 
-		// Get the raw value back
+		// Get the raw value back using the new paginated method
 		var kv *store.KV
-		kvs, err := s.ListKVPrefix(ctx, key)
+		kvs, err := s.ListKVPrefix(ctx, key, nil, 1)
 		require.NoError(t, err)
 		require.Len(t, kvs, 1)
 		kv = kvs[0]
@@ -222,6 +346,7 @@ func TestUnitKV(t *testing.T) {
 		// Upsert initial value
 		err := s.SetKV(ctx, key, initial)
 		require.NoError(t, err)
+		defer s.DeleteKV(ctx, key)
 
 		// Verify initial value
 		var tv testValue
@@ -239,7 +364,7 @@ func TestUnitKV(t *testing.T) {
 		require.Equal(t, testValue{Field1: "updated", Field2: 2}, tv)
 
 		// Verify updated_at changed
-		items, err := s.ListKVPrefix(ctx, key)
+		items, err := s.ListKVPrefix(ctx, key, nil, 1)
 		require.NoError(t, err)
 		require.Len(t, items, 1)
 		require.True(t, items[0].UpdatedAt.After(items[0].CreatedAt))

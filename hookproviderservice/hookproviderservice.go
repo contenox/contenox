@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/apiframework"
@@ -20,7 +21,7 @@ type Service interface {
 	GetByName(ctx context.Context, name string) (*store.RemoteHook, error)
 	Update(ctx context.Context, hook *store.RemoteHook) error
 	Delete(ctx context.Context, id string) error
-	List(ctx context.Context) ([]*store.RemoteHook, error)
+	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.RemoteHook, error)
 }
 
 type service struct {
@@ -38,7 +39,16 @@ func (s *service) Create(ctx context.Context, hook *store.RemoteHook) error {
 		return err
 	}
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).CreateRemoteHook(ctx, hook)
+	storeInstance := store.New(tx)
+	count, err := storeInstance.EstimateRemoteHookCount(ctx)
+	if err != nil {
+		return err
+	}
+	err = storeInstance.EnforceMaxRowCount(ctx, count)
+	if err != nil {
+		return err
+	}
+	return storeInstance.CreateRemoteHook(ctx, hook)
 }
 
 func (s *service) Get(ctx context.Context, id string) (*store.RemoteHook, error) {
@@ -64,9 +74,9 @@ func (s *service) Delete(ctx context.Context, id string) error {
 	return store.New(tx).DeleteRemoteHook(ctx, id)
 }
 
-func (s *service) List(ctx context.Context) ([]*store.RemoteHook, error) {
+func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.RemoteHook, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).ListRemoteHooks(ctx)
+	return store.New(tx).ListRemoteHooks(ctx, createdAtCursor, limit)
 }
 
 func validate(hook *store.RemoteHook) error {

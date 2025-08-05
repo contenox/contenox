@@ -2,6 +2,8 @@ package modelservice
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/contenox/activitytracker"
 	"github.com/contenox/runtime/store"
@@ -33,11 +35,17 @@ func (d *activityTrackerDecorator) Append(ctx context.Context, model *store.Mode
 	return err
 }
 
-func (d *activityTrackerDecorator) List(ctx context.Context) ([]*store.Model, error) {
-	reportErrFn, _, endFn := d.tracker.Start(ctx, "list", "models")
+func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Model, error) {
+	reportErrFn, _, endFn := d.tracker.Start(
+		ctx,
+		"list",
+		"models",
+		"cursor", fmt.Sprintf("%v", createdAtCursor),
+		"limit", fmt.Sprintf("%d", limit),
+	)
 	defer endFn()
 
-	models, err := d.service.List(ctx)
+	models, err := d.service.List(ctx, createdAtCursor, limit)
 	if err != nil {
 		reportErrFn(err)
 	}

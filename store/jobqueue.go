@@ -216,3 +216,7 @@ func (s *store) ListJobs(ctx context.Context, createdAtCursor *time.Time, limit 
 	}
 	return jobs, nil
 }
+
+func (s *store) EstimateJobCount(ctx context.Context) (int64, error) {
+	return s.estimateCount(ctx, "job_queue_v2")
+}

@@ -1,6 +1,8 @@
 package store_test
 
 import (
+	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -90,39 +92,66 @@ func TestUnit_Backend_DeletesSuccessfully(t *testing.T) {
 	require.ErrorIs(t, err, libdb.ErrNotFound)
 }
 
-func TestUnit_Backend_ListReturnsOrderedByCreationTime(t *testing.T) {
+func TestUnit_Backend_ListHandlesPagination(t *testing.T) {
 	ctx, s := store.SetupStore(t)
 
-	// Initially, the list should be empty.
-	backends, err := s.ListBackends(ctx)
-	require.NoError(t, err)
-	require.Empty(t, backends)
-
-	// Create two backends.
-	backend1 := &store.Backend{
-		ID:      uuid.NewString(),
-		Name:    "Backend1",
-		BaseURL: "http://backend1",
-		Type:    "ollama",
+	// Create 5 backends with a small delay to ensure distinct creation times.
+	var backends []*store.Backend
+	for i := 0; i < 5; i++ {
+		backend := &store.Backend{
+			ID:      uuid.NewString(),
+			Name:    fmt.Sprintf("Backend%d", i),
+			BaseURL: "http://example.com" + strconv.Itoa(i),
+			Type:    "ollama",
+		}
+		err := s.CreateBackend(ctx, backend)
+		require.NoError(t, err)
+		backends = append(backends, backend)
+		time.Sleep(1 * time.Millisecond)
 	}
-	backend2 := &store.Backend{
-		ID:      uuid.NewString(),
-		Name:    "Backend2",
-		BaseURL: "http://backend2",
-		Type:    "ollama",
-	}
-	err = s.CreateBackend(ctx, backend1)
-	require.NoError(t, err)
 
-	time.Sleep(10 * time.Millisecond)
-	err = s.CreateBackend(ctx, backend2)
-	require.NoError(t, err)
+	// Paginate through the results with a limit of 2.
+	var receivedBackends []*store.Backend
+	var lastCursor *time.Time
+	limit := 2
 
-	backends, err = s.ListBackends(ctx)
+	// Fetch first page
+	page1, err := s.ListBackends(ctx, lastCursor, limit)
 	require.NoError(t, err)
-	require.Len(t, backends, 2)
-	require.Equal(t, backend2.ID, backends[0].ID)
-	require.Equal(t, backend1.ID, backends[1].ID)
+	require.Len(t, page1, 2)
+	receivedBackends = append(receivedBackends, page1...)
+
+	// The cursor for the next page is the creation time of the last item
+	lastCursor = &page1[len(page1)-1].CreatedAt
+
+	// Fetch second page
+	page2, err := s.ListBackends(ctx, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page2, 2)
+	receivedBackends = append(receivedBackends, page2...)
+
+	lastCursor = &page2[len(page2)-1].CreatedAt
+
+	// Fetch third page (the last one)
+	page3, err := s.ListBackends(ctx, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page3, 1)
+	receivedBackends = append(receivedBackends, page3...)
+
+	// Fetch a fourth page, which should be empty
+	page4, err := s.ListBackends(ctx, &page3[0].CreatedAt, limit)
+	require.NoError(t, err)
+	require.Empty(t, page4)
+
+	// Verify all backends were retrieved in the correct order.
+	require.Len(t, receivedBackends, 5)
+
+	// The order is newest to oldest, so the last created backend should be first.
+	require.Equal(t, backends[4].ID, receivedBackends[0].ID)
+	require.Equal(t, backends[3].ID, receivedBackends[1].ID)
+	require.Equal(t, backends[2].ID, receivedBackends[2].ID)
+	require.Equal(t, backends[1].ID, receivedBackends[3].ID)
+	require.Equal(t, backends[0].ID, receivedBackends[4].ID)
 }
 
 func TestUnit_Backend_FetchesByName(t *testing.T) {

@@ -2,11 +2,14 @@ package hookproviderservice
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/contenox/activitytracker"
 	"github.com/contenox/runtime/store"
 )
 
+// activityTrackerDecorator implementation
 type activityTrackerDecorator struct {
 	service Service
 	tracker activitytracker.ActivityTracker
@@ -26,7 +29,6 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, hook *store.Remot
 	if err != nil {
 		reportErrFn(err)
 	} else {
-		// Mask sensitive information if needed
 		hookData := struct {
 			ID          string `json:"id"`
 			Name        string `json:"name"`
@@ -47,7 +49,6 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, hook *store.Remot
 }
 
 func (d *activityTrackerDecorator) Get(ctx context.Context, id string) (*store.RemoteHook, error) {
-	// Minimal tracking for read operations
 	_, _, endFn := d.tracker.Start(
 		ctx,
 		"get",
@@ -60,7 +61,6 @@ func (d *activityTrackerDecorator) Get(ctx context.Context, id string) (*store.R
 }
 
 func (d *activityTrackerDecorator) GetByName(ctx context.Context, name string) (*store.RemoteHook, error) {
-	// Minimal tracking for read operations
 	_, _, endFn := d.tracker.Start(
 		ctx,
 		"get_by_name",
@@ -86,7 +86,6 @@ func (d *activityTrackerDecorator) Update(ctx context.Context, hook *store.Remot
 	if err != nil {
 		reportErrFn(err)
 	} else {
-		// Create a sanitized version for reporting
 		hookData := struct {
 			ID          string `json:"id"`
 			Name        string `json:"name"`
@@ -107,7 +106,6 @@ func (d *activityTrackerDecorator) Update(ctx context.Context, hook *store.Remot
 }
 
 func (d *activityTrackerDecorator) Delete(ctx context.Context, id string) error {
-	// Get hook details before deletion for reporting
 	hook, err := d.service.Get(ctx, id)
 	if err != nil {
 		return err
@@ -132,19 +130,19 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, id string) error 
 	return err
 }
 
-func (d *activityTrackerDecorator) List(ctx context.Context) ([]*store.RemoteHook, error) {
-	// Minimal tracking for list operations
+func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.RemoteHook, error) {
 	_, _, endFn := d.tracker.Start(
 		ctx,
 		"list",
 		"remote_hooks",
+		"cursor", fmt.Sprintf("%v", createdAtCursor),
+		"limit", fmt.Sprintf("%d", limit),
 	)
 	defer endFn()
 
-	return d.service.List(ctx)
+	return d.service.List(ctx, createdAtCursor, limit)
 }
 
-// WithActivityTracker wraps the service with activity tracking
 func WithActivityTracker(service Service, tracker activitytracker.ActivityTracker) Service {
 	return &activityTrackerDecorator{
 		service: service,

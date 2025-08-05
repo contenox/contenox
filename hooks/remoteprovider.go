@@ -139,14 +139,33 @@ func (p *PersistentRepo) execRemoteHook(
 }
 
 func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
+	// Start with local hooks
 	localSupported := make([]string, 0, len(p.localHooks))
 	for k := range p.localHooks {
 		localSupported = append(localSupported, k)
 	}
+
+	// Fetch all remote hooks by paginating through the store
 	storeInstance := store.New(p.dbInstance.WithoutTransaction())
-	remoteHooks, err := storeInstance.ListRemoteHooks(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list remote hooks: %w", err)
+	var remoteHooks []*store.RemoteHook
+	var lastCursor *time.Time
+	limit := 100 // A reasonable page size
+
+	for {
+		page, err := storeInstance.ListRemoteHooks(ctx, lastCursor, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list remote hooks: %w", err)
+		}
+
+		remoteHooks = append(remoteHooks, page...)
+
+		// If the page size is less than the limit, we've reached the end
+		if len(page) < limit {
+			break
+		}
+
+		// Update the cursor for the next iteration
+		lastCursor = &page[len(page)-1].CreatedAt
 	}
 
 	for _, hook := range remoteHooks {

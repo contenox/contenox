@@ -247,7 +247,7 @@ func (s *State) syncBackendsWithPools(ctx context.Context) error {
 	tx := s.dbInstance.WithoutTransaction()
 	dbStore := store.New(tx)
 
-	allPools, err := dbStore.ListPools(ctx)
+	allPools, err := dbStore.ListAllPools(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching pools: %v", err)
 	}
@@ -303,20 +303,36 @@ func (s *State) syncBackendsWithPools(ctx context.Context) error {
 // behavior by operating on the global backend/model lists.
 func (s *State) syncBackends(ctx context.Context) error {
 	tx := s.dbInstance.WithoutTransaction()
-	store := store.New(tx)
+	storeInstance := store.New(tx)
 
-	backends, err := store.ListBackends(ctx)
+	backends, err := storeInstance.ListAllBackends(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching backends: %v", err)
 	}
 
-	models, err := store.ListModels(ctx)
-	if err != nil {
-		return fmt.Errorf("fetching models: %v", err)
+	// Paginate through all models
+	var allModels []*store.Model
+	var cursor *time.Time
+	limit := 100 // Use a reasonable page size
+	for {
+		models, err := storeInstance.ListModels(ctx, cursor, limit)
+		if err != nil {
+			return fmt.Errorf("fetching paginated models: %v", err)
+		}
+		allModels = append(allModels, models...)
+
+		// Break the loop if this is the last page
+		if len(models) < limit {
+			break
+		}
+
+		// Update the cursor for the next page
+		lastModel := models[len(models)-1]
+		cursor = &lastModel.CreatedAt
 	}
 
 	currentIDs := make(map[string]struct{})
-	s.processBackends(ctx, backends, models, currentIDs)
+	s.processBackends(ctx, backends, allModels, currentIDs)
 	return s.cleanupStaleBackends(currentIDs)
 }
 
@@ -526,13 +542,18 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		bodyStr := string(bodyBytes)
+		if readErr != nil {
+			bodyStr = fmt.Sprintf("<failed to read body: %v>", readErr)
+		}
 		s.state.Store(backend.ID, &LLMState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
 			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
-			Error:        fmt.Sprintf("Unexpected status: %d", resp.StatusCode),
+			Error:        fmt.Sprintf("Unexpected status: %d %s", resp.StatusCode, bodyStr),
 		})
 		return
 	}
@@ -545,13 +566,18 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&modelResp); err != nil {
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		bodyStr := string(bodyBytes)
+		if readErr != nil {
+			bodyStr = fmt.Sprintf("<failed to read body: %v>", readErr)
+		}
 		s.state.Store(backend.ID, &LLMState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
 			PulledModels: []api.ListModelResponse{},
 			Backend:      *backend,
-			Error:        fmt.Sprintf("Failed to decode response: %v", err),
+			Error:        fmt.Sprintf("Failed to decode response: %v | Raw response: %s", err, bodyStr),
 		})
 		return
 	}

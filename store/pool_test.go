@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -78,7 +79,7 @@ func TestUnit_Pools_DeletePool(t *testing.T) {
 func TestUnit_Pools_ListPools(t *testing.T) {
 	ctx, s := store.SetupStore(t)
 
-	pools, err := s.ListPools(ctx)
+	pools, err := s.ListPools(ctx, nil, 100)
 	require.NoError(t, err)
 	require.Empty(t, pools)
 
@@ -91,11 +92,69 @@ func TestUnit_Pools_ListPools(t *testing.T) {
 	err = s.CreatePool(ctx, pool2)
 	require.NoError(t, err)
 
-	pools, err = s.ListPools(ctx)
+	pools, err = s.ListPools(ctx, nil, 100)
 	require.NoError(t, err)
 	require.Len(t, pools, 2)
 	require.Equal(t, pool2.ID, pools[0].ID)
 	require.Equal(t, pool1.ID, pools[1].ID)
+}
+
+func TestUnit_Pools_ListPoolsPagination(t *testing.T) {
+	ctx, s := store.SetupStore(t)
+
+	// Create 5 pools with a small delay to ensure distinct creation times.
+	var createdPools []*store.Pool
+	for i := 0; i < 5; i++ {
+		pool := &store.Pool{
+			ID:          uuid.NewString(),
+			Name:        fmt.Sprintf("pagination-pool-%d", i),
+			PurposeType: "inference",
+		}
+		err := s.CreatePool(ctx, pool)
+		require.NoError(t, err)
+		createdPools = append(createdPools, pool)
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	// Paginate through the results with a limit of 2.
+	var receivedPools []*store.Pool
+	var lastCursor *time.Time
+	limit := 2
+
+	// Fetch first page
+	page1, err := s.ListPools(ctx, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page1, 2)
+	receivedPools = append(receivedPools, page1...)
+	lastCursor = &page1[len(page1)-1].CreatedAt
+
+	// Fetch second page
+	page2, err := s.ListPools(ctx, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page2, 2)
+	receivedPools = append(receivedPools, page2...)
+	lastCursor = &page2[len(page2)-1].CreatedAt
+
+	// Fetch third page (the last one)
+	page3, err := s.ListPools(ctx, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page3, 1)
+	receivedPools = append(receivedPools, page3...)
+
+	// Fetch a fourth page, which should be empty
+	page4, err := s.ListPools(ctx, &page3[0].CreatedAt, limit)
+	require.NoError(t, err)
+	require.Empty(t, page4)
+
+	// Verify all pools were retrieved in the correct order.
+	require.Len(t, receivedPools, 5)
+
+	// The order is newest to oldest, so the last created pool should be first.
+	require.Equal(t, createdPools[4].ID, receivedPools[0].ID)
+	require.Equal(t, createdPools[3].ID, receivedPools[1].ID)
+	require.Equal(t, createdPools[2].ID, receivedPools[2].ID)
+	require.Equal(t, createdPools[1].ID, receivedPools[3].ID)
+	require.Equal(t, createdPools[0].ID, receivedPools[4].ID)
 }
 
 func TestUnit_Pools_GetPoolByName(t *testing.T) {
@@ -125,10 +184,82 @@ func TestUnit_Pools_ListPoolsByPurpose(t *testing.T) {
 	s.CreatePool(ctx, pool1)
 	s.CreatePool(ctx, pool2)
 
-	pools, err := s.ListPoolsByPurpose(ctx, purpose)
+	pools, err := s.ListPoolsByPurpose(ctx, purpose, nil, 100)
 	require.NoError(t, err)
 	require.Len(t, pools, 1)
 	require.Equal(t, pool1.ID, pools[0].ID)
+}
+
+func TestUnit_Pools_ListPoolsByPurposePagination(t *testing.T) {
+	ctx, s := store.SetupStore(t)
+
+	// Create pools with different purpose types
+	purpose := "inference"
+	otherPurpose := "training"
+	var createdPools []*store.Pool
+	for i := 0; i < 5; i++ {
+		pool := &store.Pool{
+			ID:          uuid.NewString(),
+			Name:        fmt.Sprintf("inference-pool-%d", i),
+			PurposeType: purpose,
+		}
+		err := s.CreatePool(ctx, pool)
+		require.NoError(t, err)
+		createdPools = append(createdPools, pool)
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	// Create an extra pool with a different purpose type
+	otherPool := &store.Pool{
+		ID:          uuid.NewString(),
+		Name:        "other-pool",
+		PurposeType: otherPurpose,
+	}
+	err := s.CreatePool(ctx, otherPool)
+	require.NoError(t, err)
+
+	// Paginate through the results with a limit of 2, filtering by purpose.
+	var receivedPools []*store.Pool
+	var lastCursor *time.Time
+	limit := 2
+
+	// Fetch first page
+	page1, err := s.ListPoolsByPurpose(ctx, purpose, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page1, 2)
+	receivedPools = append(receivedPools, page1...)
+	lastCursor = &page1[len(page1)-1].CreatedAt
+
+	// Fetch second page
+	page2, err := s.ListPoolsByPurpose(ctx, purpose, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page2, 2)
+	receivedPools = append(receivedPools, page2...)
+	lastCursor = &page2[len(page2)-1].CreatedAt
+
+	// Fetch third page (the last one)
+	page3, err := s.ListPoolsByPurpose(ctx, purpose, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page3, 1)
+	receivedPools = append(receivedPools, page3...)
+
+	// Fetch a fourth page, which should be empty
+	page4, err := s.ListPoolsByPurpose(ctx, purpose, &page3[0].CreatedAt, limit)
+	require.NoError(t, err)
+	require.Empty(t, page4)
+
+	// Verify all pools for the specific purpose were retrieved in the correct order.
+	require.Len(t, receivedPools, 5)
+	require.Equal(t, createdPools[4].ID, receivedPools[0].ID)
+	require.Equal(t, createdPools[3].ID, receivedPools[1].ID)
+	require.Equal(t, createdPools[2].ID, receivedPools[2].ID)
+	require.Equal(t, createdPools[1].ID, receivedPools[3].ID)
+	require.Equal(t, createdPools[0].ID, receivedPools[4].ID)
+
+	// Verify that the other purpose pool was not returned.
+	for _, p := range receivedPools {
+		require.Equal(t, purpose, p.PurposeType)
+	}
 }
 
 func TestUnit_Pools_AssignAndListBackendsForPool(t *testing.T) {
@@ -165,10 +296,14 @@ func TestUnit_Pools_RemoveBackendFromPool(t *testing.T) {
 
 	s.AssignBackendToPool(ctx, pool.ID, backend.ID)
 
-	err := s.RemoveBackendFromPool(ctx, pool.ID, backend.ID)
+	backends, err := s.ListBackendsForPool(ctx, pool.ID)
+	require.NoError(t, err)
+	require.Len(t, backends, 1)
+
+	err = s.RemoveBackendFromPool(ctx, pool.ID, backend.ID)
 	require.NoError(t, err)
 
-	backends, err := s.ListBackendsForPool(ctx, pool.ID)
+	backends, err = s.ListBackendsForPool(ctx, pool.ID)
 	require.NoError(t, err)
 	require.Empty(t, backends)
 }
@@ -215,7 +350,8 @@ func TestUnit_Pools_AssignAndListModelsForPool(t *testing.T) {
 	require.Equal(t, model.ID, models[0].ID)
 	// test for error when assigning model to pool twice
 	err = s.AssignModelToPool(ctx, pool.ID, model.ID)
-	require.Error(t, err, libdb.ErrConstraintViolation)
+	require.Error(t, err)
+	require.ErrorIs(t, err, libdb.ErrUniqueViolation)
 }
 
 func TestUnit_Pools_RemoveModelFromPool(t *testing.T) {
@@ -229,10 +365,14 @@ func TestUnit_Pools_RemoveModelFromPool(t *testing.T) {
 
 	s.AssignModelToPool(ctx, pool.ID, model.ID)
 
-	err := s.RemoveModelFromPool(ctx, pool.ID, model.ID)
+	models, err := s.ListModelsForPool(ctx, pool.ID)
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+
+	err = s.RemoveModelFromPool(ctx, pool.ID, model.ID)
 	require.NoError(t, err)
 
-	models, err := s.ListModelsForPool(ctx, pool.ID)
+	models, err = s.ListModelsForPool(ctx, pool.ID)
 	require.NoError(t, err)
 	require.Empty(t, models)
 }

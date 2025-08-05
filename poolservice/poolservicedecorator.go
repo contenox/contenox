@@ -2,6 +2,8 @@ package poolservice
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/contenox/activitytracker"
 	"github.com/contenox/runtime/store"
@@ -123,16 +125,18 @@ func (d *activityTrackerDecorator) ListAll(ctx context.Context) ([]*store.Pool, 
 	return pools, err
 }
 
-func (d *activityTrackerDecorator) ListByPurpose(ctx context.Context, purpose string) ([]*store.Pool, error) {
+func (d *activityTrackerDecorator) ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*store.Pool, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"list",
 		"pools-by-purpose",
 		"purpose", purpose,
+		"cursor", fmt.Sprintf("%v", createdAtCursor),
+		"limit", fmt.Sprintf("%d", limit),
 	)
 	defer endFn()
 
-	pools, err := d.service.ListByPurpose(ctx, purpose)
+	pools, err := d.service.ListByPurpose(ctx, purpose, createdAtCursor, limit)
 	if err != nil {
 		reportErrFn(err)
 	}

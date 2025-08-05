@@ -81,12 +81,12 @@ func (s *store) DeleteModel(ctx context.Context, modelName string) error {
 	return checkRowsAffected(result)
 }
 
-func (s *store) ListModels(ctx context.Context) ([]*Model, error) {
+func (s *store) ListAllModels(ctx context.Context) ([]*Model, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, model, created_at, updated_at
-		FROM ollama_models
-		ORDER BY created_at DESC`,
-	)
+        SELECT id, model, created_at, updated_at
+        FROM ollama_models
+        ORDER BY created_at DESC, id DESC;
+    `)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query models: %w", err)
 	}
@@ -111,4 +111,47 @@ func (s *store) ListModels(ctx context.Context) ([]*Model, error) {
 	}
 
 	return models, nil
+}
+
+func (s *store) ListModels(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Model, error) {
+	cursor := time.Now().UTC()
+	if createdAtCursor != nil {
+		cursor = *createdAtCursor
+	}
+
+	rows, err := s.Exec.QueryContext(ctx, `
+        SELECT id, model, created_at, updated_at
+        FROM ollama_models
+        WHERE created_at < $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT $2;
+    `, cursor, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query models: %w", err)
+	}
+	defer rows.Close()
+
+	var models []*Model
+	for rows.Next() {
+		var model Model
+		if err := rows.Scan(
+			&model.ID,
+			&model.Model,
+			&model.CreatedAt,
+			&model.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan model: %w", err)
+		}
+		models = append(models, &model)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return models, nil
+}
+
+func (s *store) EstimateModelCount(ctx context.Context) (int64, error) {
+	return s.estimateCount(ctx, "ollama_models")
 }

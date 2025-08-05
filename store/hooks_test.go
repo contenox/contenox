@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -133,8 +134,8 @@ func TestUnit_RemoteHooks_List(t *testing.T) {
 		time.Sleep(10 * time.Millisecond) // Ensure ordering by created_at
 	}
 
-	// List all hooks
-	list, err := s.ListRemoteHooks(ctx)
+	// List all hooks using a large limit to simulate a non-paginated call
+	list, err := s.ListRemoteHooks(ctx, nil, 100)
 	require.NoError(t, err)
 	require.Len(t, list, 3)
 
@@ -142,6 +143,68 @@ func TestUnit_RemoteHooks_List(t *testing.T) {
 	require.Equal(t, hooks[2].ID, list[0].ID)
 	require.Equal(t, hooks[1].ID, list[1].ID)
 	require.Equal(t, hooks[0].ID, list[2].ID)
+}
+
+func TestUnit_RemoteHooks_ListPagination(t *testing.T) {
+	ctx, s := store.SetupStore(t)
+
+	// Create 5 hooks with a small delay to ensure distinct creation times.
+	var createdHooks []*store.RemoteHook
+	for i := 0; i < 5; i++ {
+		hook := &store.RemoteHook{
+			ID:          uuid.New().String(),
+			Name:        fmt.Sprintf("pagination-hook-%d", i),
+			EndpointURL: "https://example.com",
+			Method:      "POST",
+			TimeoutMs:   1000,
+		}
+		err := s.CreateRemoteHook(ctx, hook)
+		require.NoError(t, err)
+		createdHooks = append(createdHooks, hook)
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	// Paginate through the results with a limit of 2.
+	var receivedHooks []*store.RemoteHook
+	var lastCursor *time.Time
+	limit := 2
+
+	// Fetch first page
+	page1, err := s.ListRemoteHooks(ctx, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page1, 2)
+	receivedHooks = append(receivedHooks, page1...)
+
+	lastCursor = &page1[len(page1)-1].CreatedAt
+
+	// Fetch second page
+	page2, err := s.ListRemoteHooks(ctx, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page2, 2)
+	receivedHooks = append(receivedHooks, page2...)
+
+	lastCursor = &page2[len(page2)-1].CreatedAt
+
+	// Fetch third page (the last one)
+	page3, err := s.ListRemoteHooks(ctx, lastCursor, limit)
+	require.NoError(t, err)
+	require.Len(t, page3, 1)
+	receivedHooks = append(receivedHooks, page3...)
+
+	// Fetch a fourth page, which should be empty
+	page4, err := s.ListRemoteHooks(ctx, &page3[0].CreatedAt, limit)
+	require.NoError(t, err)
+	require.Empty(t, page4)
+
+	// Verify all hooks were retrieved in the correct order.
+	require.Len(t, receivedHooks, 5)
+
+	// The order is newest to oldest, so the last created hook should be first.
+	require.Equal(t, createdHooks[4].ID, receivedHooks[0].ID)
+	require.Equal(t, createdHooks[3].ID, receivedHooks[1].ID)
+	require.Equal(t, createdHooks[2].ID, receivedHooks[2].ID)
+	require.Equal(t, createdHooks[1].ID, receivedHooks[3].ID)
+	require.Equal(t, createdHooks[0].ID, receivedHooks[4].ID)
 }
 
 func TestUnit_RemoteHooks_UniqueNameConstraint(t *testing.T) {
@@ -213,7 +276,7 @@ func TestUnit_RemoteHooks_UpdateNonExistent(t *testing.T) {
 func TestUnit_RemoteHooks_ListEmpty(t *testing.T) {
 	ctx, s := store.SetupStore(t)
 
-	hooks, err := s.ListRemoteHooks(ctx)
+	hooks, err := s.ListRemoteHooks(ctx, nil, 100)
 	require.NoError(t, err)
 	require.Empty(t, hooks, "Should return empty list when no hooks exist")
 }

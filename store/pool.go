@@ -75,12 +75,55 @@ func (s *store) DeletePool(ctx context.Context, id string) error {
 	return checkRowsAffected(result)
 }
 
-func (s *store) ListPools(ctx context.Context) ([]*Pool, error) {
+func (s *store) ListAllPools(ctx context.Context) ([]*Pool, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, name, purpose_type, created_at, updated_at
-		FROM llm_pool ORDER BY created_at DESC`)
+        SELECT id, name, purpose_type, created_at, updated_at
+        FROM llm_pool
+        ORDER BY created_at DESC, id DESC;
+    `)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query pools: %w", err)
+	}
+	defer rows.Close()
+
+	pools := []*Pool{}
+	for rows.Next() {
+		var pool Pool
+		if err := rows.Scan(
+			&pool.ID,
+			&pool.Name,
+			&pool.PurposeType,
+			&pool.CreatedAt,
+			&pool.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan pool: %w", err)
+		}
+		pools = append(pools, &pool)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return pools, nil
+}
+
+func (s *store) ListPools(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Pool, error) {
+	// The cursor is set to the current time if not provided.
+	cursor := time.Now().UTC()
+	if createdAtCursor != nil {
+		cursor = *createdAtCursor
+	}
+
+	rows, err := s.Exec.QueryContext(ctx, `
+        SELECT id, name, purpose_type, created_at, updated_at
+        FROM llm_pool
+        WHERE created_at < $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT $2`,
+		cursor, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query pools: %w", err)
 	}
 	defer rows.Close()
 
@@ -88,20 +131,30 @@ func (s *store) ListPools(ctx context.Context) ([]*Pool, error) {
 	for rows.Next() {
 		var pool Pool
 		if err := rows.Scan(&pool.ID, &pool.Name, &pool.PurposeType, &pool.CreatedAt, &pool.UpdatedAt); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan pool: %w", err)
 		}
 		pools = append(pools, &pool)
 	}
 	return pools, rows.Err()
 }
 
-func (s *store) ListPoolsByPurpose(ctx context.Context, purposeType string) ([]*Pool, error) {
+// ListPoolsByPurpose retrieves a list of LLM pools for a specific purpose,
+// created before the provided cursor, ordered from newest to oldest.
+func (s *store) ListPoolsByPurpose(ctx context.Context, purposeType string, createdAtCursor *time.Time, limit int) ([]*Pool, error) {
+	// The cursor is set to the current time if not provided.
+	cursor := time.Now().UTC()
+	if createdAtCursor != nil {
+		cursor = *createdAtCursor
+	}
+
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, name, purpose_type, created_at, updated_at
-		FROM llm_pool WHERE purpose_type = $1
-		ORDER BY created_at DESC`, purposeType)
+        SELECT id, name, purpose_type, created_at, updated_at
+        FROM llm_pool WHERE purpose_type = $1 AND created_at < $2
+        ORDER BY created_at DESC, id DESC
+        LIMIT $3`,
+		purposeType, cursor, limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query pools by purpose: %w", err)
 	}
 	defer rows.Close()
 
@@ -109,7 +162,7 @@ func (s *store) ListPoolsByPurpose(ctx context.Context, purposeType string) ([]*
 	for rows.Next() {
 		var pool Pool
 		if err := rows.Scan(&pool.ID, &pool.Name, &pool.PurposeType, &pool.CreatedAt, &pool.UpdatedAt); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan pool: %w", err)
 		}
 		pools = append(pools, &pool)
 	}
@@ -244,4 +297,8 @@ func (s *store) ListPoolsForModel(ctx context.Context, modelID string) ([]*Pool,
 		pools = append(pools, &p)
 	}
 	return pools, rows.Err()
+}
+
+func (s *store) EstimatePoolCount(ctx context.Context) (int64, error) {
+	return s.estimateCount(ctx, "llm_pool")
 }

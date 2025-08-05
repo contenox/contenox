@@ -91,12 +91,53 @@ func (s *store) DeleteBackend(ctx context.Context, id string) error {
 	return checkRowsAffected(result)
 }
 
-func (s *store) ListBackends(ctx context.Context) ([]*Backend, error) {
+func (s *store) ListAllBackends(ctx context.Context) ([]*Backend, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, name, base_url, type, created_at, updated_at
-		FROM llm_backends
-		ORDER BY created_at DESC`,
-	)
+        SELECT id, name, base_url, type, created_at, updated_at
+        FROM llm_backends
+        ORDER BY created_at DESC, id DESC;
+    `)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query backends: %w", err)
+	}
+	defer rows.Close()
+
+	backends := []*Backend{}
+	for rows.Next() {
+		var backend Backend
+		if err := rows.Scan(
+			&backend.ID,
+			&backend.Name,
+			&backend.BaseURL,
+			&backend.Type,
+			&backend.CreatedAt,
+			&backend.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan backend: %w", err)
+		}
+		backends = append(backends, &backend)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
+	return backends, nil
+}
+
+func (s *store) ListBackends(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Backend, error) {
+	cursor := time.Now().UTC()
+	if createdAtCursor != nil {
+		cursor = *createdAtCursor
+	}
+
+	rows, err := s.Exec.QueryContext(ctx, `
+        SELECT id, name, base_url, type, created_at, updated_at
+        FROM llm_backends
+        WHERE created_at < $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT $2;
+    `, cursor, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query backends: %w", err)
 	}
@@ -156,4 +197,8 @@ func checkRowsAffected(result sql.Result) error {
 		return libdb.ErrNotFound
 	}
 	return nil
+}
+
+func (s *store) EstimateBackendCount(ctx context.Context) (int64, error) {
+	return s.estimateCount(ctx, "llm_backends")
 }

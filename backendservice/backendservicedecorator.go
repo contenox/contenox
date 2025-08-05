@@ -2,6 +2,8 @@ package backendservice
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/contenox/activitytracker"
 	"github.com/contenox/runtime/store"
@@ -97,11 +99,17 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, id string) error 
 	return err
 }
 
-func (d *activityTrackerDecorator) List(ctx context.Context) ([]*store.Backend, error) {
-	reportErrFn, _, endFn := d.tracker.Start(ctx, "list", "backends")
+func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Backend, error) {
+	reportErrFn, _, endFn := d.tracker.Start(
+		ctx,
+		"list",
+		"backends",
+		"cursor", fmt.Sprintf("%v", createdAtCursor),
+		"limit", fmt.Sprintf("%d", limit),
+	)
 	defer endFn()
 
-	backends, err := d.service.List(ctx)
+	backends, err := d.service.List(ctx, createdAtCursor, limit)
 	if err != nil {
 		reportErrFn(err)
 	}

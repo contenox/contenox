@@ -82,18 +82,25 @@ func (s *store) DeleteKV(ctx context.Context, key string) error {
 	return checkRowsAffected(result)
 }
 
-func (s *store) ListKV(ctx context.Context) ([]*KV, error) {
+func (s *store) ListKV(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*KV, error) {
+	cursor := time.Now().UTC()
+	if createdAtCursor != nil {
+		cursor = *createdAtCursor
+	}
+
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT key, value, created_at, updated_at
-		FROM kv
-		ORDER BY created_at DESC`,
-	)
+        SELECT key, value, created_at, updated_at
+        FROM kv
+        WHERE created_at < $1
+        ORDER BY created_at DESC, key DESC
+        LIMIT $2;
+    `, cursor, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query key-value pairs: %w", err)
 	}
 	defer rows.Close()
 
-	kvs := []*KV{}
+	var kvs []*KV
 	for rows.Next() {
 		var kv KV
 		if err := rows.Scan(
@@ -114,20 +121,26 @@ func (s *store) ListKV(ctx context.Context) ([]*KV, error) {
 	return kvs, nil
 }
 
-func (s *store) ListKVPrefix(ctx context.Context, prefix string) ([]*KV, error) {
+func (s *store) ListKVPrefix(ctx context.Context, prefix string, createdAtCursor *time.Time, limit int) ([]*KV, error) {
+	// The cursor is set to the current time if not provided.
+	cursor := time.Now().UTC()
+	if createdAtCursor != nil {
+		cursor = *createdAtCursor
+	}
+
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT key, value, created_at, updated_at
-		FROM kv
-		WHERE key LIKE $1 || '%'
-		ORDER BY created_at DESC`,
-		prefix,
-	)
+        SELECT key, value, created_at, updated_at
+        FROM kv
+        WHERE key LIKE $1 || '%' AND created_at < $2
+        ORDER BY created_at DESC, key DESC
+        LIMIT $3;
+    `, prefix, cursor, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query key-value pairs: %w", err)
+		return nil, fmt.Errorf("failed to query key-value pairs with prefix: %w", err)
 	}
 	defer rows.Close()
 
-	kvs := []*KV{}
+	var kvs []*KV
 	for rows.Next() {
 		var kv KV
 		if err := rows.Scan(
@@ -146,4 +159,8 @@ func (s *store) ListKVPrefix(ctx context.Context, prefix string) ([]*KV, error) 
 	}
 
 	return kvs, nil
+}
+
+func (s *store) EstimateKVCount(ctx context.Context) (int64, error) {
+	return s.estimateCount(ctx, "kv")
 }

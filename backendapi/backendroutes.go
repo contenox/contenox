@@ -3,6 +3,7 @@ package backendapi
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	serverops "github.com/contenox/runtime/apiframework"
@@ -62,7 +63,30 @@ func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	backends, err := b.service.List(ctx)
+	// Parse pagination parameters from query string
+	var cursor *time.Time
+	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+		t, err := time.Parse(time.RFC3339Nano, cursorStr)
+		if err != nil {
+			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
+			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			return
+		}
+		cursor = &t
+	}
+
+	limit := 100 // Default limit
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		i, err := strconv.Atoi(limitStr)
+		if err != nil {
+			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
+			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			return
+		}
+		limit = i
+	}
+
+	backends, err := b.service.List(ctx, cursor, limit)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.ListOperation)
 		return

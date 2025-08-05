@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/apiframework"
@@ -32,7 +33,7 @@ type Service interface {
 	Update(ctx context.Context, pool *store.Pool) error
 	Delete(ctx context.Context, id string) error
 	ListAll(ctx context.Context) ([]*store.Pool, error)
-	ListByPurpose(ctx context.Context, purpose string) ([]*store.Pool, error)
+	ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*store.Pool, error)
 	AssignBackend(ctx context.Context, poolID, backendID string) error
 	RemoveBackend(ctx context.Context, poolID, backendID string) error
 	ListBackends(ctx context.Context, poolID string) ([]*store.Backend, error)
@@ -46,7 +47,16 @@ type Service interface {
 func (s *service) Create(ctx context.Context, pool *store.Pool) error {
 	pool.ID = uuid.New().String()
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).CreatePool(ctx, pool)
+	storeInstance := store.New(tx)
+	count, err := storeInstance.EstimatePoolCount(ctx)
+	if err != nil {
+		return err
+	}
+	err = storeInstance.EnforceMaxRowCount(ctx, count)
+	if err != nil {
+		return err
+	}
+	return storeInstance.CreatePool(ctx, pool)
 }
 
 func (s *service) GetByID(ctx context.Context, id string) (*store.Pool, error) {
@@ -77,12 +87,33 @@ func (s *service) Delete(ctx context.Context, id string) error {
 
 func (s *service) ListAll(ctx context.Context) ([]*store.Pool, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).ListPools(ctx)
+	storeInstance := store.New(tx)
+
+	var allPools []*store.Pool
+	var lastCursor *time.Time
+	limit := 100 // A reasonable page size
+
+	for {
+		page, err := storeInstance.ListPools(ctx, lastCursor, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list pools: %w", err)
+		}
+
+		allPools = append(allPools, page...)
+
+		if len(page) < limit {
+			break // No more pages
+		}
+
+		lastCursor = &page[len(page)-1].CreatedAt
+	}
+
+	return allPools, nil
 }
 
-func (s *service) ListByPurpose(ctx context.Context, purpose string) ([]*store.Pool, error) {
+func (s *service) ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*store.Pool, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).ListPoolsByPurpose(ctx, purpose)
+	return store.New(tx).ListPoolsByPurpose(ctx, purpose, createdAtCursor, limit)
 }
 
 func (s *service) AssignBackend(ctx context.Context, poolID, backendID string) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -86,22 +87,28 @@ type Store interface {
 	GetBackend(ctx context.Context, id string) (*Backend, error)
 	UpdateBackend(ctx context.Context, backend *Backend) error
 	DeleteBackend(ctx context.Context, id string) error
-	ListBackends(ctx context.Context) ([]*Backend, error)
+	ListAllBackends(ctx context.Context) ([]*Backend, error)
+	ListBackends(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Backend, error)
 	GetBackendByName(ctx context.Context, name string) (*Backend, error)
+	EstimateBackendCount(ctx context.Context) (int64, error)
 
 	AppendModel(ctx context.Context, model *Model) error
 	GetModel(ctx context.Context, id string) (*Model, error)
 	GetModelByName(ctx context.Context, name string) (*Model, error)
 	DeleteModel(ctx context.Context, modelName string) error
-	ListModels(ctx context.Context) ([]*Model, error)
+	ListAllModels(ctx context.Context) ([]*Model, error)
+	ListModels(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Model, error)
+	EstimateModelCount(ctx context.Context) (int64, error)
 
 	CreatePool(ctx context.Context, pool *Pool) error
 	GetPool(ctx context.Context, id string) (*Pool, error)
 	GetPoolByName(ctx context.Context, name string) (*Pool, error)
 	UpdatePool(ctx context.Context, pool *Pool) error
 	DeletePool(ctx context.Context, id string) error
-	ListPools(ctx context.Context) ([]*Pool, error)
-	ListPoolsByPurpose(ctx context.Context, purposeType string) ([]*Pool, error)
+	ListAllPools(ctx context.Context) ([]*Pool, error)
+	ListPools(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Pool, error)
+	ListPoolsByPurpose(ctx context.Context, purposeType string, createdAtCursor *time.Time, limit int) ([]*Pool, error)
+	EstimatePoolCount(ctx context.Context) (int64, error)
 
 	AssignBackendToPool(ctx context.Context, poolID string, backendID string) error
 	RemoveBackendFromPool(ctx context.Context, poolID string, backendID string) error
@@ -121,20 +128,25 @@ type Store interface {
 	PopJobForType(ctx context.Context, taskType string) (*Job, error)
 	GetJobsForType(ctx context.Context, taskType string) ([]*Job, error)
 	ListJobs(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Job, error)
+	EstimateJobCount(ctx context.Context) (int64, error)
 
 	SetKV(ctx context.Context, key string, value json.RawMessage) error
 	UpdateKV(ctx context.Context, key string, value json.RawMessage) error
 	GetKV(ctx context.Context, key string, out interface{}) error
 	DeleteKV(ctx context.Context, key string) error
-	ListKV(ctx context.Context) ([]*KV, error)
-	ListKVPrefix(ctx context.Context, prefix string) ([]*KV, error)
+	ListKV(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*KV, error)
+	ListKVPrefix(ctx context.Context, prefix string, createdAtCursor *time.Time, limit int) ([]*KV, error)
+	EstimateKVCount(ctx context.Context) (int64, error)
 
 	CreateRemoteHook(ctx context.Context, hook *RemoteHook) error
 	GetRemoteHook(ctx context.Context, id string) (*RemoteHook, error)
 	GetRemoteHookByName(ctx context.Context, name string) (*RemoteHook, error)
 	UpdateRemoteHook(ctx context.Context, hook *RemoteHook) error
 	DeleteRemoteHook(ctx context.Context, id string) error
-	ListRemoteHooks(ctx context.Context) ([]*RemoteHook, error)
+	ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*RemoteHook, error)
+	EstimateRemoteHookCount(ctx context.Context) (int64, error)
+
+	EnforceMaxRowCount(ctx context.Context, count int64) error
 }
 
 //go:embed schema.sql
@@ -149,6 +161,23 @@ func New(exec libdb.Exec) Store {
 		panic("SERVER BUG: store.New called with nil exec")
 	}
 	return &store{exec}
+}
+
+const MaxRowsCount = 100000
+
+func (s *store) estimateCount(ctx context.Context, table string) (int64, error) {
+	var count int64
+	err := s.Exec.QueryRowContext(ctx, `
+		SELECT estimate_row_count($1)
+	`, table).Scan(&count)
+	return count, err
+}
+
+func (s *store) EnforceMaxRowCount(ctx context.Context, count int64) error {
+	if count >= MaxRowsCount {
+		return fmt.Errorf("row limit reached (max %d)", MaxRowsCount)
+	}
+	return nil
 }
 
 func quiet() func() {

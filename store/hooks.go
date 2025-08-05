@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	libdb "github.com/contenox/dbexec"
@@ -106,13 +107,21 @@ func (s *store) DeleteRemoteHook(ctx context.Context, id string) error {
 	return checkRowsAffected(result)
 }
 
-func (s *store) ListRemoteHooks(ctx context.Context) ([]*RemoteHook, error) {
+func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*RemoteHook, error) {
+	cursor := time.Now().UTC()
+	if createdAtCursor != nil {
+		cursor = *createdAtCursor
+	}
+
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, name, endpoint_url, method, timeout_ms, created_at, updated_at
-		FROM remote_hooks
-		ORDER BY created_at DESC`)
+        SELECT id, name, endpoint_url, method, timeout_ms, created_at, updated_at
+        FROM remote_hooks
+        WHERE created_at < $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT $2;
+    `, cursor, limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query remote hooks: %w", err)
 	}
 	defer rows.Close()
 
@@ -128,9 +137,18 @@ func (s *store) ListRemoteHooks(ctx context.Context) ([]*RemoteHook, error) {
 			&hook.CreatedAt,
 			&hook.UpdatedAt,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan remote hook: %w", err)
 		}
 		hooks = append(hooks, &hook)
 	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration error: %w", err)
+	}
+
 	return hooks, nil
+}
+
+func (s *store) EstimateRemoteHookCount(ctx context.Context) (int64, error) {
+	return s.estimateCount(ctx, "remote_hooks")
 }

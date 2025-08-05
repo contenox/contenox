@@ -2,6 +2,8 @@ package providerservice
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/contenox/activitytracker"
 	"github.com/contenox/runtime/runtimestate"
@@ -70,15 +72,17 @@ func (d *activityTrackerDecorator) DeleteProviderConfig(ctx context.Context, pro
 	return err
 }
 
-func (d *activityTrackerDecorator) ListProviderConfigs(ctx context.Context) ([]*runtimestate.ProviderConfig, error) {
+func (d *activityTrackerDecorator) ListProviderConfigs(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimestate.ProviderConfig, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"list",
 		"provider_configs",
+		"cursor", fmt.Sprintf("%v", createdAtCursor),
+		"limit", fmt.Sprintf("%d", limit),
 	)
 	defer endFn()
 
-	configs, err := d.service.ListProviderConfigs(ctx)
+	configs, err := d.service.ListProviderConfigs(ctx, createdAtCursor, limit)
 	if err != nil {
 		reportErrFn(err)
 	}
@@ -91,3 +95,5 @@ func WithActivityTracker(service Service, tracker activitytracker.ActivityTracke
 		tracker: tracker,
 	}
 }
+
+var _ Service = (*activityTrackerDecorator)(nil)
