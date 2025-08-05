@@ -1,9 +1,9 @@
-# contenox/runtime: genAI Orchestration Engine
+# contenox/runtime: genAI orchestration runtime
 
 ![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 
-**contenox/runtime** is a genAI orchestration engine that enables developers to build, manage, and execute complex LLM (Large Language Model) workflows with ease. It provides a unified interface for interacting with multiple AI providers, and creating multi-task prompt engineering pipelines.
+**contenox/runtime** is a genAI orchestration runtime that enables developers to build, manage, and execute complex LLM (Large Language Model) workflows with ease. It provides a unified interface for interacting with multiple AI providers, and creating multi-task prompt engineering pipelines.
 
 ## Overview
 
@@ -17,7 +17,7 @@ contenox/runtime is designed as the backbone for AI-powered applications, offeri
 
 ## Key Features
 
-### 🧠 State-machine as Engine
+### State-machine as Engine
 - Chain multiple LLM operations together with conditional transitions
 - 10+ built-in task handlers (`parse_number`, `parse_range`, `condition_key`, etc.)
 - Dynamic routing based on LLM outputs
@@ -46,18 +46,18 @@ chain := &taskengine.ChainDefinition{
 }
 ```
 
-### ⛓️ Resource Management
+### Resource Management
 - **Backend Management**: Connect to multiple AI providers (Ollama, OpenAI, Gemini)
 - **Model Management**: Download, store, and manage LLM models
 - **Resource Pooling**: Group resources by purpose (inference, embedding, etc.)
 - **Backend-Model Associations**: Assign specific models to specific backends
 
-### 🔌 Extensible Architecture
+### Extensible Architecture
 - **Custom Hooks**: Extend functionality with remote HTTP hooks
 - **Provider API**: Configure cloud providers (OpenAI, Gemini) securely
 - **Download Queue**: Manage model download operations with progress tracking
 
-### 📦 Comprehensive SDK
+### SDK
 - Implement the same interfaces as internal services
 - Seamlessly replace local service with HTTP client
 - Consistent error handling across all services
@@ -66,11 +66,3 @@ chain := &taskengine.ChainDefinition{
 ## Getting Started
 
 ## TODO:
-
-## License
-
-This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
-
----
-
-**contenox/runtime** -  The missing orchestration layer for LLM-powered applications. Build sophisticated AI workflows with ease
