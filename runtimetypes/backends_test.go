@@ -1,4 +1,4 @@
-package store_test
+package runtimetypes_test
 
 import (
 	"fmt"
@@ -7,15 +7,15 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUnit_Backend_CreatesAndFetchesByID(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	backend := &store.Backend{
+	backend := &runtimetypes.Backend{
 		ID:      uuid.NewString(),
 		Name:    "TestBackend",
 		BaseURL: "http://localhost:8080",
@@ -38,9 +38,9 @@ func TestUnit_Backend_CreatesAndFetchesByID(t *testing.T) {
 }
 
 func TestUnit_Backend_UpdatesFieldsCorrectly(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	backend := &store.Backend{
+	backend := &runtimetypes.Backend{
 		ID:      uuid.NewString(),
 		Name:    "InitialBackend",
 		BaseURL: "http://initial.url",
@@ -70,9 +70,9 @@ func TestUnit_Backend_UpdatesFieldsCorrectly(t *testing.T) {
 }
 
 func TestUnit_Backend_DeletesSuccessfully(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	backend := &store.Backend{
+	backend := &runtimetypes.Backend{
 		ID:      uuid.NewString(),
 		Name:    "ToDelete",
 		BaseURL: "http://delete.me",
@@ -93,12 +93,12 @@ func TestUnit_Backend_DeletesSuccessfully(t *testing.T) {
 }
 
 func TestUnit_Backend_ListHandlesPagination(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Create 5 backends with a small delay to ensure distinct creation times.
-	var backends []*store.Backend
+	var backends []*runtimetypes.Backend
 	for i := 0; i < 5; i++ {
-		backend := &store.Backend{
+		backend := &runtimetypes.Backend{
 			ID:      uuid.NewString(),
 			Name:    fmt.Sprintf("Backend%d", i),
 			BaseURL: "http://example.com" + strconv.Itoa(i),
@@ -111,7 +111,7 @@ func TestUnit_Backend_ListHandlesPagination(t *testing.T) {
 	}
 
 	// Paginate through the results with a limit of 2.
-	var receivedBackends []*store.Backend
+	var receivedBackends []*runtimetypes.Backend
 	var lastCursor *time.Time
 	limit := 2
 
@@ -155,9 +155,9 @@ func TestUnit_Backend_ListHandlesPagination(t *testing.T) {
 }
 
 func TestUnit_Backend_FetchesByName(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	backend := &store.Backend{
+	backend := &runtimetypes.Backend{
 		ID:      uuid.NewString(),
 		Name:    "UniqueBackend",
 		BaseURL: "http://unique",
@@ -175,7 +175,7 @@ func TestUnit_Backend_FetchesByName(t *testing.T) {
 }
 
 func TestUnit_Backend_GetNonexistentReturnsNotFound(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Test retrieval by a non-existent ID.
 	_, err := s.GetBackend(ctx, uuid.NewString())

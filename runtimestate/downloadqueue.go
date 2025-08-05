@@ -8,7 +8,7 @@ import (
 	"net/url"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 
 	"github.com/ollama/ollama/api"
 )
@@ -30,11 +30,11 @@ type dwqueue struct {
 func (q dwqueue) add(ctx context.Context, u url.URL, models ...string) error {
 	tx := q.dbInstance.WithoutTransaction()
 	for _, model := range models {
-		payload, err := json.Marshal(store.QueueItem{URL: u.String(), Model: model})
+		payload, err := json.Marshal(runtimetypes.QueueItem{URL: u.String(), Model: model})
 		if err != nil {
 			return err
 		}
-		err = store.New(tx).AppendJob(ctx, store.Job{
+		err = runtimetypes.New(tx).AppendJob(ctx, runtimetypes.Job{
 			ID:       u.String(), // Using backends url as ID to prevent multiple downloads on the same backend
 			TaskType: "model_download",
 			Payload:  payload,
@@ -51,14 +51,14 @@ func (q dwqueue) add(ctx context.Context, u url.URL, models ...string) error {
 // pop retrieves and removes the next pending 'model_download' task from the persistent queue.
 // It returns the details of the task (URL and Model name) within a QueueItem.
 // If no 'model_download' tasks are currently pending in the queue, it returns libdb.ErrNotFound.
-func (q dwqueue) pop(ctx context.Context) (*store.QueueItem, error) {
+func (q dwqueue) pop(ctx context.Context) (*runtimetypes.QueueItem, error) {
 	tx := q.dbInstance.WithoutTransaction()
 
-	job, err := store.New(tx).PopJobForType(ctx, "model_download")
+	job, err := runtimetypes.New(tx).PopJobForType(ctx, "model_download")
 	if err != nil {
 		return nil, err
 	}
-	var item store.QueueItem
+	var item runtimetypes.QueueItem
 	// Use &item so json.Unmarshal writes into our allocated struct.
 	err = json.Unmarshal(job.Payload, &item)
 	if err != nil {
@@ -70,7 +70,7 @@ func (q dwqueue) pop(ctx context.Context) (*store.QueueItem, error) {
 // downloadModel executes the actual model download process for a given task item.
 // It uses the Ollama API client to pull the specified model from the backend URL defined in the item.
 // The progress function is called periodically during the download with status updates.
-func (q dwqueue) downloadModel(ctx context.Context, item store.QueueItem, progress func(status store.Status) error) error {
+func (q dwqueue) downloadModel(ctx context.Context, item runtimetypes.QueueItem, progress func(status runtimetypes.Status) error) error {
 	u, err := url.Parse(item.URL)
 	if err != nil {
 		return err
@@ -80,7 +80,7 @@ func (q dwqueue) downloadModel(ctx context.Context, item store.QueueItem, progre
 	err = client.Pull(ctx, &api.PullRequest{
 		Model: item.Model,
 	}, func(pr api.ProgressResponse) error {
-		return progress(store.Status{
+		return progress(runtimetypes.Status{
 			Digest:    pr.Digest,
 			Status:    pr.Status,
 			Total:     pr.Total,

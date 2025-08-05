@@ -10,7 +10,7 @@ import (
 	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/modelservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 func AddModelRoutes(mux *http.ServeMux, modelService modelservice.Service, dwService downloadservice.Service) {
@@ -30,7 +30,7 @@ type service struct {
 func (s *service) append(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	model, err := serverops.Decode[store.Model](r)
+	model, err := serverops.Decode[runtimetypes.Model](r)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return

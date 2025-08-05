@@ -1,4 +1,4 @@
-package store_test
+package runtimetypes_test
 
 import (
 	"fmt"
@@ -6,13 +6,13 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUnit_Models_AppendAndGetAllModels(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 	limit := 100 // Use a large limit to fetch all models
 
 	models, err := s.ListModels(ctx, nil, limit)
@@ -20,7 +20,7 @@ func TestUnit_Models_AppendAndGetAllModels(t *testing.T) {
 	require.Empty(t, models)
 
 	// Append a new model.
-	model := &store.Model{
+	model := &runtimetypes.Model{
 		ID:    uuid.New().String(),
 		Model: "test-model",
 	}
@@ -38,10 +38,10 @@ func TestUnit_Models_AppendAndGetAllModels(t *testing.T) {
 }
 
 func TestUnit_Models_DeleteModel(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 	limit := 100
 
-	model := &store.Model{
+	model := &runtimetypes.Model{
 		ID:    uuid.New().String(),
 		Model: "model-to-delete",
 	}
@@ -57,17 +57,17 @@ func TestUnit_Models_DeleteModel(t *testing.T) {
 }
 
 func TestUnit_Models_DeleteNonExistentModel(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	err := s.DeleteModel(ctx, "non-existent-model")
 	require.ErrorIs(t, err, libdb.ErrNotFound)
 }
 
 func TestUnit_Models_GetAllModelsOrder(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 	limit := 100
 
-	model1 := &store.Model{
+	model1 := &runtimetypes.Model{
 		ID:    uuid.New().String(),
 		Model: "model1",
 	}
@@ -76,7 +76,7 @@ func TestUnit_Models_GetAllModelsOrder(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 
-	model2 := &store.Model{
+	model2 := &runtimetypes.Model{
 		ID:    uuid.New().String(),
 		Model: "model2",
 	}
@@ -92,9 +92,9 @@ func TestUnit_Models_GetAllModelsOrder(t *testing.T) {
 }
 
 func TestUnit_Models_AppendDuplicateModel(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	model := &store.Model{
+	model := &runtimetypes.Model{
 		Model: "duplicate-model",
 	}
 	err := s.AppendModel(ctx, model)
@@ -105,9 +105,9 @@ func TestUnit_Models_AppendDuplicateModel(t *testing.T) {
 }
 
 func TestUnit_Models_GetModelByName(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	model := &store.Model{
+	model := &runtimetypes.Model{
 		ID:    uuid.New().String(),
 		Model: "model-to-get",
 	}
@@ -123,12 +123,12 @@ func TestUnit_Models_GetModelByName(t *testing.T) {
 }
 
 func TestUnit_Models_ListHandlesPagination(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Create 5 models with a small delay to ensure distinct creation times.
-	var createdModels []*store.Model
+	var createdModels []*runtimetypes.Model
 	for i := 0; i < 5; i++ {
-		model := &store.Model{
+		model := &runtimetypes.Model{
 			ID:    uuid.New().String(),
 			Model: fmt.Sprintf("model%d", i),
 		}
@@ -139,7 +139,7 @@ func TestUnit_Models_ListHandlesPagination(t *testing.T) {
 	}
 
 	// Paginate through the results with a limit of 2.
-	var receivedModels []*store.Model
+	var receivedModels []*runtimetypes.Model
 	var lastCursor *time.Time
 	limit := 2
 

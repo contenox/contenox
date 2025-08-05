@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/contenox/activitytracker"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 type activityTrackerDecorator struct {
@@ -66,7 +66,7 @@ func (d *activityTrackerDecorator) RemoveDownloadFromQueue(ctx context.Context, 
 	return err
 }
 
-func (d *activityTrackerDecorator) DownloadInProgress(ctx context.Context, statusCh chan<- *store.Status) error {
+func (d *activityTrackerDecorator) DownloadInProgress(ctx context.Context, statusCh chan<- *runtimetypes.Status) error {
 	reportErrFn, _, endFn := d.tracker.Start(ctx, "stream", "download-status")
 	defer endFn()
 

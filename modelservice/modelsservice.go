@@ -8,7 +8,7 @@ import (
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 var ErrInvalidModel = errors.New("invalid model data")
@@ -19,8 +19,8 @@ type service struct {
 }
 
 type Service interface {
-	Append(ctx context.Context, model *store.Model) error
-	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Model, error)
+	Append(ctx context.Context, model *runtimetypes.Model) error
+	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Model, error)
 	Delete(ctx context.Context, modelName string) error
 }
 
@@ -31,13 +31,13 @@ func New(db libdb.DBManager, embedModel string) Service {
 	}
 }
 
-func (s *service) Append(ctx context.Context, model *store.Model) error {
+func (s *service) Append(ctx context.Context, model *runtimetypes.Model) error {
 
 	if err := validate(model); err != nil {
 		return err
 	}
 	tx := s.dbInstance.WithoutTransaction()
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 	count, err := storeInstance.EstimateModelCount(ctx)
 	if err != nil {
 		return err
@@ -49,9 +49,9 @@ func (s *service) Append(ctx context.Context, model *store.Model) error {
 	return storeInstance.AppendModel(ctx, model)
 }
 
-func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Model, error) {
+func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Model, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).ListModels(ctx, createdAtCursor, limit)
+	return runtimetypes.New(tx).ListModels(ctx, createdAtCursor, limit)
 }
 
 func (s *service) Delete(ctx context.Context, modelName string) error {
@@ -59,10 +59,10 @@ func (s *service) Delete(ctx context.Context, modelName string) error {
 	if modelName == s.immutableEmbedModelName {
 		return apiframework.ErrImmutableModel
 	}
-	return store.New(tx).DeleteModel(ctx, modelName)
+	return runtimetypes.New(tx).DeleteModel(ctx, modelName)
 }
 
-func validate(model *store.Model) error {
+func validate(model *runtimetypes.Model) error {
 	if model.Model == "" {
 		return fmt.Errorf("%w: model name is required", ErrInvalidModel)
 	}

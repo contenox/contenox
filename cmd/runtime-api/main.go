@@ -17,8 +17,8 @@ import (
 	"github.com/contenox/runtime/llmrepo"
 	"github.com/contenox/runtime/ollamatokenizer"
 	"github.com/contenox/runtime/runtimestate"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/serverapi"
-	"github.com/contenox/runtime/store"
 	"github.com/contenox/runtime/taskengine"
 )
 
@@ -38,7 +38,7 @@ func initDatabase(ctx context.Context, cfg *serverapi.Config) (libdb.DBManager, 
 	}
 	var dbInstance libdb.DBManager
 	err = libroutine.NewRoutine(10, time.Minute).ExecuteWithRetry(ctx, time.Second, 3, func(ctx context.Context) error {
-		dbInstance, err = libdb.NewPostgresDBManager(ctx, dbURL, store.Schema)
+		dbInstance, err = libdb.NewPostgresDBManager(ctx, dbURL, runtimetypes.Schema)
 		if err != nil {
 			return err
 		}

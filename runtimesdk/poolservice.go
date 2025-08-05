@@ -12,7 +12,7 @@ import (
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/poolservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 // HTTPPoolService implements the poolservice.Service interface
@@ -40,7 +40,7 @@ func NewHTTPPoolService(baseURL, token string, client *http.Client) poolservice.
 }
 
 // Create implements poolservice.Service.Create
-func (s *HTTPPoolService) Create(ctx context.Context, pool *store.Pool) error {
+func (s *HTTPPoolService) Create(ctx context.Context, pool *runtimetypes.Pool) error {
 	url := s.baseURL + "/pools"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
@@ -81,7 +81,7 @@ func (s *HTTPPoolService) Create(ctx context.Context, pool *store.Pool) error {
 }
 
 // GetByID implements poolservice.Service.GetByID
-func (s *HTTPPoolService) GetByID(ctx context.Context, id string) (*store.Pool, error) {
+func (s *HTTPPoolService) GetByID(ctx context.Context, id string) (*runtimetypes.Pool, error) {
 	url := fmt.Sprintf("%s/pools/%s", s.baseURL, url.PathEscape(id))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -106,7 +106,7 @@ func (s *HTTPPoolService) GetByID(ctx context.Context, id string) (*store.Pool, 
 	}
 
 	// Decode response
-	var pool store.Pool
+	var pool runtimetypes.Pool
 	if err := json.NewDecoder(resp.Body).Decode(&pool); err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (s *HTTPPoolService) GetByID(ctx context.Context, id string) (*store.Pool, 
 }
 
 // GetByName implements poolservice.Service.GetByName
-func (s *HTTPPoolService) GetByName(ctx context.Context, name string) (*store.Pool, error) {
+func (s *HTTPPoolService) GetByName(ctx context.Context, name string) (*runtimetypes.Pool, error) {
 	url := fmt.Sprintf("%s/pool-by-name/%s", s.baseURL, url.PathEscape(name))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -140,7 +140,7 @@ func (s *HTTPPoolService) GetByName(ctx context.Context, name string) (*store.Po
 	}
 
 	// Decode response
-	var pool store.Pool
+	var pool runtimetypes.Pool
 	if err := json.NewDecoder(resp.Body).Decode(&pool); err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (s *HTTPPoolService) GetByName(ctx context.Context, name string) (*store.Po
 }
 
 // Update implements poolservice.Service.Update
-func (s *HTTPPoolService) Update(ctx context.Context, pool *store.Pool) error {
+func (s *HTTPPoolService) Update(ctx context.Context, pool *runtimetypes.Pool) error {
 	url := fmt.Sprintf("%s/pools/%s", s.baseURL, url.PathEscape(pool.ID))
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
@@ -218,7 +218,7 @@ func (s *HTTPPoolService) Delete(ctx context.Context, id string) error {
 }
 
 // ListAll implements poolservice.Service.ListAll
-func (s *HTTPPoolService) ListAll(ctx context.Context) ([]*store.Pool, error) {
+func (s *HTTPPoolService) ListAll(ctx context.Context) ([]*runtimetypes.Pool, error) {
 	url := s.baseURL + "/pools"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -243,7 +243,7 @@ func (s *HTTPPoolService) ListAll(ctx context.Context) ([]*store.Pool, error) {
 	}
 
 	// Decode response
-	var pools []*store.Pool
+	var pools []*runtimetypes.Pool
 	if err := json.NewDecoder(resp.Body).Decode(&pools); err != nil {
 		return nil, err
 	}
@@ -252,7 +252,7 @@ func (s *HTTPPoolService) ListAll(ctx context.Context) ([]*store.Pool, error) {
 }
 
 // ListByPurpose implements poolservice.Service.ListByPurpose
-func (s *HTTPPoolService) ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*store.Pool, error) {
+func (s *HTTPPoolService) ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Pool, error) {
 	// Build URL with query parameters
 	rUrl := fmt.Sprintf("%s/pool-by-purpose/%s?limit=%d", s.baseURL, url.PathEscape(purpose), limit)
 	if createdAtCursor != nil {
@@ -281,7 +281,7 @@ func (s *HTTPPoolService) ListByPurpose(ctx context.Context, purpose string, cre
 	}
 
 	// Decode response
-	var pools []*store.Pool
+	var pools []*runtimetypes.Pool
 	if err := json.NewDecoder(resp.Body).Decode(&pools); err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ func (s *HTTPPoolService) RemoveBackend(ctx context.Context, poolID, backendID s
 }
 
 // ListBackends implements poolservice.Service.ListBackends
-func (s *HTTPPoolService) ListBackends(ctx context.Context, poolID string) ([]*store.Backend, error) {
+func (s *HTTPPoolService) ListBackends(ctx context.Context, poolID string) ([]*runtimetypes.Backend, error) {
 	url := fmt.Sprintf("%s/backend-associations/%s/backends", s.baseURL, url.PathEscape(poolID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -373,7 +373,7 @@ func (s *HTTPPoolService) ListBackends(ctx context.Context, poolID string) ([]*s
 	}
 
 	// Decode response
-	var backends []*store.Backend
+	var backends []*runtimetypes.Backend
 	if err := json.NewDecoder(resp.Body).Decode(&backends); err != nil {
 		return nil, err
 	}
@@ -382,7 +382,7 @@ func (s *HTTPPoolService) ListBackends(ctx context.Context, poolID string) ([]*s
 }
 
 // ListPoolsForBackend implements poolservice.Service.ListPoolsForBackend
-func (s *HTTPPoolService) ListPoolsForBackend(ctx context.Context, backendID string) ([]*store.Pool, error) {
+func (s *HTTPPoolService) ListPoolsForBackend(ctx context.Context, backendID string) ([]*runtimetypes.Pool, error) {
 	url := fmt.Sprintf("%s/backend-associations/%s/pools", s.baseURL, url.PathEscape(backendID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -407,7 +407,7 @@ func (s *HTTPPoolService) ListPoolsForBackend(ctx context.Context, backendID str
 	}
 
 	// Decode response
-	var pools []*store.Pool
+	var pools []*runtimetypes.Pool
 	if err := json.NewDecoder(resp.Body).Decode(&pools); err != nil {
 		return nil, err
 	}
@@ -474,7 +474,7 @@ func (s *HTTPPoolService) RemoveModel(ctx context.Context, poolID, modelID strin
 }
 
 // ListModels implements poolservice.Service.ListModels
-func (s *HTTPPoolService) ListModels(ctx context.Context, poolID string) ([]*store.Model, error) {
+func (s *HTTPPoolService) ListModels(ctx context.Context, poolID string) ([]*runtimetypes.Model, error) {
 	url := fmt.Sprintf("%s/model-associations/%s/models", s.baseURL, url.PathEscape(poolID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -499,7 +499,7 @@ func (s *HTTPPoolService) ListModels(ctx context.Context, poolID string) ([]*sto
 	}
 
 	// Decode response
-	var models []*store.Model
+	var models []*runtimetypes.Model
 	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
 		return nil, err
 	}
@@ -508,7 +508,7 @@ func (s *HTTPPoolService) ListModels(ctx context.Context, poolID string) ([]*sto
 }
 
 // ListPoolsForModel implements poolservice.Service.ListPoolsForModel
-func (s *HTTPPoolService) ListPoolsForModel(ctx context.Context, modelID string) ([]*store.Pool, error) {
+func (s *HTTPPoolService) ListPoolsForModel(ctx context.Context, modelID string) ([]*runtimetypes.Pool, error) {
 	url := fmt.Sprintf("%s/model-associations/%s/pools", s.baseURL, url.PathEscape(modelID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -533,7 +533,7 @@ func (s *HTTPPoolService) ListPoolsForModel(ctx context.Context, modelID string)
 	}
 
 	// Decode response
-	var pools []*store.Pool
+	var pools []*runtimetypes.Pool
 	if err := json.NewDecoder(resp.Body).Decode(&pools); err != nil {
 		return nil, err
 	}

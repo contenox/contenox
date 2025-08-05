@@ -8,7 +8,7 @@ import (
 
 	libbus "github.com/contenox/bus"
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 var (
@@ -19,7 +19,7 @@ type Service interface {
 	CurrentDownloadQueueState(ctx context.Context) ([]Job, error)
 	CancelDownloads(ctx context.Context, url string) error
 	RemoveDownloadFromQueue(ctx context.Context, modelName string) error
-	DownloadInProgress(ctx context.Context, statusCh chan<- *store.Status) error
+	DownloadInProgress(ctx context.Context, statusCh chan<- *runtimetypes.Status) error
 }
 
 type service struct {
@@ -39,7 +39,7 @@ func New(dbInstance libdb.DBManager, psInstance libbus.Messenger) Service {
 type Job struct {
 	ID           string          `json:"id"`
 	TaskType     string          `json:"taskType"`
-	ModelJob     store.QueueItem `json:"modelJob"`
+	ModelJob     runtimetypes.QueueItem `json:"modelJob"`
 	ScheduledFor int64           `json:"scheduledFor"`
 	ValidUntil   int64           `json:"validUntil"`
 	CreatedAt    time.Time       `json:"createdAt"`
@@ -47,12 +47,12 @@ type Job struct {
 
 func (s *service) CurrentDownloadQueueState(ctx context.Context) ([]Job, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	queue, err := store.New(tx).GetJobsForType(ctx, "model_download")
+	queue, err := runtimetypes.New(tx).GetJobsForType(ctx, "model_download")
 	if err != nil {
 		return nil, err
 	}
 	var convQueue []Job
-	var item store.QueueItem
+	var item runtimetypes.QueueItem
 	for _, queue := range queue {
 
 		err := json.Unmarshal(queue.Payload, &item)
@@ -73,7 +73,7 @@ func (s *service) CurrentDownloadQueueState(ctx context.Context) ([]Job, error) 
 }
 
 func (s *service) CancelDownloads(ctx context.Context, url string) error {
-	queueItem := store.Job{
+	queueItem := runtimetypes.Job{
 		ID: url,
 	}
 	b, err := json.Marshal(&queueItem)
@@ -93,14 +93,14 @@ func (s *service) RemoveDownloadFromQueue(ctx context.Context, modelName string)
 	if err != nil {
 		return err
 	}
-	jobs, err := store.New(tx).PopJobsForType(ctx, "model_download")
+	jobs, err := runtimetypes.New(tx).PopJobsForType(ctx, "model_download")
 	if err != nil {
 		return err
 	}
 	found := false
-	var filteresJobs []*store.Job
+	var filteresJobs []*runtimetypes.Job
 	for _, job := range jobs {
-		var item store.QueueItem
+		var item runtimetypes.QueueItem
 		err = json.Unmarshal(job.Payload, &item)
 		if err != nil {
 			return err
@@ -113,7 +113,7 @@ func (s *service) RemoveDownloadFromQueue(ctx context.Context, modelName string)
 		}
 	}
 	for _, job := range filteresJobs {
-		err := store.New(tx).AppendJob(ctx, *job)
+		err := runtimetypes.New(tx).AppendJob(ctx, *job)
 		if err != nil {
 			return err
 		}
@@ -124,7 +124,7 @@ func (s *service) RemoveDownloadFromQueue(ctx context.Context, modelName string)
 	return nil
 }
 
-func (s *service) DownloadInProgress(ctx context.Context, statusCh chan<- *store.Status) error {
+func (s *service) DownloadInProgress(ctx context.Context, statusCh chan<- *runtimetypes.Status) error {
 	ch := make(chan []byte, 16)
 	sub, err := s.psInstance.Stream(ctx, "model_download", ch)
 	if err != nil {
@@ -138,7 +138,7 @@ func (s *service) DownloadInProgress(ctx context.Context, statusCh chan<- *store
 				if !ok {
 					return
 				}
-				var st store.Status
+				var st runtimetypes.Status
 				if err := json.Unmarshal(data, &st); err != nil {
 					log.Printf("failed to unmarshal status: %v", err)
 					continue

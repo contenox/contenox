@@ -1,4 +1,4 @@
-package store_test
+package runtimetypes_test
 
 import (
 	"fmt"
@@ -6,15 +6,15 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUnit_Pools_CreateAndGetPool(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	pool := &store.Pool{
+	pool := &runtimetypes.Pool{
 		ID:          uuid.NewString(),
 		Name:        "TestPool",
 		PurposeType: "inference",
@@ -33,9 +33,9 @@ func TestUnit_Pools_CreateAndGetPool(t *testing.T) {
 }
 
 func TestUnit_Pools_UpdatePool(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	pool := &store.Pool{
+	pool := &runtimetypes.Pool{
 		ID:          uuid.NewString(),
 		Name:        "InitialPool",
 		PurposeType: "testing",
@@ -58,9 +58,9 @@ func TestUnit_Pools_UpdatePool(t *testing.T) {
 }
 
 func TestUnit_Pools_DeletePool(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	pool := &store.Pool{
+	pool := &runtimetypes.Pool{
 		ID:          uuid.NewString(),
 		Name:        "ToDelete",
 		PurposeType: "testing",
@@ -77,14 +77,14 @@ func TestUnit_Pools_DeletePool(t *testing.T) {
 }
 
 func TestUnit_Pools_ListPools(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	pools, err := s.ListPools(ctx, nil, 100)
 	require.NoError(t, err)
 	require.Empty(t, pools)
 
-	pool1 := &store.Pool{ID: uuid.NewString(), Name: "Pool1", PurposeType: "type1"}
-	pool2 := &store.Pool{ID: uuid.NewString(), Name: "Pool2", PurposeType: "type2"}
+	pool1 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1", PurposeType: "type1"}
+	pool2 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool2", PurposeType: "type2"}
 
 	err = s.CreatePool(ctx, pool1)
 	require.NoError(t, err)
@@ -100,12 +100,12 @@ func TestUnit_Pools_ListPools(t *testing.T) {
 }
 
 func TestUnit_Pools_ListPoolsPagination(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Create 5 pools with a small delay to ensure distinct creation times.
-	var createdPools []*store.Pool
+	var createdPools []*runtimetypes.Pool
 	for i := 0; i < 5; i++ {
-		pool := &store.Pool{
+		pool := &runtimetypes.Pool{
 			ID:          uuid.NewString(),
 			Name:        fmt.Sprintf("pagination-pool-%d", i),
 			PurposeType: "inference",
@@ -117,7 +117,7 @@ func TestUnit_Pools_ListPoolsPagination(t *testing.T) {
 	}
 
 	// Paginate through the results with a limit of 2.
-	var receivedPools []*store.Pool
+	var receivedPools []*runtimetypes.Pool
 	var lastCursor *time.Time
 	limit := 2
 
@@ -158,9 +158,9 @@ func TestUnit_Pools_ListPoolsPagination(t *testing.T) {
 }
 
 func TestUnit_Pools_GetPoolByName(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	pool := &store.Pool{
+	pool := &runtimetypes.Pool{
 		ID:          uuid.NewString(),
 		Name:        "UniquePool",
 		PurposeType: "inference",
@@ -175,11 +175,11 @@ func TestUnit_Pools_GetPoolByName(t *testing.T) {
 }
 
 func TestUnit_Pools_ListPoolsByPurpose(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	purpose := "inference"
-	pool1 := &store.Pool{ID: uuid.NewString(), Name: "Pool1", PurposeType: purpose}
-	pool2 := &store.Pool{ID: uuid.NewString(), Name: "Pool2", PurposeType: "training"}
+	pool1 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1", PurposeType: purpose}
+	pool2 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool2", PurposeType: "training"}
 
 	s.CreatePool(ctx, pool1)
 	s.CreatePool(ctx, pool2)
@@ -191,14 +191,14 @@ func TestUnit_Pools_ListPoolsByPurpose(t *testing.T) {
 }
 
 func TestUnit_Pools_ListPoolsByPurposePagination(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Create pools with different purpose types
 	purpose := "inference"
 	otherPurpose := "training"
-	var createdPools []*store.Pool
+	var createdPools []*runtimetypes.Pool
 	for i := 0; i < 5; i++ {
-		pool := &store.Pool{
+		pool := &runtimetypes.Pool{
 			ID:          uuid.NewString(),
 			Name:        fmt.Sprintf("inference-pool-%d", i),
 			PurposeType: purpose,
@@ -210,7 +210,7 @@ func TestUnit_Pools_ListPoolsByPurposePagination(t *testing.T) {
 	}
 
 	// Create an extra pool with a different purpose type
-	otherPool := &store.Pool{
+	otherPool := &runtimetypes.Pool{
 		ID:          uuid.NewString(),
 		Name:        "other-pool",
 		PurposeType: otherPurpose,
@@ -219,7 +219,7 @@ func TestUnit_Pools_ListPoolsByPurposePagination(t *testing.T) {
 	require.NoError(t, err)
 
 	// Paginate through the results with a limit of 2, filtering by purpose.
-	var receivedPools []*store.Pool
+	var receivedPools []*runtimetypes.Pool
 	var lastCursor *time.Time
 	limit := 2
 
@@ -263,12 +263,12 @@ func TestUnit_Pools_ListPoolsByPurposePagination(t *testing.T) {
 }
 
 func TestUnit_Pools_AssignAndListBackendsForPool(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	pool := &store.Pool{ID: uuid.NewString(), Name: "Pool1"}
+	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
 	s.CreatePool(ctx, pool)
 
-	backend := &store.Backend{
+	backend := &runtimetypes.Backend{
 		ID:      uuid.NewString(),
 		Name:    "Backend1",
 		BaseURL: "http://backend1",
@@ -286,12 +286,12 @@ func TestUnit_Pools_AssignAndListBackendsForPool(t *testing.T) {
 }
 
 func TestUnit_Pools_RemoveBackendFromPool(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	pool := &store.Pool{ID: uuid.NewString(), Name: "Pool1"}
+	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
 	s.CreatePool(ctx, pool)
 
-	backend := &store.Backend{ID: uuid.NewString(), Name: "Backend1"}
+	backend := &runtimetypes.Backend{ID: uuid.NewString(), Name: "Backend1"}
 	s.CreateBackend(ctx, backend)
 
 	s.AssignBackendToPool(ctx, pool.ID, backend.ID)
@@ -309,13 +309,13 @@ func TestUnit_Pools_RemoveBackendFromPool(t *testing.T) {
 }
 
 func TestUnit_Pools_ListPoolsForBackend(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	backend := &store.Backend{ID: uuid.NewString(), Name: "Backend1"}
+	backend := &runtimetypes.Backend{ID: uuid.NewString(), Name: "Backend1"}
 	s.CreateBackend(ctx, backend)
 
-	pool1 := &store.Pool{ID: uuid.NewString(), Name: "Pool1"}
-	pool2 := &store.Pool{ID: uuid.NewString(), Name: "Pool2"}
+	pool1 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
+	pool2 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool2"}
 	s.CreatePool(ctx, pool1)
 	s.CreatePool(ctx, pool2)
 
@@ -332,13 +332,13 @@ func TestUnit_Pools_ListPoolsForBackend(t *testing.T) {
 }
 
 func TestUnit_Pools_AssignAndListModelsForPool(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	model := &store.Model{Model: "model1"}
+	model := &runtimetypes.Model{Model: "model1"}
 	err := s.AppendModel(ctx, model)
 	require.NoError(t, err)
 
-	pool := &store.Pool{ID: uuid.NewString(), Name: "Pool1"}
+	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
 	s.CreatePool(ctx, pool)
 
 	err = s.AssignModelToPool(ctx, pool.ID, model.ID)
@@ -355,12 +355,12 @@ func TestUnit_Pools_AssignAndListModelsForPool(t *testing.T) {
 }
 
 func TestUnit_Pools_RemoveModelFromPool(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	model := &store.Model{Model: "model1"}
+	model := &runtimetypes.Model{Model: "model1"}
 	s.AppendModel(ctx, model)
 
-	pool := &store.Pool{ID: uuid.NewString(), Name: "Pool1"}
+	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
 	s.CreatePool(ctx, pool)
 
 	s.AssignModelToPool(ctx, pool.ID, model.ID)
@@ -378,13 +378,13 @@ func TestUnit_Pools_RemoveModelFromPool(t *testing.T) {
 }
 
 func TestUnit_Pools_ListPoolsForModel(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	model := &store.Model{Model: "model1"}
+	model := &runtimetypes.Model{Model: "model1"}
 	s.AppendModel(ctx, model)
 
-	pool1 := &store.Pool{ID: uuid.NewString(), Name: "Pool1"}
-	pool2 := &store.Pool{ID: uuid.NewString(), Name: "Pool2"}
+	pool1 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
+	pool2 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool2"}
 	s.CreatePool(ctx, pool1)
 	s.CreatePool(ctx, pool2)
 
@@ -401,7 +401,7 @@ func TestUnit_Pools_ListPoolsForModel(t *testing.T) {
 }
 
 func TestUnit_Pools_GetNonExistentPool(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	_, err := s.GetPool(ctx, uuid.NewString())
 	require.ErrorIs(t, err, libdb.ErrNotFound)
@@ -411,13 +411,13 @@ func TestUnit_Pools_GetNonExistentPool(t *testing.T) {
 }
 
 func TestUnit_Pools_DuplicatePoolName(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	pool := &store.Pool{ID: uuid.NewString(), Name: "Duplicate"}
+	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Duplicate"}
 	err := s.CreatePool(ctx, pool)
 	require.NoError(t, err)
 
-	pool2 := &store.Pool{ID: uuid.NewString(), Name: "Duplicate"}
+	pool2 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Duplicate"}
 	err = s.CreatePool(ctx, pool2)
 	require.Error(t, err)
 }

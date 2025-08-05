@@ -9,7 +9,7 @@ import (
 	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/runtimestate"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/ollama/ollama/api"
 )
@@ -46,7 +46,7 @@ type backendManager struct {
 func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	backend, err := serverops.Decode[store.Backend](r)
+	backend, err := serverops.Decode[runtimetypes.Backend](r)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -172,7 +172,7 @@ func (b *backendManager) update(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, fmt.Errorf("missing id parameter %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
 		return
 	}
-	backend, err := serverops.Decode[store.Backend](r)
+	backend, err := serverops.Decode[runtimetypes.Backend](r)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
 		return

@@ -12,7 +12,7 @@ import (
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/hookproviderservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 // HTTPRemoteHookService implements the hookproviderservice.Service interface
@@ -40,7 +40,7 @@ func NewHTTPRemoteHookService(baseURL, token string, client *http.Client) hookpr
 }
 
 // Create implements hookproviderservice.Service.Create
-func (s *HTTPRemoteHookService) Create(ctx context.Context, hook *store.RemoteHook) error {
+func (s *HTTPRemoteHookService) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {
 	url := s.baseURL + "/hooks/remote"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
@@ -81,7 +81,7 @@ func (s *HTTPRemoteHookService) Create(ctx context.Context, hook *store.RemoteHo
 }
 
 // Get implements hookproviderservice.Service.Get
-func (s *HTTPRemoteHookService) Get(ctx context.Context, id string) (*store.RemoteHook, error) {
+func (s *HTTPRemoteHookService) Get(ctx context.Context, id string) (*runtimetypes.RemoteHook, error) {
 	url := fmt.Sprintf("%s/hooks/remote/%s", s.baseURL, url.PathEscape(id))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -106,7 +106,7 @@ func (s *HTTPRemoteHookService) Get(ctx context.Context, id string) (*store.Remo
 	}
 
 	// Decode response
-	var hook store.RemoteHook
+	var hook runtimetypes.RemoteHook
 	if err := json.NewDecoder(resp.Body).Decode(&hook); err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (s *HTTPRemoteHookService) Get(ctx context.Context, id string) (*store.Remo
 }
 
 // GetByName implements hookproviderservice.Service.GetByName
-func (s *HTTPRemoteHookService) GetByName(ctx context.Context, name string) (*store.RemoteHook, error) {
+func (s *HTTPRemoteHookService) GetByName(ctx context.Context, name string) (*runtimetypes.RemoteHook, error) {
 	// The API doesn't have a direct endpoint for getting hooks by name,
 	// so we'll need to list all hooks and find the one with the matching name
 	hooks, err := s.List(ctx, nil, 1000)
@@ -133,7 +133,7 @@ func (s *HTTPRemoteHookService) GetByName(ctx context.Context, name string) (*st
 }
 
 // Update implements hookproviderservice.Service.Update
-func (s *HTTPRemoteHookService) Update(ctx context.Context, hook *store.RemoteHook) error {
+func (s *HTTPRemoteHookService) Update(ctx context.Context, hook *runtimetypes.RemoteHook) error {
 	url := fmt.Sprintf("%s/hooks/remote/%s", s.baseURL, url.PathEscape(hook.ID))
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
@@ -202,7 +202,7 @@ func (s *HTTPRemoteHookService) Delete(ctx context.Context, id string) error {
 }
 
 // List implements hookproviderservice.Service.List
-func (s *HTTPRemoteHookService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.RemoteHook, error) {
+func (s *HTTPRemoteHookService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.RemoteHook, error) {
 	// Build URL with query parameters
 	rURL := fmt.Sprintf("%s/hooks/remote?limit=%d", s.baseURL, limit)
 	if createdAtCursor != nil {
@@ -231,7 +231,7 @@ func (s *HTTPRemoteHookService) List(ctx context.Context, createdAtCursor *time.
 	}
 
 	// Decode response
-	var hooks []*store.RemoteHook
+	var hooks []*runtimetypes.RemoteHook
 	if err := json.NewDecoder(resp.Body).Decode(&hooks); err != nil {
 		return nil, err
 	}

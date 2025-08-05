@@ -7,17 +7,17 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 var ErrInvalidBackend = errors.New("invalid backend data")
 
 type Service interface {
-	Create(ctx context.Context, backend *store.Backend) error
-	Get(ctx context.Context, id string) (*store.Backend, error)
-	Update(ctx context.Context, backend *store.Backend) error
+	Create(ctx context.Context, backend *runtimetypes.Backend) error
+	Get(ctx context.Context, id string) (*runtimetypes.Backend, error)
+	Update(ctx context.Context, backend *runtimetypes.Backend) error
 	Delete(ctx context.Context, id string) error
-	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Backend, error)
+	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Backend, error)
 }
 
 type service struct {
@@ -28,12 +28,12 @@ func New(db libdb.DBManager) Service {
 	return &service{dbInstance: db}
 }
 
-func (s *service) Create(ctx context.Context, backend *store.Backend) error {
+func (s *service) Create(ctx context.Context, backend *runtimetypes.Backend) error {
 	tx := s.dbInstance.WithoutTransaction()
 	if err := validate(backend); err != nil {
 		return err
 	}
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 	count, err := storeInstance.EstimateBackendCount(ctx)
 	if err != nil {
 		return err
@@ -47,30 +47,30 @@ func (s *service) Create(ctx context.Context, backend *store.Backend) error {
 	return storeInstance.CreateBackend(ctx, backend)
 }
 
-func (s *service) Get(ctx context.Context, id string) (*store.Backend, error) {
+func (s *service) Get(ctx context.Context, id string) (*runtimetypes.Backend, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).GetBackend(ctx, id)
+	return runtimetypes.New(tx).GetBackend(ctx, id)
 }
 
-func (s *service) Update(ctx context.Context, backend *store.Backend) error {
+func (s *service) Update(ctx context.Context, backend *runtimetypes.Backend) error {
 	if err := validate(backend); err != nil {
 		return err
 	}
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).UpdateBackend(ctx, backend)
+	return runtimetypes.New(tx).UpdateBackend(ctx, backend)
 }
 
 func (s *service) Delete(ctx context.Context, id string) error {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).DeleteBackend(ctx, id)
+	return runtimetypes.New(tx).DeleteBackend(ctx, id)
 }
 
-func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Backend, error) {
+func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Backend, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).ListBackends(ctx, createdAtCursor, limit)
+	return runtimetypes.New(tx).ListBackends(ctx, createdAtCursor, limit)
 }
 
-func validate(backend *store.Backend) error {
+func validate(backend *runtimetypes.Backend) error {
 	if backend.Name == "" {
 		return fmt.Errorf("%w: name is required", ErrInvalidBackend)
 	}

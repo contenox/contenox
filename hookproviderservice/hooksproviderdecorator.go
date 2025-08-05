@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/contenox/activitytracker"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 // activityTrackerDecorator implementation
@@ -15,7 +15,7 @@ type activityTrackerDecorator struct {
 	tracker activitytracker.ActivityTracker
 }
 
-func (d *activityTrackerDecorator) Create(ctx context.Context, hook *store.RemoteHook) error {
+func (d *activityTrackerDecorator) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"create",
@@ -48,7 +48,7 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, hook *store.Remot
 	return err
 }
 
-func (d *activityTrackerDecorator) Get(ctx context.Context, id string) (*store.RemoteHook, error) {
+func (d *activityTrackerDecorator) Get(ctx context.Context, id string) (*runtimetypes.RemoteHook, error) {
 	_, _, endFn := d.tracker.Start(
 		ctx,
 		"get",
@@ -60,7 +60,7 @@ func (d *activityTrackerDecorator) Get(ctx context.Context, id string) (*store.R
 	return d.service.Get(ctx, id)
 }
 
-func (d *activityTrackerDecorator) GetByName(ctx context.Context, name string) (*store.RemoteHook, error) {
+func (d *activityTrackerDecorator) GetByName(ctx context.Context, name string) (*runtimetypes.RemoteHook, error) {
 	_, _, endFn := d.tracker.Start(
 		ctx,
 		"get_by_name",
@@ -72,7 +72,7 @@ func (d *activityTrackerDecorator) GetByName(ctx context.Context, name string) (
 	return d.service.GetByName(ctx, name)
 }
 
-func (d *activityTrackerDecorator) Update(ctx context.Context, hook *store.RemoteHook) error {
+func (d *activityTrackerDecorator) Update(ctx context.Context, hook *runtimetypes.RemoteHook) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"update",
@@ -130,7 +130,7 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, id string) error 
 	return err
 }
 
-func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.RemoteHook, error) {
+func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.RemoteHook, error) {
 	_, _, endFn := d.tracker.Start(
 		ctx,
 		"list",

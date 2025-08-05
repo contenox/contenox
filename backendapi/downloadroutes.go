@@ -9,7 +9,7 @@ import (
 
 	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/downloadservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 func AddQueueRoutes(mux *http.ServeMux, dwService downloadservice.Service) {
@@ -66,7 +66,7 @@ func (s *downloadManager) inProgress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a channel to receive progress statuses.
-	statusCh := make(chan *store.Status)
+	statusCh := make(chan *runtimetypes.Status)
 
 	// Use a separate goroutine to subscribe and push updates into statusCh.
 	go func() {

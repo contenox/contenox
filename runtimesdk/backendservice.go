@@ -11,7 +11,7 @@ import (
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 // HTTPBackendService implements the backendservice.Service interface
@@ -39,7 +39,7 @@ func NewHTTPBackendService(baseURL, token string, client *http.Client) backendse
 }
 
 // Create implements backendservice.Service.Create
-func (s *HTTPBackendService) Create(ctx context.Context, backend *store.Backend) error {
+func (s *HTTPBackendService) Create(ctx context.Context, backend *runtimetypes.Backend) error {
 	rUrl := s.baseURL + "/backends"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", rUrl, nil)
@@ -80,7 +80,7 @@ func (s *HTTPBackendService) Create(ctx context.Context, backend *store.Backend)
 }
 
 // Get implements backendservice.Service.Get
-func (s *HTTPBackendService) Get(ctx context.Context, id string) (*store.Backend, error) {
+func (s *HTTPBackendService) Get(ctx context.Context, id string) (*runtimetypes.Backend, error) {
 	url := fmt.Sprintf("%s/backends/%s", s.baseURL, id)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -119,7 +119,7 @@ func (s *HTTPBackendService) Get(ctx context.Context, id string) (*store.Backend
 	}
 
 	// Convert to store.Backend
-	backend := &store.Backend{
+	backend := &runtimetypes.Backend{
 		ID:        apiResponse.ID,
 		Name:      apiResponse.Name,
 		BaseURL:   apiResponse.BaseURL,
@@ -132,7 +132,7 @@ func (s *HTTPBackendService) Get(ctx context.Context, id string) (*store.Backend
 }
 
 // Update implements backendservice.Service.Update
-func (s *HTTPBackendService) Update(ctx context.Context, backend *store.Backend) error {
+func (s *HTTPBackendService) Update(ctx context.Context, backend *runtimetypes.Backend) error {
 	url := fmt.Sprintf("%s/backends/%s", s.baseURL, backend.ID)
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
@@ -201,7 +201,7 @@ func (s *HTTPBackendService) Delete(ctx context.Context, id string) error {
 }
 
 // List implements backendservice.Service.List
-func (s *HTTPBackendService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Backend, error) {
+func (s *HTTPBackendService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Backend, error) {
 	url := fmt.Sprintf("%s/backends?limit=%d", s.baseURL, limit)
 	if createdAtCursor != nil {
 		url += "&cursor=" + createdAtCursor.Format(time.RFC3339Nano)
@@ -243,9 +243,9 @@ func (s *HTTPBackendService) List(ctx context.Context, createdAtCursor *time.Tim
 	}
 
 	// Convert to []*store.Backend
-	backends := make([]*store.Backend, 0, len(apiResponses))
+	backends := make([]*runtimetypes.Backend, 0, len(apiResponses))
 	for _, apiResp := range apiResponses {
-		backends = append(backends, &store.Backend{
+		backends = append(backends, &runtimetypes.Backend{
 			ID:        apiResp.ID,
 			Name:      apiResp.Name,
 			BaseURL:   apiResp.BaseURL,

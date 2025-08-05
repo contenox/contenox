@@ -1,19 +1,19 @@
-package store_test
+package runtimetypes_test
 
 import (
 	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUnit_JobQueue_AppendJobAndPopAll(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	job := &store.Job{
+	job := &runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "test-task",
 		Payload:      []byte(`{"key": "value"}`),
@@ -40,16 +40,16 @@ func TestUnit_JobQueue_AppendJobAndPopAll(t *testing.T) {
 }
 
 func TestUnit_JobQueue_PopAllForType(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	job1 := &store.Job{
+	job1 := &runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "type-A",
 		Payload:      []byte(`{"foo": "bar"}`),
 		ScheduledFor: 1610000000,
 		ValidUntil:   1610003600,
 	}
-	job2 := &store.Job{
+	job2 := &runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "type-B",
 		Payload:      []byte(`{"hello": "world"}`),
@@ -79,7 +79,7 @@ func TestUnit_JobQueue_PopAllForType(t *testing.T) {
 }
 
 func TestUnit_JobQueue_PopAllEmptyQueue(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	jobs, err := s.PopAllJobs(ctx)
 	require.NoError(t, err)
@@ -87,7 +87,7 @@ func TestUnit_JobQueue_PopAllEmptyQueue(t *testing.T) {
 }
 
 func TestUnit_JobQueue_PopAllForTypeEmpty(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	jobs, err := s.PopJobsForType(ctx, "non-existent-type")
 	require.NoError(t, err)
@@ -95,7 +95,7 @@ func TestUnit_JobQueue_PopAllForTypeEmpty(t *testing.T) {
 }
 
 func TestUnit_JobQueue_PopOneForType(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Prepare valid JSON payloads.
 	job1Payload, _ := json.Marshal(map[string]string{"data": "job1"})
@@ -103,21 +103,21 @@ func TestUnit_JobQueue_PopOneForType(t *testing.T) {
 	job3Payload, _ := json.Marshal(map[string]string{"data": "job3"})
 
 	// Insert three jobs: two of type "task-A", one of type "task-B".
-	job1 := store.Job{
+	job1 := runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "task-A",
 		Payload:      job1Payload,
 		ScheduledFor: 1600000000,
 		ValidUntil:   1600003600,
 	}
-	job2 := store.Job{
+	job2 := runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "task-A",
 		Payload:      job2Payload,
 		ScheduledFor: 1600000001,
 		ValidUntil:   1600003601,
 	}
-	job3 := store.Job{
+	job3 := runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "task-B",
 		Payload:      job3Payload,
@@ -165,7 +165,7 @@ func TestUnit_JobQueue_PopOneForType(t *testing.T) {
 }
 
 func TestUnit_JobQueue_GetAllForType(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Prepare valid JSON payloads.
 	payloadA1, err := json.Marshal(map[string]string{"job": "A1"})
@@ -176,21 +176,21 @@ func TestUnit_JobQueue_GetAllForType(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert two jobs of type "task-A" and one job of type "task-B".
-	jobA1 := store.Job{
+	jobA1 := runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "task-A",
 		Payload:      payloadA1,
 		ScheduledFor: 1630000000,
 		ValidUntil:   1630003600,
 	}
-	jobA2 := store.Job{
+	jobA2 := runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "task-A",
 		Payload:      payloadA2,
 		ScheduledFor: 1630000001,
 		ValidUntil:   1630003601,
 	}
-	jobB := store.Job{
+	jobB := runtimetypes.Job{
 		ID:           uuid.New().String(),
 		TaskType:     "task-B",
 		Payload:      payloadB,
@@ -231,8 +231,8 @@ func TestUnit_JobQueue_GetAllForType(t *testing.T) {
 	require.Equal(t, jobB.ValidUntil, jobsB[0].ValidUntil)
 }
 
-func newTestUnit_JobQueue_Job(taskType string) *store.Job {
-	return &store.Job{
+func newTestUnit_JobQueue_Job(taskType string) *runtimetypes.Job {
+	return &runtimetypes.Job{
 		ID:       uuid.New().String(),
 		TaskType: taskType,
 		Payload:  []byte(`{}`),
@@ -240,9 +240,9 @@ func newTestUnit_JobQueue_Job(taskType string) *store.Job {
 }
 
 func TestUnit_JobQueue_ListJobsPagination(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	var jobs []*store.Job
+	var jobs []*runtimetypes.Job
 	var jobIDs []string
 
 	totalJobs := 5

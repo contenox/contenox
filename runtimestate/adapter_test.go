@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/runtimestate"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/ollama/ollama/api"
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +18,7 @@ func TestUnit_ModelProviderAdapter_ReturnsExpectedProviders(t *testing.T) {
 		"backend1": {
 			ID:      "backend1",
 			Name:    "Backend One",
-			Backend: store.Backend{ID: "backend1", Name: "Ollama", Type: "ollama"},
+			Backend: runtimetypes.Backend{ID: "backend1", Name: "Ollama", Type: "ollama"},
 			PulledModels: []api.ListModelResponse{
 				{Name: "Model One", Model: "model1", ModifiedAt: now},
 				{Name: "Model Shared", Model: "shared", ModifiedAt: now},
@@ -27,7 +27,7 @@ func TestUnit_ModelProviderAdapter_ReturnsExpectedProviders(t *testing.T) {
 		"backend2": {
 			ID:      "backend2",
 			Name:    "Backend Two",
-			Backend: store.Backend{ID: "backend2", Name: "Ollama", Type: "ollama"},
+			Backend: runtimetypes.Backend{ID: "backend2", Name: "Ollama", Type: "ollama"},
 			PulledModels: []api.ListModelResponse{
 				{Name: "Model Two", Model: "model2", ModifiedAt: now},
 				{Name: "Model Shared", Model: "shared", ModifiedAt: now},
@@ -73,7 +73,7 @@ func TestUnit_ModelProviderAdapter_SetsCorrectModelCapabilities(t *testing.T) {
 		backendID: {
 			ID:      backendID,
 			Name:    "Test Backend",
-			Backend: store.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
+			Backend: runtimetypes.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
 			PulledModels: []api.ListModelResponse{
 				{Name: chatModelName, Model: chatModelName, ModifiedAt: now},
 				{Name: embedModelName, Model: embedModelName, ModifiedAt: now},

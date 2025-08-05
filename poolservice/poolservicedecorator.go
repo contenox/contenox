@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/contenox/activitytracker"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 type activityTrackerDecorator struct {
@@ -14,7 +14,7 @@ type activityTrackerDecorator struct {
 	tracker activitytracker.ActivityTracker
 }
 
-func (d *activityTrackerDecorator) Create(ctx context.Context, pool *store.Pool) error {
+func (d *activityTrackerDecorator) Create(ctx context.Context, pool *runtimetypes.Pool) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"create",
@@ -37,7 +37,7 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, pool *store.Pool)
 	return err
 }
 
-func (d *activityTrackerDecorator) GetByID(ctx context.Context, id string) (*store.Pool, error) {
+func (d *activityTrackerDecorator) GetByID(ctx context.Context, id string) (*runtimetypes.Pool, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"read",
@@ -54,7 +54,7 @@ func (d *activityTrackerDecorator) GetByID(ctx context.Context, id string) (*sto
 	return pool, err
 }
 
-func (d *activityTrackerDecorator) GetByName(ctx context.Context, name string) (*store.Pool, error) {
+func (d *activityTrackerDecorator) GetByName(ctx context.Context, name string) (*runtimetypes.Pool, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"read",
@@ -71,7 +71,7 @@ func (d *activityTrackerDecorator) GetByName(ctx context.Context, name string) (
 	return pool, err
 }
 
-func (d *activityTrackerDecorator) Update(ctx context.Context, pool *store.Pool) error {
+func (d *activityTrackerDecorator) Update(ctx context.Context, pool *runtimetypes.Pool) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"update",
@@ -113,7 +113,7 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, id string) error 
 	return err
 }
 
-func (d *activityTrackerDecorator) ListAll(ctx context.Context) ([]*store.Pool, error) {
+func (d *activityTrackerDecorator) ListAll(ctx context.Context) ([]*runtimetypes.Pool, error) {
 	reportErrFn, _, endFn := d.tracker.Start(ctx, "list", "pools")
 	defer endFn()
 
@@ -125,7 +125,7 @@ func (d *activityTrackerDecorator) ListAll(ctx context.Context) ([]*store.Pool, 
 	return pools, err
 }
 
-func (d *activityTrackerDecorator) ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*store.Pool, error) {
+func (d *activityTrackerDecorator) ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Pool, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"list",
@@ -188,7 +188,7 @@ func (d *activityTrackerDecorator) RemoveBackend(ctx context.Context, poolID, ba
 	return err
 }
 
-func (d *activityTrackerDecorator) ListBackends(ctx context.Context, poolID string) ([]*store.Backend, error) {
+func (d *activityTrackerDecorator) ListBackends(ctx context.Context, poolID string) ([]*runtimetypes.Backend, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"read",
@@ -205,7 +205,7 @@ func (d *activityTrackerDecorator) ListBackends(ctx context.Context, poolID stri
 	return backends, err
 }
 
-func (d *activityTrackerDecorator) ListPoolsForBackend(ctx context.Context, backendID string) ([]*store.Pool, error) {
+func (d *activityTrackerDecorator) ListPoolsForBackend(ctx context.Context, backendID string) ([]*runtimetypes.Pool, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"read",
@@ -266,7 +266,7 @@ func (d *activityTrackerDecorator) RemoveModel(ctx context.Context, poolID, mode
 	return err
 }
 
-func (d *activityTrackerDecorator) ListModels(ctx context.Context, poolID string) ([]*store.Model, error) {
+func (d *activityTrackerDecorator) ListModels(ctx context.Context, poolID string) ([]*runtimetypes.Model, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"read",
@@ -283,7 +283,7 @@ func (d *activityTrackerDecorator) ListModels(ctx context.Context, poolID string
 	return models, err
 }
 
-func (d *activityTrackerDecorator) ListPoolsForModel(ctx context.Context, modelID string) ([]*store.Pool, error) {
+func (d *activityTrackerDecorator) ListPoolsForModel(ctx context.Context, modelID string) ([]*runtimetypes.Pool, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"read",

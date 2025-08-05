@@ -12,7 +12,7 @@ import (
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/downloadservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 // HTTPDownloadService implements the downloadservice.Service interface
@@ -133,7 +133,7 @@ func (s *HTTPDownloadService) RemoveDownloadFromQueue(ctx context.Context, model
 }
 
 // DownloadInProgress implements downloadservice.Service.DownloadInProgress
-func (s *HTTPDownloadService) DownloadInProgress(ctx context.Context, statusCh chan<- *store.Status) error {
+func (s *HTTPDownloadService) DownloadInProgress(ctx context.Context, statusCh chan<- *runtimetypes.Status) error {
 	url := s.baseURL + "/queue/inProgress"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -188,7 +188,7 @@ func (s *HTTPDownloadService) DownloadInProgress(ctx context.Context, statusCh c
 			jsonData := line[6 : len(line)-1]
 
 			// Parse JSON into store.Status
-			var status store.Status
+			var status runtimetypes.Status
 			if err := json.Unmarshal(jsonData, &status); err != nil {
 				// Skip malformed events but continue processing the stream
 				continue

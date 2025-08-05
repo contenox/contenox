@@ -1,4 +1,4 @@
-package store_test
+package runtimetypes_test
 
 import (
 	"errors"
@@ -8,15 +8,15 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	hook := &store.RemoteHook{
+	hook := &runtimetypes.RemoteHook{
 		ID:          uuid.New().String(),
 		Name:        "test-hook",
 		EndpointURL: "https://example.com/hook",
@@ -46,9 +46,9 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_Update(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	original := &store.RemoteHook{
+	original := &runtimetypes.RemoteHook{
 		ID:          uuid.New().String(),
 		Name:        "original-hook",
 		EndpointURL: "https://original.com",
@@ -79,9 +79,9 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_Delete(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	hook := &store.RemoteHook{
+	hook := &runtimetypes.RemoteHook{
 		ID:          uuid.New().String(),
 		Name:        "hook-to-delete",
 		EndpointURL: "https://delete.com",
@@ -102,10 +102,10 @@ func TestUnit_RemoteHooks_Delete(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_List(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Create multiple hooks with slight delay
-	hooks := []*store.RemoteHook{
+	hooks := []*runtimetypes.RemoteHook{
 		{
 			ID:          uuid.New().String(),
 			Name:        "hook-1",
@@ -146,12 +146,12 @@ func TestUnit_RemoteHooks_List(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_ListPagination(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Create 5 hooks with a small delay to ensure distinct creation times.
-	var createdHooks []*store.RemoteHook
+	var createdHooks []*runtimetypes.RemoteHook
 	for i := 0; i < 5; i++ {
-		hook := &store.RemoteHook{
+		hook := &runtimetypes.RemoteHook{
 			ID:          uuid.New().String(),
 			Name:        fmt.Sprintf("pagination-hook-%d", i),
 			EndpointURL: "https://example.com",
@@ -165,7 +165,7 @@ func TestUnit_RemoteHooks_ListPagination(t *testing.T) {
 	}
 
 	// Paginate through the results with a limit of 2.
-	var receivedHooks []*store.RemoteHook
+	var receivedHooks []*runtimetypes.RemoteHook
 	var lastCursor *time.Time
 	limit := 2
 
@@ -208,9 +208,9 @@ func TestUnit_RemoteHooks_ListPagination(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_UniqueNameConstraint(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	hook1 := &store.RemoteHook{
+	hook1 := &runtimetypes.RemoteHook{
 		ID:          uuid.New().String(),
 		Name:        "unique-hook",
 		EndpointURL: "https://unique1.com",
@@ -231,7 +231,7 @@ func TestUnit_RemoteHooks_UniqueNameConstraint(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_NotFoundCases(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	t.Run("get_by_id_not_found", func(t *testing.T) {
 		_, err := s.GetRemoteHook(ctx, uuid.New().String())
@@ -246,7 +246,7 @@ func TestUnit_RemoteHooks_NotFoundCases(t *testing.T) {
 	})
 
 	t.Run("update_non_existent", func(t *testing.T) {
-		hook := &store.RemoteHook{ID: uuid.New().String()}
+		hook := &runtimetypes.RemoteHook{ID: uuid.New().String()}
 		err := s.UpdateRemoteHook(ctx, hook)
 		require.Error(t, err)
 	})
@@ -258,9 +258,9 @@ func TestUnit_RemoteHooks_NotFoundCases(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_UpdateNonExistent(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
-	hook := &store.RemoteHook{
+	hook := &runtimetypes.RemoteHook{
 		ID:          uuid.New().String(), // Doesn't exist
 		Name:        "non-existent",
 		EndpointURL: "https://update.com",
@@ -274,7 +274,7 @@ func TestUnit_RemoteHooks_UpdateNonExistent(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_ListEmpty(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	hooks, err := s.ListRemoteHooks(ctx, nil, 100)
 	require.NoError(t, err)
@@ -282,10 +282,10 @@ func TestUnit_RemoteHooks_ListEmpty(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_ConcurrentUpdates(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Create initial hook
-	hook := &store.RemoteHook{
+	hook := &runtimetypes.RemoteHook{
 		ID:          uuid.New().String(),
 		Name:        "concurrent-hook",
 		EndpointURL: "https://concurrent.com",
@@ -326,10 +326,10 @@ func TestUnit_RemoteHooks_ConcurrentUpdates(t *testing.T) {
 }
 
 func TestUnit_RemoteHooks_DeleteCascade(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	// Create hook
-	hook := &store.RemoteHook{
+	hook := &runtimetypes.RemoteHook{
 		ID:          uuid.New().String(),
 		Name:        "cascade-test",
 		EndpointURL: "https://cascade.com",

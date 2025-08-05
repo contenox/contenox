@@ -13,7 +13,7 @@ import (
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/ollamatokenizer"
 	"github.com/contenox/runtime/runtimestate"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 const (
@@ -98,8 +98,8 @@ func NewExecRepo(ctx context.Context, config *Config, dbInstance libdb.DBManager
 }
 
 type modelManager struct {
-	pool       *store.Pool
-	model      *store.Model
+	pool       *runtimetypes.Pool
+	model      *runtimetypes.Model
 	dbInstance libdb.DBManager
 	runtime    *runtimestate.State
 	tokenizer  ollamatokenizer.Tokenizer
@@ -114,7 +114,7 @@ func (e *modelManager) GetRuntime(ctx context.Context) llmresolver.ProviderFromR
 }
 
 func (e *modelManager) GetDefaultSystemProvider(ctx context.Context) (libmodelprovider.Provider, error) {
-	backends := map[string]store.Backend{}
+	backends := map[string]runtimetypes.Backend{}
 
 	for _, v := range e.runtime.Get(ctx) {
 		ok, err := e.backendIsInPool(ctx, v.Backend)
@@ -161,8 +161,8 @@ func (e *modelManager) GetTokenizer(ctx context.Context, modelName string) (Toke
 	}, nil
 }
 
-func (e *modelManager) backendIsInPool(ctx context.Context, backendToVerify store.Backend) (bool, error) {
-	backendsConfiguredInPool, err := store.New(e.dbInstance.WithoutTransaction()).ListBackendsForPool(ctx, e.pool.ID)
+func (e *modelManager) backendIsInPool(ctx context.Context, backendToVerify runtimetypes.Backend) (bool, error) {
+	backendsConfiguredInPool, err := runtimetypes.New(e.dbInstance.WithoutTransaction()).ListBackendsForPool(ctx, e.pool.ID)
 	if err != nil {
 		return false, fmt.Errorf("failed to list backends for pool %s: %w", e.pool.ID, err)
 	}
@@ -176,7 +176,7 @@ func (e *modelManager) backendIsInPool(ctx context.Context, backendToVerify stor
 }
 
 func (e *modelManager) GetAvailableProviders(ctx context.Context) ([]libmodelprovider.Provider, error) {
-	backends := map[string]store.Backend{}
+	backends := map[string]runtimetypes.Backend{}
 	for _, v := range e.runtime.Get(ctx) {
 		ok, err := e.backendIsInPool(ctx, v.Backend)
 		if err != nil {
@@ -219,10 +219,10 @@ func (a *tokenizerAdapter) CountTokens(ctx context.Context, prompt string) (int,
 	return a.tokenizer.CountTokens(ctx, a.modelName, prompt)
 }
 
-func initEmbedPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*store.Pool, error) {
-	pool, err := store.New(tx).GetPool(ctx, EmbedPoolID)
+func initEmbedPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Pool, error) {
+	pool, err := runtimetypes.New(tx).GetPool(ctx, EmbedPoolID)
 	if !created && errors.Is(err, libdb.ErrNotFound) {
-		err = store.New(tx).CreatePool(ctx, &store.Pool{
+		err = runtimetypes.New(tx).CreatePool(ctx, &runtimetypes.Pool{
 			ID:          EmbedPoolID,
 			Name:        EmbedPoolName,
 			PurposeType: "Internal Embeddings",
@@ -239,10 +239,10 @@ func initEmbedPool(ctx context.Context, config *Config, tx libdb.Exec, created b
 	return pool, nil
 }
 
-func initTaskPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*store.Pool, error) {
-	pool, err := store.New(tx).GetPool(ctx, TasksPoolID)
+func initTaskPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Pool, error) {
+	pool, err := runtimetypes.New(tx).GetPool(ctx, TasksPoolID)
 	if !created && errors.Is(err, libdb.ErrNotFound) {
-		err = store.New(tx).CreatePool(ctx, &store.Pool{
+		err = runtimetypes.New(tx).CreatePool(ctx, &runtimetypes.Pool{
 			ID:          TasksPoolID,
 			Name:        TasksPoolName,
 			PurposeType: "Internal Tasks",
@@ -259,20 +259,20 @@ func initTaskPool(ctx context.Context, config *Config, tx libdb.Exec, created bo
 	return pool, nil
 }
 
-func initEmbedModel(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*store.Model, error) {
+func initEmbedModel(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Model, error) {
 	tenantID, err := uuid.Parse(config.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	modelID := uuid.NewSHA1(tenantID, []byte(config.EmbedModel))
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 
 	model, err := storeInstance.GetModelByName(ctx, config.EmbedModel)
 	if err != nil && !errors.Is(err, libdb.ErrNotFound) {
 		return nil, fmt.Errorf("get model: %w", err)
 	}
 	if !created && errors.Is(err, libdb.ErrNotFound) {
-		err = storeInstance.AppendModel(ctx, &store.Model{
+		err = storeInstance.AppendModel(ctx, &runtimetypes.Model{
 			Model: config.EmbedModel,
 			ID:    modelID.String(),
 		})
@@ -284,20 +284,20 @@ func initEmbedModel(ctx context.Context, config *Config, tx libdb.Exec, created 
 	return model, nil
 }
 
-func initTaskModel(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*store.Model, error) {
+func initTaskModel(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Model, error) {
 	tenantID, err := uuid.Parse(config.TenantID)
 	if err != nil {
 		return nil, err
 	}
 	modelID := uuid.NewSHA1(tenantID, []byte(config.TaskModel))
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 
 	model, err := storeInstance.GetModelByName(ctx, config.TaskModel)
 	if err != nil && !errors.Is(err, libdb.ErrNotFound) {
 		return nil, fmt.Errorf("get model: %w", err)
 	}
 	if !created && errors.Is(err, libdb.ErrNotFound) {
-		err = storeInstance.AppendModel(ctx, &store.Model{
+		err = storeInstance.AppendModel(ctx, &runtimetypes.Model{
 			Model: config.TaskModel,
 			ID:    modelID.String(),
 		})
@@ -309,8 +309,8 @@ func initTaskModel(ctx context.Context, config *Config, tx libdb.Exec, created b
 	return model, nil
 }
 
-func assignModelToPool(ctx context.Context, _ *Config, tx libdb.Exec, model *store.Model, pool *store.Pool) error {
-	storeInstance := store.New(tx)
+func assignModelToPool(ctx context.Context, _ *Config, tx libdb.Exec, model *runtimetypes.Model, pool *runtimetypes.Pool) error {
+	storeInstance := runtimetypes.New(tx)
 
 	models, err := storeInstance.ListModelsForPool(ctx, pool.ID)
 	if err != nil {

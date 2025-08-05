@@ -10,7 +10,7 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/taskengine"
 )
 
@@ -43,7 +43,7 @@ func (p *PersistentRepo) Exec(
 	}
 
 	// Check remote
-	storeInstance := store.New(p.dbInstance.WithoutTransaction())
+	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
 	remoteHook, err := storeInstance.GetRemoteHookByName(ctx, args.Name)
 	if err != nil {
 		return taskengine.StatusUnknownHookProvider, nil, taskengine.DataTypeAny, transition,
@@ -55,7 +55,7 @@ func (p *PersistentRepo) Exec(
 
 func (p *PersistentRepo) execRemoteHook(
 	ctx context.Context,
-	hook *store.RemoteHook,
+	hook *runtimetypes.RemoteHook,
 	startingTime time.Time,
 	input any,
 	dataType taskengine.DataType,
@@ -146,8 +146,8 @@ func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
 	}
 
 	// Fetch all remote hooks by paginating through the store
-	storeInstance := store.New(p.dbInstance.WithoutTransaction())
-	var remoteHooks []*store.RemoteHook
+	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
+	var remoteHooks []*runtimetypes.RemoteHook
 	var lastCursor *time.Time
 	limit := 100 // A reasonable page size
 

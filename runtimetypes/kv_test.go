@@ -1,4 +1,4 @@
-package store_test
+package runtimetypes_test
 
 import (
 	"encoding/json"
@@ -7,13 +7,13 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 func TestUnitKV(t *testing.T) {
-	ctx, s := store.SetupStore(t)
+	ctx, s := runtimetypes.SetupStore(t)
 
 	type testValue struct {
 		Field1 string `json:"field1"`
@@ -161,7 +161,7 @@ func TestUnitKV(t *testing.T) {
 	t.Run("ListKV_Pagination", func(t *testing.T) {
 		// Create 5 key-value pairs with a small delay to ensure distinct creation times.
 		for i := 0; i < 5; i++ {
-			kv := &store.KV{
+			kv := &runtimetypes.KV{
 				Key:   fmt.Sprintf("pagination-test-%d", i),
 				Value: json.RawMessage(`"value"`),
 			}
@@ -171,7 +171,7 @@ func TestUnitKV(t *testing.T) {
 		}
 
 		// Paginate through the results with a limit of 2.
-		var receivedKVs []*store.KV
+		var receivedKVs []*runtimetypes.KV
 		var lastCursor *time.Time
 		limit := 2
 
@@ -236,7 +236,7 @@ func TestUnitKV(t *testing.T) {
 		defer s.DeleteKV(ctx, otherPrefix)
 
 		// Paginate through the results with a limit of 2, filtering by prefix.
-		var receivedKVs []*store.KV
+		var receivedKVs []*runtimetypes.KV
 		var lastCursor *time.Time
 		limit := 2
 
@@ -328,7 +328,7 @@ func TestUnitKV(t *testing.T) {
 		defer s.DeleteKV(ctx, key)
 
 		// Get the raw value back using the new paginated method
-		var kv *store.KV
+		var kv *runtimetypes.KV
 		kvs, err := s.ListKVPrefix(ctx, key, nil, 1)
 		require.NoError(t, err)
 		require.Len(t, kvs, 1)

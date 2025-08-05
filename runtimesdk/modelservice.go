@@ -12,7 +12,7 @@ import (
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/modelservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 // HTTPModelService implements the modelservice.Service interface
@@ -40,7 +40,7 @@ func NewHTTPModelService(baseURL, token string, client *http.Client) modelservic
 }
 
 // Append implements modelservice.Service.Append
-func (s *HTTPModelService) Append(ctx context.Context, model *store.Model) error {
+func (s *HTTPModelService) Append(ctx context.Context, model *runtimetypes.Model) error {
 	url := s.baseURL + "/models"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
@@ -82,7 +82,7 @@ func (s *HTTPModelService) Append(ctx context.Context, model *store.Model) error
 }
 
 // List implements modelservice.Service.List
-func (s *HTTPModelService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Model, error) {
+func (s *HTTPModelService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Model, error) {
 	// Build URL with query parameters
 	rUrl := fmt.Sprintf("%s/models?limit=%d", s.baseURL, limit)
 	if createdAtCursor != nil {
@@ -129,10 +129,10 @@ func (s *HTTPModelService) List(ctx context.Context, createdAtCursor *time.Time,
 	}
 
 	// Convert to []*store.Model
-	models := make([]*store.Model, 0, len(response.Data))
+	models := make([]*runtimetypes.Model, 0, len(response.Data))
 	for _, openAIModel := range response.Data {
 		createdAt := time.Unix(openAIModel.Created, 0)
-		models = append(models, &store.Model{
+		models = append(models, &runtimetypes.Model{
 			ID:        openAIModel.ID,
 			Model:     openAIModel.ID,
 			CreatedAt: createdAt,

@@ -9,7 +9,7 @@ import (
 
 	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/hookproviderservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 func AddRemoteHookRoutes(mux *http.ServeMux, service hookproviderservice.Service) {
@@ -29,7 +29,7 @@ type remoteHookService struct {
 func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	hook, err := serverops.Decode[store.RemoteHook](r)
+	hook, err := serverops.Decode[runtimetypes.RemoteHook](r)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -94,7 +94,7 @@ func (s *remoteHookService) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := url.PathEscape(r.PathValue("id"))
 
-	hook, err := serverops.Decode[store.RemoteHook](r)
+	hook, err := serverops.Decode[runtimetypes.RemoteHook](r)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
 		return

@@ -9,7 +9,7 @@ import (
 
 	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/poolservice"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 func AddPoolRoutes(mux *http.ServeMux, poolService poolservice.Service) {
@@ -43,7 +43,7 @@ type poolHandler struct {
 func (h *poolHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	pool, err := serverops.Decode[store.Pool](r)
+	pool, err := serverops.Decode[runtimetypes.Pool](r)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -99,7 +99,7 @@ func (h *poolHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pool, err := serverops.Decode[store.Pool](r)
+	pool, err := serverops.Decode[runtimetypes.Pool](r)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
 		return

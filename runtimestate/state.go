@@ -18,7 +18,7 @@ import (
 
 	libbus "github.com/contenox/bus"
 	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 	"github.com/ollama/ollama/api"
 )
 
@@ -28,7 +28,7 @@ type LLMState struct {
 	Name         string                  `json:"name"`
 	Models       []string                `json:"models"`
 	PulledModels []api.ListModelResponse `json:"pulledModels"`
-	Backend      store.Backend           `json:"backend"`
+	Backend      runtimetypes.Backend    `json:"backend"`
 	// Error stores a description of the last encountered error when
 	// interacting with or reconciling this backend's state, if any.
 	Error string `json:"error,omitempty"`
@@ -148,7 +148,7 @@ func (s *State) RunDownloadCycle(ctx context.Context) error {
 				if !ok {
 					return
 				}
-				var queueItem store.Job
+				var queueItem runtimetypes.Job
 				if err := json.Unmarshal(data, &queueItem); err != nil {
 					// log.Println("Error unmarshalling cancel message:", err)
 					continue
@@ -166,7 +166,7 @@ func (s *State) RunDownloadCycle(ctx context.Context) error {
 	}()
 
 	// log.Printf("Processing download job: %+v", item)
-	err = s.dwQueue.downloadModel(ctx, *item, func(status store.Status) error {
+	err = s.dwQueue.downloadModel(ctx, *item, func(status runtimetypes.Status) error {
 		// //log.Printf("Download progress for model %s: %+v", item.Model, status)
 		message, _ := json.Marshal(status)
 		return s.psInstance.Publish(ctx, "model_download", message)
@@ -245,15 +245,15 @@ func (s *State) cleanupStaleBackends(currentIDs map[string]struct{}) error {
 // premature deletion of valid cross-pool backends.
 func (s *State) syncBackendsWithPools(ctx context.Context) error {
 	tx := s.dbInstance.WithoutTransaction()
-	dbStore := store.New(tx)
+	dbStore := runtimetypes.New(tx)
 
 	allPools, err := dbStore.ListAllPools(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching pools: %v", err)
 	}
 
-	allBackendObjects := make(map[string]*store.Backend)
-	backendToAggregatedModels := make(map[string]map[string]*store.Model)
+	allBackendObjects := make(map[string]*runtimetypes.Backend)
+	backendToAggregatedModels := make(map[string]map[string]*runtimetypes.Model)
 	activeBackendIDs := make(map[string]struct{})
 
 	for _, pool := range allPools {
@@ -273,7 +273,7 @@ func (s *State) syncBackendsWithPools(ctx context.Context) error {
 				allBackendObjects[backend.ID] = backend
 			}
 			if _, exists := backendToAggregatedModels[backend.ID]; !exists {
-				backendToAggregatedModels[backend.ID] = make(map[string]*store.Model)
+				backendToAggregatedModels[backend.ID] = make(map[string]*runtimetypes.Model)
 			}
 			for _, model := range poolModels {
 				backendToAggregatedModels[backend.ID][model.Model] = model
@@ -283,7 +283,7 @@ func (s *State) syncBackendsWithPools(ctx context.Context) error {
 
 	// Now, process each unique backend once with its fully aggregated list of models.
 	for backendID, backendObj := range allBackendObjects {
-		modelsForThisBackend := make([]*store.Model, 0, len(backendToAggregatedModels[backendID]))
+		modelsForThisBackend := make([]*runtimetypes.Model, 0, len(backendToAggregatedModels[backendID]))
 		for _, model := range backendToAggregatedModels[backendID] {
 			modelsForThisBackend = append(modelsForThisBackend, model)
 		}
@@ -303,7 +303,7 @@ func (s *State) syncBackendsWithPools(ctx context.Context) error {
 // behavior by operating on the global backend/model lists.
 func (s *State) syncBackends(ctx context.Context) error {
 	tx := s.dbInstance.WithoutTransaction()
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 
 	backends, err := storeInstance.ListAllBackends(ctx)
 	if err != nil {
@@ -311,7 +311,7 @@ func (s *State) syncBackends(ctx context.Context) error {
 	}
 
 	// Paginate through all models
-	var allModels []*store.Model
+	var allModels []*runtimetypes.Model
 	var cursor *time.Time
 	limit := 100 // Use a reasonable page size
 	for {
@@ -337,7 +337,7 @@ func (s *State) syncBackends(ctx context.Context) error {
 }
 
 // Helper method to process backends and collect their IDs
-func (s *State) processBackends(ctx context.Context, backends []*store.Backend, models []*store.Model, currentIDs map[string]struct{}) {
+func (s *State) processBackends(ctx context.Context, backends []*runtimetypes.Backend, models []*runtimetypes.Model, currentIDs map[string]struct{}) {
 	for _, backend := range backends {
 		currentIDs[backend.ID] = struct{}{}
 		s.processBackend(ctx, backend, models)
@@ -349,7 +349,7 @@ func (s *State) processBackends(ctx context.Context, backends []*store.Backend, 
 // It updates the internal state map with the results of the processing,
 // including any errors encountered for unsupported types.
 // Helper method to process backends and collect their IDs
-func (s *State) processBackend(ctx context.Context, backend *store.Backend, declaredModels []*store.Model) {
+func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backend, declaredModels []*runtimetypes.Model) {
 	switch strings.ToLower(backend.Type) {
 	case "ollama":
 		s.processOllamaBackend(ctx, backend, declaredModels)
@@ -378,7 +378,7 @@ func (s *State) processBackend(ctx context.Context, backend *store.Backend, decl
 // - Initiates deletion for models present on the instance but not declared in the config.
 // Finally, it updates the internal state map with the latest observed list of pulled models
 // and any communication errors encountered.
-func (s *State) processOllamaBackend(ctx context.Context, backend *store.Backend, declaredOllamaModels []*store.Model) {
+func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.Backend, declaredOllamaModels []*runtimetypes.Model) {
 	// log.Printf("Processing Ollama backend for ID %s with declared models: %+v", backend.ID, declaredOllamaModels)
 
 	models := []string{}
@@ -506,7 +506,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *store.Backend
 // processVLLMBackend handles the state reconciliation for a single vLLM backend.
 // Since vLLM instances typically serve a single model, we verify that the running model
 // matches one of the models assigned to the backend through its pools.
-func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, _ []*store.Model) {
+func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
 	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 5 * time.Second,
@@ -611,7 +611,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *store.Backend, 
 	})
 }
 
-func (s *State) processGeminiBackend(ctx context.Context, backend *store.Backend, _ []*store.Model) {
+func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
 	stateInstance := &LLMState{
 		ID:           backend.ID,
 		Name:         backend.Name,
@@ -622,7 +622,7 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *store.Backend
 
 	// Retrieve API key configuration
 	cfg := ProviderConfig{}
-	storeInstance := store.New(s.dbInstance.WithoutTransaction())
+	storeInstance := runtimetypes.New(s.dbInstance.WithoutTransaction())
 	if err := storeInstance.GetKV(ctx, GeminiKey, &cfg); err != nil {
 		if errors.Is(err, libdb.ErrNotFound) {
 			stateInstance.Error = "API key not configured"
@@ -701,7 +701,7 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *store.Backend
 	s.state.Store(backend.ID, stateInstance)
 }
 
-func (s *State) processOpenAIBackend(ctx context.Context, backend *store.Backend, _ []*store.Model) {
+func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
 	stateInstance := &LLMState{
 		ID:           backend.ID,
 		Name:         backend.Name,
@@ -711,7 +711,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *store.Backend
 
 	// Retrieve API key configuration
 	cfg := ProviderConfig{}
-	storeInstance := store.New(s.dbInstance.WithoutTransaction())
+	storeInstance := runtimetypes.New(s.dbInstance.WithoutTransaction())
 	if err := storeInstance.GetKV(ctx, OpenaiKey, &cfg); err != nil {
 		if errors.Is(err, libdb.ErrNotFound) {
 			stateInstance.Error = "API key not configured"

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/contenox/activitytracker"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 type activityTrackerDecorator struct {
@@ -14,7 +14,7 @@ type activityTrackerDecorator struct {
 	tracker activitytracker.ActivityTracker
 }
 
-func (d *activityTrackerDecorator) Create(ctx context.Context, backend *store.Backend) error {
+func (d *activityTrackerDecorator) Create(ctx context.Context, backend *runtimetypes.Backend) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"create",
@@ -39,7 +39,7 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, backend *store.Ba
 	return err
 }
 
-func (d *activityTrackerDecorator) Get(ctx context.Context, id string) (*store.Backend, error) {
+func (d *activityTrackerDecorator) Get(ctx context.Context, id string) (*runtimetypes.Backend, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"read",
@@ -56,7 +56,7 @@ func (d *activityTrackerDecorator) Get(ctx context.Context, id string) (*store.B
 	return backend, err
 }
 
-func (d *activityTrackerDecorator) Update(ctx context.Context, backend *store.Backend) error {
+func (d *activityTrackerDecorator) Update(ctx context.Context, backend *runtimetypes.Backend) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"update",
@@ -99,7 +99,7 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, id string) error 
 	return err
 }
 
-func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Backend, error) {
+func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Backend, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"list",

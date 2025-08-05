@@ -9,7 +9,7 @@ import (
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/runtimestate"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 const (
@@ -50,7 +50,7 @@ func (s *service) SetProviderConfig(ctx context.Context, providerType string, re
 	}
 	defer r()
 
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 	count, err := storeInstance.EstimateKVCount(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to estimate KV count: %w", err)
@@ -91,7 +91,7 @@ func (s *service) SetProviderConfig(ctx context.Context, providerType string, re
 	}
 
 	// Upsert backend configuration
-	backend := &store.Backend{
+	backend := &runtimetypes.Backend{
 		ID:      providerType,
 		Name:    providerType,
 		BaseURL: backendURL,
@@ -118,7 +118,7 @@ func (s *service) GetProviderConfig(ctx context.Context, providerType string) (*
 	tx := s.dbInstance.WithoutTransaction()
 	var config runtimestate.ProviderConfig
 	key := runtimestate.ProviderKeyPrefix + providerType
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 	err := storeInstance.GetKV(ctx, key, &config)
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func (s *service) GetProviderConfig(ctx context.Context, providerType string) (*
 
 func (s *service) DeleteProviderConfig(ctx context.Context, providerType string) error {
 	tx := s.dbInstance.WithoutTransaction()
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 
 	key := runtimestate.ProviderKeyPrefix + providerType
 	return storeInstance.DeleteKV(ctx, key)
@@ -136,7 +136,7 @@ func (s *service) DeleteProviderConfig(ctx context.Context, providerType string)
 
 func (s *service) ListProviderConfigs(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimestate.ProviderConfig, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 
 	kvs, err := storeInstance.ListKVPrefix(ctx, runtimestate.ProviderKeyPrefix, createdAtCursor, limit)
 	if err != nil {

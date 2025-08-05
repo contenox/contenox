@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/contenox/activitytracker"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 type activityTrackerDecorator struct {
@@ -14,7 +14,7 @@ type activityTrackerDecorator struct {
 	tracker activitytracker.ActivityTracker
 }
 
-func (d *activityTrackerDecorator) Append(ctx context.Context, model *store.Model) error {
+func (d *activityTrackerDecorator) Append(ctx context.Context, model *runtimetypes.Model) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"create",
@@ -35,7 +35,7 @@ func (d *activityTrackerDecorator) Append(ctx context.Context, model *store.Mode
 	return err
 }
 
-func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.Model, error) {
+func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Model, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"list",

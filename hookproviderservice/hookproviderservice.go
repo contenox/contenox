@@ -8,7 +8,7 @@ import (
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/store"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 var (
@@ -16,12 +16,12 @@ var (
 )
 
 type Service interface {
-	Create(ctx context.Context, hook *store.RemoteHook) error
-	Get(ctx context.Context, id string) (*store.RemoteHook, error)
-	GetByName(ctx context.Context, name string) (*store.RemoteHook, error)
-	Update(ctx context.Context, hook *store.RemoteHook) error
+	Create(ctx context.Context, hook *runtimetypes.RemoteHook) error
+	Get(ctx context.Context, id string) (*runtimetypes.RemoteHook, error)
+	GetByName(ctx context.Context, name string) (*runtimetypes.RemoteHook, error)
+	Update(ctx context.Context, hook *runtimetypes.RemoteHook) error
 	Delete(ctx context.Context, id string) error
-	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.RemoteHook, error)
+	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.RemoteHook, error)
 }
 
 type service struct {
@@ -34,12 +34,12 @@ func New(dbInstance libdb.DBManager) Service {
 	}
 }
 
-func (s *service) Create(ctx context.Context, hook *store.RemoteHook) error {
+func (s *service) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {
 	if err := validate(hook); err != nil {
 		return err
 	}
 	tx := s.dbInstance.WithoutTransaction()
-	storeInstance := store.New(tx)
+	storeInstance := runtimetypes.New(tx)
 	count, err := storeInstance.EstimateRemoteHookCount(ctx)
 	if err != nil {
 		return err
@@ -51,35 +51,35 @@ func (s *service) Create(ctx context.Context, hook *store.RemoteHook) error {
 	return storeInstance.CreateRemoteHook(ctx, hook)
 }
 
-func (s *service) Get(ctx context.Context, id string) (*store.RemoteHook, error) {
+func (s *service) Get(ctx context.Context, id string) (*runtimetypes.RemoteHook, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).GetRemoteHook(ctx, id)
+	return runtimetypes.New(tx).GetRemoteHook(ctx, id)
 }
 
-func (s *service) GetByName(ctx context.Context, name string) (*store.RemoteHook, error) {
+func (s *service) GetByName(ctx context.Context, name string) (*runtimetypes.RemoteHook, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).GetRemoteHookByName(ctx, name)
+	return runtimetypes.New(tx).GetRemoteHookByName(ctx, name)
 }
 
-func (s *service) Update(ctx context.Context, hook *store.RemoteHook) error {
+func (s *service) Update(ctx context.Context, hook *runtimetypes.RemoteHook) error {
 	if err := validate(hook); err != nil {
 		return err
 	}
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).UpdateRemoteHook(ctx, hook)
+	return runtimetypes.New(tx).UpdateRemoteHook(ctx, hook)
 }
 
 func (s *service) Delete(ctx context.Context, id string) error {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).DeleteRemoteHook(ctx, id)
+	return runtimetypes.New(tx).DeleteRemoteHook(ctx, id)
 }
 
-func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*store.RemoteHook, error) {
+func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.RemoteHook, error) {
 	tx := s.dbInstance.WithoutTransaction()
-	return store.New(tx).ListRemoteHooks(ctx, createdAtCursor, limit)
+	return runtimetypes.New(tx).ListRemoteHooks(ctx, createdAtCursor, limit)
 }
 
-func validate(hook *store.RemoteHook) error {
+func validate(hook *runtimetypes.RemoteHook) error {
 	switch {
 	case hook.Name == "":
 		return fmt.Errorf("%w %w: name is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
