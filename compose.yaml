@@ -17,7 +17,6 @@ services:
       - SECURITY_ENABLED=true
       - TOKENIZER_SERVICE_URL=http://tokenizer:50051
       - EMBED_MODEL=nomic-embed-text:latest
-      - WORKER_USER_EMAIL=worker@example.com
       - TASK_MODEL=qwen3:4b
       - KV_HOST=valkey:6379
     depends_on:
