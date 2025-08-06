@@ -434,9 +434,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 			_, reportChangeFinal, endFinal := exe.tracker.Start(
 				ctx,
 				"chain_complete",
-				"chain",
-				"final_output", finalOutput,
-			)
+				"chain")
 			defer endFinal()
 			reportChangeFinal("chain", finalOutput)
 			break
