@@ -22,6 +22,7 @@ func AddExecRoutes(mux *http.ServeMux, promptService execservice.ExecService, ta
 	mux.HandleFunc("POST /tasks", f.tasks)
 	mux.HandleFunc("GET /supported", f.supported)
 	mux.HandleFunc("POST /embed", f.embed)
+	mux.HandleFunc("GET /defaultmodel", f.defaultModel)
 }
 
 type taskManager struct {
@@ -255,4 +256,18 @@ func (tm *taskManager) embed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = serverops.Encode(w, r, http.StatusOK, EmbedResponse{Vector: vector})
+}
+
+type DefaultModelResponse struct {
+	ModelName string `json:"modelName"`
+}
+
+func (tm *taskManager) defaultModel(w http.ResponseWriter, r *http.Request) {
+	modelName, err := tm.embedService.DefaultModelName(r.Context())
+	if err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("failed to get default model: %w", err), serverops.GetOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, DefaultModelResponse{ModelName: modelName})
 }

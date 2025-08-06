@@ -83,3 +83,40 @@ func (s *HTTPEmbedService) Embed(ctx context.Context, text string) ([]float64, e
 
 	return response.Vector, nil
 }
+
+// DefaultModelName implements embedservice.Service.
+func (s *HTTPEmbedService) DefaultModelName(ctx context.Context) (string, error) {
+	url := s.baseURL + "/defaultmodel"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Handle non-200 responses
+	if resp.StatusCode != http.StatusOK {
+		return "", apiframework.HandleAPIError(resp)
+	}
+
+	// Parse response
+	var response struct {
+		ModelName string `json:"modelName"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return response.ModelName, nil
+}

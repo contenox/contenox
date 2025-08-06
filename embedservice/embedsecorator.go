@@ -12,6 +12,26 @@ type activityTrackerDecorator struct {
 	tracker activitytracker.ActivityTracker
 }
 
+// DefaultModelName implements Service.
+func (d *activityTrackerDecorator) DefaultModelName(ctx context.Context) (string, error) {
+	// Start tracking with relevant context
+	reportErr, _, endFn := d.tracker.Start(
+		ctx,
+		"get_default_model",
+		"embedding",
+	)
+	defer endFn()
+
+	// Execute the operation
+	modelName, err := d.service.DefaultModelName(ctx)
+	if err != nil {
+		// Report error with additional context
+		reportErr(fmt.Errorf("failed to get default model: %w", err))
+		return "", err
+	}
+
+	return modelName, nil
+}
 func (d *activityTrackerDecorator) Embed(ctx context.Context, text string) ([]float64, error) {
 	// Start tracking with relevant context
 	reportErr, _, endFn := d.tracker.Start(
@@ -29,22 +49,6 @@ func (d *activityTrackerDecorator) Embed(ctx context.Context, text string) ([]fl
 		reportErr(fmt.Errorf("embedding failed: %w", err))
 		return nil, err
 	}
-
-	// Report successful operation metrics
-	reportChange := func(id string, data any) {
-		// Using "operation" as the ID since there's no natural entity ID
-		d.tracker.Start(
-			ctx,
-			"embed_result",
-			"embedding",
-			"vector_length", len(vector),
-			"text_length", len(text),
-		)
-	}
-	reportChange("operation", map[string]interface{}{
-		"vector_length": len(vector),
-		"text_length":   len(text),
-	})
 
 	return vector, nil
 }

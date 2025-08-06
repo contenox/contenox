@@ -11,6 +11,7 @@ import (
 
 type Service interface {
 	Embed(ctx context.Context, text string) ([]float64, error)
+	DefaultModelName(ctx context.Context) (string, error)
 }
 
 type service struct {
@@ -43,4 +44,13 @@ func (s *service) Embed(ctx context.Context, text string) ([]float64, error) {
 		return nil, fmt.Errorf("embedding failed: %w", err)
 	}
 	return vectorData, nil
+}
+
+// DefaultModelName implements Service.
+func (s *service) DefaultModelName(ctx context.Context) (string, error) {
+	embedProvider, err := s.repo.GetDefaultSystemProvider(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get embedder provider: %w", err)
+	}
+	return embedProvider.ModelName(), nil
 }
