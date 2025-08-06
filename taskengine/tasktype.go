@@ -58,6 +58,24 @@ func (d DataType) MarshalYAML() ([]byte, error) {
 	return yaml.Marshal(d.String())
 }
 
+func (dt DataType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	dt, err := DataTypeFromString(s)
+	return err
+}
+
+func (dt DataType) UnmarshalYAML(data []byte) error {
+	var s string
+	if err := yaml.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	dt, err := DataTypeFromString(s)
+	return err
+}
+
 // TriggerType defines the type of trigger that starts a chain.
 type TriggerType string
 
