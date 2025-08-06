@@ -5,6 +5,7 @@ import (
 
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/downloadservice"
+	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/hookproviderservice"
 	"github.com/contenox/runtime/modelservice"
@@ -24,6 +25,7 @@ type Client struct {
 	ProviderService providerservice.Service
 	DownloadService downloadservice.Service
 	StateService    stateservice.Service
+	EmbedService    embedservice.Service
 }
 
 // Config holds configuration for the SDK client
@@ -44,5 +46,6 @@ func NewClient(config Config, http *http.Client) (*Client, error) {
 		ProviderService: NewHTTPProviderService(config.BaseURL, config.Token, http),
 		DownloadService: NewHTTPDownloadService(config.BaseURL, config.Token, http),
 		StateService:    NewHTTPStateService(config.BaseURL, config.Token, http),
+		EmbedService:    NewHTTPEmbedService(config.BaseURL, config.Token, http),
 	}, nil
 }

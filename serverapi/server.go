@@ -19,6 +19,7 @@ import (
 	"github.com/contenox/runtime/backendapi"
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/downloadservice"
+	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/execapi"
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/hookproviderservice"
@@ -105,7 +106,9 @@ func New(
 	execService := execservice.NewExec(ctx, execmodelrepo, dbInstance)
 	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
 	taskService := execservice.NewTasksEnv(ctx, environmentExec, dbInstance, hookRegistry)
-	execapi.AddExecRoutes(mux, execService, taskService)
+	embedService := embedservice.New(embedder)
+	embedService = embedservice.WithActivityTracker(embedService, serveropsChainedTracker)
+	execapi.AddExecRoutes(mux, execService, taskService, embedService)
 	providerService := providerservice.New(dbInstance)
 	providerService = providerservice.WithActivityTracker(providerService, serveropsChainedTracker)
 	providerapi.AddProviderRoutes(mux, providerService)

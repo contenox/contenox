@@ -7,23 +7,27 @@ import (
 	"strconv"
 
 	serverops "github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/taskengine"
 )
 
-func AddExecRoutes(mux *http.ServeMux, promptService execservice.ExecService, taskService execservice.TasksEnvService) {
+func AddExecRoutes(mux *http.ServeMux, promptService execservice.ExecService, taskService execservice.TasksEnvService, embedService embedservice.Service) {
 	f := &taskManager{
 		promptService: promptService,
 		taskService:   taskService,
+		embedService:  embedService,
 	}
 	mux.HandleFunc("POST /execute", f.execute)
 	mux.HandleFunc("POST /tasks", f.tasks)
 	mux.HandleFunc("GET /supported", f.supported)
+	mux.HandleFunc("POST /embed", f.embed)
 }
 
 type taskManager struct {
 	promptService execservice.ExecService
 	taskService   execservice.TasksEnvService
+	embedService  embedservice.Service
 }
 
 func (tm *taskManager) execute(w http.ResponseWriter, r *http.Request) {
@@ -227,4 +231,28 @@ func (tm *taskManager) supported(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = serverops.Encode(w, r, http.StatusOK, resp)
+}
+
+type EmbedRequest struct {
+	Text string `json:"text"`
+}
+
+type EmbedResponse struct {
+	Vector []float64 `json:"vector"`
+}
+
+func (tm *taskManager) embed(w http.ResponseWriter, r *http.Request) {
+	req, err := serverops.Decode[EmbedRequest](r)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.CreateOperation)
+		return
+	}
+
+	vector, err := tm.embedService.Embed(r.Context(), req.Text)
+	if err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("embedding failed: %w", err), serverops.CreateOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, EmbedResponse{Vector: vector})
 }
