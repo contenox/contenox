@@ -72,7 +72,7 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Cha
 
 	// Check for error status codes
 	if resp.StatusCode != http.StatusOK {
-		return nil, taskengine.DataTypeAny, response.State, apiframework.HandleAPIError(resp)
+		return nil, taskengine.DataTypeAny, nil, apiframework.HandleAPIError(resp)
 	}
 
 	// Decode response
