@@ -47,6 +47,25 @@ func (c *CapturedStateUnit) MarshalJSON() ([]byte, error) {
 	})
 }
 
+func (c *CapturedStateUnit) UnmarshalJSON(data []byte) error {
+	type Alias CapturedStateUnit
+	aux := &struct {
+		Duration float64 `json:"duration"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+
+	// First unmarshal into our auxiliary struct
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Convert milliseconds back to nanoseconds for time.Duration
+	c.Duration = time.Duration(aux.Duration * float64(time.Millisecond))
+	return nil
+}
+
 type TrackedRequest struct {
 	ID string `json:"id"`
 }
