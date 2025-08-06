@@ -3,6 +3,7 @@ package taskengine
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -58,22 +59,66 @@ func (d DataType) MarshalYAML() ([]byte, error) {
 	return yaml.Marshal(d.String())
 }
 
-func (dt DataType) UnmarshalJSON(data []byte) error {
+func (dt *DataType) UnmarshalJSON(data []byte) error {
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}
-	dt, err := DataTypeFromString(s)
-	return err
+
+	switch strings.ToLower(s) {
+	case "any":
+		*dt = DataTypeAny
+	case "string":
+		*dt = DataTypeString
+	case "bool":
+		*dt = DataTypeBool
+	case "int":
+		*dt = DataTypeInt
+	case "float":
+		*dt = DataTypeFloat
+	case "vector":
+		*dt = DataTypeVector
+	case "search_results":
+		*dt = DataTypeSearchResults
+	case "json":
+		*dt = DataTypeJSON
+	case "chat_history":
+		*dt = DataTypeChatHistory
+	default:
+		return fmt.Errorf("unknown data type: %q", s)
+	}
+
+	return nil
 }
 
-func (dt DataType) UnmarshalYAML(data []byte) error {
+func (dt *DataType) UnmarshalYAML(data []byte) error {
 	var s string
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return err
 	}
-	dt, err := DataTypeFromString(s)
-	return err
+
+	switch strings.ToLower(s) {
+	case "string":
+		*dt = DataTypeString
+	case "bool":
+		*dt = DataTypeBool
+	case "int":
+		*dt = DataTypeInt
+	case "float":
+		*dt = DataTypeFloat
+	case "vector":
+		*dt = DataTypeVector
+	case "search_results":
+		*dt = DataTypeSearchResults
+	case "json":
+		*dt = DataTypeJSON
+	case "chat_history":
+		*dt = DataTypeChatHistory
+	default:
+		return fmt.Errorf("unknown data type: %q", s)
+	}
+
+	return nil
 }
 
 // TriggerType defines the type of trigger that starts a chain.
