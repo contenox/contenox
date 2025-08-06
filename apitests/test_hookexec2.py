@@ -15,7 +15,7 @@ class TestHookExecution:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "response": "Remote operation completed",
+            "output": "Remote operation completed",
             "dataType": "string",
             "transition": "next_task",
             "state": [{  # Execution history
@@ -42,7 +42,7 @@ class TestHookExecution:
         result = response.json()
 
         # The API returns "response" field, NOT "output"
-        assert result.get("response") == "Remote operation completed"
+        assert result.get("output") == "Remote operation completed"
         assert result.get("dataType") == "string"
         assert any(step.get("output") == "Remote operation completed"
                   for step in result.get("state", []))

@@ -102,7 +102,7 @@ func DataTypeFromString(s string) (DataType, error) {
 // EnvExecutor defines an environment for executing ChainDefinitions
 type EnvExecutor interface {
 	// ExecEnv executes a chain with input and returns final output
-	ExecEnv(ctx context.Context, chain *ChainDefinition, input any, dataType DataType) (any, []CapturedStateUnit, error)
+	ExecEnv(ctx context.Context, chain *ChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error)
 }
 
 // ErrUnsupportedTaskType indicates unrecognized task type
@@ -151,7 +151,7 @@ func NewEnv(
 //
 // It manages the full lifecycle of task execution: rendering prompts, calling the
 // TaskExecutor, handling timeouts, retries, transitions, and collecting final output.
-func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input any, dataType DataType) (any, []CapturedStateUnit, error) {
+func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error) {
 	stack := exe.inspector.Start(ctx)
 
 	vars := map[string]any{
@@ -165,17 +165,17 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 	if len(chain.RoutingStrategy) > 0 {
 		resolver, err = llmresolver.PolicyFromString(chain.RoutingStrategy)
 		if err != nil {
-			return nil, stack.GetExecutionHistory(), err
+			return nil, DataTypeAny, stack.GetExecutionHistory(), err
 		}
 	}
 
 	if err := validateChain(chain.Tasks); err != nil {
-		return nil, stack.GetExecutionHistory(), err
+		return nil, DataTypeAny, stack.GetExecutionHistory(), err
 	}
 
 	currentTask, err := findTaskByID(chain.Tasks, chain.Tasks[0].ID)
 	if err != nil {
-		return nil, stack.GetExecutionHistory(), err
+		return nil, DataTypeAny, stack.GetExecutionHistory(), err
 	}
 
 	var finalOutput any
@@ -192,11 +192,11 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 			var ok bool
 			taskInput, ok = vars[currentTask.InputVar]
 			if !ok {
-				return nil, stack.GetExecutionHistory(), fmt.Errorf("task %s: input variable %q not found", currentTask.ID, currentTask.InputVar)
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: input variable %q not found", currentTask.ID, currentTask.InputVar)
 			}
 			taskInputType, ok = varTypes[currentTask.InputVar]
 			if !ok {
-				return nil, stack.GetExecutionHistory(), fmt.Errorf("task %s: input variable %q missing type info", currentTask.ID, currentTask.InputVar)
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: input variable %q missing type info", currentTask.ID, currentTask.InputVar)
 			}
 		}
 
@@ -204,7 +204,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 		if currentTask.PromptTemplate != "" {
 			rendered, err := renderTemplate(currentTask.PromptTemplate, vars)
 			if err != nil {
-				return nil, stack.GetExecutionHistory(), fmt.Errorf("task %s: template error: %v", currentTask.ID, err)
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: template error: %v", currentTask.ID, err)
 			}
 			taskInput = rendered
 			taskInputType = DataTypeString
@@ -215,7 +215,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 		for retry := 0; retry <= maxRetries; retry++ {
 			// Note: Return on breakpoint for now
 			if stack.HasBreakpoint(currentTask.ID) {
-				return nil, stack.GetExecutionHistory(), fmt.Errorf("task %s: breakpoint set", currentTask.ID)
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: breakpoint set", currentTask.ID)
 			}
 
 			// Track task attempt start
@@ -224,7 +224,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 			if currentTask.Timeout != "" {
 				timeout, err := time.ParseDuration(currentTask.Timeout)
 				if err != nil {
-					return nil, stack.GetExecutionHistory(), fmt.Errorf("task %s: invalid timeout: %v", currentTask.ID, err)
+					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: invalid timeout: %v", currentTask.ID, err)
 				}
 				taskCtx, cancel = context.WithTimeout(ctx, timeout)
 				defer cancel()
@@ -281,7 +281,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 				// Fetch right value
 				rightVal, ok := vars[compose.WithVar]
 				if !ok {
-					return nil, stack.GetExecutionHistory(), fmt.Errorf("compose right_var %q not found", compose.WithVar)
+					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose right_var %q not found", compose.WithVar)
 				}
 
 				// Determine strategy
@@ -304,10 +304,10 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 					baseMap, isBaseMap := output.(map[string]any)
 					overridesMap, isOverridesMap := rightVal.(map[string]any)
 					if !isBaseMap || !isOverridesMap {
-						return nil, stack.GetExecutionHistory(), fmt.Errorf("invalid types for override")
+						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("invalid types for override")
 					}
 					if err := mergo.Merge(&baseMap, overridesMap, mergo.WithOverride); err != nil {
-						return nil, stack.GetExecutionHistory(), fmt.Errorf("merge failed (override): %w", err)
+						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("merge failed (override): %w", err)
 					}
 					merged = baseMap
 				case "append_string_to_chat_history":
@@ -318,7 +318,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 						rightCH, rightIsCH = output.(ChatHistory)
 					}
 					if !leftIsCH || !rightIsCH {
-						return nil, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'append_string_to_chat_history' requires both left and right values to be either string or ChatHistory")
+						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'append_string_to_chat_history' requires both left and right values to be either string or ChatHistory")
 					}
 					merged = ChatHistory{
 						Messages: append([]Message{
@@ -339,10 +339,10 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 					if !leftIsCH || !rightIsCH {
 						rightType, ok := varTypes[compose.WithVar]
 						if !ok {
-							return nil, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'chathistory_append' requires both right value to exist")
+							return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'chathistory_append' requires both right value to exist")
 						}
 
-						return nil, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'chathistory_append' requires both left (type: %s) and right (type: %s) values to be ChatHistory", dataType.String(), rightType.String())
+						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'chathistory_append' requires both left (type: %s) and right (type: %s) values to be ChatHistory", dataType.String(), rightType.String())
 					}
 
 					leftCH.Messages = append(rightCH.Messages, leftCH.Messages...)
@@ -358,7 +358,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 					// If models are the same, leftCH.Model remains unchanged.
 					merged = leftCH
 				default:
-					return nil, stack.GetExecutionHistory(), fmt.Errorf("unsupported compose strategy: %q", strategy)
+					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("unsupported compose strategy: %q", strategy)
 				}
 
 				// Update task output to composed value
@@ -390,7 +390,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 				previousTaskID := currentTask.ID
 				currentTask, err = findTaskByID(chain.Tasks, currentTask.Transition.OnFailure)
 				if err != nil {
-					return nil, stack.GetExecutionHistory(), fmt.Errorf("error transition target not found: %v", err)
+					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("error transition target not found: %v", err)
 				}
 				// Track error-based transition
 				_, reportChangeErrTransition, endErrTransition := exe.tracker.Start(
@@ -404,7 +404,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 				reportChangeErrTransition(currentTask.ID, taskErr)
 				continue
 			}
-			return nil, stack.GetExecutionHistory(), fmt.Errorf("task %s failed after %d retries: %v", currentTask.ID, maxRetries, taskErr)
+			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s failed after %d retries: %v", currentTask.ID, maxRetries, taskErr)
 		}
 
 		// Update execution variables
@@ -417,7 +417,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 		if currentTask.Print != "" {
 			printMsg, err := renderTemplate(currentTask.Print, vars)
 			if err != nil {
-				return nil, stack.GetExecutionHistory(), fmt.Errorf("task %s: print template error: %v", currentTask.ID, err)
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: print template error: %v", currentTask.ID, err)
 			}
 			fmt.Println(printMsg)
 		}
@@ -425,7 +425,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 		// Evaluate transitions
 		nextTaskID, err := exe.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval)
 		if err != nil {
-			return nil, stack.GetExecutionHistory(), fmt.Errorf("task %s: transition error: %v", currentTask.ID, err)
+			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: transition error: %v", currentTask.ID, err)
 		}
 
 		if nextTaskID == "" || nextTaskID == TermEnd {
@@ -455,11 +455,11 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 		// Find next task
 		currentTask, err = findTaskByID(chain.Tasks, nextTaskID)
 		if err != nil {
-			return nil, stack.GetExecutionHistory(), fmt.Errorf("next task %s not found: %v", nextTaskID, err)
+			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("next task %s not found: %v", nextTaskID, err)
 		}
 	}
 
-	return finalOutput, stack.GetExecutionHistory(), nil
+	return finalOutput, outputType, stack.GetExecutionHistory(), nil
 }
 
 func renderTemplate(tmplStr string, vars map[string]any) (string, error) {

@@ -13,7 +13,7 @@ type activityTrackerTaskEnvDecorator struct {
 	tracker activitytracker.ActivityTracker
 }
 
-func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, []taskengine.CapturedStateUnit, error) {
+func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
 	// Extract useful metadata from the chain
 	chainID := chain.ID
 
@@ -27,7 +27,7 @@ func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *ta
 	)
 	defer endFn()
 
-	result, stacktrace, err := d.service.Execute(ctx, chain, input, inputType)
+	result, outputType, stacktrace, err := d.service.Execute(ctx, chain, input, inputType)
 	if err != nil {
 		reportErrFn(err)
 	} else {
@@ -36,10 +36,11 @@ func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *ta
 			"result":     result,
 			"chainID":    chainID,
 			"stacktrace": stacktrace,
+			"outputType": outputType.String(),
 		})
 	}
 
-	return result, stacktrace, err
+	return result, outputType, stacktrace, err
 }
 
 func (d *activityTrackerTaskEnvDecorator) Supports(ctx context.Context) ([]string, error) {

@@ -49,7 +49,7 @@ func TestUnit_ComposeOverride(t *testing.T) {
 	}
 
 	// Execute chain
-	output, _, err := env.ExecEnv(context.Background(), chain, map[string]any{"a": 1, "b": 2}, taskengine.DataTypeJSON)
+	output, _, _, err := env.ExecEnv(context.Background(), chain, map[string]any{"a": 1, "b": 2}, taskengine.DataTypeJSON)
 	require.NoError(t, err)
 
 	// Verify composition
@@ -100,7 +100,7 @@ func TestUnit_ComposeAppendStringToChatHistory(t *testing.T) {
 	}
 
 	// Execute chain
-	output, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+	output, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
 	require.NoError(t, err)
 
 	// Verify composition
@@ -163,7 +163,7 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 	}
 
 	// Execute chain
-	output, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+	output, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
 	require.NoError(t, err)
 
 	// Verify composition
@@ -217,7 +217,7 @@ func TestUnit_ComposeAutoStrategy(t *testing.T) {
 		}
 
 		// Execute chain
-		output, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+		output, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
 		require.NoError(t, err)
 
 		// Verify auto-selected override strategy
@@ -263,7 +263,7 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		}
 
 		// Execute chain
-		_, _, err := env.ExecEnv(context.Background(), chain, "input", taskengine.DataTypeString)
+		_, _, _, err := env.ExecEnv(context.Background(), chain, "input", taskengine.DataTypeString)
 
 		// Verify error
 		assert.ErrorContains(t, err, "unsupported compose strategy")
@@ -288,7 +288,7 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		}
 
 		// Execute chain
-		_, _, err := env.ExecEnv(context.Background(), chain, "input", taskengine.DataTypeString)
+		_, _, _, err := env.ExecEnv(context.Background(), chain, "input", taskengine.DataTypeString)
 
 		// Verify error
 		assert.ErrorContains(t, err, "compose right_var \"nonexistent\" not found")
@@ -333,7 +333,7 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		}
 
 		// Execute chain
-		_, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+		_, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
 
 		// Verify error
 		assert.Error(t, err, "invalid types for append_string_to_chat_history")
@@ -373,7 +373,7 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		}
 
 		// Execute chain
-		_, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+		_, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
 		assert.Error(t, err, "compose strategy 'merge_chat_histories' requires both left")
 	})
 }

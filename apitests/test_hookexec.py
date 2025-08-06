@@ -74,8 +74,8 @@ def test_hook_task_in_chain(
 
     # Verify the response
     data = response.json()
-    assert "response" in data, "Response missing response field"
-    assert data["response"] == MOCK_HOOK_RESPONSE["output"], "Unexpected hook output"
+    assert "output" in data, "Response missing response field"
+    assert data["output"] == MOCK_HOOK_RESPONSE["output"], "Unexpected hook output"
 
     # Verify task execution history
     assert len(data["state"]) == 1, "Should have one task in state"

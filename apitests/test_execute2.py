@@ -308,7 +308,7 @@ def test_compose_strategies(
     )
     assert_status_code(response, 200)
     data = response.json()
-    output = data["response"]
+    output = data["output"]
     assert "messages" in output
     assert len(output["messages"]) > 2, "Chat history should be longer after composition"
     sent_messages = output["messages"]
@@ -367,5 +367,5 @@ def test_print_statements_with_templates(
     assert_status_code(response, 200)
 
     data = response.json()
-    output = data["response"]
+    output = data["output"]
     assert "Second task output: The answer is 42. Previous: Hello world", output

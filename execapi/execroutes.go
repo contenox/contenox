@@ -212,15 +212,19 @@ func (tm *taskManager) tasks(w http.ResponseWriter, r *http.Request) {
 		convertedInput = req.Input
 	}
 
-	resp, capturedStateUnits, err := tm.taskService.Execute(r.Context(), req.Chain, convertedInput, inputType)
+	resp, outputType, capturedStateUnits, err := tm.taskService.Execute(r.Context(), req.Chain, convertedInput, inputType)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
 		return
 	}
-	response := map[string]any{
-		"response": resp,
-		"state":    capturedStateUnits,
+	var response struct {
+		Output     any                            `json:"output"`
+		OutputType string                         `json:"outputType"`
+		State      []taskengine.CapturedStateUnit `json:"state"`
 	}
+	response.Output = resp
+	response.OutputType = outputType.String()
+	response.State = capturedStateUnits
 	_ = serverops.Encode(w, r, http.StatusOK, response)
 }
 

@@ -99,7 +99,7 @@ def test_execute_taskchain(
     data = response.json()
 
     # Validate response structure
-    assert "response" in data, "Response missing response field"
+    assert "output" in data, "Output missing response field"
     assert "state" in data, "Response missing state field"
     assert isinstance(data["state"], list), "State should be a list"
 
@@ -113,8 +113,8 @@ def test_execute_taskchain(
     assert first_task["outputType"] == "string", "Output type should be string"
 
     # Validate the final response
-    assert isinstance(data["response"], str), "Final response should be a string"
-    assert "Paris" in data["response"], "Response should contain Paris"
+    assert isinstance(data["output"], str), "Final response should be a string"
+    assert "Paris" in data["output"], "Response should contain Paris"
 
 def test_multi_step_taskchain(
     base_url,
@@ -167,7 +167,7 @@ def test_multi_step_taskchain(
 
     data = response.json()
     assert len(data["state"]) == 3
-    assert "The capital of France is Paris" in data["response"]
+    assert "The capital of France is Paris" in data["output"]
 
 def test_conditional_branching(
     base_url,
@@ -226,7 +226,7 @@ def test_conditional_branching(
     assert len(data["state"]) >= 2  # At least 2 tasks executed
     last_task = data["state"][-1]
     assert last_task["taskID"] in ["correct_response", "incorrect_response"]
-    assert "correct" in data["response"].lower()
+    assert "correct" in data["output"].lower()
 
 def test_invalid_chain_definition(
     base_url,
@@ -307,7 +307,7 @@ def test_model_execution_task(
 
     # Find the assistant's message in the response
     assistant_messages = [
-        msg for msg in data["response"]["messages"]
+        msg for msg in data["output"]["messages"]
         if msg["role"] == "assistant"
     ]
     assert len(assistant_messages) == 1, "Expected exactly one assistant message"
@@ -368,11 +368,11 @@ def test_embedding_handler(
     data = response.json()
 
     # Validate response structure
-    assert "response" in data, "Response missing response field"
+    assert "output" in data, "Output missing response field"
     assert "state" in data, "Response missing state field"
 
     # Validate embedding response is a non-empty list of floats
-    embedding_vector = data["response"]
+    embedding_vector = data["output"]
     assert isinstance(embedding_vector, list), "Embedding should be a list"
     assert len(embedding_vector) > 0, "Embedding vector should not be empty"
     assert all(isinstance(x, float) for x in embedding_vector), \

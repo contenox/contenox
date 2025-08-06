@@ -35,7 +35,7 @@ func NewHTTPTasksEnvService(baseURL, token string, client *http.Client) execserv
 }
 
 // Execute implements execservice.TasksEnvService.Execute
-func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, []taskengine.CapturedStateUnit, error) {
+func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
 	url := s.baseURL + "/tasks"
 
 	// Create request payload
@@ -47,7 +47,7 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Cha
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, taskengine.DataTypeAny, nil, err
 	}
 
 	// Set headers
@@ -59,31 +59,35 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Cha
 	// Encode request body
 	body, err := json.Marshal(request)
 	if err != nil {
-		return nil, nil, err
+		return nil, taskengine.DataTypeAny, nil, err
 	}
 	req.Body = io.NopCloser(strings.NewReader(string(body)))
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return nil, taskengine.DataTypeAny, nil, err
 	}
 	defer resp.Body.Close()
 
 	// Check for error status codes
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, apiframework.HandleAPIError(resp)
+		return nil, taskengine.DataTypeAny, nil, apiframework.HandleAPIError(resp)
 	}
 
 	// Decode response
 	var response struct {
-		Response any                            `json:"response"`
-		State    []taskengine.CapturedStateUnit `json:"state"`
+		Output     any                            `json:"output"`
+		OutputType string                         `json:"outputType"`
+		State      []taskengine.CapturedStateUnit `json:"state"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, nil, err
+		return nil, taskengine.DataTypeAny, nil, err
 	}
-
-	return response.Response, response.State, nil
+	dt, err := taskengine.DataTypeFromString(response.OutputType)
+	if err != nil {
+		return nil, taskengine.DataTypeAny, nil, err
+	}
+	return response.Output, dt, response.State, nil
 }
 
 // Supports implements execservice.TasksEnvService.Supports (via taskengine.HookRegistry)
