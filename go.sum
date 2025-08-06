@@ -22,8 +22,6 @@ github.com/contenox/dbexec v0.0.2 h1:gmKCnMSmeMHBgrgulf1IaHYjPMvMMgBDr083oh2GXcU
 github.com/contenox/dbexec v0.0.2/go.mod h1:NEGLZSBi4Fj2biiBKThP5eF7WNET3337digu2wVuX5s=
 github.com/contenox/kvstore v0.0.1 h1:caWl8UoL7ZhT52QEnwc8q0II06hX2K08g0iD5aAIalE=
 github.com/contenox/kvstore v0.0.1/go.mod h1:vPAABNgqO8Xz+AotFyOAIW883uiiPrO+GYCnXK4S/dU=
-github.com/contenox/modelprovider v0.0.2 h1:KH0OwY9peM1l2M0OhWpAKXQvKV92VZkY90v1mTvByrY=
-github.com/contenox/modelprovider v0.0.2/go.mod h1:nTGaLC2LEpRSwbL5LYdPy76mLa5e4UwqJoZXfa1KYqY=
 github.com/contenox/modelprovider v0.0.3 h1:ivJqfDR5uGGl5P8eRfOvntLT3RECHu0Pkg+Pe/0gyBc=
 github.com/contenox/modelprovider v0.0.3/go.mod h1:nTGaLC2LEpRSwbL5LYdPy76mLa5e4UwqJoZXfa1KYqY=
 github.com/contenox/routine v0.0.1 h1:mOmh4ZkQ/+s9NOiAqrsNCtEKTpSQQQWzppr6knXFBv8=

@@ -30,6 +30,7 @@ import (
 	"github.com/contenox/runtime/providerapi"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/runtimestate"
+	"github.com/contenox/runtime/stateservice"
 	"github.com/contenox/runtime/taskengine"
 )
 
@@ -62,8 +63,11 @@ func New(
 	}
 	backendService := backendservice.New(dbInstance)
 	backendService = backendservice.WithActivityTracker(backendService, serveropsChainedTracker)
-	backendapi.AddBackendRoutes(mux, backendService, state)
+	stateService := stateservice.New(state)
+	stateService = stateservice.WithActivityTracker(stateService, serveropsChainedTracker)
+	backendapi.AddBackendRoutes(mux, backendService, stateService)
 	poolservice := poolservice.New(dbInstance)
+	backendapi.AddStateRoutes(mux, stateService)
 	poolapi.AddPoolRoutes(mux, poolservice)
 	// Get circuit breaker pool instance
 	pool := routine.GetPool()

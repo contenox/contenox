@@ -8,13 +8,13 @@ import (
 
 	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/runtimestate"
 	"github.com/contenox/runtime/runtimetypes"
+	"github.com/contenox/runtime/stateservice"
 	"github.com/google/uuid"
 	"github.com/ollama/ollama/api"
 )
 
-func AddBackendRoutes(mux *http.ServeMux, backendService backendservice.Service, stateService *runtimestate.State) {
+func AddBackendRoutes(mux *http.ServeMux, backendService backendservice.Service, stateService stateservice.Service) {
 	b := &backendManager{service: backendService, stateService: stateService}
 
 	mux.HandleFunc("POST /backends", b.create)
@@ -40,7 +40,7 @@ type respBackendList struct {
 
 type backendManager struct {
 	service      backendservice.Service
-	stateService *runtimestate.State
+	stateService stateservice.Service
 }
 
 func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +92,12 @@ func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backendState := b.stateService.Get(ctx)
+	backendState, err := b.stateService.Get(ctx)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
 	resp := []respBackendList{}
 	for _, backend := range backends {
 		item := respBackendList{
@@ -141,7 +146,11 @@ func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get dynamic runtime state
-	state := b.stateService.Get(ctx)
+	state, err := b.stateService.Get(ctx)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.GetOperation)
+		return
+	}
 	itemState, ok := state[id]
 
 	resp := RespBackend{
