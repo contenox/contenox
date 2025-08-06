@@ -3,6 +3,7 @@ package runtimesdk
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -71,7 +72,7 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Cha
 
 	// Check for error status codes
 	if resp.StatusCode != http.StatusOK {
-		return nil, taskengine.DataTypeAny, nil, apiframework.HandleAPIError(resp)
+		return nil, taskengine.DataTypeAny, response.State, apiframework.HandleAPIError(resp)
 	}
 
 	// Decode response
@@ -81,13 +82,17 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Cha
 		State      []taskengine.CapturedStateUnit `json:"state"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, taskengine.DataTypeAny, nil, err
+		return nil, taskengine.DataTypeAny, response.State, err
 	}
 	dt, err := taskengine.DataTypeFromString(response.OutputType)
 	if err != nil {
-		return nil, taskengine.DataTypeAny, nil, err
+		return nil, taskengine.DataTypeAny, response.State, err
 	}
-	return response.Output, dt, response.State, nil
+	converted, err := taskengine.ConvertToType(response.Output, dt)
+	if err != nil {
+		return nil, dt, response.State, fmt.Errorf("type conversion failed: %w", err)
+	}
+	return converted, dt, response.State, nil
 }
 
 // Supports implements execservice.TasksEnvService.Supports (via taskengine.HookRegistry)
