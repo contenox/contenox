@@ -29,13 +29,15 @@ func main() {
 
 	swagger := &openapi3.T{
 		OpenAPI: "3.0.0",
-	}
-	swagger.Info = &openapi3.Info{
-		Title:   "LLM Backend Management API",
-		Version: "1.0",
+		Info: &openapi3.Info{
+			Title:   "LLM Backend Management API",
+			Version: "1.0",
+		},
+		Paths: openapi3.NewPaths(),
 	}
 
-	swagger.Paths = openapi3.NewPaths()
+	// Add security scheme
+
 	swagger.Security = *openapi3.NewSecurityRequirements().
 		With(openapi3.SecurityRequirement{"X-API-Key": []string{}})
 
@@ -49,9 +51,9 @@ func main() {
 	swagger.Components.SecuritySchemes = openapi3.SecuritySchemes{
 		"X-API-Key": &openapi3.SecuritySchemeRef{
 			Value: openapi3.NewSecurityScheme().
-				WithType("http").
-				WithScheme("token").
-				WithBearerFormat("text"),
+				WithType("apiKey").
+				WithName("X-API-Key").
+				WithIn("header"),
 		},
 	}
 	os.MkdirAll("docs", 0755)
@@ -67,7 +69,6 @@ func parseProject(fset *token.FileSet, rootDir string, pkgs map[string]*ast.Pack
 		if err != nil {
 			return err
 		}
-		// Skip directories that are not relevant to the project, e.g., hidden dirs, test dirs
 		if info.IsDir() {
 			dirName := info.Name()
 			if strings.HasPrefix(dirName, ".") || dirName == "tools" || dirName == "vendor" || dirName == "apitests" {
@@ -76,19 +77,16 @@ func parseProject(fset *token.FileSet, rootDir string, pkgs map[string]*ast.Pack
 			return nil
 		}
 
-		// Only parse Go files that are not test files
 		if strings.HasSuffix(info.Name(), ".go") && !strings.HasSuffix(info.Name(), "_test.go") {
 			log.Printf("Found Go file: %s", path)
 
-			// Parse the file and check for errors
+			// Parse with comments
 			fileAST, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 			if err != nil {
 				log.Printf("Error parsing file %s: %v", path, err)
-				// Returning nil here will continue the walk, but log the error
 				return nil
 			}
 
-			// Add the parsed file to the correct package in the map
 			pkgName := fileAST.Name.Name
 			if pkgs[pkgName] == nil {
 				pkgs[pkgName] = &ast.Package{
@@ -102,10 +100,36 @@ func parseProject(fset *token.FileSet, rootDir string, pkgs map[string]*ast.Pack
 	})
 }
 
+// Extracts comments and cleans them up
+func extractComments(doc *ast.CommentGroup) string {
+	if doc == nil {
+		return ""
+	}
+
+	comments := make([]string, 0, len(doc.List))
+	for _, c := range doc.List {
+		text := c.Text
+
+		// Clean up comment markers
+		switch {
+		case strings.HasPrefix(text, "//"):
+			text = strings.TrimPrefix(text, "//")
+		case strings.HasPrefix(text, "/*"):
+			text = strings.TrimPrefix(text, "/*")
+			text = strings.TrimSuffix(text, "*/")
+		}
+
+		text = strings.TrimSpace(text)
+		if text != "" {
+			comments = append(comments, text)
+		}
+	}
+	return strings.Join(comments, "\n")
+}
+
 func processRouteFiles(fset *token.FileSet, pkgs map[string]*ast.Package, swagger *openapi3.T) {
 	for _, pkg := range pkgs {
 		for _, file := range pkg.Files {
-			// Corrected line to get the file path
 			filePath := fset.File(file.Pos()).Name()
 			log.Printf("Processing file: %s", filePath)
 
@@ -120,6 +144,7 @@ func processRouteFiles(fset *token.FileSet, pkgs map[string]*ast.Package, swagge
 		}
 	}
 }
+
 func extractRoutesFromFunction(fset *token.FileSet, file *ast.File, fn *ast.FuncDecl, swagger *openapi3.T) {
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok {
@@ -135,7 +160,7 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 	var path, method string
 	if len(call.Args) > 0 {
 		if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
-			parts := strings.Split(lit.Value[1:len(lit.Value)-1], " ")
+			parts := strings.Split(strings.Trim(lit.Value, `"`), " ")
 			if len(parts) == 2 {
 				method = parts[0]
 				path = parts[1]
@@ -146,6 +171,7 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 		}
 	}
 
+	// Extract parameters from path
 	if strings.Contains(path, "{") {
 		pathItem := swagger.Paths.Find(path)
 		if pathItem == nil {
@@ -153,7 +179,6 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 			swagger.Paths.Set(path, pathItem)
 		}
 
-		// Extract parameters from path
 		parts := strings.Split(path, "/")
 		for _, part := range parts {
 			if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
@@ -168,6 +193,7 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 	}
 
 	var handler *ast.FuncDecl
+	var handlerDocs string
 	if len(call.Args) > 1 {
 		if funcLit, ok := call.Args[1].(*ast.FuncLit); ok {
 			handler = &ast.FuncDecl{
@@ -179,6 +205,7 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 			ast.Inspect(file, func(n ast.Node) bool {
 				if fn, ok := n.(*ast.FuncDecl); ok && fn.Name.Name == sel.Sel.Name {
 					handler = fn
+					handlerDocs = extractComments(fn.Doc)
 					return false
 				}
 				return true
@@ -198,6 +225,11 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 	op := openapi3.NewOperation()
 	op.Summary = strings.TrimPrefix(handler.Name.Name, "handle")
 
+	// Use handler docs for operation description
+	if handlerDocs != "" {
+		op.Description = handlerDocs
+	}
+
 	if reqType := extractRequestType(handler); reqType != "" {
 		schemaRef := &openapi3.SchemaRef{
 			Ref: fmt.Sprintf("#/components/schemas/%s", reqType),
@@ -210,7 +242,8 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 
 		op.RequestBody = &openapi3.RequestBodyRef{
 			Value: &openapi3.RequestBody{
-				Content: content,
+				Content:  content,
+				Required: true,
 			},
 		}
 	}
@@ -219,7 +252,6 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 	for status, respType := range statusCodes {
 		var schemaRef *openapi3.SchemaRef
 
-		// Check if it's a primitive type
 		if openapiType := toOpenAPIType(respType); openapiType != nil {
 			schemaRef = &openapi3.SchemaRef{
 				Value: &openapi3.Schema{
@@ -227,7 +259,6 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 				},
 			}
 		} else {
-			// Assume it's an object and use ref
 			schemaRef = &openapi3.SchemaRef{
 				Ref: fmt.Sprintf("#/components/schemas/%s", respType),
 			}
@@ -255,6 +286,8 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 		pathItem.Put = op
 	case "DELETE":
 		pathItem.Delete = op
+	case "PATCH":
+		pathItem.Patch = op
 	}
 }
 
@@ -445,7 +478,9 @@ func addSchemasToSpec(swagger *openapi3.T) {
 			ast.Inspect(file, func(n ast.Node) bool {
 				if typeSpec, ok := n.(*ast.TypeSpec); ok {
 					if structType, ok := typeSpec.Type.(*ast.StructType); ok {
-						addStructSchema(swagger, typeSpec.Name.Name, structType)
+						// Get struct documentation
+						doc := extractComments(typeSpec.Doc)
+						addStructSchema(swagger, typeSpec.Name.Name, structType, doc)
 					}
 				}
 				return true
@@ -454,7 +489,7 @@ func addSchemasToSpec(swagger *openapi3.T) {
 	}
 }
 
-func addStructSchema(swagger *openapi3.T, name string, structType *ast.StructType) {
+func addStructSchema(swagger *openapi3.T, name string, structType *ast.StructType, description string) {
 	if swagger.Components == nil {
 		swagger.Components = &openapi3.Components{
 			Schemas: make(openapi3.Schemas),
@@ -464,6 +499,7 @@ func addStructSchema(swagger *openapi3.T, name string, structType *ast.StructTyp
 	schema := openapi3.NewSchema()
 	schema.Type = &openapi3.Types{openapi3.TypeObject}
 	schema.Properties = make(openapi3.Schemas)
+	schema.Description = description // Add struct-level description
 
 	for _, field := range structType.Fields.List {
 		fieldName := ""
@@ -477,14 +513,16 @@ func addStructSchema(swagger *openapi3.T, name string, structType *ast.StructTyp
 				if obj := ident.Obj; obj != nil {
 					if spec, ok := obj.Decl.(*ast.TypeSpec); ok {
 						if st, ok := spec.Type.(*ast.StructType); ok {
-							// Recursively add embedded struct
-							addStructSchema(swagger, ident.Name, st)
+							// Recursively add embedded struct with its docs
+							doc := extractComments(spec.Doc)
+							addStructSchema(swagger, ident.Name, st, doc)
 						}
 					}
 				}
 			}
 			continue
 		}
+
 		jsonTag := ""
 		if field.Tag != nil {
 			tag := strings.Trim(field.Tag.Value, "`")
@@ -503,6 +541,14 @@ func addStructSchema(swagger *openapi3.T, name string, structType *ast.StructTyp
 		}
 
 		fieldSchema := openapi3.NewSchema()
+
+		// Add field documentation
+		if doc := extractComments(field.Doc); doc != "" {
+			fieldSchema.Description = doc
+		} else if comment := extractComments(field.Comment); comment != "" {
+			fieldSchema.Description = comment
+		}
+
 		switch fieldType := field.Type.(type) {
 		case *ast.Ident:
 			fieldSchema.Type = goTypeToSwaggerType(fieldType.Name)
@@ -520,6 +566,17 @@ func addStructSchema(swagger *openapi3.T, name string, structType *ast.StructTyp
 		case *ast.StarExpr:
 			if elemType, ok := fieldType.X.(*ast.Ident); ok {
 				fieldSchema.Type = goTypeToSwaggerType(elemType.Name)
+			}
+		case *ast.MapType:
+			has := true
+			fieldSchema.Type = &openapi3.Types{openapi3.TypeObject}
+			fieldSchema.AdditionalProperties = openapi3.AdditionalProperties{
+				Has: &has,
+				Schema: &openapi3.SchemaRef{
+					Value: &openapi3.Schema{
+						Type: &openapi3.Types{openapi3.TypeString},
+					},
+				},
 			}
 		}
 

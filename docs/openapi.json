@@ -20,7 +20,10 @@
           "message": {
             "type": "string"
           },
-          "metadata": {},
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
           "requestID": {
             "type": "string"
           }
@@ -85,24 +88,30 @@
       "ChainDefinition": {
         "properties": {
           "debug": {
+            "description": "Enables capturing user input and output.",
             "type": "boolean"
           },
           "description": {
+            "description": "Description provides a human-readable summary of the chain's purpose.",
             "type": "string"
           },
           "id": {
+            "description": "ID uniquely identifies the chain.",
             "type": "string"
           },
           "routing_strategy": {
+            "description": "RoutingStrategy defines how transitions should be evaluated (optional).",
             "type": "string"
           },
           "tasks": {
+            "description": "Tasks is the list of tasks to execute in sequence.",
             "items": {
               "type": "object"
             },
             "type": "array"
           },
           "token_limit": {
+            "description": "TokenLimit is the token limit for the context window (used during execution).",
             "type": "integer"
           }
         },
@@ -111,51 +120,69 @@
       "ChainTask": {
         "properties": {
           "compose": {
+            "description": "Compose merges the specified the output with the withVar side.\nOptional. compose is applied before the input reaches the task execution,",
             "type": "object"
           },
           "description": {
+            "description": "Description is a human-readable summary of what the task does.",
             "type": "string"
           },
           "execute_config": {
+            "description": "ExecuteConfig defines the configuration for executing prompt or chat model tasks.",
             "type": "object"
           },
           "handler": {
+            "description": "Handler determines how the LLM output (or hook) will be interpreted.",
             "type": "object"
           },
           "hook": {
+            "description": "Hook defines an external action to run.\nRequired for Hook tasks, must be nil/omitted for all other types.\nExample: {type: \"send_email\", args: {\"to\": \"user@example.com\"}}",
             "type": "object"
           },
           "id": {
+            "description": "ID uniquely identifies the task within the chain.",
             "type": "string"
           },
           "input_var": {
+            "description": "InputVar is the name of the variable to use as input for the task.\nExample: \"input\" for the original input.\nEach task stores its output in a variable named with it's task id.",
             "type": "string"
           },
           "print": {
+            "description": "Print optionally formats the output for display/logging.\nSupports template variables from previous task outputs.\nOptional for all task types except Hook where it's rarely used.\nExample: \"The score is: {{.previous_output}}\"",
             "type": "string"
           },
           "prompt_template": {
+            "description": "PromptTemplate is the text prompt sent to the LLM.\nIt's Required and only applicable for the raw_string type.\nSupports template variables from previous task outputs.\nExample: \"Rate the quality from 1-10: {{.input}}\"",
             "type": "string"
           },
           "retry_on_failure": {
+            "description": "RetryOnFailure sets how many times to retry this task on failure.\nApplies to all task types including Hooks.\nDefault: 0 (no retries)",
             "type": "integer"
           },
           "system_instruction": {
+            "description": "SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.",
             "type": "string"
           },
           "timeout": {
+            "description": "Timeout optionally sets a timeout for task execution.\nFormat: \"10s\", \"2m\", \"1h\" etc.\nOptional for all task types.",
             "type": "string"
           },
           "transition": {
+            "description": "Transition defines what to do after this task completes.",
             "type": "object"
           },
-          "valid_conditions": {}
+          "valid_conditions": {
+            "additionalProperties": true,
+            "description": "ValidConditions defines allowed values for ConditionKey tasks.\nRequired for ConditionKey tasks, ignored for all other types.\nExample: {\"yes\": true, \"no\": true} for a yes/no condition.",
+            "type": "object"
+          }
         },
         "type": "object"
       },
       "ChainWithTrigger": {
         "properties": {
           "triggers": {
+            "description": "Triggers defines when the chain should be started.",
             "items": {
               "type": "object"
             },
@@ -195,6 +222,7 @@
       "ComposeTask": {
         "properties": {
           "strategy": {
+            "description": "Strategy defines how values should be merged (\"override\", \"merge_chat_histories\", \"append_string_to_chat_history\").\nOptional; defaults to \"override\" or \"merge_chat_histories\" if both output and WithVar values are ChatHistory.\n\"merge_chat_histories\": If both output and WithVar values are ChatHistory,\nappends the WithVar's Messages to the output's Messages.",
             "type": "string"
           },
           "with_var": {
@@ -205,46 +233,7 @@
       },
       "Config": {
         "properties": {
-          "addr": {
-            "type": "string"
-          },
-          "database_url": {
-            "type": "string"
-          },
-          "embed_model": {
-            "type": "string"
-          },
-          "kv_backend": {
-            "type": "string"
-          },
-          "kv_host": {
-            "type": "string"
-          },
-          "kv_password": {
-            "type": "string"
-          },
-          "nats_password": {
-            "type": "string"
-          },
-          "nats_url": {
-            "type": "string"
-          },
-          "nats_user": {
-            "type": "string"
-          },
-          "port": {
-            "type": "string"
-          },
-          "task_model": {
-            "type": "string"
-          },
-          "token": {
-            "type": "string"
-          },
-          "tokenizer_service_url": {
-            "type": "string"
-          },
-          "vector_store_url": {
+          "": {
             "type": "string"
           }
         },
@@ -280,6 +269,7 @@
       "EmbedRequest": {
         "properties": {
           "": {
+            "description": "Optional. Empty uses default.",
             "type": "string"
           }
         },
@@ -347,8 +337,13 @@
       },
       "HookCall": {
         "properties": {
-          "args": {},
+          "args": {
+            "additionalProperties": true,
+            "description": "Args are key-value pairs to parameterize the hook call.\nExample: {\"to\": \"user@example.com\", \"subject\": \"Notification\"}",
+            "type": "object"
+          },
           "name": {
+            "description": "Name is the registered hook name to invoke (e.g., \"send_email\").",
             "type": "string"
           }
         },
@@ -378,8 +373,14 @@
           "id": {
             "type": "string"
           },
-          "modelJob": {
-            "type": "object"
+          "payload": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "retryCount": {
+            "type": "integer"
           },
           "scheduledFor": {
             "type": "integer"
@@ -442,6 +443,7 @@
             "type": "object"
           },
           "error": {
+            "description": "Error stores a description of the last encountered error when\ninteracting with or reconciling this backend's state, if any.",
             "type": "string"
           },
           "id": {
@@ -507,6 +509,7 @@
             "type": "string"
           },
           "role": {
+            "description": "user/system/assistant",
             "type": "string"
           }
         },
@@ -541,7 +544,10 @@
       },
       "MockTokenizer": {
         "properties": {
-          "": {}
+          "": {
+            "additionalProperties": true,
+            "type": "object"
+          }
         },
         "type": "object"
       },
@@ -924,15 +930,18 @@
       "TaskTransition": {
         "properties": {
           "branches": {
+            "description": "Branches defines conditional branches for successful task completion.",
             "items": {
               "type": "object"
             },
             "type": "array"
           },
           "on_failure": {
+            "description": "OnFailure is the task ID to jump to in case of failure.",
             "type": "string"
           },
           "on_failure_alert": {
+            "description": "OnFailureAlert specifies the alert message to send if the task fails.",
             "type": "string"
           }
         },
@@ -941,6 +950,7 @@
       "TrackedEvent": {
         "properties": {
           "duration": {
+            "description": "Duration in milliseconds",
             "type": "number"
           },
           "end": {},
@@ -956,7 +966,10 @@
           "id": {
             "type": "string"
           },
-          "metadata": {},
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
           "operation": {
             "type": "string"
           },
@@ -983,15 +996,19 @@
       "TransitionBranch": {
         "properties": {
           "alert_on_match": {
+            "description": "AlertOnMatch specifies the alert message to send if this branch is taken.",
             "type": "string"
           },
           "goto": {
+            "description": "Goto specifies the target task ID if this branch is taken.\nLeave empty or use taskengine.TermEnd to end the chain.",
             "type": "string"
           },
           "operator": {
+            "description": "Operator defines how to compare the task's output to When.",
             "type": "object"
           },
           "when": {
+            "description": "When specifies the condition that must be met to follow this branch.\nFormat depends on the task type:\n- For condition_key: exact string match\n- For parse_number: numeric comparison (using Operator)",
             "type": "string"
           }
         },
@@ -1000,12 +1017,15 @@
       "Trigger": {
         "properties": {
           "description": {
+            "description": "Description is a human-readable explanation of the trigger.",
             "type": "string"
           },
           "pattern": {
+            "description": "Pattern is used for matching input in keyword or event triggers.",
             "type": "string"
           },
           "type": {
+            "description": "Type specifies the trigger mode (manual, keyword, etc.).",
             "type": "object"
           }
         },
@@ -1319,6 +1339,7 @@
         }
       ],
       "post": {
+        "description": "Backend association handlers",
         "responses": {
           "201": {
             "content": {
@@ -1626,7 +1647,8 @@
                 "$ref": "#/components/schemas/EmbedRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -2100,6 +2122,7 @@
         }
       ],
       "post": {
+        "description": "Model association handlers",
         "responses": {
           "200": {
             "content": {
@@ -2794,6 +2817,7 @@
     },
     "/queue/inProgress": {
       "get": {
+        "description": "inProgress streams status updates to the client via Server-Sent Events.",
         "responses": {
           "400": {
             "content": {
@@ -2961,7 +2985,8 @@
                 "$ref": "#/components/schemas/taskExec"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
