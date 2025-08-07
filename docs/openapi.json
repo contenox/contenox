@@ -1,0 +1,1909 @@
+{
+  "components": {
+    "schemas": {
+      "APIError": {
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Alert": {
+        "properties": {
+          "Timestamp": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "metadata": {},
+          "requestID": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Backend": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "CapturedStateUnit": {
+        "properties": {
+          "duration": {
+            "type": "object"
+          },
+          "error": {
+            "type": "object"
+          },
+          "input": {
+            "type": "string"
+          },
+          "inputType": {
+            "type": "object"
+          },
+          "output": {
+            "type": "string"
+          },
+          "outputType": {
+            "type": "object"
+          },
+          "taskHandler": {
+            "type": "string"
+          },
+          "taskID": {
+            "type": "string"
+          },
+          "transition": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ChainDefinition": {
+        "properties": {
+          "debug": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "routing_strategy": {
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "token_limit": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ChainTask": {
+        "properties": {
+          "compose": {
+            "type": "object"
+          },
+          "description": {
+            "type": "string"
+          },
+          "execute_config": {
+            "type": "object"
+          },
+          "handler": {
+            "type": "object"
+          },
+          "hook": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "input_var": {
+            "type": "string"
+          },
+          "print": {
+            "type": "string"
+          },
+          "prompt_template": {
+            "type": "string"
+          },
+          "retry_on_failure": {
+            "type": "integer"
+          },
+          "system_instruction": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": "string"
+          },
+          "transition": {
+            "type": "object"
+          },
+          "valid_conditions": {}
+        },
+        "type": "object"
+      },
+      "ChainWithTrigger": {
+        "properties": {
+          "triggers": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ChatHistory": {
+        "properties": {
+          "inputTokens": {
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": "string"
+          },
+          "outputTokens": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Client": {
+        "properties": {
+          "": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "ComposeTask": {
+        "properties": {
+          "strategy": {
+            "type": "string"
+          },
+          "with_var": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Config": {
+        "properties": {
+          "database_url": {
+            "type": "string"
+          },
+          "embed_model": {
+            "type": "string"
+          },
+          "task_model": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ConfigHTTP": {
+        "properties": {
+          "": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ConfigureRequest": {
+        "properties": {
+          "apiKey": {
+            "type": "string"
+          },
+          "upsert": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "DefaultModelResponse": {
+        "properties": {
+          "modelName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EmbedRequest": {
+        "properties": {
+          "": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EmbedResponse": {
+        "properties": {
+          "vector": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExecutionState": {
+        "properties": {
+          "": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "HTTPBackendService": {
+        "type": "object"
+      },
+      "HTTPClient": {
+        "type": "object"
+      },
+      "HTTPDownloadService": {
+        "type": "object"
+      },
+      "HTTPEmbedService": {
+        "type": "object"
+      },
+      "HTTPExecService": {
+        "type": "object"
+      },
+      "HTTPModelService": {
+        "type": "object"
+      },
+      "HTTPPoolService": {
+        "type": "object"
+      },
+      "HTTPProviderService": {
+        "type": "object"
+      },
+      "HTTPRemoteHookService": {
+        "type": "object"
+      },
+      "HTTPStateService": {
+        "type": "object"
+      },
+      "HTTPTasksEnvService": {
+        "type": "object"
+      },
+      "HookCall": {
+        "properties": {
+          "args": {},
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HookCallRecord": {
+        "properties": {
+          "": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HookResponse": {
+        "properties": {
+          "": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Job": {
+        "properties": {
+          "createdAt": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "payload": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "retryCount": {
+            "type": "integer"
+          },
+          "scheduledFor": {
+            "type": "integer"
+          },
+          "taskType": {
+            "type": "string"
+          },
+          "validUntil": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "KV": {
+        "properties": {
+          "createdAt": {
+            "type": "object"
+          },
+          "key": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "object"
+          },
+          "value": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "KVActivitySink": {
+        "type": "object"
+      },
+      "LLMExecutionConfig": {
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LLMState": {
+        "properties": {
+          "backend": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pulledModels": {
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ListConfigsResponse": {
+        "properties": {
+          "providers": {
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "object": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Message": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "MessageConfig": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MockHookRepo": {
+        "properties": {
+          "": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "MockModelRepo": {
+        "properties": {
+          "": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "MockTaskExecutor": {
+        "properties": {
+          "": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MockTokenizer": {
+        "properties": {
+          "": {}
+        },
+        "type": "object"
+      },
+      "Model": {
+        "properties": {
+          "createdAt": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "NoopAlertSink": {
+        "type": "object"
+      },
+      "NoopExecutionStack": {
+        "type": "object"
+      },
+      "NoopInspector": {
+        "type": "object"
+      },
+      "OpenAIChatRequest": {
+        "properties": {
+          "frequency_penalty": {
+            "type": "number"
+          },
+          "max_tokens": {
+            "type": "integer"
+          },
+          "messages": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": "string"
+          },
+          "n": {
+            "type": "integer"
+          },
+          "presence_penalty": {
+            "type": "number"
+          },
+          "stop": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "temperature": {
+            "type": "number"
+          },
+          "top_p": {
+            "type": "number"
+          },
+          "user": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OpenAIChatRequestMessage": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OpenAIChatResponse": {
+        "properties": {
+          "choices": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "created": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "system_fingerprint": {
+            "type": "string"
+          },
+          "usage": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "OpenAIChatResponseChoice": {
+        "properties": {
+          "finish_reason": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "OpenAIModel": {
+        "properties": {
+          "created": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "owned_by": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OpenAITokenUsage": {
+        "properties": {
+          "completion_tokens": {
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "type": "integer"
+          },
+          "total_tokens": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "Operation": {
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PersistentRepo": {
+        "type": "object"
+      },
+      "Pool": {
+        "properties": {
+          "createdAt": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "purposeType": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "PromptRequest": {
+        "properties": {
+          "": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ProviderConfig": {
+        "properties": {
+          "": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "QueueItem": {
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RemoteHook": {
+        "properties": {
+          "createdAt": {
+            "type": "object"
+          },
+          "endpointUrl": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "timeoutMs": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "Request": {
+        "properties": {
+          "": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "RespBackend": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pulledModels": {
+            "type": "array"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "SearchResult": {
+        "properties": {
+          "distance": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SimpleAlertSink": {
+        "type": "object"
+      },
+      "SimpleEnv": {
+        "type": "object"
+      },
+      "SimpleExec": {
+        "type": "object"
+      },
+      "SimpleInspector": {
+        "type": "object"
+      },
+      "SimpleRepo": {
+        "type": "object"
+      },
+      "SimpleStackTrace": {
+        "type": "object"
+      },
+      "State": {
+        "type": "object"
+      },
+      "Status": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "StatusResponse": {
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "TaskRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TaskResponse": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TaskTransition": {
+        "properties": {
+          "branches": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "on_failure": {
+            "type": "string"
+          },
+          "on_failure_alert": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TrackedEvent": {
+        "properties": {
+          "duration": {
+            "type": "number"
+          },
+          "end": {},
+          "entityData": {
+            "type": "object"
+          },
+          "entityID": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {},
+          "operation": {
+            "type": "string"
+          },
+          "requestID": {
+            "type": "string"
+          },
+          "start": {
+            "type": "object"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TrackedRequest": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TransitionBranch": {
+        "properties": {
+          "alert_on_match": {
+            "type": "string"
+          },
+          "goto": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "object"
+          },
+          "when": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Trigger": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "type": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "activityTrackerDecorator": {
+        "type": "object"
+      },
+      "activityTrackerTaskEnvDecorator": {
+        "type": "object"
+      },
+      "backendManager": {
+        "type": "object"
+      },
+      "downloadManager": {
+        "type": "object"
+      },
+      "dwqueue": {
+        "type": "object"
+      },
+      "execService": {
+        "type": "object"
+      },
+      "mockOllamaTokenizer": {
+        "type": "object"
+      },
+      "modelManager": {
+        "type": "object"
+      },
+      "noopTracker": {
+        "type": "object"
+      },
+      "poolHandler": {
+        "type": "object"
+      },
+      "providerManager": {
+        "type": "object"
+      },
+      "remoteHookService": {
+        "type": "object"
+      },
+      "respBackendList": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pulledModels": {
+            "type": "array"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "service": {
+        "type": "object"
+      },
+      "statemux": {
+        "type": "object"
+      },
+      "store": {
+        "type": "object"
+      },
+      "taskExec": {
+        "properties": {
+          "chain": {},
+          "input": {
+            "type": "object"
+          },
+          "inputType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskManager": {
+        "type": "object"
+      },
+      "tasksEnvService": {
+        "type": "object"
+      },
+      "tokenizeRequest": {
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "tokenizeResponse": {
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "tokens": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "tokenizerAdapter": {
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "LLM Backend Management API",
+    "version": "1.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/backend-associations/{backendID}/pools": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listPoolsForBackend"
+      }
+    },
+    "/backend-associations/{poolID}/backends": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listBackends"
+      }
+    },
+    "/backend-associations/{poolID}/backends/{backendID}": {
+      "delete": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "removeBackend"
+      },
+      "post": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "assignBackend"
+      }
+    },
+    "/backends": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "list"
+      },
+      "post": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "create"
+      }
+    },
+    "/backends/{id}": {
+      "delete": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "delete"
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "get"
+      },
+      "put": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "update"
+      }
+    },
+    "/defaultmodel": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "defaultModel"
+      }
+    },
+    "/embed": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbedRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "embed"
+      }
+    },
+    "/execute": {
+      "post": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "execute"
+      }
+    },
+    "/hooks/remote": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "list"
+      },
+      "post": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "create"
+      }
+    },
+    "/hooks/remote/{id}": {
+      "delete": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "delete"
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "get"
+      },
+      "put": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "update"
+      }
+    },
+    "/model-associations/{modelID}/pools": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listPoolsForModel"
+      }
+    },
+    "/model-associations/{poolID}/models": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listModels"
+      }
+    },
+    "/model-associations/{poolID}/models/{modelID}": {
+      "delete": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "removeModel"
+      },
+      "post": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "assignModel"
+      }
+    },
+    "/models": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "list"
+      },
+      "post": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "append"
+      }
+    },
+    "/models/{model}": {
+      "delete": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "delete"
+      }
+    },
+    "/pool-by-name/{name}": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "getByName"
+      }
+    },
+    "/pool-by-purpose/{purpose}": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listByPurpose"
+      }
+    },
+    "/pools": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listAll"
+      },
+      "post": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "create"
+      }
+    },
+    "/pools/{id}": {
+      "delete": {
+        "responses": null,
+        "summary": "delete"
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "getByID"
+      },
+      "put": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "update"
+      }
+    },
+    "/providers/configs": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listConfigs"
+      }
+    },
+    "/providers/{providerType}/config": {
+      "delete": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "deleteConfig"
+      },
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "get"
+      }
+    },
+    "/queue": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "getQueue"
+      }
+    },
+    "/queue/cancel": {
+      "delete": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "cancelDownload"
+      }
+    },
+    "/queue/inProgress": {
+      "get": {
+        "responses": null,
+        "summary": "inProgress"
+      }
+    },
+    "/queue/{model}": {
+      "delete": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "removeFromQueue"
+      }
+    },
+    "/state": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "list"
+      }
+    },
+    "/supported": {
+      "get": {
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "supported"
+      }
+    },
+    "/tasks": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/taskExec"
+              }
+            }
+          }
+        },
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "tasks"
+      }
+    }
+  }
+}
