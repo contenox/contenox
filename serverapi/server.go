@@ -56,15 +56,6 @@ func New(
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		// OK
 	})
-	// Add new handler to serve the raw OpenAPI spec
-	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./docs/openapi.json")
-	})
-
-	// Add new handler to serve the Swagger UI HTML page
-	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./docs/index.html")
-	})
 	tracker := taskengine.NewKVActivityTracker(kvManager)
 	stdOuttracker := activitytracker.NewLogActivityTracker(slog.Default())
 	serveropsChainedTracker := activitytracker.ChainedTracker{
