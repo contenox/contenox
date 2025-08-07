@@ -205,16 +205,46 @@
       },
       "Config": {
         "properties": {
+          "addr": {
+            "type": "string"
+          },
           "database_url": {
             "type": "string"
           },
           "embed_model": {
             "type": "string"
           },
+          "kv_backend": {
+            "type": "string"
+          },
+          "kv_host": {
+            "type": "string"
+          },
+          "kv_password": {
+            "type": "string"
+          },
+          "nats_password": {
+            "type": "string"
+          },
+          "nats_url": {
+            "type": "string"
+          },
+          "nats_user": {
+            "type": "string"
+          },
+          "port": {
+            "type": "string"
+          },
           "task_model": {
             "type": "string"
           },
-          "tenant_id": {
+          "token": {
+            "type": "string"
+          },
+          "tokenizer_service_url": {
+            "type": "string"
+          },
+          "vector_store_url": {
             "type": "string"
           }
         },
@@ -348,14 +378,8 @@
           "id": {
             "type": "string"
           },
-          "payload": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "retryCount": {
-            "type": "integer"
+          "modelJob": {
+            "type": "object"
           },
           "scheduledFor": {
             "type": "integer"
@@ -1124,11 +1148,31 @@
     "/backend-associations/{backendID}/pools": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pools"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1139,16 +1183,46 @@
           }
         },
         "summary": "listPoolsForBackend"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "backendID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/backend-associations/{poolID}/backends": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backends"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1159,16 +1233,46 @@
           }
         },
         "summary": "listBackends"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/backend-associations/{poolID}/backends/{backendID}": {
       "delete": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1180,13 +1284,67 @@
         },
         "summary": "removeBackend"
       },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "backendID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "backendID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "post": {
         "responses": {
-          "500": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1202,11 +1360,31 @@
     "/backends": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resp"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1220,11 +1398,31 @@
       },
       "post": {
         "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backend"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1240,11 +1438,31 @@
     "/backends/{id}": {
       "delete": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1258,11 +1476,31 @@
       },
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resp"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1274,13 +1512,59 @@
         },
         "summary": "get"
       },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "put": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backend"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1296,11 +1580,31 @@
     "/defaultmodel": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1325,11 +1629,31 @@
           }
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbedResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1345,11 +1669,31 @@
     "/execute": {
       "post": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resp"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1365,11 +1709,31 @@
     "/hooks/remote": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hooks"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1383,11 +1747,31 @@
       },
       "post": {
         "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hook"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1403,11 +1787,31 @@
     "/hooks/remote/{id}": {
       "delete": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1421,11 +1825,31 @@
       },
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hook"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1437,13 +1861,59 @@
         },
         "summary": "get"
       },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "put": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hook"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1459,11 +1929,31 @@
     "/model-associations/{modelID}/pools": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pools"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1474,16 +1964,46 @@
           }
         },
         "summary": "listPoolsForModel"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "modelID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/model-associations/{poolID}/models": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/models"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1494,16 +2014,46 @@
           }
         },
         "summary": "listModels"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/model-associations/{poolID}/models/{modelID}": {
       "delete": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1515,13 +2065,67 @@
         },
         "summary": "removeModel"
       },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "modelID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "modelID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "post": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1537,11 +2141,31 @@
     "/models": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1555,11 +2179,31 @@
       },
       "post": {
         "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/model"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1575,11 +2219,31 @@
     "/models/{model}": {
       "delete": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1590,16 +2254,46 @@
           }
         },
         "summary": "delete"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/pool-by-name/{name}": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1610,16 +2304,46 @@
           }
         },
         "summary": "getByName"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/pool-by-purpose/{purpose}": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pools"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1630,16 +2354,46 @@
           }
         },
         "summary": "listByPurpose"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "purpose",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/pools": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pools"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1653,11 +2407,31 @@
       },
       "post": {
         "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pool"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1672,16 +2446,60 @@
     },
     "/pools/{id}": {
       "delete": {
-        "responses": null,
-        "summary": "delete"
-      },
-      "get": {
         "responses": {
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "delete"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1693,13 +2511,59 @@
         },
         "summary": "getByID"
       },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
       "put": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1715,11 +2579,31 @@
     "/providers/configs": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/configs"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1735,11 +2619,31 @@
     "/providers/{providerType}/config": {
       "delete": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1753,11 +2657,31 @@
       },
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/config"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1768,16 +2692,54 @@
           }
         },
         "summary": "get"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "providerType",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "providerType",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/queue": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/currentQueue"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1793,11 +2755,31 @@
     "/queue/cancel": {
       "delete": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1812,18 +2794,62 @@
     },
     "/queue/inProgress": {
       "get": {
-        "responses": null,
+        "responses": {
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": ""
+          }
+        },
         "summary": "inProgress"
       }
     },
     "/queue/{model}": {
       "delete": {
         "responses": {
-          "500": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1834,16 +2860,46 @@
           }
         },
         "summary": "removeFromQueue"
-      }
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/state": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/internalModels"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1859,11 +2915,31 @@
     "/supported": {
       "get": {
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resp"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1888,11 +2964,31 @@
           }
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
           "500": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/object"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             },
@@ -1905,5 +3001,10 @@
         "summary": "tasks"
       }
     }
-  }
+  },
+  "security": [
+    {
+      "X-API-Key": []
+    }
+  ]
 }

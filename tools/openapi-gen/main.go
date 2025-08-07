@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -33,7 +34,10 @@ func main() {
 		Title:   "LLM Backend Management API",
 		Version: "1.0",
 	}
+
 	swagger.Paths = openapi3.NewPaths()
+	swagger.Security = *openapi3.NewSecurityRequirements().
+		With(openapi3.SecurityRequirement{"X-API-Key": []string{}})
 
 	processRouteFiles(fset, pkgs, swagger)
 	addSchemasToSpec(swagger)
@@ -42,7 +46,14 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to marshal spec:", err)
 	}
-
+	swagger.Components.SecuritySchemes = openapi3.SecuritySchemes{
+		"X-API-Key": &openapi3.SecuritySchemeRef{
+			Value: openapi3.NewSecurityScheme().
+				WithType("http").
+				WithScheme("token").
+				WithBearerFormat("text"),
+		},
+	}
 	os.MkdirAll("docs", 0755)
 	if err := os.WriteFile("docs/openapi.json", data, 0644); err != nil {
 		log.Fatal("Failed to write spec:", err)
@@ -135,6 +146,27 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 		}
 	}
 
+	if strings.Contains(path, "{") {
+		pathItem := swagger.Paths.Find(path)
+		if pathItem == nil {
+			pathItem = &openapi3.PathItem{}
+			swagger.Paths.Set(path, pathItem)
+		}
+
+		// Extract parameters from path
+		parts := strings.Split(path, "/")
+		for _, part := range parts {
+			if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+				paramName := strings.Trim(part, "{}")
+				param := openapi3.NewPathParameter(paramName)
+				param.Schema = openapi3.NewStringSchema().NewRef()
+				pathItem.Parameters = append(pathItem.Parameters, &openapi3.ParameterRef{
+					Value: param,
+				})
+			}
+		}
+	}
+
 	var handler *ast.FuncDecl
 	if len(call.Args) > 1 {
 		if funcLit, ok := call.Args[1].(*ast.FuncLit); ok {
@@ -186,12 +218,16 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 	statusCodes := extractStatusCodes(handler)
 	for status, respType := range statusCodes {
 		var schemaRef *openapi3.SchemaRef
-		if respType == "string" {
+
+		// Check if it's a primitive type
+		if openapiType := toOpenAPIType(respType); openapiType != nil {
 			schemaRef = &openapi3.SchemaRef{
-				Value: openapi3.NewSchema(),
+				Value: &openapi3.Schema{
+					Type: openapiType,
+				},
 			}
-			schemaRef.Value.Type = &openapi3.Types{openapi3.TypeString}
 		} else {
+			// Assume it's an object and use ref
 			schemaRef = &openapi3.SchemaRef{
 				Ref: fmt.Sprintf("#/components/schemas/%s", respType),
 			}
@@ -245,32 +281,90 @@ func extractStatusCodes(handler *ast.FuncDecl) map[int]string {
 
 	ast.Inspect(handler.Body, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok {
+			// Look for Encode calls
 			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Encode" {
-				if len(call.Args) >= 2 {
-					if id, ok := call.Args[1].(*ast.Ident); ok {
-						status := httpStatusToCode(id.Name)
-						respType := "object"
-						if len(call.Args) >= 4 && status != 204 {
-							if sel, ok := call.Args[3].(*ast.SelectorExpr); ok {
-								respType = sel.Sel.Name
-							}
-						}
-						statusCodes[status] = respType
+				if len(call.Args) < 4 {
+					return true
+				}
+
+				status := 0
+				// Handle status argument (could be identifier, selector or literal)
+				switch arg := call.Args[2].(type) {
+				case *ast.Ident:
+					status = httpStatusToCode(arg.Name)
+				case *ast.SelectorExpr:
+					status = httpStatusToCode(arg.Sel.Name)
+				case *ast.BasicLit:
+					if i, err := strconv.Atoi(arg.Value); err == nil {
+						status = i
 					}
 				}
+
+				if status == 0 {
+					return true
+				}
+
+				respType := "object"
+				// Handle response type argument
+				switch arg := call.Args[3].(type) {
+				case *ast.Ident:
+					respType = arg.Name // Use identifier name directly
+				case *ast.SelectorExpr:
+					respType = arg.Sel.Name
+				case *ast.CompositeLit:
+					if id, ok := arg.Type.(*ast.Ident); ok {
+						respType = id.Name
+					}
+				}
+
+				statusCodes[status] = respType
 			}
+
+			// Look for Error calls
 			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Error" {
 				if len(call.Args) >= 3 {
+					status := 500
+					// First try to get status from operation type
 					if sel, ok := call.Args[2].(*ast.SelectorExpr); ok {
-						status := httpStatusFromOperation(sel.Sel.Name)
-						statusCodes[status] = "ErrorResponse"
+						status = httpStatusFromOperation(sel.Sel.Name)
 					}
+					// Then check if we have a specific status code
+					if len(call.Args) >= 4 {
+						if lit, ok := call.Args[3].(*ast.BasicLit); ok && lit.Kind == token.INT {
+							if code, err := strconv.Atoi(lit.Value); err == nil {
+								status = code
+							}
+						}
+					}
+					statusCodes[status] = "ErrorResponse"
 				}
 			}
 		}
 		return true
 	})
+
+	if _, exists := statusCodes[400]; !exists {
+		statusCodes[400] = "ErrorResponse"
+	}
+	if _, exists := statusCodes[500]; !exists {
+		statusCodes[500] = "ErrorResponse"
+	}
+
 	return statusCodes
+}
+
+func getActualTypeName(expr ast.Expr, name string) string {
+	// If it's a selector expression like runtimetypes.Backend, extract the type name
+	if sel, ok := expr.(*ast.SelectorExpr); ok {
+		return sel.Sel.Name
+	}
+
+	// If it's an identifier, just use the name
+	if _, ok := expr.(*ast.Ident); ok {
+		return name
+	}
+
+	return name
 }
 
 func httpStatusToCode(name string) int {
@@ -372,11 +466,25 @@ func addStructSchema(swagger *openapi3.T, name string, structType *ast.StructTyp
 	schema.Properties = make(openapi3.Schemas)
 
 	for _, field := range structType.Fields.List {
-		if len(field.Names) == 0 {
-			continue
+		fieldName := ""
+		if len(field.Names) > 0 {
+			fieldName = field.Names[0].Name
 		}
 
-		fieldName := field.Names[0].Name
+		// Handle embedded structs
+		if fieldName == "" {
+			if ident, ok := field.Type.(*ast.Ident); ok {
+				if obj := ident.Obj; obj != nil {
+					if spec, ok := obj.Decl.(*ast.TypeSpec); ok {
+						if st, ok := spec.Type.(*ast.StructType); ok {
+							// Recursively add embedded struct
+							addStructSchema(swagger, ident.Name, st)
+						}
+					}
+				}
+			}
+			continue
+		}
 		jsonTag := ""
 		if field.Tag != nil {
 			tag := strings.Trim(field.Tag.Value, "`")
@@ -449,5 +557,73 @@ func goTypeToSwaggerType(goType string) *openapi3.Types {
 		return &openapi3.Types{openapi3.TypeString}
 	default:
 		return &openapi3.Types{openapi3.TypeObject}
+	}
+}
+
+func resolveVariableType(handler *ast.FuncDecl, varName string) string {
+	var resolvedType string
+
+	ast.Inspect(handler.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.AssignStmt:
+			for i, lhs := range node.Lhs {
+				if ident, ok := lhs.(*ast.Ident); ok && ident.Name == varName {
+					rhs := node.Rhs[i]
+					switch t := rhs.(type) {
+					case *ast.CompositeLit:
+						// Handle struct literals
+						if ident, ok := t.Type.(*ast.Ident); ok {
+							resolvedType = ident.Name
+							return false
+						}
+					case *ast.CallExpr:
+						// Handle function returns
+						if sel, ok := t.Fun.(*ast.SelectorExpr); ok {
+							resolvedType = sel.Sel.Name
+							return false
+						}
+					}
+				}
+			}
+		case *ast.DeclStmt:
+			// Handle variable declarations
+			if genDecl, ok := node.Decl.(*ast.GenDecl); ok && genDecl.Tok == token.VAR {
+				for _, spec := range genDecl.Specs {
+					if valueSpec, ok := spec.(*ast.ValueSpec); ok {
+						for _, name := range valueSpec.Names {
+							if name.Name == varName && valueSpec.Type != nil {
+								if ident, ok := valueSpec.Type.(*ast.Ident); ok {
+									resolvedType = ident.Name
+									return false
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	if resolvedType != "" {
+		return resolvedType
+	}
+	return varName // Fallback to variable name
+}
+
+func toOpenAPIType(goType string) *openapi3.Types {
+	switch goType {
+	case "string", "time.Time", "time.Duration":
+		return &openapi3.Types{openapi3.TypeString}
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64":
+		return &openapi3.Types{openapi3.TypeInteger}
+	case "float32", "float64":
+		return &openapi3.Types{openapi3.TypeNumber}
+	case "bool":
+		return &openapi3.Types{openapi3.TypeBoolean}
+	case "interface{}", "any":
+		return &openapi3.Types{openapi3.TypeObject} // Generic object type
+	default:
+		return nil
 	}
 }
