@@ -46,7 +46,7 @@ type backendManager struct {
 func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	backend, err := serverops.Decode[runtimetypes.Backend](r)
+	backend, err := serverops.Decode[runtimetypes.Backend](r) // @request []runtimetypes.Backend
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -57,7 +57,7 @@ func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusCreated, backend)
+	_ = serverops.Encode(w, r, http.StatusCreated, backend) // @response []runtimetypes.Backend
 }
 
 func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {

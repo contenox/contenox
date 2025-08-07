@@ -1,0 +1,1097 @@
+{
+  "components": {
+    "schemas": {
+      "array_runtimetypes_Backend": {
+        "items": {
+          "$ref": "#/components/schemas/runtimetypes_Backend"
+        },
+        "type": "array"
+      },
+      "runtimetypes_Backend": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "X-API-Key": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "title": "LLM Backend Management API",
+    "version": "1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/backend-associations/{backendID}/pools": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pools"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listPoolsForBackend"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "backendID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/backend-associations/{poolID}/backends": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backends"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listBackends"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/backend-associations/{poolID}/backends/{backendID}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "removeBackend"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "backendID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "backendID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Backend association handlers",
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "assignBackend"
+      }
+    },
+    "/backends": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resp"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "list"
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/array_runtimetypes_Backend"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_runtimetypes_Backend"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "create"
+      }
+    },
+    "/backends/{id}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "delete"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resp"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "get"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backend"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "update"
+      }
+    },
+    "/defaultmodel": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "defaultModel"
+      }
+    },
+    "/embed": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbedResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "embed"
+      }
+    },
+    "/execute": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resp"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "execute"
+      }
+    },
+    "/hooks/remote": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hooks"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "list"
+      },
+      "post": {
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hook"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "create"
+      }
+    },
+    "/hooks/remote/{id}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "delete"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hook"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "get"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hook"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "update"
+      }
+    },
+    "/model-associations/{modelID}/pools": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pools"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listPoolsForModel"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "modelID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/model-associations/{poolID}/models": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/models"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listModels"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/model-associations/{poolID}/models/{modelID}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "removeModel"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "modelID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "poolID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "modelID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Model association handlers",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "assignModel"
+      }
+    },
+    "/models": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "list"
+      },
+      "post": {
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/model"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "append"
+      }
+    },
+    "/models/{model}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "delete"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/pool-by-name/{name}": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "getByName"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/pool-by-purpose/{purpose}": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pools"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listByPurpose"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "purpose",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/pools": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pools"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listAll"
+      },
+      "post": {
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pool"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "create"
+      }
+    },
+    "/pools/{id}": {
+      "delete": {
+        "responses": null,
+        "summary": "delete"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "getByID"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/pool"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "update"
+      }
+    },
+    "/providers/configs": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/configs"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listConfigs"
+      }
+    },
+    "/providers/{providerType}/config": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "deleteConfig"
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/config"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "get"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "providerType",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "providerType",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/queue": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/currentQueue"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "getQueue"
+      }
+    },
+    "/queue/cancel": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "cancelDownload"
+      }
+    },
+    "/queue/inProgress": {
+      "get": {
+        "description": "inProgress streams status updates to the client via Server-Sent Events.",
+        "responses": null,
+        "summary": "inProgress"
+      }
+    },
+    "/queue/{model}": {
+      "delete": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "removeFromQueue"
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/state": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/internalModels"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "list"
+      }
+    },
+    "/supported": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/resp"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "supported"
+      }
+    },
+    "/tasks": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/taskExec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/response"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "tasks"
+      }
+    }
+  },
+  "security": [
+    {
+      "X-API-Key": []
+    }
+  ]
+}
