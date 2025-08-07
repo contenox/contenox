@@ -18,8 +18,26 @@ var (
 	ErrMissingParameter      = errors.New("serverops: missing parameter")
 	ErrEmptyRequest          = errors.New("serverops: empty request")
 	ErrEmptyRequestBody      = errors.New("serverops: empty request body")
-	ErrBadRequest            = errors.New("serverops: bad request")
-	ErrUnprocessableEntity   = errors.New("serverops: unprocessable entity")
+)
+
+// The generic error types for common HTTP status codes
+var (
+	// ErrBadRequest is a generic error for a 400 Bad Request
+	ErrBadRequest = errors.New("serverops: bad request")
+	// ErrUnprocessableEntity is a generic error for a 422 Unprocessable Entity
+	ErrUnprocessableEntity = errors.New("serverops: unprocessable entity")
+	// ErrNotFound is a generic error for a 404 Not Found
+	ErrNotFound = errors.New("serverops: not found")
+	// ErrConflict is a generic error for a 409 Conflict
+	ErrConflict = errors.New("serverops: conflict")
+	// ErrForbidden is a generic error for a 403 Forbidden
+	ErrForbidden = errors.New("serverops: forbidden")
+	// ErrInternalServerError is a generic error for a 500 Internal Server Error
+	ErrInternalServerError = errors.New("serverops: internal server error")
+	// ErrUnsupportedMediaType is a generic error for a 415 Unsupported Media Type
+	ErrUnsupportedMediaType = errors.New("serverops: unsupported media type")
+	// ErrUnauthorized is a generic error for a 401 Unauthorized
+	ErrUnauthorized = errors.New("serverops: unauthorized")
 )
 
 // ErrFileSizeLimitExceeded indicates the specific file exceeded its allowed size limit.
@@ -95,6 +113,28 @@ func mapErrorToStatus(op Operation, err error) int {
 	}
 	if errors.Is(err, ErrBadRequest) {
 		return http.StatusBadRequest // 400
+	}
+
+	if errors.Is(err, ErrUnauthorized) {
+		return http.StatusUnauthorized // 401
+	}
+	if errors.Is(err, ErrForbidden) {
+		return http.StatusForbidden // 403
+	}
+	if errors.Is(err, ErrNotFound) {
+		return http.StatusNotFound // 404
+	}
+	if errors.Is(err, ErrConflict) {
+		return http.StatusConflict // 409
+	}
+	if errors.Is(err, ErrUnsupportedMediaType) {
+		return http.StatusUnsupportedMediaType // 415
+	}
+	if errors.Is(err, ErrInternalServerError) {
+		return http.StatusInternalServerError // 500
+	}
+	if errors.Is(err, ErrUnprocessableEntity) {
+		return http.StatusUnprocessableEntity // 422
 	}
 
 	if errors.Is(err, libdb.ErrNotFound) {

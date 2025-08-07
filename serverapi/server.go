@@ -74,7 +74,6 @@ func New(
 	pool := routine.GetPool()
 
 	// Start managed loops using the pool
-
 	pool.StartLoop(
 		ctx,
 		&routine.LoopConfig{
@@ -116,6 +115,7 @@ func New(
 	hookproviderService = hookproviderservice.WithActivityTracker(hookproviderService, serveropsChainedTracker)
 	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
 	handler = apiframework.RequestIDMiddleware(handler)
+	handler = apiframework.TracingMiddleware(handler)
 
 	return handler, cleanup, nil
 }
