@@ -51,15 +51,5 @@ test-api-docker:
 	docker build -f Dockerfile.apitests -t contenox-apitests .
 	docker run --rm --network=host contenox-apitests
 
-docs-gen:
-	@echo "📝 Generating OpenAPI spec..."
-	@go run $(PROJECT_ROOT)/tools/openapi-gen --project="$(PROJECT_ROOT)" --output="$(PROJECT_ROOT)/docs"
-	@echo "✅ OpenAPI spec generated at $(PROJECT_ROOT)/docs/openapi.json"
-
-docs-render:
-	@echo "🎨 Rendering static OpenAPI HTML..."
-	@go run $(PROJECT_ROOT)/tools/render-openapi
-	@echo "✅ Static documentation generated at $(PROJECT_ROOT)/docs/index.html"
-
-build: docs-gen docs-render
+build:
 	docker compose build --build-arg CORE_VERSION=$(DEFAULT_CORE_VERSION)
