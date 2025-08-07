@@ -30,7 +30,7 @@ func NewHTTPRemoteHookService(baseURL, token string, client *http.Client) hookpr
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPRemoteHookService{
 		client:  client,
@@ -51,7 +51,7 @@ func (s *HTTPRemoteHookService) Create(ctx context.Context, hook *runtimetypes.R
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	// Encode request body

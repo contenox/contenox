@@ -26,7 +26,7 @@ func NewHTTPExecService(baseURL, token string, client *http.Client) execservice.
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPExecService{
 		client:  client,
@@ -47,7 +47,7 @@ func (s *HTTPExecService) Execute(ctx context.Context, request *execservice.Task
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	// Encode request body

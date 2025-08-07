@@ -116,6 +116,10 @@ func New(
 	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
+	if config.Token != "" {
+		handler = apiframework.TokenMiddleware(handler)
+		handler = apiframework.EnforceToken(config.Token, handler)
+	}
 
 	return handler, cleanup, nil
 }
@@ -134,6 +138,7 @@ type Config struct {
 	KVBackend           string `json:"kv_backend"`
 	KVHost              string `json:"kv_host"`
 	KVPassword          string `json:"kv_password"`
+	Token               string `json:"token"`
 }
 
 func LoadConfig[T any](cfg *T) error {

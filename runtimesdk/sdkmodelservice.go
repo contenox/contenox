@@ -30,7 +30,7 @@ func NewHTTPModelService(baseURL, token string, client *http.Client) modelservic
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPModelService{
 		client:  client,
@@ -51,7 +51,7 @@ func (s *HTTPModelService) Append(ctx context.Context, model *runtimetypes.Model
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	// Encode request body

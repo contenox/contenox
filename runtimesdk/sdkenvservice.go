@@ -26,7 +26,7 @@ func NewHTTPTasksEnvService(baseURL, token string, client *http.Client) execserv
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPTasksEnvService{
 		client:  client,
@@ -54,7 +54,7 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Cha
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	// Encode request body

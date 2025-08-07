@@ -247,3 +247,16 @@ def configurable_mock_hook_server(httpserver: HTTPServer):
         }
 
     return _setup_mock
+
+
+API_TOKEN = "my-secret-test-token"
+
+@pytest.fixture(scope="session")
+def auth_headers():
+    """
+    Fixture that provides authentication headers with a constant token.
+    """
+    headers = {
+        "X-API-Key": API_TOKEN
+    }
+    return headers

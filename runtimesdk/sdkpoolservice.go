@@ -30,7 +30,7 @@ func NewHTTPPoolService(baseURL, token string, client *http.Client) poolservice.
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPPoolService{
 		client:  client,
@@ -51,7 +51,7 @@ func (s *HTTPPoolService) Create(ctx context.Context, pool *runtimetypes.Pool) e
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	// Encode request body

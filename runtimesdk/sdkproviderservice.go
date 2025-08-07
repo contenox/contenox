@@ -30,7 +30,7 @@ func NewHTTPProviderService(baseURL, token string, client *http.Client) provider
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPProviderService{
 		client:  client,
@@ -101,7 +101,7 @@ func (s *HTTPProviderService) GetProviderConfig(ctx context.Context, providerTyp
 	}
 
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	resp, err := s.client.Do(req)

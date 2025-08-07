@@ -27,7 +27,7 @@ func NewHTTPStateService(baseURL, token string, client *http.Client) stateservic
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPStateService{
 		client:  client,
@@ -48,7 +48,7 @@ func (h *HTTPStateService) Get(ctx context.Context) (map[string]runtimestate.LLM
 
 	// Set headers
 	if h.token != "" {
-		req.Header.Set("Authorization", "Bearer "+h.token)
+		req.Header.Set("X-API-Key", h.token)
 	}
 
 	resp, err := h.client.Do(req)

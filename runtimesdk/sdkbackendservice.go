@@ -29,7 +29,7 @@ func NewHTTPBackendService(baseURL, token string, client *http.Client) backendse
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPBackendService{
 		client:  client,
@@ -50,7 +50,7 @@ func (s *HTTPBackendService) Create(ctx context.Context, backend *runtimetypes.B
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	// Encode request body

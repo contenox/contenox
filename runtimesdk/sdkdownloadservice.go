@@ -30,7 +30,7 @@ func NewHTTPDownloadService(baseURL, token string, client *http.Client) download
 	}
 
 	// Ensure baseURL doesn't end with a slash
-	strings.TrimSuffix(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return &HTTPDownloadService{
 		client:  client,
@@ -50,7 +50,7 @@ func (s *HTTPDownloadService) CurrentDownloadQueueState(ctx context.Context) ([]
 
 	// Set headers
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	resp, err := s.client.Do(req)

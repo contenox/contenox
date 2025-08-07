@@ -58,7 +58,7 @@ func (s *HTTPEmbedService) Embed(ctx context.Context, text string) ([]float64, e
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	resp, err := s.client.Do(req)
