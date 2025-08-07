@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -13,22 +14,37 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"gopkg.in/yaml.v3"
 )
 
 var pkgs map[string]*ast.Package
 
 func main() {
+	var projectDir string
+	var outputDir string
+
+	flag.StringVar(&projectDir, "project", "", "The root directory of the Go project to parse.")
+	flag.StringVar(&outputDir, "output", "docs", "The output directory for the generated OpenAPI spec.")
+
+	flag.Parse()
+
+	if projectDir == "" {
+		fmt.Println("Error: The --project flag is required.")
+		flag.Usage()
+		os.Exit(1)
+	}
+
 	fset := token.NewFileSet()
 	pkgs = make(map[string]*ast.Package)
 
-	// Recursively parse all .go files in the project
-	err := parseProject(fset, "/home/naro/src/github.com/contenox/runtime/", pkgs)
+	// Use the argument for the project directory
+	err := parseProject(fset, projectDir, pkgs)
 	if err != nil {
 		log.Fatal("Failed to parse project:", err)
 	}
 
 	swagger := &openapi3.T{
-		OpenAPI: "3.0.0",
+		OpenAPI: "3.1.0",
 		Info: &openapi3.Info{
 			Title:   "LLM Backend Management API",
 			Version: "1.0",
@@ -36,18 +52,12 @@ func main() {
 		Paths: openapi3.NewPaths(),
 	}
 
-	// Add security scheme
-
 	swagger.Security = *openapi3.NewSecurityRequirements().
 		With(openapi3.SecurityRequirement{"X-API-Key": []string{}})
 
 	processRouteFiles(fset, pkgs, swagger)
 	addSchemasToSpec(swagger)
 
-	data, err := json.MarshalIndent(swagger, "", "  ")
-	if err != nil {
-		log.Fatal("Failed to marshal spec:", err)
-	}
 	swagger.Components.SecuritySchemes = openapi3.SecuritySchemes{
 		"X-API-Key": &openapi3.SecuritySchemeRef{
 			Value: openapi3.NewSecurityScheme().
@@ -56,12 +66,28 @@ func main() {
 				WithIn("header"),
 		},
 	}
-	os.MkdirAll("docs", 0755)
-	if err := os.WriteFile("docs/openapi.json", data, 0644); err != nil {
+
+	data, err := json.MarshalIndent(swagger, "", "  ")
+	if err != nil {
+		log.Fatal("Failed to marshal spec:", err)
+	}
+
+	// Use the argument for the output directory
+	os.MkdirAll(outputDir, 0755)
+	outputFilePath := filepath.Join(outputDir, "openapi.json")
+	if err := os.WriteFile(outputFilePath, data, 0644); err != nil {
+		log.Fatal("Failed to write spec:", err)
+	}
+	data, err = yaml.Marshal(swagger)
+	if err != nil {
+		log.Fatal("Failed to marshal spec:", err)
+	}
+	outputFilePath = filepath.Join(outputDir, "openapi.yaml")
+	if err := os.WriteFile(outputFilePath, data, 0644); err != nil {
 		log.Fatal("Failed to write spec:", err)
 	}
 
-	fmt.Println("✅ OpenAPI spec generated at docs/openapi.json")
+	fmt.Printf("✅ OpenAPI spec generated at %s\n", outputFilePath)
 }
 
 func parseProject(fset *token.FileSet, rootDir string, pkgs map[string]*ast.Package) error {

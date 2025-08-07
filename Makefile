@@ -1,7 +1,6 @@
-.PHONY: test-unit test-system test compose-wipe benchmark run build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server
-DEFAULT_ADMIN_USER ?= admin@admin.com
+.PHONY: test-unit test-system test compose-wipe benchmark run build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen
 DEFAULT_CORE_VERSION ?= dev-demo
-
+PROJECT_ROOT := $(shell pwd)
 test-unit:
 	GOMAXPROCS=4 go test -C ./ -run '^TestUnit_' ./...
 
@@ -51,3 +50,16 @@ test-api-logs: run wait-for-server
 test-api-docker:
 	docker build -f Dockerfile.apitests -t contenox-apitests .
 	docker run --rm --network=host contenox-apitests
+
+docs-gen:
+	@echo "📝 Generating OpenAPI spec..."
+	@go run $(PROJECT_ROOT)/tools/openapi-gen --project="$(PROJECT_ROOT)" --output="$(PROJECT_ROOT)/docs"
+	@echo "✅ OpenAPI spec generated at $(PROJECT_ROOT)/docs/openapi.json"
+
+docs-render:
+	@echo "🎨 Rendering static OpenAPI HTML..."
+	@go run $(PROJECT_ROOT)/tools/render-openapi
+	@echo "✅ Static documentation generated at $(PROJECT_ROOT)/docs/index.html"
+
+build: docs-gen docs-render
+	docker compose build --build-arg CORE_VERSION=$(DEFAULT_CORE_VERSION)

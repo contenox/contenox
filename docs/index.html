@@ -1,4 +1,38 @@
-{
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation</title>
+    <!-- We are using local Swagger UI files to avoid internet dependency.
+         In a real-world scenario, you would bundle these files locally.
+         For this example, we'll embed the spec directly. -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui.min.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- The container for Swagger UI to render the docs -->
+    <div id="swagger-ui"></div>
+
+    <!-- Swagger UI JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-standalone-preset.min.js"></script>
+
+    <script>
+        // Use the window.onload event to ensure the script runs after the page is fully loaded
+        window.onload = function() {
+            // Check if the required scripts are loaded
+            if (typeof SwaggerUIBundle !== 'undefined') {
+                // We embed the JSON content directly into the JavaScript to make it self-contained.
+                const spec = {
   "components": {
     "schemas": {
       "APIError": {
@@ -3038,4 +3072,26 @@
       "X-API-Key": []
     }
   ]
-}
+};
+                const ui = SwaggerUIBundle({
+                    // Point Swagger UI to the embedded JSON object
+                    spec: spec,
+                    dom_id: '#swagger-ui',
+                    deepLinking: true,
+                    presets: [
+                        SwaggerUIBundle.presets.apis,
+                        SwaggerUIStandalonePreset
+                    ],
+                    plugins: [
+                        SwaggerUIBundle.plugins.DownloadUrl
+                    ],
+                    layout: "StandaloneLayout"
+                });
+            } else {
+                console.error("Swagger UI scripts failed to load.");
+            }
+        };
+    </script>
+
+</body>
+</html>

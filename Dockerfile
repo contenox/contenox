@@ -26,6 +26,9 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/runtime-api .
 
+# Copy the generated OpenAPI spec from the build context
+COPY docs/openapi.json ./docs/
+
 # Install dependencies for healthcheck and SSL
 RUN apk add --no-cache ca-certificates curl
 
