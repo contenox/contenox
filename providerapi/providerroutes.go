@@ -39,9 +39,15 @@ type ConfigureRequest struct {
 type StatusResponse struct {
 	Configured bool      `json:"configured"`
 	UpdatedAt  time.Time `json:"updatedAt"`
-	Provider   string    `json:"provider"`
+	Provider   string    `json:"provider" example:"gemini"`
 }
 
+// Configures authentication for an external provider (OpenAI or Gemini).
+// Requires a valid API key for the specified provider type.
+// The 'upsert' parameter determines whether to update existing configuration.
+// After suggesful configuration the system will provision a virtual backend for that provider.
+// Also all available models from that given provider will be declared by the system.
+// This provider can then be added to one or many pools to allow usage of the models.
 func (p *providerManager) configure(providerType string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req, err := apiframework.Decode[ConfigureRequest](r) // @request providerapi.ConfigureRequest
@@ -71,6 +77,8 @@ func (p *providerManager) configure(providerType string) func(w http.ResponseWri
 	}
 }
 
+// Checks configuration status for an external provider.
+// Returns whether the provider is properly configured with valid credentials.
 func (p *providerManager) status(providerType string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := p.providerService.GetProviderConfig(r.Context(), providerType)
@@ -92,6 +100,8 @@ func (p *providerManager) status(providerType string) func(w http.ResponseWriter
 	}
 }
 
+// Removes provider configuration from the system.
+// After deletion, the provider will no longer be available for model execution.
 func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 	providerType := r.PathValue("providerType")
 	if providerType == "" {
@@ -107,10 +117,7 @@ func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, "Provider config deleted successfully") // @response string
 }
 
-type ListConfigsResponse struct {
-	Providers []*runtimestate.ProviderConfig `json:"providers"`
-}
-
+// Lists all configured external providers with pagination support.
 func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -146,6 +153,7 @@ func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, configs) // @response []runtimestate.ProviderConfig
 }
 
+// Retrieves configuration details for a specific external provider.
 func (p *providerManager) get(w http.ResponseWriter, r *http.Request) {
 	providerType := r.PathValue("providerType")
 	if providerType == "" {

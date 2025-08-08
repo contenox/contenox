@@ -24,6 +24,11 @@ type downloadManager struct {
 	service downloadservice.Service
 }
 
+// Retrieves the current model download queue state.
+// Returns a list of models waiting to be downloaded.
+// Downloading models is only supported for ollama backends.
+// If pools are enabled, models will only be downloaded to backends
+// that are associated with at least one pool.
 func (s *downloadManager) getQueue(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -36,6 +41,8 @@ func (s *downloadManager) getQueue(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, currentQueue) // @response []downloadservice.Job
 }
 
+// Removes a model from the download queue.
+// If a model download is in progress or the download will be cancelled.
 func (s *downloadManager) removeFromQueue(w http.ResponseWriter, r *http.Request) {
 	modelName := r.PathValue("model")
 	if modelName == "" {
@@ -51,7 +58,12 @@ func (s *downloadManager) removeFromQueue(w http.ResponseWriter, r *http.Request
 	_ = serverops.Encode(w, r, http.StatusOK, "Model removed from queue") // @response string
 }
 
-// inProgress streams status updates to the client via Server-Sent Events.
+// Streams real-time download progress via Server-Sent Events (SSE).
+// Clients should handle 'data' events containing JSON status updates.
+// Connection remains open until client disconnects or server closes.
+// Example event format:
+// event: status
+// data: {"status":"downloading","digest":"sha256:abc123","total":1000000,"completed":250000,"model":"mistral:latest","baseUrl":"http://localhost:11434"}
 func (s *downloadManager) inProgress(w http.ResponseWriter, r *http.Request) {
 	// Set appropriate SSE headers.
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -103,6 +115,13 @@ func (s *downloadManager) inProgress(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// Cancels an in-progress model download.
+// Accepts either:
+// - 'url' query parameter to cancel a download on a specific backend
+// - 'model' query parameter to cancel the model download across all backends
+// Example: /queue/cancel?url=http://localhost:11434
+//
+//	/queue/cancel?model=mistral:latest
 func (s *downloadManager) cancelDownload(w http.ResponseWriter, r *http.Request) {
 	value := url.QueryEscape(r.URL.Query().Get("url"))
 	if value == "" {

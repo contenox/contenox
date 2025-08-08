@@ -26,6 +26,8 @@ type remoteHookService struct {
 	service hookproviderservice.Service
 }
 
+// Creates a new remote hook configuration.
+// Remote hooks allow task-chains to trigger external HTTP services during execution.
 func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -42,6 +44,7 @@ func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusCreated, hook) // @response runtimetypes.RemoteHook
 }
 
+// Lists all configured remote hooks with pagination support.
 func (s *remoteHookService) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -77,6 +80,7 @@ func (s *remoteHookService) list(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, hooks) // @response []runtimetypes.RemoteHook
 }
 
+// Retrieves a specific remote hook configuration by ID.
 func (s *remoteHookService) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := url.PathEscape(r.PathValue("id"))
@@ -90,6 +94,8 @@ func (s *remoteHookService) get(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, hook) // @response runtimetypes.RemoteHook
 }
 
+// Updates an existing remote hook configuration.
+// The ID from the URL path overrides any ID in the request body.
 func (s *remoteHookService) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := url.PathEscape(r.PathValue("id"))
@@ -109,6 +115,8 @@ func (s *remoteHookService) update(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, hook) // @response runtimetypes.RemoteHook
 }
 
+// Deletes a remote hook configuration by ID.
+// Returns a simple "deleted" confirmation message on success.
 func (s *remoteHookService) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := url.PathEscape(r.PathValue("id"))

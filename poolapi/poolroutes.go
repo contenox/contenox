@@ -40,6 +40,9 @@ type poolHandler struct {
 	service poolservice.Service
 }
 
+// Creates a new resource pool for organizing backends and models.
+// Pool names must be unique within the system.
+// Pools allow grouping of backends and models for specific purposes (e.g., embeddings, tasks).
 func (h *poolHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -57,6 +60,7 @@ func (h *poolHandler) create(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusCreated, pool) // @response runtimetypes.Pool
 }
 
+// Retrieves a specific pool by its unique ID.
 func (h *poolHandler) getByID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := url.PathEscape(r.PathValue("id"))
@@ -74,6 +78,8 @@ func (h *poolHandler) getByID(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, pool) // @response runtimetypes.Pool
 }
 
+// Retrieves a pool by its human-readable name.
+// Useful for configuration where ID might not be known but name is consistent.
 func (h *poolHandler) getByName(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := url.PathEscape(r.PathValue("name"))
@@ -91,6 +97,8 @@ func (h *poolHandler) getByName(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, pool) // @response runtimetypes.Pool
 }
 
+// Updates an existing pool configuration.
+// The ID from the URL path overrides any ID in the request body.
 func (h *poolHandler) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := url.PathEscape(r.PathValue("id"))
@@ -114,6 +122,9 @@ func (h *poolHandler) update(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, pool) // @response runtimetypes.Pool
 }
 
+// Removes a pool from the system.
+// This does not delete associated backends or models, only the pool relationship.
+// Returns a simple "deleted" confirmation message on success.
 func (h *poolHandler) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := url.PathEscape(r.PathValue("id"))
@@ -130,6 +141,8 @@ func (h *poolHandler) delete(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, "deleted") // @response string
 }
 
+// Lists all resource pools in the system.
+// Returns basic pool information without associated backends or models.
 func (h *poolHandler) listAll(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -142,6 +155,9 @@ func (h *poolHandler) listAll(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, pools) // @response []runtimetypes.Pool
 }
 
+// Lists pools filtered by purpose type with pagination support.
+// Purpose types categorize pools (e.g., "Internal Embeddings", "Internal Tasks").
+// Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 func (h *poolHandler) listByPurpose(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	purpose := url.PathEscape(r.PathValue("purpose"))
@@ -182,7 +198,8 @@ func (h *poolHandler) listByPurpose(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, pools) // @response []runtimetypes.Pool
 }
 
-// Backend association handlers
+// Associates a backend with a pool.
+// After assignment, the pool's models will be available to the backend.
 func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -200,6 +217,8 @@ func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusCreated, "backend assigned") // @response string
 }
 
+// Removes a backend from a pool.
+// After removal, the backend will no longer have access to the pool's models.
 func (h *poolHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -218,6 +237,8 @@ func (h *poolHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, "backend removed") // @response string
 }
 
+// Lists all backends associated with a specific pool.
+// Returns basic backend information without runtime state.
 func (h *poolHandler) listBackends(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -235,6 +256,8 @@ func (h *poolHandler) listBackends(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, backends) // @response []runtimetypes.Backend
 }
 
+// Lists all pools that a specific backend belongs to.
+// Useful for understanding which model sets a backend has access to.
 func (h *poolHandler) listPoolsForBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	backendID := url.PathEscape(r.PathValue("backendID"))
@@ -252,7 +275,8 @@ func (h *poolHandler) listPoolsForBackend(w http.ResponseWriter, r *http.Request
 	_ = serverops.Encode(w, r, http.StatusOK, pools) // @response []runtimetypes.Pool
 }
 
-// Model association handlers
+// Associates a model with a pool.
+// After assignment, the model becomes available to all backends in the pool.
 func (h *poolHandler) assignModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -271,6 +295,8 @@ func (h *poolHandler) assignModel(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, "model assigned") // @response string
 }
 
+// Removes a model from a pool.
+// After removal, the model will no longer be available to backends in the pool.
 func (h *poolHandler) removeModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -289,6 +315,8 @@ func (h *poolHandler) removeModel(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, "model removed") // @response string
 }
 
+// Lists all models associated with a specific pool.
+// Returns basic model information without backend-specific details.
 func (h *poolHandler) listModels(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -306,6 +334,8 @@ func (h *poolHandler) listModels(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, models) // @response []runtimetypes.Model
 }
 
+// Lists all pools that a specific model belongs to.
+// Useful for understanding where a model is deployed across the system.
 func (h *poolHandler) listPoolsForModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	modelID := url.PathEscape(r.PathValue("modelID"))

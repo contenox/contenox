@@ -27,6 +27,9 @@ type service struct {
 	dwService downloadservice.Service
 }
 
+// Declares a new model to the system.
+// The model must be available in a configured backend or will be queued for download.
+// NOTE: If pools are enabled, to make a model available to backends, it must be added to the same pool.
 func (s *service) append(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -46,17 +49,19 @@ func (s *service) append(w http.ResponseWriter, r *http.Request) {
 }
 
 type OpenAIModel struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	OwnedBy string `json:"owned_by"`
+	ID      string `json:"id" example:"mistral:latest"`
+	Object  string `json:"object" example:"model"`
+	Created int64  `json:"created" example:"1717020800"`
+	OwnedBy string `json:"owned_by" example:"system"`
 }
 
 type ListResponse struct {
-	Object string        `json:"object"`
+	Object string        `json:"object" example:"list"`
 	Data   []OpenAIModel `json:"data"`
 }
 
+// Lists all available models in OpenAI-compatible format.
+// Returns models as they would appear in OpenAI's /v1/models endpoint.
 func (s *service) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -109,6 +114,9 @@ func (s *service) list(w http.ResponseWriter, r *http.Request) {
 	serverops.Encode(w, r, http.StatusOK, response) // @response backendapi.ListResponse
 }
 
+// Deletes a model from the system registry.
+// - Does not remove the model from backend storage (requires separate backend operation)
+// - Accepts 'purge=true' query parameter to also remove related downloads from queue
 func (s *service) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	modelName := url.PathEscape(r.PathValue("model"))

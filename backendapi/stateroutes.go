@@ -17,6 +17,8 @@ type statemux struct {
 	stateService stateservice.Service
 }
 
+// Retrieves the current runtime state of all LLM backends.
+// Includes connection status, loaded models, and error information.
 func (s *statemux) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	internalModels, err := s.stateService.Get(ctx)

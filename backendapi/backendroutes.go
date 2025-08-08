@@ -44,7 +44,9 @@ type backendManager struct {
 	stateService stateservice.Service
 }
 
-// Create a new backend connection
+// Creates a new backend connection to an LLM provider.
+// Backends represent connections to LLM services (e.g., Ollama, OpenAI) that can host models.
+// Note: Creating a backend will be provisioned on the next synchronization cycle.
 func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -62,7 +64,7 @@ func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusCreated, backend) // @response runtimetypes.Backend
 }
 
-// List all backend connections
+// Lists all configured backend connections with runtime status.
 func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -142,7 +144,7 @@ type respBackend struct {
 	UpdatedAt    time.Time               `json:"updatedAt"`
 }
 
-// Retrieve a backend by ID
+// Retrieves complete information for a specific backend
 func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -196,7 +198,9 @@ func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 	serverops.Encode(w, r, http.StatusOK, resp) // @response backendapi.respBackend
 }
 
-// Update a backend by ID
+// Updates an existing backend configuration.
+// The ID from the URL path overrides any ID in the request body.
+// Note: Updating a backend will be provisioned on the next synchronization cycle.
 func (b *backendManager) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -219,7 +223,9 @@ func (b *backendManager) update(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, backend) // @response runtimetypes.Backend
 }
 
-// Delete a backend by ID
+// Removes a backend connection.
+// This does not delete models from the remote provider, only removes the connection.
+// Returns a simple "backend removed" confirmation message on success.
 func (b *backendManager) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")

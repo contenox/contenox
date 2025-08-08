@@ -31,6 +31,8 @@ type taskManager struct {
 	embedService  embedservice.Service
 }
 
+// Runs the prompt through the default LLM.
+// This endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.
 func (tm *taskManager) execute(w http.ResponseWriter, r *http.Request) {
 	req, err := serverops.Decode[execservice.TaskRequest](r) // @request execservice.TaskRequest
 	if err != nil {
@@ -58,6 +60,9 @@ type taskResponse struct {
 	State      []taskengine.CapturedStateUnit `json:"state" @include:"taskengine.CapturedStateUnit"`
 }
 
+// Executes dynamic task-chain workflows.
+// Task-chains are state-machine workflows (DAGs) with conditional branches,
+// external hooks, and captured execution state.
 func (tm *taskManager) tasks(w http.ResponseWriter, r *http.Request) {
 	req, err := serverops.Decode[taskExec](r) // @request execapi.taskExec
 	if err != nil {
@@ -230,6 +235,8 @@ func (tm *taskManager) tasks(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, response) // @response execapi.taskResponse
 }
 
+// Lists available task-chain hook types.
+// Returns all registered external action types that can be used in task-chain hooks.
 func (tm *taskManager) supported(w http.ResponseWriter, r *http.Request) {
 	resp, err := tm.taskService.Supports(r.Context())
 	if err != nil {
@@ -241,13 +248,15 @@ func (tm *taskManager) supported(w http.ResponseWriter, r *http.Request) {
 }
 
 type EmbedRequest struct {
-	Text string `json:"text"`
+	Text string `json:"text" example:"Hello, world!"`
 }
 
 type EmbedResponse struct {
-	Vector []float64 `json:"vector"`
+	Vector []float64 `json:"vector" example:"[0.1, 0.2, 0.3, ...]"`
 }
 
+// Generates vector embeddings for text.
+// Uses the system's default embedding model configured at startup.
 func (tm *taskManager) embed(w http.ResponseWriter, r *http.Request) {
 	req, err := serverops.Decode[EmbedRequest](r) // @request execapi.EmbedRequest
 	if err != nil {
@@ -265,9 +274,10 @@ func (tm *taskManager) embed(w http.ResponseWriter, r *http.Request) {
 }
 
 type DefaultModelResponse struct {
-	ModelName string `json:"modelName"`
+	ModelName string `json:"modelName" example:"mistral:latest"`
 }
 
+// Returns the default model configured during system initialization.
 func (tm *taskManager) defaultModel(w http.ResponseWriter, r *http.Request) {
 	modelName, err := tm.embedService.DefaultModelName(r.Context())
 	if err != nil {

@@ -43,17 +43,22 @@ components:
                         $ref: '#/components/schemas/backendapi_OpenAIModel'
                     type: array
                 object:
+                    example: list
                     type: string
             type: object
         backendapi_OpenAIModel:
             properties:
                 created:
+                    example: "1717020800"
                     type: integer
                 id:
+                    example: mistral:latest
                     type: string
                 object:
+                    example: model
                     type: string
                 owned_by:
+                    example: system
                     type: string
             type: object
         backendapi_respBackend:
@@ -136,25 +141,26 @@ components:
         execapi_DefaultModelResponse:
             properties:
                 modelName:
+                    example: mistral:latest
                     type: string
             type: object
         execapi_EmbedRequest:
             properties:
                 text:
+                    example: Hello, world!
                     type: string
             type: object
         execapi_EmbedResponse:
             properties:
                 vector:
+                    example: '[0.1, 0.2, 0.3, ...]'
                     items:
                         type: number
                     type: array
             type: object
         execapi_taskExec:
             properties:
-                chain:
-                    items:
-                        $ref: '#/components/schemas/taskengine_ChainDefinition'
+                chain: {}
                 input:
                     type: object
                 inputType:
@@ -174,13 +180,16 @@ components:
         execservice_TaskRequest:
             properties:
                 prompt:
+                    example: Hello, how are you?
                     type: string
             type: object
         execservice_TaskResponse:
             properties:
                 id:
+                    example: 123e4567-e89b-12d3-a456-426614174000
                     type: string
                 response:
+                    example: I'm doing well, thank you!
                     type: string
             type: object
         runtimestate_LLMState:
@@ -300,100 +309,6 @@ components:
                 transition:
                     type: string
             type: object
-        taskengine_ChainDefinition:
-            properties:
-                debug:
-                    description: Enables capturing user input and output.
-                    type: boolean
-                description:
-                    description: Description provides a human-readable summary of the chain's purpose.
-                    type: string
-                id:
-                    description: ID uniquely identifies the chain.
-                    type: string
-                routing_strategy:
-                    description: RoutingStrategy defines how transitions should be evaluated (optional).
-                    type: string
-                tasks:
-                    description: Tasks is the list of tasks to execute in sequence.
-                    items:
-                        $ref: '#/components/schemas/taskengine_ChainTask'
-                    type: array
-                token_limit:
-                    description: TokenLimit is the token limit for the context window (used during execution).
-                    type: integer
-            type: object
-        taskengine_ChainTask:
-            properties:
-                compose,omitempty:
-                    description: |-
-                        Compose merges the specified the output with the withVar side.
-                        Optional. compose is applied before the input reaches the task execution,
-                    type: object
-                description:
-                    description: Description is a human-readable summary of what the task does.
-                    type: string
-                execute_config,omitempty:
-                    description: ExecuteConfig defines the configuration for executing prompt or chat model tasks.
-                    type: object
-                handler:
-                    description: Handler determines how the LLM output (or hook) will be interpreted.
-                    type: object
-                hook,omitempty:
-                    description: |-
-                        Hook defines an external action to run.
-                        Required for Hook tasks, must be nil/omitted for all other types.
-                        Example: {type: "send_email", args: {"to": "user@example.com"}}
-                    type: object
-                id:
-                    description: ID uniquely identifies the task within the chain.
-                    type: string
-                input_var,omitempty:
-                    description: |-
-                        InputVar is the name of the variable to use as input for the task.
-                        Example: "input" for the original input.
-                        Each task stores its output in a variable named with it's task id.
-                    type: string
-                print,omitempty:
-                    description: |-
-                        Print optionally formats the output for display/logging.
-                        Supports template variables from previous task outputs.
-                        Optional for all task types except Hook where it's rarely used.
-                        Example: "The score is: {{.previous_output}}"
-                    type: string
-                prompt_template:
-                    description: |-
-                        PromptTemplate is the text prompt sent to the LLM.
-                        It's Required and only applicable for the raw_string type.
-                        Supports template variables from previous task outputs.
-                        Example: "Rate the quality from 1-10: {{.input}}"
-                    type: string
-                retry_on_failure,omitempty:
-                    description: |-
-                        RetryOnFailure sets how many times to retry this task on failure.
-                        Applies to all task types including Hooks.
-                        Default: 0 (no retries)
-                    type: integer
-                system_instruction,omitempty:
-                    description: SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.
-                    type: string
-                timeout,omitempty:
-                    description: |-
-                        Timeout optionally sets a timeout for task execution.
-                        Format: "10s", "2m", "1h" etc.
-                        Optional for all task types.
-                    type: string
-                transition:
-                    description: Transition defines what to do after this task completes.
-                    type: object
-                valid_conditions,omitempty:
-                    additionalProperties: true
-                    description: |-
-                        ValidConditions defines allowed values for ConditionKey tasks.
-                        Required for ConditionKey tasks, ignored for all other types.
-                        Example: {"yes": true, "no": true} for a yes/no condition.
-                    type: object
-            type: object
     securitySchemes:
         X-API-Key:
             in: header
@@ -406,6 +321,9 @@ openapi: 3.1.0
 paths:
     /backend-associations/{backendID}/pools:
         get:
+            description: |-
+                Lists all pools that a specific backend belongs to.
+                Useful for understanding which model sets a backend has access to.
             responses:
                 "200":
                     content:
@@ -424,6 +342,9 @@ paths:
                 type: string
     /backend-associations/{poolID}/backends:
         get:
+            description: |-
+                Lists all backends associated with a specific pool.
+                Returns basic backend information without runtime state.
             responses:
                 "200":
                     content:
@@ -442,6 +363,9 @@ paths:
                 type: string
     /backend-associations/{poolID}/backends/{backendID}:
         delete:
+            description: |-
+                Removes a backend from a pool.
+                After removal, the backend will no longer have access to the pool's models.
             responses:
                 "200":
                     content:
@@ -464,7 +388,9 @@ paths:
               schema:
                 type: string
         post:
-            description: Backend association handlers
+            description: |-
+                Associates a backend with a pool.
+                After assignment, the pool's models will be available to the backend.
             responses:
                 "201":
                     content:
@@ -477,7 +403,7 @@ paths:
             summary: assignBackend
     /backends:
         get:
-            description: List all backend connections
+            description: Lists all configured backend connections with runtime status.
             responses:
                 "200":
                     content:
@@ -489,7 +415,10 @@ paths:
                     description: ""
             summary: list
         post:
-            description: Create a new backend connection
+            description: |-
+                Creates a new backend connection to an LLM provider.
+                Backends represent connections to LLM services (e.g., Ollama, OpenAI) that can host models.
+                Note: Creating a backend will be provisioned on the next synchronization cycle.
             requestBody:
                 content:
                     application/json:
@@ -508,7 +437,10 @@ paths:
             summary: create
     /backends/{id}:
         delete:
-            description: Delete a backend by ID
+            description: |-
+                Removes a backend connection.
+                This does not delete models from the remote provider, only removes the connection.
+                Returns a simple "backend removed" confirmation message on success.
             responses:
                 "200":
                     content:
@@ -520,7 +452,7 @@ paths:
                     description: ""
             summary: delete
         get:
-            description: Retrieve a backend by ID
+            description: Retrieves complete information for a specific backend
             responses:
                 "200":
                     content:
@@ -538,7 +470,10 @@ paths:
               schema:
                 type: string
         put:
-            description: Update a backend by ID
+            description: |-
+                Updates an existing backend configuration.
+                The ID from the URL path overrides any ID in the request body.
+                Note: Updating a backend will be provisioned on the next synchronization cycle.
             requestBody:
                 content:
                     application/json:
@@ -557,6 +492,7 @@ paths:
             summary: update
     /defaultmodel:
         get:
+            description: Returns the default model configured during system initialization.
             responses:
                 "200":
                     content:
@@ -569,6 +505,9 @@ paths:
             summary: defaultModel
     /embed:
         post:
+            description: |-
+                Generates vector embeddings for text.
+                Uses the system's default embedding model configured at startup.
             requestBody:
                 content:
                     application/json:
@@ -587,6 +526,9 @@ paths:
             summary: embed
     /execute:
         post:
+            description: |-
+                Runs the prompt through the default LLM.
+                This endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.
             requestBody:
                 content:
                     application/json:
@@ -605,6 +547,7 @@ paths:
             summary: execute
     /hooks/remote:
         get:
+            description: Lists all configured remote hooks with pagination support.
             responses:
                 "200":
                     content:
@@ -616,6 +559,9 @@ paths:
                     description: ""
             summary: list
         post:
+            description: |-
+                Creates a new remote hook configuration.
+                Remote hooks allow task-chains to trigger external HTTP services during execution.
             requestBody:
                 content:
                     application/json:
@@ -634,6 +580,9 @@ paths:
             summary: create
     /hooks/remote/{id}:
         delete:
+            description: |-
+                Deletes a remote hook configuration by ID.
+                Returns a simple "deleted" confirmation message on success.
             responses:
                 "200":
                     content:
@@ -645,6 +594,7 @@ paths:
                     description: ""
             summary: delete
         get:
+            description: Retrieves a specific remote hook configuration by ID.
             responses:
                 "200":
                     content:
@@ -662,6 +612,9 @@ paths:
               schema:
                 type: string
         put:
+            description: |-
+                Updates an existing remote hook configuration.
+                The ID from the URL path overrides any ID in the request body.
             requestBody:
                 content:
                     application/json:
@@ -680,6 +633,9 @@ paths:
             summary: update
     /model-associations/{modelID}/pools:
         get:
+            description: |-
+                Lists all pools that a specific model belongs to.
+                Useful for understanding where a model is deployed across the system.
             responses:
                 "200":
                     content:
@@ -698,6 +654,9 @@ paths:
                 type: string
     /model-associations/{poolID}/models:
         get:
+            description: |-
+                Lists all models associated with a specific pool.
+                Returns basic model information without backend-specific details.
             responses:
                 "200":
                     content:
@@ -716,6 +675,9 @@ paths:
                 type: string
     /model-associations/{poolID}/models/{modelID}:
         delete:
+            description: |-
+                Removes a model from a pool.
+                After removal, the model will no longer be available to backends in the pool.
             responses:
                 "200":
                     content:
@@ -738,7 +700,9 @@ paths:
               schema:
                 type: string
         post:
-            description: Model association handlers
+            description: |-
+                Associates a model with a pool.
+                After assignment, the model becomes available to all backends in the pool.
             responses:
                 "200":
                     content:
@@ -751,6 +715,9 @@ paths:
             summary: assignModel
     /models:
         get:
+            description: |-
+                Lists all available models in OpenAI-compatible format.
+                Returns models as they would appear in OpenAI's /v1/models endpoint.
             responses:
                 "200":
                     content:
@@ -762,6 +729,10 @@ paths:
                     description: ""
             summary: list
         post:
+            description: |-
+                Declares a new model to the system.
+                The model must be available in a configured backend or will be queued for download.
+                NOTE: If pools are enabled, to make a model available to backends, it must be added to the same pool.
             requestBody:
                 content:
                     application/json:
@@ -780,6 +751,10 @@ paths:
             summary: append
     /models/{model}:
         delete:
+            description: |-
+                Deletes a model from the system registry.
+                - Does not remove the model from backend storage (requires separate backend operation)
+                - Accepts 'purge=true' query parameter to also remove related downloads from queue
             responses:
                 "200":
                     content:
@@ -798,6 +773,9 @@ paths:
                 type: string
     /pool-by-name/{name}:
         get:
+            description: |-
+                Retrieves a pool by its human-readable name.
+                Useful for configuration where ID might not be known but name is consistent.
             responses:
                 "200":
                     content:
@@ -816,6 +794,10 @@ paths:
                 type: string
     /pool-by-purpose/{purpose}:
         get:
+            description: |-
+                Lists pools filtered by purpose type with pagination support.
+                Purpose types categorize pools (e.g., "Internal Embeddings", "Internal Tasks").
+                Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
             responses:
                 "200":
                     content:
@@ -834,6 +816,9 @@ paths:
                 type: string
     /pools:
         get:
+            description: |-
+                Lists all resource pools in the system.
+                Returns basic pool information without associated backends or models.
             responses:
                 "200":
                     content:
@@ -845,6 +830,10 @@ paths:
                     description: ""
             summary: listAll
         post:
+            description: |-
+                Creates a new resource pool for organizing backends and models.
+                Pool names must be unique within the system.
+                Pools allow grouping of backends and models for specific purposes (e.g., embeddings, tasks).
             requestBody:
                 content:
                     application/json:
@@ -863,6 +852,10 @@ paths:
             summary: create
     /pools/{id}:
         delete:
+            description: |-
+                Removes a pool from the system.
+                This does not delete associated backends or models, only the pool relationship.
+                Returns a simple "deleted" confirmation message on success.
             responses:
                 "200":
                     content:
@@ -874,6 +867,7 @@ paths:
                     description: ""
             summary: delete
         get:
+            description: Retrieves a specific pool by its unique ID.
             responses:
                 "200":
                     content:
@@ -891,6 +885,9 @@ paths:
               schema:
                 type: string
         put:
+            description: |-
+                Updates an existing pool configuration.
+                The ID from the URL path overrides any ID in the request body.
             requestBody:
                 content:
                     application/json:
@@ -909,6 +906,9 @@ paths:
             summary: update
     /providers/{providerType}/config:
         delete:
+            description: |-
+                Removes provider configuration from the system.
+                After deletion, the provider will no longer be available for model execution.
             responses:
                 "200":
                     content:
@@ -920,6 +920,7 @@ paths:
                     description: ""
             summary: deleteConfig
         get:
+            description: Retrieves configuration details for a specific external provider.
             responses:
                 "200":
                     content:
@@ -938,6 +939,7 @@ paths:
                 type: string
     /providers/configs:
         get:
+            description: Lists all configured external providers with pagination support.
             responses:
                 "200":
                     content:
@@ -950,6 +952,12 @@ paths:
             summary: listConfigs
     /queue:
         get:
+            description: |-
+                Retrieves the current model download queue state.
+                Returns a list of models waiting to be downloaded.
+                Downloading models is only supported for ollama backends.
+                If pools are enabled, models will only be downloaded to backends
+                that are associated with at least one pool.
             responses:
                 "200":
                     content:
@@ -962,6 +970,9 @@ paths:
             summary: getQueue
     /queue/{model}:
         delete:
+            description: |-
+                Removes a model from the download queue.
+                If a model download is in progress or the download will be cancelled.
             responses:
                 "200":
                     content:
@@ -980,6 +991,13 @@ paths:
                 type: string
     /queue/cancel:
         delete:
+            description: |-
+                Cancels an in-progress model download.
+                Accepts either:
+                - 'url' query parameter to cancel a download on a specific backend
+                - 'model' query parameter to cancel the model download across all backends
+                Example: /queue/cancel?url=http://localhost:11434
+                /queue/cancel?model=mistral:latest
             responses:
                 "200":
                     content:
@@ -992,7 +1010,13 @@ paths:
             summary: cancelDownload
     /queue/inProgress:
         get:
-            description: inProgress streams status updates to the client via Server-Sent Events.
+            description: |-
+                Streams real-time download progress via Server-Sent Events (SSE).
+                Clients should handle 'data' events containing JSON status updates.
+                Connection remains open until client disconnects or server closes.
+                Example event format:
+                event: status
+                data: {"status":"downloading","digest":"sha256:abc123","total":1000000,"completed":250000,"model":"mistral:latest","baseUrl":"http://localhost:11434"}
             responses:
                 "200":
                     content:
@@ -1005,6 +1029,9 @@ paths:
             summary: inProgress
     /state:
         get:
+            description: |-
+                Retrieves the current runtime state of all LLM backends.
+                Includes connection status, loaded models, and error information.
             responses:
                 "200":
                     content:
@@ -1017,6 +1044,9 @@ paths:
             summary: list
     /supported:
         get:
+            description: |-
+                Lists available task-chain hook types.
+                Returns all registered external action types that can be used in task-chain hooks.
             responses:
                 "200":
                     content:
@@ -1029,6 +1059,10 @@ paths:
             summary: supported
     /tasks:
         post:
+            description: |-
+                Executes dynamic task-chain workflows.
+                Task-chains are state-machine workflows (DAGs) with conditional branches,
+                external hooks, and captured execution state.
             requestBody:
                 content:
                     application/json:

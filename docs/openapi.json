@@ -64,6 +64,7 @@
             "type": "array"
           },
           "object": {
+            "example": "list",
             "type": "string"
           }
         },
@@ -72,15 +73,19 @@
       "backendapi_OpenAIModel": {
         "properties": {
           "created": {
+            "example": "1717020800",
             "type": "integer"
           },
           "id": {
+            "example": "mistral:latest",
             "type": "string"
           },
           "object": {
+            "example": "model",
             "type": "string"
           },
           "owned_by": {
+            "example": "system",
             "type": "string"
           }
         },
@@ -200,6 +205,7 @@
       "execapi_DefaultModelResponse": {
         "properties": {
           "modelName": {
+            "example": "mistral:latest",
             "type": "string"
           }
         },
@@ -208,6 +214,7 @@
       "execapi_EmbedRequest": {
         "properties": {
           "text": {
+            "example": "Hello, world!",
             "type": "string"
           }
         },
@@ -216,6 +223,7 @@
       "execapi_EmbedResponse": {
         "properties": {
           "vector": {
+            "example": "[0.1, 0.2, 0.3, ...]",
             "items": {
               "type": "number"
             },
@@ -226,11 +234,7 @@
       },
       "execapi_taskExec": {
         "properties": {
-          "chain": {
-            "items": {
-              "$ref": "#/components/schemas/taskengine_ChainDefinition"
-            }
-          },
+          "chain": {},
           "input": {
             "type": "object"
           },
@@ -260,6 +264,7 @@
       "execservice_TaskRequest": {
         "properties": {
           "prompt": {
+            "example": "Hello, how are you?",
             "type": "string"
           }
         },
@@ -268,9 +273,11 @@
       "execservice_TaskResponse": {
         "properties": {
           "id": {
+            "example": "123e4567-e89b-12d3-a456-426614174000",
             "type": "string"
           },
           "response": {
+            "example": "I'm doing well, thank you!",
             "type": "string"
           }
         },
@@ -446,100 +453,6 @@
           }
         },
         "type": "object"
-      },
-      "taskengine_ChainDefinition": {
-        "properties": {
-          "debug": {
-            "description": "Enables capturing user input and output.",
-            "type": "boolean"
-          },
-          "description": {
-            "description": "Description provides a human-readable summary of the chain's purpose.",
-            "type": "string"
-          },
-          "id": {
-            "description": "ID uniquely identifies the chain.",
-            "type": "string"
-          },
-          "routing_strategy": {
-            "description": "RoutingStrategy defines how transitions should be evaluated (optional).",
-            "type": "string"
-          },
-          "tasks": {
-            "description": "Tasks is the list of tasks to execute in sequence.",
-            "items": {
-              "$ref": "#/components/schemas/taskengine_ChainTask"
-            },
-            "type": "array"
-          },
-          "token_limit": {
-            "description": "TokenLimit is the token limit for the context window (used during execution).",
-            "type": "integer"
-          }
-        },
-        "type": "object"
-      },
-      "taskengine_ChainTask": {
-        "properties": {
-          "compose,omitempty": {
-            "description": "Compose merges the specified the output with the withVar side.\nOptional. compose is applied before the input reaches the task execution,",
-            "type": "object"
-          },
-          "description": {
-            "description": "Description is a human-readable summary of what the task does.",
-            "type": "string"
-          },
-          "execute_config,omitempty": {
-            "description": "ExecuteConfig defines the configuration for executing prompt or chat model tasks.",
-            "type": "object"
-          },
-          "handler": {
-            "description": "Handler determines how the LLM output (or hook) will be interpreted.",
-            "type": "object"
-          },
-          "hook,omitempty": {
-            "description": "Hook defines an external action to run.\nRequired for Hook tasks, must be nil/omitted for all other types.\nExample: {type: \"send_email\", args: {\"to\": \"user@example.com\"}}",
-            "type": "object"
-          },
-          "id": {
-            "description": "ID uniquely identifies the task within the chain.",
-            "type": "string"
-          },
-          "input_var,omitempty": {
-            "description": "InputVar is the name of the variable to use as input for the task.\nExample: \"input\" for the original input.\nEach task stores its output in a variable named with it's task id.",
-            "type": "string"
-          },
-          "print,omitempty": {
-            "description": "Print optionally formats the output for display/logging.\nSupports template variables from previous task outputs.\nOptional for all task types except Hook where it's rarely used.\nExample: \"The score is: {{.previous_output}}\"",
-            "type": "string"
-          },
-          "prompt_template": {
-            "description": "PromptTemplate is the text prompt sent to the LLM.\nIt's Required and only applicable for the raw_string type.\nSupports template variables from previous task outputs.\nExample: \"Rate the quality from 1-10: {{.input}}\"",
-            "type": "string"
-          },
-          "retry_on_failure,omitempty": {
-            "description": "RetryOnFailure sets how many times to retry this task on failure.\nApplies to all task types including Hooks.\nDefault: 0 (no retries)",
-            "type": "integer"
-          },
-          "system_instruction,omitempty": {
-            "description": "SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.",
-            "type": "string"
-          },
-          "timeout,omitempty": {
-            "description": "Timeout optionally sets a timeout for task execution.\nFormat: \"10s\", \"2m\", \"1h\" etc.\nOptional for all task types.",
-            "type": "string"
-          },
-          "transition": {
-            "description": "Transition defines what to do after this task completes.",
-            "type": "object"
-          },
-          "valid_conditions,omitempty": {
-            "additionalProperties": true,
-            "description": "ValidConditions defines allowed values for ConditionKey tasks.\nRequired for ConditionKey tasks, ignored for all other types.\nExample: {\"yes\": true, \"no\": true} for a yes/no condition.",
-            "type": "object"
-          }
-        },
-        "type": "object"
       }
     },
     "securitySchemes": {
@@ -558,6 +471,7 @@
   "paths": {
     "/backend-associations/{backendID}/pools": {
       "get": {
+        "description": "Lists all pools that a specific backend belongs to.\nUseful for understanding which model sets a backend has access to.",
         "responses": {
           "200": {
             "content": {
@@ -588,6 +502,7 @@
     },
     "/backend-associations/{poolID}/backends": {
       "get": {
+        "description": "Lists all backends associated with a specific pool.\nReturns basic backend information without runtime state.",
         "responses": {
           "200": {
             "content": {
@@ -618,6 +533,7 @@
     },
     "/backend-associations/{poolID}/backends/{backendID}": {
       "delete": {
+        "description": "Removes a backend from a pool.\nAfter removal, the backend will no longer have access to the pool's models.",
         "responses": {
           "200": {
             "content": {
@@ -654,7 +570,7 @@
         }
       ],
       "post": {
-        "description": "Backend association handlers",
+        "description": "Associates a backend with a pool.\nAfter assignment, the pool's models will be available to the backend.",
         "responses": {
           "201": {
             "content": {
@@ -675,7 +591,7 @@
     },
     "/backends": {
       "get": {
-        "description": "List all backend connections",
+        "description": "Lists all configured backend connections with runtime status.",
         "responses": {
           "200": {
             "content": {
@@ -694,7 +610,7 @@
         "summary": "list"
       },
       "post": {
-        "description": "Create a new backend connection",
+        "description": "Creates a new backend connection to an LLM provider.\nBackends represent connections to LLM services (e.g., Ollama, OpenAI) that can host models.\nNote: Creating a backend will be provisioned on the next synchronization cycle.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -725,7 +641,7 @@
     },
     "/backends/{id}": {
       "delete": {
-        "description": "Delete a backend by ID",
+        "description": "Removes a backend connection.\nThis does not delete models from the remote provider, only removes the connection.\nReturns a simple \"backend removed\" confirmation message on success.",
         "responses": {
           "200": {
             "content": {
@@ -744,7 +660,7 @@
         "summary": "delete"
       },
       "get": {
-        "description": "Retrieve a backend by ID",
+        "description": "Retrieves complete information for a specific backend",
         "responses": {
           "200": {
             "content": {
@@ -773,7 +689,7 @@
         }
       ],
       "put": {
-        "description": "Update a backend by ID",
+        "description": "Updates an existing backend configuration.\nThe ID from the URL path overrides any ID in the request body.\nNote: Updating a backend will be provisioned on the next synchronization cycle.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -804,6 +720,7 @@
     },
     "/defaultmodel": {
       "get": {
+        "description": "Returns the default model configured during system initialization.",
         "responses": {
           "200": {
             "content": {
@@ -824,6 +741,7 @@
     },
     "/embed": {
       "post": {
+        "description": "Generates vector embeddings for text.\nUses the system's default embedding model configured at startup.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -854,6 +772,7 @@
     },
     "/execute": {
       "post": {
+        "description": "Runs the prompt through the default LLM.\nThis endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -884,6 +803,7 @@
     },
     "/hooks/remote": {
       "get": {
+        "description": "Lists all configured remote hooks with pagination support.",
         "responses": {
           "200": {
             "content": {
@@ -902,6 +822,7 @@
         "summary": "list"
       },
       "post": {
+        "description": "Creates a new remote hook configuration.\nRemote hooks allow task-chains to trigger external HTTP services during execution.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -932,6 +853,7 @@
     },
     "/hooks/remote/{id}": {
       "delete": {
+        "description": "Deletes a remote hook configuration by ID.\nReturns a simple \"deleted\" confirmation message on success.",
         "responses": {
           "200": {
             "content": {
@@ -950,6 +872,7 @@
         "summary": "delete"
       },
       "get": {
+        "description": "Retrieves a specific remote hook configuration by ID.",
         "responses": {
           "200": {
             "content": {
@@ -978,6 +901,7 @@
         }
       ],
       "put": {
+        "description": "Updates an existing remote hook configuration.\nThe ID from the URL path overrides any ID in the request body.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1008,6 +932,7 @@
     },
     "/model-associations/{modelID}/pools": {
       "get": {
+        "description": "Lists all pools that a specific model belongs to.\nUseful for understanding where a model is deployed across the system.",
         "responses": {
           "200": {
             "content": {
@@ -1038,6 +963,7 @@
     },
     "/model-associations/{poolID}/models": {
       "get": {
+        "description": "Lists all models associated with a specific pool.\nReturns basic model information without backend-specific details.",
         "responses": {
           "200": {
             "content": {
@@ -1068,6 +994,7 @@
     },
     "/model-associations/{poolID}/models/{modelID}": {
       "delete": {
+        "description": "Removes a model from a pool.\nAfter removal, the model will no longer be available to backends in the pool.",
         "responses": {
           "200": {
             "content": {
@@ -1104,7 +1031,7 @@
         }
       ],
       "post": {
-        "description": "Model association handlers",
+        "description": "Associates a model with a pool.\nAfter assignment, the model becomes available to all backends in the pool.",
         "responses": {
           "200": {
             "content": {
@@ -1125,6 +1052,7 @@
     },
     "/models": {
       "get": {
+        "description": "Lists all available models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.",
         "responses": {
           "200": {
             "content": {
@@ -1143,6 +1071,7 @@
         "summary": "list"
       },
       "post": {
+        "description": "Declares a new model to the system.\nThe model must be available in a configured backend or will be queued for download.\nNOTE: If pools are enabled, to make a model available to backends, it must be added to the same pool.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1173,6 +1102,7 @@
     },
     "/models/{model}": {
       "delete": {
+        "description": "Deletes a model from the system registry.\n- Does not remove the model from backend storage (requires separate backend operation)\n- Accepts 'purge=true' query parameter to also remove related downloads from queue",
         "responses": {
           "200": {
             "content": {
@@ -1203,6 +1133,7 @@
     },
     "/pool-by-name/{name}": {
       "get": {
+        "description": "Retrieves a pool by its human-readable name.\nUseful for configuration where ID might not be known but name is consistent.",
         "responses": {
           "200": {
             "content": {
@@ -1233,6 +1164,7 @@
     },
     "/pool-by-purpose/{purpose}": {
       "get": {
+        "description": "Lists pools filtered by purpose type with pagination support.\nPurpose types categorize pools (e.g., \"Internal Embeddings\", \"Internal Tasks\").\nAccepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.",
         "responses": {
           "200": {
             "content": {
@@ -1263,6 +1195,7 @@
     },
     "/pools": {
       "get": {
+        "description": "Lists all resource pools in the system.\nReturns basic pool information without associated backends or models.",
         "responses": {
           "200": {
             "content": {
@@ -1281,6 +1214,7 @@
         "summary": "listAll"
       },
       "post": {
+        "description": "Creates a new resource pool for organizing backends and models.\nPool names must be unique within the system.\nPools allow grouping of backends and models for specific purposes (e.g., embeddings, tasks).",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1311,6 +1245,7 @@
     },
     "/pools/{id}": {
       "delete": {
+        "description": "Removes a pool from the system.\nThis does not delete associated backends or models, only the pool relationship.\nReturns a simple \"deleted\" confirmation message on success.",
         "responses": {
           "200": {
             "content": {
@@ -1329,6 +1264,7 @@
         "summary": "delete"
       },
       "get": {
+        "description": "Retrieves a specific pool by its unique ID.",
         "responses": {
           "200": {
             "content": {
@@ -1357,6 +1293,7 @@
         }
       ],
       "put": {
+        "description": "Updates an existing pool configuration.\nThe ID from the URL path overrides any ID in the request body.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1387,6 +1324,7 @@
     },
     "/providers/configs": {
       "get": {
+        "description": "Lists all configured external providers with pagination support.",
         "responses": {
           "200": {
             "content": {
@@ -1407,6 +1345,7 @@
     },
     "/providers/{providerType}/config": {
       "delete": {
+        "description": "Removes provider configuration from the system.\nAfter deletion, the provider will no longer be available for model execution.",
         "responses": {
           "200": {
             "content": {
@@ -1425,6 +1364,7 @@
         "summary": "deleteConfig"
       },
       "get": {
+        "description": "Retrieves configuration details for a specific external provider.",
         "responses": {
           "200": {
             "content": {
@@ -1455,6 +1395,7 @@
     },
     "/queue": {
       "get": {
+        "description": "Retrieves the current model download queue state.\nReturns a list of models waiting to be downloaded.\nDownloading models is only supported for ollama backends.\nIf pools are enabled, models will only be downloaded to backends\nthat are associated with at least one pool.",
         "responses": {
           "200": {
             "content": {
@@ -1475,6 +1416,7 @@
     },
     "/queue/cancel": {
       "delete": {
+        "description": "Cancels an in-progress model download.\nAccepts either:\n- 'url' query parameter to cancel a download on a specific backend\n- 'model' query parameter to cancel the model download across all backends\nExample: /queue/cancel?url=http://localhost:11434\n/queue/cancel?model=mistral:latest",
         "responses": {
           "200": {
             "content": {
@@ -1495,7 +1437,7 @@
     },
     "/queue/inProgress": {
       "get": {
-        "description": "inProgress streams status updates to the client via Server-Sent Events.",
+        "description": "Streams real-time download progress via Server-Sent Events (SSE).\nClients should handle 'data' events containing JSON status updates.\nConnection remains open until client disconnects or server closes.\nExample event format:\nevent: status\ndata: {\"status\":\"downloading\",\"digest\":\"sha256:abc123\",\"total\":1000000,\"completed\":250000,\"model\":\"mistral:latest\",\"baseUrl\":\"http://localhost:11434\"}",
         "responses": {
           "200": {
             "content": {
@@ -1516,6 +1458,7 @@
     },
     "/queue/{model}": {
       "delete": {
+        "description": "Removes a model from the download queue.\nIf a model download is in progress or the download will be cancelled.",
         "responses": {
           "200": {
             "content": {
@@ -1546,6 +1489,7 @@
     },
     "/state": {
       "get": {
+        "description": "Retrieves the current runtime state of all LLM backends.\nIncludes connection status, loaded models, and error information.",
         "responses": {
           "200": {
             "content": {
@@ -1566,6 +1510,7 @@
     },
     "/supported": {
       "get": {
+        "description": "Lists available task-chain hook types.\nReturns all registered external action types that can be used in task-chain hooks.",
         "responses": {
           "200": {
             "content": {
@@ -1586,6 +1531,7 @@
     },
     "/tasks": {
       "post": {
+        "description": "Executes dynamic task-chain workflows.\nTask-chains are state-machine workflows (DAGs) with conditional branches,\nexternal hooks, and captured execution state.",
         "requestBody": {
           "content": {
             "application/json": {

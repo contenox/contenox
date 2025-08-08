@@ -29,12 +29,12 @@ func NewExec(ctx context.Context, modelRepo llmrepo.ModelRepo, dbInstance libdb.
 }
 
 type TaskRequest struct {
-	Prompt string `json:"prompt"`
+	Prompt string `json:"prompt" example:"Hello, how are you?"`
 }
 
 type TaskResponse struct {
-	ID       string `json:"id"`
-	Response string `json:"response"`
+	ID       string `json:"id" example:"123e4567-e89b-12d3-a456-426614174000"`
+	Response string `json:"response" example:"I'm doing well, thank you!"`
 }
 
 func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
