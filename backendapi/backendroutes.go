@@ -12,7 +12,6 @@ import (
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/stateservice"
 	"github.com/google/uuid"
-	"github.com/ollama/ollama/api"
 )
 
 func AddBackendRoutes(mux *http.ServeMux, backendService backendservice.Service, stateService stateservice.Service) {
@@ -31,9 +30,9 @@ type respBackendList struct {
 	BaseURL string `json:"baseUrl" example:"http://localhost:11434"`
 	Type    string `json:"type" example:"ollama"`
 
-	Models       []string                `json:"models"`
-	PulledModels []api.ListModelResponse `json:"pulledModels"`
-	Error        string                  `json:"error,omitempty" example:"error-message"`
+	Models       []string                         `json:"models"`
+	PulledModels []runtimestate.ListModelResponse `json:"pulledModels" @include:runtimestate.ListModelResponse`
+	Error        string                           `json:"error,omitempty" example:"error-message"`
 
 	CreatedAt time.Time `json:"createdAt" example:"2023-01-01T00:00:00Z"`
 	UpdatedAt time.Time `json:"updatedAt" example:"2023-01-01T00:00:00Z"`
@@ -133,15 +132,15 @@ func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
 }
 
 type respBackend struct {
-	ID           string                  `json:"id"`
-	Name         string                  `json:"name"`
-	BaseURL      string                  `json:"baseUrl"`
-	Type         string                  `json:"type"`
-	Models       []string                `json:"models"`
-	PulledModels []api.ListModelResponse `json:"pulledModels"`
-	Error        string                  `json:"error,omitempty"`
-	CreatedAt    time.Time               `json:"createdAt"`
-	UpdatedAt    time.Time               `json:"updatedAt"`
+	ID           string                           `json:"id"`
+	Name         string                           `json:"name"`
+	BaseURL      string                           `json:"baseUrl"`
+	Type         string                           `json:"type"`
+	Models       []string                         `json:"models"`
+	PulledModels []runtimestate.ListModelResponse `json:"pulledModels" @include:"runtimestate.ListModelResponse"`
+	Error        string                           `json:"error,omitempty"`
+	CreatedAt    time.Time                        `json:"createdAt"`
+	UpdatedAt    time.Time                        `json:"updatedAt"`
 }
 
 // Retrieves complete information for a specific backend
@@ -183,7 +182,7 @@ func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 		BaseURL:      backend.BaseURL,
 		Type:         backend.Type,
 		Models:       []string{},
-		PulledModels: []api.ListModelResponse{},
+		PulledModels: []runtimestate.ListModelResponse{},
 		Error:        "",
 		CreatedAt:    backend.CreatedAt,
 		UpdatedAt:    backend.UpdatedAt,

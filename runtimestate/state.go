@@ -58,7 +58,7 @@ func (s *LLMState) GetAPIKey() string {
 	return s.apiKey
 }
 
-func convertOllamaListModelResponse(model *api.ListModelResponse) *ListModelResponse {
+func convertOllamaModelResponse(model *api.ListModelResponse) *ListModelResponse {
 	list := &ListModelResponse{
 		Name:       model.Name,
 		Model:      model.Model,
@@ -73,6 +73,14 @@ func convertOllamaListModelResponse(model *api.ListModelResponse) *ListModelResp
 			ParameterSize:     model.Details.ParameterSize,
 			QuantizationLevel: model.Details.QuantizationLevel,
 		},
+	}
+	return list
+}
+
+func convertOllamaListModelResponse(models []api.ListModelResponse) []ListModelResponse {
+	list := make([]ListModelResponse, len(models))
+	for i, model := range models {
+		list[i] = *convertOllamaModelResponse(&model)
 	}
 	return list
 }
@@ -533,7 +541,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 		ID:           backend.ID,
 		Name:         backend.Name,
 		Models:       models,
-		PulledModels: modelResp.Models,
+		PulledModels: convertOllamaListModelResponse(modelResp.Models),
 		Backend:      *backend,
 	}
 	s.state.Store(backend.ID, stateservice)
@@ -643,7 +651,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 		ID:           backend.ID,
 		Name:         backend.Name,
 		Models:       []string{servedModel},
-		PulledModels: pulledModels,
+		PulledModels: convertOllamaListModelResponse(pulledModels),
 		Backend:      *backend,
 	})
 }
@@ -733,7 +741,7 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 
 	// Update state
 	stateInstance.Models = modelNames
-	stateInstance.PulledModels = pulledModels
+	stateInstance.PulledModels = convertOllamaListModelResponse(pulledModels)
 	stateInstance.apiKey = cfg.APIKey
 	s.state.Store(backend.ID, stateInstance)
 }
@@ -813,7 +821,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 
 	// Update state
 	stateInstance.Models = modelNames
-	stateInstance.PulledModels = pulledModels
+	stateInstance.PulledModels = convertOllamaListModelResponse(pulledModels)
 	stateInstance.apiKey = cfg.APIKey
 	s.state.Store(backend.ID, stateInstance)
 }

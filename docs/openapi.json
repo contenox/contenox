@@ -117,7 +117,7 @@
           },
           "pulledModels": {
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/runtimestate_ListModelResponse"
             },
             "type": "array"
           },

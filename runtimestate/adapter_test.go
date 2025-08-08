@@ -7,7 +7,6 @@ import (
 
 	"github.com/contenox/runtime/runtimestate"
 	"github.com/contenox/runtime/runtimetypes"
-	"github.com/ollama/ollama/api"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +18,7 @@ func TestUnit_ModelProviderAdapter_ReturnsExpectedProviders(t *testing.T) {
 			ID:      "backend1",
 			Name:    "Backend One",
 			Backend: runtimetypes.Backend{ID: "backend1", Name: "Ollama", Type: "ollama"},
-			PulledModels: []api.ListModelResponse{
+			PulledModels: []runtimestate.ListModelResponse{
 				{Name: "Model One", Model: "model1", ModifiedAt: now},
 				{Name: "Model Shared", Model: "shared", ModifiedAt: now},
 			},
@@ -28,7 +27,7 @@ func TestUnit_ModelProviderAdapter_ReturnsExpectedProviders(t *testing.T) {
 			ID:      "backend2",
 			Name:    "Backend Two",
 			Backend: runtimetypes.Backend{ID: "backend2", Name: "Ollama", Type: "ollama"},
-			PulledModels: []api.ListModelResponse{
+			PulledModels: []runtimestate.ListModelResponse{
 				{Name: "Model Two", Model: "model2", ModifiedAt: now},
 				{Name: "Model Shared", Model: "shared", ModifiedAt: now},
 			},
@@ -74,7 +73,7 @@ func TestUnit_ModelProviderAdapter_SetsCorrectModelCapabilities(t *testing.T) {
 			ID:      backendID,
 			Name:    "Test Backend",
 			Backend: runtimetypes.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
-			PulledModels: []api.ListModelResponse{
+			PulledModels: []runtimestate.ListModelResponse{
 				{Name: chatModelName, Model: chatModelName, ModifiedAt: now},
 				{Name: embedModelName, Model: embedModelName, ModifiedAt: now},
 				{Name: unknownModelName, Model: unknownModelName, ModifiedAt: now},
