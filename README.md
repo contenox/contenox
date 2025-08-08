@@ -5,10 +5,7 @@
 
 **contenox/runtime** is an open-source runtime for orchestrating generative AI workflows. It treats AI workflows as state machines, enabling:
 
-✅ **Declarative workflow definition** - Define complex AI interactions in YAML/JSON
-✅ **Built-in state management** - Automatic context passing between steps
-✅ **Vendor-agnostic execution** - Switch providers without changing workflow logic
-✅ **Production-ready observability** - Detailed execution history for every step
+✅ **Declarative workflow definition** ✅ **Built-in state management** ✅ **Vendor-agnostic execution** ✅ **Observability with passion** ✅ **Made with Go with performance in mind**
 
 ## ⚡ Get Started in 3 Minutes
 
@@ -78,7 +75,7 @@ curl -X POST http://localhost:8081/execute \
   }'
 ```
 
-### 6. Create a Conditional Workflow
+### 6. Create a Tasks-Chain Workflow
 ```yaml
 # save as sky_question.yaml
 input: "Is the sky blue?"
@@ -134,6 +131,9 @@ curl -X POST http://localhost:8081/tasks \
   - `parse_number`: Extract numerical values
   - `parse_range`: Handle score ranges
   - `raw_string`: Standard text generation
+  - `embedding`: Embedding generation
+  - `model_execution`: Model execution on a chat-history
+  - `hook`: Calls a user-defined hook pointing to a external service
 - **Context Preservation**: Automatic input/output passing between steps
 
 ### Multi-Backend Support
@@ -149,21 +149,10 @@ graph LR
 - **Automatic Sync**: Models stay consistent across backends
 - **Pool Management**: Assign backends to specific task types
 
-### Production Ready
-- **Execution History**: Full audit trail for every workflow run
-- **Retry Logic**: Automatic failure recovery
-- **Queue Management**: Control model downloads and cancellations
-
 ## 🧩 Extensibility
 
 ### Custom Hooks
-Integrate with external services:
-```python
-# email_notification.py
-def send_completion_notification(task_result):
-    if task_result["status"] == "COMPLETED":
-        send_email(f"Task completed: {task_result['id']}")
-```
+Hooks are external servers that are callable withi the taskschains if registered. TODO: point to the documentation.
 
 ### Hybrid Deployments
 ```mermaid
@@ -172,16 +161,18 @@ graph TB
     OnPrem[On-Prem LLMs] -->|Sensitive data| Runtime
 ```
 
-## 📚 Documentation
-- [API Reference](docs/api.md)
+
 _____
 
 
 TODO WRITE THESE:
+## 📚 Documentation
+- [API Reference](docs/api.md)
 - [Workflow Specification](docs/workflow-spec.md)
 - [Backend Management](docs/backends.md)
 - [Handler Library](docs/handlers.md)
 
+TODO SETUP THESE:
 ## 🚀 Getting Help
 Join our community for support:
 - [GitHub Discussions](https://github.com/contenox/runtime/discussions)
