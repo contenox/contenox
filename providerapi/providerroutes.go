@@ -1,7 +1,6 @@
 package providerapi
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
+	"github.com/contenox/runtime/apiframework"
 	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/runtimestate"
@@ -44,8 +44,8 @@ type StatusResponse struct {
 
 func (p *providerManager) configure(providerType string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req ConfigureRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req, err := apiframework.Decode[ConfigureRequest](r) // @request providerapi.ConfigureRequest
+		if err != nil {
 			_ = serverops.Error(w, r, err, serverops.CreateOperation)
 			return
 		}
@@ -64,7 +64,7 @@ func (p *providerManager) configure(providerType string) func(w http.ResponseWri
 			_ = serverops.Error(w, r, err, serverops.CreateOperation)
 			return
 		}
-		_ = serverops.Encode(w, r, http.StatusOK, StatusResponse{
+		_ = serverops.Encode(w, r, http.StatusOK, StatusResponse{ // @response providerapi.StatusResponse
 			Configured: true,
 			Provider:   providerType,
 		})
@@ -85,7 +85,7 @@ func (p *providerManager) status(providerType string) func(w http.ResponseWriter
 			_ = serverops.Error(w, r, err, serverops.GetOperation)
 			return
 		}
-		_ = serverops.Encode(w, r, http.StatusOK, StatusResponse{
+		_ = serverops.Encode(w, r, http.StatusOK, StatusResponse{ // @response providerapi.StatusResponse
 			Configured: true,
 			Provider:   providerType,
 		})
@@ -104,7 +104,7 @@ func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, map[string]string{"message": "Provider config deleted successfully"})
+	_ = serverops.Encode(w, r, http.StatusOK, "Provider config deleted successfully") // @response string
 }
 
 type ListConfigsResponse struct {
@@ -143,7 +143,7 @@ func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, configs)
+	_ = serverops.Encode(w, r, http.StatusOK, configs) // @response []runtimestate.ProviderConfig
 }
 
 func (p *providerManager) get(w http.ResponseWriter, r *http.Request) {
@@ -159,5 +159,5 @@ func (p *providerManager) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, config)
+	_ = serverops.Encode(w, r, http.StatusOK, config) // @response runtimestate.ProviderConfig
 }

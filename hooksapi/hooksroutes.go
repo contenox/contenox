@@ -29,7 +29,7 @@ type remoteHookService struct {
 func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	hook, err := serverops.Decode[runtimetypes.RemoteHook](r)
+	hook, err := serverops.Decode[runtimetypes.RemoteHook](r) // @request runtimetypes.RemoteHook
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -39,7 +39,7 @@ func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusCreated, hook)
+	_ = serverops.Encode(w, r, http.StatusCreated, hook) // @response runtimetypes.RemoteHook
 }
 
 func (s *remoteHookService) list(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +74,7 @@ func (s *remoteHookService) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, hooks)
+	_ = serverops.Encode(w, r, http.StatusOK, hooks) // @response []runtimetypes.RemoteHook
 }
 
 func (s *remoteHookService) get(w http.ResponseWriter, r *http.Request) {
@@ -87,14 +87,14 @@ func (s *remoteHookService) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, hook)
+	_ = serverops.Encode(w, r, http.StatusOK, hook) // @response runtimetypes.RemoteHook
 }
 
 func (s *remoteHookService) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := url.PathEscape(r.PathValue("id"))
 
-	hook, err := serverops.Decode[runtimetypes.RemoteHook](r)
+	hook, err := serverops.Decode[runtimetypes.RemoteHook](r) // @request runtimetypes.RemoteHook
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
 		return
@@ -106,7 +106,7 @@ func (s *remoteHookService) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, hook)
+	_ = serverops.Encode(w, r, http.StatusOK, hook) // @response runtimetypes.RemoteHook
 }
 
 func (s *remoteHookService) delete(w http.ResponseWriter, r *http.Request) {
@@ -118,5 +118,5 @@ func (s *remoteHookService) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = serverops.Encode(w, r, http.StatusOK, "deleted") // @response string
 }

@@ -57,6 +57,7 @@ func main() {
 
 	processRouteFiles(fset, pkgs, swagger)
 	addSchemasToSpec(swagger)
+	swagger.Components.Schemas["array_string"] = openapi3.NewSchemaRef("", openapi3.NewArraySchema().WithItems(openapi3.NewStringSchema()))
 	cleanUnusedSchemas(swagger)
 	swagger.Components.SecuritySchemes = openapi3.SecuritySchemes{
 		"X-API-Key": &openapi3.SecuritySchemeRef{
@@ -203,13 +204,11 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 		if pathItem == nil {
 			pathItem = &openapi3.PathItem{}
 			swagger.Paths.Set(path, pathItem)
-		}
 
-		parts := strings.Split(path, "/")
-		for _, part := range parts {
-			if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
-				paramName := strings.Trim(part, "{}")
+			// Add parameters ONLY when first creating the path
+			for _, paramName := range extractPathParams(path) {
 				param := openapi3.NewPathParameter(paramName)
+				param.Required = true
 				param.Schema = openapi3.NewStringSchema().NewRef()
 				pathItem.Parameters = append(pathItem.Parameters, &openapi3.ParameterRef{
 					Value: param,
@@ -303,7 +302,23 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 
 		op.AddResponse(status, response)
 	}
-
+	if isSSEHandler(handler) {
+		// Add SSE response definition
+		response := openapi3.NewResponse()
+		desc := "Server-Sent Events stream"
+		response.Description = &desc
+		mediaType := openapi3.NewMediaType()
+		mediaType.Schema = openapi3.NewStringSchema().NewRef()
+		content := openapi3.Content{"text/event-stream": mediaType}
+		response.Content = content
+		op.AddResponse(200, response)
+	} else if len(statusCodes) == 0 { // Existing response handling
+		// Add default response if no others found
+		response := openapi3.NewResponse()
+		desc := "OK"
+		response.Description = &desc
+		op.AddResponse(200, response)
+	}
 	switch strings.ToUpper(method) {
 	case "GET":
 		pathItem.Get = op
@@ -326,8 +341,8 @@ func extractRequestType(handler *ast.FuncDecl, file *ast.File) string {
 				if sel, ok := gen.X.(*ast.SelectorExpr); ok && sel.Sel.Name == "Decode" {
 					// Look for comment annotation after the Decode call
 					if comment := findFollowingComment(call, file); comment != "" {
-						if strings.HasPrefix(comment, "@request ") {
-							typeStr := strings.TrimPrefix(comment, "@request ")
+						if after, ok0 := strings.CutPrefix(comment, "@request "); ok0 {
+							typeStr := after
 
 							// Check if it's a slice type
 							isArray := false
@@ -337,7 +352,7 @@ func extractRequestType(handler *ast.FuncDecl, file *ast.File) string {
 							}
 
 							// Convert package.Type to package_Type
-							typeStr = strings.Replace(typeStr, ".", "_", -1)
+							typeStr = strings.ReplaceAll(typeStr, ".", "_")
 
 							// For slice types, prefix with "array_"
 							if isArray {
@@ -390,8 +405,8 @@ func extractStatusCodes(handler *ast.FuncDecl, file *ast.File) map[int]string {
 
 				// Look for comment annotation after the Encode call
 				if comment := findFollowingComment(call, file); comment != "" {
-					if strings.HasPrefix(comment, "@response ") {
-						typeStr := strings.TrimPrefix(comment, "@response ")
+					if after, ok0 := strings.CutPrefix(comment, "@response "); ok0 {
+						typeStr := after
 
 						// Check if it's a slice type
 						isArray := false
@@ -401,7 +416,7 @@ func extractStatusCodes(handler *ast.FuncDecl, file *ast.File) map[int]string {
 						}
 
 						// Convert package.Type to package_Type
-						typeStr = strings.Replace(typeStr, ".", "_", -1)
+						typeStr = strings.ReplaceAll(typeStr, ".", "_")
 
 						// For slice types, prefix with "array_"
 						if isArray {
@@ -632,20 +647,75 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 		switch fieldType := field.Type.(type) {
 		case *ast.Ident:
 			fieldSchema.Type = goTypeToSwaggerType(fieldType.Name)
+			fieldSchema.Format = goTypeToSwaggerFormat(fieldType.Name)
 		case *ast.SelectorExpr:
 			fieldSchema.Type = goTypeToSwaggerType(fieldType.Sel.Name)
+			fieldSchema.Format = goTypeToSwaggerFormat(fieldType.Sel.Name)
 		case *ast.ArrayType:
 			fieldSchema.Type = &openapi3.Types{openapi3.TypeArray}
+			var elemTypeName string
+			var isCustomType bool
+
+			// First, try to determine element type
 			if elemType, ok := fieldType.Elt.(*ast.Ident); ok {
-				fieldSchema.Items = &openapi3.SchemaRef{
-					Value: &openapi3.Schema{
-						Type: goTypeToSwaggerType(elemType.Name),
-					},
+				fullTypeName := pkgName + "_" + elemType.Name
+				if _, exists := swagger.Components.Schemas[fullTypeName]; exists {
+					fieldSchema.Items = &openapi3.SchemaRef{
+						Ref: fmt.Sprintf("#/components/schemas/%s", fullTypeName),
+					}
+					isCustomType = true
+				} else {
+					elemTypeName = elemType.Name
+				}
+			}
+
+			// Process @include tag to override or specify custom type
+			if field.Tag != nil {
+				tag := strings.Trim(field.Tag.Value, "`")
+				if strings.Contains(tag, "@include:") {
+					if includeStart := strings.Index(tag, `@include:"`); includeStart != -1 {
+						includeStart += len(`@include:"`)
+						//panic(tag)
+						includeEnd := strings.Index(tag[includeStart:], `"`)
+						if includeEnd != -1 {
+							includedType := tag[includeStart : includeStart+includeEnd]
+							includedType = strings.ReplaceAll(includedType, ".", "_")
+
+							//	if _, exists := swagger.Components.Schemas[includedType]; exists {
+							fieldSchema.Items = &openapi3.SchemaRef{
+								Ref: fmt.Sprintf("#/components/schemas/%s", includedType),
+							}
+							isCustomType = true
+							//		} else {
+							//	log.Printf("WARNING: @include schema not found: %s", includedType)
+							//	}
+						}
+					}
+				}
+			}
+
+			// Fallback to basic type if no custom type was set
+			if !isCustomType {
+				if elemTypeName != "" {
+					fieldSchema.Items = &openapi3.SchemaRef{
+						Value: &openapi3.Schema{
+							Type:   goTypeToSwaggerType(elemTypeName),
+							Format: goTypeToSwaggerFormat(elemTypeName),
+						},
+					}
+				} else {
+					// Final fallback to generic object
+					fieldSchema.Items = &openapi3.SchemaRef{
+						Value: &openapi3.Schema{
+							Type: &openapi3.Types{openapi3.TypeObject},
+						},
+					}
 				}
 			}
 		case *ast.StarExpr:
 			if elemType, ok := fieldType.X.(*ast.Ident); ok {
 				fieldSchema.Type = goTypeToSwaggerType(elemType.Name)
+				fieldSchema.Format = goTypeToSwaggerFormat(elemType.Name)
 			}
 		case *ast.MapType:
 			has := true
@@ -654,7 +724,8 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 				Has: &has,
 				Schema: &openapi3.SchemaRef{
 					Value: &openapi3.Schema{
-						Type: &openapi3.Types{openapi3.TypeString},
+						Type:   &openapi3.Types{openapi3.TypeString},
+						Format: goTypeToSwaggerFormat("string"),
 					},
 				},
 			}
@@ -669,6 +740,26 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 					if exampleEnd != -1 {
 						example := tag[exampleStart : exampleStart+exampleEnd]
 						fieldSchema.Example = example
+					}
+				}
+			}
+			if strings.Contains(tag, `omitempty`) {
+				//schema.Required = append(schema.Required, jsonTag)
+			} else if strings.Contains(tag, `required:"true"`) {
+				schema.Required = append(schema.Required, jsonTag)
+			}
+			if strings.Contains(tag, "@include:") {
+				if exampleStart := strings.Index(tag, `@include:"`); exampleStart != -1 {
+					exampleStart += len(`@include:"`)
+					exampleEnd := strings.Index(tag[exampleStart:], `"`)
+					if exampleEnd != -1 {
+						example := tag[exampleStart : exampleStart+exampleEnd]
+						example = strings.ReplaceAll(example, ".", "_")
+						if _, exists := swagger.Components.Schemas[example]; exists {
+							fieldSchema.Items = &openapi3.SchemaRef{
+								Ref: fmt.Sprintf("#/components/schemas/%s", example),
+							}
+						}
 					}
 				}
 			}
@@ -688,7 +779,6 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 
 		swagger.Components.Schemas[arrayName] = openapi3.NewSchemaRef("", arraySchema)
 	}
-
 }
 
 func goTypeToSwaggerType(goType string) *openapi3.Types {
@@ -701,10 +791,19 @@ func goTypeToSwaggerType(goType string) *openapi3.Types {
 		return &openapi3.Types{openapi3.TypeNumber}
 	case "bool":
 		return &openapi3.Types{openapi3.TypeBoolean}
-	case "time.Time":
+	case "Time":
 		return &openapi3.Types{openapi3.TypeString}
 	default:
 		return &openapi3.Types{openapi3.TypeObject}
+	}
+}
+
+func goTypeToSwaggerFormat(goType string) string {
+	switch goType {
+	case "Time":
+		return "date-time"
+	default:
+		return ""
 	}
 }
 
@@ -799,95 +898,176 @@ func toOpenAPIType(goType string) *openapi3.Types {
 	}
 }
 
-// cleanUnusedSchemas removes any schema definitions that aren't referenced in the API paths
-// cleanUnusedSchemas removes any schema definitions that aren't referenced in the API paths
 func cleanUnusedSchemas(swagger *openapi3.T) {
 	if swagger.Components == nil || swagger.Components.Schemas == nil {
 		return
 	}
 
-	// Step 1: Collect all used references
-	usedSchemas := make(map[string]bool)
-
-	// Check paths for references
+	// Step 1: Find all directly referenced schemas in operations
+	directlyUsed := make(map[string]bool)
 	for _, pathItem := range swagger.Paths.Map() {
-		for _, operation := range []*openapi3.Operation{
+		for _, op := range []*openapi3.Operation{
 			pathItem.Get, pathItem.Put, pathItem.Post,
 			pathItem.Delete, pathItem.Options, pathItem.Head,
 			pathItem.Patch, pathItem.Trace,
 		} {
-			if operation == nil {
+			if op == nil {
 				continue
 			}
+			collectDirectRefs(op, directlyUsed)
+		}
+	}
 
-			// Check request body
-			if operation.RequestBody != nil && operation.RequestBody.Value != nil {
-				for _, mediaType := range operation.RequestBody.Value.Content {
-					if mediaType != nil && mediaType.Schema != nil {
-						collectRefsFromSchemaRef(mediaType.Schema, usedSchemas)
-					}
-				}
+	// Step 2: Do BFS to find all referenced schemas
+	usedSchemas := make(map[string]bool)
+	queue := make([]string, 0, len(directlyUsed))
+
+	// Initialize queue with directly used schemas
+	for name := range directlyUsed {
+		usedSchemas[name] = true
+		queue = append(queue, name)
+	}
+
+	// Process queue
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+
+		// Get schema from components
+		schemaRef, exists := swagger.Components.Schemas[name]
+		if !exists {
+			continue
+		}
+
+		// Find references in this schema
+		refs := findRefsInSchema(schemaRef)
+		for _, ref := range refs {
+			// Only process if we haven't seen this schema before
+			if !usedSchemas[ref] {
+				usedSchemas[ref] = true
+				queue = append(queue, ref)
 			}
-
-			// Check responses
-			for _, responseRef := range operation.Responses.Map() {
-				if responseRef == nil || responseRef.Value == nil {
-					continue
-				}
-
-				for _, mediaType := range responseRef.Value.Content {
-					if mediaType != nil && mediaType.Schema != nil {
-						collectRefsFromSchemaRef(mediaType.Schema, usedSchemas)
-					}
-				}
-			}
 		}
 	}
 
-	// Step 2: Create a map of base schemas to their array counterparts
-	baseToArrays := make(map[string]string)
-	arrayToBases := make(map[string]string)
-	for name := range swagger.Components.Schemas {
-		if strings.HasPrefix(name, "array_") {
-			baseName := name[6:] // Remove "array_"
-			baseToArrays[baseName] = name
-			arrayToBases[name] = baseName
+	// Step 3: Remove unused schemas
+	cleaned := openapi3.Schemas{}
+	for name, schema := range swagger.Components.Schemas {
+		if usedSchemas[name] {
+			cleaned[name] = schema
 		}
 	}
-
-	// Step 3: Propagate usage from base schemas to array schemas and vice versa
-	schemasToKeep := make(map[string]bool)
-	for name := range usedSchemas {
-		schemasToKeep[name] = true
-
-		// If this is a base schema, mark its array version as used too
-		if arrayName, exists := baseToArrays[name]; exists {
-			schemasToKeep[arrayName] = true
-		}
-
-		// If this is an array schema, mark its base version as used too
-		if baseName, exists := arrayToBases[name]; exists {
-			schemasToKeep[baseName] = true
-		}
-	}
-
-	// Step 4: Remove unused schemas
-	cleanedSchemas := openapi3.Schemas{}
-	for name, schemaRef := range swagger.Components.Schemas {
-		if schemasToKeep[name] {
-			cleanedSchemas[name] = schemaRef
-		}
-	}
-
-	swagger.Components.Schemas = cleanedSchemas
+	swagger.Components.Schemas = cleaned
 }
 
-// Helper to check if a schema is an array of a used schema
-func isArrayOfUsedSchema(name string, usedSchemas map[string]bool) bool {
-	if strings.HasPrefix(name, "array_") {
-		baseName := name[6:] // Remove "array_"
-		return usedSchemas[baseName]
+func collectDirectRefs(op *openapi3.Operation, refs map[string]bool) {
+	// Request body
+	if op.RequestBody != nil && op.RequestBody.Value != nil {
+		for _, mediaType := range op.RequestBody.Value.Content {
+			if mediaType.Schema != nil && mediaType.Schema.Ref != "" {
+				if name := getSchemaNameFromRef(mediaType.Schema.Ref); name != "" {
+					refs[name] = true
+				}
+			}
+		}
 	}
+
+	// Responses
+	for _, response := range op.Responses.Map() {
+		if response.Value == nil {
+			continue
+		}
+		for _, mediaType := range response.Value.Content {
+			if mediaType.Schema != nil && mediaType.Schema.Ref != "" {
+				if name := getSchemaNameFromRef(mediaType.Schema.Ref); name != "" {
+					refs[name] = true
+				}
+			}
+		}
+	}
+}
+
+func getSchemaNameFromRef(ref string) string {
+	if after, ok := strings.CutPrefix(ref, "#/components/schemas/"); ok {
+		return after
+	}
+	return ""
+}
+
+func findRefsInSchema(schemaRef *openapi3.SchemaRef) []string {
+	refs := []string{}
+
+	// Handle direct reference
+	if schemaRef.Ref != "" {
+		if name := getSchemaNameFromRef(schemaRef.Ref); name != "" {
+			refs = append(refs, name)
+		}
+		return refs
+	}
+
+	if schemaRef.Value == nil {
+		return refs
+	}
+
+	// Check items
+	if schemaRef.Value.Items != nil {
+		refs = append(refs, findRefsInSchema(schemaRef.Value.Items)...)
+	}
+
+	// Check properties
+	for _, propRef := range schemaRef.Value.Properties {
+		refs = append(refs, findRefsInSchema(propRef)...)
+	}
+
+	// Check additional properties
+	if schemaRef.Value.AdditionalProperties.Schema != nil {
+		refs = append(refs, findRefsInSchema(schemaRef.Value.AdditionalProperties.Schema)...)
+	}
+
+	// Check allOf, anyOf, oneOf
+	for _, subRef := range schemaRef.Value.AllOf {
+		refs = append(refs, findRefsInSchema(subRef)...)
+	}
+	for _, subRef := range schemaRef.Value.AnyOf {
+		refs = append(refs, findRefsInSchema(subRef)...)
+	}
+	for _, subRef := range schemaRef.Value.OneOf {
+		refs = append(refs, findRefsInSchema(subRef)...)
+	}
+
+	return refs
+}
+
+func referencesUsedSchema(ref *openapi3.SchemaRef, used map[string]bool) bool {
+	if ref == nil {
+		return false
+	}
+
+	// Check direct reference
+	if ref.Ref != "" {
+		name := strings.TrimPrefix(ref.Ref, "#/components/schemas/")
+		return used[name]
+	}
+
+	if ref.Value == nil {
+		return false
+	}
+
+	// Check nested references
+	if referencesUsedSchema(ref.Value.Items, used) {
+		return true
+	}
+
+	for _, prop := range ref.Value.Properties {
+		if referencesUsedSchema(prop, used) {
+			return true
+		}
+	}
+
+	if ref.Value.AdditionalProperties.Schema != nil {
+		return referencesUsedSchema(ref.Value.AdditionalProperties.Schema, used)
+	}
+
 	return false
 }
 
@@ -900,8 +1080,8 @@ func collectRefsFromSchemaRef(schemaRef *openapi3.SchemaRef, usedSchemas map[str
 	// Handle $ref directly
 	if schemaRef.Ref != "" {
 		// Extract schema name from "#/components/schemas/SchemaName"
-		if strings.HasPrefix(schemaRef.Ref, "#/components/schemas/") {
-			schemaName := strings.TrimPrefix(schemaRef.Ref, "#/components/schemas/")
+		if after, ok := strings.CutPrefix(schemaRef.Ref, "#/components/schemas/"); ok {
+			schemaName := after
 			usedSchemas[schemaName] = true
 		}
 		return
@@ -944,4 +1124,33 @@ func collectRefsFromSchema(schema *openapi3.Schema, usedSchemas map[string]bool)
 	for _, subSchemaRef := range schema.OneOf {
 		collectRefsFromSchemaRef(subSchemaRef, usedSchemas)
 	}
+}
+
+func isSSEHandler(handler *ast.FuncDecl) bool {
+	if handler.Doc == nil {
+		return false
+	}
+	for _, comment := range handler.Doc.List {
+		if strings.Contains(comment.Text, "Server-Sent Events") ||
+			strings.Contains(comment.Text, "streams status updates") {
+			return true
+		}
+	}
+	return false
+}
+
+func extractPathParams(path string) []string {
+	seen := make(map[string]bool)
+	var params []string
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			name := strings.Trim(part, "{}")
+			if !seen[name] {
+				seen[name] = true
+				params = append(params, name)
+			}
+		}
+	}
+	return params
 }

@@ -32,7 +32,7 @@ type taskManager struct {
 }
 
 func (tm *taskManager) execute(w http.ResponseWriter, r *http.Request) {
-	req, err := serverops.Decode[execservice.TaskRequest](r)
+	req, err := serverops.Decode[execservice.TaskRequest](r) // @request execservice.TaskRequest
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
 		return
@@ -43,17 +43,23 @@ func (tm *taskManager) execute(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
 		return
 	}
-	_ = serverops.Encode(w, r, http.StatusOK, resp)
+	_ = serverops.Encode(w, r, http.StatusOK, resp) // @response execservice.TaskResponse
 }
 
 type taskExec struct {
 	Input     any                         `json:"input"`
 	InputType string                      `json:"inputType"`
-	Chain     *taskengine.ChainDefinition `json:"chain"`
+	Chain     *taskengine.ChainDefinition `json:"chain" @include:"taskengine.ChainDefinition"`
+}
+
+type taskResponse struct {
+	Output     any                            `json:"output"`
+	OutputType string                         `json:"outputType"`
+	State      []taskengine.CapturedStateUnit `json:"state" @include:"taskengine.CapturedStateUnit"`
 }
 
 func (tm *taskManager) tasks(w http.ResponseWriter, r *http.Request) {
-	req, err := serverops.Decode[taskExec](r)
+	req, err := serverops.Decode[taskExec](r) // @request execapi.taskExec
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
 		return
@@ -217,15 +223,11 @@ func (tm *taskManager) tasks(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
 		return
 	}
-	var response struct {
-		Output     any                            `json:"output"`
-		OutputType string                         `json:"outputType"`
-		State      []taskengine.CapturedStateUnit `json:"state"`
-	}
+	var response taskResponse
 	response.Output = resp
 	response.OutputType = outputType.String()
 	response.State = capturedStateUnits
-	_ = serverops.Encode(w, r, http.StatusOK, response)
+	_ = serverops.Encode(w, r, http.StatusOK, response) // @response execapi.taskResponse
 }
 
 func (tm *taskManager) supported(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +237,7 @@ func (tm *taskManager) supported(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, resp)
+	_ = serverops.Encode(w, r, http.StatusOK, resp) // @response []string
 }
 
 type EmbedRequest struct {
@@ -247,7 +249,7 @@ type EmbedResponse struct {
 }
 
 func (tm *taskManager) embed(w http.ResponseWriter, r *http.Request) {
-	req, err := serverops.Decode[EmbedRequest](r)
+	req, err := serverops.Decode[EmbedRequest](r) // @request execapi.EmbedRequest
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -259,7 +261,7 @@ func (tm *taskManager) embed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, EmbedResponse{Vector: vector})
+	_ = serverops.Encode(w, r, http.StatusOK, EmbedResponse{Vector: vector}) // @response execapi.EmbedResponse
 }
 
 type DefaultModelResponse struct {
@@ -273,5 +275,5 @@ func (tm *taskManager) defaultModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, DefaultModelResponse{ModelName: modelName})
+	_ = serverops.Encode(w, r, http.StatusOK, DefaultModelResponse{ModelName: modelName}) // @response execapi.DefaultModelResponse
 }

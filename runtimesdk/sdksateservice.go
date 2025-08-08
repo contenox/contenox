@@ -37,7 +37,7 @@ func NewHTTPStateService(baseURL, token string, client *http.Client) stateservic
 }
 
 // Get implements modelservice.Service.Get
-func (h *HTTPStateService) Get(ctx context.Context) (map[string]runtimestate.LLMState, error) {
+func (h *HTTPStateService) Get(ctx context.Context) ([]runtimestate.LLMState, error) {
 	// Build URL with query parameters
 	rUrl := fmt.Sprintf("%s/state", h.baseURL)
 
@@ -62,7 +62,7 @@ func (h *HTTPStateService) Get(ctx context.Context) (map[string]runtimestate.LLM
 		return nil, apiframework.HandleAPIError(resp)
 	}
 
-	var response map[string]runtimestate.LLMState
+	var response []runtimestate.LLMState
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
 	}

@@ -33,7 +33,7 @@ func (s *downloadManager) getQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, currentQueue)
+	_ = serverops.Encode(w, r, http.StatusOK, currentQueue) // @response []downloadservice.Job
 }
 
 func (s *downloadManager) removeFromQueue(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +48,7 @@ func (s *downloadManager) removeFromQueue(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, map[string]string{"message": "Model removed from queue"})
+	_ = serverops.Encode(w, r, http.StatusOK, "Model removed from queue") // @response string
 }
 
 // inProgress streams status updates to the client via Server-Sent Events.
@@ -100,6 +100,7 @@ func (s *downloadManager) inProgress(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+
 }
 
 func (s *downloadManager) cancelDownload(w http.ResponseWriter, r *http.Request) {
@@ -112,5 +113,5 @@ func (s *downloadManager) cancelDownload(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, map[string]string{"message": "Model removed from queue"})
+	_ = serverops.Encode(w, r, http.StatusOK, "Model removed from queue") // @response string
 }

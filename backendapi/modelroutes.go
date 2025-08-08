@@ -30,7 +30,7 @@ type service struct {
 func (s *service) append(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	model, err := serverops.Decode[runtimetypes.Model](r)
+	model, err := serverops.Decode[runtimetypes.Model](r) // @request runtimetypes.Model
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -42,7 +42,19 @@ func (s *service) append(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusCreated, model)
+	_ = serverops.Encode(w, r, http.StatusCreated, model) // @response runtimetypes.Model
+}
+
+type OpenAIModel struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	OwnedBy string `json:"owned_by"`
+}
+
+type ListResponse struct {
+	Object string        `json:"object"`
+	Data   []OpenAIModel `json:"data"`
 }
 
 func (s *service) list(w http.ResponseWriter, r *http.Request) {
@@ -78,18 +90,6 @@ func (s *service) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type OpenAIModel struct {
-		ID      string `json:"id"`
-		Object  string `json:"object"`
-		Created int64  `json:"created"`
-		OwnedBy string `json:"owned_by"`
-	}
-
-	type ListResponse struct {
-		Object string        `json:"object"`
-		Data   []OpenAIModel `json:"data"`
-	}
-
 	openAIModels := make([]OpenAIModel, len(internalModels))
 
 	for i, m := range internalModels {
@@ -106,7 +106,7 @@ func (s *service) list(w http.ResponseWriter, r *http.Request) {
 		Data:   openAIModels,
 	}
 
-	serverops.Encode(w, r, http.StatusOK, response)
+	serverops.Encode(w, r, http.StatusOK, response) // @response backendapi.ListResponse
 }
 
 func (s *service) delete(w http.ResponseWriter, r *http.Request) {
@@ -132,5 +132,5 @@ func (s *service) delete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "model removed")
+	_ = serverops.Encode(w, r, http.StatusOK, "model removed") // @response string
 }

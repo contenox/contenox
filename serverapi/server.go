@@ -51,7 +51,7 @@ func New(
 	mux := http.NewServeMux()
 	var handler http.Handler = mux
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+		apiframework.Error(w, r, apiframework.ErrNotFound, apiframework.ListOperation)
 	})
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		// OK

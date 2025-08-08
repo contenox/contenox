@@ -8,6 +8,7 @@ import (
 
 	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
+	"github.com/contenox/runtime/runtimestate"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/stateservice"
 	"github.com/google/uuid"
@@ -25,17 +26,17 @@ func AddBackendRoutes(mux *http.ServeMux, backendService backendservice.Service,
 }
 
 type respBackendList struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	BaseURL string `json:"baseUrl"`
-	Type    string `json:"type"`
+	ID      string `json:"id" example:"backend-id"`
+	Name    string `json:"name" example:"backend-name"`
+	BaseURL string `json:"baseUrl" example:"http://localhost:11434"`
+	Type    string `json:"type" example:"ollama"`
 
 	Models       []string                `json:"models"`
 	PulledModels []api.ListModelResponse `json:"pulledModels"`
-	Error        string                  `json:"error,omitempty"`
+	Error        string                  `json:"error,omitempty" example:"error-message"`
 
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	CreatedAt time.Time `json:"createdAt" example:"2023-01-01T00:00:00Z"`
+	UpdatedAt time.Time `json:"updatedAt" example:"2023-01-01T00:00:00Z"`
 }
 
 type backendManager struct {
@@ -43,10 +44,11 @@ type backendManager struct {
 	stateService stateservice.Service
 }
 
+// Create a new backend connection
 func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	backend, err := serverops.Decode[runtimetypes.Backend](r) // @request []runtimetypes.Backend
+	backend, err := serverops.Decode[runtimetypes.Backend](r) // @request runtimetypes.Backend
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -57,9 +59,10 @@ func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusCreated, backend) // @response []runtimetypes.Backend
+	_ = serverops.Encode(w, r, http.StatusCreated, backend) // @response runtimetypes.Backend
 }
 
+// List all backend connections
 func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -106,19 +109,28 @@ func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
 			BaseURL: backend.BaseURL,
 			Type:    backend.Type,
 		}
-		state, ok := backendState[backend.ID]
+		ok := false
+		var itemState runtimestate.LLMState
+		for _, l := range backendState {
+			if l.ID == backend.ID {
+				ok = true
+
+				itemState = l
+				break
+			}
+		}
 		if ok {
-			item.Models = state.Models
-			item.PulledModels = state.PulledModels
-			item.Error = state.Error
+			item.Models = itemState.Models
+			item.PulledModels = itemState.PulledModels
+			item.Error = itemState.Error
 		}
 		resp = append(resp, item)
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, resp)
+	_ = serverops.Encode(w, r, http.StatusOK, resp) // @response []backendapi.respBackendList
 }
 
-type RespBackend struct {
+type respBackend struct {
 	ID           string                  `json:"id"`
 	Name         string                  `json:"name"`
 	BaseURL      string                  `json:"baseUrl"`
@@ -130,6 +142,7 @@ type RespBackend struct {
 	UpdatedAt    time.Time               `json:"updatedAt"`
 }
 
+// Retrieve a backend by ID
 func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -151,9 +164,18 @@ func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 		serverops.Error(w, r, err, serverops.GetOperation)
 		return
 	}
-	itemState, ok := state[id]
+	ok := false
+	var itemState runtimestate.LLMState
+	for _, l := range state {
+		if l.ID == id {
+			ok = true
 
-	resp := RespBackend{
+			itemState = l
+			break
+		}
+	}
+
+	resp := respBackend{
 		ID:           backend.ID,
 		Name:         backend.Name,
 		BaseURL:      backend.BaseURL,
@@ -171,9 +193,10 @@ func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 		resp.Error = itemState.Error
 	}
 
-	serverops.Encode(w, r, http.StatusOK, resp)
+	serverops.Encode(w, r, http.StatusOK, resp) // @response backendapi.respBackend
 }
 
+// Update a backend by ID
 func (b *backendManager) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -181,7 +204,7 @@ func (b *backendManager) update(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, fmt.Errorf("missing id parameter %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
 		return
 	}
-	backend, err := serverops.Decode[runtimetypes.Backend](r)
+	backend, err := serverops.Decode[runtimetypes.Backend](r) // @request runtimetypes.Backend
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
 		return
@@ -193,9 +216,10 @@ func (b *backendManager) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, backend)
+	_ = serverops.Encode(w, r, http.StatusOK, backend) // @response runtimetypes.Backend
 }
 
+// Delete a backend by ID
 func (b *backendManager) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
@@ -208,5 +232,5 @@ func (b *backendManager) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "backend removed")
+	_ = serverops.Encode(w, r, http.StatusOK, "backend removed") // @response string
 }

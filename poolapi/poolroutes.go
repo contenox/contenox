@@ -43,7 +43,7 @@ type poolHandler struct {
 func (h *poolHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	pool, err := serverops.Decode[runtimetypes.Pool](r)
+	pool, err := serverops.Decode[runtimetypes.Pool](r) // @request runtimetypes.Pool
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)
 		return
@@ -54,7 +54,7 @@ func (h *poolHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusCreated, pool)
+	_ = serverops.Encode(w, r, http.StatusCreated, pool) // @response runtimetypes.Pool
 }
 
 func (h *poolHandler) getByID(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,7 @@ func (h *poolHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, pool)
+	_ = serverops.Encode(w, r, http.StatusOK, pool) // @response runtimetypes.Pool
 }
 
 func (h *poolHandler) getByName(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +88,7 @@ func (h *poolHandler) getByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, pool)
+	_ = serverops.Encode(w, r, http.StatusOK, pool) // @response runtimetypes.Pool
 }
 
 func (h *poolHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +99,7 @@ func (h *poolHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pool, err := serverops.Decode[runtimetypes.Pool](r)
+	pool, err := serverops.Decode[runtimetypes.Pool](r) // @request runtimetypes.Pool
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
 		return
@@ -111,7 +111,7 @@ func (h *poolHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, pool)
+	_ = serverops.Encode(w, r, http.StatusOK, pool) // @response runtimetypes.Pool
 }
 
 func (h *poolHandler) delete(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +127,7 @@ func (h *poolHandler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	_ = serverops.Encode(w, r, http.StatusOK, "deleted") // @response string
 }
 
 func (h *poolHandler) listAll(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +139,7 @@ func (h *poolHandler) listAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, pools)
+	_ = serverops.Encode(w, r, http.StatusOK, pools) // @response []runtimetypes.Pool
 }
 
 func (h *poolHandler) listByPurpose(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +179,7 @@ func (h *poolHandler) listByPurpose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, pools)
+	_ = serverops.Encode(w, r, http.StatusOK, pools) // @response []runtimetypes.Pool
 }
 
 // Backend association handlers
@@ -197,7 +197,7 @@ func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
 		return
 	}
-	_ = serverops.Encode(w, r, http.StatusCreated, "backend assigned")
+	_ = serverops.Encode(w, r, http.StatusCreated, "backend assigned") // @response string
 }
 
 func (h *poolHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +215,7 @@ func (h *poolHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "backend removed")
+	_ = serverops.Encode(w, r, http.StatusOK, "backend removed") // @response string
 }
 
 func (h *poolHandler) listBackends(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +232,7 @@ func (h *poolHandler) listBackends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, backends)
+	_ = serverops.Encode(w, r, http.StatusOK, backends) // @response []runtimetypes.Backend
 }
 
 func (h *poolHandler) listPoolsForBackend(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +249,7 @@ func (h *poolHandler) listPoolsForBackend(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, pools)
+	_ = serverops.Encode(w, r, http.StatusOK, pools) // @response []runtimetypes.Pool
 }
 
 // Model association handlers
@@ -268,7 +268,7 @@ func (h *poolHandler) assignModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "model assigned")
+	_ = serverops.Encode(w, r, http.StatusOK, "model assigned") // @response string
 }
 
 func (h *poolHandler) removeModel(w http.ResponseWriter, r *http.Request) {
@@ -286,7 +286,7 @@ func (h *poolHandler) removeModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "model removed")
+	_ = serverops.Encode(w, r, http.StatusOK, "model removed") // @response string
 }
 
 func (h *poolHandler) listModels(w http.ResponseWriter, r *http.Request) {
@@ -303,7 +303,7 @@ func (h *poolHandler) listModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, models)
+	_ = serverops.Encode(w, r, http.StatusOK, models) // @response []runtimetypes.Model
 }
 
 func (h *poolHandler) listPoolsForModel(w http.ResponseWriter, r *http.Request) {
@@ -320,5 +320,5 @@ func (h *poolHandler) listPoolsForModel(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, pools)
+	_ = serverops.Encode(w, r, http.StatusOK, pools) // @response []runtimetypes.Pool
 }
