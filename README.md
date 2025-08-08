@@ -5,7 +5,7 @@
 
 **contenox/runtime** is an open-source runtime for orchestrating generative AI workflows. It treats AI workflows as state machines, enabling:
 
-✅ **Declarative workflow definition** ✅ **Built-in state management** ✅ **Vendor-agnostic execution** ✅ **Observability with passion** ✅ **Made with Go with performance in mind**
+✅ **Declarative workflow definition** ✅ **Built-in state management** ✅ **Vendor-agnostic execution** ✅ **Observability with passion** ✅ **Made with Go with intensive load**
 
 ## ⚡ Get Started in 3 Minutes
 
@@ -148,7 +148,7 @@ graph LR
 - **Unified Interface**: Consistent API across providers
 - **Automatic Sync**: Models stay consistent across backends
 - **Pool Management**: Assign backends to specific task types
-
+- **Load Balancing**: Distribute requests to the backends based via resolution policies
 ## 🧩 Extensibility
 
 ### Custom Hooks
