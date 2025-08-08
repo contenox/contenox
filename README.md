@@ -1,68 +1,193 @@
-# contenox/runtime: genAI orchestration runtime
+# contenox/runtime: GenAI Orchestration Runtime
 
 ![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 
-**contenox/runtime** is a genAI orchestration runtime that enables developers to build, manage, and execute complex LLM (Large Language Model) workflows with ease. It provides a unified interface for interacting with multiple AI providers, and creating multi-task prompt engineering pipelines.
+**contenox/runtime** is an open-source runtime for orchestrating generative AI workflows. It treats AI workflows as state machines, enabling:
 
-## Overview
+✅ **Declarative workflow definition** - Define complex AI interactions in YAML/JSON
+✅ **Built-in state management** - Automatic context passing between steps
+✅ **Vendor-agnostic execution** - Switch providers without changing workflow logic
+✅ **Production-ready observability** - Detailed execution history for every step
 
-contenox/runtime is designed as the backbone for AI-powered applications, offering:
+## ⚡ Get Started in 3 Minutes
 
-- **Multi-provider support** for OpenAI, Gemini, Ollama, and custom backends
-- **State-machine as engine** with conditional branching and state management
-- **Resource pooling** for efficient allocation of AI resources
-- **Extensible hook system** for integrating with external services
-- **SDK** for seamless integration into applications
+### Prerequisites
+- Docker and Docker Compose
+- `curl` and `jq` (for CLI examples)
 
-## Key Features
-
-### State-machine as Engine
-- Chain multiple LLM operations together with conditional transitions
-- 10+ built-in task handlers (`parse_number`, `parse_range`, `condition_key`, etc.)
-- Dynamic routing based on LLM outputs
-- Support for complex input types (chat history, search results, etc.)
-
-```go
-// Example state-machine configuration
-chain := &taskengine.ChainDefinition{
-    ID: "sentiment-analysis",
-    Tasks: []taskengine.ChainTask{
-        {
-            ID:      "classify",
-            Handler: taskengine.HandleConditionKey,
-            ValidConditions: map[string]bool{"positive": true, "negative": true, "neutral": true},
-            PromptTemplate: "Analyze sentiment of: {{.input}}. Respond with positive, negative, or neutral.",
-            Transition: taskengine.TaskTransition{
-                Branches: []taskengine.TransitionBranch{
-                    {Operator: taskengine.OpEquals, When: "positive", Goto: "positive_response"},
-                    {Operator: taskengine.OpEquals, When: "negative", Goto: "negative_response"},
-                    {Operator: taskengine.OpDefault, Goto: "neutral_response"},
-                },
-            },
-        },
-        // Additional tasks...
-    },
-}
+### 1. Launch the Runtime
+```bash
+git clone https://github.com/contenox/runtime.git
+cd runtime
+docker compose up -d
 ```
 
-### Resource Management
-- **Backend Management**: Connect to multiple AI providers (Ollama, OpenAI, Gemini)
-- **Model Management**: Download, store, and manage LLM models
-- **Resource Pooling**: Group resources by purpose (inference, embedding, etc.)
-- **Backend-Model Associations**: Assign specific models to specific backends
+This starts the complete environment:
+- Runtime API (port 8081)
+- Ollama (port 11435)
+- Postgres, NATS, Valkey, and tokenizer services
 
-### Extensible Architecture
-- **Custom Hooks**: Extend functionality with remote HTTP hooks
-- **Provider API**: Configure cloud providers (OpenAI, Gemini) securely
-- **Download Queue**: Manage model download operations with progress tracking
+### 2. Register Your Ollama Backend
+```bash
+BACKEND_ID=$(curl -s -X POST http://localhost:8081/backends \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "local-ollama",
+    "baseURL": "http://host.docker.internal:11435",
+    "type": "ollama"
+  }' | jq -r '.id')
 
-### SDK
-- Implement the same interfaces as internal services
-- Seamlessly replace local service with HTTP client
-- Consistent error handling across all services
-- Full type compatibility with internal models
+echo "Backend ID: $BACKEND_ID"
+```
 
-## Getting Started
+### 3. Assign Backend to Default Pools
+```bash
+# For task execution
+curl -X POST http://localhost:8081/backend-associations/internal_tasks_pool/backends/$BACKEND_ID
 
-## TODO:
+# For embeddings
+curl -X POST http://localhost:8081/backend-associations/internal_embed_pool/backends/$BACKEND_ID
+```
+
+### 4. Wait for Models to Download
+```bash
+EMBED_MODEL="nomic-embed-text:latest"
+TASK_MODEL="qwen3:4b"
+
+echo "⏳ Downloading models (2-5 minutes)..."
+while true; do
+  STATUS=$(curl -s http://localhost:8081/backends/$BACKEND_ID)
+
+  if jq -e ".pulledModels[] | select(.model == \"$EMBED_MODEL\")" <<< "$STATUS" >/dev/null && \
+     jq -e ".pulledModels[] | select(.model == \"$TASK_MODEL\")" <<< "$STATUS" >/dev/null; then
+    echo "✅ Models ready!"
+    break
+  fi
+  sleep 10
+  echo "⏳ Still downloading..."
+done
+```
+
+### 5. Execute Your First Prompt
+```bash
+curl -X POST http://localhost:8081/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "Explain quantum computing like I'm five"
+  }'
+```
+
+### 6. Create a Conditional Workflow
+```yaml
+# save as sky_question.yaml
+input: "Is the sky blue?"
+inputType: string
+chain:
+  id: sky-color-verification
+  tasks:
+    - id: validate
+      handler: condition_key
+      validConditions:
+        valid: true
+        invalid: true
+      promptTemplate: |
+        Is this a valid question? {{.input}}
+        Respond exactly with either "valid" or "invalid"
+      transition:
+        branches:
+          - when: valid
+            goto: answer
+          - when: invalid
+            goto: reject
+
+    - id: answer
+      handler: raw_string
+      promptTemplate: Answer this question: {{.input}}
+      transition:
+        branches:
+          - operator: default
+            goto: end
+
+    - id: reject
+      handler: raw_string
+      promptTemplate: This is not a valid question: {{.input}}
+      transition:
+        branches:
+          - operator: default
+            goto: end
+```
+
+Execute the workflow:
+```bash
+curl -X POST http://localhost:8081/tasks \
+  -H "Content-Type: application/json" \
+  -d @sky_question.yaml
+```
+
+## ✨ Key Features
+
+### State Machine Engine
+- **Conditional Branching**: Route execution based on LLM outputs
+- **Built-in Handlers**:
+  - `condition_key`: Validate and route responses
+  - `parse_number`: Extract numerical values
+  - `parse_range`: Handle score ranges
+  - `raw_string`: Standard text generation
+- **Context Preservation**: Automatic input/output passing between steps
+
+### Multi-Backend Support
+```mermaid
+graph LR
+    A[Workflow] --> B(Ollama)
+    A --> C(OpenAI)
+    A --> D(Gemini)
+    A --> E(vLLM)
+```
+
+- **Unified Interface**: Consistent API across providers
+- **Automatic Sync**: Models stay consistent across backends
+- **Pool Management**: Assign backends to specific task types
+
+### Production Ready
+- **Execution History**: Full audit trail for every workflow run
+- **Retry Logic**: Automatic failure recovery
+- **Queue Management**: Control model downloads and cancellations
+
+## 🧩 Extensibility
+
+### Custom Hooks
+Integrate with external services:
+```python
+# email_notification.py
+def send_completion_notification(task_result):
+    if task_result["status"] == "COMPLETED":
+        send_email(f"Task completed: {task_result['id']}")
+```
+
+### Hybrid Deployments
+```mermaid
+graph TB
+    Cloud[Cloud LLMs] -->|Complex tasks| Runtime
+    OnPrem[On-Prem LLMs] -->|Sensitive data| Runtime
+```
+
+## 📚 Documentation
+- [API Reference](docs/api.md)
+_____
+
+
+TODO WRITE THESE:
+- [Workflow Specification](docs/workflow-spec.md)
+- [Backend Management](docs/backends.md)
+- [Handler Library](docs/handlers.md)
+
+## 🚀 Getting Help
+Join our community for support:
+- [GitHub Discussions](https://github.com/contenox/runtime/discussions)
+- [Discord Channel](https://discord.gg/contenox)
+
+## 🤝 Contributing
+We welcome contributions! Please see our:
+- [Contribution Guide](CONTRIBUTING.md)
+- [Good First Issues](https://github.com/contenox/runtime/contribute)
