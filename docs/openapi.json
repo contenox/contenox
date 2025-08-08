@@ -657,7 +657,7 @@
     },
     "/backend-associations/{poolID}/backends/{backendID}": {
       "delete": {
-        "description": "Removes a backend from a pool.\nAfter removal, the backend will no longer have access to the pool's models.",
+        "description": "Removes a backend from a pool.\nAfter removal, the backend will no longer be eligible to process requests for models in this pool.\nRequests requiring models from this pool will no longer be routed to this backend.",
         "responses": {
           "200": {
             "content": {
@@ -694,7 +694,7 @@
         }
       ],
       "post": {
-        "description": "Associates a backend with a pool.\nAfter assignment, the pool's models will be available to the backend.",
+        "description": "Associates a backend with a pool.\nAfter assignment, the backend can process requests for all models in the pool.\nThis enables request routing between the backend and models that share this pool.",
         "responses": {
           "201": {
             "content": {
@@ -715,7 +715,7 @@
     },
     "/backends": {
       "get": {
-        "description": "Lists all configured backend connections with runtime status.",
+        "description": "Lists all configured backend connections with runtime status.\nNOTE: Only backends assigned to at least one pool will be used for request processing.\nBackends not assigned to any pool exist in the configuration but are completely ignored by the routing system.",
         "responses": {
           "200": {
             "content": {
@@ -865,7 +865,7 @@
     },
     "/embed": {
       "post": {
-        "description": "Generates vector embeddings for text.\nUses the system's default embedding model configured at startup.\nRequests are routed ONLY to backends that have the default model\navailable in any shared pool.",
+        "description": "Generates vector embeddings for text.\nUses the system's default embedding model configured at startup.\nRequests are routed ONLY to backends that have the default model available in any shared pool.\nIf pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -896,7 +896,7 @@
     },
     "/execute": {
       "post": {
-        "description": "Runs the prompt through the default LLM.\nThis endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.\nRequests are routed ONLY to backends that have the requested model\navailable in any shared pool.",
+        "description": "Runs the prompt through the default LLM.\nThis endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.\nRequests are routed ONLY to backends that have the default model available in any shared pool.\nIf pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1118,7 +1118,7 @@
     },
     "/model-associations/{poolID}/models/{modelID}": {
       "delete": {
-        "description": "Removes a model from a pool.\nAfter removal, the model will no longer be available to backends in the pool.",
+        "description": "Removes a model from a pool.\nAfter removal, requests for this model will no longer be routed to backends in this pool.\nThis model can still be used with backends in other pools where it remains assigned.",
         "responses": {
           "200": {
             "content": {
@@ -1155,7 +1155,7 @@
         }
       ],
       "post": {
-        "description": "Associates a model with a pool.\nAfter assignment, the model becomes available to all backends in the pool.",
+        "description": "Associates a model with a pool.\nAfter assignment, requests for this model can be routed to any backend in the pool.\nThis enables request routing between the model and backends that share this pool.",
         "responses": {
           "200": {
             "content": {
@@ -1176,7 +1176,7 @@
     },
     "/models": {
       "get": {
-        "description": "Lists all available models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.",
+        "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one pool will be available for request processing.\nModels not assigned to any pool exist in the configuration but are completely ignored by the routing system.",
         "responses": {
           "200": {
             "content": {
@@ -1195,7 +1195,7 @@
         "summary": "list"
       },
       "post": {
-        "description": "Declares a new model to the system.\nThe model must be available in a configured backend or will be queued for download.\nNOTE: If pools are enabled, to make a model available to backends, it must be added to the same pool.",
+        "description": "Declares a new model to the system.\nThe model must be available in a configured backend or will be queued for download.\nIMPORTANT: Models not assigned to any pool will NOT be available for request processing.\nIf pools are enabled, to make a model available to backends, it must be explicitly added to at least one pool.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1338,7 +1338,7 @@
         "summary": "listAll"
       },
       "post": {
-        "description": "Creates a new resource pool for organizing backends and models.\nPool names must be unique within the system.\nPools allow grouping of backends and models for specific purposes (e.g., embeddings, tasks).\nWhen pools are configured in the system, ONLY models and backends\nthat are assigned to the same pool will be used for request processing.\nModels and backends not assigned to any pool will be ignored by the routing system.\nA resource pool is an organizational construct that groups backends (LLM service connections)\nand models together for specific operational purposes.\nNOTE:\n- Models not assigned to any pool will not be available for execution\n- Backends not assigned to any pool will not receive models or process requests\n- Resources must be explicitly associated with the same pool to work together",
+        "description": "Creates a new resource pool for organizing backends and models.\nPool names must be unique within the system.\nPools allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).\nCRITICAL BEHAVIOR:\nWhen pools are configured in the system, request routing ONLY considers resources that share a pool.\n- Models not assigned to any pool will NOT be available for execution\n- Backends not assigned to any pool will NOT receive models or process requests\n- Resources must be explicitly associated with the same pool to work together\nThis is a fundamental operational requirement - resources outside pools are effectively invisible to the routing system.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1613,7 +1613,7 @@
     },
     "/state": {
       "get": {
-        "description": "Retrieves the current runtime state of all LLM backends.\nIncludes connection status, loaded models, and error information.",
+        "description": "Retrieves the current runtime state of all LLM backends.\nIncludes connection status, loaded models, and error information.\nNOTE: This shows the physical state of backends, but the routing system only considers\nbackends and models that are assigned to the same pool. Resources not in pools are ignored\nfor request processing even if they appear in this response.",
         "responses": {
           "200": {
             "content": {
@@ -1655,7 +1655,7 @@
     },
     "/tasks": {
       "post": {
-        "description": "Executes dynamic task-chain workflows.\nTask-chains are state-machine workflows (DAGs) with conditional branches,\nexternal hooks, and captured execution state.\nRequests are routed ONLY to backends that have the default model\navailable in any shared pool.",
+        "description": "Executes dynamic task-chain workflows.\nTask-chains are state-machine workflows (DAGs) with conditional branches,\nexternal hooks, and captured execution state.\nRequests are routed ONLY to backends that have the requested model available in any shared pool.\nIf pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.",
         "requestBody": {
           "content": {
             "application/json": {

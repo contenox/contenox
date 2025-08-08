@@ -42,16 +42,13 @@ type poolHandler struct {
 
 // Creates a new resource pool for organizing backends and models.
 // Pool names must be unique within the system.
-// Pools allow grouping of backends and models for specific purposes (e.g., embeddings, tasks).
-// When pools are configured in the system, ONLY models and backends
-// that are assigned to the same pool will be used for request processing.
-// Models and backends not assigned to any pool will be ignored by the routing system.
-// A resource pool is an organizational construct that groups backends (LLM service connections)
-// and models together for specific operational purposes.
-// NOTE:
-// - Models not assigned to any pool will not be available for execution
-// - Backends not assigned to any pool will not receive models or process requests
+// Pools allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).
+// CRITICAL BEHAVIOR:
+// When pools are configured in the system, request routing ONLY considers resources that share a pool.
+// - Models not assigned to any pool will NOT be available for execution
+// - Backends not assigned to any pool will NOT receive models or process requests
 // - Resources must be explicitly associated with the same pool to work together
+// This is a fundamental operational requirement - resources outside pools are effectively invisible to the routing system.
 func (h *poolHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -208,7 +205,8 @@ func (h *poolHandler) listByPurpose(w http.ResponseWriter, r *http.Request) {
 }
 
 // Associates a backend with a pool.
-// After assignment, the pool's models will be available to the backend.
+// After assignment, the backend can process requests for all models in the pool.
+// This enables request routing between the backend and models that share this pool.
 func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -227,7 +225,8 @@ func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 }
 
 // Removes a backend from a pool.
-// After removal, the backend will no longer have access to the pool's models.
+// After removal, the backend will no longer be eligible to process requests for models in this pool.
+// Requests requiring models from this pool will no longer be routed to this backend.
 func (h *poolHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -285,7 +284,8 @@ func (h *poolHandler) listPoolsForBackend(w http.ResponseWriter, r *http.Request
 }
 
 // Associates a model with a pool.
-// After assignment, the model becomes available to all backends in the pool.
+// After assignment, requests for this model can be routed to any backend in the pool.
+// This enables request routing between the model and backends that share this pool.
 func (h *poolHandler) assignModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
@@ -305,7 +305,8 @@ func (h *poolHandler) assignModel(w http.ResponseWriter, r *http.Request) {
 }
 
 // Removes a model from a pool.
-// After removal, the model will no longer be available to backends in the pool.
+// After removal, requests for this model will no longer be routed to backends in this pool.
+// This model can still be used with backends in other pools where it remains assigned.
 func (h *poolHandler) removeModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	poolID := url.PathEscape(r.PathValue("poolID"))
