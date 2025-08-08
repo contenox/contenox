@@ -24,11 +24,11 @@ import (
 
 // LLMState represents the observed state of a single LLM backend.
 type LLMState struct {
-	ID           string                  `json:"id"`
-	Name         string                  `json:"name"`
-	Models       []string                `json:"models"`
-	PulledModels []api.ListModelResponse `json:"pulledModels"`
-	Backend      runtimetypes.Backend    `json:"backend"`
+	ID           string               `json:"id" example:"backend1"`
+	Name         string               `json:"name" example:"Backend Name"`
+	Models       []string             `json:"models"`
+	PulledModels []ListModelResponse  `json:"pulledModels" @include:"runtimestate.ListModelResponse"`
+	Backend      runtimetypes.Backend `json:"backend"`
 	// Error stores a description of the last encountered error when
 	// interacting with or reconciling this backend's state, if any.
 	Error string `json:"error,omitempty"`
@@ -36,8 +36,45 @@ type LLMState struct {
 	apiKey string
 }
 
+type ListModelResponse struct {
+	Name       string       `json:"name"`
+	Model      string       `json:"model"`
+	ModifiedAt time.Time    `json:"modified_at"`
+	Size       int64        `json:"size"`
+	Digest     string       `json:"digest"`
+	Details    ModelDetails `json:"details,omitempty" @include:"runtimestate.ModelDetails"`
+}
+
+type ModelDetails struct {
+	ParentModel       string   `json:"parent_model"`
+	Format            string   `json:"format"`
+	Family            string   `json:"family"`
+	Families          []string `json:"families"`
+	ParameterSize     string   `json:"parameter_size"`
+	QuantizationLevel string   `json:"quantization_level"`
+}
+
 func (s *LLMState) GetAPIKey() string {
 	return s.apiKey
+}
+
+func convertOllamaListModelResponse(model *api.ListModelResponse) *ListModelResponse {
+	list := &ListModelResponse{
+		Name:       model.Name,
+		Model:      model.Model,
+		ModifiedAt: model.ModifiedAt,
+		Size:       model.Size,
+		Digest:     model.Digest,
+		Details: ModelDetails{
+			ParentModel:       model.Details.ParentModel,
+			Format:            model.Details.Format,
+			Family:            model.Details.Family,
+			Families:          model.Details.Families,
+			ParameterSize:     model.Details.ParameterSize,
+			QuantizationLevel: model.Details.QuantizationLevel,
+		},
+	}
+	return list
 }
 
 // State manages the overall runtime status of multiple LLM backends.
@@ -394,7 +431,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: []api.ListModelResponse{},
+			PulledModels: []ListModelResponse{},
 			Backend:      *backend,
 			Error:        "Invalid URL: " + err.Error(),
 		}
@@ -411,7 +448,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: []api.ListModelResponse{},
+			PulledModels: []ListModelResponse{},
 			Backend:      *backend,
 			Error:        err.Error(),
 		}
@@ -483,7 +520,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: []api.ListModelResponse{},
+			PulledModels: []ListModelResponse{},
 			Backend:      *backend,
 			Error:        err.Error(),
 		}
@@ -520,7 +557,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []api.ListModelResponse{},
+			PulledModels: []ListModelResponse{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Failed to create request: %v", err),
 		})
@@ -533,7 +570,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []api.ListModelResponse{},
+			PulledModels: []ListModelResponse{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("HTTP request failed: %v", err),
 		})
@@ -551,7 +588,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []api.ListModelResponse{},
+			PulledModels: []ListModelResponse{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Unexpected status: %d %s", resp.StatusCode, bodyStr),
 		})
@@ -575,7 +612,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []api.ListModelResponse{},
+			PulledModels: []ListModelResponse{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Failed to decode response: %v | Raw response: %s", err, bodyStr),
 		})
@@ -587,7 +624,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []api.ListModelResponse{},
+			PulledModels: []ListModelResponse{},
 			Backend:      *backend,
 			Error:        "No models found in response",
 		})
@@ -616,7 +653,7 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 		ID:           backend.ID,
 		Name:         backend.Name,
 		Backend:      *backend,
-		PulledModels: []api.ListModelResponse{},
+		PulledModels: []ListModelResponse{},
 		apiKey:       "",
 	}
 
@@ -705,7 +742,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 	stateInstance := &LLMState{
 		ID:           backend.ID,
 		Name:         backend.Name,
-		PulledModels: []api.ListModelResponse{},
+		PulledModels: []ListModelResponse{},
 		Backend:      *backend,
 	}
 

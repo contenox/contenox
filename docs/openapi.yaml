@@ -160,7 +160,9 @@ components:
             type: object
         execapi_taskExec:
             properties:
-                chain: {}
+                chain:
+                    items:
+                        $ref: '#/components/schemas/taskengine_ChainDefinition'
                 input:
                     type: object
                 inputType:
@@ -205,17 +207,35 @@ components:
                         interacting with or reconciling this backend's state, if any.
                     type: string
                 id:
+                    example: backend1
                     type: string
                 models:
                     items:
                         type: string
                     type: array
                 name:
+                    example: Backend Name
                     type: string
                 pulledModels:
                     items:
-                        type: object
+                        $ref: '#/components/schemas/runtimestate_ListModelResponse'
                     type: array
+            type: object
+        runtimestate_ListModelResponse:
+            properties:
+                details,omitempty:
+                    type: object
+                digest:
+                    type: string
+                model:
+                    type: string
+                modified_at:
+                    format: date-time
+                    type: string
+                name:
+                    type: string
+                size:
+                    type: integer
             type: object
         runtimestate_ProviderConfig:
             properties:
@@ -308,6 +328,100 @@ components:
                     type: string
                 transition:
                     type: string
+            type: object
+        taskengine_ChainDefinition:
+            properties:
+                debug:
+                    description: Enables capturing user input and output.
+                    type: boolean
+                description:
+                    description: Description provides a human-readable summary of the chain's purpose.
+                    type: string
+                id:
+                    description: ID uniquely identifies the chain.
+                    type: string
+                routing_strategy:
+                    description: RoutingStrategy defines how transitions should be evaluated (optional).
+                    type: string
+                tasks:
+                    description: Tasks is the list of tasks to execute in sequence.
+                    items:
+                        $ref: '#/components/schemas/taskengine_ChainTask'
+                    type: array
+                token_limit:
+                    description: TokenLimit is the token limit for the context window (used during execution).
+                    type: integer
+            type: object
+        taskengine_ChainTask:
+            properties:
+                compose,omitempty:
+                    description: |-
+                        Compose merges the specified the output with the withVar side.
+                        Optional. compose is applied before the input reaches the task execution,
+                    type: object
+                description:
+                    description: Description is a human-readable summary of what the task does.
+                    type: string
+                execute_config,omitempty:
+                    description: ExecuteConfig defines the configuration for executing prompt or chat model tasks.
+                    type: object
+                handler:
+                    description: Handler determines how the LLM output (or hook) will be interpreted.
+                    type: object
+                hook,omitempty:
+                    description: |-
+                        Hook defines an external action to run.
+                        Required for Hook tasks, must be nil/omitted for all other types.
+                        Example: {type: "send_email", args: {"to": "user@example.com"}}
+                    type: object
+                id:
+                    description: ID uniquely identifies the task within the chain.
+                    type: string
+                input_var,omitempty:
+                    description: |-
+                        InputVar is the name of the variable to use as input for the task.
+                        Example: "input" for the original input.
+                        Each task stores its output in a variable named with it's task id.
+                    type: string
+                print,omitempty:
+                    description: |-
+                        Print optionally formats the output for display/logging.
+                        Supports template variables from previous task outputs.
+                        Optional for all task types except Hook where it's rarely used.
+                        Example: "The score is: {{.previous_output}}"
+                    type: string
+                prompt_template:
+                    description: |-
+                        PromptTemplate is the text prompt sent to the LLM.
+                        It's Required and only applicable for the raw_string type.
+                        Supports template variables from previous task outputs.
+                        Example: "Rate the quality from 1-10: {{.input}}"
+                    type: string
+                retry_on_failure,omitempty:
+                    description: |-
+                        RetryOnFailure sets how many times to retry this task on failure.
+                        Applies to all task types including Hooks.
+                        Default: 0 (no retries)
+                    type: integer
+                system_instruction,omitempty:
+                    description: SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.
+                    type: string
+                timeout,omitempty:
+                    description: |-
+                        Timeout optionally sets a timeout for task execution.
+                        Format: "10s", "2m", "1h" etc.
+                        Optional for all task types.
+                    type: string
+                transition:
+                    description: Transition defines what to do after this task completes.
+                    type: object
+                valid_conditions,omitempty:
+                    additionalProperties: true
+                    description: |-
+                        ValidConditions defines allowed values for ConditionKey tasks.
+                        Required for ConditionKey tasks, ignored for all other types.
+                        Example: {"yes": true, "no": true} for a yes/no condition.
+                    type: object
             type: object
     securitySchemes:
         X-API-Key:
@@ -508,6 +622,8 @@ paths:
             description: |-
                 Generates vector embeddings for text.
                 Uses the system's default embedding model configured at startup.
+                Requests are routed ONLY to backends that have the default model
+                available in any shared pool.
             requestBody:
                 content:
                     application/json:
@@ -529,6 +645,8 @@ paths:
             description: |-
                 Runs the prompt through the default LLM.
                 This endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.
+                Requests are routed ONLY to backends that have the requested model
+                available in any shared pool.
             requestBody:
                 content:
                     application/json:
@@ -834,6 +952,15 @@ paths:
                 Creates a new resource pool for organizing backends and models.
                 Pool names must be unique within the system.
                 Pools allow grouping of backends and models for specific purposes (e.g., embeddings, tasks).
+                When pools are configured in the system, ONLY models and backends
+                that are assigned to the same pool will be used for request processing.
+                Models and backends not assigned to any pool will be ignored by the routing system.
+                A resource pool is an organizational construct that groups backends (LLM service connections)
+                and models together for specific operational purposes.
+                NOTE:
+                - Models not assigned to any pool will not be available for execution
+                - Backends not assigned to any pool will not receive models or process requests
+                - Resources must be explicitly associated with the same pool to work together
             requestBody:
                 content:
                     application/json:
@@ -1063,6 +1190,8 @@ paths:
                 Executes dynamic task-chain workflows.
                 Task-chains are state-machine workflows (DAGs) with conditional branches,
                 external hooks, and captured execution state.
+                Requests are routed ONLY to backends that have the default model
+                available in any shared pool.
             requestBody:
                 content:
                     application/json:

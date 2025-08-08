@@ -43,6 +43,15 @@ type poolHandler struct {
 // Creates a new resource pool for organizing backends and models.
 // Pool names must be unique within the system.
 // Pools allow grouping of backends and models for specific purposes (e.g., embeddings, tasks).
+// When pools are configured in the system, ONLY models and backends
+// that are assigned to the same pool will be used for request processing.
+// Models and backends not assigned to any pool will be ignored by the routing system.
+// A resource pool is an organizational construct that groups backends (LLM service connections)
+// and models together for specific operational purposes.
+// NOTE:
+// - Models not assigned to any pool will not be available for execution
+// - Backends not assigned to any pool will not receive models or process requests
+// - Resources must be explicitly associated with the same pool to work together
 func (h *poolHandler) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
