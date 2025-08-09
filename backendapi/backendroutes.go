@@ -31,7 +31,7 @@ type respBackendList struct {
 	Type    string `json:"type" example:"ollama"`
 
 	Models       []string                         `json:"models"`
-	PulledModels []runtimestate.ListModelResponse `json:"pulledModels" oapiinclude:runtimestate.ListModelResponse`
+	PulledModels []runtimestate.ListModelResponse `json:"pulledModels" oapiinclude:"runtimestate.ListModelResponse"`
 	Error        string                           `json:"error,omitempty" example:"error-message"`
 
 	CreatedAt time.Time `json:"createdAt" example:"2023-01-01T00:00:00Z"`
