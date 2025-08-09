@@ -153,5 +153,3 @@ Hooks are external servers that can be called from within task chains when regis
 The full API surface is defined in OpenAPI format:
 
 - 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)
-
-```
