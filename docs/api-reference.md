@@ -1,17 +1,9 @@
 ---
 title: LLM Backend Management API v1.0
 language_tabs:
-  - shell: curl
-  - javascript: javascript
   - python: python
-  - go: go
-  - java: java
 language_clients:
-  - shell: ""
-  - javascript: ""
   - python: ""
-  - go: ""
-  - java: ""
 toc_footers: []
 includes: []
 search: true
@@ -37,35 +29,6 @@ headingLevel: 2
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /backend-associations/{backendID}/pools \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/backend-associations/{backendID}/pools',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -76,49 +39,6 @@ headers = {
 r = requests.get('/backend-associations/{backendID}/pools', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/backend-associations/{backendID}/pools", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/backend-associations/{backendID}/pools");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -165,35 +85,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /backend-associations/{poolID}/backends \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/backend-associations/{poolID}/backends',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -204,49 +95,6 @@ headers = {
 r = requests.get('/backend-associations/{poolID}/backends', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/backend-associations/{poolID}/backends", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/backend-associations/{poolID}/backends");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -294,35 +142,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X DELETE /backend-associations/{poolID}/backends/{backendID} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/backend-associations/{poolID}/backends/{backendID}',
-{
-  method: 'DELETE',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -333,49 +152,6 @@ headers = {
 r = requests.delete('/backend-associations/{poolID}/backends/{backendID}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("DELETE", "/backend-associations/{poolID}/backends/{backendID}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/backend-associations/{poolID}/backends/{backendID}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("DELETE");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -416,35 +192,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X POST /backend-associations/{poolID}/backends/{backendID} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/backend-associations/{poolID}/backends/{backendID}',
-{
-  method: 'POST',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -455,49 +202,6 @@ headers = {
 r = requests.post('/backend-associations/{poolID}/backends/{backendID}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("POST", "/backend-associations/{poolID}/backends/{backendID}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/backend-associations/{poolID}/backends/{backendID}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("POST");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -538,35 +242,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /state \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/state',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -577,49 +252,6 @@ headers = {
 r = requests.get('/state', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/state", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/state");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -676,43 +308,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X POST /pools \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-const inputBody = '{
-  "createdAt": "2019-08-24T14:15:22Z",
-  "id": "string",
-  "name": "string",
-  "purposeType": "string",
-  "updatedAt": "2019-08-24T14:15:22Z"
-}';
-const headers = {
-  'Content-Type':'application/json',
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/pools',
-{
-  method: 'POST',
-  body: inputBody,
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -724,50 +319,6 @@ headers = {
 r = requests.post('/pools', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Content-Type": []string{"application/json"},
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("POST", "/pools", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/pools");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("POST");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -831,35 +382,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X DELETE /pools/{id} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/pools/{id}',
-{
-  method: 'DELETE',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -870,49 +392,6 @@ headers = {
 r = requests.delete('/pools/{id}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("DELETE", "/pools/{id}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/pools/{id}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("DELETE");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -952,35 +431,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /providers/{providerType}/config \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/providers/{providerType}/config',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -991,49 +441,6 @@ headers = {
 r = requests.get('/providers/{providerType}/config', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/providers/{providerType}/config", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/providers/{providerType}/config");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -1074,43 +481,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X PUT /pools/{id} \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-const inputBody = '{
-  "createdAt": "2019-08-24T14:15:22Z",
-  "id": "string",
-  "name": "string",
-  "purposeType": "string",
-  "updatedAt": "2019-08-24T14:15:22Z"
-}';
-const headers = {
-  'Content-Type':'application/json',
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/pools/{id}',
-{
-  method: 'PUT',
-  body: inputBody,
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -1122,50 +492,6 @@ headers = {
 r = requests.put('/pools/{id}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Content-Type": []string{"application/json"},
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("PUT", "/pools/{id}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/pools/{id}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("PUT");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -1223,35 +549,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /defaultmodel \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/defaultmodel',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -1262,49 +559,6 @@ headers = {
 r = requests.get('/defaultmodel', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/defaultmodel", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/defaultmodel");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -1338,39 +592,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X POST /embed \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-const inputBody = '{
-  "text": "Hello, world!"
-}';
-const headers = {
-  'Content-Type':'application/json',
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/embed',
-{
-  method: 'POST',
-  body: inputBody,
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -1382,50 +603,6 @@ headers = {
 r = requests.post('/embed', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Content-Type": []string{"application/json"},
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("POST", "/embed", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/embed");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("POST");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -1476,39 +653,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X POST /execute \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-const inputBody = '{
-  "prompt": "Hello, how are you?"
-}';
-const headers = {
-  'Content-Type':'application/json',
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/execute',
-{
-  method: 'POST',
-  body: inputBody,
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -1520,50 +664,6 @@ headers = {
 r = requests.post('/execute', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Content-Type": []string{"application/json"},
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("POST", "/execute", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/execute");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("POST");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -1615,35 +715,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /model-associations/{modelID}/pools \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/model-associations/{modelID}/pools',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -1654,49 +725,6 @@ headers = {
 r = requests.get('/model-associations/{modelID}/pools', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/model-associations/{modelID}/pools", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/model-associations/{modelID}/pools");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -1743,35 +771,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /model-associations/{poolID}/models \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/model-associations/{poolID}/models',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -1782,49 +781,6 @@ headers = {
 r = requests.get('/model-associations/{poolID}/models', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/model-associations/{poolID}/models", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/model-associations/{poolID}/models");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -1870,35 +826,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X DELETE /model-associations/{poolID}/models/{modelID} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/model-associations/{poolID}/models/{modelID}',
-{
-  method: 'DELETE',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -1909,49 +836,6 @@ headers = {
 r = requests.delete('/model-associations/{poolID}/models/{modelID}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("DELETE", "/model-associations/{poolID}/models/{modelID}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/model-associations/{poolID}/models/{modelID}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("DELETE");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -1992,35 +876,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X POST /model-associations/{poolID}/models/{modelID} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/model-associations/{poolID}/models/{modelID}',
-{
-  method: 'POST',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -2031,49 +886,6 @@ headers = {
 r = requests.post('/model-associations/{poolID}/models/{modelID}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("POST", "/model-associations/{poolID}/models/{modelID}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/model-associations/{poolID}/models/{modelID}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("POST");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -2114,42 +926,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X POST /models \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-const inputBody = '{
-  "createdAt": "2019-08-24T14:15:22Z",
-  "id": "string",
-  "model": "string",
-  "updatedAt": "2019-08-24T14:15:22Z"
-}';
-const headers = {
-  'Content-Type':'application/json',
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/models',
-{
-  method: 'POST',
-  body: inputBody,
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -2161,50 +937,6 @@ headers = {
 r = requests.post('/models', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Content-Type": []string{"application/json"},
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("POST", "/models", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/models");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("POST");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -2261,35 +993,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /pool-by-name/{name} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/pool-by-name/{name}',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -2300,49 +1003,6 @@ headers = {
 r = requests.get('/pool-by-name/{name}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/pool-by-name/{name}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/pool-by-name/{name}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -2387,35 +1047,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /pool-by-purpose/{purpose} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/pool-by-purpose/{purpose}',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -2426,49 +1057,6 @@ headers = {
 r = requests.get('/pool-by-purpose/{purpose}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/pool-by-purpose/{purpose}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/pool-by-purpose/{purpose}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -2516,35 +1104,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /pools \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/pools',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -2555,49 +1114,6 @@ headers = {
 r = requests.get('/pools', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/pools", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/pools");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -2638,35 +1154,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /pools/{id} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/pools/{id}',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -2677,49 +1164,6 @@ headers = {
 r = requests.get('/pools/{id}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/pools/{id}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/pools/{id}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -2763,35 +1207,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /providers/configs \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/providers/configs',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -2802,49 +1217,6 @@ headers = {
 r = requests.get('/providers/configs', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/providers/configs", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/providers/configs");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -2881,35 +1253,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X DELETE /providers/{providerType}/config \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/providers/{providerType}/config',
-{
-  method: 'DELETE',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -2920,49 +1263,6 @@ headers = {
 r = requests.delete('/providers/{providerType}/config', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("DELETE", "/providers/{providerType}/config", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/providers/{providerType}/config");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("DELETE");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -3001,35 +1301,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /queue \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/queue',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -3040,49 +1311,6 @@ headers = {
 r = requests.get('/queue', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/queue", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/queue");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -3127,35 +1355,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X DELETE /queue/cancel \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/queue/cancel',
-{
-  method: 'DELETE',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -3166,49 +1365,6 @@ headers = {
 r = requests.delete('/queue/cancel', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("DELETE", "/queue/cancel", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/queue/cancel");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("DELETE");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -3245,35 +1401,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /queue/inProgress \
-  -H 'Accept: text/event-stream' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'text/event-stream',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/queue/inProgress',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -3284,49 +1411,6 @@ headers = {
 r = requests.get('/queue/inProgress', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"text/event-stream"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/queue/inProgress", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/queue/inProgress");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -3359,35 +1443,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X DELETE /queue/{model} \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/queue/{model}',
-{
-  method: 'DELETE',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -3398,49 +1453,6 @@ headers = {
 r = requests.delete('/queue/{model}', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("DELETE", "/queue/{model}", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/queue/{model}");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("DELETE");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -3479,35 +1491,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X GET /supported \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-
-const headers = {
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/supported',
-{
-  method: 'GET',
-
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -3518,49 +1501,6 @@ headers = {
 r = requests.get('/supported', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("GET", "/supported", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/supported");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("GET");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 
@@ -3595,67 +1535,6 @@ X-API-Key
 
 > Code samples
 
-```shell
-# You can also use wget
-curl -X POST /tasks \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json' \
-  -H 'X-API-Key: API_KEY'
-
-```
-
-```javascript
-const inputBody = '{
-  "chain": [
-    {
-      "debug": true,
-      "description": "string",
-      "id": "string",
-      "routing_strategy": "string",
-      "tasks": [
-        {
-          "compose,omitempty": {},
-          "description": "string",
-          "execute_config,omitempty": {},
-          "handler": {},
-          "hook,omitempty": {},
-          "id": "string",
-          "input_var,omitempty": "string",
-          "print,omitempty": "string",
-          "prompt_template": "string",
-          "retry_on_failure,omitempty": 0,
-          "system_instruction,omitempty": "string",
-          "timeout,omitempty": "string",
-          "transition": {},
-          "valid_conditions,omitempty": {}
-        }
-      ],
-      "token_limit": 0
-    }
-  ],
-  "input": {},
-  "inputType": "string"
-}';
-const headers = {
-  'Content-Type':'application/json',
-  'Accept':'application/json',
-  'X-API-Key':'API_KEY'
-};
-
-fetch('/tasks',
-{
-  method: 'POST',
-  body: inputBody,
-  headers: headers
-})
-.then(function(res) {
-    return res.json();
-}).then(function(body) {
-    console.log(body);
-});
-
-```
-
 ```python
 import requests
 headers = {
@@ -3667,50 +1546,6 @@ headers = {
 r = requests.post('/tasks', headers = headers)
 
 print(r.json())
-
-```
-
-```go
-package main
-
-import (
-       "bytes"
-       "net/http"
-)
-
-func main() {
-
-    headers := map[string][]string{
-        "Content-Type": []string{"application/json"},
-        "Accept": []string{"application/json"},
-        "X-API-Key": []string{"API_KEY"},
-    }
-
-    data := bytes.NewBuffer([]byte{jsonReq})
-    req, err := http.NewRequest("POST", "/tasks", data)
-    req.Header = headers
-
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    // ...
-}
-
-```
-
-```java
-URL obj = new URL("/tasks");
-HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-con.setRequestMethod("POST");
-int responseCode = con.getResponseCode();
-BufferedReader in = new BufferedReader(
-    new InputStreamReader(con.getInputStream()));
-String inputLine;
-StringBuffer response = new StringBuffer();
-while ((inputLine = in.readLine()) != null) {
-    response.append(inputLine);
-}
-in.close();
-System.out.println(response.toString());
 
 ```
 

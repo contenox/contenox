@@ -64,7 +64,7 @@ docs-markdown: docs-gen
 		node:18-alpine sh -c "\
 			npm install -g widdershins@4 && \
 			widdershins /local/openapi.json -o /local/api-reference.md \
-				--language_tabs 'shell:curl' 'javascript' 'python' 'go' 'java' \
+				--language_tabs 'python' \
 				--summary \
 				--resolve \
 				--verbose"
