@@ -38,18 +38,20 @@ type Tokenizer interface {
 	CountTokens(ctx context.Context, prompt string) (int, error)
 }
 
-func NewEmbedder(ctx context.Context, config *Config, dbInstance libdb.DBManager, runtime *runtimestate.State) (ModelRepo, error) {
+func NewEmbedder(ctx context.Context, config *Config, dbInstance libdb.DBManager, contextLen int, runtime *runtimestate.State) (ModelRepo, error) {
 	tx, com, r, err := dbInstance.WithTransaction(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer r()
-
+	if contextLen <= 0 {
+		return nil, fmt.Errorf("invalid context length")
+	}
 	pool, err := initEmbedPool(ctx, config, tx, false)
 	if err != nil {
 		return nil, fmt.Errorf("init pool: %w", err)
 	}
-	model, err := initEmbedModel(ctx, config, tx, false)
+	model, err := initEmbedModel(ctx, config, tx, contextLen, false)
 	if err != nil {
 		return nil, fmt.Errorf("init model: %w", err)
 	}
@@ -64,21 +66,24 @@ func NewEmbedder(ctx context.Context, config *Config, dbInstance libdb.DBManager
 		runtime:    runtime,
 		embed:      true,
 		prompt:     false,
+		contextLen: contextLen,
 	}, com(ctx)
 }
 
-func NewExecRepo(ctx context.Context, config *Config, dbInstance libdb.DBManager, runtime *runtimestate.State, tokenizer ollamatokenizer.Tokenizer) (ModelRepo, error) {
+func NewExecRepo(ctx context.Context, config *Config, dbInstance libdb.DBManager, runtime *runtimestate.State, contextLen int, tokenizer ollamatokenizer.Tokenizer) (ModelRepo, error) {
 	tx, com, r, err := dbInstance.WithTransaction(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer r()
-
+	if contextLen <= 0 {
+		return nil, fmt.Errorf("invalid context length")
+	}
 	pool, err := initTaskPool(ctx, config, tx, false)
 	if err != nil {
 		return nil, fmt.Errorf("init pool: %w", err)
 	}
-	model, err := initTaskModel(ctx, config, tx, false)
+	model, err := initTaskModel(ctx, config, tx, contextLen, false)
 	if err != nil {
 		return nil, fmt.Errorf("init model: %w", err)
 	}
@@ -86,6 +91,7 @@ func NewExecRepo(ctx context.Context, config *Config, dbInstance libdb.DBManager
 	if err != nil {
 		return nil, fmt.Errorf("assign model to pool: %w", err)
 	}
+
 	return &modelManager{
 		pool:       pool,
 		model:      model,
@@ -94,6 +100,7 @@ func NewExecRepo(ctx context.Context, config *Config, dbInstance libdb.DBManager
 		tokenizer:  tokenizer,
 		embed:      false,
 		prompt:     true,
+		contextLen: contextLen,
 	}, com(ctx)
 }
 
@@ -105,6 +112,7 @@ type modelManager struct {
 	tokenizer  ollamatokenizer.Tokenizer
 	embed      bool
 	prompt     bool
+	contextLen int
 }
 
 // GetRuntime implements Embedder.
@@ -138,8 +146,11 @@ func (e *modelManager) GetDefaultSystemProvider(ctx context.Context) (libmodelpr
 		return nil, errors.New("no backends found")
 	}
 	provider := libmodelprovider.NewOllamaModelProvider(e.model.Model, results, http.DefaultClient,
-		libmodelprovider.WithEmbed(e.embed),
-		libmodelprovider.WithPrompt(e.prompt))
+		libmodelprovider.CapabilityConfig{
+			CanPrompt:     e.prompt,
+			CanEmbed:      e.embed,
+			ContextLength: e.contextLen,
+		})
 	return provider, nil
 }
 
@@ -198,8 +209,13 @@ func (e *modelManager) GetAvailableProviders(ctx context.Context) ([]libmodelpro
 			e.model.Model,
 			[]string{backend.BaseURL},
 			http.DefaultClient,
-			libmodelprovider.WithEmbed(e.embed),
-			libmodelprovider.WithPrompt(e.prompt),
+			libmodelprovider.CapabilityConfig{
+				ContextLength: e.model.ContextLength,
+				CanChat:       e.model.CanChat,
+				CanEmbed:      e.model.CanEmbed,
+				CanStream:     e.model.CanStream,
+				CanPrompt:     e.model.CanPrompt,
+			},
 		)
 		providers = append(providers, provider)
 	}
@@ -259,7 +275,7 @@ func initTaskPool(ctx context.Context, config *Config, tx libdb.Exec, created bo
 	return pool, nil
 }
 
-func initEmbedModel(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Model, error) {
+func initEmbedModel(ctx context.Context, config *Config, tx libdb.Exec, contextLength int, created bool) (*runtimetypes.Model, error) {
 	tenantID, err := uuid.Parse(config.TenantID)
 	if err != nil {
 		return nil, err
@@ -273,18 +289,20 @@ func initEmbedModel(ctx context.Context, config *Config, tx libdb.Exec, created 
 	}
 	if !created && errors.Is(err, libdb.ErrNotFound) {
 		err = storeInstance.AppendModel(ctx, &runtimetypes.Model{
-			Model: config.EmbedModel,
-			ID:    modelID.String(),
+			Model:         config.EmbedModel,
+			ID:            modelID.String(),
+			ContextLength: contextLength,
+			CanEmbed:      true,
 		})
 		if err != nil {
 			return nil, err
 		}
-		return initEmbedModel(ctx, config, tx, true)
+		return initEmbedModel(ctx, config, tx, contextLength, true)
 	}
 	return model, nil
 }
 
-func initTaskModel(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Model, error) {
+func initTaskModel(ctx context.Context, config *Config, tx libdb.Exec, contextLength int, created bool) (*runtimetypes.Model, error) {
 	tenantID, err := uuid.Parse(config.TenantID)
 	if err != nil {
 		return nil, err
@@ -298,13 +316,15 @@ func initTaskModel(ctx context.Context, config *Config, tx libdb.Exec, created b
 	}
 	if !created && errors.Is(err, libdb.ErrNotFound) {
 		err = storeInstance.AppendModel(ctx, &runtimetypes.Model{
-			Model: config.TaskModel,
-			ID:    modelID.String(),
+			Model:         config.TaskModel,
+			ID:            modelID.String(),
+			ContextLength: contextLength,
+			CanPrompt:     true,
 		})
 		if err != nil {
 			return nil, err
 		}
-		return initTaskModel(ctx, config, tx, true)
+		return initTaskModel(ctx, config, tx, contextLength, true)
 	}
 	return model, nil
 }

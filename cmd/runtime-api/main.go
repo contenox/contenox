@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/contenox/activitytracker"
@@ -108,12 +109,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("initializing runtime state failed: %v", err)
 	}
+	cl, err := strconv.Atoi(config.EmbedModelContextLength)
+	if err != nil {
+		log.Fatalf("parsing embed model context length failed: %v", err)
+	}
 	embedder, err := llmrepo.NewEmbedder(ctx, &llmrepo.Config{
 		DatabaseURL: config.DatabaseURL,
 		EmbedModel:  config.EmbedModel,
 		TaskModel:   config.TaskModel,
 		TenantID:    TenantID,
-	}, dbInstance, state)
+	}, dbInstance, cl, state)
 	if err != nil {
 		log.Fatalf("initializing embedding pool failed: %v", err)
 	}
@@ -124,13 +129,16 @@ func main() {
 		cleanup()
 		log.Fatalf("initializing tokenizer service failed: %v", err)
 	}
-
+	tcl, err := strconv.Atoi(config.TaskModelContextLength)
+	if err != nil {
+		log.Fatalf("parsing task model context length failed: %v", err)
+	}
 	execRepo, err := llmrepo.NewExecRepo(ctx, &llmrepo.Config{
 		DatabaseURL: config.DatabaseURL,
 		TaskModel:   config.TaskModel,
 		EmbedModel:  config.EmbedModel,
 		TenantID:    TenantID,
-	}, dbInstance, state, tokenizerSvc)
+	}, dbInstance, state, tcl, tokenizerSvc)
 	if err != nil {
 		log.Fatalf("initializing promptexec failed: %v", err)
 	}

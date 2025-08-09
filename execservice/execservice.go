@@ -60,7 +60,7 @@ func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*TaskR
 		return nil, errors.New("prompt client is nil")
 	}
 
-	response, err := promptClient.Prompt(ctx, request.Prompt)
+	response, err := promptClient.Prompt(ctx, "You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.", 0.1, request.Prompt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute prompt: %w", err)
 	}

@@ -37,21 +37,26 @@ type LLMState struct {
 }
 
 type ListModelResponse struct {
-	Name       string       `json:"name"`
-	Model      string       `json:"model"`
-	ModifiedAt time.Time    `json:"modified_at"`
-	Size       int64        `json:"size"`
-	Digest     string       `json:"digest"`
-	Details    ModelDetails `json:"details,omitempty" oapiinclude:"runtimestate.ModelDetails"`
+	Name          string       `json:"name"`
+	Model         string       `json:"model"`
+	ModifiedAt    time.Time    `json:"modifiedAt"`
+	Size          int64        `json:"size"`
+	Digest        string       `json:"digest"`
+	Details       ModelDetails `json:"details" oapiinclude:"runtimestate.ModelDetails"`
+	ContextLength int          `json:"contextLength"`
+	CanChat       bool         `json:"canChat"`
+	CanEmbed      bool         `json:"canEmbed"`
+	CanPrompt     bool         `json:"canPrompt"`
+	CanStream     bool         `json:"canStream"`
 }
 
 type ModelDetails struct {
-	ParentModel       string   `json:"parent_model"`
+	ParentModel       string   `json:"parentModel"`
 	Format            string   `json:"format"`
 	Family            string   `json:"family"`
 	Families          []string `json:"families"`
-	ParameterSize     string   `json:"parameter_size"`
-	QuantizationLevel string   `json:"quantization_level"`
+	ParameterSize     string   `json:"parameterSize"`
+	QuantizationLevel string   `json:"quantizationLevel"`
 }
 
 func (s *LLMState) GetAPIKey() string {
@@ -234,17 +239,17 @@ func (s *State) Get(ctx context.Context) map[string]LLMState {
 	s.state.Range(func(key, value any) bool {
 		backend, ok := value.(*LLMState)
 		if !ok {
-			// log.Printf("invalid type in state: %T", value)
+			// log.Fatalf("invalid type in state: %T", value)
 			return true
 		}
 		var backendCopy LLMState
 		raw, err := json.Marshal(backend)
 		if err != nil {
-			// log.Printf("failed to marshal backend: %v", err)
+			// log.Fatalf("failed to marshal backend: %v", err)
 		}
 		err = json.Unmarshal(raw, &backendCopy)
 		if err != nil {
-			// log.Printf("failed to unmarshal backend: %v", err)
+			// log.Fatalf("failed to unmarshal backend: %v", err)
 		}
 		backendCopy.apiKey = backend.apiKey
 		state[backend.ID] = backendCopy
@@ -427,8 +432,9 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	// log.Printf("Processing Ollama backend for ID %s with declared models: %+v", backend.ID, declaredOllamaModels)
 
 	models := []string{}
+	declaredModelMap := make(map[string]runtimetypes.Model)
 	for _, model := range declaredOllamaModels {
-		models = append(models, model.Model)
+		declaredModelMap[model.Model] = *model
 	}
 	// log.Printf("Extracted model names for backend %s: %v", backend.ID, models)
 
@@ -538,12 +544,31 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	// log.Printf("Updated model list for backend %s: %+v", backend.ID, modelResp.Models)
 
 	stateservice := &LLMState{
-		ID:           backend.ID,
-		Name:         backend.Name,
-		Models:       models,
-		PulledModels: convertOllamaListModelResponse(modelResp.Models),
-		Backend:      *backend,
+		ID:      backend.ID,
+		Name:    backend.Name,
+		Backend: *backend,
+		Models:  make([]string, 0, len(modelResp.Models)),
 	}
+
+	// Create proper model entries with capabilities
+	pulledModels := make([]ListModelResponse, 0, len(modelResp.Models))
+	for _, model := range modelResp.Models {
+		lmr := convertOllamaModelResponse(&model)
+
+		// Enhance with declared capabilities if available
+		if declaredModel, exists := declaredModelMap[lmr.Name]; exists {
+			lmr.ContextLength = declaredModel.ContextLength
+			lmr.CanChat = declaredModel.CanChat
+			lmr.CanEmbed = declaredModel.CanEmbed
+			lmr.CanPrompt = declaredModel.CanPrompt
+			lmr.CanStream = declaredModel.CanStream
+		}
+
+		pulledModels = append(pulledModels, *lmr)
+	}
+
+	stateservice.PulledModels = pulledModels
+	stateservice.Models = models
 	s.state.Store(backend.ID, stateservice)
 	// log.Printf("Stored updated state for backend %s", backend.ID)
 }
@@ -551,7 +576,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 // processVLLMBackend handles the state reconciliation for a single vLLM backend.
 // Since vLLM instances typically serve a single model, we verify that the running model
 // matches one of the models assigned to the backend through its pools.
-func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
+func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
 	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 5 * time.Second,
@@ -641,19 +666,37 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 
 	servedModel := modelResp.Data[0].ID
 	// Create mock PulledModels for state reporting
-	pulledModels := []api.ListModelResponse{
+	res := &LLMState{
+		ID:      backend.ID,
+		Name:    backend.Name,
+		Models:  []string{servedModel},
+		Backend: *backend,
+	}
+	pulledModels := []ListModelResponse{
 		{
 			Model: servedModel,
 		},
 	}
-
-	s.state.Store(backend.ID, &LLMState{
-		ID:           backend.ID,
-		Name:         backend.Name,
-		Models:       []string{servedModel},
-		PulledModels: convertOllamaListModelResponse(pulledModels),
-		Backend:      *backend,
-	})
+	found := false
+	for _, m := range models {
+		if m.Model == servedModel {
+			found = true
+			pulledModels[0] = ListModelResponse{
+				Name:          m.ID,
+				Model:         m.Model,
+				ModifiedAt:    m.UpdatedAt,
+				ContextLength: m.ContextLength,
+				CanChat:       m.CanChat,
+				CanEmbed:      m.CanEmbed,
+				CanPrompt:     m.CanPrompt,
+				CanStream:     m.CanStream,
+			}
+		}
+	}
+	if !found {
+		res.Error = fmt.Sprintf("backend has model %s, yet it's not declared in the configuration", servedModel)
+	}
+	s.state.Store(backend.ID, res)
 }
 
 func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
@@ -730,23 +773,26 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 	}
 
 	modelNames := make([]string, 0, len(geminiResponse.Models))
-	pulledModels := make([]api.ListModelResponse, 0, len(geminiResponse.Models))
+	pulledModels := make([]ListModelResponse, 0, len(geminiResponse.Models))
 	for _, m := range geminiResponse.Models {
+		resp, err := fetchGeminiModelInfo(ctx, backend.BaseURL, m.Name, cfg.APIKey, http.DefaultClient)
+		if err != nil {
+			stateInstance.Error = fmt.Sprintf("Failed to fetch model info: %v", err)
+			s.state.Store(backend.ID, stateInstance)
+			continue
+		}
 		modelNames = append(modelNames, m.Name)
-		pulledModels = append(pulledModels, api.ListModelResponse{
-			Name:  m.Name,
-			Model: m.Name,
-		})
+		pulledModels = append(pulledModels, *resp)
 	}
 
 	// Update state
 	stateInstance.Models = modelNames
-	stateInstance.PulledModels = convertOllamaListModelResponse(pulledModels)
+	stateInstance.PulledModels = pulledModels
 	stateInstance.apiKey = cfg.APIKey
 	s.state.Store(backend.ID, stateInstance)
 }
 
-func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
+func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
 	stateInstance := &LLMState{
 		ID:           backend.ID,
 		Name:         backend.Name,
@@ -789,7 +835,8 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 
 	// Handle non-200 responses
 	if resp.StatusCode != http.StatusOK {
-		stateInstance.Error = fmt.Sprintf("API returned %d", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		stateInstance.Error = fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(bodyBytes))
 		s.state.Store(backend.ID, stateInstance)
 		return
 	}
@@ -806,22 +853,105 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 		return
 	}
 
-	// Extract model names
-	modelNames := make([]string, 0, len(openAIResponse.Data))
-	pulledModels := make([]api.ListModelResponse, 0, len(openAIResponse.Data))
-	for _, m := range openAIResponse.Data {
-		modelNames = append(modelNames, m.ID)
+	// Create lookup map for declared models
+	declaredModels := make(map[string]*runtimetypes.Model)
+	for _, model := range models {
+		declaredModels[model.Model] = model
 	}
-	for _, model := range openAIResponse.Data {
-		pulledModels = append(pulledModels, api.ListModelResponse{
-			Model: model.ID,
-			Name:  model.ID,
-		})
+
+	// Process each model from the backend response
+	modelNames := make([]string, 0, len(openAIResponse.Data))
+	pulledModels := make([]ListModelResponse, 0, len(openAIResponse.Data))
+	var undeclaredModels []string
+
+	for _, m := range openAIResponse.Data {
+		modelID := m.ID
+		modelNames = append(modelNames, modelID)
+
+		// Initialize with minimal data
+		modelResp := ListModelResponse{
+			Model: modelID,
+			Name:  modelID,
+		}
+
+		// Enhance with declared capabilities if found
+		if declaredModel, exists := declaredModels[modelID]; exists {
+			modelResp.Name = declaredModel.ID
+			modelResp.ContextLength = declaredModel.ContextLength
+			modelResp.CanChat = declaredModel.CanChat
+			modelResp.CanEmbed = declaredModel.CanEmbed
+			modelResp.CanPrompt = declaredModel.CanPrompt
+			modelResp.CanStream = declaredModel.CanStream
+		} else {
+			undeclaredModels = append(undeclaredModels, modelID)
+		}
+
+		pulledModels = append(pulledModels, modelResp)
+	}
+
+	// Set error if undeclared models found
+	if len(undeclaredModels) > 0 {
+		stateInstance.Error = fmt.Sprintf(
+			"backend has undeclared models: %s",
+			strings.Join(undeclaredModels, ", "),
+		)
 	}
 
 	// Update state
 	stateInstance.Models = modelNames
-	stateInstance.PulledModels = convertOllamaListModelResponse(pulledModels)
+	stateInstance.PulledModels = pulledModels
 	stateInstance.apiKey = cfg.APIKey
 	s.state.Store(backend.ID, stateInstance)
+}
+
+func fetchGeminiModelInfo(ctx context.Context, baseURL, modelName, apiKey string, httpClient *http.Client) (*ListModelResponse, error) {
+	url := fmt.Sprintf("%s/v1beta/models/%s", baseURL, modelName)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("X-Goog-Api-Key", apiKey)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API returned error (%d): %s", resp.StatusCode, string(body))
+	}
+	var modelResponse struct {
+		Name                       string   `json:"name"`
+		InputTokenLimit            int      `json:"inputTokenLimit"`
+		OutputTokenLimit           int      `json:"outputTokenLimit"`
+		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&modelResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	// Determine capabilities from API response
+	canChat := false
+	canPrompt := false
+	canEmbed := false
+	canStream := false
+	for _, method := range modelResponse.SupportedGenerationMethods {
+		switch method {
+		case "generateContent":
+			canChat = true
+			canPrompt = true
+			canStream = true
+		case "embedContent":
+			canEmbed = true
+		}
+	}
+	return &ListModelResponse{
+		Name:          modelName,
+		Model:         modelName,
+		ContextLength: modelResponse.InputTokenLimit,
+		CanChat:       canChat,
+		CanPrompt:     canPrompt,
+		CanEmbed:      canEmbed,
+		CanStream:     canStream,
+	}, nil
+
 }

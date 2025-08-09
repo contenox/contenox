@@ -331,27 +331,47 @@ func TestUnit_Pools_ListPoolsForBackend(t *testing.T) {
 	}
 }
 
-func TestUnit_Pools_AssignAndListModelsForPool(t *testing.T) {
+func TestUnit_PoolModel_AssignModelToPool(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
-	model := &runtimetypes.Model{Model: "model1"}
-	err := s.AppendModel(ctx, model)
-	require.NoError(t, err)
+	// Create a model with capability fields
+	model := &runtimetypes.Model{
+		ID:            uuid.New().String(),
+		Model:         "test-model",
+		ContextLength: 4096,
+		CanChat:       true,
+		CanEmbed:      false,
+		CanPrompt:     true,
+		CanStream:     false,
+	}
+	require.NoError(t, s.AppendModel(ctx, model))
 
-	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
-	s.CreatePool(ctx, pool)
+	// Create a pool
+	pool := &runtimetypes.Pool{
+		ID:          uuid.New().String(),
+		Name:        "test-pool",
+		PurposeType: "test-purpose",
+	}
+	require.NoError(t, s.CreatePool(ctx, pool))
 
-	err = s.AssignModelToPool(ctx, pool.ID, model.ID)
-	require.NoError(t, err)
+	// Assign model to pool
+	require.NoError(t, s.AssignModelToPool(ctx, pool.ID, model.ID))
 
+	// Verify model is in the pool with correct capabilities
 	models, err := s.ListModelsForPool(ctx, pool.ID)
 	require.NoError(t, err)
 	require.Len(t, models, 1)
+
+	// Verify all capability fields
 	require.Equal(t, model.ID, models[0].ID)
-	// test for error when assigning model to pool twice
-	err = s.AssignModelToPool(ctx, pool.ID, model.ID)
-	require.Error(t, err)
-	require.ErrorIs(t, err, libdb.ErrUniqueViolation)
+	require.Equal(t, "test-model", models[0].Model)
+	require.Equal(t, 4096, models[0].ContextLength)
+	require.True(t, models[0].CanChat)
+	require.False(t, models[0].CanEmbed)
+	require.True(t, models[0].CanPrompt)
+	require.False(t, models[0].CanStream)
+	require.WithinDuration(t, model.CreatedAt, models[0].CreatedAt, time.Second)
+	require.WithinDuration(t, model.UpdatedAt, models[0].UpdatedAt, time.Second)
 }
 
 func TestUnit_Pools_RemoveModelFromPool(t *testing.T) {

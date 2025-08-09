@@ -89,7 +89,7 @@ def create_model_and_assign_to_pool(base_url):
     model_name = "smollm2:135m"
     pool_id = "internal_tasks_pool"
 
-    payload = {"model": model_name}
+    payload = {"model": model_name, "canChat": True, "canPrompt": True, "contextLength": 1024}
     create_url = f"{base_url}/models"
     response = requests.post(create_url, json=payload)
     assert response.status_code == 201, f"Model creation failed: {response.text}"

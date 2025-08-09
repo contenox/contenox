@@ -19,10 +19,15 @@ func TestUnit_Models_AppendAndGetAllModels(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, models)
 
-	// Append a new model.
+	// Append a new model with capability fields
 	model := &runtimetypes.Model{
-		ID:    uuid.New().String(),
-		Model: "test-model",
+		ID:            uuid.New().String(),
+		Model:         "test-model",
+		ContextLength: 4096,
+		CanChat:       true,
+		CanEmbed:      false,
+		CanPrompt:     true,
+		CanStream:     false,
 	}
 	err = s.AppendModel(ctx, model)
 	require.NoError(t, err)
@@ -33,6 +38,11 @@ func TestUnit_Models_AppendAndGetAllModels(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, models, 1)
 	require.Equal(t, "test-model", models[0].Model)
+	require.Equal(t, 4096, models[0].ContextLength)
+	require.True(t, models[0].CanChat)
+	require.False(t, models[0].CanEmbed)
+	require.True(t, models[0].CanPrompt)
+	require.False(t, models[0].CanStream)
 	require.WithinDuration(t, model.CreatedAt, models[0].CreatedAt, time.Second)
 	require.WithinDuration(t, model.UpdatedAt, models[0].UpdatedAt, time.Second)
 }
@@ -42,8 +52,13 @@ func TestUnit_Models_DeleteModel(t *testing.T) {
 	limit := 100
 
 	model := &runtimetypes.Model{
-		ID:    uuid.New().String(),
-		Model: "model-to-delete",
+		ID:            uuid.New().String(),
+		Model:         "model-to-delete",
+		ContextLength: 2048,
+		CanChat:       false,
+		CanEmbed:      true,
+		CanPrompt:     false,
+		CanStream:     true,
 	}
 	err := s.AppendModel(ctx, model)
 	require.NoError(t, err)
@@ -68,8 +83,13 @@ func TestUnit_Models_GetAllModelsOrder(t *testing.T) {
 	limit := 100
 
 	model1 := &runtimetypes.Model{
-		ID:    uuid.New().String(),
-		Model: "model1",
+		ID:            uuid.New().String(),
+		Model:         "model1",
+		ContextLength: 1024,
+		CanChat:       true,
+		CanEmbed:      true,
+		CanPrompt:     true,
+		CanStream:     true,
 	}
 	err := s.AppendModel(ctx, model1)
 	require.NoError(t, err)
@@ -77,8 +97,13 @@ func TestUnit_Models_GetAllModelsOrder(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	model2 := &runtimetypes.Model{
-		ID:    uuid.New().String(),
-		Model: "model2",
+		ID:            uuid.New().String(),
+		Model:         "model2",
+		ContextLength: 8192,
+		CanChat:       false,
+		CanEmbed:      false,
+		CanPrompt:     false,
+		CanStream:     false,
 	}
 	err = s.AppendModel(ctx, model2)
 	require.NoError(t, err)
@@ -87,7 +112,17 @@ func TestUnit_Models_GetAllModelsOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, models, 2)
 	require.Equal(t, "model2", models[0].Model)
+	require.Equal(t, 8192, models[0].ContextLength)
+	require.False(t, models[0].CanChat)
+	require.False(t, models[0].CanEmbed)
+	require.False(t, models[0].CanPrompt)
+	require.False(t, models[0].CanStream)
 	require.Equal(t, "model1", models[1].Model)
+	require.Equal(t, 1024, models[1].ContextLength)
+	require.True(t, models[1].CanChat)
+	require.True(t, models[1].CanEmbed)
+	require.True(t, models[1].CanPrompt)
+	require.True(t, models[1].CanStream)
 	require.True(t, models[0].CreatedAt.After(models[1].CreatedAt))
 }
 
@@ -95,12 +130,26 @@ func TestUnit_Models_AppendDuplicateModel(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	model := &runtimetypes.Model{
-		Model: "duplicate-model",
+		Model:         "duplicate-model",
+		ContextLength: 4096,
+		CanChat:       true,
+		CanEmbed:      false,
+		CanPrompt:     true,
+		CanStream:     false,
 	}
 	err := s.AppendModel(ctx, model)
 	require.NoError(t, err)
 
-	err = s.AppendModel(ctx, model)
+	// Attempt to append duplicate model with same capabilities
+	duplicate := &runtimetypes.Model{
+		Model:         "duplicate-model",
+		ContextLength: 4096, // Same capabilities
+		CanChat:       true,
+		CanEmbed:      false,
+		CanPrompt:     true,
+		CanStream:     false,
+	}
+	err = s.AppendModel(ctx, duplicate)
 	require.Error(t, err)
 }
 
@@ -108,8 +157,13 @@ func TestUnit_Models_GetModelByName(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	model := &runtimetypes.Model{
-		ID:    uuid.New().String(),
-		Model: "model-to-get",
+		ID:            uuid.New().String(),
+		Model:         "model-to-get",
+		ContextLength: 2048,
+		CanChat:       true,
+		CanEmbed:      false,
+		CanPrompt:     true,
+		CanStream:     false,
 	}
 	err := s.AppendModel(ctx, model)
 	require.NoError(t, err)
@@ -118,6 +172,11 @@ func TestUnit_Models_GetModelByName(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, model.ID, foundModel.ID)
 	require.Equal(t, model.Model, foundModel.Model)
+	require.Equal(t, 2048, foundModel.ContextLength)
+	require.True(t, foundModel.CanChat)
+	require.False(t, foundModel.CanEmbed)
+	require.True(t, foundModel.CanPrompt)
+	require.False(t, foundModel.CanStream)
 	require.WithinDuration(t, model.CreatedAt, foundModel.CreatedAt, time.Second)
 	require.WithinDuration(t, model.UpdatedAt, foundModel.UpdatedAt, time.Second)
 }
@@ -125,12 +184,17 @@ func TestUnit_Models_GetModelByName(t *testing.T) {
 func TestUnit_Models_ListHandlesPagination(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
-	// Create 5 models with a small delay to ensure distinct creation times.
+	// Create 5 models with capability fields
 	var createdModels []*runtimetypes.Model
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		model := &runtimetypes.Model{
-			ID:    uuid.New().String(),
-			Model: fmt.Sprintf("model%d", i),
+			ID:            uuid.New().String(),
+			Model:         fmt.Sprintf("model%d", i),
+			ContextLength: 1024 + i*1024, // Vary context length
+			CanChat:       i%2 == 0,
+			CanEmbed:      i%3 == 0,
+			CanPrompt:     i%4 == 0,
+			CanStream:     i%5 == 0,
 		}
 		err := s.AppendModel(ctx, model)
 		require.NoError(t, err)
@@ -138,7 +202,7 @@ func TestUnit_Models_ListHandlesPagination(t *testing.T) {
 		time.Sleep(1 * time.Millisecond)
 	}
 
-	// Paginate through the results with a limit of 2.
+	// Paginate through the results with a limit of 2
 	var receivedModels []*runtimetypes.Model
 	var lastCursor *time.Time
 	limit := 2
@@ -170,13 +234,38 @@ func TestUnit_Models_ListHandlesPagination(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, page4)
 
-	// Verify all models were retrieved in the correct order.
+	// Verify all models were retrieved in the correct order
 	require.Len(t, receivedModels, 5)
 
-	// The order is newest to oldest, so the last created model should be first.
-	require.Equal(t, createdModels[4].ID, receivedModels[0].ID)
-	require.Equal(t, createdModels[3].ID, receivedModels[1].ID)
-	require.Equal(t, createdModels[2].ID, receivedModels[2].ID)
-	require.Equal(t, createdModels[1].ID, receivedModels[3].ID)
-	require.Equal(t, createdModels[0].ID, receivedModels[4].ID)
+	// Check capability fields for each retrieved model
+	for i, received := range receivedModels {
+		expected := createdModels[4-i] // Reverse order (newest first)
+		require.Equal(t, expected.Model, received.Model)
+		require.Equal(t, expected.ContextLength, received.ContextLength)
+		require.Equal(t, expected.CanChat, received.CanChat)
+		require.Equal(t, expected.CanEmbed, received.CanEmbed)
+		require.Equal(t, expected.CanPrompt, received.CanPrompt)
+		require.Equal(t, expected.CanStream, received.CanStream)
+	}
+}
+
+// New test for context length validation
+func TestUnit_Models_InvalidContextLength(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	// Test zero context length
+	model := &runtimetypes.Model{
+		ID:            uuid.New().String(),
+		Model:         "invalid-model",
+		ContextLength: 0, // Invalid value
+	}
+	err := s.AppendModel(ctx, model)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "context length cannot be zero")
+
+	// Test negative context length
+	model.ContextLength = -100
+	err = s.AppendModel(ctx, model)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "context length cannot be zero")
 }

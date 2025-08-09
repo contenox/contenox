@@ -126,20 +126,22 @@ func New(
 }
 
 type Config struct {
-	DatabaseURL         string `json:"database_url"`
-	Port                string `json:"port"`
-	Addr                string `json:"addr"`
-	NATSURL             string `json:"nats_url"`
-	NATSUser            string `json:"nats_user"`
-	NATSPassword        string `json:"nats_password"`
-	TokenizerServiceURL string `json:"tokenizer_service_url"`
-	EmbedModel          string `json:"embed_model"`
-	TaskModel           string `json:"task_model"`
-	VectorStoreURL      string `json:"vector_store_url"`
-	KVBackend           string `json:"kv_backend"`
-	KVHost              string `json:"kv_host"`
-	KVPassword          string `json:"kv_password"`
-	Token               string `json:"token"`
+	DatabaseURL             string `json:"database_url"`
+	Port                    string `json:"port"`
+	Addr                    string `json:"addr"`
+	NATSURL                 string `json:"nats_url"`
+	NATSUser                string `json:"nats_user"`
+	NATSPassword            string `json:"nats_password"`
+	TokenizerServiceURL     string `json:"tokenizer_service_url"`
+	EmbedModel              string `json:"embed_model"`
+	EmbedModelContextLength string `json:"embed_model_context_length"`
+	TaskModel               string `json:"task_model"`
+	TaskModelContextLength  string `json:"task_model_context_length"`
+	VectorStoreURL          string `json:"vector_store_url"`
+	KVBackend               string `json:"kv_backend"`
+	KVHost                  string `json:"kv_host"`
+	KVPassword              string `json:"kv_password"`
+	Token                   string `json:"token"`
 }
 
 func LoadConfig[T any](cfg *T) error {

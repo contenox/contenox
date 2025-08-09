@@ -3,6 +3,12 @@ CREATE TABLE IF NOT EXISTS ollama_models (
     id VARCHAR(255) PRIMARY KEY,
     model VARCHAR(512) NOT NULL UNIQUE,
 
+    can_chat BOOLEAN NOT NULL,
+    can_stream BOOLEAN NOT NULL,
+    can_prompt BOOLEAN NOT NULL,
+    can_embed BOOLEAN NOT NULL,
+    context_length INT NOT NULL,
+
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );

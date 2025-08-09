@@ -137,6 +137,7 @@ def test_multi_step_taskchain(
             {
                 "id": "get_country",
                 "handler": "raw_string",
+                "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "prompt_template": "What country is Paris the capital of?",
                 "transition": {
                     "branches": [{"operator": "default", "goto": "capital_task"}]
@@ -145,6 +146,7 @@ def test_multi_step_taskchain(
             {
                 "id": "capital_task",
                 "handler": "raw_string",
+                "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "prompt_template": "What is the capital of {{.get_country}}?",
                 "transition": {
                     "branches": [{"operator": "default", "goto": "format_response"}]
@@ -153,6 +155,7 @@ def test_multi_step_taskchain(
             {
                 "id": "format_response",
                 "handler": "raw_string",
+                "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "prompt_template": "Format this nicely: The capital of {{.get_country}} is {{.capital_task}}",
                 "transition": {
                     "branches": [{"operator": "default", "goto": "end"}]

@@ -16,7 +16,9 @@ services:
       - NATS_PASSWORD=natspassword
       - TOKENIZER_SERVICE_URL=http://tokenizer:50051
       - EMBED_MODEL=nomic-embed-text:latest
+      - EMBED_MODEL_CONTEXT_LENGTH=2048
       - TASK_MODEL=qwen3:4b
+      - TASK_MODEL_CONTEXT_LENGTH=2048
       - KV_HOST=valkey:6379
       #- TOKEN=your_token_here
     depends_on:

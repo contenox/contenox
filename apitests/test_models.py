@@ -7,7 +7,9 @@ def test_create_model(base_url):
 
     payload = {
         "model": "test-model",
-        "name": "Test Model"
+        "name": "Test Model",
+        "canPrompt": True,
+        "contextLength": 2048,
     }
 
     response = requests.post(f"{base_url}/models", json=payload)
@@ -37,7 +39,7 @@ def test_list_models(base_url):
 
 def test_delete_model(base_url):
     # Step 1: Create a model
-    payload = {"model": "temp-delete-model"}
+    payload = {"model": "temp-delete-model", "canPrompt": True, "contextLength": 2048}
     response = requests.post(f"{base_url}/models", json=payload)
     assert_status_code(response, 201)
     model = response.json()
@@ -73,8 +75,3 @@ def test_model_assigned_to_pool(base_url, create_model_and_assign_to_pool):
     models_in_pool = response.json()
 
     assert any(m['id'] == model_id for m in models_in_pool), "Model not found in pool"
-
-def trigger_model_pull(base_url, model_name, with_ollama_backend):
-    payload = {"model": model_name}
-    response = requests.post(f"{base_url}/models/pull", json=payload)
-    assert response.status_code == 202, f"Failed to trigger model pull: {response.text}"

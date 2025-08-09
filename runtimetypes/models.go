@@ -14,13 +14,20 @@ func (s *store) AppendModel(ctx context.Context, model *Model) error {
 	now := time.Now().UTC()
 	model.CreatedAt = now
 	model.UpdatedAt = now
-
+	if model.ContextLength <= 0 {
+		return fmt.Errorf("context length cannot be zero")
+	}
 	_, err := s.Exec.ExecContext(ctx, `
 		INSERT INTO ollama_models
-		(id, model, created_at, updated_at)
-		VALUES ($1, $2, $3, $4)`,
+		(id, model, context_length, can_chat, can_embed, can_prompt, can_stream, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		model.ID,
 		model.Model,
+		model.ContextLength,
+		model.CanChat,
+		model.CanEmbed,
+		model.CanPrompt,
+		model.CanStream,
 		model.CreatedAt,
 		model.UpdatedAt,
 	)
@@ -30,13 +37,18 @@ func (s *store) AppendModel(ctx context.Context, model *Model) error {
 func (s *store) GetModel(ctx context.Context, id string) (*Model, error) {
 	var model Model
 	err := s.Exec.QueryRowContext(ctx, `
-        SELECT id, model, created_at, updated_at
+        SELECT id, model, context_length, can_chat, can_embed, can_prompt, can_stream, created_at, updated_at
         FROM ollama_models
         WHERE id = $1`,
 		id,
 	).Scan(
 		&model.ID,
 		&model.Model,
+		&model.ContextLength,
+		&model.CanChat,
+		&model.CanEmbed,
+		&model.CanPrompt,
+		&model.CanStream,
 		&model.CreatedAt,
 		&model.UpdatedAt,
 	)
@@ -50,13 +62,18 @@ func (s *store) GetModel(ctx context.Context, id string) (*Model, error) {
 func (s *store) GetModelByName(ctx context.Context, name string) (*Model, error) {
 	var model Model
 	err := s.Exec.QueryRowContext(ctx, `
-        SELECT id, model, created_at, updated_at
+        SELECT id, model, context_length, can_chat, can_embed, can_prompt, can_stream, created_at, updated_at
         FROM ollama_models
         WHERE model = $1`,
 		name,
 	).Scan(
 		&model.ID,
 		&model.Model,
+		&model.ContextLength,
+		&model.CanChat,
+		&model.CanEmbed,
+		&model.CanPrompt,
+		&model.CanStream,
 		&model.CreatedAt,
 		&model.UpdatedAt,
 	)
@@ -83,7 +100,7 @@ func (s *store) DeleteModel(ctx context.Context, modelName string) error {
 
 func (s *store) ListAllModels(ctx context.Context) ([]*Model, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
-        SELECT id, model, created_at, updated_at
+        SELECT id, model, context_length, can_chat, can_embed, can_prompt, can_stream, created_at, updated_at
         FROM ollama_models
         ORDER BY created_at DESC, id DESC;
     `)
@@ -98,6 +115,11 @@ func (s *store) ListAllModels(ctx context.Context) ([]*Model, error) {
 		if err := rows.Scan(
 			&model.ID,
 			&model.Model,
+			&model.ContextLength,
+			&model.CanChat,
+			&model.CanEmbed,
+			&model.CanPrompt,
+			&model.CanStream,
 			&model.CreatedAt,
 			&model.UpdatedAt,
 		); err != nil {
@@ -120,7 +142,7 @@ func (s *store) ListModels(ctx context.Context, createdAtCursor *time.Time, limi
 	}
 
 	rows, err := s.Exec.QueryContext(ctx, `
-        SELECT id, model, created_at, updated_at
+        SELECT id, model, context_length, can_chat, can_embed, can_prompt, can_stream, created_at, updated_at
         FROM ollama_models
         WHERE created_at < $1
         ORDER BY created_at DESC, id DESC
@@ -137,6 +159,11 @@ func (s *store) ListModels(ctx context.Context, createdAtCursor *time.Time, limi
 		if err := rows.Scan(
 			&model.ID,
 			&model.Model,
+			&model.ContextLength,
+			&model.CanChat,
+			&model.CanEmbed,
+			&model.CanPrompt,
+			&model.CanStream,
 			&model.CreatedAt,
 			&model.UpdatedAt,
 		); err != nil {

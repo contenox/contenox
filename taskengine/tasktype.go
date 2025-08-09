@@ -217,10 +217,11 @@ func ToOperatorTerm(s string) (OperatorTerm, error) {
 }
 
 type LLMExecutionConfig struct {
-	Model     string   `yaml:"model" json:"model"`
-	Models    []string `yaml:"models,omitempty" json:"models,omitempty"`
-	Provider  string   `yaml:"provider,omitempty" json:"provider,omitempty"`
-	Providers []string `yaml:"providers,omitempty" json:"providers,omitempty"`
+	Model       string   `yaml:"model" json:"model"`
+	Models      []string `yaml:"models,omitempty" json:"models,omitempty"`
+	Provider    string   `yaml:"provider,omitempty" json:"provider,omitempty"`
+	Providers   []string `yaml:"providers,omitempty" json:"providers,omitempty"`
+	Temperature float32  `yaml:"temperature,omitempty" json:"temperature,omitempty"`
 }
 
 type MessageConfig struct {

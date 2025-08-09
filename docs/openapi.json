@@ -162,7 +162,7 @@
           },
           "pulledModels": {
             "items": {
-              "type": "object"
+              "$ref": "#/components/schemas/runtimestate_ListModelResponse"
             },
             "type": "array"
           },
@@ -325,7 +325,22 @@
       },
       "runtimestate_ListModelResponse": {
         "properties": {
-          "details,omitempty": {
+          "canChat": {
+            "type": "boolean"
+          },
+          "canEmbed": {
+            "type": "boolean"
+          },
+          "canPrompt": {
+            "type": "boolean"
+          },
+          "canStream": {
+            "type": "boolean"
+          },
+          "contextLength": {
+            "type": "integer"
+          },
+          "details": {
             "type": "object"
           },
           "digest": {
@@ -334,7 +349,7 @@
           "model": {
             "type": "string"
           },
-          "modified_at": {
+          "modifiedAt": {
             "format": "date-time",
             "type": "string"
           },
@@ -385,6 +400,22 @@
       },
       "runtimetypes_Model": {
         "properties": {
+          "canChat": {
+            "type": "boolean"
+          },
+          "canEmbed": {
+            "type": "boolean"
+          },
+          "canPrompt": {
+            "description": "TODO: Implement the forms for this",
+            "type": "boolean"
+          },
+          "canStream": {
+            "type": "boolean"
+          },
+          "contextLength": {
+            "type": "integer"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"

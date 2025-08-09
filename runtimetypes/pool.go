@@ -255,11 +255,11 @@ func (s *store) RemoveModelFromPool(ctx context.Context, poolID, modelID string)
 
 func (s *store) ListModelsForPool(ctx context.Context, poolID string) ([]*Model, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT m.id, m.model, m.created_at, m.updated_at
-		FROM ollama_models m
-		INNER JOIN ollama_model_assignments a ON m.id = a.model_id
-		WHERE a.llm_pool_id = $1
-		ORDER BY a.created_at DESC`, poolID)
+        SELECT m.id, m.model, m.context_length, m.can_chat, m.can_embed, m.can_prompt, m.can_stream, m.created_at, m.updated_at
+        FROM ollama_models m
+        INNER JOIN ollama_model_assignments a ON m.id = a.model_id
+        WHERE a.llm_pool_id = $1
+        ORDER BY a.created_at DESC`, poolID)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,17 @@ func (s *store) ListModelsForPool(ctx context.Context, poolID string) ([]*Model,
 	var models []*Model
 	for rows.Next() {
 		var m Model
-		if err := rows.Scan(&m.ID, &m.Model, &m.CreatedAt, &m.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&m.ID,
+			&m.Model,
+			&m.ContextLength,
+			&m.CanChat,
+			&m.CanEmbed,
+			&m.CanPrompt,
+			&m.CanStream,
+			&m.CreatedAt,
+			&m.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		models = append(models, &m)

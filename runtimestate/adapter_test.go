@@ -10,87 +10,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnit_ModelProviderAdapter_ReturnsExpectedProviders(t *testing.T) {
-	now := time.Now()
-
-	runtime := map[string]runtimestate.LLMState{
-		"backend1": {
-			ID:      "backend1",
-			Name:    "Backend One",
-			Backend: runtimetypes.Backend{ID: "backend1", Name: "Ollama", Type: "ollama"},
-			PulledModels: []runtimestate.ListModelResponse{
-				{Name: "Model One", Model: "model1", ModifiedAt: now},
-				{Name: "Model Shared", Model: "shared", ModifiedAt: now},
-			},
-		},
-		"backend2": {
-			ID:      "backend2",
-			Name:    "Backend Two",
-			Backend: runtimetypes.Backend{ID: "backend2", Name: "Ollama", Type: "ollama"},
-			PulledModels: []runtimestate.ListModelResponse{
-				{Name: "Model Two", Model: "model2", ModifiedAt: now},
-				{Name: "Model Shared", Model: "shared", ModifiedAt: now},
-			},
-		},
-	}
-
-	adapter := runtimestate.LocalProviderAdapter(context.Background(), runtime)
-
-	providers, err := adapter(context.Background(), "ollama")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(providers) != 3 {
-		t.Fatalf("expected 3 providers, got %d", len(providers))
-	}
-
-	models := map[string]bool{}
-	for _, provider := range providers {
-		models[provider.ModelName()] = true
-	}
-
-	expected := []string{"model1", "model2", "shared"}
-	for _, model := range expected {
-		if !models[model] {
-			t.Errorf("expected model %q to be in providers, but it was not found", model)
-		}
-	}
-}
-
 func TestUnit_ModelProviderAdapter_SetsCorrectModelCapabilities(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
-	chatModelName := "llama3:latest"           // A model known to support chat by default
-	embedModelName := "granite-embedding:30m"  // A model known to support embed by default
-	unknownModelName := "some-random-model:v1" // A model not in default maps
+	chatModelName := "llama3:latest"
+	embedModelName := "granite-embedding:30m"
+	unknownModelName := "some-random-model:v1"
 	backendID := "backend-test"
 	backendURL := "http://host:1234"
 
-	// 1. Setup Runtime State with various models
 	runtime := map[string]runtimestate.LLMState{
 		backendID: {
 			ID:      backendID,
 			Name:    "Test Backend",
 			Backend: runtimetypes.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
 			PulledModels: []runtimestate.ListModelResponse{
-				{Name: chatModelName, Model: chatModelName, ModifiedAt: now},
-				{Name: embedModelName, Model: embedModelName, ModifiedAt: now},
-				{Name: unknownModelName, Model: unknownModelName, ModifiedAt: now},
+				{
+					Name:          chatModelName,
+					Model:         chatModelName,
+					ModifiedAt:    now,
+					CanChat:       true,
+					CanEmbed:      true,
+					CanPrompt:     true,
+					CanStream:     true,
+					ContextLength: 4096,
+				},
+				{
+					Name:          embedModelName,
+					Model:         embedModelName,
+					ModifiedAt:    now,
+					CanEmbed:      true,
+					ContextLength: 512,
+				},
+				{
+					Name:       unknownModelName,
+					Model:      unknownModelName,
+					ModifiedAt: now,
+				},
 			},
 		},
 	}
 
-	// 2. Get the adapter function (which currently hardcodes WithChat(true))
+	// 2. Get the adapter function
 	adapterFunc := runtimestate.LocalProviderAdapter(ctx, runtime)
 
-	// 3. Get the providers created by the adapter
-	// Pass a dummy type, as the adapter's returned function ignores it currently
+	// 3. Get the providers
 	providers, err := adapterFunc(ctx, "ollama")
 	require.NoError(t, err)
-	require.Len(t, providers, 3, "Should create one provider per unique model")
+	require.Len(t, providers, 3, "Should create one provider per model")
 
-	// 4. Verify capabilities for each provider type
+	// 4. Verify capabilities
 	foundChat := false
 	foundEmbed := false
 	foundUnknown := false
@@ -99,14 +68,12 @@ func TestUnit_ModelProviderAdapter_SetsCorrectModelCapabilities(t *testing.T) {
 		switch p.ModelName() {
 		case chatModelName:
 			foundChat = true
-			// Default for llama3 is chat=true, embed=true. Adapter uses WithChat(true).
-			require.True(t, p.CanChat(), "Provider for %s should support chat (default + adapter override)", chatModelName)
-			require.True(t, p.CanEmbed(), "Provider for %s should support embed (default)", chatModelName)
+			require.True(t, p.CanChat(), "Provider for %s should support chat", chatModelName)
+			require.True(t, p.CanEmbed(), "Provider for %s should support embed", chatModelName)
 		case embedModelName:
 			foundEmbed = true
-			// Default for all-minilm is chat=false, embed=false. Adapter uses WithChat(true).
-			require.True(t, p.CanEmbed(), "Provider for %s should support embed (adapter override)", embedModelName)
-			require.False(t, p.CanChat(), "Provider for %s should NOT support chat (default)", embedModelName)
+			require.True(t, p.CanEmbed(), "Provider for %s should support embed", embedModelName)
+			require.False(t, p.CanChat(), "Provider for %s should NOT support chat", embedModelName)
 		case unknownModelName:
 			foundUnknown = true
 		}
@@ -115,6 +82,122 @@ func TestUnit_ModelProviderAdapter_SetsCorrectModelCapabilities(t *testing.T) {
 	require.True(t, foundChat, "Provider for chat model not found")
 	require.True(t, foundEmbed, "Provider for embed model not found")
 	require.True(t, foundUnknown, "Provider for unknown model not found")
+}
 
-	t.Log("Test confirmed: ModelProviderAdapter correctly creates providers, but hardcodes WithChat(true), overriding defaults and potentially setting incorrect capabilities (CanEmbed=false) for models intended for embedding.")
+func TestUnit_ModelProviderAdapter_PropagatesCapabilitiesCorrectly(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	backendID := "backend-test"
+	backendURL := "http://host:1234"
+
+	// Define models with specific capabilities
+	runtime := map[string]runtimestate.LLMState{
+		backendID: {
+			ID:      backendID,
+			Name:    "Test Backend",
+			Backend: runtimetypes.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
+			PulledModels: []runtimestate.ListModelResponse{
+				{
+					Name:          "chat-model",
+					Model:         "chat-model",
+					ModifiedAt:    now,
+					CanChat:       true,
+					CanEmbed:      false,
+					CanPrompt:     true,
+					CanStream:     true,
+					ContextLength: 4096,
+				},
+				{
+					Name:          "embed-model",
+					Model:         "embed-model",
+					ModifiedAt:    now,
+					CanChat:       false,
+					CanEmbed:      true,
+					CanPrompt:     false,
+					CanStream:     false,
+					ContextLength: 512,
+				},
+				{
+					Name:          "full-model",
+					Model:         "full-model",
+					ModifiedAt:    now,
+					CanChat:       true,
+					CanEmbed:      true,
+					CanPrompt:     true,
+					CanStream:     true,
+					ContextLength: 8192,
+				},
+			},
+		},
+	}
+
+	adapterFunc := runtimestate.LocalProviderAdapter(ctx, runtime)
+
+	providers, err := adapterFunc(ctx, "ollama")
+	require.NoError(t, err, "should not return error")
+	require.Len(t, providers, 3, "should create one provider per model")
+
+	// Verify capabilities
+	for _, p := range providers {
+		switch p.ModelName() {
+		case "chat-model":
+			require.True(t, p.CanChat(), "chat-model should support chat")
+			require.False(t, p.CanEmbed(), "chat-model should not support embedding")
+			require.True(t, p.CanPrompt(), "chat-model should support prompting")
+			require.True(t, p.CanStream(), "chat-model should support streaming")
+			require.Equal(t, 4096, p.GetContextLength(), "chat-model context length mismatch")
+
+		case "embed-model":
+			require.False(t, p.CanChat(), "embed-model should not support chat")
+			require.True(t, p.CanEmbed(), "embed-model should support embedding")
+			require.False(t, p.CanPrompt(), "embed-model should not support prompting")
+			require.False(t, p.CanStream(), "embed-model should not support streaming")
+			require.Equal(t, 512, p.GetContextLength(), "embed-model context length mismatch")
+
+		case "full-model":
+			require.True(t, p.CanChat(), "full-model should support chat")
+			require.True(t, p.CanEmbed(), "full-model should support embedding")
+			require.True(t, p.CanPrompt(), "full-model should support prompting")
+			require.True(t, p.CanStream(), "full-model should support streaming")
+			require.Equal(t, 8192, p.GetContextLength(), "full-model context length mismatch")
+		}
+	}
+}
+
+func TestUnit_ModelProviderAdapter_HandlesMissingCapabilities(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	backendID := "backend-test"
+	backendURL := "http://host:1234"
+
+	// Define model with partial capabilities
+	runtime := map[string]runtimestate.LLMState{
+		backendID: {
+			ID:      backendID,
+			Name:    "Test Backend",
+			Backend: runtimetypes.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
+			PulledModels: []runtimestate.ListModelResponse{
+				{
+					Name:       "partial-model",
+					Model:      "partial-model",
+					ModifiedAt: now,
+					// Missing capability fields
+				},
+			},
+		},
+	}
+
+	adapterFunc := runtimestate.LocalProviderAdapter(ctx, runtime)
+
+	providers, err := adapterFunc(ctx, "ollama")
+	require.NoError(t, err, "should not return error")
+	require.Len(t, providers, 1, "should create one provider")
+
+	// Verify zero-value capabilities
+	p := providers[0]
+	require.False(t, p.CanChat(), "should default to no chat support")
+	require.False(t, p.CanEmbed(), "should default to no embedding support")
+	require.False(t, p.CanPrompt(), "should default to no prompt support")
+	require.False(t, p.CanStream(), "should default to no streaming support")
+	require.Equal(t, 0, p.GetContextLength(), "should default to zero context length")
 }

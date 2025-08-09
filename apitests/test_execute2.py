@@ -165,6 +165,7 @@ def test_transition_operators(
             {
                 "id": "condition_task",
                 "handler": "condition_key",
+                "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "valid_conditions": {
                     "very_long_string": True,
                     "short": True

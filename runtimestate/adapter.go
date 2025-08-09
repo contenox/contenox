@@ -4,56 +4,79 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/contenox/modelprovider"
 	libmodelprovider "github.com/contenox/modelprovider"
 	"github.com/contenox/runtime/llmresolver"
 )
 
 // LocalProviderAdapter creates providers for self-hosted backends (Ollama, vLLM)
 func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmresolver.ProviderFromRuntimeState {
-	// Create a two-level map: backendType -> modelName -> []baseURLs
-	modelsByBackendType := make(map[string]map[string][]LLMState)
+	// Create a flat list of providers (one per model per backend)
+	providersByType := make(map[string][]libmodelprovider.Provider)
 
 	for _, state := range runtime {
-		backendType := state.Backend.Type
+		if state.Error != "" {
+			continue
+		}
 
-		if _, ok := modelsByBackendType[backendType]; !ok {
-			modelsByBackendType[backendType] = make(map[string][]LLMState)
+		backendType := state.Backend.Type
+		if _, ok := providersByType[backendType]; !ok {
+			providersByType[backendType] = []libmodelprovider.Provider{}
 		}
 
 		for _, model := range state.PulledModels {
-			modelName := model.Model
-			modelsByBackendType[backendType][modelName] = append(
-				modelsByBackendType[backendType][modelName],
-				state,
-			)
-		}
-	}
-
-	// Create providers grouped by backend type
-	providersByType := make(map[string][]libmodelprovider.Provider)
-	for backendType, modelMap := range modelsByBackendType {
-		for modelName, snapshots := range modelMap {
-			apiKey := ""
-			backendURLs := []string{}
-			for _, state := range snapshots {
-				apiKey = state.apiKey
-				backendURLs = append(backendURLs, state.Backend.BaseURL)
+			capability := modelprovider.CapabilityConfig{
+				ContextLength: model.ContextLength,
+				CanChat:       model.CanChat,
+				CanEmbed:      model.CanEmbed,
+				CanStream:     model.CanStream,
+				CanPrompt:     model.CanPrompt,
 			}
+
 			switch backendType {
 			case "ollama":
-				providersByType["ollama"] = append(providersByType["ollama"],
-					libmodelprovider.NewOllamaModelProvider(modelName, backendURLs, http.DefaultClient))
+				providersByType[backendType] = append(
+					providersByType[backendType],
+					libmodelprovider.NewOllamaModelProvider(
+						model.Model,
+						[]string{state.Backend.BaseURL},
+						http.DefaultClient,
+						capability,
+					),
+				)
 			case "vllm":
-				providersByType["vllm"] = append(providersByType["vllm"],
-					libmodelprovider.NewVLLMModelProvider(modelName, backendURLs, http.DefaultClient))
+				providersByType[backendType] = append(
+					providersByType[backendType],
+					libmodelprovider.NewVLLMModelProvider(
+						model.Model,
+						[]string{state.Backend.BaseURL},
+						http.DefaultClient,
+						capability,
+						state.apiKey,
+					),
+				)
 			case "openai":
-				providersByType["openai"] = append(providersByType["openai"],
-					libmodelprovider.NewOpenAIProvider(apiKey, modelName, backendURLs, http.DefaultClient))
+				providersByType[backendType] = append(
+					providersByType[backendType],
+					libmodelprovider.NewOpenAIProvider(
+						state.apiKey,
+						model.Model,
+						[]string{state.Backend.BaseURL},
+						capability,
+						http.DefaultClient,
+					),
+				)
 			case "gemini":
-				{
-					providersByType["gemini"] = append(providersByType["gemini"],
-						libmodelprovider.NewGeminiProvider(apiKey, modelName, backendURLs, http.DefaultClient))
-				}
+				providersByType[backendType] = append(
+					providersByType[backendType],
+					libmodelprovider.NewGeminiProvider(
+						state.apiKey,
+						model.Model,
+						[]string{state.Backend.BaseURL},
+						capability,
+						http.DefaultClient,
+					),
+				)
 			}
 		}
 	}

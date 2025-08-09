@@ -280,10 +280,15 @@ for request processing even if they appear in this response.
     "name": "Backend Name",
     "pulledModels": [
       {
-        "details,omitempty": {},
+        "canChat": true,
+        "canEmbed": true,
+        "canPrompt": true,
+        "canStream": true,
+        "contextLength": 0,
+        "details": {},
         "digest": "string",
         "model": "string",
-        "modified_at": "2019-08-24T14:15:22Z",
+        "modifiedAt": "2019-08-24T14:15:22Z",
         "name": "string",
         "size": 0
       }
@@ -802,6 +807,11 @@ Returns basic model information without backend-specific details.
 ```json
 [
   {
+    "canChat": true,
+    "canEmbed": true,
+    "canPrompt": true,
+    "canStream": true,
+    "contextLength": 0,
     "createdAt": "2019-08-24T14:15:22Z",
     "id": "string",
     "model": "string",
@@ -951,6 +961,11 @@ If pools are enabled, to make a model available to backends, it must be explicit
 
 ```json
 {
+  "canChat": true,
+  "canEmbed": true,
+  "canPrompt": true,
+  "canStream": true,
+  "contextLength": 0,
   "createdAt": "2019-08-24T14:15:22Z",
   "id": "string",
   "model": "string",
@@ -970,6 +985,11 @@ If pools are enabled, to make a model available to backends, it must be explicit
 
 ```json
 {
+  "canChat": true,
+  "canEmbed": true,
+  "canPrompt": true,
+  "canStream": true,
+  "contextLength": 0,
   "createdAt": "2019-08-24T14:15:22Z",
   "id": "string",
   "model": "string",
@@ -1656,7 +1676,19 @@ X-API-Key
     ],
     "name": "backend-name",
     "pulledModels": [
-      {}
+      {
+        "canChat": true,
+        "canEmbed": true,
+        "canPrompt": true,
+        "canStream": true,
+        "contextLength": 0,
+        "details": {},
+        "digest": "string",
+        "model": "string",
+        "modifiedAt": "2019-08-24T14:15:22Z",
+        "name": "string",
+        "size": 0
+      }
     ],
     "type": "ollama",
     "updatedAt": "2023-01-01T00:00:00Z"
@@ -1718,10 +1750,15 @@ X-API-Key
     "name": "Backend Name",
     "pulledModels": [
       {
-        "details,omitempty": {},
+        "canChat": true,
+        "canEmbed": true,
+        "canPrompt": true,
+        "canStream": true,
+        "contextLength": 0,
+        "details": {},
         "digest": "string",
         "model": "string",
-        "modified_at": "2019-08-24T14:15:22Z",
+        "modifiedAt": "2019-08-24T14:15:22Z",
         "name": "string",
         "size": 0
       }
@@ -1797,6 +1834,11 @@ X-API-Key
 ```json
 [
   {
+    "canChat": true,
+    "canEmbed": true,
+    "canPrompt": true,
+    "canStream": true,
+    "contextLength": 0,
     "createdAt": "2019-08-24T14:15:22Z",
     "id": "string",
     "model": "string",
@@ -1958,10 +2000,15 @@ X-API-Key
   "name": "string",
   "pulledModels": [
     {
-      "details,omitempty": {},
+      "canChat": true,
+      "canEmbed": true,
+      "canPrompt": true,
+      "canStream": true,
+      "contextLength": 0,
+      "details": {},
       "digest": "string",
       "model": "string",
-      "modified_at": "2019-08-24T14:15:22Z",
+      "modifiedAt": "2019-08-24T14:15:22Z",
       "name": "string",
       "size": 0
     }
@@ -2004,7 +2051,19 @@ X-API-Key
   ],
   "name": "backend-name",
   "pulledModels": [
-    {}
+    {
+      "canChat": true,
+      "canEmbed": true,
+      "canPrompt": true,
+      "canStream": true,
+      "contextLength": 0,
+      "details": {},
+      "digest": "string",
+      "model": "string",
+      "modifiedAt": "2019-08-24T14:15:22Z",
+      "name": "string",
+      "size": 0
+    }
   ],
   "type": "ollama",
   "updatedAt": "2023-01-01T00:00:00Z"
@@ -2022,7 +2081,7 @@ X-API-Key
 |id|string|false|none|none|
 |models|[string]|false|none|none|
 |name|string|false|none|none|
-|pulledModels|[object]|false|none|none|
+|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|false|none|none|
 |type|string|false|none|none|
 |updatedAt|string(date-time)|false|none|none|
 
@@ -2263,10 +2322,15 @@ X-API-Key
   "name": "Backend Name",
   "pulledModels": [
     {
-      "details,omitempty": {},
+      "canChat": true,
+      "canEmbed": true,
+      "canPrompt": true,
+      "canStream": true,
+      "contextLength": 0,
+      "details": {},
       "digest": "string",
       "model": "string",
-      "modified_at": "2019-08-24T14:15:22Z",
+      "modifiedAt": "2019-08-24T14:15:22Z",
       "name": "string",
       "size": 0
     }
@@ -2296,10 +2360,15 @@ X-API-Key
 
 ```json
 {
-  "details,omitempty": {},
+  "canChat": true,
+  "canEmbed": true,
+  "canPrompt": true,
+  "canStream": true,
+  "contextLength": 0,
+  "details": {},
   "digest": "string",
   "model": "string",
-  "modified_at": "2019-08-24T14:15:22Z",
+  "modifiedAt": "2019-08-24T14:15:22Z",
   "name": "string",
   "size": 0
 }
@@ -2310,10 +2379,15 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|details,omitempty|object|false|none|none|
+|canChat|boolean|false|none|none|
+|canEmbed|boolean|false|none|none|
+|canPrompt|boolean|false|none|none|
+|canStream|boolean|false|none|none|
+|contextLength|integer|false|none|none|
+|details|object|false|none|none|
 |digest|string|false|none|none|
 |model|string|false|none|none|
-|modified_at|string(date-time)|false|none|none|
+|modifiedAt|string(date-time)|false|none|none|
 |name|string|false|none|none|
 |size|integer|false|none|none|
 
@@ -2378,6 +2452,11 @@ X-API-Key
 
 ```json
 {
+  "canChat": true,
+  "canEmbed": true,
+  "canPrompt": true,
+  "canStream": true,
+  "contextLength": 0,
   "createdAt": "2019-08-24T14:15:22Z",
   "id": "string",
   "model": "string",
@@ -2390,6 +2469,11 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
+|canChat|boolean|false|none|none|
+|canEmbed|boolean|false|none|none|
+|canPrompt|boolean|false|none|TODO: Implement the forms for this|
+|canStream|boolean|false|none|none|
+|contextLength|integer|false|none|none|
 |createdAt|string(date-time)|false|none|none|
 |id|string|false|none|none|
 |model|string|false|none|none|

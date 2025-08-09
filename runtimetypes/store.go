@@ -39,10 +39,15 @@ type Backend struct {
 }
 
 type Model struct {
-	ID        string    `json:"id"`
-	Model     string    `json:"model"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID            string    `json:"id"`
+	Model         string    `json:"model"`
+	ContextLength int       `json:"contextLength"`
+	CanChat       bool      `json:"canChat"`
+	CanEmbed      bool      `json:"canEmbed"`
+	CanPrompt     bool      `json:"canPrompt"` // TODO: Implement the forms for this
+	CanStream     bool      `json:"canStream"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 type Pool struct {
