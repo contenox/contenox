@@ -11,6 +11,9 @@
 ✅ **Observability with passion**
 ✅ **Made with Go for intensive load**
 
+
+This is the core for the [contenox](https://github.com/contenox) ecosystem.
+
 ## ⚡ Get Started in 3 Minutes
 
 ### Prerequisites
