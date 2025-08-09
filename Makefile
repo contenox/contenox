@@ -1,4 +1,4 @@
-.PHONY: test-unit test-system test compose-wipe benchmark run build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen
+.PHONY: test-unit test-system test compose-wipe benchmark run build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown
 DEFAULT_CORE_VERSION ?= dev-demo
 PROJECT_ROOT := $(shell pwd)
 test-unit:
@@ -55,5 +55,20 @@ docs-gen:
 	@echo "📝 Generating OpenAPI spec..."
 	@go run $(PROJECT_ROOT)/tools/openapi-gen --project="$(PROJECT_ROOT)" --output="$(PROJECT_ROOT)/docs"
 	@echo "✅ OpenAPI spec generated at $(PROJECT_ROOT)/docs/openapi.json"
+
+docs-markdown: docs-gen
+	@echo "📝 Converting OpenAPI spec to Markdown..."
+	@echo "🐳 Using Node.js Docker image to generate documentation..."
+	@docker run --rm \
+		-v $(PROJECT_ROOT)/docs:/local \
+		node:18-alpine sh -c "\
+			npm install -g widdershins@4 && \
+			widdershins /local/openapi.json -o /local/api-reference.md \
+				--language_tabs 'shell:curl' 'javascript' 'python' 'go' 'java' \
+				--summary \
+				--resolve \
+				--verbose"
+	@echo "✅ Markdown documentation generated at $(PROJECT_ROOT)/docs/api-reference.md"
+
 build:
 	docker compose build --build-arg CORE_VERSION=$(DEFAULT_CORE_VERSION)
