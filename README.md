@@ -39,7 +39,7 @@ BACKEND_ID=$(curl -s -X POST http://localhost:8081/backends \
   -H "Content-Type: application/json" \
   -d '{
     "name": "local-ollama",
-    "baseURL": "http://host.docker.internal:11435",
+    "baseURL": "http://ollama:11435",
     "type": "ollama"
   }' | jq -r '.id')
 
