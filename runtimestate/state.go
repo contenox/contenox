@@ -27,7 +27,7 @@ type LLMState struct {
 	ID           string               `json:"id" example:"backend1"`
 	Name         string               `json:"name" example:"Backend Name"`
 	Models       []string             `json:"models"`
-	PulledModels []ListModelResponse  `json:"pulledModels" @include:"runtimestate.ListModelResponse"`
+	PulledModels []ListModelResponse  `json:"pulledModels" oapiinclude:"runtimestate.ListModelResponse"`
 	Backend      runtimetypes.Backend `json:"backend"`
 	// Error stores a description of the last encountered error when
 	// interacting with or reconciling this backend's state, if any.
@@ -42,7 +42,7 @@ type ListModelResponse struct {
 	ModifiedAt time.Time    `json:"modified_at"`
 	Size       int64        `json:"size"`
 	Digest     string       `json:"digest"`
-	Details    ModelDetails `json:"details,omitempty" @include:"runtimestate.ModelDetails"`
+	Details    ModelDetails `json:"details,omitempty" oapiinclude:"runtimestate.ModelDetails"`
 }
 
 type ModelDetails struct {

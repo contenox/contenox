@@ -53,13 +53,13 @@ func (tm *taskManager) execute(w http.ResponseWriter, r *http.Request) {
 type taskExec struct {
 	Input     any                         `json:"input"`
 	InputType string                      `json:"inputType"`
-	Chain     *taskengine.ChainDefinition `json:"chain" @include:"taskengine.ChainDefinition"`
+	Chain     *taskengine.ChainDefinition `json:"chain" oapiinclude:"taskengine.ChainDefinition"`
 }
 
 type taskResponse struct {
 	Output     any                            `json:"output"`
 	OutputType string                         `json:"outputType"`
-	State      []taskengine.CapturedStateUnit `json:"state" @include:"taskengine.CapturedStateUnit"`
+	State      []taskengine.CapturedStateUnit `json:"state" oapiinclude:"taskengine.CapturedStateUnit"`
 }
 
 // Executes dynamic task-chain workflows.

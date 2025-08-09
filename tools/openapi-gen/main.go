@@ -669,12 +669,12 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 				}
 			}
 
-			// Process @include tag to override or specify custom type
+			// Process oapiinclude tag to override or specify custom type
 			if field.Tag != nil {
 				tag := strings.Trim(field.Tag.Value, "`")
-				if strings.Contains(tag, "@include:") {
-					if includeStart := strings.Index(tag, `@include:"`); includeStart != -1 {
-						includeStart += len(`@include:"`)
+				if strings.Contains(tag, "oapiinclude:") {
+					if includeStart := strings.Index(tag, `oapiinclude:"`); includeStart != -1 {
+						includeStart += len(`oapiinclude:"`)
 						//panic(tag)
 						includeEnd := strings.Index(tag[includeStart:], `"`)
 						if includeEnd != -1 {
@@ -687,7 +687,7 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 							}
 							isCustomType = true
 							//		} else {
-							//	log.Printf("WARNING: @include schema not found: %s", includedType)
+							//	log.Printf("WARNING: oapiinclude schema not found: %s", includedType)
 							//	}
 						}
 					}
@@ -748,9 +748,9 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 			} else if strings.Contains(tag, `required:"true"`) {
 				schema.Required = append(schema.Required, jsonTag)
 			}
-			if strings.Contains(tag, "@include:") {
-				if exampleStart := strings.Index(tag, `@include:"`); exampleStart != -1 {
-					exampleStart += len(`@include:"`)
+			if strings.Contains(tag, "oapiinclude:") {
+				if exampleStart := strings.Index(tag, `oapiinclude:"`); exampleStart != -1 {
+					exampleStart += len(`oapiinclude:"`)
 					exampleEnd := strings.Index(tag[exampleStart:], `"`)
 					if exampleEnd != -1 {
 						example := tag[exampleStart : exampleStart+exampleEnd]
