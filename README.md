@@ -1,3 +1,4 @@
+```markdown
 # contenox/runtime: GenAI Orchestration Runtime
 
 ![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)
@@ -5,7 +6,11 @@
 
 **contenox/runtime** is an open-source runtime for orchestrating generative AI workflows. It treats AI workflows as state machines, enabling:
 
-✅ **Declarative workflow definition** ✅ **Built-in state management** ✅ **Vendor-agnostic execution** ✅ **Observability with passion** ✅ **Made with Go with intensive load**
+✅ **Declarative workflow definition**
+✅ **Built-in state management**
+✅ **Vendor-agnostic execution**
+✅ **Observability with passion**
+✅ **Made with Go for intensive load**
 
 ## ⚡ Get Started in 3 Minutes
 
@@ -53,7 +58,7 @@ curl -X POST http://localhost:8081/backend-associations/internal_embed_pool/back
 EMBED_MODEL="nomic-embed-text:latest"
 TASK_MODEL="qwen3:4b"
 
-echo "⏳ Downloading models (2-5 minutes)..."
+echo "⏳ Downloading models (2–5 minutes)..."
 while true; do
   STATUS=$(curl -s http://localhost:8081/backends/$BACKEND_ID)
 
@@ -69,13 +74,13 @@ done
 
 ### 5. Execute Your First Prompt
 ```bash
-curl -X POST http://localhost:8081/execute -H "Content-Type: application/json" -d '{
-    "prompt": "Explain quantum computing"
-  }'
+curl -X POST http://localhost:8081/execute \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Explain quantum computing"}'
 ```
 
 ### 6. Create a Tasks-Chain Workflow
-# save as qa.json
+# Save as `qa.json`
 ```json
 {
   "input": "What's the best way to optimize database queries?",
@@ -107,7 +112,7 @@ Execute the workflow:
 ```bash
 curl -X POST http://localhost:8081/tasks \
   -H "Content-Type: application/json" \
-  -d @qa.json.json
+  -d @qa.json
 ```
 
 ## ✨ Key Features
@@ -120,11 +125,11 @@ curl -X POST http://localhost:8081/tasks \
   - `parse_range`: Handle score ranges
   - `raw_string`: Standard text generation
   - `embedding`: Embedding generation
-  - `model_execution`: Model execution on a chat-history
-  - `hook`: Calls a user-defined hook pointing to a external service
+  - `model_execution`: Model execution on a chat history
+  - `hook`: Calls a user-defined hook pointing to an external service
 - **Context Preservation**: Automatic input/output passing between steps
 
-### Multi-Backend Support
+### Multi-Provider Support
 ```mermaid
 graph LR
     A[Workflow] --> B(Ollama)
@@ -136,37 +141,18 @@ graph LR
 - **Unified Interface**: Consistent API across providers
 - **Automatic Sync**: Models stay consistent across backends
 - **Pool Management**: Assign backends to specific task types
-- **Load Balancing**: Distribute requests to the backends based via resolution policies
+- **Backend Resolver**: Distribute requests to backends based on resolution policies
+
 ## 🧩 Extensibility
 
 ### Custom Hooks
-Hooks are external servers that are callable withi the taskschains if registered. TODO: point to the documentation.
+Hooks are external servers that can be called from within task chains when registered.
+[🔗 See Hook Documentation](./docs/hooks.md) *(TODO: link to actual documentation)*
 
-### Hybrid Deployments
-```mermaid
-graph TB
-    Cloud[Cloud LLMs] -->|Complex tasks| Runtime
-    OnPrem[On-Prem LLMs] -->|Sensitive data| Runtime
+## 📘 API Documentation
+
+The full API surface is defined in OpenAPI format:
+
+- 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)
+
 ```
-
-
-_____
-
-
-TODO WRITE THESE:
-## 📚 Documentation
-- [API Reference](docs/api.md)
-- [Workflow Specification](docs/workflow-spec.md)
-- [Backend Management](docs/backends.md)
-- [Handler Library](docs/handlers.md)
-
-TODO SETUP THESE:
-## 🚀 Getting Help
-Join our community for support:
-- [GitHub Discussions](https://github.com/contenox/runtime/discussions)
-- [Discord Channel](https://discord.gg/contenox)
-
-## 🤝 Contributing
-We welcome contributions! Please see our:
-- [Contribution Guide](CONTRIBUTING.md)
-- [Good First Issues](https://github.com/contenox/runtime/contribute)
