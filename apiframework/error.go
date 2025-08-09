@@ -8,6 +8,7 @@ import (
 
 	libauth "github.com/contenox/authz"
 	libdb "github.com/contenox/dbexec"
+	"github.com/contenox/runtime/runtimetypes"
 )
 
 var (
@@ -166,6 +167,12 @@ func mapErrorToStatus(op Operation, err error) int {
 		errors.Is(err, libdb.ErrLockNotAvailable) ||
 		errors.Is(err, libdb.ErrQueryCanceled) { // Could be client cancel or server issue
 		return http.StatusConflict // 409 (Maybe 503 Service Unavailable for some?)
+	}
+	if errors.Is(err, runtimetypes.ErrLimitParamExceeded) {
+		return http.StatusBadRequest // data-count limit reached scenario
+	}
+	if errors.Is(err, runtimetypes.ErrAppendLimitExceeded) {
+		return http.StatusBadRequest // data-count limit reached scenario
 	}
 
 	// --- JSON Handling Errors ---

@@ -87,7 +87,9 @@ func (s *store) ListKV(ctx context.Context, createdAtCursor *time.Time, limit in
 	if createdAtCursor != nil {
 		cursor = *createdAtCursor
 	}
-
+	if limit > MAXLIMIT {
+		return nil, ErrLimitParamExceeded
+	}
 	rows, err := s.Exec.QueryContext(ctx, `
         SELECT key, value, created_at, updated_at
         FROM kv

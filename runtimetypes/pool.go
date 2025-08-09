@@ -114,7 +114,9 @@ func (s *store) ListPools(ctx context.Context, createdAtCursor *time.Time, limit
 	if createdAtCursor != nil {
 		cursor = *createdAtCursor
 	}
-
+	if limit > MAXLIMIT {
+		return nil, ErrLimitParamExceeded
+	}
 	rows, err := s.Exec.QueryContext(ctx, `
         SELECT id, name, purpose_type, created_at, updated_at
         FROM llm_pool

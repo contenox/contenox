@@ -130,7 +130,9 @@ func (s *store) ListBackends(ctx context.Context, createdAtCursor *time.Time, li
 	if createdAtCursor != nil {
 		cursor = *createdAtCursor
 	}
-
+	if limit > MAXLIMIT {
+		return nil, ErrLimitParamExceeded
+	}
 	rows, err := s.Exec.QueryContext(ctx, `
         SELECT id, name, base_url, type, created_at, updated_at
         FROM llm_backends

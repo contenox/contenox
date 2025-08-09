@@ -14,6 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const MAXLIMIT = 1000
+
+var ErrLimitParamExceeded = fmt.Errorf("limit exceeds maximum allowed value")
+var ErrAppendLimitExceeded = fmt.Errorf("append limit exceeds maximum allowed values")
+
 type Status struct {
 	Status    string `json:"status"`
 	Digest    string `json:"digest,omitempty"`

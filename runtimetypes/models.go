@@ -140,7 +140,9 @@ func (s *store) ListModels(ctx context.Context, createdAtCursor *time.Time, limi
 	if createdAtCursor != nil {
 		cursor = *createdAtCursor
 	}
-
+	if limit > MAXLIMIT {
+		return nil, ErrLimitParamExceeded
+	}
 	rows, err := s.Exec.QueryContext(ctx, `
         SELECT id, model, context_length, can_chat, can_embed, can_prompt, can_stream, created_at, updated_at
         FROM ollama_models

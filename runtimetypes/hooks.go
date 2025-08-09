@@ -112,6 +112,9 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 	if createdAtCursor != nil {
 		cursor = *createdAtCursor
 	}
+	if limit > MAXLIMIT {
+		return nil, ErrLimitParamExceeded
+	}
 
 	rows, err := s.Exec.QueryContext(ctx, `
         SELECT id, name, endpoint_url, method, timeout_ms, created_at, updated_at

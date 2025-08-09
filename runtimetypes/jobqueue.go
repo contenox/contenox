@@ -32,7 +32,9 @@ func (s *store) AppendJobs(ctx context.Context, jobs ...*Job) error {
 	if len(jobs) == 0 {
 		return nil
 	}
-
+	if len(jobs) > MAXLIMIT {
+		return ErrAppendLimitExceeded
+	}
 	now := time.Now().UTC()
 	valueStrings := make([]string, 0, len(jobs))
 	valueArgs := make([]interface{}, 0, len(jobs)*7)

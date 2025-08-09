@@ -8,14 +8,24 @@
 ✅ **Declarative workflow definition**
 ✅ **Built-in state management**
 ✅ **Vendor-agnostic execution**
+✅ **Multi-backend orchestration**
 ✅ **Observability with passion**
 ✅ **Made with Go for intensive load**
+✅ **Build Agentic capabilities via Hooks**
 
 
 This is the core for the [contenox](https://github.com/contenox) ecosystem.
 
 ## ⚡ Get Started in 3 Minutes
 
+Startup flow:
+- Launch runtime services via Docker
+- Register one or more model backends
+- Assign each backend to the relevant execution pools
+- Pull required models to the backends
+- Execute a workflow and observe the logs
+
+See first workflow runs in under 5 minutes:
 ### Prerequisites
 - Docker and Docker Compose
 - `curl` and `jq` (for CLI examples)
@@ -33,7 +43,7 @@ This starts the complete environment:
 - Ollama (port 11435)
 - Postgres, NATS, Valkey, and tokenizer services
 
-### 2. Register Your Ollama Backend
+### 2. Register Ollama Backends
 ```bash
 BACKEND_ID=$(curl -s -X POST http://localhost:8081/backends \
   -H "Content-Type: application/json" \
@@ -74,7 +84,7 @@ while true; do
 done
 ```
 
-### 5. Execute Your First Prompt
+### 5. Execute a Prompt
 ```bash
 curl -X POST http://localhost:8081/execute \
   -H "Content-Type: application/json" \
@@ -117,6 +127,15 @@ curl -X POST http://localhost:8081/tasks \
   -d @qa.json
 ```
 
+All runtime activity is captured in structured logs, providing deep observability into workflows and system behavior.
+
+Logs can be viewed using Docker:
+```bash
+docker logs contenox-runtime-kernel
+```
+
+Logs, Metrics and Request-Traces are also pushed to valkey.
+
 ## ✨ Key Features
 
 ### State Machine Engine
@@ -130,8 +149,14 @@ curl -X POST http://localhost:8081/tasks \
   - `model_execution`: Model execution on a chat history
   - `hook`: Calls a user-defined hook pointing to an external service
 - **Context Preservation**: Automatic input/output passing between steps
+- **Multi-Model Support**: Define preferred Models for each Chain-Task.
+- **Conditional Branching**: Logical operators to route execution based on LLM outputs.
+- **Retry and Timeout**: Configure task-level retries and timeouts for robust workflows.
 
 ### Multi-Provider Support
+
+Define preferred model provider and backend resolution policy directly within task chains. This allows for seamless, dynamic orchestration across various LLM providers.
+
 ```mermaid
 graph LR
     A[Workflow] --> B(Ollama)
@@ -149,13 +174,14 @@ graph LR
 
 ### Custom Hooks
 Hooks are external servers that can be called from within task chains when registered.
+They allow to interact with systems and data outside of the runtime and Tasks-Chains itself.
 [🔗 See Hook Documentation](./docs/hooks.md)
 
 ## 📘 API Documentation
 
-🔗 [API Reference Documentation](./docs/api-reference.md)
+The full API surface is thoroughly documented and defined in the OpenAPI format, making it easy to integrate with other tools. You can find more details here:
 
-The full API surface is defined in OpenAPI format:
+- 🔗 [API Reference Documentation](./docs/api-reference.md)
 - 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)
 
 Also review the [tests](./apitests) for context to the API documentation.
