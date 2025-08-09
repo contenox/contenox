@@ -147,7 +147,7 @@ graph LR
 
 ### Custom Hooks
 Hooks are external servers that can be called from within task chains when registered.
-[🔗 See Hook Documentation](./docs/hooks.md) *(TODO: link to actual documentation)*
+[🔗 See Hook Documentation](./docs/hooks.md)
 
 ## 📘 API Documentation
 

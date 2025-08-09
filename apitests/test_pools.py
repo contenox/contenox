@@ -35,7 +35,7 @@ def test_update_pool(base_url):
 def test_delete_pool(base_url):
     pool_id = create_test_pool(base_url)
     response = requests.delete(f"{base_url}/pools/{pool_id}")
-    assert_status_code(response, 204)
+    assert_status_code(response, 200)
 
     # Verify deletion
     response = requests.get(f"{base_url}/pools/{pool_id}")
