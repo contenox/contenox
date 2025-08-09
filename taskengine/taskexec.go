@@ -602,7 +602,7 @@ func (exe *SimpleExec) condition(ctx context.Context, resolver llmresolver.Polic
 		}
 	}
 	if !found {
-		return false, fmt.Errorf("failed to parse into valid condition output was %s", response)
+		return false, fmt.Errorf("failed to parse into valid condition output was: %s prompt was: %s", response, prompt)
 	}
 	for key, val := range validConditions {
 		if strings.EqualFold(response, key) {

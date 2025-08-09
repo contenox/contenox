@@ -121,39 +121,6 @@ func (dt *DataType) UnmarshalYAML(data []byte) error {
 	return nil
 }
 
-// TriggerType defines the type of trigger that starts a chain.
-type TriggerType string
-
-const (
-	// TriggerManual means the chain must be started manually via API or UI.
-	TriggerManual TriggerType = "manual"
-
-	// TriggerKeyword starts the chain if input matches a specific keyword.
-	TriggerKeyword TriggerType = "keyword"
-
-	// TriggerSemantic starts the chain based on semantic similarity (e.g., embeddings).
-	TriggerSemantic TriggerType = "embedding"
-
-	// TriggerEvent starts the chain in response to an external event or webhook.
-	TriggerEvent TriggerType = "webhook"
-)
-
-func (t TriggerType) String() string {
-	return string(t)
-}
-
-// Trigger defines how and when a chain should be started.
-type Trigger struct {
-	// Type specifies the trigger mode (manual, keyword, etc.).
-	Type TriggerType `yaml:"type" json:"type"`
-
-	// Description is a human-readable explanation of the trigger.
-	Description string `yaml:"description" json:"description"`
-
-	// Pattern is used for matching input in keyword or event triggers.
-	Pattern string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
-}
-
 // TaskTransition defines what happens after a task completes,
 // including which task to go to next and how to handle errors.
 type TaskTransition struct {
@@ -366,15 +333,6 @@ type ComposeTask struct {
 	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
 }
 
-// ChainWithTrigger is a convenience struct that combines triggers and chain definition.
-type ChainWithTrigger struct {
-	// Triggers defines when the chain should be started.
-	Triggers []Trigger `yaml:"triggers,omitempty" json:"triggers,omitempty"`
-
-	// ChainDefinition contains the actual task sequence.
-	ChainDefinition
-}
-
 type ChainTerms string
 
 const (
@@ -386,60 +344,6 @@ const (
 //
 // ChainDefinition support dynamic routing based on LLM outputs or conditions,
 // and can include hooks to perform external actions (e.g., sending emails).
-//
-// Example usage:
-//
-// Define a YAML chain:
-//
-//	chains/article.yaml:
-//	  id: article-generator
-//	  description: Generates articles based on topic and length
-//	  triggers:
-//	    - type: manual
-//	      description: Run manually via API
-//	  tasks:
-//	    - id: get_length
-//	      handler: parse_number
-//	      prompt_template: "How many words should the article be?"
-//	      transition:
-//	        branches:
-//	          - when: "default"
-//	            goto: generate_article
-//
-//	    - id: generate_article
-//	      handler: raw_string
-//	      prompt_template: "Write a {{ .get_length }}-word article about {{ .input }}"
-//	      print: "Generated article:\n{{ .previous_output }}"
-//	      transition:
-//	        branches:
-//	          - when: "default"
-//	            goto: end
-//
-//	    - id: end
-//	      handler: raw_string
-//	      prompt_template: "{{ .generate_article }}"
-//
-// Parse and execute it:
-//
-//	file, err := os.Open("chains/article.yaml")
-//	if err != nil {
-//	    log.Fatalf("failed to open YAML: %v", err)
-//	}
-//	defer file.Close()
-//
-//	var chainDef taskengine.ChainDefinition
-//	if err := yaml.NewDecoder(file).Decode(&chainDef); err != nil {
-//	    log.Fatalf("failed to parse YAML: %v", err)
-//	}
-//
-//	exec, _ := taskengine.NewExec(ctx, modelRepo, hookProvider)
-//	env, _ := taskengine.NewEnv(ctx, tracker, exec)
-//	output, err := env.ExecEnv(ctx, &chainDef, userInput, taskengine.DataTypeString)
-//	if err != nil {
-//	    log.Fatalf("execution failed: %v", err)
-//	}
-//
-//	fmt.Println("Final output:", output)
 type ChainDefinition struct {
 	// ID uniquely identifies the chain.
 	ID string `yaml:"id" json:"id"`

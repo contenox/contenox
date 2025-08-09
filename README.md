@@ -17,6 +17,7 @@
 ```bash
 git clone https://github.com/contenox/runtime.git
 cd runtime
+docker compose build
 docker compose up -d
 ```
 
@@ -68,58 +69,45 @@ done
 
 ### 5. Execute Your First Prompt
 ```bash
-curl -X POST http://localhost:8081/execute \
-  -H "Content-Type: application/json" \
-  -d '{
-    "prompt": "Explain quantum computing like I'm five"
+curl -X POST http://localhost:8081/execute -H "Content-Type: application/json" -d '{
+    "prompt": "Explain quantum computing"
   }'
 ```
 
 ### 6. Create a Tasks-Chain Workflow
-```yaml
-# save as sky_question.yaml
-input: "Is the sky blue?"
-inputType: string
-chain:
-  id: sky-color-verification
-  tasks:
-    - id: validate
-      handler: condition_key
-      validConditions:
-        valid: true
-        invalid: true
-      promptTemplate: |
-        Is this a valid question? {{.input}}
-        Respond exactly with either "valid" or "invalid"
-      transition:
-        branches:
-          - when: valid
-            goto: answer
-          - when: invalid
-            goto: reject
-
-    - id: answer
-      handler: raw_string
-      promptTemplate: Answer this question: {{.input}}
-      transition:
-        branches:
-          - operator: default
-            goto: end
-
-    - id: reject
-      handler: raw_string
-      promptTemplate: This is not a valid question: {{.input}}
-      transition:
-        branches:
-          - operator: default
-            goto: end
+# save as qa.json
+```json
+{
+  "input": "What's the best way to optimize database queries?",
+  "inputType": "string",
+  "chain": {
+    "id": "smart-query-assistant",
+    "description": "Handles technical questions",
+    "tasks": [
+      {
+        "id": "generate_response",
+        "description": "Generate final answer",
+        "handler": "raw_string",
+        "systemInstruction": "You're a senior engineer. Provide concise, professional answers to technical questions.",
+        "transition": {
+          "branches": [
+            {
+              "operator": "default",
+              "goto": "end"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
 ```
 
 Execute the workflow:
 ```bash
 curl -X POST http://localhost:8081/tasks \
   -H "Content-Type: application/json" \
-  -d @sky_question.yaml
+  -d @qa.json.json
 ```
 
 ## ✨ Key Features
