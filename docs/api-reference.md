@@ -272,7 +272,7 @@ for request processing even if they appear in this response.
   {
     "apiKey": "string",
     "backend": {},
-    "error,omitempty": "string",
+    "error": "string",
     "id": "backend1",
     "models": [
       "string"
@@ -1581,33 +1581,7 @@ If pools are enabled, models and backends not assigned to any pool will be compl
 
 ```json
 {
-  "chain": [
-    {
-      "debug": true,
-      "description": "string",
-      "id": "string",
-      "routing_strategy": "string",
-      "tasks": [
-        {
-          "compose,omitempty": {},
-          "description": "string",
-          "execute_config,omitempty": {},
-          "handler": {},
-          "hook,omitempty": {},
-          "id": "string",
-          "input_var,omitempty": "string",
-          "print,omitempty": "string",
-          "prompt_template": "string",
-          "retry_on_failure,omitempty": 0,
-          "system_instruction,omitempty": "string",
-          "timeout,omitempty": "string",
-          "transition": {},
-          "valid_conditions,omitempty": {}
-        }
-      ],
-      "token_limit": 0
-    }
-  ],
+  "chain": null,
   "input": {},
   "inputType": "string"
 }
@@ -1669,7 +1643,7 @@ X-API-Key
   {
     "baseUrl": "http://localhost:11434",
     "createdAt": "2023-01-01T00:00:00Z",
-    "error,omitempty": "error-message",
+    "error": "error-message",
     "id": "backend-id",
     "models": [
       "string"
@@ -1742,7 +1716,7 @@ X-API-Key
   {
     "apiKey": "string",
     "backend": {},
-    "error,omitempty": "string",
+    "error": "string",
     "id": "backend1",
     "models": [
       "string"
@@ -1952,8 +1926,8 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|data|[[backendapi_OpenAIModel](#schemabackendapi_openaimodel)]|false|none|none|
-|object|string|false|none|none|
+|data|[[backendapi_OpenAIModel](#schemabackendapi_openaimodel)]|true|none|none|
+|object|string|true|none|none|
 
 <h2 id="tocS_backendapi_OpenAIModel">backendapi_OpenAIModel</h2>
 <!-- backwards compatibility -->
@@ -1976,10 +1950,10 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|created|integer|false|none|none|
-|id|string|false|none|none|
-|object|string|false|none|none|
-|owned_by|string|false|none|none|
+|created|integer|true|none|none|
+|id|string|true|none|none|
+|object|string|true|none|none|
+|owned_by|string|true|none|none|
 
 <h2 id="tocS_backendapi_respBackend">backendapi_respBackend</h2>
 <!-- backwards compatibility -->
@@ -1992,7 +1966,7 @@ X-API-Key
 {
   "baseUrl": "string",
   "createdAt": "2019-08-24T14:15:22Z",
-  "error,omitempty": "string",
+  "error": "string",
   "id": "string",
   "models": [
     "string"
@@ -2023,15 +1997,15 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|baseUrl|string|false|none|none|
-|createdAt|string(date-time)|false|none|none|
-|error,omitempty|string|false|none|none|
-|id|string|false|none|none|
-|models|[string]|false|none|none|
-|name|string|false|none|none|
-|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|false|none|none|
-|type|string|false|none|none|
-|updatedAt|string(date-time)|false|none|none|
+|baseUrl|string|true|none|none|
+|createdAt|string(date-time)|true|none|none|
+|error|string|false|none|none|
+|id|string|true|none|none|
+|models|[string]|true|none|none|
+|name|string|true|none|none|
+|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|true|none|none|
+|type|string|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_backendapi_respBackendList">backendapi_respBackendList</h2>
 <!-- backwards compatibility -->
@@ -2044,7 +2018,7 @@ X-API-Key
 {
   "baseUrl": "http://localhost:11434",
   "createdAt": "2023-01-01T00:00:00Z",
-  "error,omitempty": "error-message",
+  "error": "error-message",
   "id": "backend-id",
   "models": [
     "string"
@@ -2075,15 +2049,15 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|baseUrl|string|false|none|none|
-|createdAt|string(date-time)|false|none|none|
-|error,omitempty|string|false|none|none|
-|id|string|false|none|none|
-|models|[string]|false|none|none|
-|name|string|false|none|none|
-|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|false|none|none|
-|type|string|false|none|none|
-|updatedAt|string(date-time)|false|none|none|
+|baseUrl|string|true|none|none|
+|createdAt|string(date-time)|true|none|none|
+|error|string|false|none|none|
+|id|string|true|none|none|
+|models|[string]|true|none|none|
+|name|string|true|none|none|
+|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|true|none|none|
+|type|string|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_downloadservice_Job">downloadservice_Job</h2>
 <!-- backwards compatibility -->
@@ -2108,12 +2082,12 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|createdAt|string(date-time)|false|none|none|
-|id|string|false|none|none|
-|modelJob|object|false|none|none|
-|scheduledFor|integer|false|none|none|
-|taskType|string|false|none|none|
-|validUntil|integer|false|none|none|
+|createdAt|string(date-time)|true|none|none|
+|id|string|true|none|none|
+|modelJob|object|true|none|none|
+|scheduledFor|integer|true|none|none|
+|taskType|string|true|none|none|
+|validUntil|integer|true|none|none|
 
 <h2 id="tocS_execapi_DefaultModelResponse">execapi_DefaultModelResponse</h2>
 <!-- backwards compatibility -->
@@ -2133,7 +2107,7 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|modelName|string|false|none|none|
+|modelName|string|true|none|none|
 
 <h2 id="tocS_execapi_EmbedRequest">execapi_EmbedRequest</h2>
 <!-- backwards compatibility -->
@@ -2153,7 +2127,7 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|text|string|false|none|none|
+|text|string|true|none|none|
 
 <h2 id="tocS_execapi_EmbedResponse">execapi_EmbedResponse</h2>
 <!-- backwards compatibility -->
@@ -2173,7 +2147,7 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|vector|[number]|false|none|none|
+|vector|[number]|true|none|none|
 
 <h2 id="tocS_execapi_taskExec">execapi_taskExec</h2>
 <!-- backwards compatibility -->
@@ -2184,33 +2158,7 @@ X-API-Key
 
 ```json
 {
-  "chain": [
-    {
-      "debug": true,
-      "description": "string",
-      "id": "string",
-      "routing_strategy": "string",
-      "tasks": [
-        {
-          "compose,omitempty": {},
-          "description": "string",
-          "execute_config,omitempty": {},
-          "handler": {},
-          "hook,omitempty": {},
-          "id": "string",
-          "input_var,omitempty": "string",
-          "print,omitempty": "string",
-          "prompt_template": "string",
-          "retry_on_failure,omitempty": 0,
-          "system_instruction,omitempty": "string",
-          "timeout,omitempty": "string",
-          "transition": {},
-          "valid_conditions,omitempty": {}
-        }
-      ],
-      "token_limit": 0
-    }
-  ],
+  "chain": null,
   "input": {},
   "inputType": "string"
 }
@@ -2221,9 +2169,9 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|chain|array|false|none|none|
-|input|object|false|none|none|
-|inputType|string|false|none|none|
+|chain|any|true|none|none|
+|input|object|true|none|none|
+|inputType|string|true|none|none|
 
 <h2 id="tocS_execapi_taskResponse">execapi_taskResponse</h2>
 <!-- backwards compatibility -->
@@ -2257,9 +2205,9 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|output|object|false|none|none|
-|outputType|string|false|none|none|
-|state|[[taskengine_CapturedStateUnit](#schemataskengine_capturedstateunit)]|false|none|none|
+|output|object|true|none|none|
+|outputType|string|true|none|none|
+|state|[[taskengine_CapturedStateUnit](#schemataskengine_capturedstateunit)]|true|none|none|
 
 <h2 id="tocS_execservice_TaskRequest">execservice_TaskRequest</h2>
 <!-- backwards compatibility -->
@@ -2279,7 +2227,7 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|prompt|string|false|none|none|
+|prompt|string|true|none|none|
 
 <h2 id="tocS_execservice_TaskResponse">execservice_TaskResponse</h2>
 <!-- backwards compatibility -->
@@ -2300,8 +2248,8 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|id|string|false|none|none|
-|response|string|false|none|none|
+|id|string|true|none|none|
+|response|string|true|none|none|
 
 <h2 id="tocS_runtimestate_LLMState">runtimestate_LLMState</h2>
 <!-- backwards compatibility -->
@@ -2314,7 +2262,7 @@ X-API-Key
 {
   "apiKey": "string",
   "backend": {},
-  "error,omitempty": "string",
+  "error": "string",
   "id": "backend1",
   "models": [
     "string"
@@ -2344,12 +2292,12 @@ X-API-Key
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |apiKey|string|false|none|APIKey stores the API key used for authentication with the backend.|
-|backend|object|false|none|none|
-|error,omitempty|string|false|none|Error stores a description of the last encountered error when<br>interacting with or reconciling this backend's state, if any.|
-|id|string|false|none|none|
-|models|[string]|false|none|none|
-|name|string|false|none|none|
-|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|false|none|none|
+|backend|object|true|none|none|
+|error|string|false|none|Error stores a description of the last encountered error when<br>interacting with or reconciling this backend's state, if any.|
+|id|string|true|none|none|
+|models|[string]|true|none|none|
+|name|string|true|none|none|
+|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|true|none|none|
 
 <h2 id="tocS_runtimestate_ListModelResponse">runtimestate_ListModelResponse</h2>
 <!-- backwards compatibility -->
@@ -2379,17 +2327,17 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|canChat|boolean|false|none|none|
-|canEmbed|boolean|false|none|none|
-|canPrompt|boolean|false|none|none|
-|canStream|boolean|false|none|none|
-|contextLength|integer|false|none|none|
-|details|object|false|none|none|
-|digest|string|false|none|none|
-|model|string|false|none|none|
-|modifiedAt|string(date-time)|false|none|none|
-|name|string|false|none|none|
-|size|integer|false|none|none|
+|canChat|boolean|true|none|none|
+|canEmbed|boolean|true|none|none|
+|canPrompt|boolean|true|none|none|
+|canStream|boolean|true|none|none|
+|contextLength|integer|true|none|none|
+|details|object|true|none|none|
+|digest|string|true|none|none|
+|model|string|true|none|none|
+|modifiedAt|string(date-time)|true|none|none|
+|name|string|true|none|none|
+|size|integer|true|none|none|
 
 <h2 id="tocS_runtimestate_ProviderConfig">runtimestate_ProviderConfig</h2>
 <!-- backwards compatibility -->
@@ -2436,12 +2384,12 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|baseUrl|string|false|none|none|
-|createdAt|string(date-time)|false|none|none|
-|id|string|false|none|none|
-|name|string|false|none|none|
-|type|string|false|none|none|
-|updatedAt|string(date-time)|false|none|none|
+|baseUrl|string|true|none|none|
+|createdAt|string(date-time)|true|none|none|
+|id|string|true|none|none|
+|name|string|true|none|none|
+|type|string|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_runtimetypes_Model">runtimetypes_Model</h2>
 <!-- backwards compatibility -->
@@ -2469,15 +2417,15 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|canChat|boolean|false|none|none|
-|canEmbed|boolean|false|none|none|
-|canPrompt|boolean|false|none|TODO: Implement the forms for this|
-|canStream|boolean|false|none|none|
-|contextLength|integer|false|none|none|
-|createdAt|string(date-time)|false|none|none|
-|id|string|false|none|none|
-|model|string|false|none|none|
-|updatedAt|string(date-time)|false|none|none|
+|canChat|boolean|true|none|none|
+|canEmbed|boolean|true|none|none|
+|canPrompt|boolean|true|none|TODO: Implement the forms for this|
+|canStream|boolean|true|none|none|
+|contextLength|integer|true|none|none|
+|createdAt|string(date-time)|true|none|none|
+|id|string|true|none|none|
+|model|string|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_runtimetypes_Pool">runtimetypes_Pool</h2>
 <!-- backwards compatibility -->
@@ -2501,11 +2449,11 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|createdAt|string(date-time)|false|none|none|
-|id|string|false|none|none|
-|name|string|false|none|none|
-|purposeType|string|false|none|none|
-|updatedAt|string(date-time)|false|none|none|
+|createdAt|string(date-time)|true|none|none|
+|id|string|true|none|none|
+|name|string|true|none|none|
+|purposeType|string|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_runtimetypes_RemoteHook">runtimetypes_RemoteHook</h2>
 <!-- backwards compatibility -->
@@ -2531,13 +2479,13 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|createdAt|string(date-time)|false|none|none|
-|endpointUrl|string|false|none|none|
-|id|string|false|none|none|
-|method|string|false|none|none|
-|name|string|false|none|none|
-|timeoutMs|integer|false|none|none|
-|updatedAt|string(date-time)|false|none|none|
+|createdAt|string(date-time)|true|none|none|
+|endpointUrl|string|true|none|none|
+|id|string|true|none|none|
+|method|string|true|none|none|
+|name|string|true|none|none|
+|timeoutMs|integer|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_taskengine_CapturedStateUnit">taskengine_CapturedStateUnit</h2>
 <!-- backwards compatibility -->
@@ -2565,106 +2513,13 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|duration|object|false|none|none|
-|error|object|false|none|none|
-|input|string|false|none|none|
-|inputType|object|false|none|none|
-|output|string|false|none|none|
-|outputType|object|false|none|none|
-|taskHandler|string|false|none|none|
-|taskID|string|false|none|none|
-|transition|string|false|none|none|
-
-<h2 id="tocS_taskengine_ChainDefinition">taskengine_ChainDefinition</h2>
-<!-- backwards compatibility -->
-<a id="schemataskengine_chaindefinition"></a>
-<a id="schema_taskengine_ChainDefinition"></a>
-<a id="tocStaskengine_chaindefinition"></a>
-<a id="tocstaskengine_chaindefinition"></a>
-
-```json
-{
-  "debug": true,
-  "description": "string",
-  "id": "string",
-  "routing_strategy": "string",
-  "tasks": [
-    {
-      "compose,omitempty": {},
-      "description": "string",
-      "execute_config,omitempty": {},
-      "handler": {},
-      "hook,omitempty": {},
-      "id": "string",
-      "input_var,omitempty": "string",
-      "print,omitempty": "string",
-      "prompt_template": "string",
-      "retry_on_failure,omitempty": 0,
-      "system_instruction,omitempty": "string",
-      "timeout,omitempty": "string",
-      "transition": {},
-      "valid_conditions,omitempty": {}
-    }
-  ],
-  "token_limit": 0
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|debug|boolean|false|none|Enables capturing user input and output.|
-|description|string|false|none|Description provides a human-readable summary of the chain's purpose.|
-|id|string|false|none|ID uniquely identifies the chain.|
-|routing_strategy|string|false|none|RoutingStrategy defines how transitions should be evaluated (optional).|
-|tasks|[[taskengine_ChainTask](#schemataskengine_chaintask)]|false|none|Tasks is the list of tasks to execute in sequence.|
-|token_limit|integer|false|none|TokenLimit is the token limit for the context window (used during execution).|
-
-<h2 id="tocS_taskengine_ChainTask">taskengine_ChainTask</h2>
-<!-- backwards compatibility -->
-<a id="schemataskengine_chaintask"></a>
-<a id="schema_taskengine_ChainTask"></a>
-<a id="tocStaskengine_chaintask"></a>
-<a id="tocstaskengine_chaintask"></a>
-
-```json
-{
-  "compose,omitempty": {},
-  "description": "string",
-  "execute_config,omitempty": {},
-  "handler": {},
-  "hook,omitempty": {},
-  "id": "string",
-  "input_var,omitempty": "string",
-  "print,omitempty": "string",
-  "prompt_template": "string",
-  "retry_on_failure,omitempty": 0,
-  "system_instruction,omitempty": "string",
-  "timeout,omitempty": "string",
-  "transition": {},
-  "valid_conditions,omitempty": {}
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|compose,omitempty|object|false|none|Compose merges the specified the output with the withVar side.<br>Optional. compose is applied before the input reaches the task execution,|
-|description|string|false|none|Description is a human-readable summary of what the task does.|
-|execute_config,omitempty|object|false|none|ExecuteConfig defines the configuration for executing prompt or chat model tasks.|
-|handler|object|false|none|Handler determines how the LLM output (or hook) will be interpreted.|
-|hook,omitempty|object|false|none|Hook defines an external action to run.<br>Required for Hook tasks, must be nil/omitted for all other types.<br>Example: {type: "send_email", args: {"to": "user@example.com"}}|
-|id|string|false|none|ID uniquely identifies the task within the chain.|
-|input_var,omitempty|string|false|none|InputVar is the name of the variable to use as input for the task.<br>Example: "input" for the original input.<br>Each task stores its output in a variable named with it's task id.|
-|print,omitempty|string|false|none|Print optionally formats the output for display/logging.<br>Supports template variables from previous task outputs.<br>Optional for all task types except Hook where it's rarely used.<br>Example: "The score is: {{.previous_output}}"|
-|prompt_template|string|false|none|PromptTemplate is the text prompt sent to the LLM.<br>It's Required and only applicable for the raw_string type.<br>Supports template variables from previous task outputs.<br>Example: "Rate the quality from 1-10: {{.input}}"|
-|retry_on_failure,omitempty|integer|false|none|RetryOnFailure sets how many times to retry this task on failure.<br>Applies to all task types including Hooks.<br>Default: 0 (no retries)|
-|system_instruction,omitempty|string|false|none|SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.|
-|timeout,omitempty|string|false|none|Timeout optionally sets a timeout for task execution.<br>Format: "10s", "2m", "1h" etc.<br>Optional for all task types.|
-|transition|object|false|none|Transition defines what to do after this task completes.|
-|valid_conditions,omitempty|object|false|none|ValidConditions defines allowed values for ConditionKey tasks.<br>Required for ConditionKey tasks, ignored for all other types.<br>Example: {"yes": true, "no": true} for a yes/no condition.|
+|duration|object|true|none|none|
+|error|object|true|none|none|
+|input|string|true|none|none|
+|inputType|object|true|none|none|
+|output|string|true|none|none|
+|outputType|object|true|none|none|
+|taskHandler|string|true|none|none|
+|taskID|string|true|none|none|
+|transition|string|true|none|none|
 

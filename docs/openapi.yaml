@@ -45,6 +45,9 @@ components:
                 object:
                     example: list
                     type: string
+            required:
+                - object
+                - data
             type: object
         backendapi_OpenAIModel:
             properties:
@@ -60,6 +63,11 @@ components:
                 owned_by:
                     example: system
                     type: string
+            required:
+                - id
+                - object
+                - created
+                - owned_by
             type: object
         backendapi_respBackend:
             properties:
@@ -68,7 +76,7 @@ components:
                 createdAt:
                     format: date-time
                     type: string
-                error,omitempty:
+                error:
                     type: string
                 id:
                     type: string
@@ -87,6 +95,15 @@ components:
                 updatedAt:
                     format: date-time
                     type: string
+            required:
+                - id
+                - name
+                - baseUrl
+                - type
+                - models
+                - pulledModels
+                - createdAt
+                - updatedAt
             type: object
         backendapi_respBackendList:
             properties:
@@ -97,7 +114,7 @@ components:
                     example: "2023-01-01T00:00:00Z"
                     format: date-time
                     type: string
-                error,omitempty:
+                error:
                     example: error-message
                     type: string
                 id:
@@ -121,6 +138,15 @@ components:
                     example: "2023-01-01T00:00:00Z"
                     format: date-time
                     type: string
+            required:
+                - id
+                - name
+                - baseUrl
+                - type
+                - models
+                - pulledModels
+                - createdAt
+                - updatedAt
             type: object
         downloadservice_Job:
             properties:
@@ -137,18 +163,29 @@ components:
                     type: string
                 validUntil:
                     type: integer
+            required:
+                - id
+                - taskType
+                - modelJob
+                - scheduledFor
+                - validUntil
+                - createdAt
             type: object
         execapi_DefaultModelResponse:
             properties:
                 modelName:
                     example: mistral:latest
                     type: string
+            required:
+                - modelName
             type: object
         execapi_EmbedRequest:
             properties:
                 text:
                     example: Hello, world!
                     type: string
+            required:
+                - text
             type: object
         execapi_EmbedResponse:
             properties:
@@ -157,16 +194,20 @@ components:
                     items:
                         type: number
                     type: array
+            required:
+                - vector
             type: object
         execapi_taskExec:
             properties:
-                chain:
-                    items:
-                        $ref: '#/components/schemas/taskengine_ChainDefinition'
+                chain: {}
                 input:
                     type: object
                 inputType:
                     type: string
+            required:
+                - input
+                - inputType
+                - chain
             type: object
         execapi_taskResponse:
             properties:
@@ -178,12 +219,18 @@ components:
                     items:
                         $ref: '#/components/schemas/taskengine_CapturedStateUnit'
                     type: array
+            required:
+                - output
+                - outputType
+                - state
             type: object
         execservice_TaskRequest:
             properties:
                 prompt:
                     example: Hello, how are you?
                     type: string
+            required:
+                - prompt
             type: object
         execservice_TaskResponse:
             properties:
@@ -193,6 +240,9 @@ components:
                 response:
                     example: I'm doing well, thank you!
                     type: string
+            required:
+                - id
+                - response
             type: object
         runtimestate_LLMState:
             properties:
@@ -201,7 +251,7 @@ components:
                     type: string
                 backend:
                     type: object
-                error,omitempty:
+                error:
                     description: |-
                         Error stores a description of the last encountered error when
                         interacting with or reconciling this backend's state, if any.
@@ -220,6 +270,13 @@ components:
                     items:
                         $ref: '#/components/schemas/runtimestate_ListModelResponse'
                     type: array
+            required:
+                - id
+                - name
+                - models
+                - pulledModels
+                - backend
+                - ""
             type: object
         runtimestate_ListModelResponse:
             properties:
@@ -246,6 +303,18 @@ components:
                     type: string
                 size:
                     type: integer
+            required:
+                - name
+                - model
+                - modifiedAt
+                - size
+                - digest
+                - details
+                - contextLength
+                - canChat
+                - canEmbed
+                - canPrompt
+                - canStream
             type: object
         runtimestate_ProviderConfig:
             properties:
@@ -253,6 +322,9 @@ components:
                     type: string
                 Type:
                     type: string
+            required:
+                - ""
+                - ""
             type: object
         runtimetypes_Backend:
             properties:
@@ -270,6 +342,13 @@ components:
                 updatedAt:
                     format: date-time
                     type: string
+            required:
+                - id
+                - name
+                - baseUrl
+                - type
+                - createdAt
+                - updatedAt
             type: object
         runtimetypes_Model:
             properties:
@@ -294,6 +373,16 @@ components:
                 updatedAt:
                     format: date-time
                     type: string
+            required:
+                - id
+                - model
+                - contextLength
+                - canChat
+                - canEmbed
+                - canPrompt
+                - canStream
+                - createdAt
+                - updatedAt
             type: object
         runtimetypes_Pool:
             properties:
@@ -309,6 +398,12 @@ components:
                 updatedAt:
                     format: date-time
                     type: string
+            required:
+                - id
+                - name
+                - purposeType
+                - createdAt
+                - updatedAt
             type: object
         runtimetypes_RemoteHook:
             properties:
@@ -328,6 +423,14 @@ components:
                 updatedAt:
                     format: date-time
                     type: string
+            required:
+                - id
+                - name
+                - endpointUrl
+                - method
+                - timeoutMs
+                - createdAt
+                - updatedAt
             type: object
         taskengine_CapturedStateUnit:
             properties:
@@ -349,100 +452,16 @@ components:
                     type: string
                 transition:
                     type: string
-            type: object
-        taskengine_ChainDefinition:
-            properties:
-                debug:
-                    description: Enables capturing user input and output.
-                    type: boolean
-                description:
-                    description: Description provides a human-readable summary of the chain's purpose.
-                    type: string
-                id:
-                    description: ID uniquely identifies the chain.
-                    type: string
-                routing_strategy:
-                    description: RoutingStrategy defines how transitions should be evaluated (optional).
-                    type: string
-                tasks:
-                    description: Tasks is the list of tasks to execute in sequence.
-                    items:
-                        $ref: '#/components/schemas/taskengine_ChainTask'
-                    type: array
-                token_limit:
-                    description: TokenLimit is the token limit for the context window (used during execution).
-                    type: integer
-            type: object
-        taskengine_ChainTask:
-            properties:
-                compose,omitempty:
-                    description: |-
-                        Compose merges the specified the output with the withVar side.
-                        Optional. compose is applied before the input reaches the task execution,
-                    type: object
-                description:
-                    description: Description is a human-readable summary of what the task does.
-                    type: string
-                execute_config,omitempty:
-                    description: ExecuteConfig defines the configuration for executing prompt or chat model tasks.
-                    type: object
-                handler:
-                    description: Handler determines how the LLM output (or hook) will be interpreted.
-                    type: object
-                hook,omitempty:
-                    description: |-
-                        Hook defines an external action to run.
-                        Required for Hook tasks, must be nil/omitted for all other types.
-                        Example: {type: "send_email", args: {"to": "user@example.com"}}
-                    type: object
-                id:
-                    description: ID uniquely identifies the task within the chain.
-                    type: string
-                input_var,omitempty:
-                    description: |-
-                        InputVar is the name of the variable to use as input for the task.
-                        Example: "input" for the original input.
-                        Each task stores its output in a variable named with it's task id.
-                    type: string
-                print,omitempty:
-                    description: |-
-                        Print optionally formats the output for display/logging.
-                        Supports template variables from previous task outputs.
-                        Optional for all task types except Hook where it's rarely used.
-                        Example: "The score is: {{.previous_output}}"
-                    type: string
-                prompt_template:
-                    description: |-
-                        PromptTemplate is the text prompt sent to the LLM.
-                        It's Required and only applicable for the raw_string type.
-                        Supports template variables from previous task outputs.
-                        Example: "Rate the quality from 1-10: {{.input}}"
-                    type: string
-                retry_on_failure,omitempty:
-                    description: |-
-                        RetryOnFailure sets how many times to retry this task on failure.
-                        Applies to all task types including Hooks.
-                        Default: 0 (no retries)
-                    type: integer
-                system_instruction,omitempty:
-                    description: SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.
-                    type: string
-                timeout,omitempty:
-                    description: |-
-                        Timeout optionally sets a timeout for task execution.
-                        Format: "10s", "2m", "1h" etc.
-                        Optional for all task types.
-                    type: string
-                transition:
-                    description: Transition defines what to do after this task completes.
-                    type: object
-                valid_conditions,omitempty:
-                    additionalProperties: true
-                    description: |-
-                        ValidConditions defines allowed values for ConditionKey tasks.
-                        Required for ConditionKey tasks, ignored for all other types.
-                        Example: {"yes": true, "no": true} for a yes/no condition.
-                    type: object
+            required:
+                - taskID
+                - taskHandler
+                - inputType
+                - outputType
+                - transition
+                - duration
+                - error
+                - input
+                - output
             type: object
     securitySchemes:
         X-API-Key:

@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -620,13 +621,19 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 
 		// Process field tags to get JSON name
 		jsonTag := ""
+		isOmitempty := false
 		if field.Tag != nil {
 			tag := strings.Trim(field.Tag.Value, "`")
-			if tagParts := strings.Split(tag, " "); len(tagParts) > 0 {
-				if jsonParts := strings.Split(tagParts[0], ":"); len(jsonParts) > 1 {
-					jsonTag = strings.Trim(jsonParts[1], `"`)
+			if jsonTagVal, hasJson := reflect.StructTag(tag).Lookup("json"); hasJson {
+				parts := strings.Split(jsonTagVal, ",")
+				jsonTag = parts[0]
+				if len(parts) > 1 && parts[1] == "omitempty" {
+					isOmitempty = true
 				}
 			}
+		}
+		if !isOmitempty {
+			schema.Required = append(schema.Required, jsonTag)
 		}
 
 		// If no json tag, use field name
