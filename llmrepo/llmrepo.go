@@ -125,7 +125,7 @@ func (e *modelManager) GetRuntime(ctx context.Context) llmresolver.ProviderFromR
 
 func (e *modelManager) GetDefaultSystemProvider(ctx context.Context) (libmodelprovider.Provider, error) {
 	backends := map[string]runtimetypes.Backend{}
-
+	foundModel := runtimestate.ListModelResponse{}
 	for _, v := range e.runtime.Get(ctx) {
 		ok, err := e.backendIsInPool(ctx, v.Backend)
 		if err != nil {
@@ -136,6 +136,7 @@ func (e *modelManager) GetDefaultSystemProvider(ctx context.Context) (libmodelpr
 		}
 		for _, lmr := range v.PulledModels {
 			if lmr.Model == e.model.Model {
+				foundModel = lmr
 				backends[v.Backend.BaseURL] = v.Backend
 			}
 		}
@@ -149,10 +150,10 @@ func (e *modelManager) GetDefaultSystemProvider(ctx context.Context) (libmodelpr
 	}
 	provider := libmodelprovider.NewOllamaModelProvider(e.model.Model, results, http.DefaultClient,
 		libmodelprovider.CapabilityConfig{
-			CanPrompt:     e.prompt,
-			CanEmbed:      e.embed,
-			CanChat:       e.canChat,
-			ContextLength: e.contextLen,
+			CanPrompt:     foundModel.CanPrompt,
+			CanEmbed:      foundModel.CanEmbed,
+			CanChat:       foundModel.CanChat,
+			ContextLength: foundModel.ContextLength,
 		})
 	return provider, nil
 }
