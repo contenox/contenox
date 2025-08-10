@@ -1122,6 +1122,27 @@
         "summary": "update"
       }
     },
+    "/internal/models": {
+      "get": {
+        "description": "Lists all registered models in internal format.\nThis endpoint returns full model details including timestamps and capabilities.\nIntended for administrative and debugging purposes.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_*runtimetypes_Model"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "listInternal"
+      }
+    },
     "/model-associations/{modelID}/pools": {
       "get": {
         "description": "Lists all pools that a specific model belongs to.\nUseful for understanding where a model is deployed across the system.",
@@ -1292,7 +1313,7 @@
         "summary": "append"
       }
     },
-    "/models/{model}": {
+    "/models/{id}": {
       "delete": {
         "description": "Deletes a model from the system registry.\n- Does not remove the model from backend storage (requires separate backend operation)\n- Accepts 'purge=true' query parameter to also remove related downloads from queue",
         "responses": {
@@ -1315,13 +1336,42 @@
       "parameters": [
         {
           "in": "path",
-          "name": "model",
+          "name": "id",
           "required": true,
           "schema": {
             "type": "string"
           }
         }
-      ]
+      ],
+      "put": {
+        "description": "Updates an existing model registration.\nOnly mutable fields (like capabilities and context length) can be updated.\nThe model ID cannot be changed.\nReturns the updated model configuration.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_Model"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_Model"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "description": ""
+          }
+        },
+        "summary": "update"
+      }
     },
     "/pool-by-name/{name}": {
       "get": {

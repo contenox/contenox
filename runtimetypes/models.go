@@ -135,6 +135,44 @@ func (s *store) ListAllModels(ctx context.Context) ([]*Model, error) {
 	return models, nil
 }
 
+func (s *store) UpdateModel(ctx context.Context, data *Model) error {
+	now := time.Now().UTC()
+	data.UpdatedAt = now
+
+	// Validate required fields
+	if data.ContextLength <= 0 {
+		return fmt.Errorf("context length cannot be zero or negative")
+	}
+
+	// Update only the modifiable fields that exist in the table
+	result, err := s.Exec.ExecContext(ctx, `
+		UPDATE ollama_models
+		SET
+			model = $2,
+			context_length = $3,
+			can_chat = $4,
+			can_embed = $5,
+			can_prompt = $6,
+			can_stream = $7,
+			updated_at = $8
+		WHERE id = $1`,
+		data.ID,
+		data.Model,
+		data.ContextLength,
+		data.CanChat,
+		data.CanEmbed,
+		data.CanPrompt,
+		data.CanStream,
+		data.UpdatedAt,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update model: %w", err)
+	}
+
+	return checkRowsAffected(result)
+}
+
 func (s *store) ListModels(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Model, error) {
 	cursor := time.Now().UTC()
 	if createdAtCursor != nil {

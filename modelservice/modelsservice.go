@@ -20,6 +20,7 @@ type service struct {
 
 type Service interface {
 	Append(ctx context.Context, model *runtimetypes.Model) error
+	Update(ctx context.Context, data *runtimetypes.Model) error
 	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Model, error)
 	Delete(ctx context.Context, modelName string) error
 }
@@ -47,6 +48,20 @@ func (s *service) Append(ctx context.Context, model *runtimetypes.Model) error {
 		return err
 	}
 	return storeInstance.AppendModel(ctx, model)
+}
+
+func (s *service) Update(ctx context.Context, data *runtimetypes.Model) error {
+
+	if err := validate(data); err != nil {
+		return err
+	}
+	if data.ID == "" {
+		return fmt.Errorf("%w %w: id is required", apiframework.ErrBadRequest, ErrInvalidModel)
+	}
+	tx := s.dbInstance.WithoutTransaction()
+	storeInstance := runtimetypes.New(tx)
+
+	return storeInstance.UpdateModel(ctx, data)
 }
 
 func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Model, error) {

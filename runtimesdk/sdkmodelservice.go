@@ -81,10 +81,58 @@ func (s *HTTPModelService) Append(ctx context.Context, model *runtimetypes.Model
 	return nil
 }
 
+// Update implements modelservice.Service.Update
+func (s *HTTPModelService) Update(ctx context.Context, data *runtimetypes.Model) error {
+	if data.ID == "" {
+		return fmt.Errorf("model ID is required to update")
+	}
+
+	// Construct URL using model ID
+	url := fmt.Sprintf("%s/models/%s", s.baseURL, url.PathEscape(data.ID))
+
+	// Marshal the model data to JSON
+	body, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("failed to marshal model data: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, "PUT", url, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	// Perform request
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Handle non-200 responses
+	if resp.StatusCode != http.StatusOK {
+		return apiframework.HandleAPIError(resp)
+	}
+
+	// On success, decode the response (full updated model) into data
+	if err := json.NewDecoder(resp.Body).Decode(data); err != nil {
+		return fmt.Errorf("failed to decode updated model response: %w", err)
+	}
+
+	return nil
+}
+
 // List implements modelservice.Service.List
+// Uses the internal /internal/models endpoint to get full model details
 func (s *HTTPModelService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Model, error) {
-	// Build URL with query parameters
-	rUrl := fmt.Sprintf("%s/models?limit=%d", s.baseURL, limit)
+	// Build URL for internal endpoint
+	rUrl := fmt.Sprintf("%s/internal/models?limit=%d", s.baseURL, limit)
 	if createdAtCursor != nil {
 		rUrl += "&cursor=" + url.QueryEscape(createdAtCursor.Format(time.RFC3339Nano))
 	}
@@ -110,34 +158,10 @@ func (s *HTTPModelService) List(ctx context.Context, createdAtCursor *time.Time,
 		return nil, apiframework.HandleAPIError(resp)
 	}
 
-	// The API returns OpenAI-compatible format, but we need to convert to store.Model
-	type OpenAIModel struct {
-		ID      string `json:"id"`
-		Object  string `json:"object"`
-		Created int64  `json:"created"`
-		OwnedBy string `json:"owned_by"`
-	}
-
-	type ListResponse struct {
-		Object string        `json:"object"`
-		Data   []OpenAIModel `json:"data"`
-	}
-
-	var response ListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, err
-	}
-
-	// Convert to []*store.Model
-	models := make([]*runtimetypes.Model, 0, len(response.Data))
-	for _, openAIModel := range response.Data {
-		createdAt := time.Unix(openAIModel.Created, 0)
-		models = append(models, &runtimetypes.Model{
-			ID:        openAIModel.ID,
-			Model:     openAIModel.ID,
-			CreatedAt: createdAt,
-			UpdatedAt: createdAt, // API doesn't provide separate UpdatedAt
-		})
+	// Decode directly into []*runtimetypes.Model
+	var models []*runtimetypes.Model
+	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+		return nil, fmt.Errorf("failed to decode internal models response: %w", err)
 	}
 
 	return models, nil

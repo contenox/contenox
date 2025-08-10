@@ -716,6 +716,45 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## listInternal
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/internal/models', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /internal/models`
+
+Lists all registered models in internal format.
+This endpoint returns full model details including timestamps and capabilities.
+Intended for administrative and debugging purposes.
+
+> Example responses
+
+<h3 id="listinternal-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|none|None|
+
+<h3 id="listinternal-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## listPoolsForModel
 
 > Code samples

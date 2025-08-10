@@ -53,6 +53,34 @@ func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *ti
 	return models, err
 }
 
+func (d *activityTrackerDecorator) Update(ctx context.Context, data *runtimetypes.Model) error {
+	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
+		ctx,
+		"update",
+		"model",
+		"name", data.Model,
+		"id", data.ID,
+	)
+	defer endFn()
+
+	err := d.service.Update(ctx, data)
+	if err != nil {
+		reportErrFn(err)
+	} else {
+		changes := map[string]any{
+			"model":         data.Model,
+			"contextLength": data.ContextLength,
+			"canChat":       data.CanChat,
+			"canEmbed":      data.CanEmbed,
+			"canPrompt":     data.CanPrompt,
+			"canStream":     data.CanStream,
+		}
+		reportChangeFn(data.ID, changes)
+	}
+
+	return err
+}
+
 func (d *activityTrackerDecorator) Delete(ctx context.Context, modelName string) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,

@@ -794,6 +794,22 @@ paths:
                 default:
                     description: ""
             summary: update
+    /internal/models:
+        get:
+            description: |-
+                Lists all registered models in internal format.
+                This endpoint returns full model details including timestamps and capabilities.
+                Intended for administrative and debugging purposes.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/array_*runtimetypes_Model'
+                    description: OK
+                default:
+                    description: ""
+            summary: listInternal
     /model-associations/{modelID}/pools:
         get:
             description: |-
@@ -917,7 +933,7 @@ paths:
                 default:
                     description: ""
             summary: append
-    /models/{model}:
+    /models/{id}:
         delete:
             description: |-
                 Deletes a model from the system registry.
@@ -935,10 +951,32 @@ paths:
             summary: delete
         parameters:
             - in: path
-              name: model
+              name: id
               required: true
               schema:
                 type: string
+        put:
+            description: |-
+                Updates an existing model registration.
+                Only mutable fields (like capabilities and context length) can be updated.
+                The model ID cannot be changed.
+                Returns the updated model configuration.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/runtimetypes_Model'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/runtimetypes_Model'
+                    description: OK
+                default:
+                    description: ""
+            summary: update
     /pool-by-name/{name}:
         get:
             description: |-

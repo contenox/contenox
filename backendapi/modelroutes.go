@@ -18,6 +18,8 @@ func AddModelRoutes(mux *http.ServeMux, modelService modelservice.Service, dwSer
 
 	mux.HandleFunc("POST /models", s.append)
 	mux.HandleFunc("GET /models", s.list)
+	mux.HandleFunc("PUT /models/{id}", s.update)
+	mux.HandleFunc("GET /internal/models", s.listInternal) // ← New: full internal format
 	// mux.HandleFunc("GET /v1/models/{model}", s.modelDetails) // TODO: Implement model details endpoint
 	mux.HandleFunc("DELETE /models/{model}", s.delete)
 }
@@ -115,6 +117,90 @@ func (s *service) list(w http.ResponseWriter, r *http.Request) {
 	}
 
 	serverops.Encode(w, r, http.StatusOK, response) // @response backendapi.ListResponse
+}
+
+// Updates an existing model registration.
+// Only mutable fields (like capabilities and context length) can be updated.
+// The model ID cannot be changed.
+// Returns the updated model configuration.
+func (s *service) update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Extract and validate model ID from path
+	id := r.PathValue("id")
+	if id == "" {
+		_ = serverops.Error(w, r, fmt.Errorf("model ID is required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		return
+	}
+
+	// Decode request body into Model struct
+	updatedModel, err := serverops.Decode[runtimetypes.Model](r) // @request runtimetypes.Model
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	// Ensure the ID in the URL matches the model data (if present)
+	if updatedModel.ID != "" && updatedModel.ID != id {
+		err = fmt.Errorf("%w: ID in payload does not match URL", serverops.ErrUnprocessableEntity)
+		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+	updatedModel.ID = id // enforce ID from URL
+
+	// Perform update
+	if err := s.service.Update(ctx, &updatedModel); err != nil {
+		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	// Return updated model
+	_ = serverops.Encode(w, r, http.StatusOK, updatedModel) // @response runtimetypes.Model
+}
+
+// Lists all registered models in internal format.
+// This endpoint returns full model details including timestamps and capabilities.
+// Intended for administrative and debugging purposes.
+func (s *service) listInternal(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Parse pagination parameters
+	var cursor *time.Time
+	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+		t, err := time.Parse(time.RFC3339Nano, cursorStr)
+		if err != nil {
+			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
+			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			return
+		}
+		cursor = &t
+	}
+
+	limit := 100
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		i, err := strconv.Atoi(limitStr)
+		if err != nil {
+			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
+			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			return
+		}
+		if i < 1 {
+			err = fmt.Errorf("%w: limit must be positive", serverops.ErrUnprocessableEntity)
+			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			return
+		}
+		limit = i
+	}
+
+	// Reuse the same service.List method that returns internal models
+	models, err := s.service.List(ctx, cursor, limit)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
+	// Return raw internal models
+	_ = serverops.Encode(w, r, http.StatusOK, models) // @response []*runtimetypes.Model
 }
 
 // Deletes a model from the system registry.

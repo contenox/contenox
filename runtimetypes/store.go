@@ -107,6 +107,7 @@ type Store interface {
 	GetModelByName(ctx context.Context, name string) (*Model, error)
 	DeleteModel(ctx context.Context, modelName string) error
 	ListAllModels(ctx context.Context) ([]*Model, error)
+	UpdateModel(ctx context.Context, data *Model) error
 	ListModels(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Model, error)
 	EstimateModelCount(ctx context.Context) (int64, error)
 
