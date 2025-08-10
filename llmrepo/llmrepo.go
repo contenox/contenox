@@ -98,8 +98,9 @@ func NewExecRepo(ctx context.Context, config *Config, dbInstance libdb.DBManager
 		dbInstance: dbInstance,
 		runtime:    runtime,
 		tokenizer:  tokenizer,
-		embed:      false,
-		prompt:     true,
+		embed:      model.CanEmbed,
+		prompt:     model.CanPrompt,
+		canChat:    model.CanChat,
 		contextLen: contextLen,
 	}, com(ctx)
 }
@@ -112,6 +113,7 @@ type modelManager struct {
 	tokenizer  ollamatokenizer.Tokenizer
 	embed      bool
 	prompt     bool
+	canChat    bool
 	contextLen int
 }
 
@@ -149,6 +151,7 @@ func (e *modelManager) GetDefaultSystemProvider(ctx context.Context) (libmodelpr
 		libmodelprovider.CapabilityConfig{
 			CanPrompt:     e.prompt,
 			CanEmbed:      e.embed,
+			CanChat:       e.canChat,
 			ContextLength: e.contextLen,
 		})
 	return provider, nil
