@@ -66,7 +66,7 @@ func NewClient(config Config, httpClient *http.Client) (*Client, error) {
 	sdkVersion := GetSDKVersion()
 
 	// Special case for development (when version is unknown)
-	if sdkVersion == "unknown" || strings.Contains(about.Version, "dev") {
+	if about.Version == "unknown" || strings.Contains(about.Version, "dev") {
 		return createClient(config, httpClient)
 	}
 
