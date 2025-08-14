@@ -21,13 +21,13 @@ import (
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/serverapi"
 	"github.com/contenox/runtime/taskengine"
+	"github.com/google/uuid"
 )
 
 var (
-	cliSetCoreVersion string
-	cliSetTenantID    string
-	CoreVersion       = "CORE-UNSET-dev"
-	TenantID          = "96ed1c59-ffc1-4545-b3c3-191079c68d79"
+	cliSetTenancy  string
+	Tenancy        = "96ed1c59-ffc1-4545-b3c3-191079c68d79"
+	nodeInstanceID = "NODE-Instance-UNSET-dev"
 )
 
 func initDatabase(ctx context.Context, cfg *serverapi.Config) (libdb.DBManager, error) {
@@ -65,102 +65,99 @@ func initPubSub(ctx context.Context, cfg *serverapi.Config) (libbus.Messenger, e
 }
 
 func main() {
-	if cliSetCoreVersion == "" {
-		log.Fatalf("corrupted build! cliSetCoreVersion was not injected")
-	}
-	if cliSetTenantID == "" {
+	if cliSetTenancy == "" {
 		log.Fatalf("corrupted build! cliSetTenantID was not injected")
 	}
-	TenantID = cliSetTenantID
-	CoreVersion = cliSetCoreVersion
+	nodeInstanceID = uuid.NewString()[0:8]
+	Tenancy = cliSetTenancy
 	config := &serverapi.Config{}
 	if err := serverapi.LoadConfig(config); err != nil {
-		log.Fatalf("failed to load configuration: %v", err)
+		log.Fatalf("%s: failed to load configuration: %v", nodeInstanceID, err)
 	}
 	ctx := context.TODO()
 	cleanups := []func() error{func() error {
-		fmt.Println("cleaning up")
+		fmt.Printf("%s cleaning up", nodeInstanceID)
 		return nil
 	}}
 	defer func() {
 		for _, cleanup := range cleanups {
 			err := cleanup()
 			if err != nil {
-				log.Printf("cleanup failed: %v", err)
+				log.Printf("%s cleanup failed: %v", nodeInstanceID, err)
 			}
 		}
 	}()
 	fmt.Print("initialize the database")
 	dbInstance, err := initDatabase(ctx, config)
 	if err != nil {
-		log.Fatalf("initializing database failed: %v", err)
+		log.Fatalf("%s initializing database failed: %v", nodeInstanceID, err)
 	}
 	defer dbInstance.Close()
 
 	ps, err := initPubSub(ctx, config)
 	if err != nil {
-		log.Fatalf("initializing PubSub failed: %v", err)
+		log.Fatalf("%s initializing PubSub failed: %v", nodeInstanceID, err)
 	}
 	if err != nil {
-		log.Fatalf("initializing OpenSearch failed: %v", err)
+		log.Fatalf("%s initializing OpenSearch failed: %v", nodeInstanceID, err)
 	}
 	state, err := runtimestate.New(ctx, dbInstance, ps, runtimestate.WithPools())
 	// state, err := runtimestate.New(ctx, dbInstance, ps)
 	if err != nil {
-		log.Fatalf("initializing runtime state failed: %v", err)
+		log.Fatalf("%s initializing runtime state failed: %v", nodeInstanceID, err)
 	}
 	cl, err := strconv.Atoi(config.EmbedModelContextLength)
 	if err != nil {
-		log.Fatalf("parsing embed model context length failed: %v", err)
+		log.Fatalf("%s parsing embed model context length failed: %v", nodeInstanceID, err)
 	}
 	embedder, err := llmrepo.NewEmbedder(ctx, &llmrepo.Config{
 		DatabaseURL: config.DatabaseURL,
 		EmbedModel:  config.EmbedModel,
 		TaskModel:   config.TaskModel,
-		TenantID:    TenantID,
+		TenantID:    Tenancy,
 	}, dbInstance, cl, state)
 	if err != nil {
-		log.Fatalf("initializing embedding pool failed: %v", err)
+		log.Fatalf("%s initializing embedding pool failed: %v", nodeInstanceID, err)
 	}
 	tokenizerSvc, cleanup, err := ollamatokenizer.NewHTTPClient(ctx, ollamatokenizer.ConfigHTTP{
 		BaseURL: config.TokenizerServiceURL,
 	})
 	if err != nil {
 		cleanup()
-		log.Fatalf("initializing tokenizer service failed: %v", err)
+		log.Fatalf("%s initializing tokenizer service failed: %v", nodeInstanceID, err)
 	}
 	tcl, err := strconv.Atoi(config.TaskModelContextLength)
 	if err != nil {
-		log.Fatalf("parsing task model context length failed: %v", err)
+		log.Fatalf("%s parsing task model context length failed: %v", nodeInstanceID, err)
 	}
 	execRepo, err := llmrepo.NewExecRepo(ctx, &llmrepo.Config{
 		DatabaseURL: config.DatabaseURL,
 		TaskModel:   config.TaskModel,
 		EmbedModel:  config.EmbedModel,
-		TenantID:    TenantID,
+		TenantID:    Tenancy,
 	}, dbInstance, state, tcl, tokenizerSvc)
 	if err != nil {
-		log.Fatalf("initializing promptexec failed: %v", err)
+		log.Fatalf("%s initializing promptexec failed: %v", nodeInstanceID, err)
 	}
 
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
-		log.Fatalf("initializing vector store failed: %v", err)
+		log.Fatalf("%s initializing vector store failed: %v", nodeInstanceID, err)
 	}
 	kvManager, err := libkv.NewManager(libkv.Config{
 		Addr:     config.KVHost,
 		Password: config.KVPassword,
 	}, time.Hour*24)
 	if err != nil {
-		log.Fatalf("initializing kv manager failed: %v", err)
+		log.Fatalf("%s initializing kv manager failed: %v", nodeInstanceID, err)
 	}
 	kvExec, err := kvManager.Executor(ctx)
 	if err != nil {
-		log.Fatalf("initializing kv manager 1 failed: %v", err)
+		log.Fatalf("%s initializing kv manager 1 failed: %v", nodeInstanceID, err)
 	}
 	err = kvExec.SetWithTTL(ctx, "test", []byte("test"), time.Second)
 	if err != nil {
-		log.Fatalf("initializing kv manager 2 failed: %v", err)
+		log.Fatalf("%s initializing kv manager 2 failed: %v", nodeInstanceID, err)
 	}
 
 	tracker := taskengine.NewKVActivityTracker(kvManager)
@@ -174,25 +171,25 @@ func main() {
 	hookRepo := hooks.NewPersistentRepo(map[string]taskengine.HookRepo{}, dbInstance, http.DefaultClient)
 	exec, err := taskengine.NewExec(ctx, execRepo, embedder, hookRepo, serveropsChainedTracker)
 	if err != nil {
-		log.Fatalf("initializing task engine engine failed: %v", err)
+		log.Fatalf("%s initializing task engine engine failed: %v", nodeInstanceID, err)
 	}
 	environmentExec, err := taskengine.NewEnv(ctx, serveropsChainedTracker, taskengine.NewAlertSink(kvManager), exec, taskengine.NewSimpleInspector(kvManager))
 	if err != nil {
-		log.Fatalf("initializing task engine failed: %v", err)
+		log.Fatalf("%s initializing task engine failed: %v", nodeInstanceID, err)
 	}
 	cleanups = append(cleanups, cleanup)
-	apiHandler, cleanup, err := serverapi.New(ctx, config, dbInstance, ps, embedder, execRepo, environmentExec, state, hookRepo, kvManager)
+	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, embedder, execRepo, environmentExec, state, hookRepo, kvManager)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
-		log.Fatalf("initializing API handler failed: %v", err)
+		log.Fatalf("%s initializing API handler failed: %v", nodeInstanceID, err)
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/", apiHandler)
 
 	port := config.Port
-	log.Printf("starting server on :%s", port)
+	log.Printf("%s %s starting server on :%s", Tenancy, nodeInstanceID, port)
 	if err := http.ListenAndServe(config.Addr+":"+port, mux); err != nil {
-		log.Fatalf("server failed: %v", err)
+		log.Fatalf("%s server failed: %v", nodeInstanceID, err)
 	}
 }

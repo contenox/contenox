@@ -1,8 +1,14 @@
 package runtimesdk
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
@@ -35,7 +41,7 @@ type Config struct {
 }
 
 // NewClient creates a new SDK client with the provided configuration
-func NewClient(config Config, http *http.Client) (*Client, error) {
+func createClient(config Config, http *http.Client) (*Client, error) {
 	return &Client{
 		BackendService:  NewHTTPBackendService(config.BaseURL, config.Token, http),
 		ModelService:    NewHTTPModelService(config.BaseURL, config.Token, http),
@@ -48,4 +54,66 @@ func NewClient(config Config, http *http.Client) (*Client, error) {
 		StateService:    NewHTTPStateService(config.BaseURL, config.Token, http),
 		EmbedService:    NewHTTPEmbedService(config.BaseURL, config.Token, http),
 	}, nil
+}
+
+func NewClient(config Config, httpClient *http.Client) (*Client, error) {
+	// First validate version compatibility
+	about, err := fetchServerVersion(config, httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate server version: %w", err)
+	}
+
+	sdkVersion := GetSDKVersion()
+
+	// Special case for development (when version is unknown)
+	if sdkVersion == "unknown" || strings.Contains(about.Version, "dev") {
+		return createClient(config, httpClient)
+	}
+
+	// Enforce exact version match
+	if sdkVersion != about.Version {
+		return nil, fmt.Errorf(
+			"version mismatch: server=%q, sdk=%q (must be identical)\n"+
+				"Hint: Run 'go get github.com/contenox/runtime@%s' to fix",
+			about.Version,
+			sdkVersion,
+			about.Version,
+		)
+	}
+
+	return createClient(config, httpClient)
+}
+
+func fetchServerVersion(config Config, httpClient *http.Client) (apiframework.AboutServer, error) {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", config.BaseURL+"/version", nil)
+	if err != nil {
+		return apiframework.AboutServer{}, err
+	}
+
+	if config.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+config.Token)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return apiframework.AboutServer{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return apiframework.AboutServer{}, fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	var about apiframework.AboutServer
+	if err := json.NewDecoder(resp.Body).Decode(&about); err != nil {
+		return apiframework.AboutServer{}, err
+	}
+	return about, nil
 }

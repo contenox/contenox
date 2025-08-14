@@ -10,13 +10,12 @@ RUN go mod download
 COPY . .
 
 # Build arguments with default values
-ARG CORE_VERSION="dev-build"
-ARG TENANT_ID="54882f1d-3788-44f9-aed6-19a793c4568f"
+ARG TENANCY="54882f1d-3788-44f9-aed6-19a793c4568f"
 
 # Build the application with ldflags
 RUN go build -ldflags "\
     -X 'main.cliSetCoreVersion=$CORE_VERSION' \
-    -X 'main.cliSetTenantID=$TENANT_ID'" \
+    -X 'main.cliSetTenancy=$TENANCY'" \
     -o runtime-api ./cmd/runtime-api
 
 # Runtime stage

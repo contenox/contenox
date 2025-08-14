@@ -1,5 +1,4 @@
 .PHONY: test-unit test-system test compose-wipe benchmark run build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown
-DEFAULT_CORE_VERSION ?= dev-demo
 PROJECT_ROOT := $(shell pwd)
 test-unit:
 	GOMAXPROCS=4 go test -C ./ -run '^TestUnit_' ./...
@@ -71,4 +70,4 @@ docs-markdown: docs-gen
 	@echo "✅ Markdown documentation generated at $(PROJECT_ROOT)/docs/api-reference.md"
 
 build:
-	docker compose build --build-arg CORE_VERSION=$(DEFAULT_CORE_VERSION)
+	docker compose build

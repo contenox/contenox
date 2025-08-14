@@ -37,6 +37,8 @@ import (
 
 func New(
 	ctx context.Context,
+	nodeInstanceID string,
+	tenancy string,
 	config *Config,
 	dbInstance libdb.DBManager,
 	pubsub libbus.Messenger,
@@ -55,6 +57,10 @@ func New(
 	})
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		// OK
+	})
+	version := apiframework.GetVersion()
+	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		apiframework.Encode(w, r, http.StatusOK, apiframework.AboutServer{Version: version, NodeInstanceID: nodeInstanceID, Tenancy: tenancy})
 	})
 	tracker := taskengine.NewKVActivityTracker(kvManager)
 	stdOuttracker := activitytracker.NewLogActivityTracker(slog.Default())
