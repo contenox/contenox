@@ -11,6 +11,7 @@ COPY . .
 
 # Build arguments with default values
 ARG TENANCY="54882f1d-3788-44f9-aed6-19a793c4568f"
+ARG VERSION #ensure there is no default version
 
 # Build the application with ldflags
 RUN go build -ldflags "\

@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+var Version string
+
 type AboutServer struct {
 	Version        string `json:"version"`
 	NodeInstanceID string `json:"nodeInstanceID"`
@@ -12,6 +14,9 @@ type AboutServer struct {
 }
 
 func GetVersion() string {
+	if Version != "" {
+		return Version
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "unknown"

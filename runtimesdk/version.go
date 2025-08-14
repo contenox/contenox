@@ -6,7 +6,12 @@ import (
 	"strings"
 )
 
+var Version string
+
 func GetSDKVersion() string {
+	if Version != "" {
+		return Version
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "unknown"
