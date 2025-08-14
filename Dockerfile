@@ -15,7 +15,7 @@ ARG VERSION #ensure there is no default version
 
 # Build the application with ldflags
 RUN go build -ldflags "\
-    -X 'main.cliSetCoreVersion=$CORE_VERSION' \
+    -X 'main.cliVersion=$VERSION' \
     -X 'main.cliSetTenancy=$TENANCY'" \
     -o runtime-api ./cmd/runtime-api
 
