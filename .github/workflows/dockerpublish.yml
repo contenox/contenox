@@ -31,7 +31,8 @@ jobs:
       - name: Build and push to GHCR
         uses: docker/build-push-action@v5
         with:
-          args: --build-arg VERSION=${{ steps.vars.outputs.TAG }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
           context: .
           push: true
           tags: |
