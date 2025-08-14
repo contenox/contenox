@@ -151,9 +151,10 @@ func (p *PersistentRepo) execRemoteHook(
 	}
 	if response.Error != "" {
 		err = errors.New(response.Error)
+	} else if errorStatus {
+		err = fmt.Errorf("failed with status %d", resp.StatusCode)
 	}
 	return response.Output, dt, response.Transition, err
-
 }
 
 func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
