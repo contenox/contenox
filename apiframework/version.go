@@ -16,11 +16,18 @@ func GetVersion() string {
 	if !ok {
 		return "unknown"
 	}
+
+	if info.Main.Path == "github.com/contenox/runtime" {
+		version := strings.TrimSuffix(info.Main.Version, "+incompatible")
+		return version
+	}
+
 	for _, dep := range info.Deps {
 		if dep.Path == "github.com/contenox/runtime" {
 			version := strings.TrimSuffix(dep.Version, "+incompatible")
 			return version
 		}
 	}
+
 	return "unknown"
 }
