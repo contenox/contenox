@@ -91,8 +91,8 @@ func fetchServerVersion(config Config, httpClient *http.Client) (apiframework.Ab
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", config.BaseURL+"/api/version", nil)
+	baseURL := strings.TrimSuffix(config.BaseURL, "/")
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/version", nil)
 	if err != nil {
 		return apiframework.AboutServer{}, err
 	}
