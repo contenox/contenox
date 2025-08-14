@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
@@ -56,9 +55,9 @@ func createClient(config Config, http *http.Client) (*Client, error) {
 	}, nil
 }
 
-func NewClient(config Config, httpClient *http.Client) (*Client, error) {
+func NewClient(ctx context.Context, config Config, httpClient *http.Client) (*Client, error) {
 	// First validate version compatibility
-	about, err := fetchServerVersion(config, httpClient)
+	about, err := fetchServerVersion(ctx, config, httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate server version: %w", err)
 	}
@@ -84,13 +83,11 @@ func NewClient(config Config, httpClient *http.Client) (*Client, error) {
 	return createClient(config, httpClient)
 }
 
-func fetchServerVersion(config Config, httpClient *http.Client) (apiframework.AboutServer, error) {
+func fetchServerVersion(ctx context.Context, config Config, httpClient *http.Client) (apiframework.AboutServer, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	baseURL := strings.TrimSuffix(config.BaseURL, "/")
 	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/version", nil)
 	if err != nil {

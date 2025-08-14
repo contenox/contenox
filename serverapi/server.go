@@ -52,6 +52,12 @@ func New(
 	cleanup := func() error { return nil }
 	mux := http.NewServeMux()
 	var handler http.Handler = mux
+	tracker := taskengine.NewKVActivityTracker(kvManager)
+	stdOuttracker := activitytracker.NewLogActivityTracker(slog.Default())
+	serveropsChainedTracker := activitytracker.ChainedTracker{
+		tracker,
+		stdOuttracker,
+	}
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		apiframework.Error(w, r, apiframework.ErrNotFound, apiframework.ListOperation)
 	})
@@ -62,13 +68,6 @@ func New(
 	mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
 		apiframework.Encode(w, r, http.StatusOK, apiframework.AboutServer{Version: version, NodeInstanceID: nodeInstanceID, Tenancy: tenancy})
 	})
-	tracker := taskengine.NewKVActivityTracker(kvManager)
-	stdOuttracker := activitytracker.NewLogActivityTracker(slog.Default())
-	serveropsChainedTracker := activitytracker.ChainedTracker{
-		tracker,
-		stdOuttracker,
-	}
-
 	backendService := backendservice.New(dbInstance)
 	backendService = backendservice.WithActivityTracker(backendService, serveropsChainedTracker)
 	stateService := stateservice.New(state)

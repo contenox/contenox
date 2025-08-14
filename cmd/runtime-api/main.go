@@ -178,6 +178,7 @@ func main() {
 		log.Fatalf("%s initializing task engine failed: %v", nodeInstanceID, err)
 	}
 	cleanups = append(cleanups, cleanup)
+
 	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, embedder, execRepo, environmentExec, state, hookRepo, kvManager)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
@@ -186,7 +187,6 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/", apiHandler)
-
 	port := config.Port
 	log.Printf("%s %s starting server on :%s", Tenancy, nodeInstanceID, port)
 	if err := http.ListenAndServe(config.Addr+":"+port, mux); err != nil {
