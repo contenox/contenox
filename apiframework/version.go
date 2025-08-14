@@ -17,7 +17,7 @@ func GetVersion() string {
 		return "unknown"
 	}
 	for _, dep := range info.Deps {
-		if dep.Path == "github.com/contenox/runtime/runtimesdk" {
+		if dep.Path == "github.com/contenox/runtime" {
 			version := strings.TrimSuffix(dep.Version, "+incompatible")
 			return version
 		}
