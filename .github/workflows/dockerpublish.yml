@@ -26,9 +26,11 @@ jobs:
 
       - name: Extract tag
         id: vars
-        run: echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_OUTPUT
+        run: echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
       - name: Debug metadata output
         run: echo "The version tag is ${{ steps.vars.outputs.TAG }}"
+
       - name: Build and push to GHCR
         uses: docker/build-push-action@v5
         with:
