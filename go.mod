@@ -3,7 +3,7 @@ module github.com/contenox/runtime
 go 1.24.5
 
 require (
-	github.com/contenox/activitytracker v0.0.2
+	github.com/contenox/activitytracker v0.0.3
 	github.com/contenox/authz v0.0.1
 	github.com/contenox/dbexec v0.0.2
 	github.com/ollama/ollama v0.9.2

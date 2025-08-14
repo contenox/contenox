@@ -18,11 +18,11 @@ func NewSimpleProvider(hooks map[string]taskengine.HookRepo) taskengine.HookRepo
 	}
 }
 
-func (m *SimpleRepo) Exec(ctx context.Context, startingTime time.Time, input any, dataType taskengine.DataType, transition string, args *taskengine.HookCall) (int, any, taskengine.DataType, string, error) {
+func (m *SimpleRepo) Exec(ctx context.Context, startingTime time.Time, input any, dataType taskengine.DataType, transition string, args *taskengine.HookCall) (any, taskengine.DataType, string, error) {
 	if hook, ok := m.hooks[args.Name]; ok {
 		return hook.Exec(ctx, startingTime, input, dataType, transition, args)
 	}
-	return taskengine.StatusUnknownHookProvider, nil, taskengine.DataTypeAny, transition, fmt.Errorf("unknown hook type: %s", args.Name)
+	return nil, taskengine.DataTypeAny, transition, fmt.Errorf("unknown hook type: %s", args.Name)
 }
 
 func (m *SimpleRepo) Supports(ctx context.Context) ([]string, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,15 +18,18 @@ import (
 type PersistentRepo struct {
 	localHooks map[string]taskengine.HookRepo
 	dbInstance libdb.DBManager
+	httpClient *http.Client
 }
 
 func NewPersistentRepo(
 	localHooks map[string]taskengine.HookRepo,
 	dbInstance libdb.DBManager,
+	httpClient *http.Client,
 ) taskengine.HookRepo {
 	return &PersistentRepo{
 		localHooks: localHooks,
 		dbInstance: dbInstance,
+		httpClient: httpClient,
 	}
 }
 
@@ -36,7 +40,7 @@ func (p *PersistentRepo) Exec(
 	dataType taskengine.DataType,
 	transition string,
 	args *taskengine.HookCall,
-) (int, any, taskengine.DataType, string, error) {
+) (any, taskengine.DataType, string, error) {
 	// Check local hooks first
 	if hook, ok := p.localHooks[args.Name]; ok {
 		return hook.Exec(ctx, startingTime, input, dataType, transition, args)
@@ -46,7 +50,7 @@ func (p *PersistentRepo) Exec(
 	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
 	remoteHook, err := storeInstance.GetRemoteHookByName(ctx, args.Name)
 	if err != nil {
-		return taskengine.StatusUnknownHookProvider, nil, taskengine.DataTypeAny, transition,
+		return nil, taskengine.DataTypeAny, transition,
 			fmt.Errorf("unknown hook: %s", args.Name)
 	}
 
@@ -61,7 +65,7 @@ func (p *PersistentRepo) execRemoteHook(
 	dataType taskengine.DataType,
 	transition string,
 	args *taskengine.HookCall,
-) (int, any, taskengine.DataType, string, error) {
+) (any, taskengine.DataType, string, error) {
 	request := struct {
 		StartingTime time.Time            `json:"startingTime"`
 		Input        any                  `json:"input"`
@@ -78,7 +82,7 @@ func (p *PersistentRepo) execRemoteHook(
 
 	jsonBody, err := json.Marshal(request)
 	if err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, transition,
+		return nil, taskengine.DataTypeAny, transition,
 			fmt.Errorf("failed to marshal request: %w", err)
 	}
 
@@ -93,49 +97,63 @@ func (p *PersistentRepo) execRemoteHook(
 		bytes.NewReader(jsonBody),
 	)
 	if err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, transition,
+		return nil, taskengine.DataTypeAny, transition,
 			fmt.Errorf("failed to create request: %w", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	client := http.DefaultClient
+	client := p.httpClient
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, transition,
+		return nil, taskengine.DataTypeAny, transition,
 			fmt.Errorf("remote hook request failed: %w", err)
 	}
 	defer resp.Body.Close()
-
+	errorStatus := false
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-			fmt.Errorf("remote hook returned status: %d", resp.StatusCode)
+		errorStatus = true
 	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-			fmt.Errorf("failed to read response body: %w", err)
-	}
-
 	response := struct {
 		Output     any    `json:"output"`
 		DataType   string `json:"dataType"`
+		Error      string `json:"error,omitempty"`
 		Transition string `json:"transition"`
 	}{}
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		if errorStatus {
+			return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
+				fmt.Errorf("failed to read response body: %w", err)
+		}
+		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
+			fmt.Errorf("failed to read response body: %w", err)
+	}
+
 	if err := json.Unmarshal(body, &response); err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
+		if errorStatus {
+			return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
+				fmt.Errorf("failed to parse response: %w", err)
+		}
+		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 			fmt.Errorf("failed to parse response: %w", err)
 	}
 
 	dt, err := taskengine.DataTypeFromString(response.DataType)
 	if err != nil {
-		return taskengine.StatusError, nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
+		if errorStatus {
+			return nil, dt, fmt.Sprint(resp.StatusCode),
+				fmt.Errorf("invalid data type in response: %s", response.DataType)
+		}
+		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 			fmt.Errorf("invalid data type in response: %s", response.DataType)
 	}
+	if response.Error != "" {
+		err = errors.New(response.Error)
+	}
+	return response.Output, dt, response.Transition, err
 
-	return taskengine.StatusSuccess, response.Output, dt, response.Transition, nil
 }
 
 func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {

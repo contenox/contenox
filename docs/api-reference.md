@@ -1620,7 +1620,33 @@ If pools are enabled, models and backends not assigned to any pool will be compl
 
 ```json
 {
-  "chain": null,
+  "chain": [
+    {
+      "debug": true,
+      "description": "string",
+      "id": "string",
+      "routing_strategy": "string",
+      "tasks": [
+        {
+          "compose": {},
+          "description": "string",
+          "execute_config": {},
+          "handler": {},
+          "hook": {},
+          "id": "string",
+          "input_var": "string",
+          "print": "string",
+          "prompt_template": "string",
+          "retry_on_failure": 0,
+          "system_instruction": "string",
+          "timeout": "string",
+          "transition": {},
+          "valid_conditions": {}
+        }
+      ],
+      "token_limit": 0
+    }
+  ],
   "input": {},
   "inputType": "string"
 }
@@ -2197,7 +2223,33 @@ X-API-Key
 
 ```json
 {
-  "chain": null,
+  "chain": [
+    {
+      "debug": true,
+      "description": "string",
+      "id": "string",
+      "routing_strategy": "string",
+      "tasks": [
+        {
+          "compose": {},
+          "description": "string",
+          "execute_config": {},
+          "handler": {},
+          "hook": {},
+          "id": "string",
+          "input_var": "string",
+          "print": "string",
+          "prompt_template": "string",
+          "retry_on_failure": 0,
+          "system_instruction": "string",
+          "timeout": "string",
+          "transition": {},
+          "valid_conditions": {}
+        }
+      ],
+      "token_limit": 0
+    }
+  ],
   "input": {},
   "inputType": "string"
 }
@@ -2208,7 +2260,7 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|chain|any|true|none|none|
+|chain|array|true|none|none|
 |input|object|true|none|none|
 |inputType|string|true|none|none|
 
@@ -2561,4 +2613,97 @@ X-API-Key
 |taskHandler|string|true|none|none|
 |taskID|string|true|none|none|
 |transition|string|true|none|none|
+
+<h2 id="tocS_taskengine_ChainDefinition">taskengine_ChainDefinition</h2>
+<!-- backwards compatibility -->
+<a id="schemataskengine_chaindefinition"></a>
+<a id="schema_taskengine_ChainDefinition"></a>
+<a id="tocStaskengine_chaindefinition"></a>
+<a id="tocstaskengine_chaindefinition"></a>
+
+```json
+{
+  "debug": true,
+  "description": "string",
+  "id": "string",
+  "routing_strategy": "string",
+  "tasks": [
+    {
+      "compose": {},
+      "description": "string",
+      "execute_config": {},
+      "handler": {},
+      "hook": {},
+      "id": "string",
+      "input_var": "string",
+      "print": "string",
+      "prompt_template": "string",
+      "retry_on_failure": 0,
+      "system_instruction": "string",
+      "timeout": "string",
+      "transition": {},
+      "valid_conditions": {}
+    }
+  ],
+  "token_limit": 0
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|debug|boolean|true|none|Enables capturing user input and output.|
+|description|string|true|none|Description provides a human-readable summary of the chain's purpose.|
+|id|string|true|none|ID uniquely identifies the chain.|
+|routing_strategy|string|true|none|RoutingStrategy defines how transitions should be evaluated (optional).|
+|tasks|[[taskengine_ChainTask](#schemataskengine_chaintask)]|true|none|Tasks is the list of tasks to execute in sequence.|
+|token_limit|integer|true|none|TokenLimit is the token limit for the context window (used during execution).|
+
+<h2 id="tocS_taskengine_ChainTask">taskengine_ChainTask</h2>
+<!-- backwards compatibility -->
+<a id="schemataskengine_chaintask"></a>
+<a id="schema_taskengine_ChainTask"></a>
+<a id="tocStaskengine_chaintask"></a>
+<a id="tocstaskengine_chaintask"></a>
+
+```json
+{
+  "compose": {},
+  "description": "string",
+  "execute_config": {},
+  "handler": {},
+  "hook": {},
+  "id": "string",
+  "input_var": "string",
+  "print": "string",
+  "prompt_template": "string",
+  "retry_on_failure": 0,
+  "system_instruction": "string",
+  "timeout": "string",
+  "transition": {},
+  "valid_conditions": {}
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|compose|object|false|none|Compose merges the specified the output with the withVar side.<br>Optional. compose is applied before the input reaches the task execution,|
+|description|string|true|none|Description is a human-readable summary of what the task does.|
+|execute_config|object|false|none|ExecuteConfig defines the configuration for executing prompt or chat model tasks.|
+|handler|object|true|none|Handler determines how the LLM output (or hook) will be interpreted.|
+|hook|object|false|none|Hook defines an external action to run.<br>Required for Hook tasks, must be nil/omitted for all other types.<br>Example: {type: "send_email", args: {"to": "user@example.com"}}|
+|id|string|true|none|ID uniquely identifies the task within the chain.|
+|input_var|string|false|none|InputVar is the name of the variable to use as input for the task.<br>Example: "input" for the original input.<br>Each task stores its output in a variable named with it's task id.|
+|print|string|false|none|Print optionally formats the output for display/logging.<br>Supports template variables from previous task outputs.<br>Optional for all task types except Hook where it's rarely used.<br>Example: "The score is: {{.previous_output}}"|
+|prompt_template|string|true|none|PromptTemplate is the text prompt sent to the LLM.<br>It's Required and only applicable for the raw_string type.<br>Supports template variables from previous task outputs.<br>Example: "Rate the quality from 1-10: {{.input}}"|
+|retry_on_failure|integer|false|none|RetryOnFailure sets how many times to retry this task on failure.<br>Applies to all task types including Hooks.<br>Default: 0 (no retries)|
+|system_instruction|string|false|none|SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.|
+|timeout|string|false|none|Timeout optionally sets a timeout for task execution.<br>Format: "10s", "2m", "1h" etc.<br>Optional for all task types.|
+|transition|object|true|none|Transition defines what to do after this task completes.|
+|valid_conditions|object|false|none|ValidConditions defines allowed values for ConditionKey tasks.<br>Required for ConditionKey tasks, ignored for all other types.<br>Example: {"yes": true, "no": true} for a yes/no condition.|
 

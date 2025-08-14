@@ -112,7 +112,7 @@ var ErrUnsupportedTaskType = errors.New("executor does not support the task type
 // and to conduct side effects on internal state.
 type HookRepo interface {
 	// Exec runs a hook with input and returns results
-	Exec(ctx context.Context, startingTime time.Time, input any, dataType DataType, transition string, args *HookCall) (int, any, DataType, string, error)
+	Exec(ctx context.Context, startingTime time.Time, input any, dataType DataType, transition string, args *HookCall) (any, DataType, string, error)
 	HookRegistry
 }
 
@@ -185,6 +185,10 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 	var taskErr error
 
 	for {
+		if ctx.Err() != nil {
+			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: context canceled", currentTask.ID)
+		}
+
 		// Determine task input
 		taskInput := output
 		taskInputType := outputType
@@ -219,7 +223,8 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 			}
 
 			// Track task attempt start
-			taskCtx := ctx
+			taskCtx := context.Background()
+			taskCtx = activitytracker.CopyTrackingValues(ctx, taskCtx)
 			var cancel context.CancelFunc
 			if currentTask.Timeout != "" {
 				timeout, err := time.ParseDuration(currentTask.Timeout)
@@ -227,9 +232,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: invalid timeout: %v", currentTask.ID, err)
 				}
 				taskCtx, cancel = context.WithTimeout(ctx, timeout)
-				defer cancel()
 			}
-
 			reportErrAttempt, reportChangeAttempt, endAttempt := exe.tracker.Start(
 				taskCtx,
 				"task_attempt",
@@ -237,7 +240,6 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 				"retry", retry,
 				"task_type", currentTask.Handler,
 			)
-			defer endAttempt()
 
 			startTime := time.Now().UTC()
 
@@ -245,6 +247,10 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
 				reportErrAttempt(taskErr)
+			}
+			endAttempt()
+			if cancel != nil {
+				cancel()
 			}
 			duration := time.Since(startTime)
 			errState := ErrorResponse{

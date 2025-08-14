@@ -2,7 +2,7 @@
 
 ## What Are Hooks?
 
-Hooks are **custom integrations** that allow your AI workflows to interact with external systems or execute custom logic. They act as bridges between your state machine workflows and the outside world, enabling you to:
+Hooks are **custom integrations** that allow AI workflows to interact with external systems or execute custom logic. They act as bridges between the state machine workflows and the outside world, enabling:
 
 - Call external APIs or services
 - Implement custom validation logic
@@ -18,11 +18,11 @@ There are **two types of hooks** in contenox/runtime:
 
 ## 🌐 Remote Hooks (Recommended Approach)
 
-Remote hooks let your workflows call any HTTP service during execution.
+Remote hooks allow workflows call any HTTP service during execution.
 
 ### 1. Register a Remote Hook
 
-Use the API to register your external service:
+Register via API a external service:
 
 ```bash
 curl -X POST http://localhost:8081/hooks/remote \
@@ -39,16 +39,16 @@ curl -X POST http://localhost:8081/hooks/remote \
 
 | Parameter | Required | Description | Validation |
 |-----------|----------|-------------|------------|
-| `name` | Yes | Unique identifier for your hook | Must be unique, non-empty string |
-| `endpointUrl` | Yes | Full URL of your service | Must be valid URL |
+| `name` | Yes | Unique identifier for the hook | Must be unique, non-empty string |
+| `endpointUrl` | Yes | Full URL of the service | Must be valid URL |
 | `method` | Yes | HTTP method (GET, POST, etc.) | Valid HTTP method |
 | `timeoutMs` | Yes | Max execution time in milliseconds | Must be > 0 |
 
-> **Note:** On Linux Docker, use your machine's IP instead of `host.docker.internal`
+> **Note:** On Linux Docker, use the machine's IP instead of `host.docker.internal`
 
 ### 2. Use in a Workflow
 
-Reference your hook in a task-chain workflow:
+Reference the hook in a task-chain workflow:
 
 ```json
 {
@@ -79,9 +79,9 @@ Reference your hook in a task-chain workflow:
 }
 ```
 
-### 3. Implement Your Hook Service
+### 3. Implement a Hook Service
 
-Your service must accept a POST request with this JSON structure:
+the service must accept a POST request with this JSON structure:
 
 ```json
 {
@@ -101,6 +101,7 @@ And respond with:
 {
   "output": "pong",
   "dataType": "string",
+  "error": "",
   "transition": "success"
 }
 ```
@@ -111,11 +112,12 @@ And respond with:
 |-------|----------|-------------|
 | `output` | Yes | Result data to pass to next task |
 | `dataType` | Yes | Type of the output (string, int, bool, etc.) |
+| `error` | No | Error message if any |
 | `transition` | Yes | Value used for conditional branching |
 
 ### 4. Ping Pong Example (Python)
 
-Here's a minimal working example to test your integration:
+Minimal working example to test the integration:
 
 ```python
 from flask import Flask, request, jsonify

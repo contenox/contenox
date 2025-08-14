@@ -171,7 +171,7 @@ func main() {
 	}
 
 	// Create persistent hook repo
-	hookRepo := hooks.NewPersistentRepo(map[string]taskengine.HookRepo{}, dbInstance)
+	hookRepo := hooks.NewPersistentRepo(map[string]taskengine.HookRepo{}, dbInstance, http.DefaultClient)
 	exec, err := taskengine.NewExec(ctx, execRepo, embedder, hookRepo, serveropsChainedTracker)
 	if err != nil {
 		log.Fatalf("initializing task engine engine failed: %v", err)
