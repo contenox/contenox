@@ -13,9 +13,14 @@ COPY . .
 ARG TENANCY="54882f1d-3788-44f9-aed6-19a793c4568f"
 ARG VERSION #ensure there is no default version
 
+RUN if [ -z "$VERSION" ]; then \
+    echo "ERROR: VERSION build argument is required but not provided" && \
+    exit 1; \
+    fi
+
 # Build the application with ldflags
 RUN go build -ldflags "\
-    -X 'main.cliVersion=$VERSION' \
+    -X 'main.cliSetVersion=$VERSION' \
     -X 'main.cliSetTenancy=$TENANCY'" \
     -o runtime-api ./cmd/runtime-api
 

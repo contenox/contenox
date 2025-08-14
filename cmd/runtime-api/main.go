@@ -27,7 +27,7 @@ import (
 
 var (
 	cliSetTenancy  string
-	cliVersion     string
+	cliSetVersion  string
 	Tenancy        = "96ed1c59-ffc1-4545-b3c3-191079c68d79"
 	nodeInstanceID = "NODE-Instance-UNSET-dev"
 )
@@ -70,9 +70,11 @@ func main() {
 	if cliSetTenancy == "" {
 		log.Fatalf("corrupted build! cliSetTenantID was not injected")
 	}
-	if cliVersion != "" {
-		apiframework.Version = cliVersion
+	if cliSetVersion == "" {
+		log.Fatalf("corrupted build! cliSetVersion was not injected")
 	}
+
+	apiframework.Version = cliSetVersion
 	nodeInstanceID = uuid.NewString()[0:8]
 	Tenancy = cliSetTenancy
 	config := &serverapi.Config{}

@@ -1,5 +1,11 @@
-.PHONY: test-unit test-system test compose-wipe benchmark run build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown
+.PHONY: echo-version test-unit test-system test compose-wipe benchmark run build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown
 PROJECT_ROOT := $(shell pwd)
+DEFAULT_VERSION := $(shell git describe --tags --always --dirty)
+
+
+echo-version:
+	@echo $(DEFAULT_VERSION)
+
 test-unit:
 	GOMAXPROCS=4 go test -C ./ -run '^TestUnit_' ./...
 
@@ -13,7 +19,7 @@ benchmark:
 	go test -C ./core -bench=. -run=^$ -benchmem ./...
 
 build:
-	docker compose build --build-arg DEFAULT_ADMIN_USER=$(DEFAULT_ADMIN_USER) --build-arg CORE_VERSION=$(DEFAULT_CORE_VERSION)
+	docker compose build --build-arg DEFAULT_ADMIN_USER=$(DEFAULT_ADMIN_USER) --build-arg VERSION=$(DEFAULT_VERSION)
 
 down:
 	docker compose down
@@ -68,6 +74,3 @@ docs-markdown: docs-gen
 				--resolve \
 				--verbose"
 	@echo "✅ Markdown documentation generated at $(PROJECT_ROOT)/docs/api-reference.md"
-
-build:
-	docker compose build
