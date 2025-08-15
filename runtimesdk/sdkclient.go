@@ -62,7 +62,7 @@ func NewClient(ctx context.Context, config Config, httpClient *http.Client) (*Cl
 		return nil, fmt.Errorf("failed to validate server version: %w", err)
 	}
 
-	sdkVersion := GetSDKVersion()
+	sdkVersion := apiframework.GetVersion()
 
 	// Special case for development (when version is unknown)
 	if about.Version == "unknown" || strings.Contains(about.Version, "dev") {
