@@ -2,28 +2,28 @@
 
 PROJECT_ROOT := $(shell pwd)
 VERSION_FILE := apiframework/version.txt
-VERSION_TOOL := tools/version/version
 
-# Build the version management tool
-$(VERSION_TOOL):
-	go build -o $@ ./tools/version
+# Version management commands - use go run directly
+set-version:
+	go run ./tools/version/main.go set
 
-# Version management commands
-set-version: $(VERSION_TOOL)
-	./$(VERSION_TOOL) set
+bump-major:
+	go run ./tools/version/main.go bump major
 
-bump-major: $(VERSION_TOOL)
-	./$(VERSION_TOOL) bump major
+bump-minor:
+	go run ./tools/version/main.go bump minor
 
-bump-minor: $(VERSION_TOOL)
-	./$(VERSION_TOOL) bump minor
-
-bump-patch: $(VERSION_TOOL)
-	./$(VERSION_TOOL) bump patch
+bump-patch:
+	go run ./tools/version/main.go bump patch
 
 validate-version:
 	@if [ ! -f "$(VERSION_FILE)" ]; then \
 		echo "ERROR: Version file $(VERSION_FILE) does not exist. Run 'make set-version' first."; \
+		exit 1; \
+	fi
+	@VERSION_CONTENT=$$(cat $(VERSION_FILE) | tr -d '\n' | tr -d '\r'); \
+	if [ -z "$$VERSION_CONTENT" ]; then \
+		echo "ERROR: Version file $(VERSION_FILE) is empty. Run 'make set-version' first."; \
 		exit 1; \
 	fi
 
@@ -32,7 +32,6 @@ echo-version:
 
 clean:
 	@rm -f $(VERSION_FILE) 2>/dev/null || true
-	@rm -f $(VERSION_TOOL) 2>/dev/null || true
 
 build: set-version validate-version
 	docker compose build --build-arg DEFAULT_ADMIN_USER=$(DEFAULT_ADMIN_USER)

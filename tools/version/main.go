@@ -66,74 +66,99 @@ func setVersion() {
 }
 
 func bumpVersion(bumpType string) {
-	// Get current latest tag
-	cmd := exec.Command("git", "fetch", "--tags")
-	cmd.Run() // Ignore error, might be first run
+	// 1. Verify we're in a git repository
+	if !isGitRepository() {
+		fmt.Println("ERROR: Not in a git repository")
+		os.Exit(1)
+	}
 
-	// Get the latest tag
+	// 2. Check for uncommitted changes
+	if hasUncommittedChanges() {
+		fmt.Println("ERROR: Cannot create release with uncommitted changes.")
+		fmt.Println("Please commit or stash your changes first.")
+		os.Exit(1)
+	}
+
+	// 3. Get current version
+	currentVersion, err := getCurrentTagVersion()
+	if err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Current version: %s\n", currentVersion)
+
+	// 4. Calculate new version
+	newVersion, err := calculateNewVersion(currentVersion, bumpType)
+	if err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("New version will be: %s\n", newVersion)
+
+	// 5. Update version file
+	if err := updateVersionFile(newVersion); err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 6. Commit the version file
+	if err := commitVersionFile(newVersion); err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+		// Revert the version file change
+		os.WriteFile(getVersionFile(), []byte(currentVersion), 0644)
+		os.Exit(1)
+	}
+
+	// 7. Create tag
+	if err := createTag(newVersion); err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+		// Revert the commit
+		exec.Command("git", "reset", "HEAD~1").Run()
+		// Revert the version file
+		os.WriteFile(getVersionFile(), []byte(currentVersion), 0644)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n✅ Release %s created successfully!\n", newVersion)
+	fmt.Printf("   Push with: git push && git push origin %s\n", newVersion)
+}
+
+func isGitRepository() bool {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	err := cmd.Run()
+	return err == nil
+}
+
+func hasUncommittedChanges() bool {
+	cmd := exec.Command("git", "status", "--porcelain")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("Git error: %s\n", string(output))
+		return true
+	}
+	return len(strings.TrimSpace(string(output))) > 0
+}
+
+func getCurrentTagVersion() (string, error) {
+	// Try to get the latest tag
+	cmd := exec.Command("git", "fetch", "--tags")
+	cmd.Run() // Ignore error
+
 	cmd = exec.Command("git", "describe", "--tags", "--abbrev=0", "--exclude=*-*")
 	output, err := cmd.CombinedOutput()
 	currentTag := strings.TrimSpace(string(output))
 
 	// If no tags exist, start with v0.1.0
 	if err != nil || currentTag == "" || strings.Contains(currentTag, "fatal") {
-		currentTag = "v0.1.0"
+		return "v0.1.0", nil
 	}
 
-	// Parse version
-	major, minor, patch := parseVersion(currentTag)
-
-	// Bump version based on type
-	var newVersion string
-	switch bumpType {
-	case "major":
-		newVersion = fmt.Sprintf("v%d.0.0", major+1)
-	case "minor":
-		newVersion = fmt.Sprintf("v%d.%d.0", major, minor+1)
-	case "patch":
-		newVersion = fmt.Sprintf("v%d.%d.%d", major, minor, patch+1)
-	default:
-		fmt.Printf("Error: Unknown bump type '%s'\n", bumpType)
-		os.Exit(1)
-	}
-
-	// Update version file
-	err = os.WriteFile(getVersionFile(), []byte(newVersion), 0644)
-	if err != nil {
-		fmt.Printf("Error writing version file: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Commit the version file change
-	cmd = exec.Command("git", "add", getVersionFile())
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error adding version file: %v\n", err)
-		os.Exit(1)
-	}
-
-	cmd = exec.Command("git", "commit", "-m", fmt.Sprintf("chore: release %s", newVersion))
-	if err := cmd.Run(); err != nil {
-		// If no changes to commit (already committed), continue
-		if !strings.Contains(err.Error(), "nothing to commit") {
-			fmt.Printf("Error committing version file: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	// Create tag pointing to THIS commit
-	cmd = exec.Command("git", "tag", "-a", newVersion, "-m", fmt.Sprintf("Release %s", newVersion))
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error creating tag: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("\n✅ Release %s created successfully!\n", newVersion)
-	fmt.Printf("   Push with: git push origin %s\n", newVersion)
+	return currentTag, nil
 }
 
-func parseVersion(tag string) (int, int, int) {
+func calculateNewVersion(currentVersion, bumpType string) (string, error) {
 	// Remove 'v' prefix if present
-	tag = strings.TrimPrefix(tag, "v")
+	tag := strings.TrimPrefix(currentVersion, "v")
 
 	// Split version parts
 	parts := strings.Split(tag, ".")
@@ -153,5 +178,53 @@ func parseVersion(tag string) (int, int, int) {
 		fmt.Sscanf(parts[2], "%d", &patch)
 	}
 
-	return major, minor, patch
+	// Bump version based on type
+	switch bumpType {
+	case "major":
+		return fmt.Sprintf("v%d.0.0", major+1), nil
+	case "minor":
+		return fmt.Sprintf("v%d.%d.0", major, minor+1), nil
+	case "patch":
+		return fmt.Sprintf("v%d.%d.%d", major, minor, patch+1), nil
+	default:
+		return "", fmt.Errorf("unknown bump type '%s'", bumpType)
+	}
+}
+
+func updateVersionFile(newVersion string) error {
+	fmt.Printf("📝 Updating version file to %s...\n", newVersion)
+	return os.WriteFile(getVersionFile(), []byte(newVersion), 0644)
+}
+
+func commitVersionFile(newVersion string) error {
+	fmt.Println("📦 Committing version file...")
+
+	// Add the file
+	cmd := exec.Command("git", "add", getVersionFile())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to add version file: %w\nOutput: %s", err, string(output))
+	}
+
+	// Commit the change
+	cmd = exec.Command("git", "commit", "-m", fmt.Sprintf("chore: release %s", newVersion))
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to commit version file: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
+func createTag(newVersion string) error {
+	fmt.Printf("🔖 Creating tag %s...\n", newVersion)
+
+	// Create tag pointing to THIS commit
+	cmd := exec.Command("git", "tag", "-a", newVersion, "-m", fmt.Sprintf("Release %s", newVersion))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create tag: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
 }
