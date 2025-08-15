@@ -1,4 +1,4 @@
-.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown clean set-version bump-major bump-minor bump-patch bump-rc bump-beta finalize-release
+.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown clean set-version bump-major bump-minor bump-patch
 
 PROJECT_ROOT := $(shell pwd)
 VERSION_FILE := apiframework/version.txt
@@ -20,15 +20,6 @@ bump-minor: $(VERSION_TOOL)
 
 bump-patch: $(VERSION_TOOL)
 	./$(VERSION_TOOL) bump patch
-
-bump-rc: $(VERSION_TOOL)
-	./$(VERSION_TOOL) bump rc
-
-bump-beta: $(VERSION_TOOL)
-	./$(VERSION_TOOL) bump beta
-
-finalize-release: $(VERSION_TOOL)
-	./$(VERSION_TOOL) finalize
 
 validate-version:
 	@if [ ! -f "$(VERSION_FILE)" ]; then \

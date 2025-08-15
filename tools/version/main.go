@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -20,17 +18,10 @@ func main() {
 		setVersion()
 	case "bump":
 		if len(os.Args) < 3 {
-			fmt.Println("Error: Must specify bump type (major, minor, patch, rc, beta)")
+			fmt.Println("Error: Must specify bump type (major, minor, patch)")
 			os.Exit(1)
 		}
-		bumpType := os.Args[2]
-		var rcName string
-		if len(os.Args) >= 4 {
-			rcName = os.Args[3]
-		}
-		bumpVersion(bumpType, rcName)
-	case "finalize":
-		finalizeRelease()
+		bumpVersion(os.Args[2])
 	default:
 		showHelp()
 		os.Exit(1)
@@ -41,15 +32,14 @@ func showHelp() {
 	fmt.Println("Version management tool")
 	fmt.Println("Usage:")
 	fmt.Println("  version set           - Set version from git")
-	fmt.Println("  version bump TYPE     - Bump version (major, minor, patch, rc, beta)")
-	fmt.Println("  version finalize      - Finalize a release candidate")
+	fmt.Println("  version bump TYPE     - Bump version (major, minor, patch)")
 }
 
 func getVersionFile() string {
 	return "apiframework/version.txt"
 }
 
-func getCurrentGitVersion() (string, error) {
+func getCurrentVersion() (string, error) {
 	cmd := exec.Command("git", "describe", "--tags", "--always", "--dirty")
 	output, err := cmd.Output()
 	if err != nil {
@@ -59,7 +49,7 @@ func getCurrentGitVersion() (string, error) {
 }
 
 func setVersion() {
-	version, err := getCurrentGitVersion()
+	version, err := getCurrentVersion()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -75,7 +65,7 @@ func setVersion() {
 	fmt.Printf("Version set to: %s\n", version)
 }
 
-func bumpVersion(bumpType, rcName string) {
+func bumpVersion(bumpType string) {
 	// Get current latest tag
 	cmd := exec.Command("git", "fetch", "--tags")
 	cmd.Run() // Ignore error, might be first run
@@ -91,7 +81,7 @@ func bumpVersion(bumpType, rcName string) {
 	}
 
 	// Parse version
-	major, minor, patch, preReleaseType, preReleaseNum := parseVersion(currentTag)
+	major, minor, patch := parseVersion(currentTag)
 
 	// Bump version based on type
 	var newVersion string
@@ -102,41 +92,9 @@ func bumpVersion(bumpType, rcName string) {
 		newVersion = fmt.Sprintf("v%d.%d.0", major, minor+1)
 	case "patch":
 		newVersion = fmt.Sprintf("v%d.%d.%d", major, minor, patch+1)
-	case "rc":
-		if rcName == "" {
-			rcName = "1"
-		}
-		if preReleaseType == "rc" {
-			newVersion = fmt.Sprintf("v%d.%d.%d-rc%d", major, minor, patch, preReleaseNum+1)
-		} else {
-			newVersion = fmt.Sprintf("v%d.%d.%d-rc%s", major, minor, patch, rcName)
-		}
-	case "beta":
-		if rcName == "" {
-			rcName = "1"
-		}
-		if preReleaseType == "beta" {
-			newVersion = fmt.Sprintf("v%d.%d.%d-beta%d", major, minor, patch, preReleaseNum+1)
-		} else {
-			newVersion = fmt.Sprintf("v%d.%d.%d-beta%s", major, minor, patch, rcName)
-		}
 	default:
 		fmt.Printf("Error: Unknown bump type '%s'\n", bumpType)
 		os.Exit(1)
-	}
-
-	// Create and push tag
-	cmd = exec.Command("git", "tag", "-a", newVersion, "-m", fmt.Sprintf("Release %s", newVersion))
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error creating tag: %v\n", err)
-		os.Exit(1)
-	}
-
-	cmd = exec.Command("git", "push", "origin", newVersion)
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error pushing tag: %v\n", err)
-		// Don't exit here - maybe we're on a branch without push access
-		fmt.Println("Warning: Failed to push tag to remote. You may need to push manually.")
 	}
 
 	// Update version file
@@ -146,83 +104,36 @@ func bumpVersion(bumpType, rcName string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Created new version: %s\n", newVersion)
-}
-
-func finalizeRelease() {
-	// Get current version from file
-	versionFile := getVersionFile()
-	currentVersion, err := os.ReadFile(versionFile)
-	if err != nil {
-		fmt.Printf("Error reading version file: %v\n", err)
-		os.Exit(1)
-	}
-
-	version := strings.TrimSpace(string(currentVersion))
-
-	// Check if it's already a production version
-	if !strings.Contains(version, "-") {
-		fmt.Println("Current version is already a production release")
-		return
-	}
-
-	// Remove pre-release suffix
-	prodVersion := regexp.MustCompile(`-[a-zA-Z0-9.]+$`).ReplaceAllString(version, "")
-
-	// Create production tag
-	cmd := exec.Command("git", "tag", "-a", prodVersion, "-m", fmt.Sprintf("Production release %s", prodVersion))
+	// Commit the version file change
+	cmd = exec.Command("git", "add", getVersionFile())
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error creating production tag: %v\n", err)
+		fmt.Printf("Error adding version file: %v\n", err)
 		os.Exit(1)
 	}
 
-	cmd = exec.Command("git", "push", "origin", prodVersion)
+	cmd = exec.Command("git", "commit", "-m", fmt.Sprintf("chore: release %s", newVersion))
 	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error pushing production tag: %v\n", err)
-		// Don't exit here - maybe we're on a branch without push access
-		fmt.Println("Warning: Failed to push tag to remote. You may need to push manually.")
-	}
-
-	// Update version file
-	err = os.WriteFile(versionFile, []byte(prodVersion), 0644)
-	if err != nil {
-		fmt.Printf("Error writing version file: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Finalized production release: %s\n", prodVersion)
-}
-
-func parseVersion(tag string) (int, int, int, string, int) {
-	// Remove 'v' prefix if present
-	tag = strings.TrimPrefix(tag, "v")
-
-	// Extract pre-release info if present
-	preReleaseType := ""
-	preReleaseNum := 0
-	if idx := strings.IndexAny(tag, "-"); idx != -1 {
-		preRelease := tag[idx+1:]
-		tag = tag[:idx]
-
-		// Parse pre-release info
-		if strings.HasPrefix(preRelease, "rc") {
-			preReleaseType = "rc"
-			numStr := strings.TrimPrefix(preRelease, "rc")
-			if num, err := strconv.Atoi(numStr); err == nil {
-				preReleaseNum = num
-			} else {
-				preReleaseNum = 1
-			}
-		} else if strings.HasPrefix(preRelease, "beta") {
-			preReleaseType = "beta"
-			numStr := strings.TrimPrefix(preRelease, "beta")
-			if num, err := strconv.Atoi(numStr); err == nil {
-				preReleaseNum = num
-			} else {
-				preReleaseNum = 1
-			}
+		// If no changes to commit (already committed), continue
+		if !strings.Contains(err.Error(), "nothing to commit") {
+			fmt.Printf("Error committing version file: %v\n", err)
+			os.Exit(1)
 		}
 	}
+
+	// Create tag pointing to THIS commit
+	cmd = exec.Command("git", "tag", "-a", newVersion, "-m", fmt.Sprintf("Release %s", newVersion))
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Error creating tag: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n✅ Release %s created successfully!\n", newVersion)
+	fmt.Printf("   Push with: git push origin %s\n", newVersion)
+}
+
+func parseVersion(tag string) (int, int, int) {
+	// Remove 'v' prefix if present
+	tag = strings.TrimPrefix(tag, "v")
 
 	// Split version parts
 	parts := strings.Split(tag, ".")
@@ -242,5 +153,5 @@ func parseVersion(tag string) (int, int, int, string, int) {
 		fmt.Sscanf(parts[2], "%d", &patch)
 	}
 
-	return major, minor, patch, preReleaseType, preReleaseNum
+	return major, minor, patch
 }

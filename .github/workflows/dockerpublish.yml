@@ -16,6 +16,10 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          # This is critical! We need the actual commit that was tagged
+          # not just the tag reference
+          fetch-depth: 0
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -28,30 +32,33 @@ jobs:
         id: vars
         run: echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Debug metadata output
-        run: echo "The version tag is ${{ steps.vars.outputs.TAG }}"
-
       - name: Verify version matches tag
         run: |
-          # Get the current tag
           TAG="${{ steps.vars.outputs.TAG }}"
 
-          # Create version file using the same logic as our Makefile
-          GIT_VERSION=$(git describe --tags --exact-match 2>/dev/null || echo "$TAG")
-
-          # Create version file
-          echo -n "$GIT_VERSION" > apiframework/version.txt
-
-          # Read version from file
+          # Read the version file that was committed with the tag
           VERSION_IN_FILE=$(cat apiframework/version.txt | tr -d '\n' | tr -d '\r')
 
           # Compare with tag
           if [ "$VERSION_IN_FILE" != "$TAG" ]; then
-            echo "ERROR: Version in file ($VERSION_IN_FILE) does not match tag ($TAG)"
-            echo "When building from a tag, these should match exactly."
+            echo "ERROR: Version in file ($VERSION_IN_FILE) does NOT match tag ($TAG)"
+            echo "This means the tag was created without updating the version file first."
+            echo "Proper release process:"
+            echo "  1. Update version file with new version"
+            echo "  2. Commit the change"
+            echo "  3. Create tag pointing to THAT commit"
+            echo "  4. Push tag"
+            echo ""
+            echo "To fix this:"
+            echo "  git checkout $TAG"
+            echo "  echo -n '$TAG' > apiframework/version.txt"
+            echo "  git commit -m 'Update version to $TAG' apiframework/version.txt"
+            echo "  git tag -d $TAG"
+            echo "  git tag $TAG"
+            echo "  git push -f origin $TAG"
             exit 1
           fi
-          echo "Version verification passed: $VERSION_IN_FILE matches tag"
+          echo "✓ Version verification passed: $VERSION_IN_FILE matches tag"
 
       - name: Build and push to GHCR
         uses: docker/build-push-action@v5
