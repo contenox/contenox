@@ -14,7 +14,6 @@ import (
 	libdb "github.com/contenox/dbexec"
 	libkv "github.com/contenox/kvstore"
 	libroutine "github.com/contenox/routine"
-	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/hooks"
 	"github.com/contenox/runtime/llmrepo"
 	"github.com/contenox/runtime/ollamatokenizer"
@@ -27,7 +26,6 @@ import (
 
 var (
 	cliSetTenancy  string
-	cliSetVersion  string
 	Tenancy        = "96ed1c59-ffc1-4545-b3c3-191079c68d79"
 	nodeInstanceID = "NODE-Instance-UNSET-dev"
 )
@@ -70,11 +68,7 @@ func main() {
 	if cliSetTenancy == "" {
 		log.Fatalf("corrupted build! cliSetTenantID was not injected")
 	}
-	if cliSetVersion == "" {
-		log.Fatalf("corrupted build! cliSetVersion was not injected")
-	}
 
-	apiframework.Version = cliSetVersion
 	nodeInstanceID = uuid.NewString()[0:8]
 	Tenancy = cliSetTenancy
 	config := &serverapi.Config{}

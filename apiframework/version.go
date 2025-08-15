@@ -1,11 +1,12 @@
 package apiframework
 
 import (
-	"runtime/debug"
+	_ "embed"
 	"strings"
 )
 
-var Version string
+//go:embed version.txt
+var versionFile string
 
 type AboutServer struct {
 	Version        string `json:"version"`
@@ -13,26 +14,15 @@ type AboutServer struct {
 	Tenancy        string `json:"tenancy"`
 }
 
+var version string
+
 func GetVersion() string {
-	if Version != "" {
-		return Version
-	}
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "unknown"
-	}
+	return version
+}
 
-	if info.Main.Path == "github.com/contenox/runtime" {
-		version := strings.TrimSuffix(info.Main.Version, "+incompatible")
-		return version
+func init() {
+	version = strings.TrimSpace(versionFile)
+	if version == "" {
+		version = "unknown"
 	}
-
-	for _, dep := range info.Deps {
-		if dep.Path == "github.com/contenox/runtime" {
-			version := strings.TrimSuffix(dep.Version, "+incompatible")
-			return version
-		}
-	}
-
-	return "unknown"
 }

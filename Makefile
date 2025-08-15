@@ -1,25 +1,50 @@
-.PHONY: echo-version test-unit test-system test compose-wipe benchmark run build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown
-PROJECT_ROOT := $(shell pwd)
-DEFAULT_VERSION := $(shell git describe --tags --always --dirty)
+.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown clean set-version bump-major bump-minor bump-patch bump-rc bump-beta finalize-release
 
+PROJECT_ROOT := $(shell pwd)
+VERSION_FILE := apiframework/version.txt
+VERSION_TOOL := tools/version/version
+
+# Build the version management tool
+$(VERSION_TOOL):
+	go build -o $@ ./tools/version
+
+# Version management commands
+set-version: $(VERSION_TOOL)
+	./$(VERSION_TOOL) set
+
+bump-major: $(VERSION_TOOL)
+	./$(VERSION_TOOL) bump major
+
+bump-minor: $(VERSION_TOOL)
+	./$(VERSION_TOOL) bump minor
+
+bump-patch: $(VERSION_TOOL)
+	./$(VERSION_TOOL) bump patch
+
+bump-rc: $(VERSION_TOOL)
+	./$(VERSION_TOOL) bump rc
+
+bump-beta: $(VERSION_TOOL)
+	./$(VERSION_TOOL) bump beta
+
+finalize-release: $(VERSION_TOOL)
+	./$(VERSION_TOOL) finalize
+
+validate-version:
+	@if [ ! -f "$(VERSION_FILE)" ]; then \
+		echo "ERROR: Version file $(VERSION_FILE) does not exist. Run 'make set-version' first."; \
+		exit 1; \
+	fi
 
 echo-version:
-	@echo $(DEFAULT_VERSION)
+	@echo "Current version: $$(cat $(VERSION_FILE) 2>/dev/null || echo 'not set')"
 
-test-unit:
-	GOMAXPROCS=4 go test -C ./ -run '^TestUnit_' ./...
+clean:
+	@rm -f $(VERSION_FILE) 2>/dev/null || true
+	@rm -f $(VERSION_TOOL) 2>/dev/null || true
 
-test-system:
-	GOMAXPROCS=4 go test -C ./ -run '^TestSystem_' ./...
-
-test:
-	GOMAXPROCS=4 go test -C ./ ./...
-
-benchmark:
-	go test -C ./core -bench=. -run=^$ -benchmem ./...
-
-build:
-	docker compose build --build-arg DEFAULT_ADMIN_USER=$(DEFAULT_ADMIN_USER) --build-arg VERSION=$(DEFAULT_VERSION)
+build: set-version validate-version
+	docker compose build --build-arg DEFAULT_ADMIN_USER=$(DEFAULT_ADMIN_USER)
 
 down:
 	docker compose down
@@ -29,6 +54,15 @@ run: down build
 
 logs: run
 	docker compose logs -f runtime
+
+test-unit:
+	GOMAXPROCS=4 go test -C ./ -run '^TestUnit_' ./...
+
+test-system:
+	GOMAXPROCS=4 go test -C ./ -run '^TestSystem_' ./...
+
+test:
+	GOMAXPROCS=4 go test -C ./ ./...
 
 compose-wipe:
 	docker compose down --volumes --rmi all
@@ -51,7 +85,6 @@ test-api: run wait-for-server
 test-api-logs: run wait-for-server
 	. apitests/.venv/bin/activate && pytest --log-cli-level=DEBUG --capture=no -v apitests
 
-
 test-api-docker:
 	docker build -f Dockerfile.apitests -t contenox-apitests .
 	docker run --rm --network=host contenox-apitests
@@ -69,7 +102,7 @@ docs-markdown: docs-gen
 		node:18-alpine sh -c "\
 			npm install -g widdershins@4 && \
 			widdershins /local/openapi.json -o /local/api-reference.md \
-				--language_tabs 'python' \
+				--language_tabs 'python:Python' \
 				--summary \
 				--resolve \
 				--verbose"

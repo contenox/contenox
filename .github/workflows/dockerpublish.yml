@@ -31,11 +31,31 @@ jobs:
       - name: Debug metadata output
         run: echo "The version tag is ${{ steps.vars.outputs.TAG }}"
 
+      - name: Verify version matches tag
+        run: |
+          # Get the current tag
+          TAG="${{ steps.vars.outputs.TAG }}"
+
+          # Create version file using the same logic as our Makefile
+          GIT_VERSION=$(git describe --tags --exact-match 2>/dev/null || echo "$TAG")
+
+          # Create version file
+          echo -n "$GIT_VERSION" > apiframework/version.txt
+
+          # Read version from file
+          VERSION_IN_FILE=$(cat apiframework/version.txt | tr -d '\n' | tr -d '\r')
+
+          # Compare with tag
+          if [ "$VERSION_IN_FILE" != "$TAG" ]; then
+            echo "ERROR: Version in file ($VERSION_IN_FILE) does not match tag ($TAG)"
+            echo "When building from a tag, these should match exactly."
+            exit 1
+          fi
+          echo "Version verification passed: $VERSION_IN_FILE matches tag"
+
       - name: Build and push to GHCR
         uses: docker/build-push-action@v5
         with:
-          build-args: |
-            VERSION=${{ steps.vars.outputs.TAG }}
           context: .
           push: true
           tags: |
