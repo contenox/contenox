@@ -435,6 +435,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	declaredModelMap := make(map[string]runtimetypes.Model)
 	for _, model := range declaredOllamaModels {
 		declaredModelMap[model.Model] = *model
+		models = append(models, model.Model)
 	}
 	// log.Printf("Extracted model names for backend %s: %v", backend.ID, models)
 
@@ -581,7 +582,10 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}
-
+	wantedModels := []string{}
+	for _, m := range models {
+		wantedModels = append(wantedModels, m.Model)
+	}
 	// Build models endpoint URL
 	modelsURL := strings.TrimSuffix(backend.BaseURL, "/") + "/v1/models"
 	req, err := http.NewRequestWithContext(ctx, "GET", modelsURL, nil)
