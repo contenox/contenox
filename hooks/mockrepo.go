@@ -35,7 +35,6 @@ func NewMockHookRegistry() *MockHookRepo {
 	return &MockHookRepo{
 		ResponseMap: make(map[string]HookResponse),
 		DefaultResponse: HookResponse{
-			Status:     taskengine.StatusSuccess,
 			Output:     "default mock response",
 			OutputType: taskengine.DataTypeString,
 			Transition: "",

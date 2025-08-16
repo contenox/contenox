@@ -260,3 +260,33 @@ def auth_headers():
         "X-API-Key": API_TOKEN
     }
     return headers
+
+EMBED_MODEL_NAME = "nomic-embed-text:latest"
+TASK_MODEL_NAME = "phi3:3.8b"
+
+@pytest.fixture(scope="session")
+def wait_for_declared_models(
+    base_url,
+    create_backend_and_assign_to_pool,
+    create_model_and_assign_to_pool,
+    wait_for_model_in_backend
+):
+    """Fixture that waits for all declared models to be downloaded"""
+    backend_id = create_backend_and_assign_to_pool["backend_id"]
+
+    # Get all models from the internal API endpoint
+    response = requests.get(f"{base_url}/internal/models")
+    response.raise_for_status()
+    all_models = response.json()
+
+    # Extract model names
+    model_names = [model["model"] for model in all_models]
+    logger.info(f"Found {len(model_names)} models to wait for: {model_names}")
+    assert len(model_names) > 0, "No models found"
+
+    # Wait for each model to download
+    for model_name in model_names:
+        logger.info(f"⏳ Waiting for model '{model_name}' to download")
+        wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)
+
+    logger.info("✅ All models downloaded successfully")

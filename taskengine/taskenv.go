@@ -17,12 +17,6 @@ import (
 	"github.com/contenox/runtime/llmresolver"
 )
 
-const (
-	StatusSuccess             = 1
-	StatusUnknownHookProvider = 2
-	StatusError               = 3
-)
-
 // DataType represents the type of data that can be passed between tasks
 type DataType int
 

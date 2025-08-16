@@ -2,14 +2,14 @@
 
 ## What Are Hooks?
 
-Hooks are **custom integrations** that allow AI workflows to interact with external systems or execute custom logic. They act as bridges between the state machine workflows and the outside world, enabling:
+Hooks are **custom integrations** enabling AI workflows to interact with external systems or execute custom logic. Hooks act as bridges between state machine workflows and external systems, supporting:
 
-- Call external APIs or services
-- Implement custom validation logic
-- Integrate with business systems
-- Extend the runtime's capabilities
+- External API or service calls
+- Custom validation logic implementation
+- Business system integration
+- Runtime capability extension
 
-There are **two types of hooks** in contenox/runtime:
+Two hook types exist in contenox/runtime:
 
 1. **Remote Hooks** - HTTP-based services (most common)
 2. **Local Hooks** - Built-in Go implementations (for performance-critical operations)
@@ -18,11 +18,11 @@ There are **two types of hooks** in contenox/runtime:
 
 ## 🌐 Remote Hooks (Recommended Approach)
 
-Remote hooks allow workflows call any HTTP service during execution.
+Remote hooks allow workflows to call HTTP services during execution.
 
 ### 1. Register a Remote Hook
 
-Register via API a external service:
+Register an external service via API:
 
 ```bash
 curl -X POST http://localhost:8081/hooks/remote \
@@ -40,11 +40,11 @@ curl -X POST http://localhost:8081/hooks/remote \
 | Parameter | Required | Description | Validation |
 |-----------|----------|-------------|------------|
 | `name` | Yes | Unique identifier for the hook | Must be unique, non-empty string |
-| `endpointUrl` | Yes | Full URL of the service | Must be valid URL |
+| `endpointUrl` | Yes | Full absolute URL of the service | Must include scheme (http:// or https://) and host (e.g., "http://example.com/path") |
 | `method` | Yes | HTTP method (GET, POST, etc.) | Valid HTTP method |
-| `timeoutMs` | Yes | Max execution time in milliseconds | Must be > 0 |
+| `timeoutMs` | Yes | Max execution time in milliseconds | Must be positive integer (recommended: 1000-30000ms) |
 
-> **Note:** On Linux Docker, use the machine's IP instead of `host.docker.internal`
+> **Note:** On Linux Docker, use machine IP instead of `host.docker.internal`
 
 ### 2. Use in a Workflow
 
@@ -60,7 +60,7 @@ Reference the hook in a task-chain workflow:
     "tasks": [
       {
         "id": "call_ping_pong",
-        "description": "Call our ping-pong hook",
+        "description": "Call ping-pong hook",
         "handler": "hook",
         "hook": {
           "name": "ping-pong"
@@ -81,7 +81,7 @@ Reference the hook in a task-chain workflow:
 
 ### 3. Implement a Hook Service
 
-the service must accept a POST request with this JSON structure:
+The service must accept a POST request with this JSON structure:
 
 ```json
 {
@@ -111,13 +111,60 @@ And respond with:
 | Field | Required | Description |
 |-------|----------|-------------|
 | `output` | Yes | Result data to pass to next task |
-| `dataType` | Yes | Type of the output (string, int, bool, etc.) |
+| `dataType` | Yes | Type of the output (must be valid type from table below) |
 | `error` | No | Error message if any |
 | `transition` | Yes | Value used for conditional branching |
 
-### 4. Ping Pong Example (Python)
+#### Valid dataType Values:
+| Value | Description | Example |
+|-------|-------------|---------|
+| `string` | Text data | `"Hello world"` |
+| `int` | Integer number | `42` |
+| `float` | Floating point number | `3.14` |
+| `bool` | Boolean value | `true` |
+| `chat_history` | Chat history object | `{ "messages": [...] }` |
+| `openai_chat` | OpenAI chat request | `{ "model": "...", "messages": [...] }` |
+| `openai_chat_response` | OpenAI chat response | `{ "choices": [...] }` |
+| `search_results` | Search results array | `[ { "title": "...", "content": "..." } ]` |
+| `vector` | Vector of floats | `[0.1, 0.2, 0.3]` |
+| `json` | Generic JSON object | `{ "any": "valid json" }` |
+| `any` | Unspecified type | (not recommended) |
 
-Minimal working example to test the integration:
+> **Important:** The `output` value undergoes automatic conversion to the type specified in `dataType`. Conversion failures cause hook execution failure. Ensure service output matches declared dataType.
+
+### 4. Error Handling
+
+When remote hooks fail, the system returns specific error messages:
+
+1. **Invalid URL Format**:
+   ```
+   endpoint URL must be absolute (include http:// or https://): /hooks/legacy/echo
+   ```
+
+2. **HTTP Error Status (4xx/5xx)**:
+   ```
+   hook 'ping-pong' failed with status 500: {"error": "Database connection failed"}
+   ```
+
+3. **Invalid JSON Response**:
+   ```
+   failed to parse response (status 500): invalid character 'D' looking for beginning of value
+   Response: Database connection failed
+   ```
+
+4. **Non-empty "error" Field**:
+   ```
+   hook 'ping-pong' error: Database connection failed
+   ```
+
+5. **Type Conversion Failure**:
+   ```
+   hook 'ping-pong' returned invalid int data: cannot convert string to int
+   ```
+
+### 5. Ping Pong Example (Python)
+
+Minimal working example to test integration:
 
 ```python
 from flask import Flask, request, jsonify
@@ -130,13 +177,13 @@ def ping_pong():
     data = request.json
     print("Received hook request:", data)
 
-    # Extract the input from the runtime
+    # Extract input from runtime
     input_data = data.get('input', '')
 
-    # Our simple ping-pong logic
+    # Ping-pong logic
     output = "pong" if input_data == "ping" else f"echo: {input_data}"
 
-    # Return the required hook response format
+    # Return required hook response format
     return jsonify({
         "output": output,
         "dataType": "string",
@@ -198,4 +245,33 @@ Expected response:
     }
   ]
 }
+```
+
+### 🔍 Common Hook Errors
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `endpoint URL must be absolute (include http:// or https://)` | Missing scheme in endpointUrl | Use absolute URL: `http://service:port/path` |
+| `invalid data type 'xyz'` | Unrecognized dataType value | Use valid dataType from reference table |
+| `failed to convert hook output to [type]` | Output incompatible with dataType | Ensure output matches dataType or use compatible type |
+| `hook failed with status [code]` | Remote service returned error | Check service logs; response body included in error |
+| `context deadline exceeded` | Hook execution exceeded timeout | Increase timeoutMs value |
+| `timeout must be positive` | Invalid timeout value | Set timeoutMs to positive integer |
+
+### ✅ Hook Validation Checklist
+
+Before registering a hook:
+1. Endpoint URL starts with `http://` or `https://`
+2. Service returns valid JSON with proper dataType
+3. timeoutMs set between 1000-30000 (1-30 seconds)
+4. Successful test via direct curl before workflow integration
+
+```bash
+curl -X POST http://localhost:8081/hooks/test \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "your-hook",
+    "input": "test",
+    "dataType": "string"
+  }'
 ```

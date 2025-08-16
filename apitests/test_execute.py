@@ -4,10 +4,13 @@ from helpers import assert_status_code
 # Test the execute endpoint
 def test_execute_prompt(base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -31,10 +34,13 @@ def test_execute_prompt(base_url,
 # Test error handling
 def test_execute_without_prompt(base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -51,10 +57,13 @@ def test_execute_without_prompt(base_url,
 def test_execute_taskchain(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -119,10 +128,13 @@ def test_execute_taskchain(
 def test_multi_step_taskchain(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -175,10 +187,13 @@ def test_multi_step_taskchain(
 def test_conditional_branching(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -193,7 +208,7 @@ def test_conditional_branching(
             {
                 "id": "check_france",
                 "handler": "condition_key",
-                "valid_conditions": {"yes": True, "no": False},
+                "valid_conditions": {"yes": True, "no": False, "Yes.": True, "No.": False, "Yes": True, "No": False},
                 "prompt_template": "Is Paris the capital of France? Answer only 'yes' or 'no'.",
                 "transition": {
                     "branches": [
@@ -234,10 +249,13 @@ def test_conditional_branching(
 def test_invalid_chain_definition(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -257,10 +275,13 @@ def test_invalid_chain_definition(
 def test_model_execution_task(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -323,10 +344,13 @@ def test_model_execution_task(
 def test_embedding_handler(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]

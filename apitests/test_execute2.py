@@ -4,11 +4,14 @@ from helpers import assert_status_code
 def test_parse_number_handler(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
     """Test parse_number handler with predictable numeric response"""
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -76,11 +79,14 @@ def test_parse_number_handler(
 def test_parse_range_handler(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
     """Test parse_range handler with numeric range validation"""
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -146,11 +152,14 @@ def test_parse_range_handler(
 def test_transition_operators(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
     """Test different transition operators with predictable conditions"""
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -168,9 +177,11 @@ def test_transition_operators(
                 "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "valid_conditions": {
                     "very_long_string": True,
+                    "Very_long_string": True,
+                    "Short": True,
                     "short": True
                 },
-                "prompt_template": "Generate a random string that is either 'very_long_string' or 'short'.",
+                "prompt_template": "Echo either 'very_long_string' or 'short'.",
                 "transition": {
                     "branches": [
                         {
@@ -253,11 +264,14 @@ def test_transition_operators(
 def test_compose_strategies(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend
 ):
     """Test different compose strategies with chat history"""
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]
@@ -323,10 +337,13 @@ def test_compose_strategies(
 def test_print_statements_with_templates(
     base_url,
     with_ollama_backend,
+    wait_for_declared_models,
     create_model_and_assign_to_pool,
     create_backend_and_assign_to_pool,
     wait_for_model_in_backend):
     """Test print statements with template variables (verifies via logs)"""
+    _ = with_ollama_backend
+    _ = wait_for_declared_models
     model_info = create_model_and_assign_to_pool
     backend_info = create_backend_and_assign_to_pool
     model_name = model_info["model_name"]

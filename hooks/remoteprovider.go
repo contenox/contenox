@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	libdb "github.com/contenox/dbexec"
@@ -85,7 +86,19 @@ func (p *PersistentRepo) execRemoteHook(
 		return nil, taskengine.DataTypeAny, transition,
 			fmt.Errorf("failed to marshal request: %w", err)
 	}
-
+	u, parseErr := url.Parse(hook.EndpointURL)
+	if parseErr != nil {
+		return nil, taskengine.DataTypeAny, transition,
+			fmt.Errorf("invalid endpoint URL format: %w", parseErr)
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return nil, taskengine.DataTypeAny, transition,
+			fmt.Errorf("endpoint URL must be absolute (include http:// or https://): %s", hook.EndpointURL)
+	}
+	if hook.TimeoutMs <= 0 {
+		return nil, taskengine.DataTypeAny, transition,
+			fmt.Errorf("timeout must be positive: %d", hook.TimeoutMs)
+	}
 	timeout := time.Duration(hook.TimeoutMs) * time.Millisecond
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -130,16 +143,23 @@ func (p *PersistentRepo) execRemoteHook(
 		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 			fmt.Errorf("failed to read response body: %w", err)
 	}
-
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errorStatus = true
+		bodySample := string(body)
+		if len(bodySample) > 200 {
+			bodySample = bodySample[:200] + "..."
+		}
+		err = fmt.Errorf("hook failed with status %d: %s", resp.StatusCode, bodySample)
+	}
 	if err := json.Unmarshal(body, &response); err != nil {
 		if errorStatus {
+			err = fmt.Errorf("hook failed with status %d: %w", resp.StatusCode, err)
 			return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-				fmt.Errorf("failed to parse response: %w", err)
+				err
 		}
 		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-			fmt.Errorf("failed to parse response: %w", err)
+			fmt.Errorf("failed to unmarshal hook response: %w", err)
 	}
-
 	dt, err := taskengine.DataTypeFromString(response.DataType)
 	if err != nil {
 		if errorStatus {
@@ -154,7 +174,12 @@ func (p *PersistentRepo) execRemoteHook(
 	} else if errorStatus {
 		err = fmt.Errorf("failed with status %d", resp.StatusCode)
 	}
-	return response.Output, dt, response.Transition, err
+	convertedOutput, convErr := taskengine.ConvertToType(response.Output, dt)
+	if convErr != nil {
+		return nil, dt, response.Transition,
+			fmt.Errorf("failed to convert hook output to %s: %w", dt.String(), convErr)
+	}
+	return convertedOutput, dt, response.Transition, err
 }
 
 func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
@@ -168,7 +193,7 @@ func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
 	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
 	var remoteHooks []*runtimetypes.RemoteHook
 	var lastCursor *time.Time
-	limit := 100 // A reasonable page size
+	limit := 100 // A reasonable page size?
 
 	for {
 		page, err := storeInstance.ListRemoteHooks(ctx, lastCursor, limit)
