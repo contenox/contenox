@@ -1,20 +1,7 @@
-.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown clean set-version bump-major bump-minor bump-patch
+.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown clean set-version bump-major bump-minor bump-patch commit-docs
 
 PROJECT_ROOT := $(shell pwd)
 VERSION_FILE := apiframework/version.txt
-
-# Version management commands - use go run directly
-set-version:
-	go run ./tools/version/main.go set
-
-bump-major:
-	go run ./tools/version/main.go bump major
-
-bump-minor:
-	go run ./tools/version/main.go bump minor
-
-bump-patch:
-	go run ./tools/version/main.go bump patch
 
 validate-version:
 	@if [ ! -f "$(VERSION_FILE)" ]; then \
@@ -97,3 +84,20 @@ docs-markdown: docs-gen
 				--resolve \
 				--verbose"
 	@echo "✅ Markdown documentation generated at $(PROJECT_ROOT)/docs/api-reference.md"
+
+commit-docs: docs-markdown
+	@git add $(PROJECT_ROOT)/docs/
+	@git commit -m "Update API reference"
+
+# Version management commands - use go run directly
+set-version: commit-docs
+	go run ./tools/version/main.go set
+
+bump-major: commit-docs
+	go run ./tools/version/main.go bump major
+
+bump-minor: commit-docs
+	go run ./tools/version/main.go bump minor
+
+bump-patch: commit-docs
+	go run ./tools/version/main.go bump patch

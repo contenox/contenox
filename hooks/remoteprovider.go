@@ -143,9 +143,9 @@ func (p *PersistentRepo) execRemoteHook(
 		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 			fmt.Errorf("failed to read response body: %w", err)
 	}
+	bodySample := string(body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errorStatus = true
-		bodySample := string(body)
 		if len(bodySample) > 200 {
 			bodySample = bodySample[:200] + "..."
 		}
@@ -153,7 +153,7 @@ func (p *PersistentRepo) execRemoteHook(
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
 		if errorStatus {
-			err = fmt.Errorf("hook failed with status %d: %w", resp.StatusCode, err)
+			err = fmt.Errorf("hook failed with status %d, body: %s, error: %w", resp.StatusCode, bodySample, err)
 			return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
 				err
 		}

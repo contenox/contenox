@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/contenox/runtime/apiframework"
 	"github.com/getkin/kin-openapi/openapi3"
 	"gopkg.in/yaml.v3"
 )
@@ -47,8 +48,8 @@ func main() {
 	swagger := &openapi3.T{
 		OpenAPI: "3.1.0",
 		Info: &openapi3.Info{
-			Title:   "LLM Backend Management API",
-			Version: "1.0",
+			Title:   "contenox/runtime – LLM Backend Management API",
+			Version: apiframework.GetVersion(),
 		},
 		Paths: openapi3.NewPaths(),
 	}
