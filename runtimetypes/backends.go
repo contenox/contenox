@@ -9,6 +9,7 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
 
@@ -16,7 +17,9 @@ func (s *store) CreateBackend(ctx context.Context, backend *Backend) error {
 	now := time.Now().UTC()
 	backend.CreatedAt = now
 	backend.UpdatedAt = now
-
+	if backend.ID == "" {
+		backend.ID = uuid.New().String()
+	}
 	_, err := s.Exec.ExecContext(ctx, `
 		INSERT INTO llm_backends
 		(id, name, base_url, type, created_at, updated_at)

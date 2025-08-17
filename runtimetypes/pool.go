@@ -8,13 +8,16 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
+	"github.com/google/uuid"
 )
 
 func (s *store) CreatePool(ctx context.Context, pool *Pool) error {
 	now := time.Now().UTC()
 	pool.CreatedAt = now
 	pool.UpdatedAt = now
-
+	if pool.ID == "" {
+		pool.ID = uuid.New().String()
+	}
 	_, err := s.Exec.ExecContext(ctx, `
 		INSERT INTO llm_pool
 		(id, name, purpose_type, created_at, updated_at)

@@ -94,8 +94,6 @@ func TestUnit_Models_GetAllModelsOrder(t *testing.T) {
 	err := s.AppendModel(ctx, model1)
 	require.NoError(t, err)
 
-	time.Sleep(10 * time.Millisecond)
-
 	model2 := &runtimetypes.Model{
 		ID:            uuid.New().String(),
 		Model:         "model2",
@@ -199,7 +197,6 @@ func TestUnit_Models_ListHandlesPagination(t *testing.T) {
 		err := s.AppendModel(ctx, model)
 		require.NoError(t, err)
 		createdModels = append(createdModels, model)
-		time.Sleep(1 * time.Millisecond)
 	}
 
 	// Paginate through the results with a limit of 2

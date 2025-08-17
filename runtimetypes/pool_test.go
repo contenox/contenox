@@ -88,7 +88,6 @@ func TestUnit_Pools_ListPools(t *testing.T) {
 
 	err = s.CreatePool(ctx, pool1)
 	require.NoError(t, err)
-	time.Sleep(10 * time.Millisecond)
 	err = s.CreatePool(ctx, pool2)
 	require.NoError(t, err)
 
@@ -104,7 +103,7 @@ func TestUnit_Pools_ListPoolsPagination(t *testing.T) {
 
 	// Create 5 pools with a small delay to ensure distinct creation times.
 	var createdPools []*runtimetypes.Pool
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		pool := &runtimetypes.Pool{
 			ID:          uuid.NewString(),
 			Name:        fmt.Sprintf("pagination-pool-%d", i),
@@ -113,7 +112,6 @@ func TestUnit_Pools_ListPoolsPagination(t *testing.T) {
 		err := s.CreatePool(ctx, pool)
 		require.NoError(t, err)
 		createdPools = append(createdPools, pool)
-		time.Sleep(1 * time.Millisecond)
 	}
 
 	// Paginate through the results with a limit of 2.
@@ -181,8 +179,10 @@ func TestUnit_Pools_ListPoolsByPurpose(t *testing.T) {
 	pool1 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1", PurposeType: purpose}
 	pool2 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool2", PurposeType: "training"}
 
-	s.CreatePool(ctx, pool1)
-	s.CreatePool(ctx, pool2)
+	err := s.CreatePool(ctx, pool1)
+	require.NoError(t, err)
+	err = s.CreatePool(ctx, pool2)
+	require.NoError(t, err)
 
 	pools, err := s.ListPoolsByPurpose(ctx, purpose, nil, 100)
 	require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestUnit_Pools_ListPoolsByPurposePagination(t *testing.T) {
 	purpose := "inference"
 	otherPurpose := "training"
 	var createdPools []*runtimetypes.Pool
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		pool := &runtimetypes.Pool{
 			ID:          uuid.NewString(),
 			Name:        fmt.Sprintf("inference-pool-%d", i),
@@ -206,7 +206,6 @@ func TestUnit_Pools_ListPoolsByPurposePagination(t *testing.T) {
 		err := s.CreatePool(ctx, pool)
 		require.NoError(t, err)
 		createdPools = append(createdPools, pool)
-		time.Sleep(1 * time.Millisecond)
 	}
 
 	// Create an extra pool with a different purpose type
@@ -266,7 +265,8 @@ func TestUnit_Pools_AssignAndListBackendsForPool(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
-	s.CreatePool(ctx, pool)
+	err := s.CreatePool(ctx, pool)
+	require.NoError(t, err)
 
 	backend := &runtimetypes.Backend{
 		ID:      uuid.NewString(),
@@ -274,9 +274,10 @@ func TestUnit_Pools_AssignAndListBackendsForPool(t *testing.T) {
 		BaseURL: "http://backend1",
 		Type:    "ollama",
 	}
-	s.CreateBackend(ctx, backend)
+	err = s.CreateBackend(ctx, backend)
+	require.NoError(t, err)
 
-	err := s.AssignBackendToPool(ctx, pool.ID, backend.ID)
+	err = s.AssignBackendToPool(ctx, pool.ID, backend.ID)
 	require.NoError(t, err)
 
 	backends, err := s.ListBackendsForPool(ctx, pool.ID)
@@ -289,12 +290,15 @@ func TestUnit_Pools_RemoveBackendFromPool(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
-	s.CreatePool(ctx, pool)
+	err := s.CreatePool(ctx, pool)
+	require.NoError(t, err)
 
 	backend := &runtimetypes.Backend{ID: uuid.NewString(), Name: "Backend1"}
-	s.CreateBackend(ctx, backend)
+	err = s.CreateBackend(ctx, backend)
+	require.NoError(t, err)
 
-	s.AssignBackendToPool(ctx, pool.ID, backend.ID)
+	err = s.AssignBackendToPool(ctx, pool.ID, backend.ID)
+	require.NoError(t, err)
 
 	backends, err := s.ListBackendsForPool(ctx, pool.ID)
 	require.NoError(t, err)
@@ -312,15 +316,20 @@ func TestUnit_Pools_ListPoolsForBackend(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	backend := &runtimetypes.Backend{ID: uuid.NewString(), Name: "Backend1"}
-	s.CreateBackend(ctx, backend)
+	err := s.CreateBackend(ctx, backend)
+	require.NoError(t, err)
 
 	pool1 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
 	pool2 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool2"}
-	s.CreatePool(ctx, pool1)
-	s.CreatePool(ctx, pool2)
+	err = s.CreatePool(ctx, pool1)
+	require.NoError(t, err)
+	err = s.CreatePool(ctx, pool2)
+	require.NoError(t, err)
 
-	s.AssignBackendToPool(ctx, pool1.ID, backend.ID)
-	s.AssignBackendToPool(ctx, pool2.ID, backend.ID)
+	err = s.AssignBackendToPool(ctx, pool1.ID, backend.ID)
+	require.NoError(t, err)
+	err = s.AssignBackendToPool(ctx, pool2.ID, backend.ID)
+	require.NoError(t, err)
 
 	pools, err := s.ListPoolsForBackend(ctx, backend.ID)
 	require.NoError(t, err)
@@ -377,13 +386,16 @@ func TestUnit_PoolModel_AssignModelToPool(t *testing.T) {
 func TestUnit_Pools_RemoveModelFromPool(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
-	model := &runtimetypes.Model{Model: "model1"}
-	s.AppendModel(ctx, model)
+	model := &runtimetypes.Model{Model: "model1", ContextLength: 1024, CanPrompt: true, CanStream: false}
+	err := s.AppendModel(ctx, model)
+	require.NoError(t, err)
 
 	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
-	s.CreatePool(ctx, pool)
+	err = s.CreatePool(ctx, pool)
+	require.NoError(t, err)
 
-	s.AssignModelToPool(ctx, pool.ID, model.ID)
+	err = s.AssignModelToPool(ctx, pool.ID, model.ID)
+	require.NoError(t, err)
 
 	models, err := s.ListModelsForPool(ctx, pool.ID)
 	require.NoError(t, err)
@@ -400,16 +412,21 @@ func TestUnit_Pools_RemoveModelFromPool(t *testing.T) {
 func TestUnit_Pools_ListPoolsForModel(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
-	model := &runtimetypes.Model{Model: "model1"}
-	s.AppendModel(ctx, model)
+	model := &runtimetypes.Model{Model: "model1", ContextLength: 1024, CanPrompt: true, CanStream: false}
+	err := s.AppendModel(ctx, model)
+	require.NoError(t, err)
 
 	pool1 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool1"}
 	pool2 := &runtimetypes.Pool{ID: uuid.NewString(), Name: "Pool2"}
-	s.CreatePool(ctx, pool1)
-	s.CreatePool(ctx, pool2)
+	err = s.CreatePool(ctx, pool1)
+	require.NoError(t, err)
+	err = s.CreatePool(ctx, pool2)
+	require.NoError(t, err)
 
-	s.AssignModelToPool(ctx, pool1.ID, model.ID)
-	s.AssignModelToPool(ctx, pool2.ID, model.ID)
+	err = s.AssignModelToPool(ctx, pool1.ID, model.ID)
+	require.NoError(t, err)
+	err = s.AssignModelToPool(ctx, pool2.ID, model.ID)
+	require.NoError(t, err)
 
 	pools, err := s.ListPoolsForModel(ctx, model.ID)
 	require.NoError(t, err)

@@ -6,11 +6,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
 
 // AppendJobs inserts a list of jobs into the job_queue table.
 func (s *store) AppendJob(ctx context.Context, job Job) error {
+	if job.ID == "" {
+		job.ID = uuid.New().String()
+	}
 	job.CreatedAt = time.Now().UTC()
 	_, err := s.Exec.ExecContext(ctx, `
 		INSERT INTO job_queue_v2

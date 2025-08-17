@@ -8,12 +8,16 @@ import (
 	"time"
 
 	libdb "github.com/contenox/dbexec"
+	"github.com/google/uuid"
 )
 
 func (s *store) AppendModel(ctx context.Context, model *Model) error {
 	now := time.Now().UTC()
 	model.CreatedAt = now
 	model.UpdatedAt = now
+	if model.ID == "" {
+		model.ID = uuid.New().String()
+	}
 	if model.ContextLength <= 0 {
 		return fmt.Errorf("context length cannot be zero")
 	}

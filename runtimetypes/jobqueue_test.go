@@ -126,9 +126,7 @@ func TestUnit_JobQueue_PopOneForType(t *testing.T) {
 	}
 
 	require.NoError(t, s.AppendJob(ctx, job1))
-	time.Sleep(10 * time.Millisecond) // Ensure ordering by created_at.
 	require.NoError(t, s.AppendJob(ctx, job2))
-	time.Sleep(10 * time.Millisecond)
 	require.NoError(t, s.AppendJob(ctx, job3))
 
 	// Pop one job of type "task-A" (oldest should be returned).
@@ -199,7 +197,6 @@ func TestUnit_JobQueue_GetAllForType(t *testing.T) {
 	}
 
 	require.NoError(t, s.AppendJob(ctx, jobA1))
-	time.Sleep(10 * time.Millisecond) // Ensure different created_at timestamps.
 	require.NoError(t, s.AppendJob(ctx, jobA2))
 	require.NoError(t, s.AppendJob(ctx, jobB))
 
@@ -261,7 +258,7 @@ func TestUnit_JobQueue_ListJobsPagination(t *testing.T) {
 		jobIDs = append(jobIDs, job.ID)
 
 		if i < totalJobs-1 {
-			time.Sleep(25 * time.Millisecond)
+			time.Sleep(1 * time.Millisecond)
 		}
 	}
 

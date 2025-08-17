@@ -131,7 +131,6 @@ func TestUnit_RemoteHooks_List(t *testing.T) {
 
 	for _, hook := range hooks {
 		require.NoError(t, s.CreateRemoteHook(ctx, hook))
-		time.Sleep(10 * time.Millisecond) // Ensure ordering by created_at
 	}
 
 	// List all hooks using a large limit to simulate a non-paginated call
@@ -161,7 +160,6 @@ func TestUnit_RemoteHooks_ListPagination(t *testing.T) {
 		err := s.CreateRemoteHook(ctx, hook)
 		require.NoError(t, err)
 		createdHooks = append(createdHooks, hook)
-		time.Sleep(1 * time.Millisecond)
 	}
 
 	// Paginate through the results with a limit of 2.

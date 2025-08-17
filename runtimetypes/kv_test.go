@@ -160,14 +160,13 @@ func TestUnitKV(t *testing.T) {
 
 	t.Run("ListKV_Pagination", func(t *testing.T) {
 		// Create 5 key-value pairs with a small delay to ensure distinct creation times.
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			kv := &runtimetypes.KV{
 				Key:   fmt.Sprintf("pagination-test-%d", i),
 				Value: json.RawMessage(`"value"`),
 			}
 			err := s.SetKV(ctx, kv.Key, kv.Value)
 			require.NoError(t, err)
-			time.Sleep(1 * time.Millisecond)
 		}
 
 		// Paginate through the results with a limit of 2.
@@ -223,13 +222,12 @@ func TestUnitKV(t *testing.T) {
 		otherPrefix := "other-prefix-" + uuid.NewString()
 
 		// Create 5 key-value pairs with the test prefix
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			key := fmt.Sprintf("%s-%d", prefix, i)
 			value := json.RawMessage(`"prefixed value"`)
 			err := s.SetKV(ctx, key, value)
 			require.NoError(t, err)
 			defer s.DeleteKV(ctx, key)
-			time.Sleep(1 * time.Millisecond)
 		}
 		// Create a key with a different prefix
 		s.SetKV(ctx, otherPrefix, json.RawMessage(`"other value"`))

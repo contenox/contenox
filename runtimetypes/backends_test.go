@@ -97,7 +97,7 @@ func TestUnit_Backend_ListHandlesPagination(t *testing.T) {
 
 	// Create 5 backends with a small delay to ensure distinct creation times.
 	var backends []*runtimetypes.Backend
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		backend := &runtimetypes.Backend{
 			ID:      uuid.NewString(),
 			Name:    fmt.Sprintf("Backend%d", i),
@@ -107,7 +107,6 @@ func TestUnit_Backend_ListHandlesPagination(t *testing.T) {
 		err := s.CreateBackend(ctx, backend)
 		require.NoError(t, err)
 		backends = append(backends, backend)
-		time.Sleep(1 * time.Millisecond)
 	}
 
 	// Paginate through the results with a limit of 2.
