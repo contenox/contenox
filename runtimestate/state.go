@@ -909,7 +909,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 }
 
 func fetchGeminiModelInfo(ctx context.Context, baseURL, modelName, apiKey string, httpClient *http.Client) (*ListModelResponse, error) {
-	url := fmt.Sprintf("%s/v1beta/models/%s", baseURL, modelName)
+	url := fmt.Sprintf("%s/v1beta/%s", baseURL, modelName)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
