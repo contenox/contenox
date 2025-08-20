@@ -775,7 +775,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.51-4-gbfae257-dirty"
+    "version": "v0.0.51-5-g9393da8-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
