@@ -130,13 +130,29 @@ func isGitRepository() bool {
 }
 
 func hasUncommittedChanges() bool {
+	versionFilePath := getVersionFile()
+
 	cmd := exec.Command("git", "status", "--porcelain")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("Git error: %s\n", string(output))
 		return true
 	}
-	return len(strings.TrimSpace(string(output))) > 0
+
+	lines := strings.SplitSeq(string(output), "\n")
+
+	for line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			continue
+		}
+
+		if !strings.Contains(trimmedLine, versionFilePath) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func getCurrentTagVersion() (string, error) {
