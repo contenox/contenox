@@ -2,7 +2,6 @@ package execservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	libdb "github.com/contenox/dbexec"
@@ -53,19 +52,10 @@ func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*TaskR
 	if request.ModelProvider != "" {
 		providerNames = append(providerNames, request.ModelProvider)
 	}
-	promptClient, err := s.modelRepo.PromptExecute(ctx, llmrepo.Request{
+	response, _, err := s.modelRepo.PromptExecute(ctx, llmrepo.Request{
 		ModelNames:    modelNames,
 		ProviderTypes: providerNames,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve prompt client: %w", err)
-	}
-
-	if promptClient == nil {
-		return nil, errors.New("prompt client is nil")
-	}
-
-	response, err := promptClient.Prompt(ctx, "You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.", 0.1, request.Prompt)
+	}, "You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.", 0.1, request.Prompt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute prompt: %w", err)
 	}

@@ -2,7 +2,6 @@ package embedservice
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/contenox/runtime/llmrepo"
@@ -29,17 +28,10 @@ func New(repo llmrepo.ModelRepo, modelName string, modelProvider string) Service
 
 // Embed implements Service.
 func (s *service) Embed(ctx context.Context, text string) ([]float64, error) {
-	embedClient, err := s.repo.Embed(ctx, llmrepo.EmbedRequest{
+	vectorData, _, err := s.repo.Embed(ctx, llmrepo.EmbedRequest{
 		ModelName:    s.modelName,
 		ProviderType: s.modelProvider,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve embed client: %w", err)
-	}
-	if embedClient == nil {
-		return nil, errors.New("embed client is nil")
-	}
-	vectorData, err := embedClient.Embed(ctx, text)
+	}, text)
 	if err != nil {
 		return nil, fmt.Errorf("embedding failed: %w", err)
 	}

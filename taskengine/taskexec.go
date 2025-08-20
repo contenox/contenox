@@ -80,22 +80,11 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 	if llmCall.Models != nil {
 		modelNames = append(modelNames, llmCall.Models...)
 	}
-
-	// Resolve client using available providers
-	client, err := exe.repo.PromptExecute(ctx,
-		llmrepo.Request{
-			ProviderTypes: providerNames,
-			ModelNames:    modelNames,
-			Tracker:       exe.tracker,
-		},
-	)
-	if err != nil {
-		err = fmt.Errorf("prompt: client resolution failed: %w", err)
-		reportErr(err)
-		return "", err
-	}
-
-	response, err := client.Prompt(ctx, systemInstruction, float32(llmCall.Temperature), prompt)
+	response, _, err := exe.repo.PromptExecute(ctx, llmrepo.Request{
+		ProviderTypes: providerNames,
+		ModelNames:    modelNames,
+		Tracker:       exe.tracker,
+	}, systemInstruction, float32(llmCall.Temperature), prompt)
 	if err != nil {
 		err = fmt.Errorf("prompt execution failed: %w", err)
 		reportErr(err)
@@ -149,21 +138,12 @@ func (exe *SimpleExec) Embed(ctx context.Context, llmCall LLMExecutionConfig, pr
 	if len(providerNames) > 0 {
 		privider = providerNames[0]
 	}
-	// Resolve client using available providers
-	client, err := exe.repo.Embed(ctx,
-		llmrepo.EmbedRequest{
-			ProviderType: privider,
-			ModelName:    modelName,
-			// Tracker:      exe.tracker,
-		},
-	)
-	if err != nil {
-		err = fmt.Errorf("embed: client resolution failed: %w", err)
-		reportErr(err)
-		return nil, err
-	}
 
-	response, err := client.Embed(ctx, prompt)
+	response, _, err := exe.repo.Embed(ctx, llmrepo.EmbedRequest{
+		ProviderType: privider,
+		ModelName:    modelName,
+		// Tracker:      exe.tracker,
+	}, prompt)
 	if err != nil {
 		err = fmt.Errorf("prompt execution failed: %w", err)
 		reportErr(err)
@@ -448,14 +428,9 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 	if llmCall.Providers != nil {
 		providerNames = append(providerNames, llmCall.Providers...)
 	}
-	tokenizer, err := exe.repo.GetTokenizer(ctx, llmCall.Model)
-	if err != nil {
-		reportErr(fmt.Errorf("tokenizer failed: %w", err))
-		return nil, DataTypeAny, "", fmt.Errorf("tokenizer failed: %w", err)
-	}
 	if input.InputTokens <= 0 {
 		for _, m := range input.Messages {
-			InputCount, err := tokenizer.CountTokens(ctx, m.Content)
+			InputCount, err := exe.repo.CountTokens(ctx, llmCall.Model, m.Content)
 			if err != nil {
 				reportErr(fmt.Errorf("token count failed: %w", err))
 				return nil, DataTypeAny, "", fmt.Errorf("token count failed: %w", err)
@@ -476,20 +451,6 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 		modelNames = append(modelNames, llmCall.Models...)
 	}
 
-	// Resolve client using available providers
-	client, _, err := exe.repo.Chat(ctx,
-		llmrepo.Request{
-			ProviderTypes: providerNames,
-			ModelNames:    modelNames,
-			ContextLength: input.InputTokens,
-			Tracker:       exe.tracker,
-		},
-	)
-	if err != nil {
-		err = fmt.Errorf("execLLM: client resolution failed: %w", err)
-		reportErr(err)
-		return nil, DataTypeAny, "", err
-	}
 	messagesC := []libmodelprovider.Message{}
 	for _, m := range input.Messages {
 		messagesC = append(messagesC, libmodelprovider.Message{
@@ -497,7 +458,12 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 			Content: m.Content,
 		})
 	}
-	resp, err := client.Chat(ctx, messagesC)
+	resp, meta, err := exe.repo.Chat(ctx, llmrepo.Request{
+		ProviderTypes: providerNames,
+		ModelNames:    modelNames,
+		ContextLength: input.InputTokens,
+		Tracker:       exe.tracker,
+	}, messagesC)
 	if err != nil {
 		return nil, DataTypeAny, "", fmt.Errorf("chat failed: %w", err)
 	}
@@ -507,7 +473,7 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 		Timestamp: time.Now().UTC(),
 	})
 
-	outputTokensCount, err := tokenizer.CountTokens(ctx, resp.Content)
+	outputTokensCount, err := exe.repo.CountTokens(ctx, meta.ModelName, resp.Content)
 	if err != nil {
 		err = fmt.Errorf("tokenizer failed: %w", err)
 		reportErr(err)

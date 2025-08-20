@@ -164,9 +164,20 @@ func TestUnit_ChatModelResolution(t *testing.T) {
 				return tt.providers, nil
 			}
 
-			_, _, err := llmresolver.Chat(context.Background(), tt.req, getModels, llmresolver.Randomly)
+			_, provider, _, err := llmresolver.Chat(context.Background(), tt.req, getModels, llmresolver.Randomly)
+
+			// Check error condition
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("got error %v, want %v", err, tt.wantErr)
+			}
+
+			// Check provider ID if expected
+			if tt.wantModelID != "" {
+				if provider == nil {
+					t.Errorf("expected provider with ID %s, got nil", tt.wantModelID)
+				} else if provider.GetID() != tt.wantModelID {
+					t.Errorf("got provider ID %s, want %s", provider.GetID(), tt.wantModelID)
+				}
 			}
 		})
 	}
@@ -311,7 +322,7 @@ func TestUnit_EmbedModelResolution(t *testing.T) {
 				return tt.providers, nil
 			}
 
-			client, err := llmresolver.Embed(context.Background(), tt.embedReq, getModels, tt.resolver)
+			client, _, _, err := llmresolver.Embed(context.Background(), tt.embedReq, getModels, tt.resolver)
 
 			// Assertions
 			if tt.wantErr != nil {
@@ -364,5 +375,82 @@ func TestUnitNormalizeModelName(t *testing.T) {
 				t.Errorf("NormalizeModelName(%q) = %q, want %q", c.input, got, c.expected)
 			}
 		})
+	}
+}
+
+// Additional tests for the new return values
+func TestUnit_ChatReturnsProviderAndBackend(t *testing.T) {
+	mockProvider := &libmodelprovider.MockProvider{
+		ID:            "test-provider",
+		Name:          "test-model",
+		ContextLength: 4096,
+		CanChatFlag:   true,
+		Backends:      []string{"backend-1", "backend-2"},
+	}
+
+	getModels := func(_ context.Context, _ ...string) ([]libmodelprovider.Provider, error) {
+		return []libmodelprovider.Provider{mockProvider}, nil
+	}
+
+	req := llmresolver.Request{
+		ModelNames:    []string{"test-model"},
+		ContextLength: 4096,
+	}
+
+	client, provider, backend, err := llmresolver.Chat(context.Background(), req, getModels, llmresolver.Randomly)
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if provider == nil {
+		t.Error("Expected non-nil provider")
+	} else if provider.GetID() != "test-provider" {
+		t.Errorf("Expected provider ID 'test-provider', got '%s'", provider.GetID())
+	}
+
+	if backend == "" {
+		t.Error("Expected non-empty backend")
+	}
+
+	if client == nil {
+		t.Error("Expected non-nil client")
+	}
+}
+
+func TestUnit_EmbedReturnsProviderAndBackend(t *testing.T) {
+	mockProvider := &libmodelprovider.MockProvider{
+		ID:           "test-embed-provider",
+		Name:         "test-embed-model",
+		CanEmbedFlag: true,
+		Backends:     []string{"embed-backend-1"},
+	}
+
+	getModels := func(_ context.Context, _ ...string) ([]libmodelprovider.Provider, error) {
+		return []libmodelprovider.Provider{mockProvider}, nil
+	}
+
+	embedReq := llmresolver.EmbedRequest{
+		ModelName: "test-embed-model",
+	}
+
+	client, provider, backend, err := llmresolver.Embed(context.Background(), embedReq, getModels, llmresolver.Randomly)
+
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	if provider == nil {
+		t.Error("Expected non-nil provider")
+	} else if provider.GetID() != "test-embed-provider" {
+		t.Errorf("Expected provider ID 'test-embed-provider', got '%s'", provider.GetID())
+	}
+
+	if backend != "embed-backend-1" {
+		t.Errorf("Expected backend 'embed-backend-1', got '%s'", backend)
+	}
+
+	if client == nil {
+		t.Error("Expected non-nil client")
 	}
 }

@@ -234,7 +234,7 @@ func Chat(
 	req Request,
 	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
 	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
-) (libmodelprovider.LLMChatClient, string, error) {
+) (libmodelprovider.LLMChatClient, libmodelprovider.Provider, string, error) {
 	tracker := req.Tracker
 	if tracker == nil {
 		tracker = activitytracker.NoopTracker{}
@@ -252,30 +252,29 @@ func Chat(
 	candidates, err := filterCandidates(ctx, req, getModels, libmodelprovider.Provider.CanChat)
 	if err != nil {
 		reportErr(err)
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	provider, backend, err := resolver(candidates)
 	if err != nil {
 		reportErr(err)
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	if req.ContextLength < 0 {
 		err := fmt.Errorf("context length must be non-negative")
 		reportErr(err)
-		return nil, "", err
+		return nil, nil, "", err
 	}
-	modelName := provider.ModelName()
 	client, err := provider.GetChatConnection(ctx, backend)
 	if err != nil {
 		reportErr(err)
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	reportChange("selected_provider", map[string]string{
-		"model_name":  modelName,
+		"model_name":  provider.ModelName(),
 		"provider_id": provider.GetID(),
 		"backend_id":  backend,
 	})
-	return client, modelName, nil
+	return client, provider, backend, nil
 }
 
 func Embed(
@@ -283,7 +282,7 @@ func Embed(
 	embedReq EmbedRequest,
 	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
 	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
-) (libmodelprovider.LLMEmbedClient, error) {
+) (libmodelprovider.LLMEmbedClient, libmodelprovider.Provider, string, error) {
 	tracker := embedReq.Tracker
 	if tracker == nil {
 		tracker = activitytracker.NoopTracker{}
@@ -300,7 +299,7 @@ func Embed(
 	if embedReq.ModelName == "" {
 		err := errors.New("model name is required")
 		reportErr(err)
-		return nil, err
+		return nil, nil, "", err
 	}
 	req := Request{
 		ModelNames:    []string{embedReq.ModelName},
@@ -309,19 +308,24 @@ func Embed(
 	candidates, err := filterCandidates(ctx, req, getModels, libmodelprovider.Provider.CanEmbed)
 	if err != nil {
 		reportErr(err)
-		return nil, fmt.Errorf("failed to filter candidates: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to filter candidates: %w", err)
 	}
 	provider, backend, err := resolver(candidates)
 	if err != nil {
 		reportErr(err)
-		return nil, fmt.Errorf("failed to apply resolver: %w", err)
+		return nil, nil, "", fmt.Errorf("failed to apply resolver: %w", err)
+	}
+	client, err := provider.GetEmbedConnection(ctx, backend)
+	if err != nil {
+		reportErr(err)
+		return nil, nil, "", err
 	}
 	reportChange("selected_provider", map[string]string{
 		"model_name":  provider.ModelName(),
 		"provider_id": provider.GetID(),
 		"backend_id":  backend,
 	})
-	return provider.GetEmbedConnection(ctx, backend)
+	return client, provider, backend, nil
 }
 
 func Stream(
@@ -329,7 +333,7 @@ func Stream(
 	req Request,
 	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
 	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
-) (libmodelprovider.LLMStreamClient, error) {
+) (libmodelprovider.LLMStreamClient, libmodelprovider.Provider, string, error) {
 	tracker := req.Tracker
 	if tracker == nil {
 		tracker = activitytracker.NoopTracker{}
@@ -347,19 +351,24 @@ func Stream(
 	candidates, err := filterCandidates(ctx, req, getModels, libmodelprovider.Provider.CanStream)
 	if err != nil {
 		reportErr(err)
-		return nil, err
+		return nil, nil, "", err
 	}
 	provider, backend, err := resolver(candidates)
 	if err != nil {
 		reportErr(err)
-		return nil, err
+		return nil, nil, "", err
+	}
+	client, err := provider.GetStreamConnection(ctx, backend)
+	if err != nil {
+		reportErr(err)
+		return nil, nil, "", err
 	}
 	reportChange("selected_provider", map[string]string{
 		"model_name":  provider.ModelName(),
 		"provider_id": provider.GetID(),
 		"backend_id":  backend,
 	})
-	return provider.GetStreamConnection(ctx, backend)
+	return client, provider, backend, nil
 }
 
 func PromptExecute(
@@ -367,7 +376,7 @@ func PromptExecute(
 	req Request,
 	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
 	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
-) (libmodelprovider.LLMPromptExecClient, error) {
+) (libmodelprovider.LLMPromptExecClient, libmodelprovider.Provider, string, error) {
 	tracker := req.Tracker
 	if tracker == nil {
 		tracker = activitytracker.NoopTracker{}
@@ -385,17 +394,22 @@ func PromptExecute(
 	if len(req.ModelNames) == 0 {
 		err := errors.New("at least one model name is required")
 		reportErr(err)
-		return nil, err
+		return nil, nil, "", err
 	}
 	candidates, err := filterCandidates(ctx, req, getModels, libmodelprovider.Provider.CanPrompt)
 	if err != nil {
 		reportErr(err)
-		return nil, err
+		return nil, nil, "", err
 	}
 	provider, backend, err := resolver(candidates)
 	if err != nil {
 		reportErr(err)
-		return nil, err
+		return nil, nil, "", err
+	}
+	client, err := provider.GetPromptConnection(ctx, backend)
+	if err != nil {
+		reportErr(err)
+		return nil, nil, "", err
 	}
 	reportChange("selected_provider", map[string]string{
 		"model_name":    provider.ModelName(),
@@ -403,5 +417,5 @@ func PromptExecute(
 		"provider_type": provider.GetType(),
 		"backend_id":    backend,
 	})
-	return provider.GetPromptConnection(ctx, backend)
+	return client, provider, backend, nil
 }

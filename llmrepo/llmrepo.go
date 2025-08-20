@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/contenox/activitytracker"
 	libmodelprovider "github.com/contenox/modelprovider"
@@ -25,27 +26,38 @@ type Request struct {
 type EmbedRequest struct {
 	ModelName    string
 	ProviderType string
-	Tracker      activitytracker.ActivityTracker // Now exported
+	Tracker      activitytracker.ActivityTracker
+}
+
+type Meta struct {
+	ModelName    string `json:"model_name"`
+	ProviderType string `json:"provider_type"`
+	BackendID    string `json:"backend_id"`
 }
 
 type ModelRepo interface {
-	GetTokenizer(ctx context.Context, modelName string) (Tokenizer, error)
+	Tokenize(ctx context.Context, modelName string, prompt string) ([]int, error)
+	CountTokens(ctx context.Context, modelName string, prompt string) (int, error)
 	PromptExecute(
 		ctx context.Context,
 		req Request,
-	) (libmodelprovider.LLMPromptExecClient, error)
+		systeminstruction string, temperature float32, prompt string,
+	) (string, Meta, error)
 	Chat(
 		ctx context.Context,
 		req Request,
-	) (libmodelprovider.LLMChatClient, string, error)
+		Messages []libmodelprovider.Message, opts ...libmodelprovider.ChatOption,
+	) (libmodelprovider.Message, Meta, error)
 	Embed(
 		ctx context.Context,
 		embedReq EmbedRequest,
-	) (libmodelprovider.LLMEmbedClient, error)
+		prompt string,
+	) ([]float64, Meta, error)
 	Stream(
 		ctx context.Context,
 		req Request,
-	) (libmodelprovider.LLMStreamClient, error)
+		prompt string,
+	) (<-chan *libmodelprovider.StreamParcel, Meta, error)
 }
 
 type Tokenizer interface {
@@ -53,10 +65,13 @@ type Tokenizer interface {
 	CountTokens(ctx context.Context, prompt string) (int, error)
 }
 
+var _ ModelRepo = (*modelManager)(nil)
+
 type modelManager struct {
 	runtime   *runtimestate.State
 	tokenizer ollamatokenizer.Tokenizer
 	config    ModelManagerConfig
+	mu        sync.RWMutex
 }
 
 type ModelConfig struct {
@@ -71,9 +86,13 @@ type ModelManagerConfig struct {
 }
 
 func NewModelManager(runtime *runtimestate.State, tokenizer ollamatokenizer.Tokenizer, config ModelManagerConfig) (*modelManager, error) {
+	if runtime == nil {
+		return nil, errors.New("runtime cannot be nil")
+	}
 	if tokenizer == nil {
 		return nil, errors.New("tokenizer cannot be nil")
 	}
+
 	return &modelManager{
 		runtime:   runtime,
 		tokenizer: tokenizer,
@@ -81,27 +100,51 @@ func NewModelManager(runtime *runtimestate.State, tokenizer ollamatokenizer.Toke
 	}, nil
 }
 
-// convertToResolverRequest converts llmrepo.Request to llmresolver.Request
-func (e *modelManager) convertToResolverRequest(req Request) llmresolver.Request {
-	return llmresolver.Request{
-		ProviderTypes: req.ProviderTypes,
-		ModelNames:    req.ModelNames,
-		ContextLength: req.ContextLength,
-		Tracker:       req.Tracker,
+func (e *modelManager) Tokenize(ctx context.Context, modelName string, prompt string) ([]int, error) {
+	if prompt == "" {
+		return []int{}, nil
 	}
+
+	tokenizer, err := e.GetTokenizer(ctx, modelName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tokenizer: %w", err)
+	}
+
+	tokens, err := tokenizer.Tokenize(ctx, prompt)
+	if err != nil {
+		return nil, fmt.Errorf("tokenization failed: %w", err)
+	}
+
+	return tokens, nil
 }
 
-// convertToResolverEmbedRequest converts llmrepo.EmbedRequest to llmresolver.EmbedRequest
-func (e *modelManager) convertToResolverEmbedRequest(req EmbedRequest) llmresolver.EmbedRequest {
-	return llmresolver.EmbedRequest{
-		ModelName:    req.ModelName,
-		ProviderType: req.ProviderType,
-		Tracker:      req.Tracker,
+func (e *modelManager) CountTokens(ctx context.Context, modelName string, prompt string) (int, error) {
+	if prompt == "" {
+		return 0, nil
 	}
+
+	tokenizer, err := e.GetTokenizer(ctx, modelName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get tokenizer: %w", err)
+	}
+
+	count, err := tokenizer.CountTokens(ctx, prompt)
+	if err != nil {
+		return 0, fmt.Errorf("token counting failed: %w", err)
+	}
+
+	return count, nil
 }
 
-// PromptExecute implements ModelRepo.
-func (e *modelManager) PromptExecute(ctx context.Context, req Request) (libmodelprovider.LLMPromptExecClient, error) {
+func (e *modelManager) PromptExecute(
+	ctx context.Context,
+	req Request,
+	systemInstruction string, temperature float32, prompt string,
+) (string, Meta, error) {
+	if err := validateRequest(req); err != nil {
+		return "", Meta{}, fmt.Errorf("invalid request: %w", err)
+	}
+
 	runtimeStateResolution := e.GetRuntime(ctx)
 
 	// Apply defaults if not provided
@@ -113,20 +156,42 @@ func (e *modelManager) PromptExecute(ctx context.Context, req Request) (libmodel
 	}
 
 	resolverReq := e.convertToResolverRequest(req)
-	client, err := llmresolver.PromptExecute(ctx,
+	client, provider, backend, err := llmresolver.PromptExecute(ctx,
 		resolverReq,
 		runtimeStateResolution,
 		llmresolver.Randomly,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("prompt execute: client resolution failed: %w", err)
+		return "", Meta{}, fmt.Errorf("prompt execute: client resolution failed: %w", err)
+	}
+	defer safeClose(client)
+
+	result, err := client.Prompt(ctx, systemInstruction, temperature, prompt)
+	if err != nil {
+		return "", Meta{}, fmt.Errorf("prompt execution failed: %w", err)
 	}
 
-	return client, nil
+	meta := Meta{
+		ModelName:    provider.ModelName(),
+		ProviderType: provider.GetType(),
+		BackendID:    backend,
+	}
+	return result, meta, nil
 }
 
-// Chat implements ModelRepo.
-func (e *modelManager) Chat(ctx context.Context, req Request) (libmodelprovider.LLMChatClient, string, error) {
+func (e *modelManager) Chat(
+	ctx context.Context,
+	req Request,
+	messages []libmodelprovider.Message, opts ...libmodelprovider.ChatOption,
+) (libmodelprovider.Message, Meta, error) {
+	if err := validateRequest(req); err != nil {
+		return libmodelprovider.Message{}, Meta{}, fmt.Errorf("invalid request: %w", err)
+	}
+
+	if len(messages) == 0 {
+		return libmodelprovider.Message{}, Meta{}, errors.New("messages cannot be empty")
+	}
+
 	runtimeStateResolution := e.GetRuntime(ctx)
 
 	// Apply defaults if not provided
@@ -138,20 +203,38 @@ func (e *modelManager) Chat(ctx context.Context, req Request) (libmodelprovider.
 	}
 
 	resolverReq := e.convertToResolverRequest(req)
-	client, model, err := llmresolver.Chat(ctx,
+	client, provider, backend, err := llmresolver.Chat(ctx,
 		resolverReq,
 		runtimeStateResolution,
 		llmresolver.Randomly,
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("chat: client resolution failed: %w", err)
+		return libmodelprovider.Message{}, Meta{}, fmt.Errorf("chat: client resolution failed: %w", err)
+	}
+	defer safeClose(client)
+
+	response, err := client.Chat(ctx, messages, opts...)
+	if err != nil {
+		return libmodelprovider.Message{}, Meta{}, fmt.Errorf("chat execution failed: %w", err)
 	}
 
-	return client, model, nil
+	meta := Meta{
+		ModelName:    provider.ModelName(),
+		ProviderType: provider.GetType(),
+		BackendID:    backend,
+	}
+	return response, meta, nil
 }
 
-// Embed implements ModelRepo.
-func (e *modelManager) Embed(ctx context.Context, embedReq EmbedRequest) (libmodelprovider.LLMEmbedClient, error) {
+func (e *modelManager) Embed(
+	ctx context.Context,
+	embedReq EmbedRequest,
+	prompt string,
+) ([]float64, Meta, error) {
+	if prompt == "" {
+		return nil, Meta{}, errors.New("prompt cannot be empty")
+	}
+
 	runtimeStateResolution := e.GetRuntime(ctx)
 
 	// Apply defaults if not provided
@@ -163,20 +246,42 @@ func (e *modelManager) Embed(ctx context.Context, embedReq EmbedRequest) (libmod
 	}
 
 	resolverReq := e.convertToResolverEmbedRequest(embedReq)
-	client, err := llmresolver.Embed(ctx,
+	client, provider, backend, err := llmresolver.Embed(ctx,
 		resolverReq,
 		runtimeStateResolution,
 		llmresolver.Randomly,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("embed: client resolution failed: %w", err)
+		return nil, Meta{}, fmt.Errorf("embed: client resolution failed: %w", err)
+	}
+	defer safeClose(client)
+
+	embeddings, err := client.Embed(ctx, prompt)
+	if err != nil {
+		return nil, Meta{}, fmt.Errorf("embedding generation failed: %w", err)
 	}
 
-	return client, nil
+	meta := Meta{
+		ModelName:    provider.ModelName(),
+		ProviderType: provider.GetType(),
+		BackendID:    backend,
+	}
+	return embeddings, meta, nil
 }
 
-// Stream implements ModelRepo.
-func (e *modelManager) Stream(ctx context.Context, req Request) (libmodelprovider.LLMStreamClient, error) {
+func (e *modelManager) Stream(
+	ctx context.Context,
+	req Request,
+	prompt string,
+) (<-chan *libmodelprovider.StreamParcel, Meta, error) {
+	if prompt == "" {
+		return nil, Meta{}, errors.New("prompt cannot be empty")
+	}
+
+	if err := validateRequest(req); err != nil {
+		return nil, Meta{}, fmt.Errorf("invalid request: %w", err)
+	}
+
 	runtimeStateResolution := e.GetRuntime(ctx)
 
 	// Apply defaults if not provided
@@ -188,19 +293,43 @@ func (e *modelManager) Stream(ctx context.Context, req Request) (libmodelprovide
 	}
 
 	resolverReq := e.convertToResolverRequest(req)
-	client, err := llmresolver.Stream(ctx,
+	client, provider, backend, err := llmresolver.Stream(ctx,
 		resolverReq,
 		runtimeStateResolution,
 		llmresolver.Randomly,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("stream: client resolution failed: %w", err)
+		return nil, Meta{}, fmt.Errorf("stream: client resolution failed: %w", err)
 	}
 
-	return client, nil
+	stream, err := client.Stream(ctx, prompt)
+	if err != nil {
+		safeClose(client)
+		return nil, Meta{}, fmt.Errorf("stream initialization failed: %w", err)
+	}
+
+	// Wrap the stream to close the client when done
+	wrappedStream := make(chan *libmodelprovider.StreamParcel)
+	go func() {
+		defer close(wrappedStream)
+		defer safeClose(client)
+
+		for parcel := range stream {
+			wrappedStream <- parcel
+			if parcel.Error != nil {
+				break
+			}
+		}
+	}()
+
+	meta := Meta{
+		ModelName:    provider.ModelName(),
+		ProviderType: provider.GetType(),
+		BackendID:    backend,
+	}
+	return wrappedStream, meta, nil
 }
 
-// GetRuntime implements Embedder.
 func (e *modelManager) GetRuntime(ctx context.Context) runtimestate.ProviderFromRuntimeState {
 	state := e.runtime.Get(ctx)
 	return runtimestate.LocalProviderAdapter(ctx, state)
@@ -214,7 +343,7 @@ func (e *modelManager) GetTokenizer(ctx context.Context, modelName string) (Toke
 	// Get the optimal model for tokenization
 	modelForTokenization, err := e.tokenizer.OptimalModel(ctx, modelName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get optimal tokenizer model: %w", err)
 	}
 
 	// Return an adapter that uses the optimal model
@@ -222,6 +351,44 @@ func (e *modelManager) GetTokenizer(ctx context.Context, modelName string) (Toke
 		tokenizer: e.tokenizer,
 		modelName: modelForTokenization,
 	}, nil
+}
+
+func (e *modelManager) convertToResolverRequest(req Request) llmresolver.Request {
+	return llmresolver.Request{
+		ProviderTypes: req.ProviderTypes,
+		ModelNames:    req.ModelNames,
+		ContextLength: req.ContextLength,
+		Tracker:       req.Tracker,
+	}
+}
+
+func (e *modelManager) convertToResolverEmbedRequest(req EmbedRequest) llmresolver.EmbedRequest {
+	return llmresolver.EmbedRequest{
+		ModelName:    req.ModelName,
+		ProviderType: req.ProviderType,
+		Tracker:      req.Tracker,
+	}
+}
+
+func validateRequest(req Request) error {
+	if req.ContextLength < 0 {
+		return errors.New("context length must be non-negative")
+	}
+	return nil
+}
+
+func safeClose(closer interface{}) {
+	if closer == nil {
+		return
+	}
+
+	// Type switch for different client types that might have Close methods
+	switch c := closer.(type) {
+	case interface{ Close() error }:
+		_ = c.Close()
+	case interface{ Close() }:
+		c.Close()
+	}
 }
 
 type tokenizerAdapter struct {
