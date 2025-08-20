@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -31,15 +32,15 @@ func main() {
 func showHelp() {
 	fmt.Println("Version management tool")
 	fmt.Println("Usage:")
-	fmt.Println("  version set           - Set version from git")
-	fmt.Println("  version bump TYPE     - Bump version (major, minor, patch)")
+	fmt.Println("  version set        - Set version from git describe")
+	fmt.Println("  version bump TYPE  - Bump version (major, minor, patch)")
 }
 
 func getVersionFile() string {
 	return "apiframework/version.txt"
 }
 
-func getCurrentVersion() (string, error) {
+func getCurrentDescribeVersion() (string, error) {
 	cmd := exec.Command("git", "describe", "--tags", "--always", "--dirty")
 	output, err := cmd.Output()
 	if err != nil {
@@ -49,7 +50,7 @@ func getCurrentVersion() (string, error) {
 }
 
 func setVersion() {
-	version, err := getCurrentVersion()
+	version, err := getCurrentDescribeVersion()
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
@@ -146,6 +147,7 @@ func updateDocsAndAmendCommit() error {
 
 	cmd = exec.Command("git", "commit", "--amend", "--no-edit")
 	if output, err := cmd.CombinedOutput(); err != nil {
+		// If the output indicates there's nothing to commit, it means the docs were already up-to-date.
 		if strings.Contains(string(output), "nothing to commit") {
 			fmt.Println("   Documentation was already up-to-date.")
 			return nil
@@ -163,25 +165,30 @@ func isGitRepository() bool {
 	return err == nil
 }
 
+// hasUncommittedChanges checks for any changes in the git repository, ignoring the version file.
 func hasUncommittedChanges() bool {
 	versionFilePath := getVersionFile()
 
 	cmd := exec.Command("git", "status", "--porcelain")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("Git error: %s\n", string(output))
-		return true
+		fmt.Printf("Git error checking for uncommitted changes: %s\n", string(output))
+		return true // Fail safe
 	}
 
-	lines := strings.SplitSeq(string(output), "\n")
+	lines := strings.Split(string(output), "\n")
 
-	for line := range lines {
+	// Correctly iterate over the lines of output.
+	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 		if trimmedLine == "" {
 			continue
 		}
 
-		if !strings.Contains(trimmedLine, versionFilePath) {
+		// If a line indicates a change and it's NOT the version file,
+		// then we have uncommitted changes that need to be addressed.
+		// We check the file path at the end of the status line.
+		if !strings.HasSuffix(trimmedLine, versionFilePath) {
 			return true
 		}
 	}
@@ -189,56 +196,80 @@ func hasUncommittedChanges() bool {
 	return false
 }
 
+// getCurrentTagVersion fetches the latest semantic version tag from the repository.
 func getCurrentTagVersion() (string, error) {
-	// Try to get the latest tag
+	// Fetch all tags from the remote repository to ensure we have the latest ones.
 	cmd := exec.Command("git", "fetch", "--tags")
-	cmd.Run() // Ignore error
+	cmd.Run() // We can ignore errors here, as it might fail in offline scenarios.
 
-	cmd = exec.Command("git", "describe", "--tags", "--abbrev=0", "--exclude=*-*")
+	// Get the latest tag by sorting them using version semantics (-v:refname).
+	cmd = exec.Command("git", "tag", "--sort=-v:refname")
 	output, err := cmd.CombinedOutput()
-	currentTag := strings.TrimSpace(string(output))
+	if err != nil {
+		// This might fail if there are no tags yet.
+		if strings.Contains(string(output), "No names found") || len(output) == 0 {
+			fmt.Println("No existing tags found. Starting with v0.1.0.")
+			return "v0.1.0", nil
+		}
+		return "", fmt.Errorf("failed to get latest git tag: %w\nOutput: %s", err, string(output))
+	}
 
-	// If no tags exist, start with v0.1.0
-	if err != nil || currentTag == "" || strings.Contains(currentTag, "fatal") {
+	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(tags) == 0 || tags[0] == "" {
+		// No tags exist, so we start from the initial version.
+		fmt.Println("No existing tags found. Starting with v0.1.0.")
 		return "v0.1.0", nil
 	}
 
-	return currentTag, nil
+	// The first line will be the latest version tag.
+	latestTag := tags[0]
+	return latestTag, nil
 }
 
+// calculateNewVersion increments a semantic version string based on the bump type.
 func calculateNewVersion(currentVersion, bumpType string) (string, error) {
-	// Remove 'v' prefix if present
+	// Remove 'v' prefix for parsing
+	if !strings.HasPrefix(currentVersion, "v") {
+		return "", fmt.Errorf("invalid version format: missing 'v' prefix in '%s'", currentVersion)
+	}
 	tag := strings.TrimPrefix(currentVersion, "v")
 
-	// Split version parts
 	parts := strings.Split(tag, ".")
-
-	// Parse version numbers
-	major := 0
-	minor := 0
-	patch := 0
-
-	if len(parts) > 0 {
-		fmt.Sscanf(parts[0], "%d", &major)
+	if len(parts) != 3 {
+		// Handle potential non-semver tags by starting fresh
+		fmt.Printf("Warning: Could not parse current tag '%s'. Defaulting to v0.1.0 for new version.\n", currentVersion)
+		return "v0.1.0", nil
 	}
-	if len(parts) > 1 {
-		fmt.Sscanf(parts[1], "%d", &minor)
+
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return "", fmt.Errorf("invalid major version in '%s': %w", tag, err)
 	}
-	if len(parts) > 2 {
-		fmt.Sscanf(parts[2], "%d", &patch)
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("invalid minor version in '%s': %w", tag, err)
+	}
+	patch, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "", fmt.Errorf("invalid patch version in '%s': %w", tag, err)
 	}
 
 	// Bump version based on type
 	switch bumpType {
 	case "major":
-		return fmt.Sprintf("v%d.0.0", major+1), nil
+		major++
+		minor = 0
+		patch = 0
 	case "minor":
-		return fmt.Sprintf("v%d.%d.0", major, minor+1), nil
+		minor++
+		patch = 0
 	case "patch":
-		return fmt.Sprintf("v%d.%d.%d", major, minor, patch+1), nil
+		patch++
 	default:
-		return "", fmt.Errorf("unknown bump type '%s'", bumpType)
+		return "", fmt.Errorf("unknown bump type '%s'. Use 'major', 'minor', or 'patch'", bumpType)
 	}
+
+	return fmt.Sprintf("v%d.%d.%d", major, minor, patch), nil
 }
 
 func updateVersionFile(newVersion string) error {
@@ -269,7 +300,7 @@ func commitVersionFile(newVersion string) error {
 func createTag(newVersion string) error {
 	fmt.Printf("🔖 Creating tag %s...\n", newVersion)
 
-	// Create tag pointing to THIS commit
+	// Create an annotated tag pointing to the release commit
 	cmd := exec.Command("git", "tag", "-a", newVersion, "-m", fmt.Sprintf("Release %s", newVersion))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
