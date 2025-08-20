@@ -199,9 +199,7 @@ components:
             type: object
         execapi_taskExec:
             properties:
-                chain:
-                    items:
-                        $ref: '#/components/schemas/taskengine_ChainDefinition'
+                chain: {}
                 input:
                     type: object
                 inputType:
@@ -473,109 +471,6 @@ components:
                 - input
                 - output
             type: object
-        taskengine_ChainDefinition:
-            properties:
-                debug:
-                    description: Enables capturing user input and output.
-                    type: boolean
-                description:
-                    description: Description provides a human-readable summary of the chain's purpose.
-                    type: string
-                id:
-                    description: ID uniquely identifies the chain.
-                    type: string
-                tasks:
-                    description: Tasks is the list of tasks to execute in sequence.
-                    items:
-                        $ref: '#/components/schemas/taskengine_ChainTask'
-                    type: array
-                token_limit:
-                    description: TokenLimit is the token limit for the context window (used during execution).
-                    type: integer
-            required:
-                - id
-                - debug
-                - description
-                - tasks
-                - token_limit
-            type: object
-        taskengine_ChainTask:
-            properties:
-                compose:
-                    description: |-
-                        Compose merges the specified the output with the withVar side.
-                        Optional. compose is applied before the input reaches the task execution,
-                    type: object
-                description:
-                    description: Description is a human-readable summary of what the task does.
-                    type: string
-                execute_config:
-                    description: ExecuteConfig defines the configuration for executing prompt or chat model tasks.
-                    type: object
-                handler:
-                    description: Handler determines how the LLM output (or hook) will be interpreted.
-                    type: object
-                hook:
-                    description: |-
-                        Hook defines an external action to run.
-                        Required for Hook tasks, must be nil/omitted for all other types.
-                        Example: {type: "send_email", args: {"to": "user@example.com"}}
-                    type: object
-                id:
-                    description: ID uniquely identifies the task within the chain.
-                    type: string
-                input_var:
-                    description: |-
-                        InputVar is the name of the variable to use as input for the task.
-                        Example: "input" for the original input.
-                        Each task stores its output in a variable named with it's task id.
-                    type: string
-                print:
-                    description: |-
-                        Print optionally formats the output for display/logging.
-                        Supports template variables from previous task outputs.
-                        Optional for all task types except Hook where it's rarely used.
-                        Example: "The score is: {{.previous_output}}"
-                    type: string
-                prompt_template:
-                    description: |-
-                        PromptTemplate is the text prompt sent to the LLM.
-                        It's Required and only applicable for the raw_string type.
-                        Supports template variables from previous task outputs.
-                        Example: "Rate the quality from 1-10: {{.input}}"
-                    type: string
-                retry_on_failure:
-                    description: |-
-                        RetryOnFailure sets how many times to retry this task on failure.
-                        Applies to all task types including Hooks.
-                        Default: 0 (no retries)
-                    type: integer
-                system_instruction:
-                    description: SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.
-                    type: string
-                timeout:
-                    description: |-
-                        Timeout optionally sets a timeout for task execution.
-                        Format: "10s", "2m", "1h" etc.
-                        Optional for all task types.
-                    type: string
-                transition:
-                    description: Transition defines what to do after this task completes.
-                    type: object
-                valid_conditions:
-                    additionalProperties: true
-                    description: |-
-                        ValidConditions defines allowed values for ConditionKey tasks.
-                        Required for ConditionKey tasks, ignored for all other types.
-                        Example: {"yes": true, "no": true} for a yes/no condition.
-                    type: object
-            required:
-                - id
-                - description
-                - handler
-                - prompt_template
-                - transition
-            type: object
     securitySchemes:
         X-API-Key:
             in: header
@@ -583,7 +478,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-5-g9393da8-dirty
+    version: v0.0.51-6-gd8991a2-dirty
 openapi: 3.1.0
 paths:
     /backend-associations/{backendID}/pools:
