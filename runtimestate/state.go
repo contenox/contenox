@@ -22,6 +22,17 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
+// providerCacheDuration defines how long the state of models from an external
+// provider (like OpenAI or Gemini) is cached to avoid frequent API calls.
+const providerCacheDuration = 24 * time.Hour
+
+// providerCacheEntry holds the data and metadata for a cached provider state.
+type providerCacheEntry struct {
+	models    []ListModelResponse
+	timestamp time.Time
+	apiKey    string
+}
+
 // LLMState represents the observed state of a single LLM backend.
 type LLMState struct {
 	ID           string               `json:"id" example:"backend1"`
@@ -95,11 +106,12 @@ func convertOllamaListModelResponse(models []api.ListModelResponse) []ListModelR
 // and the actual state of the backends, including providing the mechanism
 // for model downloads via the dwqueue component.
 type State struct {
-	dbInstance libdb.DBManager
-	state      sync.Map
-	psInstance libbus.Messenger
-	dwQueue    dwqueue
-	withPools  bool
+	dbInstance    libdb.DBManager
+	state         sync.Map
+	psInstance    libbus.Messenger
+	dwQueue       dwqueue
+	withPools     bool
+	providerCache sync.Map
 }
 
 type Option func(*State)
@@ -117,10 +129,11 @@ func WithPools() Option {
 // Returns an initialized State ready for use.
 func New(ctx context.Context, dbInstance libdb.DBManager, psInstance libbus.Messenger, options ...Option) (*State, error) {
 	s := &State{
-		dbInstance: dbInstance,
-		state:      sync.Map{},
-		dwQueue:    dwqueue{dbInstance: dbInstance},
-		psInstance: psInstance,
+		dbInstance:    dbInstance,
+		state:         sync.Map{},
+		dwQueue:       dwqueue{dbInstance: dbInstance},
+		psInstance:    psInstance,
+		providerCache: sync.Map{},
 	}
 	if psInstance == nil {
 		return nil, errors.New("psInstance cannot be nil")
@@ -493,17 +506,17 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 			// acting as a simple lock at the queue level.
 			// Download flow:
 			// 1. The sync cycle re-evaluates the full desired vs. actual state
-			//    periodically. It will re-detect *all* currently missing models on each run.
+			//     periodically. It will re-detect *all* currently missing models on each run.
 			// 2. Therefore, the queue doesn't need to store a "TODO" list of all
-			//    pending downloads for a backend. A single job per backend URL acts as
-			//    a sufficient signal that *a* download action is required.
+			//     pending downloads for a backend. A single job per backend URL acts as
+			//     a sufficient signal that *a* download action is required.
 			// 3. The specific model placed in this job's payload reflects one missing model
-			//    identified during the *most recent* sync cycle run.
+			//     identified during the *most recent* sync cycle run.
 			// 4. When this model is downloaded, the *next* sync cycle will identify the
-			//    *next* missing model (if any) and trigger the queue again, eventually
-			//    leading to all models being downloaded over successive cycles.
+			//     *next* missing model (if any) and trigger the queue again, eventually
+			//     leading to all models being downloaded over successive cycles.
 			// 5. If the backeend dies while downloading this mechanism will ensure that
-			//    the downloadjob will be readded to the queue.
+			//     the downloadjob will be readded to the queue.
 			err := s.dwQueue.add(ctx, *backendURL, declaredModel)
 			if err != nil {
 				// log.Printf("Error adding model %s to download queue: %v", declaredModel, err)
@@ -725,6 +738,23 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 		return
 	}
 
+	// Check cache first: use if recent and API key is unchanged
+	if cached, ok := s.providerCache.Load(backend.ID); ok {
+		if entry, ok := cached.(providerCacheEntry); ok {
+			if time.Since(entry.timestamp) < providerCacheDuration && entry.apiKey == cfg.APIKey {
+				modelNames := make([]string, 0, len(entry.models))
+				for _, m := range entry.models {
+					modelNames = append(modelNames, m.Model)
+				}
+				stateInstance.Models = modelNames
+				stateInstance.PulledModels = entry.models
+				stateInstance.apiKey = entry.apiKey
+				s.state.Store(backend.ID, stateInstance)
+				return // Return early using cached data
+			}
+		}
+	}
+
 	// Prepare HTTP request
 	client := &http.Client{Timeout: 10 * time.Second}
 	reqURL := fmt.Sprintf("%s/v1beta/models",
@@ -747,14 +777,16 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 	}
 	defer resp.Body.Close()
 
-	// Handle non-200 responses and read body for debugging
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		stateInstance.Error = fmt.Sprintf("Failed to read response body: %v", err)
+		s.state.Store(backend.ID, stateInstance)
+		return
+	}
+
+	// Handle non-200 responses
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		bodyStr := string(bodyBytes)
-		if readErr != nil {
-			bodyStr = fmt.Sprintf("<failed to read body: %v>", readErr)
-		}
-		stateInstance.Error = fmt.Sprintf("API returned %d: %s", resp.StatusCode, bodyStr)
+		stateInstance.Error = fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(bodyBytes))
 		s.state.Store(backend.ID, stateInstance)
 		return
 	}
@@ -765,13 +797,8 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 			Name string `json:"name"`
 		} `json:"models"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&geminiResponse); err != nil {
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		bodyStr := string(bodyBytes)
-		if readErr != nil {
-			bodyStr = fmt.Sprintf("<failed to read body: %v>", readErr)
-		}
-		stateInstance.Error = fmt.Sprintf("Response parsing failed: %v | Raw response: %s", err, bodyStr)
+	if err := json.Unmarshal(bodyBytes, &geminiResponse); err != nil {
+		stateInstance.Error = fmt.Sprintf("Response parsing failed: %v | Raw response: %s", err, string(bodyBytes))
 		s.state.Store(backend.ID, stateInstance)
 		return
 	}
@@ -794,6 +821,13 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 	stateInstance.PulledModels = pulledModels
 	stateInstance.apiKey = cfg.APIKey
 	s.state.Store(backend.ID, stateInstance)
+
+	// Store successful result in cache
+	s.providerCache.Store(backend.ID, providerCacheEntry{
+		models:    pulledModels,
+		timestamp: time.Now(),
+		apiKey:    cfg.APIKey,
+	})
 }
 
 func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
@@ -817,6 +851,51 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 		return
 	}
 
+	// Check cache first: use if recent and API key is unchanged
+	if cached, ok := s.providerCache.Load(backend.ID); ok {
+		if entry, ok := cached.(providerCacheEntry); ok {
+			if time.Since(entry.timestamp) < providerCacheDuration && entry.apiKey == cfg.APIKey {
+				// Re-validate cached models against current declared models
+				declaredModels := make(map[string]*runtimetypes.Model)
+				for _, model := range models {
+					declaredModels[model.Model] = model
+				}
+
+				modelNames := make([]string, 0, len(entry.models))
+				pulledModels := make([]ListModelResponse, len(entry.models))
+				copy(pulledModels, entry.models) // Work on a copy
+				var undeclaredModels []string
+
+				for i, m := range pulledModels {
+					modelID := m.Model
+					modelNames = append(modelNames, modelID)
+					if declaredModel, exists := declaredModels[modelID]; exists {
+						pulledModels[i].Name = declaredModel.ID
+						pulledModels[i].ContextLength = declaredModel.ContextLength
+						pulledModels[i].CanChat = declaredModel.CanChat
+						pulledModels[i].CanEmbed = declaredModel.CanEmbed
+						pulledModels[i].CanPrompt = declaredModel.CanPrompt
+						pulledModels[i].CanStream = declaredModel.CanStream
+					} else {
+						undeclaredModels = append(undeclaredModels, modelID)
+					}
+				}
+
+				if len(undeclaredModels) > 0 {
+					stateInstance.Error = fmt.Sprintf(
+						"backend has undeclared models: %s",
+						strings.Join(undeclaredModels, ", "),
+					)
+				}
+				stateInstance.Models = modelNames
+				stateInstance.PulledModels = pulledModels
+				stateInstance.apiKey = entry.apiKey
+				s.state.Store(backend.ID, stateInstance)
+				return // Return early using cached data
+			}
+		}
+	}
+
 	// Prepare HTTP request
 	client := &http.Client{Timeout: 10 * time.Second}
 	reqURL := strings.TrimSuffix(backend.BaseURL, "/") + "/v1/models"
@@ -837,9 +916,15 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 	}
 	defer resp.Body.Close()
 
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		stateInstance.Error = fmt.Sprintf("Failed to read response body: %v", err)
+		s.state.Store(backend.ID, stateInstance)
+		return
+	}
+
 	// Handle non-200 responses
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
 		stateInstance.Error = fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(bodyBytes))
 		s.state.Store(backend.ID, stateInstance)
 		return
@@ -851,7 +936,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&openAIResponse); err != nil {
+	if err := json.Unmarshal(bodyBytes, &openAIResponse); err != nil {
 		stateInstance.Error = fmt.Sprintf("Response parsing failed: %v", err)
 		s.state.Store(backend.ID, stateInstance)
 		return
@@ -906,6 +991,13 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 	stateInstance.PulledModels = pulledModels
 	stateInstance.apiKey = cfg.APIKey
 	s.state.Store(backend.ID, stateInstance)
+
+	// Store successful result in cache
+	s.providerCache.Store(backend.ID, providerCacheEntry{
+		models:    pulledModels,
+		timestamp: time.Now(),
+		apiKey:    cfg.APIKey,
+	})
 }
 
 func fetchGeminiModelInfo(ctx context.Context, baseURL, modelName, apiKey string, httpClient *http.Client) (*ListModelResponse, error) {
