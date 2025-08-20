@@ -85,13 +85,12 @@ docs-markdown: docs-gen
 				--verbose"
 	@echo "✅ Markdown documentation generated at $(PROJECT_ROOT)/docs/api-reference.md"
 
-commit-docs: docs-markdown
+set-version: docs-markdown
+	go run ./tools/version/main.go set
+
+commit-docs: set-version
 	@git add $(PROJECT_ROOT)/docs/
 	@git commit -m "Update API reference"
-
-# Version management commands - use go run directly
-set-version: commit-docs
-	go run ./tools/version/main.go set
 
 bump-major: commit-docs
 	go run ./tools/version/main.go bump major

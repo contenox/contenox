@@ -42,8 +42,7 @@ func New(
 	config *Config,
 	dbInstance libdb.DBManager,
 	pubsub libbus.Messenger,
-	embedder llmrepo.ModelRepo,
-	execmodelrepo llmrepo.ModelRepo,
+	repo llmrepo.ModelRepo,
 	environmentExec taskengine.EnvExecutor,
 	state *runtimestate.State,
 	hookRegistry taskengine.HookRegistry,
@@ -108,10 +107,10 @@ func New(
 	modelService := modelservice.New(dbInstance, config.EmbedModel)
 	modelService = modelservice.WithActivityTracker(modelService, serveropsChainedTracker)
 	backendapi.AddModelRoutes(mux, modelService, downloadService)
-	execService := execservice.NewExec(ctx, execmodelrepo, dbInstance)
+	execService := execservice.NewExec(ctx, repo, dbInstance)
 	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
 	taskService := execservice.NewTasksEnv(ctx, environmentExec, dbInstance, hookRegistry)
-	embedService := embedservice.New(embedder)
+	embedService := embedservice.New(repo, config.EmbedModel, config.EmbedProvider)
 	embedService = embedservice.WithActivityTracker(embedService, serveropsChainedTracker)
 	execapi.AddExecRoutes(mux, execService, taskService, embedService)
 	providerService := providerservice.New(dbInstance)
@@ -139,8 +138,10 @@ type Config struct {
 	NATSPassword            string `json:"nats_password"`
 	TokenizerServiceURL     string `json:"tokenizer_service_url"`
 	EmbedModel              string `json:"embed_model"`
+	EmbedProvider           string `json:"embed_provider"`
 	EmbedModelContextLength string `json:"embed_model_context_length"`
 	TaskModel               string `json:"task_model"`
+	TaskProvider            string `json:"task_provider"`
 	TaskModelContextLength  string `json:"task_model_context_length"`
 	VectorStoreURL          string `json:"vector_store_url"`
 	KVBackend               string `json:"kv_backend"`

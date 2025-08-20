@@ -111,7 +111,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s parsing embed model context length failed: %v", nodeInstanceID, err)
 	}
-	embedder, err := llmrepo.NewEmbedder(ctx, &llmrepo.Config{
+	err = runtimestate.InitEmbeder(ctx, &runtimestate.Config{
 		DatabaseURL: config.DatabaseURL,
 		EmbedModel:  config.EmbedModel,
 		TaskModel:   config.TaskModel,
@@ -131,7 +131,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s parsing task model context length failed: %v", nodeInstanceID, err)
 	}
-	execRepo, err := llmrepo.NewExecRepo(ctx, &llmrepo.Config{
+	err = runtimestate.InitPromptExec(ctx, &runtimestate.Config{
 		DatabaseURL: config.DatabaseURL,
 		TaskModel:   config.TaskModel,
 		EmbedModel:  config.EmbedModel,
@@ -167,10 +167,26 @@ func main() {
 		tracker,
 		stdOuttracker,
 	}
-
+	repo, err := llmrepo.NewModelManager(state, tokenizerSvc, llmrepo.ModelManagerConfig{
+		DefaultPromptModel: llmrepo.ModelConfig{
+			Name:     config.TaskModel,
+			Provider: "ollama",
+		},
+		DefaultEmbeddingModel: llmrepo.ModelConfig{
+			Name:     config.EmbedModel,
+			Provider: "ollama",
+		},
+		DefaultChatModel: llmrepo.ModelConfig{
+			Name:     config.TaskModel,
+			Provider: "ollama",
+		},
+	})
+	if err != nil {
+		log.Fatalf("%s initializing llm repo failed: %v", nodeInstanceID, err)
+	}
 	// Create persistent hook repo
 	hookRepo := hooks.NewPersistentRepo(map[string]taskengine.HookRepo{}, dbInstance, http.DefaultClient)
-	exec, err := taskengine.NewExec(ctx, execRepo, embedder, hookRepo, serveropsChainedTracker)
+	exec, err := taskengine.NewExec(ctx, repo, hookRepo, serveropsChainedTracker)
 	if err != nil {
 		log.Fatalf("%s initializing task engine engine failed: %v", nodeInstanceID, err)
 	}
@@ -180,7 +196,7 @@ func main() {
 	}
 	cleanups = append(cleanups, cleanup)
 
-	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, embedder, execRepo, environmentExec, state, hookRepo, kvManager)
+	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo, kvManager)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("%s initializing API handler failed: %v", nodeInstanceID, err)

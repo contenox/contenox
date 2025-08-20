@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/contenox/runtime/llmrepo"
-	"github.com/contenox/runtime/llmresolver"
 )
 
 type Service interface {
@@ -15,24 +14,25 @@ type Service interface {
 }
 
 type service struct {
-	repo llmrepo.ModelRepo
+	repo          llmrepo.ModelRepo
+	modelName     string
+	modelProvider string
 }
 
-func New(repo llmrepo.ModelRepo) Service {
+func New(repo llmrepo.ModelRepo, modelName string, modelProvider string) Service {
 	return &service{
-		repo: repo,
+		repo:          repo,
+		modelName:     modelName,
+		modelProvider: modelProvider,
 	}
 }
 
 // Embed implements Service.
 func (s *service) Embed(ctx context.Context, text string) ([]float64, error) {
-	embedProvider, err := s.repo.GetDefaultSystemProvider(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get embedder provider: %w", err)
-	}
-	embedClient, err := llmresolver.Embed(ctx, llmresolver.EmbedRequest{
-		ModelName: embedProvider.ModelName(),
-	}, s.repo.GetRuntime(ctx), llmresolver.Randomly)
+	embedClient, err := s.repo.Embed(ctx, llmrepo.EmbedRequest{
+		ModelName:    s.modelName,
+		ProviderType: s.modelProvider,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve embed client: %w", err)
 	}
@@ -48,9 +48,5 @@ func (s *service) Embed(ctx context.Context, text string) ([]float64, error) {
 
 // DefaultModelName implements Service.
 func (s *service) DefaultModelName(ctx context.Context) (string, error) {
-	embedProvider, err := s.repo.GetDefaultSystemProvider(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get embedder provider: %w", err)
-	}
-	return embedProvider.ModelName(), nil
+	return s.modelName, nil
 }

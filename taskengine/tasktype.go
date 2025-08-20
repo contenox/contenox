@@ -360,9 +360,6 @@ type ChainDefinition struct {
 
 	// TokenLimit is the token limit for the context window (used during execution).
 	TokenLimit int64 `yaml:"token_limit" json:"token_limit"`
-
-	// RoutingStrategy defines how transitions should be evaluated (optional).
-	RoutingStrategy string `yaml:"routing_strategy" json:"routing_strategy"`
 }
 
 type SearchResult struct {

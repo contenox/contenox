@@ -8,7 +8,6 @@ import (
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/llmrepo"
-	"github.com/contenox/runtime/llmresolver"
 	"github.com/google/uuid"
 )
 
@@ -29,7 +28,9 @@ func NewExec(ctx context.Context, modelRepo llmrepo.ModelRepo, dbInstance libdb.
 }
 
 type TaskRequest struct {
-	Prompt string `json:"prompt" example:"Hello, how are you?"`
+	Prompt        string `json:"prompt" example:"Hello, how are you?"`
+	ModelName     string `json:"model_name" example:"gpt-3.5-turbo"`
+	ModelProvider string `json:"model_provider" example:"openai"`
 }
 
 type TaskResponse struct {
@@ -44,14 +45,18 @@ func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*TaskR
 	if request.Prompt == "" {
 		return nil, fmt.Errorf("prompt is empty %w", apiframework.ErrEmptyRequestBody)
 	}
-
-	provider, err := s.modelRepo.GetDefaultSystemProvider(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default system provider: %w", err)
+	modelNames := []string{}
+	providerNames := []string{}
+	if request.ModelName != "" {
+		modelNames = append(modelNames, request.ModelName)
 	}
-	promptClient, err := llmresolver.PromptExecute(ctx, llmresolver.PromptRequest{
-		ModelNames: []string{provider.ModelName()},
-	}, s.modelRepo.GetRuntime(ctx), llmresolver.Randomly)
+	if request.ModelProvider != "" {
+		providerNames = append(providerNames, request.ModelProvider)
+	}
+	promptClient, err := s.modelRepo.PromptExecute(ctx, llmrepo.Request{
+		ModelNames:    modelNames,
+		ProviderTypes: providerNames,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve prompt client: %w", err)
 	}

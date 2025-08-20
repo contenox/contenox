@@ -14,7 +14,6 @@ import (
 	"dario.cat/mergo"
 	"github.com/contenox/activitytracker"
 	"github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/llmresolver"
 )
 
 // DataType represents the type of data that can be passed between tasks
@@ -153,15 +152,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 	}
 	varTypes := map[string]DataType{"input": dataType}
 	startingTime := time.Now().UTC()
-	resolver := llmresolver.Randomly
 	var err error
-
-	if len(chain.RoutingStrategy) > 0 {
-		resolver, err = llmresolver.PolicyFromString(chain.RoutingStrategy)
-		if err != nil {
-			return nil, DataTypeAny, stack.GetExecutionHistory(), err
-		}
-	}
 
 	if err := validateChain(chain.Tasks); err != nil {
 		return nil, DataTypeAny, stack.GetExecutionHistory(), err
@@ -237,7 +228,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 
 			startTime := time.Now().UTC()
 
-			output, outputType, transitionEval, taskErr = exe.exec.TaskExec(taskCtx, startingTime, resolver, int(chain.TokenLimit), currentTask, taskInput, taskInputType)
+			output, outputType, transitionEval, taskErr = exe.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), currentTask, taskInput, taskInputType)
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
 				reportErrAttempt(taskErr)

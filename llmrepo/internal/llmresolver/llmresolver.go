@@ -1,4 +1,3 @@
-// Package llmresolver selects the most appropriate backend LLM instance based on requirements.
 package llmresolver
 
 import (
@@ -18,8 +17,6 @@ var (
 	ErrUnknownModelCapabilities = errors.New("capabilities not known for this model")
 )
 
-var DefaultProviderType string = "ollama"
-
 // Request contains requirements for selecting a model provider.
 type Request struct {
 	ProviderTypes []string // Optional: if empty, uses all default providers
@@ -28,16 +25,19 @@ type Request struct {
 	Tracker       activitytracker.ActivityTracker
 }
 
+type EmbedRequest struct {
+	ModelName    string
+	ProviderType string
+	Tracker      activitytracker.ActivityTracker // Now exported
+}
+
 func filterCandidates(
 	ctx context.Context,
 	req Request,
-	getModels ProviderFromRuntimeState,
+	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
 	capCheck func(libmodelprovider.Provider) bool,
 ) ([]libmodelprovider.Provider, error) {
 	providerTypes := req.ProviderTypes
-	if len(providerTypes) == 0 {
-		providerTypes = []string{"ollama", "vllm"}
-	}
 	providers, err := getModels(ctx, providerTypes...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get models: %w", err)
@@ -106,8 +106,6 @@ func filterCandidates(
 	return candidates, nil
 }
 
-type Policy func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error)
-
 const (
 	StrategyRandom      = "random"
 	StrategyAuto        = "auto"
@@ -116,7 +114,7 @@ const (
 )
 
 // PolicyFromString maps string names to resolver policies
-func PolicyFromString(name string) (Policy, error) {
+func PolicyFromString(name string) (func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error), error) {
 	switch strings.ToLower(name) {
 	case StrategyRandom:
 		return Randomly, nil
@@ -234,8 +232,8 @@ func NormalizeModelName(modelName string) string {
 func Chat(
 	ctx context.Context,
 	req Request,
-	getModels ProviderFromRuntimeState,
-	resolver Policy,
+	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
+	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
 ) (libmodelprovider.LLMChatClient, string, error) {
 	tracker := req.Tracker
 	if tracker == nil {
@@ -261,13 +259,8 @@ func Chat(
 		reportErr(err)
 		return nil, "", err
 	}
-	if req.ContextLength == 0 {
-		err = fmt.Errorf("context length must be greater than 0")
-		reportErr(err)
-		return nil, "", err
-	}
 	if req.ContextLength < 0 {
-		err = fmt.Errorf("context length must be non-negative")
+		err := fmt.Errorf("context length must be non-negative")
 		reportErr(err)
 		return nil, "", err
 	}
@@ -285,19 +278,13 @@ func Chat(
 	return client, modelName, nil
 }
 
-type EmbedRequest struct {
-	ModelName    string
-	ProviderType string // Optional. Empty uses default.
-	tracker      activitytracker.ActivityTracker
-}
-
 func Embed(
 	ctx context.Context,
 	embedReq EmbedRequest,
-	getModels ProviderFromRuntimeState,
-	resolver Policy,
+	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
+	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
 ) (libmodelprovider.LLMEmbedClient, error) {
-	tracker := embedReq.tracker
+	tracker := embedReq.Tracker
 	if tracker == nil {
 		tracker = activitytracker.NoopTracker{}
 	}
@@ -311,12 +298,9 @@ func Embed(
 	defer endFn()
 
 	if embedReq.ModelName == "" {
-		err := fmt.Errorf("model name is required")
+		err := errors.New("model name is required")
 		reportErr(err)
 		return nil, err
-	}
-	if embedReq.ProviderType == "" {
-		embedReq.ProviderType = DefaultProviderType
 	}
 	req := Request{
 		ModelNames:    []string{embedReq.ModelName},
@@ -325,12 +309,12 @@ func Embed(
 	candidates, err := filterCandidates(ctx, req, getModels, libmodelprovider.Provider.CanEmbed)
 	if err != nil {
 		reportErr(err)
-		return nil, fmt.Errorf("failed to filter candidates %w", err)
+		return nil, fmt.Errorf("failed to filter candidates: %w", err)
 	}
 	provider, backend, err := resolver(candidates)
 	if err != nil {
 		reportErr(err)
-		return nil, fmt.Errorf("failed apply resolver %w", err)
+		return nil, fmt.Errorf("failed to apply resolver: %w", err)
 	}
 	reportChange("selected_provider", map[string]string{
 		"model_name":  provider.ModelName(),
@@ -343,8 +327,8 @@ func Embed(
 func Stream(
 	ctx context.Context,
 	req Request,
-	getModels ProviderFromRuntimeState,
-	resolver Policy,
+	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
+	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
 ) (libmodelprovider.LLMStreamClient, error) {
 	tracker := req.Tracker
 	if tracker == nil {
@@ -378,20 +362,13 @@ func Stream(
 	return provider.GetStreamConnection(ctx, backend)
 }
 
-type PromptRequest struct {
-	ModelNames    []string
-	ProviderTypes []string // Optional. Empty uses default.
-	Tracker       activitytracker.ActivityTracker
-	ContextLength int
-}
-
 func PromptExecute(
 	ctx context.Context,
-	reqExec PromptRequest,
-	getModels ProviderFromRuntimeState,
-	resolver Policy,
+	req Request,
+	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
+	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
 ) (libmodelprovider.LLMPromptExecClient, error) {
-	tracker := reqExec.Tracker
+	tracker := req.Tracker
 	if tracker == nil {
 		tracker = activitytracker.NoopTracker{}
 	}
@@ -399,24 +376,16 @@ func PromptExecute(
 		ctx,
 		"resolve",
 		"prompt_model",
-		"model_names", reqExec.ModelNames,
-		"provider_types", reqExec.ProviderTypes,
-		"context_length", reqExec.ContextLength,
+		"model_names", req.ModelNames,
+		"provider_types", req.ProviderTypes,
+		"context_length", req.ContextLength,
 	)
 	defer endFn()
 
-	if len(reqExec.ModelNames) == 0 {
-		err := fmt.Errorf("at least one model name is required")
+	if len(req.ModelNames) == 0 {
+		err := errors.New("at least one model name is required")
 		reportErr(err)
 		return nil, err
-	}
-	if len(reqExec.ProviderTypes) == 0 {
-		reqExec.ProviderTypes = []string{DefaultProviderType, "vllm"}
-	}
-	req := Request{
-		ModelNames:    reqExec.ModelNames,
-		ProviderTypes: reqExec.ProviderTypes,
-		ContextLength: reqExec.ContextLength,
 	}
 	candidates, err := filterCandidates(ctx, req, getModels, libmodelprovider.Provider.CanPrompt)
 	if err != nil {
@@ -436,6 +405,3 @@ func PromptExecute(
 	})
 	return provider.GetPromptConnection(ctx, backend)
 }
-
-// ProviderFromRuntimeState retrieves available model providers
-type ProviderFromRuntimeState func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error)

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	libmodelprovider "github.com/contenox/modelprovider"
-	"github.com/contenox/runtime/llmresolver"
+	"github.com/contenox/runtime/llmrepo/internal/llmresolver"
 )
 
 func TestUnit_ChatModelResolution(t *testing.T) {
@@ -197,7 +197,7 @@ func TestUnit_EmbedModelResolution(t *testing.T) {
 		name      string
 		embedReq  llmresolver.EmbedRequest
 		providers []libmodelprovider.Provider
-		resolver  llmresolver.Policy
+		resolver  func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error)
 		wantErr   error
 		wantMsg   string
 	}{

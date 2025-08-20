@@ -5,14 +5,12 @@ import (
 	"net/http"
 
 	"github.com/contenox/modelprovider"
-	libmodelprovider "github.com/contenox/modelprovider"
-	"github.com/contenox/runtime/llmresolver"
 )
 
 // LocalProviderAdapter creates providers for self-hosted backends (Ollama, vLLM)
-func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmresolver.ProviderFromRuntimeState {
+func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) ProviderFromRuntimeState {
 	// Create a flat list of providers (one per model per backend)
-	providersByType := make(map[string][]libmodelprovider.Provider)
+	providersByType := make(map[string][]modelprovider.Provider)
 
 	for _, state := range runtime {
 		if state.Error != "" {
@@ -21,7 +19,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmr
 
 		backendType := state.Backend.Type
 		if _, ok := providersByType[backendType]; !ok {
-			providersByType[backendType] = []libmodelprovider.Provider{}
+			providersByType[backendType] = []modelprovider.Provider{}
 		}
 
 		for _, model := range state.PulledModels {
@@ -37,7 +35,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmr
 			case "ollama":
 				providersByType[backendType] = append(
 					providersByType[backendType],
-					libmodelprovider.NewOllamaModelProvider(
+					modelprovider.NewOllamaModelProvider(
 						model.Model,
 						[]string{state.Backend.BaseURL},
 						http.DefaultClient,
@@ -47,7 +45,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmr
 			case "vllm":
 				providersByType[backendType] = append(
 					providersByType[backendType],
-					libmodelprovider.NewVLLMModelProvider(
+					modelprovider.NewVLLMModelProvider(
 						model.Model,
 						[]string{state.Backend.BaseURL},
 						http.DefaultClient,
@@ -58,7 +56,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmr
 			case "openai":
 				providersByType[backendType] = append(
 					providersByType[backendType],
-					libmodelprovider.NewOpenAIProvider(
+					modelprovider.NewOpenAIProvider(
 						state.apiKey,
 						model.Model,
 						[]string{state.Backend.BaseURL},
@@ -69,7 +67,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmr
 			case "gemini":
 				providersByType[backendType] = append(
 					providersByType[backendType],
-					libmodelprovider.NewGeminiProvider(
+					modelprovider.NewGeminiProvider(
 						state.apiKey,
 						model.Model,
 						[]string{state.Backend.BaseURL},
@@ -81,8 +79,8 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmr
 		}
 	}
 
-	return func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error) {
-		var providers []libmodelprovider.Provider
+	return func(ctx context.Context, backendTypes ...string) ([]modelprovider.Provider, error) {
+		var providers []modelprovider.Provider
 		for _, backendType := range backendTypes {
 			if typeProviders, ok := providersByType[backendType]; ok {
 				providers = append(providers, typeProviders...)
@@ -91,3 +89,6 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]LLMState) llmr
 		return providers, nil
 	}
 }
+
+// ProviderFromRuntimeState retrieves available model providers
+type ProviderFromRuntimeState func(ctx context.Context, backendTypes ...string) ([]modelprovider.Provider, error)

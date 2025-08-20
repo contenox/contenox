@@ -8,7 +8,7 @@ import (
 
 	libdb "github.com/contenox/dbexec"
 	"github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/llmrepo"
+	"github.com/contenox/runtime/runtimestate"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 )
@@ -70,7 +70,7 @@ func (s *service) GetByName(ctx context.Context, name string) (*runtimetypes.Poo
 }
 
 func (s *service) Update(ctx context.Context, pool *runtimetypes.Pool) error {
-	if pool.ID == llmrepo.EmbedPoolID {
+	if pool.ID == runtimestate.EmbedPoolID {
 		return fmt.Errorf("pool %s is immutable", pool.ID)
 	}
 	tx := s.dbInstance.WithoutTransaction()
@@ -78,7 +78,7 @@ func (s *service) Update(ctx context.Context, pool *runtimetypes.Pool) error {
 }
 
 func (s *service) Delete(ctx context.Context, id string) error {
-	if id == llmrepo.EmbedPoolID {
+	if id == runtimestate.EmbedPoolID {
 		return fmt.Errorf("pool %s is immutable", id)
 	}
 	tx := s.dbInstance.WithoutTransaction()
@@ -142,7 +142,7 @@ func (s *service) AssignModel(ctx context.Context, poolID, modelID string) error
 }
 
 func (s *service) RemoveModel(ctx context.Context, poolID, modelID string) error {
-	if poolID == llmrepo.EmbedPoolID {
+	if poolID == runtimestate.EmbedPoolID {
 		return apiframework.ErrImmutablePool
 	}
 	tx := s.dbInstance.WithoutTransaction()
