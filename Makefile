@@ -92,11 +92,11 @@ commit-docs: set-version
 	@git add $(PROJECT_ROOT)/docs/
 	@git commit -m "Update API reference"
 
-bump-major: commit-docs
+bump-major:
 	go run ./tools/version/main.go bump major
 
-bump-minor: commit-docs
+bump-minor:
 	go run ./tools/version/main.go bump minor
 
-bump-patch: commit-docs
+bump-patch:
 	go run ./tools/version/main.go bump patch

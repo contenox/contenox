@@ -72,7 +72,7 @@ func bumpVersion(bumpType string) {
 		os.Exit(1)
 	}
 
-	// 2. Check for uncommitted changes
+	// 2. Check for uncommitted changes (this now correctly ignores the version file)
 	if hasUncommittedChanges() {
 		fmt.Println("ERROR: Cannot create release with uncommitted changes.")
 		fmt.Println("Please commit or stash your changes first.")
@@ -119,8 +119,42 @@ func bumpVersion(bumpType string) {
 		os.Exit(1)
 	}
 
+	// 8. Regenerate docs and amend the release commit
+	fmt.Println("\n🔄 Regenerating documentation with new version...")
+	if err := updateDocsAndAmendCommit(); err != nil {
+		fmt.Printf("⚠️  WARNING: Failed to update documentation: %v\n", err)
+		fmt.Println("   The tag was created, but the docs need to be updated and committed manually.")
+	}
+
 	fmt.Printf("\n✅ Release %s created successfully!\n", newVersion)
 	fmt.Printf("   Push with: git push && git push origin %s\n", newVersion)
+}
+
+func updateDocsAndAmendCommit() error {
+	// Regenerate OpenAPI spec and Markdown.
+	// We run 'make docs-markdown' as it handles both steps.
+	cmd := exec.Command("make", "docs-markdown")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to run 'make docs-markdown': %w\nOutput: %s", err, string(output))
+	}
+
+	// Add the updated docs to the index
+	cmd = exec.Command("git", "add", "docs/")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to git add docs/: %w\nOutput: %s", err, string(output))
+	}
+
+	cmd = exec.Command("git", "commit", "--amend", "--no-edit")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		if strings.Contains(string(output), "nothing to commit") {
+			fmt.Println("   Documentation was already up-to-date.")
+			return nil
+		}
+		return fmt.Errorf("failed to amend commit: %w\nOutput: %s", err, string(output))
+	}
+
+	fmt.Println("   Documentation updated and included in the release commit.")
+	return nil
 }
 
 func isGitRepository() bool {
