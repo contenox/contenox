@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -100,6 +101,33 @@ func New(
 			Operation:    state.RunDownloadCycle,
 		},
 	)
+
+	// Add this after the pool loops are started in serverapi.New
+	triggerCh := make(chan []byte, 10)
+	err := pubsub.Publish(ctx, "trigger_cycle", []byte("trigger"))
+	if err != nil {
+		log.Fatalf("failed to publish trigger_cycle message: %v", err)
+	}
+	sub, err := pubsub.Stream(ctx, "trigger_cycle", triggerCh)
+	if err != nil {
+		log.Fatalf("failed to subscribe to trigger_cycle topic: %v", err)
+	}
+	go func() {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case _, ok := <-triggerCh:
+				if !ok {
+					return
+				}
+				// Force immediate execution of both cycles
+				pool.ForceUpdate("backendCycle")
+				pool.ForceUpdate("downloadCycle")
+			}
+		}
+	}()
 
 	downloadService := downloadservice.New(dbInstance, pubsub)
 	downloadService = downloadservice.WithActivityTracker(downloadService, serveropsChainedTracker)

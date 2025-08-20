@@ -11,26 +11,29 @@
 ✅ **Multi-backend orchestration**
 ✅ **Observability with passion**
 ✅ **Made with Go for intensive load**
-✅ **Build Agentic capabilities via Hooks**
+✅ **Build agentic capabilities via hooks**
 
-
-This is the core for the [contenox](https://github.com/contenox) ecosystem.
+This is the core of the [contenox](https://github.com/contenox) ecosystem.
 
 ## ⚡ Get Started in 3 Minutes
 
 Startup flow:
-- Launch runtime services via Docker
-- Register one or more model backends
-- Assign each backend to the relevant execution pools
-- Pull required models to the backends
-- Execute a workflow and observe the logs
 
-See first workflow runs in under 5 minutes:
+* Launch runtime services via Docker
+* Register one or more model backends
+* Assign each backend to the relevant execution pools
+* Pull required models to the backends
+* Execute a workflow and observe the logs
+
+See your first workflow run in under 5 minutes:
+
 ### Prerequisites
-- Docker and Docker Compose
-- `curl` and `jq` (for CLI examples)
+
+* Docker and Docker Compose
+* `curl` and `jq` (for CLI examples)
 
 ### 1. Launch the Runtime
+
 ```bash
 git clone https://github.com/contenox/runtime.git
 cd runtime
@@ -39,11 +42,13 @@ docker compose up -d
 ```
 
 This starts the complete environment:
-- Runtime API (port 8081)
-- Ollama (port 11435)
-- Postgres, NATS, Valkey, and tokenizer services
+
+* Runtime API (port 8081)
+* Ollama (port 11435)
+* Postgres, NATS, Valkey, and tokenizer services
 
 ### 2. Register Ollama Backends
+
 ```bash
 BACKEND_ID=$(curl -s -X POST http://localhost:8081/backends \
   -H "Content-Type: application/json" \
@@ -57,6 +62,7 @@ echo "Backend ID: $BACKEND_ID"
 ```
 
 ### 3. Assign Backend to Default Pools
+
 ```bash
 # For task execution
 curl -X POST http://localhost:8081/backend-associations/internal_tasks_pool/backends/$BACKEND_ID
@@ -66,6 +72,7 @@ curl -X POST http://localhost:8081/backend-associations/internal_embed_pool/back
 ```
 
 ### 4. Wait for Models to Download
+
 ```bash
 EMBED_MODEL="nomic-embed-text:latest"
 TASK_MODEL="qwen3:4b"
@@ -85,14 +92,17 @@ done
 ```
 
 ### 5. Execute a Prompt
+
 ```bash
 curl -X POST http://localhost:8081/execute \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Explain quantum computing"}'
 ```
 
-### 6. Create a Tasks-Chain Workflow
-# Save as `qa.json`
+### 6. Create a Task Chain Workflow
+
+Save as `qa.json`:
+
 ```json
 {
   "input": "What's the best way to optimize database queries?",
@@ -121,6 +131,7 @@ curl -X POST http://localhost:8081/execute \
 ```
 
 Execute the workflow:
+
 ```bash
 curl -X POST http://localhost:8081/tasks \
   -H "Content-Type: application/json" \
@@ -130,28 +141,30 @@ curl -X POST http://localhost:8081/tasks \
 All runtime activity is captured in structured logs, providing deep observability into workflows and system behavior.
 
 Logs can be viewed using Docker:
+
 ```bash
 docker logs contenox-runtime-kernel
 ```
 
-Logs, Metrics and Request-Traces are also pushed to valkey.
+Logs, metrics, and request traces are also pushed to Valkey.
 
 ## ✨ Key Features
 
 ### State Machine Engine
-- **Conditional Branching**: Route execution based on LLM outputs
-- **Built-in Handlers**:
-  - `condition_key`: Validate and route responses
-  - `parse_number`: Extract numerical values
-  - `parse_range`: Handle score ranges
-  - `raw_string`: Standard text generation
-  - `embedding`: Embedding generation
-  - `model_execution`: Model execution on a chat history
-  - `hook`: Calls a user-defined hook pointing to an external service
-- **Context Preservation**: Automatic input/output passing between steps
-- **Multi-Model Support**: Define preferred Models for each Chain-Task.
-- **Conditional Branching**: Logical operators to route execution based on LLM outputs.
-- **Retry and Timeout**: Configure task-level retries and timeouts for robust workflows.
+
+* **Conditional Branching**: Route execution based on LLM outputs
+* **Built-in Handlers**:
+
+  * `condition_key`: Validate and route responses
+  * `parse_number`: Extract numerical values
+  * `parse_range`: Handle score ranges
+  * `raw_string`: Standard text generation
+  * `embedding`: Embedding generation
+  * `model_execution`: Model execution on a chat history
+  * `hook`: Calls a user-defined hook pointing to an external service
+* **Context Preservation**: Automatic input/output passing between steps
+* **Multi-Model Support**: Define preferred models for each task chain
+* **Retry and Timeout**: Configure task-level retries and timeouts for robust workflows
 
 ### Multi-Provider Support
 
@@ -165,23 +178,24 @@ graph LR
     A --> E(vLLM)
 ```
 
-- **Unified Interface**: Consistent API across providers
-- **Automatic Sync**: Models stay consistent across backends
-- **Pool Management**: Assign backends to specific task types
-- **Backend Resolver**: Distribute requests to backends based on resolution policies
+* **Unified Interface**: Consistent API across providers
+* **Automatic Sync**: Models stay consistent across backends
+* **Pool Management**: Assign backends to specific task types
+* **Backend Resolver**: Distribute requests to backends based on resolution policies
 
 ## 🧩 Extensibility
 
 ### Custom Hooks
+
 Hooks are external servers that can be called from within task chains when registered.
-They allow to interact with systems and data outside of the runtime and Tasks-Chains itself.
+They allow interaction with systems and data outside of the runtime and task chains themselves.
 [🔗 See Hook Documentation](./docs/hooks.md)
 
 ## 📘 API Documentation
 
 The full API surface is thoroughly documented and defined in the OpenAPI format, making it easy to integrate with other tools. You can find more details here:
 
-- 🔗 [API Reference Documentation](./docs/api-reference.md)
-- 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)
+* 🔗 [API Reference Documentation](./docs/api-reference.md)
+* 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)
 
-Also review the [tests](./apitests) for context to the API documentation.
+Also review the [tests](./apitests) for additional context on the API documentation.
