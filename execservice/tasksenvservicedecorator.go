@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/activitytracker"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskengine"
 )
 
 type activityTrackerTaskEnvDecorator struct {
 	service TasksEnvService
-	tracker activitytracker.ActivityTracker
+	tracker libtracker.ActivityTracker
 }
 
 func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
@@ -47,7 +47,7 @@ func (d *activityTrackerTaskEnvDecorator) Supports(ctx context.Context) ([]strin
 	return d.service.Supports(ctx)
 }
 
-func EnvWithActivityTracker(service TasksEnvService, tracker activitytracker.ActivityTracker) TasksEnvService {
+func EnvWithActivityTracker(service TasksEnvService, tracker libtracker.ActivityTracker) TasksEnvService {
 	return &activityTrackerTaskEnvDecorator{
 		service: service,
 		tracker: tracker,

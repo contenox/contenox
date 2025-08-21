@@ -3,10 +3,12 @@ module github.com/contenox/runtime
 go 1.24.5
 
 require (
-	github.com/contenox/activitytracker v0.0.3
 	github.com/contenox/authz v0.0.1
-	github.com/contenox/dbexec v0.0.2
+	github.com/nats-io/nats.go v1.41.1
 	github.com/ollama/ollama v0.11.4
+	github.com/testcontainers/testcontainers-go/modules/nats v0.36.0
+	github.com/testcontainers/testcontainers-go/modules/valkey v0.36.0
+	github.com/valkey-io/valkey-go v1.0.62
 )
 
 require (
@@ -15,19 +17,22 @@ require (
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/moby/go-archive v0.1.0 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
-	github.com/nats-io/nats.go v1.41.1 // indirect
 	github.com/nats-io/nkeys v0.4.9 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
 	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
-	github.com/testcontainers/testcontainers-go/modules/nats v0.36.0 // indirect
-	github.com/testcontainers/testcontainers-go/modules/valkey v0.36.0 // indirect
-	github.com/valkey-io/valkey-go v1.0.62 // indirect
+	go.opentelemetry.io/otel/sdk v1.37.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.37.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/text v0.28.0 // indirect
+	google.golang.org/grpc v1.75.0 // indirect
+	google.golang.org/protobuf v1.36.7 // indirect
 )
 
 require (
@@ -37,10 +42,6 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
-	github.com/contenox/bus v0.0.3
-	github.com/contenox/kvstore v0.0.1
-	github.com/contenox/modelprovider v0.0.11
-	github.com/contenox/routine v0.0.1
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -74,8 +75,8 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.5 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/testify v1.10.0
-	github.com/testcontainers/testcontainers-go v0.38.0 // indirect
-	github.com/testcontainers/testcontainers-go/modules/postgres v0.36.0 // indirect
+	github.com/testcontainers/testcontainers-go v0.38.0
+	github.com/testcontainers/testcontainers-go/modules/postgres v0.36.0
 	github.com/tklauser/go-sysconf v0.3.15 // indirect
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
@@ -84,7 +85,7 @@ require (
 	go.opentelemetry.io/otel v1.37.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
-	golang.org/x/crypto v0.37.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )

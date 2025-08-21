@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/activitytracker"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtimetypes"
 )
 
 // activityTrackerDecorator implementation
 type activityTrackerDecorator struct {
 	service Service
-	tracker activitytracker.ActivityTracker
+	tracker libtracker.ActivityTracker
 }
 
 func (d *activityTrackerDecorator) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {
@@ -143,7 +143,7 @@ func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *ti
 	return d.service.List(ctx, createdAtCursor, limit)
 }
 
-func WithActivityTracker(service Service, tracker activitytracker.ActivityTracker) Service {
+func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Service {
 	return &activityTrackerDecorator{
 		service: service,
 		tracker: tracker,

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/activitytracker"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtimetypes"
 )
 
 type activityTrackerDecorator struct {
 	service Service
-	tracker activitytracker.ActivityTracker
+	tracker libtracker.ActivityTracker
 }
 
 func (d *activityTrackerDecorator) Create(ctx context.Context, pool *runtimetypes.Pool) error {
@@ -300,7 +300,7 @@ func (d *activityTrackerDecorator) ListPoolsForModel(ctx context.Context, modelI
 	return pools, err
 }
 
-func WithActivityTracker(service Service, tracker activitytracker.ActivityTracker) Service {
+func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Service {
 	return &activityTrackerDecorator{
 		service: service,
 		tracker: tracker,

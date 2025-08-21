@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/activitytracker"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type activityTrackerDecorator struct {
 	service Service
-	tracker activitytracker.ActivityTracker
+	tracker libtracker.ActivityTracker
 }
 
 // DefaultModelName implements Service.
@@ -53,7 +53,7 @@ func (d *activityTrackerDecorator) Embed(ctx context.Context, text string) ([]fl
 	return vector, nil
 }
 
-func WithActivityTracker(service Service, tracker activitytracker.ActivityTracker) Service {
+func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Service {
 	return &activityTrackerDecorator{
 		service: service,
 		tracker: tracker,

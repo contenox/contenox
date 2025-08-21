@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/dbexec"
+	libdb "github.com/contenox/runtime/libdbexec"
 )
 
 func (s *store) SetKV(ctx context.Context, key string, value json.RawMessage) error {

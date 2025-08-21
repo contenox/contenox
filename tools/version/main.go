@@ -37,7 +37,7 @@ func showHelp() {
 }
 
 func getVersionFile() string {
-	return "apiframework/version.txt"
+	return "internal/apiframework/version.txt"
 }
 
 func getCurrentDescribeVersion() (string, error) {

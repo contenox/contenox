@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/activitytracker"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtimetypes"
 )
 
 type activityTrackerDecorator struct {
 	service Service
-	tracker activitytracker.ActivityTracker
+	tracker libtracker.ActivityTracker
 }
 
 func (d *activityTrackerDecorator) Append(ctx context.Context, model *runtimetypes.Model) error {
@@ -100,7 +100,7 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, modelName string)
 	return err
 }
 
-func WithActivityTracker(service Service, tracker activitytracker.ActivityTracker) Service {
+func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Service {
 	return &activityTrackerDecorator{
 		service: service,
 		tracker: tracker,

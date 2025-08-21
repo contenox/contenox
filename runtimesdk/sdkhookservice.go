@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/hookproviderservice"
+	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/runtimetypes"
 )
 

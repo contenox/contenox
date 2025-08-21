@@ -9,17 +9,17 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/contenox/activitytracker"
-	libbus "github.com/contenox/bus"
-	libdb "github.com/contenox/dbexec"
-	libkv "github.com/contenox/kvstore"
-	libroutine "github.com/contenox/routine"
-	"github.com/contenox/runtime/hooks"
-	"github.com/contenox/runtime/llmrepo"
-	"github.com/contenox/runtime/ollamatokenizer"
-	"github.com/contenox/runtime/runtimestate"
+	"github.com/contenox/runtime/internal/hooks"
+	"github.com/contenox/runtime/internal/llmrepo"
+	"github.com/contenox/runtime/internal/ollamatokenizer"
+	"github.com/contenox/runtime/internal/runtimestate"
+	"github.com/contenox/runtime/internal/serverapi"
+	libbus "github.com/contenox/runtime/libbus"
+	libdb "github.com/contenox/runtime/libdbexec"
+	libkv "github.com/contenox/runtime/libkvstore"
+	libroutine "github.com/contenox/runtime/libroutine"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtimetypes"
-	"github.com/contenox/runtime/serverapi"
 	"github.com/contenox/runtime/taskengine"
 	"github.com/google/uuid"
 )
@@ -162,8 +162,8 @@ func main() {
 	}
 
 	tracker := taskengine.NewKVActivityTracker(kvManager)
-	stdOuttracker := activitytracker.NewLogActivityTracker(slog.Default())
-	serveropsChainedTracker := activitytracker.ChainedTracker{
+	stdOuttracker := libtracker.NewLogActivityTracker(slog.Default())
+	serveropsChainedTracker := libtracker.ChainedTracker{
 		tracker,
 		stdOuttracker,
 	}

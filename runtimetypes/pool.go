@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/dbexec"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/google/uuid"
 )
 

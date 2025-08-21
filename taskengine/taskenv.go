@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/contenox/activitytracker"
-	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/libtracker"
 )
 
 // DataType represents the type of data that can be passed between tasks
@@ -119,7 +119,7 @@ type HookRegistry interface {
 // progress using an ActivityTracker.
 type SimpleEnv struct {
 	exec           TaskExecutor
-	tracker        activitytracker.ActivityTracker
+	tracker        libtracker.ActivityTracker
 	inspector      Inspector
 	alertCollector AlertSink
 }
@@ -127,7 +127,7 @@ type SimpleEnv struct {
 // NewEnv creates a new SimpleEnv with the given tracker and task executor.
 func NewEnv(
 	_ context.Context,
-	tracker activitytracker.ActivityTracker,
+	tracker libtracker.ActivityTracker,
 	alertCollector AlertSink,
 	exec TaskExecutor,
 	inspector Inspector,
@@ -209,7 +209,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input 
 
 			// Track task attempt start
 			taskCtx := context.Background()
-			taskCtx = activitytracker.CopyTrackingValues(ctx, taskCtx)
+			taskCtx = libtracker.CopyTrackingValues(ctx, taskCtx)
 			var cancel context.CancelFunc
 			if currentTask.Timeout != "" {
 				timeout, err := time.ParseDuration(currentTask.Timeout)

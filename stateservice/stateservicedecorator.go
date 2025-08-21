@@ -3,16 +3,16 @@ package stateservice
 import (
 	"context"
 
-	"github.com/contenox/activitytracker"
-	"github.com/contenox/runtime/runtimestate"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/statetype"
 )
 
 type activityTrackerDecorator struct {
 	service Service
-	tracker activitytracker.ActivityTracker
+	tracker libtracker.ActivityTracker
 }
 
-func (d *activityTrackerDecorator) Get(ctx context.Context) ([]runtimestate.LLMState, error) {
+func (d *activityTrackerDecorator) Get(ctx context.Context) ([]statetype.LLMState, error) {
 	// Start tracking the operation
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
@@ -32,7 +32,7 @@ func (d *activityTrackerDecorator) Get(ctx context.Context) ([]runtimestate.LLMS
 }
 
 // WithActivityTracker wraps a StateService with activity tracking
-func WithActivityTracker(service Service, tracker activitytracker.ActivityTracker) Service {
+func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Service {
 	return &activityTrackerDecorator{
 		service: service,
 		tracker: tracker,

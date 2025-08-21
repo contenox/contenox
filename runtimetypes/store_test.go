@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	libdb "github.com/contenox/dbexec"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/stretchr/testify/require"
 )

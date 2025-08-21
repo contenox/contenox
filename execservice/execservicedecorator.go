@@ -3,12 +3,12 @@ package execservice
 import (
 	"context"
 
-	"github.com/contenox/activitytracker"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type activityTrackerDecorator struct {
 	service ExecService
-	tracker activitytracker.ActivityTracker
+	tracker libtracker.ActivityTracker
 }
 
 func (d *activityTrackerDecorator) Execute(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
@@ -33,7 +33,7 @@ func (d *activityTrackerDecorator) Execute(ctx context.Context, request *TaskReq
 	return response, err
 }
 
-func WithActivityTracker(service ExecService, tracker activitytracker.ActivityTracker) ExecService {
+func WithActivityTracker(service ExecService, tracker libtracker.ActivityTracker) ExecService {
 	return &activityTrackerDecorator{
 		service: service,
 		tracker: tracker,

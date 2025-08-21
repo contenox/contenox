@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	libdb "github.com/contenox/dbexec"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"

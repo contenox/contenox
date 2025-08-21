@@ -3,11 +3,12 @@ package stateservice
 import (
 	"context"
 
-	"github.com/contenox/runtime/runtimestate"
+	"github.com/contenox/runtime/internal/runtimestate"
+	"github.com/contenox/runtime/statetype"
 )
 
 type Service interface {
-	Get(ctx context.Context) ([]runtimestate.LLMState, error)
+	Get(ctx context.Context) ([]statetype.LLMState, error)
 }
 
 type service struct {
@@ -15,9 +16,9 @@ type service struct {
 }
 
 // Get implements Service.
-func (s *service) Get(ctx context.Context) ([]runtimestate.LLMState, error) {
+func (s *service) Get(ctx context.Context) ([]statetype.LLMState, error) {
 	m := s.state.Get(ctx)
-	l := make([]runtimestate.LLMState, 0, len(m))
+	l := make([]statetype.LLMState, 0, len(m))
 	for _, e := range m {
 		l = append(l, e)
 	}

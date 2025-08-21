@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/internal/apiframework"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
 )
 

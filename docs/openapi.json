@@ -13,12 +13,6 @@
         },
         "type": "array"
       },
-      "array_runtimestate_LLMState": {
-        "items": {
-          "$ref": "#/components/schemas/runtimestate_LLMState"
-        },
-        "type": "array"
-      },
       "array_runtimestate_ProviderConfig": {
         "items": {
           "$ref": "#/components/schemas/runtimestate_ProviderConfig"
@@ -46,6 +40,12 @@
       "array_runtimetypes_RemoteHook": {
         "items": {
           "$ref": "#/components/schemas/runtimetypes_RemoteHook"
+        },
+        "type": "array"
+      },
+      "array_statetype_LLMState": {
+        "items": {
+          "$ref": "#/components/schemas/statetype_LLMState"
         },
         "type": "array"
       },
@@ -127,7 +127,7 @@
           },
           "pulledModels": {
             "items": {
-              "$ref": "#/components/schemas/runtimestate_ListModelResponse"
+              "$ref": "#/components/schemas/statetype_ListModelResponse"
             },
             "type": "array"
           },
@@ -281,7 +281,11 @@
       },
       "execapi_taskExec": {
         "properties": {
-          "chain": {},
+          "chain": {
+            "items": {
+              "$ref": "#/components/schemas/taskengine_ChainDefinition"
+            }
+          },
           "input": {
             "type": "object"
           },
@@ -354,102 +358,6 @@
         "required": [
           "id",
           "response"
-        ],
-        "type": "object"
-      },
-      "runtimestate_LLMState": {
-        "properties": {
-          "apiKey": {
-            "description": "APIKey stores the API key used for authentication with the backend.",
-            "type": "string"
-          },
-          "backend": {
-            "type": "object"
-          },
-          "error": {
-            "description": "Error stores a description of the last encountered error when\ninteracting with or reconciling this backend's state, if any.",
-            "type": "string"
-          },
-          "id": {
-            "example": "backend1",
-            "type": "string"
-          },
-          "models": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "name": {
-            "example": "Backend Name",
-            "type": "string"
-          },
-          "pulledModels": {
-            "items": {
-              "$ref": "#/components/schemas/runtimestate_ListModelResponse"
-            },
-            "type": "array"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "models",
-          "pulledModels",
-          "backend",
-          ""
-        ],
-        "type": "object"
-      },
-      "runtimestate_ListModelResponse": {
-        "properties": {
-          "canChat": {
-            "type": "boolean"
-          },
-          "canEmbed": {
-            "type": "boolean"
-          },
-          "canPrompt": {
-            "type": "boolean"
-          },
-          "canStream": {
-            "type": "boolean"
-          },
-          "contextLength": {
-            "type": "integer"
-          },
-          "details": {
-            "type": "object"
-          },
-          "digest": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "modifiedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "size": {
-            "type": "integer"
-          }
-        },
-        "required": [
-          "name",
-          "model",
-          "modifiedAt",
-          "size",
-          "digest",
-          "details",
-          "contextLength",
-          "canChat",
-          "canEmbed",
-          "canPrompt",
-          "canStream"
         ],
         "type": "object"
       },
@@ -613,6 +521,102 @@
         ],
         "type": "object"
       },
+      "statetype_LLMState": {
+        "properties": {
+          "apiKey": {
+            "description": "APIKey stores the API key used for authentication with the backend.",
+            "type": "string"
+          },
+          "backend": {
+            "type": "object"
+          },
+          "error": {
+            "description": "Error stores a description of the last encountered error when\ninteracting with or reconciling this backend's state, if any.",
+            "type": "string"
+          },
+          "id": {
+            "example": "backend1",
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "example": "Backend Name",
+            "type": "string"
+          },
+          "pulledModels": {
+            "items": {
+              "$ref": "#/components/schemas/statetype_ListModelResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "models",
+          "pulledModels",
+          "backend",
+          ""
+        ],
+        "type": "object"
+      },
+      "statetype_ListModelResponse": {
+        "properties": {
+          "canChat": {
+            "type": "boolean"
+          },
+          "canEmbed": {
+            "type": "boolean"
+          },
+          "canPrompt": {
+            "type": "boolean"
+          },
+          "canStream": {
+            "type": "boolean"
+          },
+          "contextLength": {
+            "type": "integer"
+          },
+          "details": {
+            "type": "object"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modifiedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "model",
+          "modifiedAt",
+          "size",
+          "digest",
+          "details",
+          "contextLength",
+          "canChat",
+          "canEmbed",
+          "canPrompt",
+          "canStream"
+        ],
+        "type": "object"
+      },
       "taskengine_CapturedStateUnit": {
         "properties": {
           "duration": {
@@ -655,6 +659,110 @@
           "output"
         ],
         "type": "object"
+      },
+      "taskengine_ChainDefinition": {
+        "properties": {
+          "debug": {
+            "description": "Enables capturing user input and output.",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "Description provides a human-readable summary of the chain's purpose.",
+            "type": "string"
+          },
+          "id": {
+            "description": "ID uniquely identifies the chain.",
+            "type": "string"
+          },
+          "tasks": {
+            "description": "Tasks is the list of tasks to execute in sequence.",
+            "items": {
+              "$ref": "#/components/schemas/taskengine_ChainTask"
+            },
+            "type": "array"
+          },
+          "token_limit": {
+            "description": "TokenLimit is the token limit for the context window (used during execution).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "debug",
+          "description",
+          "tasks",
+          "token_limit"
+        ],
+        "type": "object"
+      },
+      "taskengine_ChainTask": {
+        "properties": {
+          "compose": {
+            "description": "Compose merges the specified the output with the withVar side.\nOptional. compose is applied before the input reaches the task execution,",
+            "type": "object"
+          },
+          "description": {
+            "description": "Description is a human-readable summary of what the task does.",
+            "type": "string"
+          },
+          "execute_config": {
+            "description": "ExecuteConfig defines the configuration for executing prompt or chat model tasks.",
+            "type": "object"
+          },
+          "handler": {
+            "description": "Handler determines how the LLM output (or hook) will be interpreted.",
+            "type": "object"
+          },
+          "hook": {
+            "description": "Hook defines an external action to run.\nRequired for Hook tasks, must be nil/omitted for all other types.\nExample: {type: \"send_email\", args: {\"to\": \"user@example.com\"}}",
+            "type": "object"
+          },
+          "id": {
+            "description": "ID uniquely identifies the task within the chain.",
+            "type": "string"
+          },
+          "input_var": {
+            "description": "InputVar is the name of the variable to use as input for the task.\nExample: \"input\" for the original input.\nEach task stores its output in a variable named with it's task id.",
+            "type": "string"
+          },
+          "print": {
+            "description": "Print optionally formats the output for display/logging.\nSupports template variables from previous task outputs.\nOptional for all task types except Hook where it's rarely used.\nExample: \"The score is: {{.previous_output}}\"",
+            "type": "string"
+          },
+          "prompt_template": {
+            "description": "PromptTemplate is the text prompt sent to the LLM.\nIt's Required and only applicable for the raw_string type.\nSupports template variables from previous task outputs.\nExample: \"Rate the quality from 1-10: {{.input}}\"",
+            "type": "string"
+          },
+          "retry_on_failure": {
+            "description": "RetryOnFailure sets how many times to retry this task on failure.\nApplies to all task types including Hooks.\nDefault: 0 (no retries)",
+            "type": "integer"
+          },
+          "system_instruction": {
+            "description": "SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Timeout optionally sets a timeout for task execution.\nFormat: \"10s\", \"2m\", \"1h\" etc.\nOptional for all task types.",
+            "type": "string"
+          },
+          "transition": {
+            "description": "Transition defines what to do after this task completes.",
+            "type": "object"
+          },
+          "valid_conditions": {
+            "additionalProperties": true,
+            "description": "ValidConditions defines allowed values for ConditionKey tasks.\nRequired for ConditionKey tasks, ignored for all other types.\nExample: {\"yes\": true, \"no\": true} for a yes/no condition.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "handler",
+          "prompt_template",
+          "transition"
+        ],
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -667,7 +775,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.55"
+    "version": "v0.0.52-9-g761f19a-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1747,7 +1855,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/array_runtimestate_LLMState"
+                  "$ref": "#/components/schemas/array_statetype_LLMState"
                 }
               }
             },

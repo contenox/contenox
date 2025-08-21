@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	libbus "github.com/contenox/bus"
-	libdb "github.com/contenox/dbexec"
+	libbus "github.com/contenox/runtime/libbus"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
 )
 
@@ -37,12 +37,12 @@ func New(dbInstance libdb.DBManager, psInstance libbus.Messenger) Service {
 }
 
 type Job struct {
-	ID           string          `json:"id"`
-	TaskType     string          `json:"taskType"`
+	ID           string                 `json:"id"`
+	TaskType     string                 `json:"taskType"`
 	ModelJob     runtimetypes.QueueItem `json:"modelJob"`
-	ScheduledFor int64           `json:"scheduledFor"`
-	ValidUntil   int64           `json:"validUntil"`
-	CreatedAt    time.Time       `json:"createdAt"`
+	ScheduledFor int64                  `json:"scheduledFor"`
+	ValidUntil   int64                  `json:"validUntil"`
+	CreatedAt    time.Time              `json:"createdAt"`
 }
 
 func (s *service) CurrentDownloadQueueState(ctx context.Context) ([]Job, error) {

@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/runtimestate"
+	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/stateservice"
+	"github.com/contenox/runtime/statetype"
 )
 
 // HTTPStateService implements the stateservice.Service interface
@@ -37,7 +37,7 @@ func NewHTTPStateService(baseURL, token string, client *http.Client) stateservic
 }
 
 // Get implements modelservice.Service.Get
-func (h *HTTPStateService) Get(ctx context.Context) ([]runtimestate.LLMState, error) {
+func (h *HTTPStateService) Get(ctx context.Context) ([]statetype.LLMState, error) {
 	// Build URL with query parameters
 	rUrl := fmt.Sprintf("%s/state", h.baseURL)
 
@@ -62,7 +62,7 @@ func (h *HTTPStateService) Get(ctx context.Context) ([]runtimestate.LLMState, er
 		return nil, apiframework.HandleAPIError(resp)
 	}
 
-	var response []runtimestate.LLMState
+	var response []statetype.LLMState
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
 	}

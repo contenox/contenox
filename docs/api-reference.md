@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.55
+title: contenox/runtime – LLM Backend Management API v0.0.52-9-g761f19a-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.55</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.52-9-g761f19a-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -301,7 +301,7 @@ for request processing even if they appear in this response.
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimestate_LLMState](#schemaarray_runtimestate_llmstate)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_statetype_LLMState](#schemaarray_statetype_llmstate)|
 |default|Default|none|None|
 
 <aside class="warning">
@@ -1622,7 +1622,32 @@ If pools are enabled, models and backends not assigned to any pool will be compl
 
 ```json
 {
-  "chain": null,
+  "chain": [
+    {
+      "debug": true,
+      "description": "string",
+      "id": "string",
+      "tasks": [
+        {
+          "compose": {},
+          "description": "string",
+          "execute_config": {},
+          "handler": {},
+          "hook": {},
+          "id": "string",
+          "input_var": "string",
+          "print": "string",
+          "prompt_template": "string",
+          "retry_on_failure": 0,
+          "system_instruction": "string",
+          "timeout": "string",
+          "transition": {},
+          "valid_conditions": {}
+        }
+      ],
+      "token_limit": 0
+    }
+  ],
   "input": {},
   "inputType": "string"
 }
@@ -1690,21 +1715,7 @@ X-API-Key
       "string"
     ],
     "name": "backend-name",
-    "pulledModels": [
-      {
-        "canChat": true,
-        "canEmbed": true,
-        "canPrompt": true,
-        "canStream": true,
-        "contextLength": 0,
-        "details": {},
-        "digest": "string",
-        "model": "string",
-        "modifiedAt": "2019-08-24T14:15:22Z",
-        "name": "string",
-        "size": 0
-      }
-    ],
+    "pulledModels": [],
     "type": "ollama",
     "updatedAt": "2023-01-01T00:00:00Z"
   }
@@ -1744,50 +1755,6 @@ X-API-Key
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |*anonymous*|[[downloadservice_Job](#schemadownloadservice_job)]|false|none|none|
-
-<h2 id="tocS_array_runtimestate_LLMState">array_runtimestate_LLMState</h2>
-<!-- backwards compatibility -->
-<a id="schemaarray_runtimestate_llmstate"></a>
-<a id="schema_array_runtimestate_LLMState"></a>
-<a id="tocSarray_runtimestate_llmstate"></a>
-<a id="tocsarray_runtimestate_llmstate"></a>
-
-```json
-[
-  {
-    "apiKey": "string",
-    "backend": {},
-    "error": "string",
-    "id": "backend1",
-    "models": [
-      "string"
-    ],
-    "name": "Backend Name",
-    "pulledModels": [
-      {
-        "canChat": true,
-        "canEmbed": true,
-        "canPrompt": true,
-        "canStream": true,
-        "contextLength": 0,
-        "details": {},
-        "digest": "string",
-        "model": "string",
-        "modifiedAt": "2019-08-24T14:15:22Z",
-        "name": "string",
-        "size": 0
-      }
-    ]
-  }
-]
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|*anonymous*|[[runtimestate_LLMState](#schemaruntimestate_llmstate)]|false|none|none|
 
 <h2 id="tocS_array_runtimestate_ProviderConfig">array_runtimestate_ProviderConfig</h2>
 <!-- backwards compatibility -->
@@ -1923,6 +1890,50 @@ X-API-Key
 |---|---|---|---|---|
 |*anonymous*|[[runtimetypes_RemoteHook](#schemaruntimetypes_remotehook)]|false|none|none|
 
+<h2 id="tocS_array_statetype_LLMState">array_statetype_LLMState</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_statetype_llmstate"></a>
+<a id="schema_array_statetype_LLMState"></a>
+<a id="tocSarray_statetype_llmstate"></a>
+<a id="tocsarray_statetype_llmstate"></a>
+
+```json
+[
+  {
+    "apiKey": "string",
+    "backend": {},
+    "error": "string",
+    "id": "backend1",
+    "models": [
+      "string"
+    ],
+    "name": "Backend Name",
+    "pulledModels": [
+      {
+        "canChat": true,
+        "canEmbed": true,
+        "canPrompt": true,
+        "canStream": true,
+        "contextLength": 0,
+        "details": {},
+        "digest": "string",
+        "model": "string",
+        "modifiedAt": "2019-08-24T14:15:22Z",
+        "name": "string",
+        "size": 0
+      }
+    ]
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[statetype_LLMState](#schemastatetype_llmstate)]|false|none|none|
+
 <h2 id="tocS_array_string">array_string</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_string"></a>
@@ -2044,7 +2055,7 @@ X-API-Key
 |id|string|true|none|none|
 |models|[string]|true|none|none|
 |name|string|true|none|none|
-|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|true|none|none|
+|pulledModels|[[statetype_ListModelResponse](#schemastatetype_listmodelresponse)]|true|none|none|
 |type|string|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
 
@@ -2065,21 +2076,7 @@ X-API-Key
     "string"
   ],
   "name": "backend-name",
-  "pulledModels": [
-    {
-      "canChat": true,
-      "canEmbed": true,
-      "canPrompt": true,
-      "canStream": true,
-      "contextLength": 0,
-      "details": {},
-      "digest": "string",
-      "model": "string",
-      "modifiedAt": "2019-08-24T14:15:22Z",
-      "name": "string",
-      "size": 0
-    }
-  ],
+  "pulledModels": [],
   "type": "ollama",
   "updatedAt": "2023-01-01T00:00:00Z"
 }
@@ -2199,7 +2196,32 @@ X-API-Key
 
 ```json
 {
-  "chain": null,
+  "chain": [
+    {
+      "debug": true,
+      "description": "string",
+      "id": "string",
+      "tasks": [
+        {
+          "compose": {},
+          "description": "string",
+          "execute_config": {},
+          "handler": {},
+          "hook": {},
+          "id": "string",
+          "input_var": "string",
+          "print": "string",
+          "prompt_template": "string",
+          "retry_on_failure": 0,
+          "system_instruction": "string",
+          "timeout": "string",
+          "transition": {},
+          "valid_conditions": {}
+        }
+      ],
+      "token_limit": 0
+    }
+  ],
   "input": {},
   "inputType": "string"
 }
@@ -2210,7 +2232,7 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|chain|any|true|none|none|
+|chain|array|true|none|none|
 |input|object|true|none|none|
 |inputType|string|true|none|none|
 
@@ -2295,94 +2317,6 @@ X-API-Key
 |---|---|---|---|---|
 |id|string|true|none|none|
 |response|string|true|none|none|
-
-<h2 id="tocS_runtimestate_LLMState">runtimestate_LLMState</h2>
-<!-- backwards compatibility -->
-<a id="schemaruntimestate_llmstate"></a>
-<a id="schema_runtimestate_LLMState"></a>
-<a id="tocSruntimestate_llmstate"></a>
-<a id="tocsruntimestate_llmstate"></a>
-
-```json
-{
-  "apiKey": "string",
-  "backend": {},
-  "error": "string",
-  "id": "backend1",
-  "models": [
-    "string"
-  ],
-  "name": "Backend Name",
-  "pulledModels": [
-    {
-      "canChat": true,
-      "canEmbed": true,
-      "canPrompt": true,
-      "canStream": true,
-      "contextLength": 0,
-      "details": {},
-      "digest": "string",
-      "model": "string",
-      "modifiedAt": "2019-08-24T14:15:22Z",
-      "name": "string",
-      "size": 0
-    }
-  ]
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|apiKey|string|false|none|APIKey stores the API key used for authentication with the backend.|
-|backend|object|true|none|none|
-|error|string|false|none|Error stores a description of the last encountered error when<br>interacting with or reconciling this backend's state, if any.|
-|id|string|true|none|none|
-|models|[string]|true|none|none|
-|name|string|true|none|none|
-|pulledModels|[[runtimestate_ListModelResponse](#schemaruntimestate_listmodelresponse)]|true|none|none|
-
-<h2 id="tocS_runtimestate_ListModelResponse">runtimestate_ListModelResponse</h2>
-<!-- backwards compatibility -->
-<a id="schemaruntimestate_listmodelresponse"></a>
-<a id="schema_runtimestate_ListModelResponse"></a>
-<a id="tocSruntimestate_listmodelresponse"></a>
-<a id="tocsruntimestate_listmodelresponse"></a>
-
-```json
-{
-  "canChat": true,
-  "canEmbed": true,
-  "canPrompt": true,
-  "canStream": true,
-  "contextLength": 0,
-  "details": {},
-  "digest": "string",
-  "model": "string",
-  "modifiedAt": "2019-08-24T14:15:22Z",
-  "name": "string",
-  "size": 0
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|canChat|boolean|true|none|none|
-|canEmbed|boolean|true|none|none|
-|canPrompt|boolean|true|none|none|
-|canStream|boolean|true|none|none|
-|contextLength|integer|true|none|none|
-|details|object|true|none|none|
-|digest|string|true|none|none|
-|model|string|true|none|none|
-|modifiedAt|string(date-time)|true|none|none|
-|name|string|true|none|none|
-|size|integer|true|none|none|
 
 <h2 id="tocS_runtimestate_ProviderConfig">runtimestate_ProviderConfig</h2>
 <!-- backwards compatibility -->
@@ -2532,6 +2466,94 @@ X-API-Key
 |timeoutMs|integer|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
 
+<h2 id="tocS_statetype_LLMState">statetype_LLMState</h2>
+<!-- backwards compatibility -->
+<a id="schemastatetype_llmstate"></a>
+<a id="schema_statetype_LLMState"></a>
+<a id="tocSstatetype_llmstate"></a>
+<a id="tocsstatetype_llmstate"></a>
+
+```json
+{
+  "apiKey": "string",
+  "backend": {},
+  "error": "string",
+  "id": "backend1",
+  "models": [
+    "string"
+  ],
+  "name": "Backend Name",
+  "pulledModels": [
+    {
+      "canChat": true,
+      "canEmbed": true,
+      "canPrompt": true,
+      "canStream": true,
+      "contextLength": 0,
+      "details": {},
+      "digest": "string",
+      "model": "string",
+      "modifiedAt": "2019-08-24T14:15:22Z",
+      "name": "string",
+      "size": 0
+    }
+  ]
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|apiKey|string|false|none|APIKey stores the API key used for authentication with the backend.|
+|backend|object|true|none|none|
+|error|string|false|none|Error stores a description of the last encountered error when<br>interacting with or reconciling this backend's state, if any.|
+|id|string|true|none|none|
+|models|[string]|true|none|none|
+|name|string|true|none|none|
+|pulledModels|[[statetype_ListModelResponse](#schemastatetype_listmodelresponse)]|true|none|none|
+
+<h2 id="tocS_statetype_ListModelResponse">statetype_ListModelResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemastatetype_listmodelresponse"></a>
+<a id="schema_statetype_ListModelResponse"></a>
+<a id="tocSstatetype_listmodelresponse"></a>
+<a id="tocsstatetype_listmodelresponse"></a>
+
+```json
+{
+  "canChat": true,
+  "canEmbed": true,
+  "canPrompt": true,
+  "canStream": true,
+  "contextLength": 0,
+  "details": {},
+  "digest": "string",
+  "model": "string",
+  "modifiedAt": "2019-08-24T14:15:22Z",
+  "name": "string",
+  "size": 0
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|canChat|boolean|true|none|none|
+|canEmbed|boolean|true|none|none|
+|canPrompt|boolean|true|none|none|
+|canStream|boolean|true|none|none|
+|contextLength|integer|true|none|none|
+|details|object|true|none|none|
+|digest|string|true|none|none|
+|model|string|true|none|none|
+|modifiedAt|string(date-time)|true|none|none|
+|name|string|true|none|none|
+|size|integer|true|none|none|
+
 <h2 id="tocS_taskengine_CapturedStateUnit">taskengine_CapturedStateUnit</h2>
 <!-- backwards compatibility -->
 <a id="schemataskengine_capturedstateunit"></a>
@@ -2567,4 +2589,95 @@ X-API-Key
 |taskHandler|string|true|none|none|
 |taskID|string|true|none|none|
 |transition|string|true|none|none|
+
+<h2 id="tocS_taskengine_ChainDefinition">taskengine_ChainDefinition</h2>
+<!-- backwards compatibility -->
+<a id="schemataskengine_chaindefinition"></a>
+<a id="schema_taskengine_ChainDefinition"></a>
+<a id="tocStaskengine_chaindefinition"></a>
+<a id="tocstaskengine_chaindefinition"></a>
+
+```json
+{
+  "debug": true,
+  "description": "string",
+  "id": "string",
+  "tasks": [
+    {
+      "compose": {},
+      "description": "string",
+      "execute_config": {},
+      "handler": {},
+      "hook": {},
+      "id": "string",
+      "input_var": "string",
+      "print": "string",
+      "prompt_template": "string",
+      "retry_on_failure": 0,
+      "system_instruction": "string",
+      "timeout": "string",
+      "transition": {},
+      "valid_conditions": {}
+    }
+  ],
+  "token_limit": 0
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|debug|boolean|true|none|Enables capturing user input and output.|
+|description|string|true|none|Description provides a human-readable summary of the chain's purpose.|
+|id|string|true|none|ID uniquely identifies the chain.|
+|tasks|[[taskengine_ChainTask](#schemataskengine_chaintask)]|true|none|Tasks is the list of tasks to execute in sequence.|
+|token_limit|integer|true|none|TokenLimit is the token limit for the context window (used during execution).|
+
+<h2 id="tocS_taskengine_ChainTask">taskengine_ChainTask</h2>
+<!-- backwards compatibility -->
+<a id="schemataskengine_chaintask"></a>
+<a id="schema_taskengine_ChainTask"></a>
+<a id="tocStaskengine_chaintask"></a>
+<a id="tocstaskengine_chaintask"></a>
+
+```json
+{
+  "compose": {},
+  "description": "string",
+  "execute_config": {},
+  "handler": {},
+  "hook": {},
+  "id": "string",
+  "input_var": "string",
+  "print": "string",
+  "prompt_template": "string",
+  "retry_on_failure": 0,
+  "system_instruction": "string",
+  "timeout": "string",
+  "transition": {},
+  "valid_conditions": {}
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|compose|object|false|none|Compose merges the specified the output with the withVar side.<br>Optional. compose is applied before the input reaches the task execution,|
+|description|string|true|none|Description is a human-readable summary of what the task does.|
+|execute_config|object|false|none|ExecuteConfig defines the configuration for executing prompt or chat model tasks.|
+|handler|object|true|none|Handler determines how the LLM output (or hook) will be interpreted.|
+|hook|object|false|none|Hook defines an external action to run.<br>Required for Hook tasks, must be nil/omitted for all other types.<br>Example: {type: "send_email", args: {"to": "user@example.com"}}|
+|id|string|true|none|ID uniquely identifies the task within the chain.|
+|input_var|string|false|none|InputVar is the name of the variable to use as input for the task.<br>Example: "input" for the original input.<br>Each task stores its output in a variable named with it's task id.|
+|print|string|false|none|Print optionally formats the output for display/logging.<br>Supports template variables from previous task outputs.<br>Optional for all task types except Hook where it's rarely used.<br>Example: "The score is: {{.previous_output}}"|
+|prompt_template|string|true|none|PromptTemplate is the text prompt sent to the LLM.<br>It's Required and only applicable for the raw_string type.<br>Supports template variables from previous task outputs.<br>Example: "Rate the quality from 1-10: {{.input}}"|
+|retry_on_failure|integer|false|none|RetryOnFailure sets how many times to retry this task on failure.<br>Applies to all task types including Hooks.<br>Default: 0 (no retries)|
+|system_instruction|string|false|none|SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.|
+|timeout|string|false|none|Timeout optionally sets a timeout for task execution.<br>Format: "10s", "2m", "1h" etc.<br>Optional for all task types.|
+|transition|object|true|none|Transition defines what to do after this task completes.|
+|valid_conditions|object|false|none|ValidConditions defines allowed values for ConditionKey tasks.<br>Required for ConditionKey tasks, ignored for all other types.<br>Example: {"yes": true, "no": true} for a yes/no condition.|
 

@@ -3,7 +3,7 @@ package execservice
 import (
 	"context"
 
-	libdb "github.com/contenox/dbexec"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/taskengine"
 )
 

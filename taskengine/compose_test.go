@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/contenox/activitytracker"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskengine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -381,7 +381,7 @@ func TestUnit_ComposeErrors(t *testing.T) {
 // Helper to create test environment
 func setupTestEnv(exec taskengine.TaskExecutor) taskengine.EnvExecutor {
 	// Create no-op dependencies
-	tracker := &activitytracker.NoopTracker{}
+	tracker := &libtracker.NoopTracker{}
 	alerts := &taskengine.NoopAlertSink{}
 	inspector := &taskengine.NoopInspector{}
 

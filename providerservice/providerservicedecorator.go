@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/activitytracker"
-	"github.com/contenox/runtime/runtimestate"
+	"github.com/contenox/runtime/internal/runtimestate"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type activityTrackerDecorator struct {
 	service Service
-	tracker activitytracker.ActivityTracker
+	tracker libtracker.ActivityTracker
 }
 
 func (d *activityTrackerDecorator) SetProviderConfig(ctx context.Context, providerType string, replace bool, config *runtimestate.ProviderConfig) error {
@@ -89,7 +89,7 @@ func (d *activityTrackerDecorator) ListProviderConfigs(ctx context.Context, crea
 	return configs, err
 }
 
-func WithActivityTracker(service Service, tracker activitytracker.ActivityTracker) Service {
+func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Service {
 	return &activityTrackerDecorator{
 		service: service,
 		tracker: tracker,

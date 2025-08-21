@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	libdb "github.com/contenox/dbexec"
-	"github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/llmrepo"
+	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/internal/llmrepo"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/google/uuid"
 )
 

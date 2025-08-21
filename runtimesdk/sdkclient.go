@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/hookproviderservice"
+	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/modelservice"
 	"github.com/contenox/runtime/poolservice"
 	"github.com/contenox/runtime/providerservice"
