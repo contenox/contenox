@@ -57,7 +57,7 @@ def create_backend_and_assign_to_pool(base_url, with_ollama_backend):
     response.raise_for_status()
     backend = response.json()
     backend_id = backend["id"]
-
+    backend_url = backend["baseUrl"]
     pool_id = "internal_embed_pool"
     assign_url = f"{base_url}/backend-associations/{pool_id}/backends/{backend_id}"
     response = requests.post(assign_url)
@@ -76,6 +76,7 @@ def create_backend_and_assign_to_pool(base_url, with_ollama_backend):
 
     yield {
         "backend_id": backend_id,
+        "backend_url": backend_url,
         "pool_id": pool_id,
         "backend": backend,
     }

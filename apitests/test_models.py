@@ -143,3 +143,35 @@ def test_update_model(base_url):
     delete_url = f"{base_url}/models/{model_id}"
     del_response = requests.delete(delete_url, params={"purge": "true"})
     assert_status_code(del_response, 200)
+
+def test_internal_models_endpoint(base_url):
+    """Test the internal models endpoint that returns full details"""
+    response = requests.get(f"{base_url}/internal/models")
+    assert_status_code(response, 200)
+
+    models = response.json()
+    assert isinstance(models, list)
+    if len(models) > 0:
+        model = models[0]
+        assert "id" in model
+        assert "model" in model
+        assert "contextLength" in model
+
+def test_get_default_model(base_url):
+    """Test getting the default model"""
+    response = requests.get(f"{base_url}/defaultmodel")
+    assert_status_code(response, 200)
+
+    model = response.json()
+    assert "modelName" in model
+
+def test_default_model_consistency(base_url):
+    """Test that the default model is consistent across calls"""
+    response1 = requests.get(f"{base_url}/defaultmodel")
+    assert_status_code(response1, 200)
+
+    response2 = requests.get(f"{base_url}/defaultmodel")
+    assert_status_code(response2, 200)
+
+    # Default model should be the same across calls
+    assert response1.json()["modelName"] == response2.json()["modelName"]

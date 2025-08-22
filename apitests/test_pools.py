@@ -61,3 +61,58 @@ def test_assign_backend_to_pool(base_url, create_backend_and_assign_to_pool):
     response = requests.get(f"{base_url}/backend-associations/{pool_id}/backends")
     assert_status_code(response, 200)
     assert any(b["id"] == backend_id for b in response.json())
+
+def test_pool_by_name(base_url):
+    """Test retrieving a pool by name"""
+    # First get all pools to find a known name
+    response = requests.get(f"{base_url}/pools")
+    assert_status_code(response, 200)
+
+    pools = response.json()
+    if pools:
+        pool_name = pools[0]["name"]
+
+        # Get pool by name
+        response = requests.get(f"{base_url}/pool-by-name/{pool_name}")
+        assert_status_code(response, 200)
+
+        pool = response.json()
+        assert pool["name"] == pool_name
+
+def test_pool_by_purpose(base_url):
+    """Test filtering pools by purpose"""
+    # Get a known purpose type from existing pools
+    response = requests.get(f"{base_url}/pools")
+    assert_status_code(response, 200)
+
+    pools = response.json()
+    if pools:
+        purpose_type = pools[0]["purposeType"]
+
+        # Filter by purpose
+        response = requests.get(f"{base_url}/pool-by-purpose/{purpose_type}")
+        assert_status_code(response, 200)
+
+        filtered_pools = response.json()
+        assert isinstance(filtered_pools, list)
+        assert all(p["purposeType"] == purpose_type for p in filtered_pools)
+
+def test_backend_pools_association(base_url, create_backend_and_assign_to_pool):
+    """Test getting pools for a backend"""
+    backend_id = create_backend_and_assign_to_pool["backend_id"]
+
+    response = requests.get(f"{base_url}/backend-associations/{backend_id}/pools")
+    assert_status_code(response, 200)
+
+    pools = response.json()
+    assert isinstance(pools, list)
+
+def test_model_pools_association(base_url, create_model_and_assign_to_pool):
+    """Test getting pools for a model"""
+    model_id = create_model_and_assign_to_pool["model_id"]
+
+    response = requests.get(f"{base_url}/model-associations/{model_id}/pools")
+    assert_status_code(response, 200)
+
+    pools = response.json()
+    assert isinstance(pools, list)

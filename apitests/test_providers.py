@@ -80,3 +80,36 @@ def test_configure_and_check_status_roundtrip(base_url):
     gemini_status = requests.get(f"{base_url}/providers/gemini/status")
     assert_status_code(gemini_status, 200)
     assert gemini_status.json()["configured"] is True
+
+def test_list_provider_configs(base_url):
+    """Test listing all provider configurations"""
+    response = requests.get(f"{base_url}/providers/configs")
+    assert_status_code(response, 200)
+
+    configs = response.json()
+    assert isinstance(configs, list)
+
+def test_get_specific_provider_config(base_url):
+    """Test getting a specific provider configuration"""
+    # First configure a provider
+    requests.post(f"{base_url}/providers/openai/configure")
+    # Now get its config
+    response = requests.get(f"{base_url}/providers/openai/config")
+    # Could be 200 (if configured) or 404 (if not)
+    if response.status_code == 200:
+        config = response.json()
+        assert "Type" in config
+        assert "APIKey" in config
+
+def test_delete_provider_config(base_url):
+    """Test deleting a provider configuration"""
+    # First configure a provider
+    requests.post(f"{base_url}/providers/openai/configure")
+
+    # Now delete it
+    response = requests.delete(f"{base_url}/providers/openai/config")
+    assert_status_code(response, 200)
+
+    # Verify it's gone
+    response = requests.get(f"{base_url}/providers/openai/config")
+    assert response.status_code == 404

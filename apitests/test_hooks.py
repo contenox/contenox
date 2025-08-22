@@ -27,6 +27,15 @@ INVALID_HOOKS = [
     ({**VALID_HOOK, "timeoutMs": -100}, "negative timeout"),
 ]
 
+
+def test_get_supported_hooks(base_url):
+    """Test getting supported hook types"""
+    response = requests.get(f"{base_url}/supported")
+    assert_status_code(response, 200)
+
+    hooks = response.json()
+    assert isinstance(hooks, list)
+
 def test_create_remote_hook_success(base_url):
     """Test successful creation of a remote hook"""
     url = f"{base_url}/hooks/remote"
