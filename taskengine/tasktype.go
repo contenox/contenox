@@ -9,41 +9,51 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// TaskHandler defines the expected output format of a task.
-// It determines how the LLM's response will be interpreted.
+// TaskHandler defines how task outputs are processed and interpreted.
 type TaskHandler string
 
 const (
-	// HandleConditionKey interprets the response as a condition key,
-	// used to determine which transition to follow.
+	// HandleConditionKey interprets response as a condition key for transition branching.
+	// Requires ValidConditions to be set with allowed values.
 	HandleConditionKey TaskHandler = "condition_key"
 
 	// HandleParseNumber expects a numeric response and parses it into an integer.
+	// Returns error if response cannot be parsed as integer.
 	HandleParseNumber TaskHandler = "parse_number"
 
 	// HandleParseScore expects a floating-point score (e.g., quality rating).
+	// Returns error if response cannot be parsed as float.
 	HandleParseScore TaskHandler = "parse_score"
 
-	// HandleParseRange expects a numeric range like "5-7", or defaults to N-N for single numbers.
+	// HandleParseRange expects a numeric range like "5-7" or single number "5" (converted to "5-5").
+	// Returns error if response cannot be parsed as valid range.
 	HandleParseRange TaskHandler = "parse_range"
 
-	// HandleRawString returns the raw string result from the LLM.
+	// HandleRawString returns the raw string result from the LLM without parsing.
 	HandleRawString TaskHandler = "raw_string"
 
+	// HandleEmbedding expects string input and returns an embedding vector ([]float64).
+	// This is useful as last step in a text enrichment pipeline to enrich the data before embedding.
 	HandleEmbedding TaskHandler = "embedding"
 
-	// HandleRaiseError raises an error with the provided message.
+	// HandleRaiseError raises an error with the provided message from task input.
+	// Useful for explicit error conditions in workflows.
 	HandleRaiseError TaskHandler = "raise_error"
 
-	// HandleModelExecution will execute the system default or specified model on a chathistory.
+	// HandleModelExecution executes specified model on chat history input.
+	// Requires DataTypeChatHistory input and ExecuteConfig configuration.
 	HandleModelExecution TaskHandler = "model_execution"
 
-	// HandleParseTransition will attempt to parse a transition command from the input and strip the transition prefix if it exists.
+	// HandleParseTransition attempts to parse transition commands (e.g., "/command").
+	// Strips transition prefix if present in input.
 	HandleParseTransition TaskHandler = "parse_transition"
 
+	// HandleNoop performs no operation, passing input through unchanged.
+	// Useful for data mutation, variable composition, and transition steps.
 	HandleNoop TaskHandler = "noop"
 
-	// HandleHook indicates this task should execute an external action rather than calling the LLM.
+	// HandleHook executes an external action via registered hook rather than calling LLM.
+	// Requires Hook configuration with name and arguments.
 	HandleHook TaskHandler = "hook"
 )
 
@@ -225,8 +235,8 @@ type LLMExecutionConfig struct {
 }
 
 type MessageConfig struct {
-	Role    string `yaml:"role" json:"role"` // user/system/assistant
-	Content string `yaml:"content,omitempty" json:"content,omitempty"`
+	Role    string `yaml:"role" json:"role" example:"user"` // valid values:user/system/assistant
+	Content string `yaml:"content,omitempty" json:"content,omitempty" example:"Hello, world!"`
 }
 
 // HookCall represents an external integration or side-effect triggered during a task.
@@ -326,6 +336,7 @@ type TaskDefinition struct {
 //	with_var: "chat2"
 //	strategy: "override"
 type ComposeTask struct {
+	// Selects the variable to compose the current input with.
 	WithVar string `yaml:"with_var,omitempty" json:"with_var,omitempty"`
 	// Strategy defines how values should be merged ("override", "merge_chat_histories", "append_string_to_chat_history").
 	// Optional; defaults to "override" or "merge_chat_histories" if both output and WithVar values are ChatHistory.
@@ -363,24 +374,34 @@ type TaskChainDefinition struct {
 }
 
 type SearchResult struct {
-	ID           string  `json:"id"`
-	ResourceType string  `json:"type"`
-	Distance     float32 `json:"distance"`
+	ID           string  `json:"id" example:"search_123456"`
+	ResourceType string  `json:"type" example:"document"`
+	Distance     float32 `json:"distance" example:"0.85"`
 }
 
 // ChatHistory represents a conversation history with an LLM.
 type ChatHistory struct {
-	Messages     []Message `json:"messages"`
-	Model        string    `json:"model" example:"mistral:instruct"`
-	InputTokens  int       `json:"inputTokens" example:"15"`
-	OutputTokens int       `json:"outputTokens" example:"10"`
+	// Messages is the list of messages in the conversation.
+	Messages []Message `json:"messages"`
+	// Model is the name of the model to use for the conversation.
+	Model string `json:"model" example:"mistral:instruct"`
+	// InputTokens will be filled by the engine and will hold the number of tokens used for the input.
+	InputTokens int `json:"inputTokens" example:"15"`
+	// OutputTokens will be filled by the engine and will hold the number of tokens used for the output.
+	OutputTokens int `json:"outputTokens" example:"10"`
 }
 
 // Message represents a single message in a chat conversation.
 type Message struct {
-	ID        string    `json:"id" example:"msg_123456"`
-	Role      string    `json:"role" example:"user"`
-	Content   string    `json:"content" example:"What is the capital of France?"`
+	// ID is the unique identifier for the message.
+	// This field is not used by the engine. It can be filled as part of the Request, or left empty.
+	// The ID is useful for tracking messages and computing differences of histories before storage.
+	ID string `json:"id" example:"msg_123456"`
+	// Role is the role of the message sender.
+	Role string `json:"role" example:"user"`
+	// Content is the content of the message.
+	Content string `json:"content" example:"What is the capital of France?"`
+	// Timestamp is the time the message was sent.
 	Timestamp time.Time `json:"timestamp" example:"2023-11-15T14:30:45Z"`
 }
 

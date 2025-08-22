@@ -13,11 +13,23 @@ import (
 	"github.com/contenox/runtime/libtracker"
 )
 
-// TaskExecutor defines the interface for executing a individual tasks.
+// TaskExecutor executes individual tasks within a workflow.
+// Implementations should handle all task types and return appropriate outputs.
 type TaskExecutor interface {
-	// TaskExec runs a single task and returns output
-	// It consumes a prompt and resolver policy, and returns structured output
-	// TODO: THIS IS NOT TRUE: alongside the raw LLM response.
+	// TaskExec executes a single task with the given input and data type.
+	// Returns:
+	// - output: The processed task result
+	// - outputType: The data type of the output
+	// - transitionEval: String used for transition evaluation
+	// - error: Any execution error encountered
+	//
+	// Parameters:
+	// - ctx: Context for cancellation and timeouts
+	// - startingTime: Chain start time for consistent timing
+	// - ctxLength: Token context length limit for LLM operations
+	// - currentTask: The task definition to execute
+	// - input: Task input data
+	// - dataType: Type of the input data
 	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error)
 }
 

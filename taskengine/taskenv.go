@@ -16,24 +16,25 @@ import (
 	"github.com/contenox/runtime/libtracker"
 )
 
-// DataType represents the type of data that can be passed between tasks
+// DataType represents the type of data passed between tasks.
+// All types support JSON/YAML marshaling and unmarshaling.
 type DataType int
 
-// Constants representing hook execution status
 const (
-	DataTypeAny DataType = iota
-	DataTypeString
-	DataTypeBool
-	DataTypeInt
-	DataTypeFloat
-	DataTypeVector
-	DataTypeSearchResults
-	DataTypeJSON
-	DataTypeChatHistory
-	DataTypeOpenAIChat
-	DataTypeOpenAIChatResponse
+	DataTypeAny                DataType = iota // Any type (use sparingly, loses type safety)
+	DataTypeString                             // String data
+	DataTypeBool                               // Boolean value
+	DataTypeInt                                // Integer number
+	DataTypeFloat                              // Floating-point number
+	DataTypeVector                             // Embedding vector ([]float64)
+	DataTypeSearchResults                      // Search results array
+	DataTypeJSON                               // Generic JSON data
+	DataTypeChatHistory                        // Chat conversation history
+	DataTypeOpenAIChat                         // OpenAI chat request format
+	DataTypeOpenAIChatResponse                 // OpenAI chat response format
 )
 
+// String returns the string representation of the data type.
 func (d *DataType) String() string {
 	switch *d {
 	case DataTypeAny:
@@ -63,6 +64,7 @@ func (d *DataType) String() string {
 	}
 }
 
+// DataTypeFromString converts a string to DataType, returns error for unknown types.
 func DataTypeFromString(s string) (DataType, error) {
 	switch strings.ToLower(s) {
 	case "any":
@@ -92,20 +94,22 @@ func DataTypeFromString(s string) (DataType, error) {
 	}
 }
 
-// EnvExecutor defines an environment for executing ChainDefinitions
+// EnvExecutor executes complete task chains with input and environment management.
 type EnvExecutor interface {
-	// ExecEnv executes a chain with input and returns final output
+	// ExecEnv executes a task chain with the given input and data type.
+	// Returns final output, output type, execution history, and error.
 	ExecEnv(ctx context.Context, chain *TaskChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error)
 }
 
 // ErrUnsupportedTaskType indicates unrecognized task type
 var ErrUnsupportedTaskType = errors.New("executor does not support the task type")
 
-// HookRepo defines an interface for external system integrations
-// and to conduct side effects on internal state.
+// HookRepo defines interface for external system integrations and side effects.
 type HookRepo interface {
-	// Exec runs a hook with input and returns results
+	// Exec executes a hook with the given input and arguments.
+	// Returns output, output type, transition value, and error.
 	Exec(ctx context.Context, startingTime time.Time, input any, dataType DataType, transition string, args *HookCall) (any, DataType, string, error)
+	// HookRegistry provides hook discovery functionality.
 	HookRegistry
 }
 
