@@ -41,7 +41,7 @@ type CapturedStateUnit struct {
 	InputType   DataType      `json:"inputType" example:"string"`
 	OutputType  DataType      `json:"outputType" example:"string"`
 	Transition  string        `json:"transition" example:"valid_input"`
-	Duration    time.Duration `json:"duration" example:"452000000"` // 452ms in nanoseconds
+	Duration    time.Duration `json:"duration" example:"452000000"` // in nanoseconds
 	Error       ErrorResponse `json:"error"`
 	Input       string        `json:"input" example:"This is a test input that needs validation"`
 	Output      string        `json:"output" example:"valid"`
