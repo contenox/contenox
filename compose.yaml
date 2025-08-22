@@ -21,7 +21,6 @@ services:
       - TASK_MODEL=phi3:3.8b
       - TASK_MODEL_CONTEXT_LENGTH=2048
       - TASK_PROVIDER=ollama
-      - KV_HOST=valkey:6379
       #- TOKEN=your_token_here
     depends_on:
       postgres:
@@ -88,15 +87,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-  valkey:
-    image: valkey/valkey:alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
-      interval: 1s
-      timeout: 3s
-      retries: 50
 volumes:
   # postgres-data:
   ollama-data:

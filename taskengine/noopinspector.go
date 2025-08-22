@@ -2,27 +2,6 @@ package taskengine
 
 import "context"
 
-// No-op implementations for dependencies
-type noopTracker struct{}
-
-func (t *noopTracker) Start(ctx context.Context, eventType string, taskID string, kvs ...any) (
-	func(error),
-	func(string, any),
-	func(),
-) {
-	return func(err error) {}, func(s string, a any) {}, func() {}
-}
-
-type NoopAlertSink struct{}
-
-func (a *NoopAlertSink) SendAlert(ctx context.Context, msg string, kvs ...string) error {
-	return nil
-}
-
-func (s *NoopAlertSink) FetchAlerts(ctx context.Context, limit int) ([]*Alert, error) {
-	return nil, nil
-}
-
 type NoopInspector struct{}
 
 func (i *NoopInspector) Start(ctx context.Context) StackTrace {

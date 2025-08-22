@@ -13,8 +13,6 @@
 ✅ **Made with Go for intensive load**
 ✅ **Build agentic capabilities via hooks**
 
-This is the core of the [contenox](https://github.com/contenox) ecosystem.
-
 ## ⚡ Get Started in 3 Minutes
 
 Startup flow:
@@ -45,7 +43,7 @@ This starts the complete environment:
 
 * Runtime API (port 8081)
 * Ollama (port 11435)
-* Postgres, NATS, Valkey, and tokenizer services
+* Postgres, NATS, and tokenizer services
 
 ### 2. Register Ollama Backends
 
@@ -145,8 +143,6 @@ Logs can be viewed using Docker:
 ```bash
 docker logs contenox-runtime-kernel
 ```
-
-Logs, metrics, and request traces are also pushed to Valkey.
 
 ## ✨ Key Features
 

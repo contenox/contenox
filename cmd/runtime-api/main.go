@@ -16,7 +16,6 @@ import (
 	"github.com/contenox/runtime/internal/serverapi"
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
-	libkv "github.com/contenox/runtime/libkvstore"
 	libroutine "github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtimetypes"
@@ -145,26 +144,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s initializing vector store failed: %v", nodeInstanceID, err)
 	}
-	kvManager, err := libkv.NewManager(libkv.Config{
-		Addr:     config.KVHost,
-		Password: config.KVPassword,
-	}, time.Hour*24)
-	if err != nil {
-		log.Fatalf("%s initializing kv manager failed: %v", nodeInstanceID, err)
-	}
-	kvExec, err := kvManager.Executor(ctx)
-	if err != nil {
-		log.Fatalf("%s initializing kv manager 1 failed: %v", nodeInstanceID, err)
-	}
-	err = kvExec.SetWithTTL(ctx, "test", []byte("test"), time.Second)
-	if err != nil {
-		log.Fatalf("%s initializing kv manager 2 failed: %v", nodeInstanceID, err)
-	}
 
-	tracker := taskengine.NewKVActivityTracker(kvManager)
+	// tracker := taskengine.NewKVActivityTracker(kvManager)
 	stdOuttracker := libtracker.NewLogActivityTracker(slog.Default())
 	serveropsChainedTracker := libtracker.ChainedTracker{
-		tracker,
+		// tracker,
 		stdOuttracker,
 	}
 	repo, err := llmrepo.NewModelManager(state, tokenizerSvc, llmrepo.ModelManagerConfig{
@@ -190,13 +174,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s initializing task engine engine failed: %v", nodeInstanceID, err)
 	}
-	environmentExec, err := taskengine.NewEnv(ctx, serveropsChainedTracker, taskengine.NewAlertSink(kvManager), exec, taskengine.NewSimpleInspector(kvManager))
+	environmentExec, err := taskengine.NewEnv(ctx, serveropsChainedTracker, exec, taskengine.NewSimpleInspector())
 	if err != nil {
 		log.Fatalf("%s initializing task engine failed: %v", nodeInstanceID, err)
 	}
 	cleanups = append(cleanups, cleanup)
 
-	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo, kvManager)
+	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("%s initializing API handler failed: %v", nodeInstanceID, err)

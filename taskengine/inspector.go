@@ -52,10 +52,8 @@ type ErrorResponse struct {
 	Error         string `json:"error" example:"validation failed: input contains prohibited content"`
 }
 
-func NewSimpleInspector(kvManager libkv.KVManager) *SimpleInspector {
-	return &SimpleInspector{
-		kvManager: kvManager,
-	}
+func NewSimpleInspector() *SimpleInspector {
+	return &SimpleInspector{}
 }
 
 type SimpleInspector struct {

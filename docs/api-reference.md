@@ -107,7 +107,7 @@ Returns basic backend information without runtime state.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|poolID|path|string|true|none|
+|poolID|path|string|true|The unique identifier of the pool.|
 
 > Example responses
 
@@ -2024,14 +2024,13 @@ print(r.json())
 `GET /providers/configs`
 
 Lists all configured external providers with pagination support.
-Lists all configured external providers with pagination support.
 
 <h3 id="lists-all-configured-external-providers-with-pagination-support.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -2549,13 +2548,11 @@ If pools are enabled, models and backends not assigned to any pool will be compl
       "timeout": "30s",
       "transition": {
         "branches": {
-          "alert_on_match": "Positive response detected: {{.output}}",
           "goto": "positive_response",
           "operator": "equals",
           "when": "yes"
         },
-        "on_failure": "error_handler",
-        "on_failure_alert": "Task failed: {{.error}}"
+        "on_failure": "error_handler"
       },
       "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
     },
@@ -3185,13 +3182,11 @@ X-API-Key
       "timeout": "30s",
       "transition": {
         "branches": {
-          "alert_on_match": "Positive response detected: {{.output}}",
           "goto": "positive_response",
           "operator": "equals",
           "when": "yes"
         },
-        "on_failure": "error_handler",
-        "on_failure_alert": "Task failed: {{.error}}"
+        "on_failure": "error_handler"
       },
       "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
     },
@@ -3765,13 +3760,11 @@ X-API-Key
     "timeout": "30s",
     "transition": {
       "branches": {
-        "alert_on_match": "Positive response detected: {{.output}}",
         "goto": "positive_response",
         "operator": "equals",
         "when": "yes"
       },
-      "on_failure": "error_handler",
-      "on_failure_alert": "Task failed: {{.error}}"
+      "on_failure": "error_handler"
     },
     "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
   },
@@ -3825,13 +3818,11 @@ X-API-Key
   "timeout": "30s",
   "transition": {
     "branches": {
-      "alert_on_match": "Positive response detected: {{.output}}",
       "goto": "positive_response",
       "operator": "equals",
       "when": "yes"
     },
-    "on_failure": "error_handler",
-    "on_failure_alert": "Task failed: {{.error}}"
+    "on_failure": "error_handler"
   },
   "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
 }
@@ -3867,13 +3858,11 @@ X-API-Key
 ```json
 {
   "branches": {
-    "alert_on_match": "Positive response detected: {{.output}}",
     "goto": "positive_response",
     "operator": "equals",
     "when": "yes"
   },
-  "on_failure": "error_handler",
-  "on_failure_alert": "Task failed: {{.error}}"
+  "on_failure": "error_handler"
 }
 
 ```
@@ -3884,7 +3873,6 @@ X-API-Key
 |---|---|---|---|---|
 |branches|[taskengine_TransitionBranch](#schemataskengine_transitionbranch)|true|none|none|
 |on_failure|string|true|none|OnFailure is the task ID to jump to in case of failure.|
-|on_failure_alert|string|true|none|OnFailureAlert specifies the alert message to send if the task fails.|
 
 <h2 id="tocS_taskengine_TransitionBranch">taskengine_TransitionBranch</h2>
 <!-- backwards compatibility -->
@@ -3895,7 +3883,6 @@ X-API-Key
 
 ```json
 {
-  "alert_on_match": "Positive response detected: {{.output}}",
   "goto": "positive_response",
   "operator": "equals",
   "when": "yes"
@@ -3907,7 +3894,6 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|alert_on_match|string|true|none|AlertOnMatch specifies the alert message to send if this branch is taken.|
 |goto|string|true|none|Goto specifies the target task ID if this branch is taken.<br>Leave empty or use taskengine.TermEnd to end the chain.|
 |operator|string|false|none|Operator defines how to compare the task's output to When.|
 |when|string|true|none|When specifies the condition that must be met to follow this branch.<br>Format depends on the task type:<br>- For condition_key: exact string match<br>- For parse_number: numeric comparison (using Operator)|

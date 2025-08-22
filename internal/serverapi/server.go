@@ -26,7 +26,6 @@ import (
 	"github.com/contenox/runtime/internal/runtimestate"
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
-	libkv "github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/modelservice"
@@ -47,15 +46,15 @@ func New(
 	environmentExec taskengine.EnvExecutor,
 	state *runtimestate.State,
 	hookRegistry taskengine.HookRegistry,
-	kvManager libkv.KVManager,
+	// kvManager libkv.KVManager,
 ) (http.Handler, func() error, error) {
 	cleanup := func() error { return nil }
 	mux := http.NewServeMux()
 	var handler http.Handler = mux
-	tracker := taskengine.NewKVActivityTracker(kvManager)
+	// tracker := taskengine.NewKVActivityTracker(kvManager)
 	stdOuttracker := libtracker.NewLogActivityTracker(slog.Default())
 	serveropsChainedTracker := libtracker.ChainedTracker{
-		tracker,
+		// tracker,
 		stdOuttracker,
 	}
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
@@ -172,9 +171,6 @@ type Config struct {
 	TaskProvider            string `json:"task_provider"`
 	TaskModelContextLength  string `json:"task_model_context_length"`
 	VectorStoreURL          string `json:"vector_store_url"`
-	KVBackend               string `json:"kv_backend"`
-	KVHost                  string `json:"kv_host"`
-	KVPassword              string `json:"kv_password"`
 	Token                   string `json:"token"`
 }
 

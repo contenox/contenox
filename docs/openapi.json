@@ -939,27 +939,16 @@
             "description": "OnFailure is the task ID to jump to in case of failure.",
             "example": "error_handler",
             "type": "string"
-          },
-          "on_failure_alert": {
-            "description": "OnFailureAlert specifies the alert message to send if the task fails.",
-            "example": "Task failed: {{.error}}",
-            "type": "string"
           }
         },
         "required": [
           "on_failure",
-          "on_failure_alert",
           "branches"
         ],
         "type": "object"
       },
       "taskengine_TransitionBranch": {
         "properties": {
-          "alert_on_match": {
-            "description": "AlertOnMatch specifies the alert message to send if this branch is taken.",
-            "example": "Positive response detected: {{.output}}",
-            "type": "string"
-          },
           "goto": {
             "description": "Goto specifies the target task ID if this branch is taken.\nLeave empty or use taskengine.TermEnd to end the chain.",
             "example": "positive_response",
@@ -978,8 +967,7 @@
         },
         "required": [
           "when",
-          "goto",
-          "alert_on_match"
+          "goto"
         ],
         "type": "object"
       }
@@ -1066,6 +1054,7 @@
       },
       "parameters": [
         {
+          "description": "The unique identifier of the pool.",
           "in": "path",
           "name": "poolID",
           "required": true,
@@ -2253,22 +2242,22 @@
     },
     "/providers/configs": {
       "get": {
-        "description": "Lists all configured external providers with pagination support.\nLists all configured external providers with pagination support.",
+        "description": "Lists all configured external providers with pagination support.",
         "parameters": [
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
           {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
