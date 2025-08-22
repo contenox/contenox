@@ -3,10 +3,10 @@ package poolapi
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
+	"github.com/contenox/runtime/internal/apiframework"
 	serverops "github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/poolservice"
 	"github.com/contenox/runtime/runtimetypes"
@@ -41,6 +41,7 @@ type poolHandler struct {
 }
 
 // Creates a new resource pool for organizing backends and models.
+//
 // Pool names must be unique within the system.
 // Pools allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).
 //
@@ -104,6 +105,7 @@ func (h *poolHandler) getPoolByName(w http.ResponseWriter, r *http.Request) {
 }
 
 // Updates an existing pool configuration.
+//
 // The ID from the URL path overrides any ID in the request body.
 func (h *poolHandler) updatePool(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -129,6 +131,7 @@ func (h *poolHandler) updatePool(w http.ResponseWriter, r *http.Request) {
 }
 
 // Removes a pool from the system.
+//
 // This does not deletePool associated backends or models, only the pool relationship.
 // Returns a simple "deleted" confirmation message on success.
 func (h *poolHandler) deletePool(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +151,7 @@ func (h *poolHandler) deletePool(w http.ResponseWriter, r *http.Request) {
 }
 
 // Lists all resource pools in the system.
+//
 // Returns basic pool information without associated backends or models.
 func (h *poolHandler) listPools(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -162,6 +166,7 @@ func (h *poolHandler) listPools(w http.ResponseWriter, r *http.Request) {
 }
 
 // Lists pools filtered by purpose type with pagination support.
+//
 // Purpose types categorize pools (e.g., "Internal Embeddings", "Internal Tasks").
 // Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 func (h *poolHandler) listPoolsByPurpose(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +219,7 @@ func (h *poolHandler) listPoolsByPurpose(w http.ResponseWriter, r *http.Request)
 }
 
 // Associates a backend with a pool.
+//
 // After assignment, the backend can process requests for all models in the pool.
 // This enables request routing between the backend and models that share this pool.
 func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +240,7 @@ func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 }
 
 // Removes a backend from a pool.
+//
 // After removal, the backend will no longer be eligible to process requests for models in this pool.
 // Requests requiring models from this pool will no longer be routed to this backend.
 func (h *poolHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
@@ -255,10 +262,11 @@ func (h *poolHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
 }
 
 // Lists all backends associated with a specific pool.
+//
 // Returns basic backend information without runtime state.
 func (h *poolHandler) listBackendsByPool(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	poolID := url.PathEscape(r.PathValue("poolID"))
+	poolID := apiframework.GetPathParam(r, "poolID", "The unique identifier of the pool.")
 	if poolID == "" {
 		serverops.Error(w, r, fmt.Errorf("poolID required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
 		return

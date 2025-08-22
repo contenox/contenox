@@ -42,6 +42,7 @@ type StatusResponse struct {
 }
 
 // Configures authentication for an external provider (OpenAI or Gemini).
+//
 // Requires a valid API key for the specified provider type.
 // The 'upsert' parameter determines whether to update existing configuration.
 // After suggesful configuration the system will provision a virtual backend for that provider.
@@ -77,6 +78,7 @@ func (p *providerManager) configure(providerType string) func(w http.ResponseWri
 }
 
 // Checks configuration status for an external provider.
+//
 // Returns whether the provider is properly configured with valid credentials.
 func (p *providerManager) status(providerType string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -100,6 +102,7 @@ func (p *providerManager) status(providerType string) func(w http.ResponseWriter
 }
 
 // Removes provider configuration from the system.
+//
 // After deletion, the provider will no longer be available for model execution.
 func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 	providerType := serverops.GetPathParam(r, "providerType", "The type of the provider to delete (e.g., 'openai', 'gemini').")
@@ -116,7 +119,6 @@ func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, "Provider config deleted successfully") // @response string
 }
 
-// Lists all configured external providers with pagination support.
 // Lists all configured external providers with pagination support.
 func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

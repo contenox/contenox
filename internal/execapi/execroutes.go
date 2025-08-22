@@ -32,6 +32,7 @@ type taskManager struct {
 }
 
 // Runs the prompt through the default LLM.
+//
 // This endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.
 // Requests are routed ONLY to backends that have the default model available in any shared pool.
 // If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
@@ -63,6 +64,7 @@ type taskExecutionResponse struct {
 }
 
 // Executes dynamic task-chain workflows.
+//
 // Task-chains are state-machine workflows (DAGs) with conditional branches,
 // external hooks, and captured execution state.
 // Requests are routed ONLY to backends that have the requested model available in any shared pool.
@@ -240,6 +242,7 @@ func (tm *taskManager) executeTaskChain(w http.ResponseWriter, r *http.Request) 
 }
 
 // Lists available task-chain hook types.
+//
 // Returns all registered external action types that can be used in task-chain hooks.
 func (tm *taskManager) supported(w http.ResponseWriter, r *http.Request) {
 	resp, err := tm.taskService.Supports(r.Context())
@@ -260,6 +263,7 @@ type EmbedResponse struct {
 }
 
 // Generates vector embeddings for text.
+//
 // Uses the system's default embedding model configured at startup.
 // Requests are routed ONLY to backends that have the default model available in any shared pool.
 // If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.

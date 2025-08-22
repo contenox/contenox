@@ -44,6 +44,7 @@ type backendManager struct {
 }
 
 // Creates a new backend connection to an LLM provider.
+//
 // Backends represent connections to LLM services (e.g., Ollama, OpenAI) that can host models.
 // Note: Creating a backend will be provisioned on the next synchronization cycle.
 func (b *backendManager) createBackend(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +65,7 @@ func (b *backendManager) createBackend(w http.ResponseWriter, r *http.Request) {
 }
 
 // Lists all configured backend connections with runtime status.
+//
 // NOTE: Only backends assigned to at least one pool will be used for request processing.
 // Backends not assigned to any pool exist in the configuration but are completely ignored by the routing system.
 func (b *backendManager) listBackends(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +201,7 @@ func (b *backendManager) getBackend(w http.ResponseWriter, r *http.Request) {
 }
 
 // Updates an existing backend configuration.
+//
 // The ID from the URL path overrides any ID in the request body.
 // Note: Updating a backend will be provisioned on the next synchronization cycle.
 func (b *backendManager) updateBackend(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +227,7 @@ func (b *backendManager) updateBackend(w http.ResponseWriter, r *http.Request) {
 }
 
 // Removes a backend connection.
+//
 // This does not deleteBackend models from the remote provider, only removes the connection.
 // Returns a simple "backend removed" confirmation message on success.
 func (b *backendManager) deleteBackend(w http.ResponseWriter, r *http.Request) {

@@ -29,6 +29,7 @@ type service struct {
 }
 
 // Declares a new model to the system.
+//
 // The model must be available in a configured backend or will be queued for download.
 // IMPORTANT: Models not assigned to any pool will NOT be available for request processing.
 // If pools are enabled, to make a model available to backends, it must be explicitly added to at least one pool.
@@ -63,6 +64,7 @@ type OpenAICompatibleModelList struct {
 }
 
 // Lists all registered models in OpenAI-compatible format.
+//
 // Returns models as they would appear in OpenAI's /v1/models endpoint.
 // NOTE: Only models assigned to at least one pool will be available for request processing.
 // Models not assigned to any pool exist in the configuration but are completely ignored by the routing system.
@@ -122,6 +124,7 @@ func (s *service) listModels(w http.ResponseWriter, r *http.Request) {
 }
 
 // Updates an existing model registration.
+//
 // Only mutable fields (like capabilities and context length) can be updated.
 // The model ID cannot be changed.
 // Returns the updated model configuration.
@@ -161,6 +164,7 @@ func (s *service) updateModel(w http.ResponseWriter, r *http.Request) {
 }
 
 // Lists all registered models in internal format.
+//
 // This endpoint returns full model details including timestamps and capabilities.
 // Intended for administrative and debugging purposes.
 func (s *service) listInternal(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +213,7 @@ func (s *service) listInternal(w http.ResponseWriter, r *http.Request) {
 }
 
 // Deletes a model from the system registry.
+//
 // - Does not remove the model from backend storage (requires separate backend operation)
 // - Accepts 'purge=true' query parameter to also remove related downloads from queue
 func (s *service) deleteModel(w http.ResponseWriter, r *http.Request) {

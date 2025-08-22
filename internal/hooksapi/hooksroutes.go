@@ -25,6 +25,7 @@ type remoteHookService struct {
 }
 
 // Creates a new remote hook configuration.
+//
 // Remote hooks allow task-chains to trigger external HTTP services during execution.
 func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -84,6 +85,7 @@ func (s *remoteHookService) get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Updates an existing remote hook configuration.
+//
 // The ID from the URL path overrides any ID in the request body.
 func (s *remoteHookService) update(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -105,6 +107,7 @@ func (s *remoteHookService) update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Deletes a remote hook configuration by ID.
+//
 // Returns a simple "deleted" confirmation message on success.
 func (s *remoteHookService) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

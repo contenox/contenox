@@ -18,6 +18,7 @@ type statemux struct {
 }
 
 // Retrieves the current runtime state of all LLM backends.
+//
 // Includes connection status, loaded models, and error information.
 // NOTE: This shows the physical state of backends, but the routing system only considers
 // backends and models that are assigned to the same pool. Resources not in pools are ignored

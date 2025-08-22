@@ -24,6 +24,7 @@ type downloadManager struct {
 }
 
 // Retrieves the current model download queue state.
+//
 // Returns a list of models waiting to be downloaded.
 // Downloading models is only supported for ollama backends.
 // If pools are enabled, models will only be downloaded to backends
@@ -58,6 +59,7 @@ func (s *downloadManager) removeFromQueue(w http.ResponseWriter, r *http.Request
 }
 
 // Streams real-time download progress via Server-Sent Events (SSE).
+//
 // Clients should handle 'data' events containing JSON status updates.
 // Connection remains open until client disconnects or server closes.
 // Example event format:
@@ -115,6 +117,7 @@ func (s *downloadManager) inProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 // Cancels an in-progress model download.
+//
 // Accepts either:
 // - 'url' query parameter to cancel a download on a specific backend
 // - 'model' query parameter to cancel the model download across all backends
