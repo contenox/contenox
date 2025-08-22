@@ -8,7 +8,7 @@ import (
 )
 
 type Service interface {
-	Get(ctx context.Context) ([]statetype.LLMState, error)
+	Get(ctx context.Context) ([]statetype.BackendRuntimeState, error)
 }
 
 type service struct {
@@ -16,9 +16,9 @@ type service struct {
 }
 
 // Get implements Service.
-func (s *service) Get(ctx context.Context) ([]statetype.LLMState, error) {
+func (s *service) Get(ctx context.Context) ([]statetype.BackendRuntimeState, error) {
 	m := s.state.Get(ctx)
-	l := make([]statetype.LLMState, 0, len(m))
+	l := make([]statetype.BackendRuntimeState, 0, len(m))
 	for _, e := range m {
 		l = append(l, e)
 	}

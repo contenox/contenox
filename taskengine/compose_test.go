@@ -21,8 +21,8 @@ func TestUnit_ComposeOverride(t *testing.T) {
 	env := setupTestEnv(mockExec)
 
 	// Define chain with compose task
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:      "task1",
 				Handler: taskengine.HandleRawString,
@@ -72,8 +72,8 @@ func TestUnit_ComposeAppendStringToChatHistory(t *testing.T) {
 	env := setupTestEnv(mockExec)
 
 	// Define chain
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:      "task1",
 				Handler: taskengine.HandleRawString,
@@ -135,8 +135,8 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 	env := setupTestEnv(mockExec)
 
 	// Define chain
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:      "task1",
 				Handler: taskengine.HandleRawString,
@@ -190,8 +190,8 @@ func TestUnit_ComposeAutoStrategy(t *testing.T) {
 		env := setupTestEnv(mockExec)
 
 		// Define chain with automatic strategy
-		chain := &taskengine.ChainDefinition{
-			Tasks: []taskengine.ChainTask{
+		chain := &taskengine.TaskChainDefinition{
+			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
 					Handler: taskengine.HandleRawString,
@@ -235,8 +235,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		env := setupTestEnv(mockExec)
 
 		// Define chain with invalid strategy
-		chain := &taskengine.ChainDefinition{
-			Tasks: []taskengine.ChainTask{
+		chain := &taskengine.TaskChainDefinition{
+			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
 					Handler: taskengine.HandleRawString,
@@ -275,8 +275,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		env := setupTestEnv(mockExec)
 
 		// Define chain with missing right variable
-		chain := &taskengine.ChainDefinition{
-			Tasks: []taskengine.ChainTask{
+		chain := &taskengine.TaskChainDefinition{
+			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
 					Handler: taskengine.HandleRawString,
@@ -305,8 +305,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		env := setupTestEnv(mockExec)
 
 		// Define chain
-		chain := &taskengine.ChainDefinition{
-			Tasks: []taskengine.ChainTask{
+		chain := &taskengine.TaskChainDefinition{
+			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
 					Handler: taskengine.HandleRawString,
@@ -350,8 +350,8 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		env := setupTestEnv(mockExec)
 
 		// Define chain
-		chain := &taskengine.ChainDefinition{
-			Tasks: []taskengine.ChainTask{
+		chain := &taskengine.TaskChainDefinition{
+			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
 					Handler: taskengine.HandleRawString,

@@ -1,8 +1,15 @@
 components:
     schemas:
-        array_backendapi_respBackendList:
+        ErrorResponse:
+            properties:
+                error:
+                    type: string
+            required:
+                - error
+            type: object
+        array_backendapi_backendSummary:
             items:
-                $ref: '#/components/schemas/backendapi_respBackendList'
+                $ref: '#/components/schemas/backendapi_backendSummary'
             type: array
         array_downloadservice_Job:
             items:
@@ -28,15 +35,15 @@ components:
             items:
                 $ref: '#/components/schemas/runtimetypes_RemoteHook'
             type: array
-        array_statetype_LLMState:
+        array_statetype_BackendRuntimeState:
             items:
-                $ref: '#/components/schemas/statetype_LLMState'
+                $ref: '#/components/schemas/statetype_BackendRuntimeState'
             type: array
         array_string:
             items:
                 type: string
             type: array
-        backendapi_ListResponse:
+        backendapi_OpenAICompatibleModelList:
             properties:
                 data:
                     items:
@@ -52,13 +59,13 @@ components:
         backendapi_OpenAIModel:
             properties:
                 created:
-                    example: "1717020800"
+                    example: 1717020800
                     type: integer
                 id:
                     example: mistral:latest
                     type: string
                 object:
-                    example: model
+                    example: mistral:latest
                     type: string
                 owned_by:
                     example: system
@@ -69,30 +76,38 @@ components:
                 - created
                 - owned_by
             type: object
-        backendapi_respBackend:
+        backendapi_backendDetails:
             properties:
                 baseUrl:
+                    example: http://ollama-prod.internal:11434
                     type: string
                 createdAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
                 error:
+                    example: 'connection timeout: context deadline exceeded'
                     type: string
                 id:
+                    example: b7d9e1a3-8f0c-4a7d-9b1e-2f3a4b5c6d7e
                     type: string
                 models:
+                    example: '[\"mistral:instruct\", \"llama2:7b\", \"nomic-embed-text:latest\"]'
                     items:
                         type: string
                     type: array
                 name:
+                    example: ollama-production
                     type: string
                 pulledModels:
                     items:
-                        $ref: '#/components/schemas/statetype_ListModelResponse'
+                        $ref: '#/components/schemas/statetype_ModelPullStatus'
                     type: array
                 type:
+                    example: ollama
                     type: string
                 updatedAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
             required:
@@ -105,7 +120,7 @@ components:
                 - createdAt
                 - updatedAt
             type: object
-        backendapi_respBackendList:
+        backendapi_backendSummary:
             properties:
                 baseUrl:
                     example: http://localhost:11434
@@ -129,7 +144,7 @@ components:
                     type: string
                 pulledModels:
                     items:
-                        $ref: '#/components/schemas/runtimestate_ListModelResponse'
+                        $ref: '#/components/schemas/statetype_ModelPullStatus'
                     type: array
                 type:
                     example: ollama
@@ -151,17 +166,22 @@ components:
         downloadservice_Job:
             properties:
                 createdAt:
+                    example: "2021-09-01T00:00:00Z"
                     format: date-time
                     type: string
                 id:
+                    example: "1234567890"
                     type: string
                 modelJob:
                     type: object
                 scheduledFor:
+                    example: 1630483200
                     type: integer
                 taskType:
+                    example: model_download
                     type: string
                 validUntil:
+                    example: 1630483200
                     type: integer
             required:
                 - id
@@ -197,25 +217,29 @@ components:
             required:
                 - vector
             type: object
-        execapi_taskExec:
+        execapi_taskExecutionRequest:
             properties:
                 chain:
                     items:
-                        $ref: '#/components/schemas/taskengine_ChainDefinition'
+                        $ref: '#/components/schemas/taskengine_TaskChainDefinition'
                 input:
+                    example: What is the capital of France
                     type: object
                 inputType:
+                    example: string
                     type: string
             required:
                 - input
                 - inputType
                 - chain
             type: object
-        execapi_taskResponse:
+        execapi_taskExecutionResponse:
             properties:
                 output:
+                    example: Paris
                     type: object
                 outputType:
+                    example: string
                     type: string
                 state:
                     items:
@@ -242,18 +266,6 @@ components:
                 - model_name
                 - model_provider
             type: object
-        execservice_TaskResponse:
-            properties:
-                id:
-                    example: 123e4567-e89b-12d3-a456-426614174000
-                    type: string
-                response:
-                    example: I'm doing well, thank you!
-                    type: string
-            required:
-                - id
-                - response
-            type: object
         runtimestate_ProviderConfig:
             properties:
                 APIKey:
@@ -267,17 +279,23 @@ components:
         runtimetypes_Backend:
             properties:
                 baseUrl:
+                    example: http://ollama-prod.internal:11434
                     type: string
                 createdAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
                 id:
+                    example: b7d9e1a3-8f0c-4a7d-9b1e-2f3a4b5c6d7e
                     type: string
                 name:
+                    example: ollama-production
                     type: string
                 type:
+                    example: ollama
                     type: string
                 updatedAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
             required:
@@ -291,24 +309,32 @@ components:
         runtimetypes_Model:
             properties:
                 canChat:
+                    example: true
                     type: boolean
                 canEmbed:
+                    example: false
                     type: boolean
                 canPrompt:
-                    description: 'TODO: Implement the forms for this'
+                    example: true
                     type: boolean
                 canStream:
+                    example: true
                     type: boolean
                 contextLength:
+                    example: 8192
                     type: integer
                 createdAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
                 id:
+                    example: m7d8e9f0a-1b2c-3d4e-5f6a-7b8c9d0e1f2a
                     type: string
                 model:
+                    example: mistral:instruct
                     type: string
                 updatedAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
             required:
@@ -325,15 +351,20 @@ components:
         runtimetypes_Pool:
             properties:
                 createdAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
                 id:
+                    example: p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4
                     type: string
                 name:
+                    example: production-chat
                     type: string
                 purposeType:
+                    example: Internal Tasks
                     type: string
                 updatedAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
             required:
@@ -346,19 +377,26 @@ components:
         runtimetypes_RemoteHook:
             properties:
                 createdAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
                 endpointUrl:
+                    example: http://hooks-endpoint:port
                     type: string
                 id:
+                    example: h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6
                     type: string
                 method:
+                    example: POST
                     type: string
                 name:
+                    example: send-email
                     type: string
                 timeoutMs:
+                    example: 5000
                     type: integer
                 updatedAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
             required:
@@ -370,27 +408,26 @@ components:
                 - createdAt
                 - updatedAt
             type: object
-        statetype_LLMState:
+        statetype_BackendRuntimeState:
             properties:
-                apiKey:
-                    description: APIKey stores the API key used for authentication with the backend.
-                    type: string
                 backend:
                     type: object
                 error:
                     description: |-
                         Error stores a description of the last encountered error when
                         interacting with or reconciling this backend's state, if any.
+                    example: 'connection timeout: context deadline exceeded'
                     type: string
                 id:
-                    example: backend1
+                    example: b7d9e1a3-8f0c-4a7d-9b1e-2f3a4b5c6d7e
                     type: string
                 models:
+                    example: '[\"mistral:instruct\", \"llama2:7b\", \"nomic-embed-text:latest\"]'
                     items:
                         type: string
                     type: array
                 name:
-                    example: Backend Name
+                    example: ollama-production
                     type: string
                 pulledModels:
                     items:
@@ -402,32 +439,41 @@ components:
                 - models
                 - pulledModels
                 - backend
-                - ""
             type: object
-        statetype_ListModelResponse:
+        statetype_ModelPullStatus:
             properties:
                 canChat:
+                    example: true
                     type: boolean
                 canEmbed:
+                    example: false
                     type: boolean
                 canPrompt:
+                    example: true
                     type: boolean
                 canStream:
+                    example: true
                     type: boolean
                 contextLength:
+                    example: 4096
                     type: integer
                 details:
                     type: object
                 digest:
+                    example: sha256:9e3a6c0d3b5e7f8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a
                     type: string
                 model:
+                    example: mistral:instruct
                     type: string
                 modifiedAt:
+                    example: "2023-11-15T14:30:45Z"
                     format: date-time
                     type: string
                 name:
+                    example: Mistral 7B Instruct
                     type: string
                 size:
+                    example: 4709611008
                     type: integer
             required:
                 - name
@@ -445,22 +491,31 @@ components:
         taskengine_CapturedStateUnit:
             properties:
                 duration:
+                    description: 452ms in nanoseconds
+                    example: 4.52e+08
                     type: object
                 error:
                     type: object
                 input:
+                    example: This is a test input that needs validation
                     type: string
                 inputType:
+                    example: string
                     type: object
                 output:
+                    example: valid
                     type: string
                 outputType:
+                    example: string
                     type: object
                 taskHandler:
+                    example: condition_key
                     type: string
                 taskID:
+                    example: validate_input
                     type: string
                 transition:
+                    example: valid_input
                     type: string
             required:
                 - taskID
@@ -473,7 +528,48 @@ components:
                 - input
                 - output
             type: object
-        taskengine_ChainDefinition:
+        taskengine_HookCall:
+            properties:
+                args:
+                    additionalProperties: true
+                    description: |-
+                        Args are key-value pairs to parameterize the hook call.
+                        Example: {"to": "user@example.com", "subject": "Notification"}
+                    example: '{\"channel\": \"#alerts\", \"message\": \"Task completed successfully\"}'
+                    type: object
+                name:
+                    description: Name is the registered hook name to invoke (e.g., "send_email").
+                    example: slack_notification
+                    type: string
+            required:
+                - name
+                - args
+            type: object
+        taskengine_LLMExecutionConfig:
+            properties:
+                model:
+                    example: mistral:instruct
+                    type: string
+                models:
+                    example: '[\"gpt-4\", \"gpt-3.5-turbo\"]'
+                    items:
+                        type: string
+                    type: array
+                provider:
+                    example: ollama
+                    type: string
+                providers:
+                    example: '[\"ollama\", \"openai\"]'
+                    items:
+                        type: string
+                    type: array
+                temperature:
+                    example: 0.7
+                    type: number
+            required:
+                - model
+            type: object
+        taskengine_TaskChainDefinition:
             properties:
                 debug:
                     description: Enables capturing user input and output.
@@ -487,7 +583,7 @@ components:
                 tasks:
                     description: Tasks is the list of tasks to execute in sequence.
                     items:
-                        $ref: '#/components/schemas/taskengine_ChainTask'
+                        $ref: '#/components/schemas/taskengine_TaskDefinition'
                     type: array
                 token_limit:
                     description: TokenLimit is the token limit for the context window (used during execution).
@@ -499,7 +595,7 @@ components:
                 - tasks
                 - token_limit
             type: object
-        taskengine_ChainTask:
+        taskengine_TaskDefinition:
             properties:
                 compose:
                     description: |-
@@ -508,27 +604,35 @@ components:
                     type: object
                 description:
                     description: Description is a human-readable summary of what the task does.
+                    example: Validates user input meets quality requirements
                     type: string
                 execute_config:
                     description: ExecuteConfig defines the configuration for executing prompt or chat model tasks.
+                    items:
+                        $ref: '#/components/schemas/taskengine_LLMExecutionConfig'
                     type: object
                 handler:
                     description: Handler determines how the LLM output (or hook) will be interpreted.
+                    example: condition_key
                     type: object
                 hook:
                     description: |-
                         Hook defines an external action to run.
                         Required for Hook tasks, must be nil/omitted for all other types.
                         Example: {type: "send_email", args: {"to": "user@example.com"}}
+                    items:
+                        $ref: '#/components/schemas/taskengine_HookCall'
                     type: object
                 id:
                     description: ID uniquely identifies the task within the chain.
+                    example: validate_input
                     type: string
                 input_var:
                     description: |-
                         InputVar is the name of the variable to use as input for the task.
                         Example: "input" for the original input.
                         Each task stores its output in a variable named with it's task id.
+                    example: input
                     type: string
                 print:
                     description: |-
@@ -536,6 +640,7 @@ components:
                         Supports template variables from previous task outputs.
                         Optional for all task types except Hook where it's rarely used.
                         Example: "The score is: {{.previous_output}}"
+                    example: 'Validation result: {{.validate_input}}'
                     type: string
                 prompt_template:
                     description: |-
@@ -543,24 +648,30 @@ components:
                         It's Required and only applicable for the raw_string type.
                         Supports template variables from previous task outputs.
                         Example: "Rate the quality from 1-10: {{.input}}"
+                    example: Is this input valid? {{.input}}
                     type: string
                 retry_on_failure:
                     description: |-
                         RetryOnFailure sets how many times to retry this task on failure.
                         Applies to all task types including Hooks.
                         Default: 0 (no retries)
+                    example: 2
                     type: integer
                 system_instruction:
                     description: SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.
+                    example: You are a quality control assistant. Respond only with 'valid' or 'invalid'.
                     type: string
                 timeout:
                     description: |-
                         Timeout optionally sets a timeout for task execution.
                         Format: "10s", "2m", "1h" etc.
                         Optional for all task types.
+                    example: 30s
                     type: string
                 transition:
                     description: Transition defines what to do after this task completes.
+                    items:
+                        $ref: '#/components/schemas/taskengine_TaskTransition'
                     type: object
                 valid_conditions:
                     additionalProperties: true
@@ -568,6 +679,7 @@ components:
                         ValidConditions defines allowed values for ConditionKey tasks.
                         Required for ConditionKey tasks, ignored for all other types.
                         Example: {"yes": true, "no": true} for a yes/no condition.
+                    example: '{\"valid\": true, \"invalid\": true}'
                     type: object
             required:
                 - id
@@ -575,6 +687,55 @@ components:
                 - handler
                 - prompt_template
                 - transition
+            type: object
+        taskengine_TaskTransition:
+            properties:
+                branches:
+                    description: Branches defines conditional branches for successful task completion.
+                    items:
+                        $ref: '#/components/schemas/taskengine_TransitionBranch'
+                    type: array
+                on_failure:
+                    description: OnFailure is the task ID to jump to in case of failure.
+                    example: error_handler
+                    type: string
+                on_failure_alert:
+                    description: OnFailureAlert specifies the alert message to send if the task fails.
+                    example: 'Task failed: {{.error}}'
+                    type: string
+            required:
+                - on_failure
+                - on_failure_alert
+                - branches
+            type: object
+        taskengine_TransitionBranch:
+            properties:
+                alert_on_match:
+                    description: AlertOnMatch specifies the alert message to send if this branch is taken.
+                    example: 'Positive response detected: {{.output}}'
+                    type: string
+                goto:
+                    description: |-
+                        Goto specifies the target task ID if this branch is taken.
+                        Leave empty or use taskengine.TermEnd to end the chain.
+                    example: positive_response
+                    type: string
+                operator:
+                    description: Operator defines how to compare the task's output to When.
+                    example: equals
+                    type: object
+                when:
+                    description: |-
+                        When specifies the condition that must be met to follow this branch.
+                        Format depends on the task type:
+                        - For condition_key: exact string match
+                        - For parse_number: numeric comparison (using Operator)
+                    example: "yes"
+                    type: string
+            required:
+                - when
+                - goto
+                - alert_on_match
             type: object
     securitySchemes:
         X-API-Key:
@@ -599,7 +760,11 @@ paths:
                                 $ref: '#/components/schemas/array_runtimetypes_Pool'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: listPoolsForBackend
         parameters:
             - in: path
@@ -620,8 +785,12 @@ paths:
                                 $ref: '#/components/schemas/array_runtimetypes_Backend'
                     description: OK
                 default:
-                    description: ""
-            summary: listBackends
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: listBackendsByPool
         parameters:
             - in: path
               name: poolID
@@ -642,7 +811,11 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: removeBackend
         parameters:
             - in: path
@@ -668,7 +841,11 @@ paths:
                                 type: string
                     description: Created
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: assignBackend
     /backends:
         get:
@@ -681,11 +858,15 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_backendapi_respBackendList'
+                                $ref: '#/components/schemas/array_backendapi_backendSummary'
                     description: OK
                 default:
-                    description: ""
-            summary: list
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: listBackends
         post:
             description: |-
                 Creates a new backend connection to an LLM provider.
@@ -705,13 +886,17 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_Backend'
                     description: Created
                 default:
-                    description: ""
-            summary: create
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: createBackend
     /backends/{id}:
         delete:
             description: |-
                 Removes a backend connection.
-                This does not delete models from the remote provider, only removes the connection.
+                This does not deleteBackend models from the remote provider, only removes the connection.
                 Returns a simple "backend removed" confirmation message on success.
             responses:
                 "200":
@@ -721,8 +906,12 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
-            summary: delete
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: deleteBackend
         get:
             description: Retrieves complete information for a specific backend
             responses:
@@ -730,11 +919,15 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/backendapi_respBackend'
+                                $ref: '#/components/schemas/backendapi_backendDetails'
                     description: OK
                 default:
-                    description: ""
-            summary: get
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: getBackend
         parameters:
             - in: path
               name: id
@@ -760,8 +953,12 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_Backend'
                     description: OK
                 default:
-                    description: ""
-            summary: update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: updateBackend
     /defaultmodel:
         get:
             description: Returns the default model configured during system initialization.
@@ -773,7 +970,11 @@ paths:
                                 $ref: '#/components/schemas/execapi_DefaultModelResponse'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: defaultModel
     /embed:
         post:
@@ -796,8 +997,12 @@ paths:
                                 $ref: '#/components/schemas/execapi_EmbedResponse'
                     description: OK
                 default:
-                    description: ""
-            summary: embed
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: generateEmbeddings
     /execute:
         post:
             description: |-
@@ -819,8 +1024,12 @@ paths:
                                 $ref: '#/components/schemas/execservice_TaskResponse'
                     description: OK
                 default:
-                    description: ""
-            summary: execute
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: executeSimpleTask
     /hooks/remote:
         get:
             description: Lists all configured remote hooks with pagination support.
@@ -832,7 +1041,11 @@ paths:
                                 $ref: '#/components/schemas/array_runtimetypes_RemoteHook'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: list
         post:
             description: |-
@@ -852,7 +1065,11 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_RemoteHook'
                     description: Created
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: create
     /hooks/remote/{id}:
         delete:
@@ -867,7 +1084,11 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: delete
         get:
             description: Retrieves a specific remote hook configuration by ID.
@@ -879,7 +1100,11 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_RemoteHook'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: get
         parameters:
             - in: path
@@ -905,7 +1130,11 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_RemoteHook'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: update
     /internal/models:
         get:
@@ -921,7 +1150,11 @@ paths:
                                 $ref: '#/components/schemas/array_*runtimetypes_Model'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: listInternal
     /model-associations/{modelID}/pools:
         get:
@@ -936,7 +1169,11 @@ paths:
                                 $ref: '#/components/schemas/array_runtimetypes_Pool'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: listPoolsForModel
         parameters:
             - in: path
@@ -957,8 +1194,12 @@ paths:
                                 $ref: '#/components/schemas/array_runtimetypes_Model'
                     description: OK
                 default:
-                    description: ""
-            summary: listModels
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: listModelsByPool
         parameters:
             - in: path
               name: poolID
@@ -979,7 +1220,11 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: removeModel
         parameters:
             - in: path
@@ -1005,7 +1250,11 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: assignModel
     /models:
         get:
@@ -1019,11 +1268,15 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/backendapi_ListResponse'
+                                $ref: '#/components/schemas/backendapi_OpenAICompatibleModelList'
                     description: OK
                 default:
-                    description: ""
-            summary: list
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: listModels
         post:
             description: |-
                 Declares a new model to the system.
@@ -1044,8 +1297,12 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_Model'
                     description: Created
                 default:
-                    description: ""
-            summary: append
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: createModel
     /models/{id}:
         delete:
             description: |-
@@ -1060,8 +1317,12 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
-            summary: delete
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: deleteModel
         parameters:
             - in: path
               name: id
@@ -1088,8 +1349,12 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_Model'
                     description: OK
                 default:
-                    description: ""
-            summary: update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: updateModel
     /pool-by-name/{name}:
         get:
             description: |-
@@ -1103,8 +1368,12 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_Pool'
                     description: OK
                 default:
-                    description: ""
-            summary: getByName
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: getPoolByName
         parameters:
             - in: path
               name: name
@@ -1125,8 +1394,12 @@ paths:
                                 $ref: '#/components/schemas/array_runtimetypes_Pool'
                     description: OK
                 default:
-                    description: ""
-            summary: listByPurpose
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: listPoolsByPurpose
         parameters:
             - in: path
               name: purpose
@@ -1146,14 +1419,17 @@ paths:
                                 $ref: '#/components/schemas/array_runtimetypes_Pool'
                     description: OK
                 default:
-                    description: ""
-            summary: listAll
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: listPools
         post:
             description: |-
                 Creates a new resource pool for organizing backends and models.
                 Pool names must be unique within the system.
                 Pools allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).
-                CRITICAL BEHAVIOR:
                 When pools are configured in the system, request routing ONLY considers resources that share a pool.
                 - Models not assigned to any pool will NOT be available for execution
                 - Backends not assigned to any pool will NOT receive models or process requests
@@ -1173,13 +1449,17 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_Pool'
                     description: Created
                 default:
-                    description: ""
-            summary: create
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: createPool
     /pools/{id}:
         delete:
             description: |-
                 Removes a pool from the system.
-                This does not delete associated backends or models, only the pool relationship.
+                This does not deletePool associated backends or models, only the pool relationship.
                 Returns a simple "deleted" confirmation message on success.
             responses:
                 "200":
@@ -1189,8 +1469,12 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
-            summary: delete
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: deletePool
         get:
             description: Retrieves a specific pool by its unique ID.
             responses:
@@ -1201,8 +1485,12 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_Pool'
                     description: OK
                 default:
-                    description: ""
-            summary: getByID
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: getPool
         parameters:
             - in: path
               name: id
@@ -1227,8 +1515,12 @@ paths:
                                 $ref: '#/components/schemas/runtimetypes_Pool'
                     description: OK
                 default:
-                    description: ""
-            summary: update
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: updatePool
     /providers/{providerType}/config:
         delete:
             description: |-
@@ -1242,7 +1534,11 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: deleteConfig
         get:
             description: Retrieves configuration details for a specific external provider.
@@ -1254,7 +1550,11 @@ paths:
                                 $ref: '#/components/schemas/runtimestate_ProviderConfig'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: get
         parameters:
             - in: path
@@ -1273,7 +1573,11 @@ paths:
                                 $ref: '#/components/schemas/array_runtimestate_ProviderConfig'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: listConfigs
     /queue:
         get:
@@ -1291,7 +1595,11 @@ paths:
                                 $ref: '#/components/schemas/array_downloadservice_Job'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: getQueue
     /queue/{model}:
         delete:
@@ -1306,7 +1614,11 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: removeFromQueue
         parameters:
             - in: path
@@ -1331,7 +1643,11 @@ paths:
                                 type: string
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: cancelDownload
     /queue/inProgress:
         get:
@@ -1350,7 +1666,11 @@ paths:
                                 type: string
                     description: Server-Sent Events stream
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: inProgress
     /state:
         get:
@@ -1365,10 +1685,14 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_statetype_LLMState'
+                                $ref: '#/components/schemas/array_statetype_BackendRuntimeState'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: list
     /supported:
         get:
@@ -1383,7 +1707,11 @@ paths:
                                 $ref: '#/components/schemas/array_string'
                     description: OK
                 default:
-                    description: ""
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
             summary: supported
     /tasks:
         post:
@@ -1397,17 +1725,21 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/execapi_taskExec'
+                            $ref: '#/components/schemas/execapi_taskExecutionRequest'
                 required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/execapi_taskResponse'
+                                $ref: '#/components/schemas/execapi_taskExecutionResponse'
                     description: OK
                 default:
-                    description: ""
-            summary: tasks
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: executeTaskChain
 security:
     - X-API-Key: []

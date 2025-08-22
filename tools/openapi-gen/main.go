@@ -57,6 +57,26 @@ func main() {
 	swagger.Security = *openapi3.NewSecurityRequirements().
 		With(openapi3.SecurityRequirement{"X-API-Key": []string{}})
 
+		// Add this to your main function before generating schemas
+	if swagger.Components == nil {
+		swagger.Components = &openapi3.Components{
+			Schemas: make(openapi3.Schemas),
+		}
+	}
+
+	// Define standard error response schema
+	errorResponseSchema := openapi3.NewSchema()
+	errorResponseSchema.Type = &openapi3.Types{openapi3.TypeObject}
+	errorResponseSchema.Properties = openapi3.Schemas{
+		"error": &openapi3.SchemaRef{
+			Value: openapi3.NewStringSchema(),
+		},
+	}
+	errorResponseSchema.Required = []string{"error"}
+
+	swagger.Components.Schemas["ErrorResponse"] = &openapi3.SchemaRef{
+		Value: errorResponseSchema,
+	}
 	processRouteFiles(fset, pkgs, swagger)
 	addSchemasToSpec(swagger)
 	swagger.Components.Schemas["array_string"] = openapi3.NewSchemaRef("", openapi3.NewArraySchema().WithItems(openapi3.NewStringSchema()))
@@ -304,6 +324,25 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 
 		op.AddResponse(status, response)
 	}
+
+	// Add ErrorResponse as a default response
+	if op.Responses == nil {
+		op.Responses = openapi3.NewResponses()
+	}
+	defaultResponse := openapi3.NewResponse()
+	resp := "Default error response"
+	defaultResponse.Description = &resp
+	defaultResponse.Content = openapi3.Content{
+		"application/json": &openapi3.MediaType{
+			Schema: &openapi3.SchemaRef{
+				Ref: "#/components/schemas/ErrorResponse",
+			},
+		},
+	}
+	op.Responses.Set("default", &openapi3.ResponseRef{
+		Value: defaultResponse,
+	})
+
 	if isSSEHandler(handler) {
 		// Add SSE response definition
 		response := openapi3.NewResponse()
@@ -321,6 +360,7 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 		response.Description = &desc
 		op.AddResponse(200, response)
 	}
+
 	switch strings.ToUpper(method) {
 	case "GET":
 		pathItem.Get = op
@@ -604,14 +644,20 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 		fieldName := ""
 		if len(field.Names) > 0 {
 			fieldName = field.Names[0].Name
+			if !ast.IsExported(fieldName) {
+				continue
+			}
 		}
 		// Handle embedded structs
 		if fieldName == "" {
 			if ident, ok := field.Type.(*ast.Ident); ok {
+				if !ast.IsExported(ident.Name) {
+					continue
+				}
+
 				if obj := ident.Obj; obj != nil {
 					if spec, ok := obj.Decl.(*ast.TypeSpec); ok {
 						if st, ok := spec.Type.(*ast.StructType); ok {
-							// Recursively add embedded struct with package context
 							addStructSchema(swagger, pkgName, ident.Name, st, extractComments(spec.Doc))
 						}
 					}
@@ -677,12 +723,12 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 				}
 			}
 
-			// Process oapiinclude tag to override or specify custom type
+			// Process openapi_include_type tag to override or specify custom type
 			if field.Tag != nil {
 				tag := strings.Trim(field.Tag.Value, "`")
-				if strings.Contains(tag, "oapiinclude:") {
-					if includeStart := strings.Index(tag, `oapiinclude:"`); includeStart != -1 {
-						includeStart += len(`oapiinclude:"`)
+				if strings.Contains(tag, "openapi_include_type:") {
+					if includeStart := strings.Index(tag, `openapi_include_type:"`); includeStart != -1 {
+						includeStart += len(`openapi_include_type:"`)
 						//panic(tag)
 						includeEnd := strings.Index(tag[includeStart:], `"`)
 						if includeEnd != -1 {
@@ -695,7 +741,7 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 							}
 							isCustomType = true
 							//		} else {
-							//	log.Printf("WARNING: oapiinclude schema not found: %s", includedType)
+							//	log.Printf("WARNING: openapi_include_type schema not found: %s", includedType)
 							//	}
 						}
 					}
@@ -742,13 +788,20 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 		if field.Tag != nil {
 			tag := strings.Trim(field.Tag.Value, "`")
 			if strings.Contains(tag, `example:"`) {
-				if exampleStart := strings.Index(tag, `example:"`); exampleStart != -1 {
-					exampleStart += len(`example:"`)
-					exampleEnd := strings.Index(tag[exampleStart:], `"`)
-					if exampleEnd != -1 {
-						example := tag[exampleStart : exampleStart+exampleEnd]
-						fieldSchema.Example = example
+				var goTypeName string
+				switch ft := field.Type.(type) {
+				case *ast.Ident:
+					goTypeName = ft.Name
+				case *ast.SelectorExpr:
+					goTypeName = ft.Sel.Name
+				case *ast.ArrayType:
+					if elem, ok := ft.Elt.(*ast.Ident); ok {
+						goTypeName = "[]" + elem.Name
 					}
+				}
+
+				if exampleStr, found := extractExampleValue(tag); found {
+					fieldSchema.Example = convertExampleToType(exampleStr, goTypeName)
 				}
 			}
 			if strings.Contains(tag, `omitempty`) {
@@ -756,9 +809,9 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 			} else if strings.Contains(tag, `required:"true"`) {
 				schema.Required = append(schema.Required, jsonTag)
 			}
-			if strings.Contains(tag, "oapiinclude:") {
-				if exampleStart := strings.Index(tag, `oapiinclude:"`); exampleStart != -1 {
-					exampleStart += len(`oapiinclude:"`)
+			if strings.Contains(tag, "openapi_include_type:") {
+				if exampleStart := strings.Index(tag, `openapi_include_type:"`); exampleStart != -1 {
+					exampleStart += len(`openapi_include_type:"`)
 					exampleEnd := strings.Index(tag[exampleStart:], `"`)
 					if exampleEnd != -1 {
 						example := tag[exampleStart : exampleStart+exampleEnd]
@@ -793,7 +846,7 @@ func goTypeToSwaggerType(goType string) *openapi3.Types {
 	switch goType {
 	case "string":
 		return &openapi3.Types{openapi3.TypeString}
-	case "int", "int32", "int64":
+	case "int", "int32", "int64", "time.Duration":
 		return &openapi3.Types{openapi3.TypeInteger}
 	case "float32", "float64":
 		return &openapi3.Types{openapi3.TypeNumber}
@@ -1161,4 +1214,67 @@ func extractPathParams(path string) []string {
 		}
 	}
 	return params
+}
+
+func convertExampleToType(exampleStr, goTypeName string) interface{} {
+	// Handle boolean types
+	if goTypeName == "bool" {
+		if exampleStr == "true" {
+			return true
+		} else if exampleStr == "false" {
+			return false
+		}
+		// Fall through to return original string if not valid boolean
+	}
+
+	// Handle numeric types
+	if goTypeName == "int" || goTypeName == "int32" || goTypeName == "int64" ||
+		goTypeName == "uint" || goTypeName == "uint32" || goTypeName == "uint64" {
+		if val, err := strconv.ParseInt(exampleStr, 10, 64); err == nil {
+			return val
+		}
+	}
+
+	if goTypeName == "float32" || goTypeName == "float64" {
+		if val, err := strconv.ParseFloat(exampleStr, 64); err == nil {
+			return val
+		}
+	}
+
+	// Handle array types with JSON parsing
+	if strings.HasPrefix(goTypeName, "[]") {
+		var result []interface{}
+		if err := json.Unmarshal([]byte(exampleStr), &result); err == nil {
+			return result
+		}
+	}
+
+	// For complex types (structs, maps), try JSON parsing
+	if goTypeName == "map" || !strings.Contains("string|Time", goTypeName) {
+		var result interface{}
+		if err := json.Unmarshal([]byte(exampleStr), &result); err == nil {
+			return result
+		}
+	}
+
+	// Default: return the string as-is
+	return exampleStr
+}
+
+func extractExampleValue(tag string) (string, bool) {
+	if exampleStart := strings.Index(tag, `example:"`); exampleStart != -1 {
+		exampleStart += len(`example:"`)
+		inEscape := false
+		for i, c := range tag[exampleStart:] {
+			if c == '\\' {
+				inEscape = !inEscape
+				continue
+			}
+			if c == '"' && !inEscape {
+				return tag[exampleStart : exampleStart+i], true
+			}
+			inEscape = false
+		}
+	}
+	return "", false
 }

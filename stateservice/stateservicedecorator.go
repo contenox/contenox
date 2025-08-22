@@ -12,7 +12,7 @@ type activityTrackerDecorator struct {
 	tracker libtracker.ActivityTracker
 }
 
-func (d *activityTrackerDecorator) Get(ctx context.Context) ([]statetype.LLMState, error) {
+func (d *activityTrackerDecorator) Get(ctx context.Context) ([]statetype.BackendRuntimeState, error) {
 	// Start tracking the operation
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,

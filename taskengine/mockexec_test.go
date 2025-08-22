@@ -16,7 +16,7 @@ func TestUnit_TaskExec_PromptToString(t *testing.T) {
 		MockError:       nil,
 	}
 
-	task := &taskengine.ChainTask{
+	task := &taskengine.TaskDefinition{
 		Handler: taskengine.HandleRawString,
 	}
 

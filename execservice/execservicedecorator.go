@@ -11,7 +11,7 @@ type activityTrackerDecorator struct {
 	tracker libtracker.ActivityTracker
 }
 
-func (d *activityTrackerDecorator) Execute(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
+func (d *activityTrackerDecorator) Execute(ctx context.Context, request *TaskRequest) (*SimpleExecutionResponse, error) {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"execute",

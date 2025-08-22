@@ -29,5 +29,5 @@ func (s *statemux) list(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, err, serverops.ListOperation)
 		return
 	}
-	serverops.Encode(w, r, http.StatusOK, internalModels) // @response []statetype.LLMState
+	serverops.Encode(w, r, http.StatusOK, internalModels) // @response []statetype.BackendRuntimeState
 }

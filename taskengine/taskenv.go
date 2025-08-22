@@ -95,7 +95,7 @@ func DataTypeFromString(s string) (DataType, error) {
 // EnvExecutor defines an environment for executing ChainDefinitions
 type EnvExecutor interface {
 	// ExecEnv executes a chain with input and returns final output
-	ExecEnv(ctx context.Context, chain *ChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error)
+	ExecEnv(ctx context.Context, chain *TaskChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error)
 }
 
 // ErrUnsupportedTaskType indicates unrecognized task type
@@ -144,7 +144,7 @@ func NewEnv(
 //
 // It manages the full lifecycle of task execution: rendering prompts, calling the
 // TaskExecutor, handling timeouts, retries, transitions, and collecting final output.
-func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *ChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error) {
+func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error) {
 	stack := exe.inspector.Start(ctx)
 
 	vars := map[string]any{
@@ -592,7 +592,7 @@ func compare(operator OperatorTerm, response, when string) (bool, error) {
 }
 
 // findTaskByID returns the task with the given ID from the task list.
-func findTaskByID(tasks []ChainTask, id string) (*ChainTask, error) {
+func findTaskByID(tasks []TaskDefinition, id string) (*TaskDefinition, error) {
 	for _, task := range tasks {
 		if task.ID == id {
 			return &task, nil
@@ -601,7 +601,7 @@ func findTaskByID(tasks []ChainTask, id string) (*ChainTask, error) {
 	return nil, fmt.Errorf("task not found: %s", id)
 }
 
-func validateChain(tasks []ChainTask) error {
+func validateChain(tasks []TaskDefinition) error {
 	if len(tasks) == 0 {
 		return fmt.Errorf("chain has no tasks %w", apiframework.ErrBadRequest)
 	}

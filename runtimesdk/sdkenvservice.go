@@ -36,7 +36,7 @@ func NewHTTPTasksEnvService(baseURL, token string, client *http.Client) execserv
 }
 
 // Execute implements execservice.TasksEnvService.Execute
-func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
+func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.TaskChainDefinition, input any, inputType taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
 	url := s.baseURL + "/tasks"
 
 	// Create request payload

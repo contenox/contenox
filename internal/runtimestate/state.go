@@ -29,7 +29,7 @@ const providerCacheDuration = 24 * time.Hour
 
 // providerCacheEntry holds the data and metadata for a cached provider state.
 type providerCacheEntry struct {
-	models    []statetype.ListModelResponse
+	models    []statetype.ModelPullStatus
 	timestamp time.Time
 	apiKey    string
 }
@@ -180,15 +180,15 @@ func (s *State) RunDownloadCycle(ctx context.Context) error {
 // Get returns a copy of the current observed state for all backends.
 // This provides a safe snapshot for reading state without risking modification
 // of the internal structures.
-func (s *State) Get(ctx context.Context) map[string]statetype.LLMState {
-	state := map[string]statetype.LLMState{}
+func (s *State) Get(ctx context.Context) map[string]statetype.BackendRuntimeState {
+	state := map[string]statetype.BackendRuntimeState{}
 	s.state.Range(func(key, value any) bool {
-		backend, ok := value.(*statetype.LLMState)
+		backend, ok := value.(*statetype.BackendRuntimeState)
 		if !ok {
 			// log.Fatalf("invalid type in state: %T", value)
 			return true
 		}
-		var backendCopy statetype.LLMState
+		var backendCopy statetype.BackendRuntimeState
 		raw, err := json.Marshal(backend)
 		if err != nil {
 			// log.Fatalf("failed to marshal backend: %v", err)
@@ -356,7 +356,7 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 	case "openai":
 		s.processOpenAIBackend(ctx, backend, declaredModels)
 	default:
-		brokenService := &statetype.LLMState{
+		brokenService := &statetype.BackendRuntimeState{
 			ID:      backend.ID,
 			Name:    backend.Name,
 			Models:  []string{},
@@ -388,11 +388,11 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	backendURL, err := url.Parse(backend.BaseURL)
 	if err != nil {
 		// log.Printf("Error parsing URL for backend %s: %v", backend.ID, err)
-		stateservice := &statetype.LLMState{
+		stateservice := &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: []statetype.ListModelResponse{},
+			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
 			Error:        "Invalid URL: " + err.Error(),
 		}
@@ -405,11 +405,11 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	existingModels, err := client.List(ctx)
 	if err != nil {
 		// log.Printf("Error listing models for backend %s: %v", backend.ID, err)
-		stateservice := &statetype.LLMState{
+		stateservice := &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: []statetype.ListModelResponse{},
+			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
 			Error:        err.Error(),
 		}
@@ -477,11 +477,11 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	modelResp, err := client.List(ctx)
 	if err != nil {
 		// log.Printf("Error listing running models for backend %s after deletion: %v", backend.ID, err)
-		stateservice := &statetype.LLMState{
+		stateservice := &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       models,
-			PulledModels: []statetype.ListModelResponse{},
+			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
 			Error:        err.Error(),
 		}
@@ -490,7 +490,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	}
 	// log.Printf("Updated model list for backend %s: %+v", backend.ID, modelResp.Models)
 
-	stateservice := &statetype.LLMState{
+	stateservice := &statetype.BackendRuntimeState{
 		ID:      backend.ID,
 		Name:    backend.Name,
 		Backend: *backend,
@@ -498,7 +498,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	}
 
 	// Create proper model entries with capabilities
-	pulledModels := make([]statetype.ListModelResponse, 0, len(modelResp.Models))
+	pulledModels := make([]statetype.ModelPullStatus, 0, len(modelResp.Models))
 	for _, model := range modelResp.Models {
 		lmr := statetype.ConvertOllamaModelResponse(&model)
 
@@ -536,11 +536,11 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 	modelsURL := strings.TrimSuffix(backend.BaseURL, "/") + "/v1/models"
 	req, err := http.NewRequestWithContext(ctx, "GET", modelsURL, nil)
 	if err != nil {
-		s.state.Store(backend.ID, &statetype.LLMState{
+		s.state.Store(backend.ID, &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []statetype.ListModelResponse{},
+			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Failed to create request: %v", err),
 		})
@@ -549,11 +549,11 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 
 	resp, err := client.Do(req)
 	if err != nil {
-		s.state.Store(backend.ID, &statetype.LLMState{
+		s.state.Store(backend.ID, &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []statetype.ListModelResponse{},
+			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("HTTP request failed: %v", err),
 		})
@@ -567,11 +567,11 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 		if readErr != nil {
 			bodyStr = fmt.Sprintf("<failed to read body: %v>", readErr)
 		}
-		s.state.Store(backend.ID, &statetype.LLMState{
+		s.state.Store(backend.ID, &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []statetype.ListModelResponse{},
+			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Unexpected status: %d %s", resp.StatusCode, bodyStr),
 		})
@@ -591,11 +591,11 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 		if readErr != nil {
 			bodyStr = fmt.Sprintf("<failed to read body: %v>", readErr)
 		}
-		s.state.Store(backend.ID, &statetype.LLMState{
+		s.state.Store(backend.ID, &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []statetype.ListModelResponse{},
+			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
 			Error:        fmt.Sprintf("Failed to decode response: %v | Raw response: %s", err, bodyStr),
 		})
@@ -603,11 +603,11 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 	}
 
 	if len(modelResp.Data) == 0 {
-		s.state.Store(backend.ID, &statetype.LLMState{
+		s.state.Store(backend.ID, &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
-			PulledModels: []statetype.ListModelResponse{},
+			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
 			Error:        "No models found in response",
 		})
@@ -616,13 +616,13 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 
 	servedModel := modelResp.Data[0].ID
 	// Create mock PulledModels for state reporting
-	res := &statetype.LLMState{
+	res := &statetype.BackendRuntimeState{
 		ID:      backend.ID,
 		Name:    backend.Name,
 		Models:  []string{servedModel},
 		Backend: *backend,
 	}
-	pulledModels := []statetype.ListModelResponse{
+	pulledModels := []statetype.ModelPullStatus{
 		{
 			Model: servedModel,
 		},
@@ -631,7 +631,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 	for _, m := range models {
 		if m.Model == servedModel {
 			found = true
-			pulledModels[0] = statetype.ListModelResponse{
+			pulledModels[0] = statetype.ModelPullStatus{
 				Name:          m.ID,
 				Model:         m.Model,
 				ModifiedAt:    m.UpdatedAt,
@@ -650,11 +650,11 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 }
 
 func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
-	stateInstance := &statetype.LLMState{
+	stateInstance := &statetype.BackendRuntimeState{
 		ID:           backend.ID,
 		Name:         backend.Name,
 		Backend:      *backend,
-		PulledModels: []statetype.ListModelResponse{},
+		PulledModels: []statetype.ModelPullStatus{},
 	}
 	stateInstance.SetAPIKey("")
 	// Retrieve API key configuration
@@ -736,7 +736,7 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 	}
 
 	modelNames := make([]string, 0, len(geminiResponse.Models))
-	pulledModels := make([]statetype.ListModelResponse, 0, len(geminiResponse.Models))
+	pulledModels := make([]statetype.ModelPullStatus, 0, len(geminiResponse.Models))
 	for _, m := range geminiResponse.Models {
 		resp, err := fetchGeminiModelInfo(ctx, backend.BaseURL, m.Name, cfg.APIKey, http.DefaultClient)
 		if err != nil {
@@ -763,10 +763,10 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 }
 
 func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
-	stateInstance := &statetype.LLMState{
+	stateInstance := &statetype.BackendRuntimeState{
 		ID:           backend.ID,
 		Name:         backend.Name,
-		PulledModels: []statetype.ListModelResponse{},
+		PulledModels: []statetype.ModelPullStatus{},
 		Backend:      *backend,
 	}
 
@@ -794,7 +794,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 				}
 
 				modelNames := make([]string, 0, len(entry.models))
-				pulledModels := make([]statetype.ListModelResponse, len(entry.models))
+				pulledModels := make([]statetype.ModelPullStatus, len(entry.models))
 				copy(pulledModels, entry.models) // Work on a copy
 				var undeclaredModels []string
 
@@ -882,7 +882,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 
 	// Process each model from the backend response
 	modelNames := make([]string, 0, len(openAIResponse.Data))
-	pulledModels := make([]statetype.ListModelResponse, 0, len(openAIResponse.Data))
+	pulledModels := make([]statetype.ModelPullStatus, 0, len(openAIResponse.Data))
 	var undeclaredModels []string
 
 	for _, m := range openAIResponse.Data {
@@ -890,7 +890,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 		modelNames = append(modelNames, modelID)
 
 		// Initialize with minimal data
-		modelResp := statetype.ListModelResponse{
+		modelResp := statetype.ModelPullStatus{
 			Model: modelID,
 			Name:  modelID,
 		}
@@ -932,7 +932,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 	})
 }
 
-func fetchGeminiModelInfo(ctx context.Context, baseURL, modelName, apiKey string, httpClient *http.Client) (*statetype.ListModelResponse, error) {
+func fetchGeminiModelInfo(ctx context.Context, baseURL, modelName, apiKey string, httpClient *http.Client) (*statetype.ModelPullStatus, error) {
 	url := fmt.Sprintf("%s/v1beta/%s", baseURL, modelName)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -972,7 +972,7 @@ func fetchGeminiModelInfo(ctx context.Context, baseURL, modelName, apiKey string
 			canEmbed = true
 		}
 	}
-	return &statetype.ListModelResponse{
+	return &statetype.ModelPullStatus{
 		Name:          modelName,
 		Model:         modelName,
 		ContextLength: modelResponse.InputTokenLimit,

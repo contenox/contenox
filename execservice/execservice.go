@@ -11,7 +11,7 @@ import (
 )
 
 type ExecService interface {
-	Execute(ctx context.Context, request *TaskRequest) (*TaskResponse, error)
+	Execute(ctx context.Context, request *TaskRequest) (*SimpleExecutionResponse, error)
 }
 
 type execService struct {
@@ -32,12 +32,12 @@ type TaskRequest struct {
 	ModelProvider string `json:"model_provider" example:"openai"`
 }
 
-type TaskResponse struct {
+type SimpleExecutionResponse struct {
 	ID       string `json:"id" example:"123e4567-e89b-12d3-a456-426614174000"`
 	Response string `json:"response" example:"I'm doing well, thank you!"`
 }
 
-func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
+func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*SimpleExecutionResponse, error) {
 	if request == nil {
 		return nil, apiframework.ErrEmptyRequest
 	}
@@ -60,7 +60,7 @@ func (s *execService) Execute(ctx context.Context, request *TaskRequest) (*TaskR
 		return nil, fmt.Errorf("failed to execute prompt: %w", err)
 	}
 
-	return &TaskResponse{
+	return &SimpleExecutionResponse{
 		ID:       uuid.NewString(),
 		Response: response,
 	}, nil

@@ -9,7 +9,7 @@ import (
 )
 
 // LocalProviderAdapter creates providers for self-hosted backends (Ollama, vLLM)
-func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.LLMState) ProviderFromRuntimeState {
+func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.BackendRuntimeState) ProviderFromRuntimeState {
 	// Create a flat list of providers (one per model per backend)
 	providersByType := make(map[string][]modelrepo.Provider)
 

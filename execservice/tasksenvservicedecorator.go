@@ -13,7 +13,7 @@ type activityTrackerTaskEnvDecorator struct {
 	tracker libtracker.ActivityTracker
 }
 
-func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *taskengine.ChainDefinition, input any, inputType taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
+func (d *activityTrackerTaskEnvDecorator) Execute(ctx context.Context, chain *taskengine.TaskChainDefinition, input any, inputType taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
 	// Extract useful metadata from the chain
 	chainID := chain.ID
 

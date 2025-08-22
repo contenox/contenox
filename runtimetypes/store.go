@@ -20,76 +20,76 @@ var ErrLimitParamExceeded = fmt.Errorf("limit exceeds maximum allowed value")
 var ErrAppendLimitExceeded = fmt.Errorf("append limit exceeds maximum allowed values")
 
 type Status struct {
-	Status    string `json:"status"`
-	Digest    string `json:"digest,omitempty"`
-	Total     int64  `json:"total,omitempty"`
-	Completed int64  `json:"completed,omitempty"`
-	Model     string `json:"model"`
-	BaseURL   string `json:"baseUrl"`
+	Status    string `json:"status" example:"downloading"`
+	Digest    string `json:"digest,omitempty" example:"sha256:9e3a6c0d3b5e7f8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a"`
+	Total     int64  `json:"total,omitempty" example:"1000000"`
+	Completed int64  `json:"completed,omitempty" example:"250000"`
+	Model     string `json:"model" example:"mistral:instruct"`
+	BaseURL   string `json:"baseUrl" example:"http://ollama-prod.internal:11434"`
 }
 
 type QueueItem struct {
-	URL   string `json:"url"`
-	Model string `json:"model"`
+	URL   string `json:"url" example:"http://ollama-prod.internal:11434"`
+	Model string `json:"model" example:"llama2:latest"`
 }
 
 type Backend struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	BaseURL string `json:"baseUrl"`
-	Type    string `json:"type"`
+	ID      string `json:"id" example:"b7d9e1a3-8f0c-4a7d-9b1e-2f3a4b5c6d7e"`
+	Name    string `json:"name" example:"ollama-production"`
+	BaseURL string `json:"baseUrl" example:"http://ollama-prod.internal:11434"`
+	Type    string `json:"type" example:"ollama"`
 
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	CreatedAt time.Time `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt time.Time `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
 type Model struct {
-	ID            string    `json:"id"`
-	Model         string    `json:"model"`
-	ContextLength int       `json:"contextLength"`
-	CanChat       bool      `json:"canChat"`
-	CanEmbed      bool      `json:"canEmbed"`
-	CanPrompt     bool      `json:"canPrompt"` // TODO: Implement the forms for this
-	CanStream     bool      `json:"canStream"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID            string    `json:"id" example:"m7d8e9f0a-1b2c-3d4e-5f6a-7b8c9d0e1f2a"`
+	Model         string    `json:"model" example:"mistral:instruct"`
+	ContextLength int       `json:"contextLength" example:"8192"`
+	CanChat       bool      `json:"canChat" example:"true"`
+	CanEmbed      bool      `json:"canEmbed" example:"false"`
+	CanPrompt     bool      `json:"canPrompt" example:"true"`
+	CanStream     bool      `json:"canStream" example:"true"`
+	CreatedAt     time.Time `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt     time.Time `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
 type Pool struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	PurposeType string `json:"purposeType"`
+	ID          string `json:"id" example:"p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4"`
+	Name        string `json:"name" example:"production-chat"`
+	PurposeType string `json:"purposeType" example:"Internal Tasks"`
 
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	CreatedAt time.Time `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt time.Time `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
 type Job struct {
-	ID           string    `json:"id"`
-	TaskType     string    `json:"taskType"`
-	Payload      []byte    `json:"payload"`
-	ScheduledFor int64     `json:"scheduledFor"`
-	ValidUntil   int64     `json:"validUntil"`
-	RetryCount   int       `json:"retryCount"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID           string    `json:"id" example:"j1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
+	TaskType     string    `json:"taskType" example:"model-download"`
+	Payload      []byte    `json:"payload" example:"{\"model\":\"mistral:instruct\",\"backend\":\"b7d9e1a3-8f0c-4a7d-9b1e-2f3a4b5c6d7e\"}"`
+	ScheduledFor int64     `json:"scheduledFor" example:"1717020800"`
+	ValidUntil   int64     `json:"validUntil" example:"1717024400"`
+	RetryCount   int       `json:"retryCount" example:"0"`
+	CreatedAt    time.Time `json:"createdAt" example:"2023-11-15T14:30:45Z"`
 }
 
 // KV represents a key-value pair in the database
 type KV struct {
-	Key       string          `json:"key"`
-	Value     json.RawMessage `json:"value"`
-	CreatedAt time.Time       `json:"createdAt"`
-	UpdatedAt time.Time       `json:"updatedAt"`
+	Key       string          `json:"key" example:"config:default-model"`
+	Value     json.RawMessage `json:"value" example:"\"mistral:instruct\""`
+	CreatedAt time.Time       `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt time.Time       `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
 type RemoteHook struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	EndpointURL string    `json:"endpointUrl"`
-	Method      string    `json:"method"`
-	TimeoutMs   int       `json:"timeoutMs"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string    `json:"id" example:"h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
+	Name        string    `json:"name" example:"send-email"`
+	EndpointURL string    `json:"endpointUrl" example:"http://hooks-endpoint:port"`
+	Method      string    `json:"method" example:"POST"`
+	TimeoutMs   int       `json:"timeoutMs" example:"5000"`
+	CreatedAt   time.Time `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt   time.Time `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
 type Store interface {

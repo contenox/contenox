@@ -17,22 +17,22 @@ import (
 func AddBackendRoutes(mux *http.ServeMux, backendService backendservice.Service, stateService stateservice.Service) {
 	b := &backendManager{service: backendService, stateService: stateService}
 
-	mux.HandleFunc("POST /backends", b.create)
-	mux.HandleFunc("GET /backends", b.list)
-	mux.HandleFunc("GET /backends/{id}", b.get)
-	mux.HandleFunc("PUT /backends/{id}", b.update)
-	mux.HandleFunc("DELETE /backends/{id}", b.delete)
+	mux.HandleFunc("POST /backends", b.createBackend)
+	mux.HandleFunc("GET /backends", b.listBackends)
+	mux.HandleFunc("GET /backends/{id}", b.getBackend)
+	mux.HandleFunc("PUT /backends/{id}", b.updateBackend)
+	mux.HandleFunc("DELETE /backends/{id}", b.deleteBackend)
 }
 
-type respBackendList struct {
+type backendSummary struct {
 	ID      string `json:"id" example:"backend-id"`
 	Name    string `json:"name" example:"backend-name"`
 	BaseURL string `json:"baseUrl" example:"http://localhost:11434"`
 	Type    string `json:"type" example:"ollama"`
 
-	Models       []string                      `json:"models"`
-	PulledModels []statetype.ListModelResponse `json:"pulledModels" oapiinclude:"runtimestate.ListModelResponse"`
-	Error        string                        `json:"error,omitempty" example:"error-message"`
+	Models       []string                    `json:"models"`
+	PulledModels []statetype.ModelPullStatus `json:"pulledModels" openapi_include_type:"statetype.ModelPullStatus"`
+	Error        string                      `json:"error,omitempty" example:"error-message"`
 
 	CreatedAt time.Time `json:"createdAt" example:"2023-01-01T00:00:00Z"`
 	UpdatedAt time.Time `json:"updatedAt" example:"2023-01-01T00:00:00Z"`
@@ -46,7 +46,7 @@ type backendManager struct {
 // Creates a new backend connection to an LLM provider.
 // Backends represent connections to LLM services (e.g., Ollama, OpenAI) that can host models.
 // Note: Creating a backend will be provisioned on the next synchronization cycle.
-func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
+func (b *backendManager) createBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	backend, err := serverops.Decode[runtimetypes.Backend](r) // @request runtimetypes.Backend
@@ -66,7 +66,7 @@ func (b *backendManager) create(w http.ResponseWriter, r *http.Request) {
 // Lists all configured backend connections with runtime status.
 // NOTE: Only backends assigned to at least one pool will be used for request processing.
 // Backends not assigned to any pool exist in the configuration but are completely ignored by the routing system.
-func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
+func (b *backendManager) listBackends(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Parse pagination parameters from query string
@@ -104,16 +104,16 @@ func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := []respBackendList{}
+	resp := []backendSummary{}
 	for _, backend := range backends {
-		item := respBackendList{
+		item := backendSummary{
 			ID:      backend.ID,
 			Name:    backend.Name,
 			BaseURL: backend.BaseURL,
 			Type:    backend.Type,
 		}
 		ok := false
-		var itemState statetype.LLMState
+		var itemState statetype.BackendRuntimeState
 		for _, l := range backendState {
 			if l.ID == backend.ID {
 				ok = true
@@ -130,23 +130,23 @@ func (b *backendManager) list(w http.ResponseWriter, r *http.Request) {
 		resp = append(resp, item)
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, resp) // @response []backendapi.respBackendList
+	_ = serverops.Encode(w, r, http.StatusOK, resp) // @response []backendapi.backendSummary
 }
 
-type respBackend struct {
-	ID           string                        `json:"id"`
-	Name         string                        `json:"name"`
-	BaseURL      string                        `json:"baseUrl"`
-	Type         string                        `json:"type"`
-	Models       []string                      `json:"models"`
-	PulledModels []statetype.ListModelResponse `json:"pulledModels" oapiinclude:"statetype.ListModelResponse"`
-	Error        string                        `json:"error,omitempty"`
-	CreatedAt    time.Time                     `json:"createdAt"`
-	UpdatedAt    time.Time                     `json:"updatedAt"`
+type backendDetails struct {
+	ID           string                      `json:"id" example:"b7d9e1a3-8f0c-4a7d-9b1e-2f3a4b5c6d7e"`
+	Name         string                      `json:"name" example:"ollama-production"`
+	BaseURL      string                      `json:"baseUrl" example:"http://ollama-prod.internal:11434"`
+	Type         string                      `json:"type" example:"ollama"`
+	Models       []string                    `json:"models" example:"[\"mistral:instruct\", \"llama2:7b\", \"nomic-embed-text:latest\"]"`
+	PulledModels []statetype.ModelPullStatus `json:"pulledModels" openapi_include_type:"statetype.ModelPullStatus"`
+	Error        string                      `json:"error,omitempty" example:"connection timeout: context deadline exceeded"`
+	CreatedAt    time.Time                   `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt    time.Time                   `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
 // Retrieves complete information for a specific backend
-func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
+func (b *backendManager) getBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
 	if id == "" {
@@ -168,7 +168,7 @@ func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ok := false
-	var itemState statetype.LLMState
+	var itemState statetype.BackendRuntimeState
 	for _, l := range state {
 		if l.ID == id {
 			ok = true
@@ -178,13 +178,13 @@ func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	resp := respBackend{
+	resp := backendDetails{
 		ID:           backend.ID,
 		Name:         backend.Name,
 		BaseURL:      backend.BaseURL,
 		Type:         backend.Type,
 		Models:       []string{},
-		PulledModels: []statetype.ListModelResponse{},
+		PulledModels: []statetype.ModelPullStatus{},
 		Error:        "",
 		CreatedAt:    backend.CreatedAt,
 		UpdatedAt:    backend.UpdatedAt,
@@ -196,13 +196,13 @@ func (b *backendManager) get(w http.ResponseWriter, r *http.Request) {
 		resp.Error = itemState.Error
 	}
 
-	serverops.Encode(w, r, http.StatusOK, resp) // @response backendapi.respBackend
+	serverops.Encode(w, r, http.StatusOK, resp) // @response backendapi.backendDetails
 }
 
 // Updates an existing backend configuration.
 // The ID from the URL path overrides any ID in the request body.
 // Note: Updating a backend will be provisioned on the next synchronization cycle.
-func (b *backendManager) update(w http.ResponseWriter, r *http.Request) {
+func (b *backendManager) updateBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
 	if id == "" {
@@ -225,9 +225,9 @@ func (b *backendManager) update(w http.ResponseWriter, r *http.Request) {
 }
 
 // Removes a backend connection.
-// This does not delete models from the remote provider, only removes the connection.
+// This does not deleteBackend models from the remote provider, only removes the connection.
 // Returns a simple "backend removed" confirmation message on success.
-func (b *backendManager) delete(w http.ResponseWriter, r *http.Request) {
+func (b *backendManager) deleteBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
 	if id == "" {

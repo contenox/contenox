@@ -18,7 +18,7 @@ type TaskExecutor interface {
 	// TaskExec runs a single task and returns output
 	// It consumes a prompt and resolver policy, and returns structured output
 	// TODO: THIS IS NOT TRUE: alongside the raw LLM response.
-	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, currentTask *ChainTask, input any, dataType DataType) (any, DataType, string, error)
+	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error)
 }
 
 // SimpleExec is a basic implementation of TaskExecutor.
@@ -232,7 +232,7 @@ func (exe *SimpleExec) score(ctx context.Context, systemInstruction string, llmC
 }
 
 // TaskExec dispatches task execution based on the task type.
-func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time, ctxLength int, currentTask *ChainTask, input any, dataType DataType) (any, DataType, string, error) {
+func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time, ctxLength int, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error) {
 	var transitionEval string
 	var taskErr error
 	var output any = input

@@ -36,7 +36,7 @@ func NewHTTPExecService(baseURL, token string, client *http.Client) execservice.
 }
 
 // Execute implements execservice.ExecService.Execute
-func (s *HTTPExecService) Execute(ctx context.Context, request *execservice.TaskRequest) (*execservice.TaskResponse, error) {
+func (s *HTTPExecService) Execute(ctx context.Context, request *execservice.TaskRequest) (*execservice.SimpleExecutionResponse, error) {
 	url := s.baseURL + "/execute"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
@@ -69,7 +69,7 @@ func (s *HTTPExecService) Execute(ctx context.Context, request *execservice.Task
 	}
 
 	// Decode response
-	var taskResponse execservice.TaskResponse
+	var taskResponse execservice.SimpleExecutionResponse
 	if err := json.NewDecoder(resp.Body).Decode(&taskResponse); err != nil {
 		return nil, err
 	}

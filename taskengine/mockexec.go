@@ -18,14 +18,14 @@ type MockTaskExecutor struct {
 	ErrorSequence           []error
 
 	// Tracking
-	CalledWithTask   *ChainTask
+	CalledWithTask   *TaskDefinition
 	CalledWithInput  any
 	CalledWithPrompt string
 	callCount        int
 }
 
 // TaskExec is the mock implementation of the TaskExec method.
-func (m *MockTaskExecutor) TaskExec(ctx context.Context, startingTime time.Time, tokenLimit int, currentTask *ChainTask, input any, dataType DataType) (any, DataType, string, error) {
+func (m *MockTaskExecutor) TaskExec(ctx context.Context, startingTime time.Time, tokenLimit int, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error) {
 	m.callCount++
 	m.CalledWithTask = currentTask
 	m.CalledWithInput = input

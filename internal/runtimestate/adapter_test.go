@@ -20,12 +20,12 @@ func TestUnit_ModelProviderAdapter_SetsCorrectModelCapabilities(t *testing.T) {
 	backendID := "backend-test"
 	backendURL := "http://host:1234"
 
-	runtime := map[string]statetype.LLMState{
+	runtime := map[string]statetype.BackendRuntimeState{
 		backendID: {
 			ID:      backendID,
 			Name:    "Test Backend",
 			Backend: runtimetypes.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
-			PulledModels: []statetype.ListModelResponse{
+			PulledModels: []statetype.ModelPullStatus{
 				{
 					Name:          chatModelName,
 					Model:         chatModelName,
@@ -92,12 +92,12 @@ func TestUnit_ModelProviderAdapter_PropagatesCapabilitiesCorrectly(t *testing.T)
 	backendURL := "http://host:1234"
 
 	// Define models with specific capabilities
-	runtime := map[string]statetype.LLMState{
+	runtime := map[string]statetype.BackendRuntimeState{
 		backendID: {
 			ID:      backendID,
 			Name:    "Test Backend",
 			Backend: runtimetypes.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
-			PulledModels: []statetype.ListModelResponse{
+			PulledModels: []statetype.ModelPullStatus{
 				{
 					Name:          "chat-model",
 					Model:         "chat-model",
@@ -172,12 +172,12 @@ func TestUnit_ModelProviderAdapter_HandlesMissingCapabilities(t *testing.T) {
 	backendURL := "http://host:1234"
 
 	// Define model with partial capabilities
-	runtime := map[string]statetype.LLMState{
+	runtime := map[string]statetype.BackendRuntimeState{
 		backendID: {
 			ID:      backendID,
 			Name:    "Test Backend",
 			Backend: runtimetypes.Backend{ID: backendID, Name: "Ollama", Type: "ollama", BaseURL: backendURL},
-			PulledModels: []statetype.ListModelResponse{
+			PulledModels: []statetype.ModelPullStatus{
 				{
 					Name:       "partial-model",
 					Model:      "partial-model",

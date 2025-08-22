@@ -18,10 +18,10 @@ func AddExecRoutes(mux *http.ServeMux, promptService execservice.ExecService, ta
 		taskService:   taskService,
 		embedService:  embedService,
 	}
-	mux.HandleFunc("POST /execute", f.execute)
-	mux.HandleFunc("POST /tasks", f.tasks)
+	mux.HandleFunc("POST /execute", f.executeSimpleTask)
+	mux.HandleFunc("POST /tasks", f.executeTaskChain)
 	mux.HandleFunc("GET /supported", f.supported)
-	mux.HandleFunc("POST /embed", f.embed)
+	mux.HandleFunc("POST /embed", f.generateEmbeddings)
 	mux.HandleFunc("GET /defaultmodel", f.defaultModel)
 }
 
@@ -35,7 +35,7 @@ type taskManager struct {
 // This endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.
 // Requests are routed ONLY to backends that have the default model available in any shared pool.
 // If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
-func (tm *taskManager) execute(w http.ResponseWriter, r *http.Request) {
+func (tm *taskManager) executeSimpleTask(w http.ResponseWriter, r *http.Request) {
 	req, err := serverops.Decode[execservice.TaskRequest](r) // @request execservice.TaskRequest
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
@@ -50,16 +50,16 @@ func (tm *taskManager) execute(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, resp) // @response execservice.TaskResponse
 }
 
-type taskExec struct {
-	Input     any                         `json:"input"`
-	InputType string                      `json:"inputType"`
-	Chain     *taskengine.ChainDefinition `json:"chain" oapiinclude:"taskengine.ChainDefinition"`
+type taskExecutionRequest struct {
+	Input     any                             `json:"input" example:"What is the capital of France"`
+	InputType string                          `json:"inputType" example:"string"`
+	Chain     *taskengine.TaskChainDefinition `json:"chain" openapi_include_type:"taskengine.TaskChainDefinition"`
 }
 
-type taskResponse struct {
-	Output     any                            `json:"output"`
-	OutputType string                         `json:"outputType"`
-	State      []taskengine.CapturedStateUnit `json:"state" oapiinclude:"taskengine.CapturedStateUnit"`
+type taskExecutionResponse struct {
+	Output     any                            `json:"output" example:"Paris"`
+	OutputType string                         `json:"outputType" example:"string"`
+	State      []taskengine.CapturedStateUnit `json:"state" openapi_include_type:"taskengine.CapturedStateUnit"`
 }
 
 // Executes dynamic task-chain workflows.
@@ -67,8 +67,8 @@ type taskResponse struct {
 // external hooks, and captured execution state.
 // Requests are routed ONLY to backends that have the requested model available in any shared pool.
 // If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
-func (tm *taskManager) tasks(w http.ResponseWriter, r *http.Request) {
-	req, err := serverops.Decode[taskExec](r) // @request execapi.taskExec
+func (tm *taskManager) executeTaskChain(w http.ResponseWriter, r *http.Request) {
+	req, err := serverops.Decode[taskExecutionRequest](r) // @request execapi.taskExecutionRequest
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
 		return
@@ -232,11 +232,11 @@ func (tm *taskManager) tasks(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
 		return
 	}
-	var response taskResponse
+	var response taskExecutionResponse
 	response.Output = resp
 	response.OutputType = outputType.String()
 	response.State = capturedStateUnits
-	_ = serverops.Encode(w, r, http.StatusOK, response) // @response execapi.taskResponse
+	_ = serverops.Encode(w, r, http.StatusOK, response) // @response execapi.taskExecutionResponse
 }
 
 // Lists available task-chain hook types.
@@ -263,7 +263,7 @@ type EmbedResponse struct {
 // Uses the system's default embedding model configured at startup.
 // Requests are routed ONLY to backends that have the default model available in any shared pool.
 // If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
-func (tm *taskManager) embed(w http.ResponseWriter, r *http.Request) {
+func (tm *taskManager) generateEmbeddings(w http.ResponseWriter, r *http.Request) {
 	req, err := serverops.Decode[EmbedRequest](r) // @request execapi.EmbedRequest
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.CreateOperation)

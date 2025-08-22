@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/contenox/runtime/libtracker"
 	libkv "github.com/contenox/runtime/libkvstore"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
@@ -22,8 +22,8 @@ func TestUnit_SimpleEnv_ExecEnv_SingleTask(t *testing.T) {
 	env, err := taskengine.NewEnv(t.Context(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
 				Handler:        taskengine.HandleRawString,
@@ -55,8 +55,8 @@ func TestUnit_SimpleEnv_ExecEnv_FailsAfterRetries(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
 				Handler:        taskengine.HandleRawString,
@@ -83,8 +83,8 @@ func TestUnit_SimpleEnv_ExecEnv_TransitionsToNextTask(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
 				Handler:        taskengine.HandleRawString,
@@ -124,8 +124,8 @@ func TestUnit_SimpleEnv_ExecEnv_ErrorTransition(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
 				Handler:        taskengine.HandleRawString,
@@ -162,8 +162,8 @@ func TestUnit_SimpleEnv_ExecEnv_PrintTemplate(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
 				Handler:        taskengine.HandleRawString,
@@ -194,8 +194,8 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_OriginalInput(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
 				Handler:        taskengine.HandleRawString,
@@ -225,8 +225,8 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "transform",
 				Handler:        taskengine.HandleParseNumber,
@@ -266,8 +266,8 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "moderate",
 				Handler:        taskengine.HandleParseNumber,
@@ -317,8 +317,8 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_InvalidVariable(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
 				Handler:        taskengine.HandleRawString,
@@ -348,8 +348,8 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_DefaultBehavior(t *testing.T) {
 	env, err := taskengine.NewEnv(context.Background(), tracker, taskengine.NewAlertSink(&libkv.VKManager{}), mockExec, &taskengine.SimpleInspector{})
 	require.NoError(t, err)
 
-	chain := &taskengine.ChainDefinition{
-		Tasks: []taskengine.ChainTask{
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
 				Handler:        taskengine.HandleRawString,

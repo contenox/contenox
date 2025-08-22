@@ -16,12 +16,12 @@ import (
 func AddModelRoutes(mux *http.ServeMux, modelService modelservice.Service, dwService downloadservice.Service) {
 	s := &service{service: modelService, dwService: dwService}
 
-	mux.HandleFunc("POST /models", s.append)
-	mux.HandleFunc("GET /models", s.list)
-	mux.HandleFunc("PUT /models/{id}", s.update)
+	mux.HandleFunc("POST /models", s.createModel)
+	mux.HandleFunc("GET /models", s.listModels)
+	mux.HandleFunc("PUT /models/{id}", s.updateModel)
 	mux.HandleFunc("GET /internal/models", s.listInternal)
 	// mux.HandleFunc("GET /v1/models/{model}", s.modelDetails) // TODO: Implement model details endpoint
-	mux.HandleFunc("DELETE /models/{model}", s.delete)
+	mux.HandleFunc("DELETE /models/{model}", s.deleteModel)
 }
 
 type service struct {
@@ -33,7 +33,7 @@ type service struct {
 // The model must be available in a configured backend or will be queued for download.
 // IMPORTANT: Models not assigned to any pool will NOT be available for request processing.
 // If pools are enabled, to make a model available to backends, it must be explicitly added to at least one pool.
-func (s *service) append(w http.ResponseWriter, r *http.Request) {
+func (s *service) createModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	model, err := serverops.Decode[runtimetypes.Model](r) // @request runtimetypes.Model
@@ -53,12 +53,12 @@ func (s *service) append(w http.ResponseWriter, r *http.Request) {
 
 type OpenAIModel struct {
 	ID      string `json:"id" example:"mistral:latest"`
-	Object  string `json:"object" example:"model"`
+	Object  string `json:"object" example:"mistral:latest"`
 	Created int64  `json:"created" example:"1717020800"`
 	OwnedBy string `json:"owned_by" example:"system"`
 }
 
-type ListResponse struct {
+type OpenAICompatibleModelList struct {
 	Object string        `json:"object" example:"list"`
 	Data   []OpenAIModel `json:"data"`
 }
@@ -67,7 +67,7 @@ type ListResponse struct {
 // Returns models as they would appear in OpenAI's /v1/models endpoint.
 // NOTE: Only models assigned to at least one pool will be available for request processing.
 // Models not assigned to any pool exist in the configuration but are completely ignored by the routing system.
-func (s *service) list(w http.ResponseWriter, r *http.Request) {
+func (s *service) listModels(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Parse pagination parameters from query string
@@ -111,19 +111,19 @@ func (s *service) list(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response := ListResponse{
+	response := OpenAICompatibleModelList{
 		Object: "list",
 		Data:   openAIModels,
 	}
 
-	serverops.Encode(w, r, http.StatusOK, response) // @response backendapi.ListResponse
+	serverops.Encode(w, r, http.StatusOK, response) // @response backendapi.OpenAICompatibleModelList
 }
 
 // Updates an existing model registration.
 // Only mutable fields (like capabilities and context length) can be updated.
 // The model ID cannot be changed.
 // Returns the updated model configuration.
-func (s *service) update(w http.ResponseWriter, r *http.Request) {
+func (s *service) updateModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Extract and validate model ID from path
@@ -206,7 +206,7 @@ func (s *service) listInternal(w http.ResponseWriter, r *http.Request) {
 // Deletes a model from the system registry.
 // - Does not remove the model from backend storage (requires separate backend operation)
 // - Accepts 'purge=true' query parameter to also remove related downloads from queue
-func (s *service) delete(w http.ResponseWriter, r *http.Request) {
+func (s *service) deleteModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	modelName := url.PathEscape(r.PathValue("model"))
 	if modelName == "" {

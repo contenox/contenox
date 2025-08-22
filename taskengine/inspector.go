@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/contenox/runtime/libtracker"
 	libkv "github.com/contenox/runtime/libkvstore"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type Inspector interface {
@@ -32,24 +32,24 @@ type StackTrace interface {
 type ExecutionState struct {
 	Variables   map[string]any
 	DataTypes   map[string]DataType
-	CurrentTask *ChainTask
+	CurrentTask *TaskDefinition
 }
 
 type CapturedStateUnit struct {
-	TaskID      string        `json:"taskID"`
-	TaskHandler string        `json:"taskHandler"`
-	InputType   DataType      `json:"inputType"`
-	OutputType  DataType      `json:"outputType"`
-	Transition  string        `json:"transition"`
-	Duration    time.Duration `json:"duration"`
+	TaskID      string        `json:"taskID" example:"validate_input"`
+	TaskHandler string        `json:"taskHandler" example:"condition_key"`
+	InputType   DataType      `json:"inputType" example:"string"`
+	OutputType  DataType      `json:"outputType" example:"string"`
+	Transition  string        `json:"transition" example:"valid_input"`
+	Duration    time.Duration `json:"duration" example:"452000000"` // 452ms in nanoseconds
 	Error       ErrorResponse `json:"error"`
-	Input       string        `json:"input"`
-	Output      string        `json:"output"`
+	Input       string        `json:"input" example:"This is a test input that needs validation"`
+	Output      string        `json:"output" example:"valid"`
 }
 
 type ErrorResponse struct {
 	ErrorInternal error  `json:"-"`
-	Error         string `json:"error"`
+	Error         string `json:"error" example:"validation failed: input contains prohibited content"`
 }
 
 func NewSimpleInspector(kvManager libkv.KVManager) *SimpleInspector {
@@ -100,7 +100,7 @@ type SimpleStackTrace struct {
 	breakpoints map[string]bool
 	vars        map[string]interface{}
 	dataTypes   map[string]DataType
-	currentTask *ChainTask
+	currentTask *TaskDefinition
 	ctx         context.Context
 	kvManager   libkv.KVManager
 }
