@@ -23,10 +23,8 @@ type Service interface {
 }
 
 type service struct {
-	dbInstance      libdb.DBManager
-	psInstance      libbus.Messenger
-	securityEnabled bool
-	jwtSecret       string
+	dbInstance libdb.DBManager
+	psInstance libbus.Messenger
 }
 
 func New(dbInstance libdb.DBManager, psInstance libbus.Messenger) Service {
