@@ -97,11 +97,6 @@ func (b *backendManager) listBackends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.ListOperation)
-		return
-	}
-
 	backendState, err := b.stateService.Get(ctx)
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.ListOperation)
