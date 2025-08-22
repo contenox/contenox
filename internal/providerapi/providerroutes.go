@@ -102,7 +102,7 @@ func (p *providerManager) status(providerType string) func(w http.ResponseWriter
 // Removes provider configuration from the system.
 // After deletion, the provider will no longer be available for model execution.
 func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
-	providerType := r.PathValue("providerType")
+	providerType := serverops.GetPathParam(r, "providerType", "The type of the provider to delete (e.g., 'openai', 'gemini').")
 	if providerType == "" {
 		_ = serverops.Error(w, r, errors.New("providerType is required in path"), serverops.DeleteOperation)
 		return
@@ -117,12 +117,17 @@ func (p *providerManager) deleteConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // Lists all configured external providers with pagination support.
+// Lists all configured external providers with pagination support.
 func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Parse pagination parameters from query string
+	// Use the new helper for pagination parameters
+	limitStr := serverops.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
+	cursorStr := serverops.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
+
+	// Parse pagination parameters from the retrieved strings
 	var cursor *time.Time
-	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+	if cursorStr != "" {
 		t, err := time.Parse(time.RFC3339Nano, cursorStr)
 		if err != nil {
 			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
@@ -132,15 +137,11 @@ func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 		cursor = &t
 	}
 
-	limit := 100 // Default limit
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		i, err := strconv.Atoi(limitStr)
-		if err != nil {
-			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
-			_ = serverops.Error(w, r, err, serverops.ListOperation)
-			return
-		}
-		limit = i
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
 	}
 
 	configs, err := p.providerService.ListProviderConfigs(ctx, cursor, limit)
@@ -154,7 +155,7 @@ func (p *providerManager) listConfigs(w http.ResponseWriter, r *http.Request) {
 
 // Retrieves configuration details for a specific external provider.
 func (p *providerManager) get(w http.ResponseWriter, r *http.Request) {
-	providerType := r.PathValue("providerType")
+	providerType := serverops.GetPathParam(r, "providerType", "The type of the provider to retrieve (e.g., 'openai', 'gemini').")
 	if providerType == "" {
 		_ = serverops.Error(w, r, errors.New("providerType is required in path"), serverops.GetOperation)
 		return

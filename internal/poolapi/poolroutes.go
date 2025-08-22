@@ -69,7 +69,7 @@ func (h *poolHandler) createPool(w http.ResponseWriter, r *http.Request) {
 // Retrieves a specific pool by its unique ID.
 func (h *poolHandler) getPool(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := url.PathEscape(r.PathValue("id"))
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the pool.")
 	if id == "" {
 		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.GetOperation)
 		return
@@ -88,7 +88,7 @@ func (h *poolHandler) getPool(w http.ResponseWriter, r *http.Request) {
 // Useful for configuration where ID might not be known but name is consistent.
 func (h *poolHandler) getPoolByName(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	name := url.PathEscape(r.PathValue("name"))
+	name := serverops.GetPathParam(r, "name", "The unique, human-readable name of the pool.")
 	if name == "" {
 		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.GetOperation)
 		return
@@ -107,7 +107,7 @@ func (h *poolHandler) getPoolByName(w http.ResponseWriter, r *http.Request) {
 // The ID from the URL path overrides any ID in the request body.
 func (h *poolHandler) updatePool(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := url.PathEscape(r.PathValue("id"))
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the pool to be updated.")
 	if id == "" {
 		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
 		return
@@ -133,7 +133,7 @@ func (h *poolHandler) updatePool(w http.ResponseWriter, r *http.Request) {
 // Returns a simple "deleted" confirmation message on success.
 func (h *poolHandler) deletePool(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := url.PathEscape(r.PathValue("id"))
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the pool to be deleted.")
 	if id == "" {
 		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
 		return
@@ -166,7 +166,16 @@ func (h *poolHandler) listPools(w http.ResponseWriter, r *http.Request) {
 // Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 func (h *poolHandler) listPoolsByPurpose(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	purpose := url.PathEscape(r.PathValue("purpose"))
+	purpose := serverops.GetPathParam(r, "purpose", "The purpose category to filter pools by (e.g., 'embeddings').")
+	if purpose == "" {
+		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
+		return
+	}
+
+	// Parse pagination parameters using the helper
+	limitStr := serverops.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
+	cursorStr := serverops.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
+
 	if purpose == "" {
 		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
 		return
@@ -174,7 +183,7 @@ func (h *poolHandler) listPoolsByPurpose(w http.ResponseWriter, r *http.Request)
 
 	// Parse pagination parameters from query string
 	var cursor *time.Time
-	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+	if cursorStr != "" {
 		t, err := time.Parse(time.RFC3339Nano, cursorStr)
 		if err != nil {
 			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
@@ -185,7 +194,7 @@ func (h *poolHandler) listPoolsByPurpose(w http.ResponseWriter, r *http.Request)
 	}
 
 	limit := 100 // Default limit
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+	if limitStr != "" {
 		i, err := strconv.Atoi(limitStr)
 		if err != nil {
 			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
@@ -209,8 +218,8 @@ func (h *poolHandler) listPoolsByPurpose(w http.ResponseWriter, r *http.Request)
 // This enables request routing between the backend and models that share this pool.
 func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	poolID := url.PathEscape(r.PathValue("poolID"))
-	backendID := url.PathEscape(r.PathValue("backendID"))
+	poolID := serverops.GetPathParam(r, "poolID", "The unique identifier of the pool.")
+	backendID := serverops.GetPathParam(r, "backendID", "The unique identifier of the backend to be assigned.")
 
 	if poolID == "" || backendID == "" {
 		serverops.Error(w, r, fmt.Errorf("poolID and backendID are required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
@@ -229,8 +238,8 @@ func (h *poolHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 // Requests requiring models from this pool will no longer be routed to this backend.
 func (h *poolHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	poolID := url.PathEscape(r.PathValue("poolID"))
-	backendID := url.PathEscape(r.PathValue("backendID"))
+	poolID := serverops.GetPathParam(r, "poolID", "The unique identifier of the pool.")
+	backendID := serverops.GetPathParam(r, "backendID", "The unique identifier of the backend to be removed.")
 
 	if poolID == "" || backendID == "" {
 		serverops.Error(w, r, fmt.Errorf("poolID and backendID required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
@@ -268,7 +277,7 @@ func (h *poolHandler) listBackendsByPool(w http.ResponseWriter, r *http.Request)
 // Useful for understanding which model sets a backend has access to.
 func (h *poolHandler) listPoolsForBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	backendID := url.PathEscape(r.PathValue("backendID"))
+	backendID := serverops.GetPathParam(r, "backendID", "The unique identifier of the backend.")
 	if backendID == "" {
 		serverops.Error(w, r, fmt.Errorf("backendID required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
 		return
@@ -288,8 +297,8 @@ func (h *poolHandler) listPoolsForBackend(w http.ResponseWriter, r *http.Request
 // This enables request routing between the model and backends that share this pool.
 func (h *poolHandler) assignModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	poolID := url.PathEscape(r.PathValue("poolID"))
-	modelID := url.PathEscape(r.PathValue("modelID"))
+	poolID := serverops.GetPathParam(r, "poolID", "The unique identifier of the pool.")
+	modelID := serverops.GetPathParam(r, "modelID", "The unique identifier of the model to be assigned.")
 
 	if poolID == "" || modelID == "" {
 		serverops.Error(w, r, fmt.Errorf("poolID and modelID required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
@@ -309,8 +318,8 @@ func (h *poolHandler) assignModel(w http.ResponseWriter, r *http.Request) {
 // This model can still be used with backends in other pools where it remains assigned.
 func (h *poolHandler) removeModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	poolID := url.PathEscape(r.PathValue("poolID"))
-	modelID := url.PathEscape(r.PathValue("modelID"))
+	poolID := serverops.GetPathParam(r, "poolID", "The unique identifier of the pool.")
+	modelID := serverops.GetPathParam(r, "modelID", "The unique identifier of the model to be removed.")
 
 	if poolID == "" || modelID == "" {
 		serverops.Error(w, r, fmt.Errorf("poolID and modelID required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
@@ -329,7 +338,7 @@ func (h *poolHandler) removeModel(w http.ResponseWriter, r *http.Request) {
 // Returns basic model information without backend-specific details.
 func (h *poolHandler) listModelsByPool(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	poolID := url.PathEscape(r.PathValue("poolID"))
+	poolID := serverops.GetPathParam(r, "poolID", "The unique identifier of the pool.")
 	if poolID == "" {
 		serverops.Error(w, r, fmt.Errorf("poolID required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
 		return
@@ -348,7 +357,7 @@ func (h *poolHandler) listModelsByPool(w http.ResponseWriter, r *http.Request) {
 // Useful for understanding where a model is deployed across the system.
 func (h *poolHandler) listPoolsForModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	modelID := url.PathEscape(r.PathValue("modelID"))
+	modelID := serverops.GetPathParam(r, "modelID", "The unique identifier of the model.")
 	if modelID == "" {
 		serverops.Error(w, r, fmt.Errorf("modelID required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
 		return

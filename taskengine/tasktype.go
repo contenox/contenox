@@ -148,7 +148,7 @@ type TaskTransition struct {
 // selected when the task's output matches the specified condition.
 type TransitionBranch struct {
 	// Operator defines how to compare the task's output to When.
-	Operator OperatorTerm `yaml:"operator,omitempty" json:"operator,omitempty" example:"equals"`
+	Operator OperatorTerm `yaml:"operator,omitempty" json:"operator,omitempty" example:"equals" openapi_include_type:"string"`
 
 	// When specifies the condition that must be met to follow this branch.
 	// Format depends on the task type:
@@ -273,7 +273,7 @@ type TaskDefinition struct {
 	Description string `yaml:"description" json:"description" example:"Validates user input meets quality requirements"`
 
 	// Handler determines how the LLM output (or hook) will be interpreted.
-	Handler TaskHandler `yaml:"handler" json:"handler" example:"condition_key" openapi_include_type:"taskengine.TaskHandler"`
+	Handler TaskHandler `yaml:"handler" json:"handler" example:"condition_key" openapi_include_type:"string"`
 
 	// SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.
 	SystemInstruction string `yaml:"system_instruction,omitempty" json:"system_instruction,omitempty" example:"You are a quality control assistant. Respond only with 'valid' or 'invalid'."`

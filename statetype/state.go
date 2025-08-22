@@ -12,7 +12,7 @@ type BackendRuntimeState struct {
 	ID           string               `json:"id" example:"b7d9e1a3-8f0c-4a7d-9b1e-2f3a4b5c6d7e"`
 	Name         string               `json:"name" example:"ollama-production"`
 	Models       []string             `json:"models" example:"[\"mistral:instruct\", \"llama2:7b\", \"nomic-embed-text:latest\"]"`
-	PulledModels []ModelPullStatus    `json:"pulledModels" openapi_include_type:"statetype.ListModelResponse"`
+	PulledModels []ModelPullStatus    `json:"pulledModels" openapi_include_type:"statetype.ModelPullStatus"`
 	Backend      runtimetypes.Backend `json:"backend"`
 	// Error stores a description of the last encountered error when
 	// interacting with or reconciling this backend's state, if any.

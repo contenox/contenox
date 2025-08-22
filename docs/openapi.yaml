@@ -47,7 +47,7 @@ components:
             properties:
                 data:
                     items:
-                        $ref: '#/components/schemas/backendapi_OpenAIModel'
+                        type: object
                     type: array
                 object:
                     example: list
@@ -55,26 +55,6 @@ components:
             required:
                 - object
                 - data
-            type: object
-        backendapi_OpenAIModel:
-            properties:
-                created:
-                    example: 1717020800
-                    type: integer
-                id:
-                    example: mistral:latest
-                    type: string
-                object:
-                    example: mistral:latest
-                    type: string
-                owned_by:
-                    example: system
-                    type: string
-            required:
-                - id
-                - object
-                - created
-                - owned_by
             type: object
         backendapi_backendDetails:
             properties:
@@ -100,9 +80,7 @@ components:
                     example: ollama-production
                     type: string
                 pulledModels:
-                    items:
-                        $ref: '#/components/schemas/statetype_ModelPullStatus'
-                    type: array
+                    $ref: '#/components/schemas/statetype_ModelPullStatus'
                 type:
                     example: ollama
                     type: string
@@ -143,9 +121,7 @@ components:
                     example: backend-name
                     type: string
                 pulledModels:
-                    items:
-                        $ref: '#/components/schemas/statetype_ModelPullStatus'
-                    type: array
+                    $ref: '#/components/schemas/statetype_ModelPullStatus'
                 type:
                     example: ollama
                     type: string
@@ -173,7 +149,7 @@ components:
                     example: "1234567890"
                     type: string
                 modelJob:
-                    type: object
+                    $ref: '#/components/schemas/runtimetypes_QueueItem'
                 scheduledFor:
                     example: 1630483200
                     type: integer
@@ -220,11 +196,9 @@ components:
         execapi_taskExecutionRequest:
             properties:
                 chain:
-                    items:
-                        $ref: '#/components/schemas/taskengine_TaskChainDefinition'
+                    $ref: '#/components/schemas/taskengine_TaskChainDefinition'
                 input:
-                    example: What is the capital of France
-                    type: object
+                    $ref: '#/components/schemas/object'
                 inputType:
                     example: string
                     type: string
@@ -236,19 +210,28 @@ components:
         execapi_taskExecutionResponse:
             properties:
                 output:
-                    example: Paris
-                    type: object
+                    $ref: '#/components/schemas/object'
                 outputType:
                     example: string
                     type: string
                 state:
-                    items:
-                        $ref: '#/components/schemas/taskengine_CapturedStateUnit'
-                    type: array
+                    $ref: '#/components/schemas/taskengine_CapturedStateUnit'
             required:
                 - output
                 - outputType
                 - state
+            type: object
+        execservice_SimpleExecutionResponse:
+            properties:
+                id:
+                    example: 123e4567-e89b-12d3-a456-426614174000
+                    type: string
+                response:
+                    example: I'm doing well, thank you!
+                    type: string
+            required:
+                - id
+                - response
             type: object
         execservice_TaskRequest:
             properties:
@@ -273,8 +256,8 @@ components:
                 Type:
                     type: string
             required:
-                - ""
-                - ""
+                - APIKey
+                - Type
             type: object
         runtimetypes_Backend:
             properties:
@@ -374,6 +357,18 @@ components:
                 - createdAt
                 - updatedAt
             type: object
+        runtimetypes_QueueItem:
+            properties:
+                model:
+                    example: llama2:latest
+                    type: string
+                url:
+                    example: http://ollama-prod.internal:11434
+                    type: string
+            required:
+                - url
+                - model
+            type: object
         runtimetypes_RemoteHook:
             properties:
                 createdAt:
@@ -411,7 +406,7 @@ components:
         statetype_BackendRuntimeState:
             properties:
                 backend:
-                    type: object
+                    $ref: '#/components/schemas/runtimetypes_Backend'
                 error:
                     description: |-
                         Error stores a description of the last encountered error when
@@ -430,15 +425,43 @@ components:
                     example: ollama-production
                     type: string
                 pulledModels:
-                    items:
-                        $ref: '#/components/schemas/statetype_ListModelResponse'
-                    type: array
+                    $ref: '#/components/schemas/statetype_ModelPullStatus'
             required:
                 - id
                 - name
                 - models
                 - pulledModels
                 - backend
+            type: object
+        statetype_ModelDetails:
+            properties:
+                families:
+                    example: '[\"Mistral\", \"7B\"]'
+                    items:
+                        type: string
+                    type: array
+                family:
+                    example: Mistral
+                    type: string
+                format:
+                    example: gguf
+                    type: string
+                parameterSize:
+                    example: 7B
+                    type: string
+                parentModel:
+                    example: mistral:7b
+                    type: string
+                quantizationLevel:
+                    example: Q4_K_M
+                    type: string
+            required:
+                - parentModel
+                - format
+                - family
+                - families
+                - parameterSize
+                - quantizationLevel
             type: object
         statetype_ModelPullStatus:
             properties:
@@ -458,7 +481,7 @@ components:
                     example: 4096
                     type: integer
                 details:
-                    type: object
+                    $ref: '#/components/schemas/statetype_ModelDetails'
                 digest:
                     example: sha256:9e3a6c0d3b5e7f8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a
                     type: string
@@ -491,23 +514,24 @@ components:
         taskengine_CapturedStateUnit:
             properties:
                 duration:
-                    description: 452ms in nanoseconds
+                    description: in nanoseconds
                     example: 4.52e+08
-                    type: object
+                    format: nanoseconds
+                    type: integer
                 error:
-                    type: object
+                    $ref: '#/components/schemas/taskengine_ErrorResponse'
                 input:
                     example: This is a test input that needs validation
                     type: string
                 inputType:
                     example: string
-                    type: object
+                    type: string
                 output:
                     example: valid
                     type: string
                 outputType:
                     example: string
-                    type: object
+                    type: string
                 taskHandler:
                     example: condition_key
                     type: string
@@ -527,6 +551,27 @@ components:
                 - error
                 - input
                 - output
+            type: object
+        taskengine_ComposeTask:
+            properties:
+                strategy:
+                    description: |-
+                        Strategy defines how values should be merged ("override", "merge_chat_histories", "append_string_to_chat_history").
+                        Optional; defaults to "override" or "merge_chat_histories" if both output and WithVar values are ChatHistory.
+                        "merge_chat_histories": If both output and WithVar values are ChatHistory,
+                        appends the WithVar's Messages to the output's Messages.
+                    type: string
+                with_var:
+                    description: Selects the variable to compose the current input with.
+                    type: string
+            type: object
+        taskengine_ErrorResponse:
+            properties:
+                error:
+                    example: 'validation failed: input contains prohibited content'
+                    type: string
+            required:
+                - error
             type: object
         taskengine_HookCall:
             properties:
@@ -581,10 +626,7 @@ components:
                     description: ID uniquely identifies the chain.
                     type: string
                 tasks:
-                    description: Tasks is the list of tasks to execute in sequence.
-                    items:
-                        $ref: '#/components/schemas/taskengine_TaskDefinition'
-                    type: array
+                    $ref: '#/components/schemas/taskengine_TaskDefinition'
                 token_limit:
                     description: TokenLimit is the token limit for the context window (used during execution).
                     type: integer
@@ -598,31 +640,19 @@ components:
         taskengine_TaskDefinition:
             properties:
                 compose:
-                    description: |-
-                        Compose merges the specified the output with the withVar side.
-                        Optional. compose is applied before the input reaches the task execution,
-                    type: object
+                    $ref: '#/components/schemas/taskengine_ComposeTask'
                 description:
                     description: Description is a human-readable summary of what the task does.
                     example: Validates user input meets quality requirements
                     type: string
                 execute_config:
-                    description: ExecuteConfig defines the configuration for executing prompt or chat model tasks.
-                    items:
-                        $ref: '#/components/schemas/taskengine_LLMExecutionConfig'
-                    type: object
+                    $ref: '#/components/schemas/taskengine_LLMExecutionConfig'
                 handler:
                     description: Handler determines how the LLM output (or hook) will be interpreted.
                     example: condition_key
-                    type: object
+                    type: string
                 hook:
-                    description: |-
-                        Hook defines an external action to run.
-                        Required for Hook tasks, must be nil/omitted for all other types.
-                        Example: {type: "send_email", args: {"to": "user@example.com"}}
-                    items:
-                        $ref: '#/components/schemas/taskengine_HookCall'
-                    type: object
+                    $ref: '#/components/schemas/taskengine_HookCall'
                 id:
                     description: ID uniquely identifies the task within the chain.
                     example: validate_input
@@ -669,10 +699,7 @@ components:
                     example: 30s
                     type: string
                 transition:
-                    description: Transition defines what to do after this task completes.
-                    items:
-                        $ref: '#/components/schemas/taskengine_TaskTransition'
-                    type: object
+                    $ref: '#/components/schemas/taskengine_TaskTransition'
                 valid_conditions:
                     additionalProperties: true
                     description: |-
@@ -691,10 +718,7 @@ components:
         taskengine_TaskTransition:
             properties:
                 branches:
-                    description: Branches defines conditional branches for successful task completion.
-                    items:
-                        $ref: '#/components/schemas/taskengine_TransitionBranch'
-                    type: array
+                    $ref: '#/components/schemas/taskengine_TransitionBranch'
                 on_failure:
                     description: OnFailure is the task ID to jump to in case of failure.
                     example: error_handler
@@ -723,7 +747,7 @@ components:
                 operator:
                     description: Operator defines how to compare the task's output to When.
                     example: equals
-                    type: object
+                    type: string
                 when:
                     description: |-
                         When specifies the condition that must be met to follow this branch.
@@ -765,9 +789,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listPoolsForBackend
+            summary: Lists all pools that a specific backend belongs to.
         parameters:
-            - in: path
+            - description: The unique identifier of the backend.
+              in: path
               name: backendID
               required: true
               schema:
@@ -790,7 +815,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listBackendsByPool
+            summary: Lists all backends associated with a specific pool.
         parameters:
             - in: path
               name: poolID
@@ -816,14 +841,16 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: removeBackend
+            summary: Removes a backend from a pool.
         parameters:
-            - in: path
+            - description: The unique identifier of the pool.
+              in: path
               name: poolID
               required: true
               schema:
                 type: string
-            - in: path
+            - description: The unique identifier of the backend to be assigned.
+              in: path
               name: backendID
               required: true
               schema:
@@ -846,13 +873,25 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: assignBackend
+            summary: Associates a backend with a pool.
     /backends:
         get:
             description: |-
                 Lists all configured backend connections with runtime status.
                 NOTE: Only backends assigned to at least one pool will be used for request processing.
                 Backends not assigned to any pool exist in the configuration but are completely ignored by the routing system.
+            parameters:
+                - description: The maximum number of items to return per page.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
@@ -866,7 +905,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listBackends
+            summary: Lists all configured backend connections with runtime status.
         post:
             description: |-
                 Creates a new backend connection to an LLM provider.
@@ -891,7 +930,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: createBackend
+            summary: Creates a new backend connection to an LLM provider.
     /backends/{id}:
         delete:
             description: |-
@@ -911,7 +950,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: deleteBackend
+            summary: Removes a backend connection.
         get:
             description: Retrieves complete information for a specific backend
             responses:
@@ -927,9 +966,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: getBackend
+            summary: Retrieves complete information for a specific backend
         parameters:
-            - in: path
+            - description: The unique identifier for the backend.
+              in: path
               name: id
               required: true
               schema:
@@ -958,7 +998,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: updateBackend
+            summary: Updates an existing backend configuration.
     /defaultmodel:
         get:
             description: Returns the default model configured during system initialization.
@@ -975,7 +1015,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: defaultModel
+            summary: Returns the default model configured during system initialization.
     /embed:
         post:
             description: |-
@@ -1002,7 +1042,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: generateEmbeddings
+            summary: Generates vector embeddings for text.
     /execute:
         post:
             description: |-
@@ -1021,7 +1061,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/execservice_TaskResponse'
+                                $ref: '#/components/schemas/execservice_SimpleExecutionResponse'
                     description: OK
                 default:
                     content:
@@ -1029,10 +1069,22 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: executeSimpleTask
+            summary: Runs the prompt through the default LLM.
     /hooks/remote:
         get:
             description: Lists all configured remote hooks with pagination support.
+            parameters:
+                - description: The maximum number of items to return per page.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
@@ -1046,7 +1098,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: list
+            summary: Lists all configured remote hooks with pagination support.
         post:
             description: |-
                 Creates a new remote hook configuration.
@@ -1070,7 +1122,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: create
+            summary: Creates a new remote hook configuration.
     /hooks/remote/{id}:
         delete:
             description: |-
@@ -1089,7 +1141,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: delete
+            summary: Deletes a remote hook configuration by ID.
         get:
             description: Retrieves a specific remote hook configuration by ID.
             responses:
@@ -1105,9 +1157,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: get
+            summary: Retrieves a specific remote hook configuration by ID.
         parameters:
-            - in: path
+            - description: The unique identifier for the remote hook.
+              in: path
               name: id
               required: true
               schema:
@@ -1135,19 +1188,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: update
+            summary: Updates an existing remote hook configuration.
     /internal/models:
         get:
             description: |-
                 Lists all registered models in internal format.
                 This endpoint returns full model details including timestamps and capabilities.
                 Intended for administrative and debugging purposes.
+            parameters:
+                - description: The maximum number of items to return per page.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_*runtimetypes_Model'
+                                $ref: '#/components/schemas/array_runtimetypes_Model'
                     description: OK
                 default:
                     content:
@@ -1155,7 +1220,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listInternal
+            summary: Lists all registered models in internal format.
     /model-associations/{modelID}/pools:
         get:
             description: |-
@@ -1174,9 +1239,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listPoolsForModel
+            summary: Lists all pools that a specific model belongs to.
         parameters:
-            - in: path
+            - description: The unique identifier of the model.
+              in: path
               name: modelID
               required: true
               schema:
@@ -1199,9 +1265,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listModelsByPool
+            summary: Lists all models associated with a specific pool.
         parameters:
-            - in: path
+            - description: The unique identifier of the pool.
+              in: path
               name: poolID
               required: true
               schema:
@@ -1225,14 +1292,16 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: removeModel
+            summary: Removes a model from a pool.
         parameters:
-            - in: path
+            - description: The unique identifier of the pool.
+              in: path
               name: poolID
               required: true
               schema:
                 type: string
-            - in: path
+            - description: The unique identifier of the model to be assigned.
+              in: path
               name: modelID
               required: true
               schema:
@@ -1255,7 +1324,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: assignModel
+            summary: Associates a model with a pool.
     /models:
         get:
             description: |-
@@ -1263,6 +1332,18 @@ paths:
                 Returns models as they would appear in OpenAI's /v1/models endpoint.
                 NOTE: Only models assigned to at least one pool will be available for request processing.
                 Models not assigned to any pool exist in the configuration but are completely ignored by the routing system.
+            parameters:
+                - description: The maximum number of items to return per page.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
@@ -1276,7 +1357,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listModels
+            summary: Lists all registered models in OpenAI-compatible format.
         post:
             description: |-
                 Declares a new model to the system.
@@ -1302,13 +1383,20 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: createModel
+            summary: Declares a new model to the system.
     /models/{id}:
         delete:
             description: |-
                 Deletes a model from the system registry.
                 - Does not remove the model from backend storage (requires separate backend operation)
                 - Accepts 'purge=true' query parameter to also remove related downloads from queue
+            parameters:
+                - description: If true, also removes the model from the download queue and cancels any in-progress downloads.
+                  in: query
+                  name: purge
+                  schema:
+                    default: "false"
+                    type: string
             responses:
                 "200":
                     content:
@@ -1322,9 +1410,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: deleteModel
+            summary: Deletes a model from the system registry.
         parameters:
-            - in: path
+            - description: The unique identifier for the model.
+              in: path
               name: id
               required: true
               schema:
@@ -1354,7 +1443,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: updateModel
+            summary: Updates an existing model registration.
     /pool-by-name/{name}:
         get:
             description: |-
@@ -1373,9 +1462,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: getPoolByName
+            summary: Retrieves a pool by its human-readable name.
         parameters:
-            - in: path
+            - description: The unique, human-readable name of the pool.
+              in: path
               name: name
               required: true
               schema:
@@ -1386,6 +1476,18 @@ paths:
                 Lists pools filtered by purpose type with pagination support.
                 Purpose types categorize pools (e.g., "Internal Embeddings", "Internal Tasks").
                 Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
+            parameters:
+                - description: The maximum number of items to return per page.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
@@ -1399,9 +1501,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listPoolsByPurpose
+            summary: Lists pools filtered by purpose type with pagination support.
         parameters:
-            - in: path
+            - description: The purpose category to filter pools by (e.g., 'embeddings').
+              in: path
               name: purpose
               required: true
               schema:
@@ -1424,7 +1527,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listPools
+            summary: Lists all resource pools in the system.
         post:
             description: |-
                 Creates a new resource pool for organizing backends and models.
@@ -1454,7 +1557,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: createPool
+            summary: Creates a new resource pool for organizing backends and models.
     /pools/{id}:
         delete:
             description: |-
@@ -1474,7 +1577,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: deletePool
+            summary: Removes a pool from the system.
         get:
             description: Retrieves a specific pool by its unique ID.
             responses:
@@ -1490,9 +1593,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: getPool
+            summary: Retrieves a specific pool by its unique ID.
         parameters:
-            - in: path
+            - description: The unique identifier of the pool.
+              in: path
               name: id
               required: true
               schema:
@@ -1520,7 +1624,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: updatePool
+            summary: Updates an existing pool configuration.
     /providers/{providerType}/config:
         delete:
             description: |-
@@ -1539,7 +1643,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: deleteConfig
+            summary: Removes provider configuration from the system.
         get:
             description: Retrieves configuration details for a specific external provider.
             responses:
@@ -1555,16 +1659,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: get
+            summary: Retrieves configuration details for a specific external provider.
         parameters:
-            - in: path
+            - description: The type of the provider to delete (e.g., 'openai', 'gemini').
+              in: path
               name: providerType
               required: true
               schema:
                 type: string
     /providers/configs:
         get:
-            description: Lists all configured external providers with pagination support.
+            description: |-
+                Lists all configured external providers with pagination support.
+                Lists all configured external providers with pagination support.
+            parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
+                - description: The maximum number of items to return per page.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
             responses:
                 "200":
                     content:
@@ -1578,7 +1697,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listConfigs
+            summary: Lists all configured external providers with pagination support.
     /queue:
         get:
             description: |-
@@ -1600,7 +1719,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: getQueue
+            summary: Retrieves the current model download queue state.
     /queue/{model}:
         delete:
             description: |-
@@ -1619,9 +1738,10 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: removeFromQueue
+            summary: Removes a model from the download queue.
         parameters:
-            - in: path
+            - description: The name of the model to remove from the queue (e.g., 'mistral:latest').
+              in: path
               name: model
               required: true
               schema:
@@ -1635,6 +1755,17 @@ paths:
                 - 'model' query parameter to cancel the model download across all backends
                 Example: /queue/cancel?url=http://localhost:11434
                 /queue/cancel?model=mistral:latest
+            parameters:
+                - description: The base URL of a specific backend to cancel downloads on.
+                  in: query
+                  name: url
+                  schema:
+                    type: string
+                - description: The model name to cancel downloads for across all backends.
+                  in: query
+                  name: model
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
@@ -1648,7 +1779,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: cancelDownload
+            summary: Cancels an in-progress model download.
     /queue/inProgress:
         get:
             description: |-
@@ -1671,7 +1802,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: inProgress
+            summary: Streams real-time download progress via Server-Sent Events (SSE).
     /state:
         get:
             description: |-
@@ -1693,7 +1824,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: list
+            summary: Retrieves the current runtime state of all LLM backends.
     /supported:
         get:
             description: |-
@@ -1712,7 +1843,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: supported
+            summary: Lists available task-chain hook types.
     /tasks:
         post:
             description: |-
@@ -1740,6 +1871,6 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: executeTaskChain
+            summary: Executes dynamic task-chain workflows.
 security:
     - X-API-Key: []

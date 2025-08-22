@@ -3,7 +3,6 @@ package backendapi
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -70,9 +69,12 @@ type OpenAICompatibleModelList struct {
 func (s *service) listModels(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Parse pagination parameters from query string
+	// Parse pagination parameters using the helper
+	limitStr := serverops.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
+	cursorStr := serverops.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
+
 	var cursor *time.Time
-	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+	if cursorStr != "" {
 		t, err := time.Parse(time.RFC3339Nano, cursorStr)
 		if err != nil {
 			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
@@ -83,7 +85,7 @@ func (s *service) listModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := 100 // Default limit
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+	if limitStr != "" {
 		i, err := strconv.Atoi(limitStr)
 		if err != nil {
 			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
@@ -127,7 +129,7 @@ func (s *service) updateModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Extract and validate model ID from path
-	id := r.PathValue("id")
+	id := serverops.GetPathParam(r, "id", "The unique identifier for the model.")
 	if id == "" {
 		_ = serverops.Error(w, r, fmt.Errorf("model ID is required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
 		return
@@ -164,9 +166,12 @@ func (s *service) updateModel(w http.ResponseWriter, r *http.Request) {
 func (s *service) listInternal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Parse pagination parameters
+	// Parse pagination parameters using the helper
+	limitStr := serverops.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
+	cursorStr := serverops.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
+
 	var cursor *time.Time
-	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+	if cursorStr != "" {
 		t, err := time.Parse(time.RFC3339Nano, cursorStr)
 		if err != nil {
 			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
@@ -177,7 +182,7 @@ func (s *service) listInternal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	limit := 100
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+	if limitStr != "" {
 		i, err := strconv.Atoi(limitStr)
 		if err != nil {
 			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
@@ -208,7 +213,7 @@ func (s *service) listInternal(w http.ResponseWriter, r *http.Request) {
 // - Accepts 'purge=true' query parameter to also remove related downloads from queue
 func (s *service) deleteModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	modelName := url.PathEscape(r.PathValue("model"))
+	modelName := serverops.GetPathParam(r, "model", "The name of the model to delete (e.g., 'mistral:latest').")
 	if modelName == "" {
 		serverops.Error(w, r, fmt.Errorf("model name is required: %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
 		return
@@ -217,8 +222,8 @@ func (s *service) deleteModel(w http.ResponseWriter, r *http.Request) {
 		_ = serverops.Error(w, r, err, serverops.DeleteOperation)
 		return
 	}
-	queue := r.URL.Query().Get("purge")
-	if queue == "true" {
+	purgeQueue := serverops.GetQueryParam(r, "purge", "false", "If true, also removes the model from the download queue and cancels any in-progress downloads.")
+	if purgeQueue == "true" {
 		if err := s.dwService.RemoveDownloadFromQueue(r.Context(), modelName); err != nil {
 			_ = serverops.Error(w, r, err, serverops.DeleteOperation)
 			return

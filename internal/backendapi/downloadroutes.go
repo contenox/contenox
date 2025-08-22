@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 
 	"github.com/contenox/runtime/downloadservice"
 	serverops "github.com/contenox/runtime/internal/apiframework"
@@ -44,7 +43,7 @@ func (s *downloadManager) getQueue(w http.ResponseWriter, r *http.Request) {
 // Removes a model from the download queue.
 // If a model download is in progress or the download will be cancelled.
 func (s *downloadManager) removeFromQueue(w http.ResponseWriter, r *http.Request) {
-	modelName := r.PathValue("model")
+	modelName := serverops.GetPathParam(r, "model", "The name of the model to remove from the queue (e.g., 'mistral:latest').")
 	if modelName == "" {
 		_ = serverops.Error(w, r, fmt.Errorf("missing model parameter %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
 		return
@@ -123,14 +122,26 @@ func (s *downloadManager) inProgress(w http.ResponseWriter, r *http.Request) {
 //
 //	/queue/cancel?model=mistral:latest
 func (s *downloadManager) cancelDownload(w http.ResponseWriter, r *http.Request) {
-	value := url.QueryEscape(r.URL.Query().Get("url"))
-	if value == "" {
-		url.QueryEscape(r.URL.Query().Get("model"))
+	// Use helpers to document both possible query parameters
+	urlParam := serverops.GetQueryParam(r, "url", "", "The base URL of a specific backend to cancel downloads on.")
+	modelParam := serverops.GetQueryParam(r, "model", "", "The model name to cancel downloads for across all backends.")
+
+	// Prioritize the 'url' parameter if it exists
+	valueToCancel := urlParam
+	if valueToCancel == "" {
+		valueToCancel = modelParam
 	}
-	if err := s.service.CancelDownloads(r.Context(), value); err != nil {
+
+	if valueToCancel == "" {
+		err := fmt.Errorf("%w: required query parameter 'url' or 'model' is missing", serverops.ErrBadPathValue)
 		_ = serverops.Error(w, r, err, serverops.DeleteOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "Model removed from queue") // @response string
+	if err := s.service.CancelDownloads(r.Context(), valueToCancel); err != nil {
+		_ = serverops.Error(w, r, err, serverops.DeleteOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, "Model download cancellation initiated") // @response string
 }

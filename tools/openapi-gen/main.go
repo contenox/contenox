@@ -57,7 +57,7 @@ func main() {
 	swagger.Security = *openapi3.NewSecurityRequirements().
 		With(openapi3.SecurityRequirement{"X-API-Key": []string{}})
 
-		// Add this to your main function before generating schemas
+	// Add this to your main function before generating schemas
 	if swagger.Components == nil {
 		swagger.Components = &openapi3.Components{
 			Schemas: make(openapi3.Schemas),
@@ -220,25 +220,7 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 		}
 	}
 
-	// Extract parameters from path
-	if strings.Contains(path, "{") {
-		pathItem := swagger.Paths.Find(path)
-		if pathItem == nil {
-			pathItem = &openapi3.PathItem{}
-			swagger.Paths.Set(path, pathItem)
-
-			// Add parameters ONLY when first creating the path
-			for _, paramName := range extractPathParams(path) {
-				param := openapi3.NewPathParameter(paramName)
-				param.Required = true
-				param.Schema = openapi3.NewStringSchema().NewRef()
-				pathItem.Parameters = append(pathItem.Parameters, &openapi3.ParameterRef{
-					Value: param,
-				})
-			}
-		}
-	}
-
+	// Resolve the handler function early so we can use it for parameter descriptions
 	var handler *ast.FuncDecl
 	var handlerDocs string
 	if len(call.Args) > 1 {
@@ -253,7 +235,7 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 				if fn, ok := n.(*ast.FuncDecl); ok && fn.Name.Name == sel.Sel.Name {
 					handler = fn
 					handlerDocs = extractComments(fn.Doc)
-					return false
+					return false // stop searching
 				}
 				return true
 			})
@@ -264,6 +246,34 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 		return
 	}
 
+	// Extract parameters from path
+	if strings.Contains(path, "{") {
+		pathItem := swagger.Paths.Find(path)
+		if pathItem == nil {
+			pathItem = &openapi3.PathItem{}
+			swagger.Paths.Set(path, pathItem)
+
+			// Get all parameter descriptions from the handler body once
+			paramDescriptions := findParamDescriptions(handler)
+
+			// Add parameters ONLY when first creating the path
+			for _, paramName := range extractPathParams(path) {
+				param := openapi3.NewPathParameter(paramName)
+				param.Required = true
+				param.Schema = openapi3.NewStringSchema().NewRef()
+
+				// Use the map to set the description for the current parameter
+				if desc, ok := paramDescriptions[paramName]; ok {
+					param.Description = desc
+				}
+
+				pathItem.Parameters = append(pathItem.Parameters, &openapi3.ParameterRef{
+					Value: param,
+				})
+			}
+		}
+	}
+
 	if swagger.Paths.Find(path) == nil {
 		swagger.Paths.Set(path, &openapi3.PathItem{})
 	}
@@ -271,10 +281,22 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 
 	op := openapi3.NewOperation()
 	op.Summary = strings.TrimPrefix(handler.Name.Name, "handle")
+	queryParams := findQueryParamDescriptions(handler)
+	for _, param := range queryParams {
+		op.AddParameter(param)
+	}
 
 	// Use handler docs for operation description
 	if handlerDocs != "" {
+		// Split the docs into a summary (first line) and the full description
+		parts := strings.SplitN(handlerDocs, "\n", 2)
+		if len(parts) > 0 {
+			op.Summary = parts[0]
+		}
 		op.Description = handlerDocs
+	} else {
+		// Fallback if there are no comments
+		op.Summary = strings.TrimPrefix(handler.Name.Name, "handle")
 	}
 
 	if reqType := extractRequestType(handler, file); reqType != "" {
@@ -455,6 +477,7 @@ func extractStatusCodes(handler *ast.FuncDecl, file *ast.File) map[int]string {
 						if strings.HasPrefix(typeStr, "[]") {
 							isArray = true
 							typeStr = strings.TrimPrefix(typeStr, "[]")
+							typeStr = strings.TrimPrefix(typeStr, "*")
 						}
 
 						// Convert package.Type to package_Type
@@ -621,16 +644,12 @@ func addSchemasToSpec(swagger *openapi3.T) {
 }
 
 func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, structType *ast.StructType, description string) {
-	// Create a package-prefixed name: "backendapi.RespBackend"
 	fullName := pkgName + "_" + typeName
-
 	if swagger.Components == nil {
 		swagger.Components = &openapi3.Components{
 			Schemas: make(openapi3.Schemas),
 		}
 	}
-
-	// Skip if already added
 	if _, exists := swagger.Components.Schemas[fullName]; exists {
 		return
 	}
@@ -648,13 +667,11 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 				continue
 			}
 		}
-		// Handle embedded structs
-		if fieldName == "" {
+		if fieldName == "" { // Embedded struct
 			if ident, ok := field.Type.(*ast.Ident); ok {
 				if !ast.IsExported(ident.Name) {
 					continue
 				}
-
 				if obj := ident.Obj; obj != nil {
 					if spec, ok := obj.Decl.(*ast.TypeSpec); ok {
 						if st, ok := spec.Type.(*ast.StructType); ok {
@@ -666,7 +683,6 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 			continue
 		}
 
-		// Process field tags to get JSON name
 		jsonTag := ""
 		isOmitempty := false
 		if field.Tag != nil {
@@ -679,109 +695,107 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 				}
 			}
 		}
-		if !isOmitempty {
+		if jsonTag == "" {
+			jsonTag = fieldName
+		} else if jsonTag == "-" {
+			continue
+		}
+
+		if !isOmitempty && jsonTag != "" {
 			schema.Required = append(schema.Required, jsonTag)
 		}
 
-		// If no json tag, use field name
-		if jsonTag == "" {
-			jsonTag = fieldName
-		}
-
-		// Add field to schema
 		fieldSchema := openapi3.NewSchema()
+		fieldSchemaRef := &openapi3.SchemaRef{Value: fieldSchema}
+		isRef := false
 
-		// Add field documentation
 		if doc := extractComments(field.Doc); doc != "" {
 			fieldSchema.Description = doc
 		} else if comment := extractComments(field.Comment); comment != "" {
 			fieldSchema.Description = comment
 		}
 
-		switch fieldType := field.Type.(type) {
-		case *ast.Ident:
-			fieldSchema.Type = goTypeToSwaggerType(fieldType.Name)
-			fieldSchema.Format = goTypeToSwaggerFormat(fieldType.Name)
-		case *ast.SelectorExpr:
-			fieldSchema.Type = goTypeToSwaggerType(fieldType.Sel.Name)
-			fieldSchema.Format = goTypeToSwaggerFormat(fieldType.Sel.Name)
-		case *ast.ArrayType:
-			fieldSchema.Type = &openapi3.Types{openapi3.TypeArray}
-			var elemTypeName string
-			var isCustomType bool
+		hasOverride := false
+		if field.Tag != nil {
+			tag := strings.Trim(field.Tag.Value, "`")
+			if strings.Contains(tag, "openapi_include_type:") {
+				if includeStart := strings.Index(tag, `openapi_include_type:"`); includeStart != -1 {
+					includeStart += len(`openapi_include_type:"`)
+					includeEnd := strings.Index(tag[includeStart:], `"`)
+					if includeEnd != -1 {
+						overrideType := tag[includeStart : includeStart+includeEnd]
 
-			// First, try to determine element type
-			if elemType, ok := fieldType.Elt.(*ast.Ident); ok {
-				fullTypeName := pkgName + "_" + elemType.Name
-				if _, exists := swagger.Components.Schemas[fullTypeName]; exists {
-					fieldSchema.Items = &openapi3.SchemaRef{
-						Ref: fmt.Sprintf("#/components/schemas/%s", fullTypeName),
-					}
-					isCustomType = true
-				} else {
-					elemTypeName = elemType.Name
-				}
-			}
-
-			// Process openapi_include_type tag to override or specify custom type
-			if field.Tag != nil {
-				tag := strings.Trim(field.Tag.Value, "`")
-				if strings.Contains(tag, "openapi_include_type:") {
-					if includeStart := strings.Index(tag, `openapi_include_type:"`); includeStart != -1 {
-						includeStart += len(`openapi_include_type:"`)
-						//panic(tag)
-						includeEnd := strings.Index(tag[includeStart:], `"`)
-						if includeEnd != -1 {
-							includedType := tag[includeStart : includeStart+includeEnd]
-							includedType = strings.ReplaceAll(includedType, ".", "_")
-
-							//	if _, exists := swagger.Components.Schemas[includedType]; exists {
-							fieldSchema.Items = &openapi3.SchemaRef{
-								Ref: fmt.Sprintf("#/components/schemas/%s", includedType),
+						// Handle array overrides specifically
+						if strings.HasPrefix(overrideType, "[]") {
+							fieldSchema.Type = &openapi3.Types{openapi3.TypeArray}
+							itemType := strings.TrimPrefix(overrideType, "[]")
+							itemType = strings.ReplaceAll(itemType, ".", "_")
+							if isPrimitiveType(itemType) {
+								fieldSchema.Items = &openapi3.SchemaRef{Value: &openapi3.Schema{
+									Type:   goTypeToSwaggerType(itemType),
+									Format: goTypeToSwaggerFormat(itemType),
+								}}
+							} else {
+								fieldSchema.Items = &openapi3.SchemaRef{Ref: fmt.Sprintf("#/components/schemas/%s", itemType)}
 							}
-							isCustomType = true
-							//		} else {
-							//	log.Printf("WARNING: openapi_include_type schema not found: %s", includedType)
-							//	}
+						} else { // Handle non-array overrides
+							overrideType = strings.ReplaceAll(overrideType, ".", "_")
+							if isPrimitiveType(overrideType) {
+								fieldSchema.Type = goTypeToSwaggerType(overrideType)
+								fieldSchema.Format = goTypeToSwaggerFormat(overrideType)
+							} else {
+								fieldSchemaRef.Ref = fmt.Sprintf("#/components/schemas/%s", overrideType)
+								isRef = true
+							}
 						}
+						hasOverride = true
 					}
 				}
 			}
+		}
 
-			// Fallback to basic type if no custom type was set
-			if !isCustomType {
-				if elemTypeName != "" {
-					fieldSchema.Items = &openapi3.SchemaRef{
-						Value: &openapi3.Schema{
-							Type:   goTypeToSwaggerType(elemTypeName),
-							Format: goTypeToSwaggerFormat(elemTypeName),
-						},
-					}
+		if !hasOverride {
+			switch fieldType := field.Type.(type) {
+			case *ast.Ident:
+				if isPrimitiveType(fieldType.Name) {
+					fieldSchema.Type = goTypeToSwaggerType(fieldType.Name)
+					fieldSchema.Format = goTypeToSwaggerFormat(fieldType.Name)
 				} else {
-					// Final fallback to generic object
-					fieldSchema.Items = &openapi3.SchemaRef{
-						Value: &openapi3.Schema{
-							Type: &openapi3.Types{openapi3.TypeObject},
-						},
-					}
+					fieldSchemaRef.Ref = fmt.Sprintf("#/components/schemas/%s_%s", pkgName, fieldType.Name)
+					isRef = true
 				}
-			}
-		case *ast.StarExpr:
-			if elemType, ok := fieldType.X.(*ast.Ident); ok {
-				fieldSchema.Type = goTypeToSwaggerType(elemType.Name)
-				fieldSchema.Format = goTypeToSwaggerFormat(elemType.Name)
-			}
-		case *ast.MapType:
-			has := true
-			fieldSchema.Type = &openapi3.Types{openapi3.TypeObject}
-			fieldSchema.AdditionalProperties = openapi3.AdditionalProperties{
-				Has: &has,
-				Schema: &openapi3.SchemaRef{
-					Value: &openapi3.Schema{
-						Type:   &openapi3.Types{openapi3.TypeString},
-						Format: goTypeToSwaggerFormat("string"),
-					},
-				},
+			case *ast.SelectorExpr:
+				typeName := fieldType.Sel.Name
+				if isPrimitiveType(typeName) {
+					fieldSchema.Type = goTypeToSwaggerType(typeName)
+					fieldSchema.Format = goTypeToSwaggerFormat(typeName)
+				} else {
+					pkg := fieldType.X.(*ast.Ident).Name
+					fieldSchemaRef.Ref = fmt.Sprintf("#/components/schemas/%s_%s", pkg, typeName)
+					isRef = true
+				}
+			case *ast.ArrayType:
+				fieldSchema.Type = &openapi3.Types{openapi3.TypeArray}
+				var elemTypeName string
+				if elemType, ok := fieldType.Elt.(*ast.Ident); ok {
+					elemTypeName = elemType.Name
+					fieldSchema.Items = &openapi3.SchemaRef{Value: &openapi3.Schema{Type: goTypeToSwaggerType(elemTypeName), Format: goTypeToSwaggerFormat(elemTypeName)}}
+				} else if selExpr, ok := fieldType.Elt.(*ast.SelectorExpr); ok {
+					elemTypeName = selExpr.Sel.Name
+					fieldSchema.Items = &openapi3.SchemaRef{Value: &openapi3.Schema{Type: goTypeToSwaggerType(elemTypeName), Format: goTypeToSwaggerFormat(elemTypeName)}}
+				}
+			case *ast.StarExpr:
+				if ident, ok := fieldType.X.(*ast.Ident); ok {
+					fieldSchema.Type = goTypeToSwaggerType(ident.Name)
+					fieldSchema.Format = goTypeToSwaggerFormat(ident.Name)
+				}
+			case *ast.MapType:
+				has := true
+				fieldSchema.Type = &openapi3.Types{openapi3.TypeObject}
+				fieldSchema.AdditionalProperties = openapi3.AdditionalProperties{
+					Has:    &has,
+					Schema: &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
+				}
 			}
 		}
 
@@ -794,39 +808,20 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 					goTypeName = ft.Name
 				case *ast.SelectorExpr:
 					goTypeName = ft.Sel.Name
-				case *ast.ArrayType:
-					if elem, ok := ft.Elt.(*ast.Ident); ok {
-						goTypeName = "[]" + elem.Name
-					}
 				}
-
 				if exampleStr, found := extractExampleValue(tag); found {
-					fieldSchema.Example = convertExampleToType(exampleStr, goTypeName)
-				}
-			}
-			if strings.Contains(tag, `omitempty`) {
-				//schema.Required = append(schema.Required, jsonTag)
-			} else if strings.Contains(tag, `required:"true"`) {
-				schema.Required = append(schema.Required, jsonTag)
-			}
-			if strings.Contains(tag, "openapi_include_type:") {
-				if exampleStart := strings.Index(tag, `openapi_include_type:"`); exampleStart != -1 {
-					exampleStart += len(`openapi_include_type:"`)
-					exampleEnd := strings.Index(tag[exampleStart:], `"`)
-					if exampleEnd != -1 {
-						example := tag[exampleStart : exampleStart+exampleEnd]
-						example = strings.ReplaceAll(example, ".", "_")
-						if _, exists := swagger.Components.Schemas[example]; exists {
-							fieldSchema.Items = &openapi3.SchemaRef{
-								Ref: fmt.Sprintf("#/components/schemas/%s", example),
-							}
-						}
+					if !isRef {
+						fieldSchema.Example = convertExampleToType(exampleStr, goTypeName)
 					}
 				}
 			}
 		}
 
-		schema.Properties[jsonTag] = &openapi3.SchemaRef{Value: fieldSchema}
+		if isRef {
+			schema.Properties[jsonTag] = fieldSchemaRef
+		} else {
+			schema.Properties[jsonTag] = &openapi3.SchemaRef{Value: fieldSchema}
+		}
 	}
 
 	swagger.Components.Schemas[fullName] = &openapi3.SchemaRef{Value: schema}
@@ -834,11 +829,19 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 	if _, exists := swagger.Components.Schemas[arrayName]; !exists {
 		arraySchema := openapi3.NewSchema()
 		arraySchema.Type = &openapi3.Types{openapi3.TypeArray}
-		arraySchema.Items = &openapi3.SchemaRef{
-			Ref: fmt.Sprintf("#/components/schemas/%s", fullName),
-		}
-
+		arraySchema.Items = &openapi3.SchemaRef{Ref: fmt.Sprintf("#/components/schemas/%s", fullName)}
 		swagger.Components.Schemas[arrayName] = openapi3.NewSchemaRef("", arraySchema)
+	}
+}
+
+// isPrimitiveType checks if a Go type name is a primitive or primitive-like type
+// (not a custom struct that needs a reference)
+func isPrimitiveType(typeName string) bool {
+	switch typeName {
+	case "string", "int", "int32", "int64", "float32", "float64", "bool", "Time", "Duration", "time.Time", "time.Duration":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -846,7 +849,8 @@ func goTypeToSwaggerType(goType string) *openapi3.Types {
 	switch goType {
 	case "string":
 		return &openapi3.Types{openapi3.TypeString}
-	case "int", "int32", "int64", "time.Duration":
+	// CRITICAL FIX: Changed from "time.Duration" to "Duration" to match what comes from AST
+	case "int", "int32", "int64", "Duration":
 		return &openapi3.Types{openapi3.TypeInteger}
 	case "float32", "float64":
 		return &openapi3.Types{openapi3.TypeNumber}
@@ -863,6 +867,8 @@ func goTypeToSwaggerFormat(goType string) string {
 	switch goType {
 	case "Time":
 		return "date-time"
+	case "Duration":
+		return "nanoseconds"
 	default:
 		return ""
 	}
@@ -1277,4 +1283,83 @@ func extractExampleValue(tag string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// findParamDescriptions inspects the handler's AST for calls to a specific helper function
+// (e.g., serverops.GetPathParam) and extracts the parameter name and description from its arguments.
+func findParamDescriptions(handler *ast.FuncDecl) map[string]string {
+	descriptions := make(map[string]string)
+	if handler == nil {
+		return descriptions
+	}
+
+	ast.Inspect(handler.Body, func(n ast.Node) bool {
+		// Look for a function call expression
+		if call, ok := n.(*ast.CallExpr); ok {
+			// Check if it's a selector expression like serverops.GetPathParam
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+				// We can make this more robust by checking the package name (sel.X) as well
+				if sel.Sel.Name == "GetPathParam" {
+					// Ensure we have the correct number of arguments (request, name, description)
+					if len(call.Args) == 3 {
+						// The second argument (index 1) is the parameter name
+						nameLit, nameOk := call.Args[1].(*ast.BasicLit)
+						// The third argument (index 2) is the description
+						descLit, descOk := call.Args[2].(*ast.BasicLit)
+
+						if nameOk && descOk && nameLit.Kind == token.STRING && descLit.Kind == token.STRING {
+							paramName := strings.Trim(nameLit.Value, `"`)
+							description := strings.Trim(descLit.Value, `"`)
+							descriptions[paramName] = description
+						}
+					}
+				}
+			}
+		}
+		return true // Continue searching
+	})
+
+	return descriptions
+}
+
+// findQueryParamDescriptions inspects the handler's AST for calls to GetQueryParam
+// and extracts the parameter name, default value, and description from its arguments.
+func findQueryParamDescriptions(handler *ast.FuncDecl) map[string]*openapi3.Parameter {
+	queryParams := make(map[string]*openapi3.Parameter)
+	if handler == nil {
+		return queryParams
+	}
+
+	ast.Inspect(handler.Body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok {
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "GetQueryParam" {
+				if len(call.Args) == 4 {
+					nameLit, nameOk := call.Args[1].(*ast.BasicLit)
+					defLit, defOk := call.Args[2].(*ast.BasicLit)
+					descLit, descOk := call.Args[3].(*ast.BasicLit)
+
+					if nameOk && defOk && descOk {
+						paramName := strings.Trim(nameLit.Value, `"`)
+						param := openapi3.NewQueryParameter(paramName).
+							WithSchema(openapi3.NewStringSchema()).
+							WithDescription(strings.Trim(descLit.Value, `"`))
+
+						// Query params are optional by default with this helper
+						param.Required = false
+
+						// Add the default value to the example or default field
+						defaultValue := strings.Trim(defLit.Value, `"`)
+						if defaultValue != "" {
+							param.Schema.Value.Default = defaultValue
+						}
+
+						queryParams[paramName] = param
+					}
+				}
+			}
+		}
+		return true
+	})
+
+	return queryParams
 }

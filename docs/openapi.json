@@ -70,7 +70,7 @@
         "properties": {
           "data": {
             "items": {
-              "$ref": "#/components/schemas/backendapi_OpenAIModel"
+              "type": "object"
             },
             "type": "array"
           },
@@ -82,33 +82,6 @@
         "required": [
           "object",
           "data"
-        ],
-        "type": "object"
-      },
-      "backendapi_OpenAIModel": {
-        "properties": {
-          "created": {
-            "example": 1717020800,
-            "type": "integer"
-          },
-          "id": {
-            "example": "mistral:latest",
-            "type": "string"
-          },
-          "object": {
-            "example": "mistral:latest",
-            "type": "string"
-          },
-          "owned_by": {
-            "example": "system",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "object",
-          "created",
-          "owned_by"
         ],
         "type": "object"
       },
@@ -143,10 +116,7 @@
             "type": "string"
           },
           "pulledModels": {
-            "items": {
-              "$ref": "#/components/schemas/statetype_ModelPullStatus"
-            },
-            "type": "array"
+            "$ref": "#/components/schemas/statetype_ModelPullStatus"
           },
           "type": {
             "example": "ollama",
@@ -200,10 +170,7 @@
             "type": "string"
           },
           "pulledModels": {
-            "items": {
-              "$ref": "#/components/schemas/statetype_ModelPullStatus"
-            },
-            "type": "array"
+            "$ref": "#/components/schemas/statetype_ModelPullStatus"
           },
           "type": {
             "example": "ollama",
@@ -239,7 +206,7 @@
             "type": "string"
           },
           "modelJob": {
-            "type": "object"
+            "$ref": "#/components/schemas/runtimetypes_QueueItem"
           },
           "scheduledFor": {
             "example": 1630483200,
@@ -306,13 +273,10 @@
       "execapi_taskExecutionRequest": {
         "properties": {
           "chain": {
-            "items": {
-              "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
-            }
+            "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
           },
           "input": {
-            "example": "What is the capital of France",
-            "type": "object"
+            "$ref": "#/components/schemas/object"
           },
           "inputType": {
             "example": "string",
@@ -329,24 +293,37 @@
       "execapi_taskExecutionResponse": {
         "properties": {
           "output": {
-            "example": "Paris",
-            "type": "object"
+            "$ref": "#/components/schemas/object"
           },
           "outputType": {
             "example": "string",
             "type": "string"
           },
           "state": {
-            "items": {
-              "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
-            },
-            "type": "array"
+            "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
           }
         },
         "required": [
           "output",
           "outputType",
           "state"
+        ],
+        "type": "object"
+      },
+      "execservice_SimpleExecutionResponse": {
+        "properties": {
+          "id": {
+            "example": "123e4567-e89b-12d3-a456-426614174000",
+            "type": "string"
+          },
+          "response": {
+            "example": "I'm doing well, thank you!",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "response"
         ],
         "type": "object"
       },
@@ -382,8 +359,8 @@
           }
         },
         "required": [
-          "",
-          ""
+          "APIKey",
+          "Type"
         ],
         "type": "object"
       },
@@ -514,6 +491,23 @@
         ],
         "type": "object"
       },
+      "runtimetypes_QueueItem": {
+        "properties": {
+          "model": {
+            "example": "llama2:latest",
+            "type": "string"
+          },
+          "url": {
+            "example": "http://ollama-prod.internal:11434",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "model"
+        ],
+        "type": "object"
+      },
       "runtimetypes_RemoteHook": {
         "properties": {
           "createdAt": {
@@ -561,7 +555,7 @@
       "statetype_BackendRuntimeState": {
         "properties": {
           "backend": {
-            "type": "object"
+            "$ref": "#/components/schemas/runtimetypes_Backend"
           },
           "error": {
             "description": "Error stores a description of the last encountered error when\ninteracting with or reconciling this backend's state, if any.",
@@ -584,10 +578,7 @@
             "type": "string"
           },
           "pulledModels": {
-            "items": {
-              "$ref": "#/components/schemas/statetype_ListModelResponse"
-            },
-            "type": "array"
+            "$ref": "#/components/schemas/statetype_ModelPullStatus"
           }
         },
         "required": [
@@ -596,6 +587,46 @@
           "models",
           "pulledModels",
           "backend"
+        ],
+        "type": "object"
+      },
+      "statetype_ModelDetails": {
+        "properties": {
+          "families": {
+            "example": "[\\\"Mistral\\\", \\\"7B\\\"]",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "family": {
+            "example": "Mistral",
+            "type": "string"
+          },
+          "format": {
+            "example": "gguf",
+            "type": "string"
+          },
+          "parameterSize": {
+            "example": "7B",
+            "type": "string"
+          },
+          "parentModel": {
+            "example": "mistral:7b",
+            "type": "string"
+          },
+          "quantizationLevel": {
+            "example": "Q4_K_M",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parentModel",
+          "format",
+          "family",
+          "families",
+          "parameterSize",
+          "quantizationLevel"
         ],
         "type": "object"
       },
@@ -622,7 +653,7 @@
             "type": "integer"
           },
           "details": {
-            "type": "object"
+            "$ref": "#/components/schemas/statetype_ModelDetails"
           },
           "digest": {
             "example": "sha256:9e3a6c0d3b5e7f8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a",
@@ -664,12 +695,13 @@
       "taskengine_CapturedStateUnit": {
         "properties": {
           "duration": {
-            "description": "452ms in nanoseconds",
+            "description": "in nanoseconds",
             "example": 452000000,
-            "type": "object"
+            "format": "nanoseconds",
+            "type": "integer"
           },
           "error": {
-            "type": "object"
+            "$ref": "#/components/schemas/taskengine_ErrorResponse"
           },
           "input": {
             "example": "This is a test input that needs validation",
@@ -677,7 +709,7 @@
           },
           "inputType": {
             "example": "string",
-            "type": "object"
+            "type": "string"
           },
           "output": {
             "example": "valid",
@@ -685,7 +717,7 @@
           },
           "outputType": {
             "example": "string",
-            "type": "object"
+            "type": "string"
           },
           "taskHandler": {
             "example": "condition_key",
@@ -710,6 +742,31 @@
           "error",
           "input",
           "output"
+        ],
+        "type": "object"
+      },
+      "taskengine_ComposeTask": {
+        "properties": {
+          "strategy": {
+            "description": "Strategy defines how values should be merged (\"override\", \"merge_chat_histories\", \"append_string_to_chat_history\").\nOptional; defaults to \"override\" or \"merge_chat_histories\" if both output and WithVar values are ChatHistory.\n\"merge_chat_histories\": If both output and WithVar values are ChatHistory,\nappends the WithVar's Messages to the output's Messages.",
+            "type": "string"
+          },
+          "with_var": {
+            "description": "Selects the variable to compose the current input with.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_ErrorResponse": {
+        "properties": {
+          "error": {
+            "example": "validation failed: input contains prohibited content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
         ],
         "type": "object"
       },
@@ -782,11 +839,7 @@
             "type": "string"
           },
           "tasks": {
-            "description": "Tasks is the list of tasks to execute in sequence.",
-            "items": {
-              "$ref": "#/components/schemas/taskengine_TaskDefinition"
-            },
-            "type": "array"
+            "$ref": "#/components/schemas/taskengine_TaskDefinition"
           },
           "token_limit": {
             "description": "TokenLimit is the token limit for the context window (used during execution).",
@@ -805,8 +858,7 @@
       "taskengine_TaskDefinition": {
         "properties": {
           "compose": {
-            "description": "Compose merges the specified the output with the withVar side.\nOptional. compose is applied before the input reaches the task execution,",
-            "type": "object"
+            "$ref": "#/components/schemas/taskengine_ComposeTask"
           },
           "description": {
             "description": "Description is a human-readable summary of what the task does.",
@@ -814,23 +866,15 @@
             "type": "string"
           },
           "execute_config": {
-            "description": "ExecuteConfig defines the configuration for executing prompt or chat model tasks.",
-            "items": {
-              "$ref": "#/components/schemas/taskengine_LLMExecutionConfig"
-            },
-            "type": "object"
+            "$ref": "#/components/schemas/taskengine_LLMExecutionConfig"
           },
           "handler": {
             "description": "Handler determines how the LLM output (or hook) will be interpreted.",
             "example": "condition_key",
-            "type": "object"
+            "type": "string"
           },
           "hook": {
-            "description": "Hook defines an external action to run.\nRequired for Hook tasks, must be nil/omitted for all other types.\nExample: {type: \"send_email\", args: {\"to\": \"user@example.com\"}}",
-            "items": {
-              "$ref": "#/components/schemas/taskengine_HookCall"
-            },
-            "type": "object"
+            "$ref": "#/components/schemas/taskengine_HookCall"
           },
           "id": {
             "description": "ID uniquely identifies the task within the chain.",
@@ -868,11 +912,7 @@
             "type": "string"
           },
           "transition": {
-            "description": "Transition defines what to do after this task completes.",
-            "items": {
-              "$ref": "#/components/schemas/taskengine_TaskTransition"
-            },
-            "type": "object"
+            "$ref": "#/components/schemas/taskengine_TaskTransition"
           },
           "valid_conditions": {
             "additionalProperties": true,
@@ -893,11 +933,7 @@
       "taskengine_TaskTransition": {
         "properties": {
           "branches": {
-            "description": "Branches defines conditional branches for successful task completion.",
-            "items": {
-              "$ref": "#/components/schemas/taskengine_TransitionBranch"
-            },
-            "type": "array"
+            "$ref": "#/components/schemas/taskengine_TransitionBranch"
           },
           "on_failure": {
             "description": "OnFailure is the task ID to jump to in case of failure.",
@@ -932,7 +968,7 @@
           "operator": {
             "description": "Operator defines how to compare the task's output to When.",
             "example": "equals",
-            "type": "object"
+            "type": "string"
           },
           "when": {
             "description": "When specifies the condition that must be met to follow this branch.\nFormat depends on the task type:\n- For condition_key: exact string match\n- For parse_number: numeric comparison (using Operator)",
@@ -987,10 +1023,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "listPoolsForBackend"
+        "summary": "Lists all pools that a specific backend belongs to."
       },
       "parameters": [
         {
+          "description": "The unique identifier of the backend.",
           "in": "path",
           "name": "backendID",
           "required": true,
@@ -1025,7 +1062,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "listBackendsByPool"
+        "summary": "Lists all backends associated with a specific pool."
       },
       "parameters": [
         {
@@ -1063,10 +1100,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "removeBackend"
+        "summary": "Removes a backend from a pool."
       },
       "parameters": [
         {
+          "description": "The unique identifier of the pool.",
           "in": "path",
           "name": "poolID",
           "required": true,
@@ -1075,6 +1113,7 @@
           }
         },
         {
+          "description": "The unique identifier of the backend to be assigned.",
           "in": "path",
           "name": "backendID",
           "required": true,
@@ -1107,12 +1146,31 @@
             "description": "Default error response"
           }
         },
-        "summary": "assignBackend"
+        "summary": "Associates a backend with a pool."
       }
     },
     "/backends": {
       "get": {
         "description": "Lists all configured backend connections with runtime status.\nNOTE: Only backends assigned to at least one pool will be used for request processing.\nBackends not assigned to any pool exist in the configuration but are completely ignored by the routing system.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1135,7 +1193,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "listBackends"
+        "summary": "Lists all configured backend connections with runtime status."
       },
       "post": {
         "description": "Creates a new backend connection to an LLM provider.\nBackends represent connections to LLM services (e.g., Ollama, OpenAI) that can host models.\nNote: Creating a backend will be provisioned on the next synchronization cycle.",
@@ -1171,7 +1229,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "createBackend"
+        "summary": "Creates a new backend connection to an LLM provider."
       }
     },
     "/backends/{id}": {
@@ -1199,7 +1257,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "deleteBackend"
+        "summary": "Removes a backend connection."
       },
       "get": {
         "description": "Retrieves complete information for a specific backend",
@@ -1225,10 +1283,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "getBackend"
+        "summary": "Retrieves complete information for a specific backend"
       },
       "parameters": [
         {
+          "description": "The unique identifier for the backend.",
           "in": "path",
           "name": "id",
           "required": true,
@@ -1271,7 +1330,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "updateBackend"
+        "summary": "Updates an existing backend configuration."
       }
     },
     "/defaultmodel": {
@@ -1299,7 +1358,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "defaultModel"
+        "summary": "Returns the default model configured during system initialization."
       }
     },
     "/embed": {
@@ -1337,7 +1396,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "generateEmbeddings"
+        "summary": "Generates vector embeddings for text."
       }
     },
     "/execute": {
@@ -1358,7 +1417,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/execservice_TaskResponse"
+                  "$ref": "#/components/schemas/execservice_SimpleExecutionResponse"
                 }
               }
             },
@@ -1375,12 +1434,31 @@
             "description": "Default error response"
           }
         },
-        "summary": "executeSimpleTask"
+        "summary": "Runs the prompt through the default LLM."
       }
     },
     "/hooks/remote": {
       "get": {
         "description": "Lists all configured remote hooks with pagination support.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1403,7 +1481,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "list"
+        "summary": "Lists all configured remote hooks with pagination support."
       },
       "post": {
         "description": "Creates a new remote hook configuration.\nRemote hooks allow task-chains to trigger external HTTP services during execution.",
@@ -1439,7 +1517,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "create"
+        "summary": "Creates a new remote hook configuration."
       }
     },
     "/hooks/remote/{id}": {
@@ -1467,7 +1545,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "delete"
+        "summary": "Deletes a remote hook configuration by ID."
       },
       "get": {
         "description": "Retrieves a specific remote hook configuration by ID.",
@@ -1493,10 +1571,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "get"
+        "summary": "Retrieves a specific remote hook configuration by ID."
       },
       "parameters": [
         {
+          "description": "The unique identifier for the remote hook.",
           "in": "path",
           "name": "id",
           "required": true,
@@ -1539,18 +1618,37 @@
             "description": "Default error response"
           }
         },
-        "summary": "update"
+        "summary": "Updates an existing remote hook configuration."
       }
     },
     "/internal/models": {
       "get": {
         "description": "Lists all registered models in internal format.\nThis endpoint returns full model details including timestamps and capabilities.\nIntended for administrative and debugging purposes.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/array_*runtimetypes_Model"
+                  "$ref": "#/components/schemas/array_runtimetypes_Model"
                 }
               }
             },
@@ -1567,7 +1665,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "listInternal"
+        "summary": "Lists all registered models in internal format."
       }
     },
     "/model-associations/{modelID}/pools": {
@@ -1595,10 +1693,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "listPoolsForModel"
+        "summary": "Lists all pools that a specific model belongs to."
       },
       "parameters": [
         {
+          "description": "The unique identifier of the model.",
           "in": "path",
           "name": "modelID",
           "required": true,
@@ -1633,10 +1732,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "listModelsByPool"
+        "summary": "Lists all models associated with a specific pool."
       },
       "parameters": [
         {
+          "description": "The unique identifier of the pool.",
           "in": "path",
           "name": "poolID",
           "required": true,
@@ -1671,10 +1771,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "removeModel"
+        "summary": "Removes a model from a pool."
       },
       "parameters": [
         {
+          "description": "The unique identifier of the pool.",
           "in": "path",
           "name": "poolID",
           "required": true,
@@ -1683,6 +1784,7 @@
           }
         },
         {
+          "description": "The unique identifier of the model to be assigned.",
           "in": "path",
           "name": "modelID",
           "required": true,
@@ -1715,12 +1817,31 @@
             "description": "Default error response"
           }
         },
-        "summary": "assignModel"
+        "summary": "Associates a model with a pool."
       }
     },
     "/models": {
       "get": {
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one pool will be available for request processing.\nModels not assigned to any pool exist in the configuration but are completely ignored by the routing system.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1743,7 +1864,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "listModels"
+        "summary": "Lists all registered models in OpenAI-compatible format."
       },
       "post": {
         "description": "Declares a new model to the system.\nThe model must be available in a configured backend or will be queued for download.\nIMPORTANT: Models not assigned to any pool will NOT be available for request processing.\nIf pools are enabled, to make a model available to backends, it must be explicitly added to at least one pool.",
@@ -1779,12 +1900,23 @@
             "description": "Default error response"
           }
         },
-        "summary": "createModel"
+        "summary": "Declares a new model to the system."
       }
     },
     "/models/{id}": {
       "delete": {
         "description": "Deletes a model from the system registry.\n- Does not remove the model from backend storage (requires separate backend operation)\n- Accepts 'purge=true' query parameter to also remove related downloads from queue",
+        "parameters": [
+          {
+            "description": "If true, also removes the model from the download queue and cancels any in-progress downloads.",
+            "in": "query",
+            "name": "purge",
+            "schema": {
+              "default": "false",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1807,10 +1939,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "deleteModel"
+        "summary": "Deletes a model from the system registry."
       },
       "parameters": [
         {
+          "description": "The unique identifier for the model.",
           "in": "path",
           "name": "id",
           "required": true,
@@ -1853,7 +1986,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "updateModel"
+        "summary": "Updates an existing model registration."
       }
     },
     "/pool-by-name/{name}": {
@@ -1881,10 +2014,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "getPoolByName"
+        "summary": "Retrieves a pool by its human-readable name."
       },
       "parameters": [
         {
+          "description": "The unique, human-readable name of the pool.",
           "in": "path",
           "name": "name",
           "required": true,
@@ -1897,6 +2031,25 @@
     "/pool-by-purpose/{purpose}": {
       "get": {
         "description": "Lists pools filtered by purpose type with pagination support.\nPurpose types categorize pools (e.g., \"Internal Embeddings\", \"Internal Tasks\").\nAccepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -1919,10 +2072,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "listPoolsByPurpose"
+        "summary": "Lists pools filtered by purpose type with pagination support."
       },
       "parameters": [
         {
+          "description": "The purpose category to filter pools by (e.g., 'embeddings').",
           "in": "path",
           "name": "purpose",
           "required": true,
@@ -1957,7 +2111,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "listPools"
+        "summary": "Lists all resource pools in the system."
       },
       "post": {
         "description": "Creates a new resource pool for organizing backends and models.\nPool names must be unique within the system.\nPools allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).\nWhen pools are configured in the system, request routing ONLY considers resources that share a pool.\n- Models not assigned to any pool will NOT be available for execution\n- Backends not assigned to any pool will NOT receive models or process requests\n- Resources must be explicitly associated with the same pool to work together\nThis is a fundamental operational requirement - resources outside pools are effectively invisible to the routing system.",
@@ -1993,7 +2147,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "createPool"
+        "summary": "Creates a new resource pool for organizing backends and models."
       }
     },
     "/pools/{id}": {
@@ -2021,7 +2175,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "deletePool"
+        "summary": "Removes a pool from the system."
       },
       "get": {
         "description": "Retrieves a specific pool by its unique ID.",
@@ -2047,10 +2201,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "getPool"
+        "summary": "Retrieves a specific pool by its unique ID."
       },
       "parameters": [
         {
+          "description": "The unique identifier of the pool.",
           "in": "path",
           "name": "id",
           "required": true,
@@ -2093,12 +2248,31 @@
             "description": "Default error response"
           }
         },
-        "summary": "updatePool"
+        "summary": "Updates an existing pool configuration."
       }
     },
     "/providers/configs": {
       "get": {
-        "description": "Lists all configured external providers with pagination support.",
+        "description": "Lists all configured external providers with pagination support.\nLists all configured external providers with pagination support.",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2121,7 +2295,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "listConfigs"
+        "summary": "Lists all configured external providers with pagination support."
       }
     },
     "/providers/{providerType}/config": {
@@ -2149,7 +2323,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "deleteConfig"
+        "summary": "Removes provider configuration from the system."
       },
       "get": {
         "description": "Retrieves configuration details for a specific external provider.",
@@ -2175,10 +2349,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "get"
+        "summary": "Retrieves configuration details for a specific external provider."
       },
       "parameters": [
         {
+          "description": "The type of the provider to delete (e.g., 'openai', 'gemini').",
           "in": "path",
           "name": "providerType",
           "required": true,
@@ -2213,12 +2388,30 @@
             "description": "Default error response"
           }
         },
-        "summary": "getQueue"
+        "summary": "Retrieves the current model download queue state."
       }
     },
     "/queue/cancel": {
       "delete": {
         "description": "Cancels an in-progress model download.\nAccepts either:\n- 'url' query parameter to cancel a download on a specific backend\n- 'model' query parameter to cancel the model download across all backends\nExample: /queue/cancel?url=http://localhost:11434\n/queue/cancel?model=mistral:latest",
+        "parameters": [
+          {
+            "description": "The base URL of a specific backend to cancel downloads on.",
+            "in": "query",
+            "name": "url",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The model name to cancel downloads for across all backends.",
+            "in": "query",
+            "name": "model",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2241,7 +2434,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "cancelDownload"
+        "summary": "Cancels an in-progress model download."
       }
     },
     "/queue/inProgress": {
@@ -2269,7 +2462,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "inProgress"
+        "summary": "Streams real-time download progress via Server-Sent Events (SSE)."
       }
     },
     "/queue/{model}": {
@@ -2297,10 +2490,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "removeFromQueue"
+        "summary": "Removes a model from the download queue."
       },
       "parameters": [
         {
+          "description": "The name of the model to remove from the queue (e.g., 'mistral:latest').",
           "in": "path",
           "name": "model",
           "required": true,
@@ -2335,7 +2529,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "list"
+        "summary": "Retrieves the current runtime state of all LLM backends."
       }
     },
     "/supported": {
@@ -2363,7 +2557,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "supported"
+        "summary": "Lists available task-chain hook types."
       }
     },
     "/tasks": {
@@ -2401,7 +2595,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "executeTaskChain"
+        "summary": "Executes dynamic task-chain workflows."
       }
     }
   },

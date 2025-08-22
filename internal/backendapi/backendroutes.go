@@ -69,9 +69,12 @@ func (b *backendManager) createBackend(w http.ResponseWriter, r *http.Request) {
 func (b *backendManager) listBackends(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Parse pagination parameters from query string
+	// Parse pagination parameters using the helper
+	limitStr := serverops.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
+	cursorStr := serverops.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
+
 	var cursor *time.Time
-	if cursorStr := r.URL.Query().Get("cursor"); cursorStr != "" {
+	if cursorStr != "" {
 		t, err := time.Parse(time.RFC3339Nano, cursorStr)
 		if err != nil {
 			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
@@ -81,18 +84,19 @@ func (b *backendManager) listBackends(w http.ResponseWriter, r *http.Request) {
 		cursor = &t
 	}
 
-	limit := 100 // Default limit
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		i, err := strconv.Atoi(limitStr)
-		if err != nil {
-			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
-			_ = serverops.Error(w, r, err, serverops.ListOperation)
-			return
-		}
-		limit = i
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
 	}
 
 	backends, err := b.service.List(ctx, cursor, limit)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
 	if err != nil {
 		_ = serverops.Error(w, r, err, serverops.ListOperation)
 		return
@@ -148,7 +152,7 @@ type backendDetails struct {
 // Retrieves complete information for a specific backend
 func (b *backendManager) getBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
+	id := serverops.GetPathParam(r, "id", "The unique identifier for the backend.")
 	if id == "" {
 		serverops.Error(w, r, fmt.Errorf("missing id parameter %w", serverops.ErrBadPathValue), serverops.GetOperation)
 		return
@@ -204,7 +208,7 @@ func (b *backendManager) getBackend(w http.ResponseWriter, r *http.Request) {
 // Note: Updating a backend will be provisioned on the next synchronization cycle.
 func (b *backendManager) updateBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
+	id := serverops.GetPathParam(r, "id", "The unique identifier for the backend.")
 	if id == "" {
 		_ = serverops.Error(w, r, fmt.Errorf("missing id parameter %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
 		return
@@ -229,7 +233,7 @@ func (b *backendManager) updateBackend(w http.ResponseWriter, r *http.Request) {
 // Returns a simple "backend removed" confirmation message on success.
 func (b *backendManager) deleteBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := r.PathValue("id")
+	id := serverops.GetPathParam(r, "id", "The unique identifier for the backend.")
 	if id == "" {
 		_ = serverops.Error(w, r, fmt.Errorf("missing id parameter %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
 		return

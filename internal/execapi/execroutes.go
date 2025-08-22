@@ -47,17 +47,17 @@ func (tm *taskManager) executeSimpleTask(w http.ResponseWriter, r *http.Request)
 		_ = serverops.Error(w, r, err, serverops.ExecuteOperation)
 		return
 	}
-	_ = serverops.Encode(w, r, http.StatusOK, resp) // @response execservice.TaskResponse
+	_ = serverops.Encode(w, r, http.StatusOK, resp) // @response execservice.SimpleExecutionResponse
 }
 
 type taskExecutionRequest struct {
-	Input     any                             `json:"input" example:"What is the capital of France"`
+	Input     any                             `json:"input" example:"What is the capital of France" openapi_include_type:"object"`
 	InputType string                          `json:"inputType" example:"string"`
 	Chain     *taskengine.TaskChainDefinition `json:"chain" openapi_include_type:"taskengine.TaskChainDefinition"`
 }
 
 type taskExecutionResponse struct {
-	Output     any                            `json:"output" example:"Paris"`
+	Output     any                            `json:"output" example:"Paris" openapi_include_type:"object"`
 	OutputType string                         `json:"outputType" example:"string"`
 	State      []taskengine.CapturedStateUnit `json:"state" openapi_include_type:"taskengine.CapturedStateUnit"`
 }

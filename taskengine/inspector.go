@@ -38,11 +38,11 @@ type ExecutionState struct {
 type CapturedStateUnit struct {
 	TaskID      string        `json:"taskID" example:"validate_input"`
 	TaskHandler string        `json:"taskHandler" example:"condition_key"`
-	InputType   DataType      `json:"inputType" example:"string"`
-	OutputType  DataType      `json:"outputType" example:"string"`
+	InputType   DataType      `json:"inputType" example:"string" openapi_include_type:"string"`
+	OutputType  DataType      `json:"outputType" example:"string" openapi_include_type:"string"`
 	Transition  string        `json:"transition" example:"valid_input"`
 	Duration    time.Duration `json:"duration" example:"452000000"` // in nanoseconds
-	Error       ErrorResponse `json:"error"`
+	Error       ErrorResponse `json:"error" openapi_include_type:"taskengine.ErrorResponse"`
 	Input       string        `json:"input" example:"This is a test input that needs validation"`
 	Output      string        `json:"output" example:"valid"`
 }
