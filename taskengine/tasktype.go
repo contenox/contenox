@@ -48,6 +48,8 @@ const (
 	// Strips transition prefix if present in input.
 	HandleParseTransition TaskHandler = "parse_transition"
 
+	HandleConvertToOpenAIChatResponse TaskHandler = "convert_to_openai_chat_response"
+
 	// HandleNoop performs no operation, passing input through unchanged.
 	// Useful for data mutation, variable composition, and transition steps.
 	HandleNoop TaskHandler = "noop"

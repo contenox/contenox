@@ -982,7 +982,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.57"
+    "version": "v0.0.51-34-ge025693-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2385,17 +2385,17 @@
         "description": "Cancels an in-progress model download.\nAccepts either:\n- 'url' query parameter to cancel a download on a specific backend\n- 'model' query parameter to cancel the model download across all backends\nExample: /queue/cancel?url=http://localhost:11434\n/queue/cancel?model=mistral:latest",
         "parameters": [
           {
-            "description": "The model name to cancel downloads for across all backends.",
+            "description": "The base URL of a specific backend to cancel downloads on.",
             "in": "query",
-            "name": "model",
+            "name": "url",
             "schema": {
               "type": "string"
             }
           },
           {
-            "description": "The base URL of a specific backend to cancel downloads on.",
+            "description": "The model name to cancel downloads for across all backends.",
             "in": "query",
-            "name": "url",
+            "name": "model",
             "schema": {
               "type": "string"
             }

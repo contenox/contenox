@@ -131,6 +131,10 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 				Model:       "gpt-4",
 			},
 		},
+		MockTaskTypeSequence: []taskengine.DataType{
+			taskengine.DataTypeChatHistory,
+			taskengine.DataTypeChatHistory,
+		},
 	}
 	env := setupTestEnv(mockExec)
 
@@ -139,7 +143,7 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:      "task1",
-				Handler: taskengine.HandleRawString,
+				Handler: taskengine.HandleNoop,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
 						{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -148,7 +152,7 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 			},
 			{
 				ID:      "task2",
-				Handler: taskengine.HandleRawString,
+				Handler: taskengine.HandleNoop,
 				Compose: &taskengine.ComposeTask{
 					WithVar:  "task1",
 					Strategy: "merge_chat_histories",
@@ -163,9 +167,9 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 	}
 
 	// Execute chain
-	output, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+	output, dt, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeChatHistory)
 	require.NoError(t, err)
-
+	require.Equal(t, taskengine.DataTypeChatHistory, dt)
 	// Verify composition
 	ch, ok := output.(taskengine.ChatHistory)
 	require.True(t, ok, "output should be ChatHistory")
@@ -226,6 +230,75 @@ func TestUnit_ComposeAutoStrategy(t *testing.T) {
 		assert.Equal(t, 1, result["a"])
 		assert.Equal(t, 2, result["b"])
 	})
+}
+
+func TestUnit_ComposeMergeChatHistories_MessageOrder(t *testing.T) {
+	// Setup environment
+	mockExec := &taskengine.MockTaskExecutor{
+		MockOutputSequence: []any{
+			taskengine.ChatHistory{ // Task1 output (user message)
+				Messages: []taskengine.Message{
+					{Role: "user", Content: "User message"},
+				},
+			},
+			taskengine.ChatHistory{ // Task2 output (system message)
+				Messages: []taskengine.Message{
+					{Role: "system", Content: "System message"},
+				},
+			},
+		},
+		MockTaskTypeSequence: []taskengine.DataType{
+			taskengine.DataTypeChatHistory,
+			taskengine.DataTypeChatHistory,
+		},
+	}
+	env := setupTestEnv(mockExec)
+
+	// Define chain
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
+			{
+				ID:      "task1",
+				Handler: taskengine.HandleNoop,
+				Transition: taskengine.TaskTransition{
+					Branches: []taskengine.TransitionBranch{
+						{Operator: taskengine.OpDefault, Goto: "task2"},
+					},
+				},
+			},
+			{
+				ID:      "task2",
+				Handler: taskengine.HandleNoop,
+				Compose: &taskengine.ComposeTask{
+					WithVar:  "task1", // Compose with task1 output
+					Strategy: "merge_chat_histories",
+				},
+				Transition: taskengine.TaskTransition{
+					Branches: []taskengine.TransitionBranch{
+						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+					},
+				},
+			},
+		},
+	}
+
+	// Execute chain
+	output, dt, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeChatHistory)
+	require.NoError(t, err)
+	require.Equal(t, taskengine.DataTypeChatHistory, dt)
+
+	// Verify composition and message order
+	ch, ok := output.(taskengine.ChatHistory)
+	require.True(t, ok, "output should be ChatHistory")
+	require.Len(t, ch.Messages, 2)
+
+	// The right messages (task1 output) should come first
+	assert.Equal(t, "user", ch.Messages[0].Role)
+	assert.Equal(t, "User message", ch.Messages[0].Content)
+
+	// The left messages (task2 output) should come after
+	assert.Equal(t, "system", ch.Messages[1].Role)
+	assert.Equal(t, "System message", ch.Messages[1].Content)
 }
 
 func TestUnit_ComposeErrors(t *testing.T) {

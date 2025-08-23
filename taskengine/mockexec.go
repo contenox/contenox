@@ -14,6 +14,7 @@ type MockTaskExecutor struct {
 
 	// Sequence responses
 	MockOutputSequence      []any
+	MockTaskTypeSequence    []DataType
 	MockRawResponseSequence []string
 	ErrorSequence           []error
 
@@ -30,54 +31,83 @@ func (m *MockTaskExecutor) TaskExec(ctx context.Context, startingTime time.Time,
 	m.CalledWithTask = currentTask
 	m.CalledWithInput = input
 
-	// Store prompt if input is string (for backward compatibility)
-	if s, ok := input.(string); ok {
-		m.CalledWithPrompt = s
-	}
-
-	// Determine which output to return
+	// Get output from sequence or single value
 	var output any
-	switch {
-	case len(m.MockOutputSequence) > 0:
+	if len(m.MockOutputSequence) > 0 {
 		output = m.MockOutputSequence[0]
 		if len(m.MockOutputSequence) > 1 {
 			m.MockOutputSequence = m.MockOutputSequence[1:]
-		} else {
-			m.MockOutputSequence = nil
 		}
-	default:
+	} else {
 		output = m.MockOutput
 	}
 
-	// Determine which raw response to return
-	var rawResponse string
-	switch {
-	case len(m.MockRawResponseSequence) > 0:
-		rawResponse = m.MockRawResponseSequence[0]
-		if len(m.MockRawResponseSequence) > 1 {
-			m.MockRawResponseSequence = m.MockRawResponseSequence[1:]
-		} else {
-			m.MockRawResponseSequence = nil
-		}
-	default:
-		rawResponse = m.MockRawResponse
-	}
-
-	// Determine which error to return
+	// Get error from sequence or single value
 	var err error
-	switch {
-	case len(m.ErrorSequence) > 0:
+	if len(m.ErrorSequence) > 0 {
 		err = m.ErrorSequence[0]
 		if len(m.ErrorSequence) > 1 {
 			m.ErrorSequence = m.ErrorSequence[1:]
-		} else {
-			m.ErrorSequence = nil
 		}
-	default:
+	} else {
 		err = m.MockError
 	}
 
-	return output, dataType, rawResponse, err
+	// Get output data type from sequence or determine from output
+	var outputDataType DataType
+	if len(m.MockTaskTypeSequence) > 0 {
+		outputDataType = m.MockTaskTypeSequence[0]
+		if len(m.MockTaskTypeSequence) > 1 {
+			m.MockTaskTypeSequence = m.MockTaskTypeSequence[1:]
+		}
+	} else {
+		// Fallback: Determine data type from output value
+		switch v := output.(type) {
+		case string:
+			outputDataType = DataTypeString
+		case bool:
+			outputDataType = DataTypeBool
+		case int:
+			outputDataType = DataTypeInt
+		case float64:
+			outputDataType = DataTypeFloat
+		case ChatHistory:
+			outputDataType = DataTypeChatHistory
+		case OpenAIChatRequest:
+			outputDataType = DataTypeOpenAIChat
+		case OpenAIChatResponse:
+			outputDataType = DataTypeOpenAIChatResponse
+		case map[string]any:
+			outputDataType = DataTypeJSON
+		default:
+			if v == nil {
+				outputDataType = dataType // If output is nil, preserve input type
+			} else {
+				outputDataType = DataTypeAny
+			}
+		}
+	}
+
+	// Get raw response from sequence or single value
+	var rawResponse string
+	if len(m.MockRawResponseSequence) > 0 {
+		rawResponse = m.MockRawResponseSequence[0]
+		if len(m.MockRawResponseSequence) > 1 {
+			m.MockRawResponseSequence = m.MockRawResponseSequence[1:]
+		}
+	} else {
+		rawResponse = m.MockRawResponse
+	}
+
+	// Determine transition evaluation
+	transitionEval := "mock_transition_ok"
+	if s, ok := output.(string); ok {
+		transitionEval = s // Handlers like raw_string use their output for transitions.
+	} else if rawResponse != "" {
+		transitionEval = rawResponse
+	}
+
+	return output, outputDataType, transitionEval, err
 }
 
 // Reset clears all mock state between tests
@@ -86,6 +116,7 @@ func (m *MockTaskExecutor) Reset() {
 	m.MockRawResponse = ""
 	m.MockError = nil
 	m.MockOutputSequence = nil
+	m.MockTaskTypeSequence = nil
 	m.MockRawResponseSequence = nil
 	m.ErrorSequence = nil
 	m.CalledWithTask = nil

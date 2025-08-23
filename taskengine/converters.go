@@ -1,0 +1,93 @@
+package taskengine
+
+import "time"
+
+// ConvertChatHistoryToOpenAI converts the internal ChatHistory format to an OpenAI-compatible response.
+// This is useful for adapting the task engine's output to systems expecting an OpenAI API format.
+func ConvertChatHistoryToOpenAI(id string, chatHistory ChatHistory, config *LLMExecutionConfig) OpenAIChatResponse {
+	resp := OpenAIChatResponse{
+		ID:      id,
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   chatHistory.Model,
+		Usage: OpenAITokenUsage{
+			PromptTokens:     chatHistory.InputTokens,
+			CompletionTokens: chatHistory.OutputTokens,
+			TotalTokens:      chatHistory.InputTokens + chatHistory.OutputTokens,
+		},
+		Choices: []OpenAIChatResponseChoice{},
+	}
+
+	// Override model from execution config if provided.
+	if config != nil && config.Model != "" {
+		resp.Model = config.Model
+	}
+
+	// The last message in the history is assumed to be the assistant's completion.
+	if len(chatHistory.Messages) > 0 {
+		lastMessage := chatHistory.Messages[len(chatHistory.Messages)-1]
+		choice := OpenAIChatResponseChoice{
+			Index: 0,
+			Message: OpenAIChatRequestMessage{
+				Role:    lastMessage.Role,
+				Content: lastMessage.Content,
+			},
+			FinishReason: "stop",
+		}
+		resp.Choices = append(resp.Choices, choice)
+	}
+
+	return resp
+}
+
+// ConvertOpenAIToChatHistory converts an OpenAI-compatible chat request into the internal
+// ChatHistory and LLMExecutionConfig formats used by the task engine.
+func ConvertOpenAIToChatHistory(request OpenAIChatRequest) (ChatHistory, int, LLMExecutionConfig) {
+	chatHistory := ChatHistory{
+		Model:    request.Model,
+		Messages: make([]Message, 0, len(request.Messages)),
+	}
+
+	for _, reqMsg := range request.Messages {
+		chatHistory.Messages = append(chatHistory.Messages, Message{
+			Role:      reqMsg.Role,
+			Content:   reqMsg.Content,
+			Timestamp: time.Now().UTC(),
+		})
+	}
+
+	config := LLMExecutionConfig{
+		Model:       request.Model,
+		Temperature: float32(request.Temperature),
+	}
+
+	return chatHistory, request.MaxTokens, config
+}
+
+func ConvertChatHistoryToOpenAIRequest(
+	chatHistory ChatHistory,
+) (OpenAIChatRequest, int, int) {
+	model := chatHistory.Model
+
+	// Prepare messages
+	messages := make([]OpenAIChatRequestMessage, 0, len(chatHistory.Messages))
+	for _, msg := range chatHistory.Messages {
+		messages = append(messages, OpenAIChatRequestMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
+	}
+
+	temperature := 0.0
+
+	return OpenAIChatRequest{
+		Model:            model,
+		Messages:         messages,
+		Temperature:      temperature,
+		TopP:             0.0,
+		PresencePenalty:  0.0,
+		FrequencyPenalty: 0.0,
+		N:                0,
+		Stream:           false,
+	}, chatHistory.InputTokens, chatHistory.OutputTokens
+}

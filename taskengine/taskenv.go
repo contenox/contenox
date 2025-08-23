@@ -281,7 +281,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				if strategy == "" {
 					// Automatic strategy selection based on types
 					if dataType == DataTypeChatHistory && varTypes[compose.WithVar] == DataTypeChatHistory {
-						strategy = "chathistory_append"
+						strategy = "merge_chat_histories"
 					} else {
 						strategy = "override"
 					}
@@ -325,30 +325,60 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 						InputTokens:  0, // should be recalculated.
 					}
 				case "merge_chat_histories":
-					leftCH, leftIsCH := output.(ChatHistory)
-					rightCH, rightIsCH := rightVal.(ChatHistory)
-
-					if !leftIsCH || !rightIsCH {
-						rightType, ok := varTypes[compose.WithVar]
+					var leftReq OpenAIChatRequest
+					var rightReq OpenAIChatRequest
+					inputTokenCountLeft := 0
+					outputTokenCountLeft := 0
+					inputTokenCountRight := 0
+					outputTokenCountRight := 0
+					leftWasHistory := false
+					leftModel := ""
+					rightModel := ""
+					if outputType == DataTypeChatHistory {
+						leftWasHistory = true
+						chatHistory, ok := output.(ChatHistory)
 						if !ok {
-							return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'chathistory_append' requires both right value to exist")
+							err := fmt.Errorf("unexpected output type")
+							return nil, DataTypeAny, stack.GetExecutionHistory(), err
 						}
-
-						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'chathistory_append' requires both left (type: %s) and right (type: %s) values to be ChatHistory", dataType.String(), rightType.String())
+						inputTokenCountLeft = chatHistory.InputTokens
+						outputTokenCountLeft = chatHistory.OutputTokens
+						leftModel = chatHistory.Model
+						leftReq, _, _ = ConvertChatHistoryToOpenAIRequest(chatHistory)
+					}
+					rightType := varTypes[compose.WithVar]
+					rightWasHistory := false
+					if rightType == DataTypeChatHistory {
+						rightWasHistory = true
+						chatHistory, ok := rightVal.(ChatHistory)
+						if !ok {
+							err := fmt.Errorf("unexpected compose.WithVar type")
+							return nil, DataTypeAny, stack.GetExecutionHistory(), err
+						}
+						rightModel = rightReq.Model
+						inputTokenCountRight = chatHistory.InputTokens
+						outputTokenCountRight = chatHistory.OutputTokens
+						rightReq, _, _ = ConvertChatHistoryToOpenAIRequest(chatHistory)
 					}
 
-					leftCH.Messages = append(rightCH.Messages, leftCH.Messages...)
-
-					// Sum the token counts
-					leftCH.InputTokens += rightCH.InputTokens
-					leftCH.OutputTokens += rightCH.OutputTokens
-
-					// Clear the Model field if the models are different
-					if leftCH.Model != rightCH.Model {
-						leftCH.Model = ""
+					mergedReq := leftReq
+					if err := mergo.Merge(&mergedReq, rightReq, mergo.WithOverride); err != nil {
+						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("failed to merge request parameters: %w", err)
 					}
-					// If models are the same, leftCH.Model remains unchanged.
-					merged = leftCH
+					mergedReq.Messages = append(rightReq.Messages, leftReq.Messages...)
+					if rightModel != leftModel {
+						mergedReq.Model = ""
+					}
+					merged = mergedReq
+
+					outputType = DataTypeOpenAIChat
+					if leftWasHistory && rightWasHistory {
+						history, _, _ := ConvertOpenAIToChatHistory(mergedReq)
+						history.InputTokens = inputTokenCountLeft + inputTokenCountRight
+						history.OutputTokens = outputTokenCountLeft + outputTokenCountRight
+						merged = history
+						outputType = DataTypeChatHistory
+					}
 				default:
 					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("unsupported compose strategy: %q", strategy)
 				}

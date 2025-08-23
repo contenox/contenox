@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/contenox/runtime/internal/llmrepo"
 	libmodelprovider "github.com/contenox/runtime/internal/modelrepo"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/google/uuid"
 )
 
 // TaskExecutor executes individual tasks within a workflow.
@@ -279,6 +281,16 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				return "", fmt.Errorf("SEVERBUG: chat history is empty")
 			}
 			return history.Messages[len(history.Messages)-1].Content, nil
+		case DataTypeOpenAIChat:
+			request, ok := input.(OpenAIChatRequest)
+			if !ok {
+				return "", fmt.Errorf("internal error: input is not an OpenAIChatRequest")
+			}
+			if len(request.Messages) == 0 {
+				return "", fmt.Errorf("cannot get prompt from empty OpenAI chat request")
+			}
+			return request.Messages[len(request.Messages)-1].Content, nil
+
 		default:
 			return "", fmt.Errorf("getPrompt unsupported input type for task %v: %v", currentTask.Handler.String(), outputType.String())
 		}
@@ -343,19 +355,56 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 			return nil, DataTypeAny, "", errors.New(message)
 		}
-	case HandleModelExecution:
-		if currentTask.ExecuteConfig == nil {
-			return nil, DataTypeAny, "", fmt.Errorf("missing llm_execution config")
-		}
+	case HandleConvertToOpenAIChatResponse:
 		if dataType != DataTypeChatHistory {
-			return nil, DataTypeAny, "", fmt.Errorf("llm_execution requires chat history input was %s", dataType.String())
+			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'chat_history', but got '%s'", currentTask.Handler, dataType.String())
 		}
 		chatHistory, ok := input.(ChatHistory)
 		if !ok {
-			return nil, DataTypeAny, "", fmt.Errorf("llm_execution requires chat history input was claimed as %s but actually %T", dataType.String(), input)
+			return nil, DataTypeAny, "", fmt.Errorf("input data is not of type ChatHistory")
+		}
+
+		id := fmt.Sprintf("chatcmpl-%d-%s", time.Now().UnixNano(), uuid.NewString()[:4])
+		openAIResponse := ConvertChatHistoryToOpenAI(id, chatHistory, currentTask.ExecuteConfig)
+		output = openAIResponse
+		outputType = DataTypeOpenAIChatResponse
+		transitionEval = "converted"
+		taskErr = nil
+
+	case HandleModelExecution:
+		if currentTask.ExecuteConfig == nil {
+			currentTask.ExecuteConfig = &LLMExecutionConfig{}
+		}
+
+		var chatHistory ChatHistory
+		var finalExecConfig *LLMExecutionConfig = currentTask.ExecuteConfig
+
+		switch dataType {
+		case DataTypeOpenAIChat:
+			openAIRequest, ok := input.(OpenAIChatRequest)
+			if !ok {
+				return nil, DataTypeAny, "", fmt.Errorf("input data for handler %s claimed to be %s but was %T", currentTask.Handler, dataType.String(), input)
+			}
+
+			var requestConfig LLMExecutionConfig
+			chatHistory, _, requestConfig = ConvertOpenAIToChatHistory(openAIRequest)
+
+			finalExecConfig = &requestConfig
+			if err := mergo.Merge(finalExecConfig, currentTask.ExecuteConfig, mergo.WithOverride); err != nil {
+				return nil, DataTypeAny, "", fmt.Errorf("failed to merge execution configs: %w", err)
+			}
+
+		case DataTypeChatHistory:
+			var ok bool
+			chatHistory, ok = input.(ChatHistory)
+			if !ok {
+				return nil, DataTypeAny, "", fmt.Errorf("input data for handler %s claimed to be %s but was %T", currentTask.Handler, dataType.String(), input)
+			}
+
+		default:
+			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'openai_chat' or 'chat_history', but got '%s'", currentTask.Handler, dataType.String())
 		}
 		if currentTask.SystemInstruction != "" {
-			// Check if the exact system instruction already exists in the messages
 			alreadyPresent := false
 			for _, msg := range chatHistory.Messages {
 				if msg.Role == "system" && msg.Content == currentTask.SystemInstruction {
@@ -363,24 +412,18 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 					break
 				}
 			}
-
-			// Only add if not already present
 			if !alreadyPresent {
-				messages := []Message{
-					{
-						Role:      "system",
-						Content:   currentTask.SystemInstruction,
-						Timestamp: time.Now().UTC(),
-					},
-				}
+				messages := []Message{{Role: "system", Content: currentTask.SystemInstruction, Timestamp: time.Now().UTC()}}
 				chatHistory.Messages = append(messages, chatHistory.Messages...)
 			}
 		}
+
+		// Call the final execution function with the prepared data
 		output, outputType, transitionEval, taskErr = exe.executeLLM(
 			taskCtx,
 			chatHistory,
 			ctxLength,
-			currentTask.ExecuteConfig,
+			finalExecConfig,
 		)
 
 	case HandleHook:

@@ -81,6 +81,7 @@ def test_execute_taskchain(
             {
                 "id": "capital_task",
                 "handler": "raw_string",
+                "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "prompt_template": "What is the capital of France? Respond ONLY with the city name.",
                 "transition": {
                     "branches": [
