@@ -66,6 +66,12 @@
         },
         "type": "array"
       },
+      "array_taskengine_TaskChainDefinition": {
+        "items": {
+          "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+        },
+        "type": "array"
+      },
       "backendapi_OpenAICompatibleModelList": {
         "properties": {
           "data": {
@@ -1431,19 +1437,19 @@
         "description": "Lists all configured remote hooks with pagination support.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -1814,19 +1820,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one pool will be available for request processing.\nModels not assigned to any pool exist in the configuration but are completely ignored by the routing system.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -2547,6 +2553,190 @@
           }
         },
         "summary": "Lists available task-chain hook types."
+      }
+    },
+    "/taskchains": {
+      "get": {
+        "description": "Lists all task chain definitions with pagination.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_taskengine_TaskChainDefinition"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists all task chain definitions with pagination."
+      },
+      "post": {
+        "description": "Creates a new task chain definition.\nThe task chain is stored in the system's KV store for later execution.\nTask chains define workflows with conditional branches, external hooks, and captured execution state.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Creates a new task chain definition."
+      }
+    },
+    "/taskchains/{id}": {
+      "delete": {
+        "description": "Deletes a task chain definition.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Deletes a task chain definition."
+      },
+      "get": {
+        "description": "Retrieves a specific task chain by ID.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Retrieves a specific task chain by ID."
+      },
+      "parameters": [
+        {
+          "description": "The unique identifier for the task chain.",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "description": "Updates an existing task chain definition.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Updates an existing task chain definition."
       }
     },
     "/tasks": {

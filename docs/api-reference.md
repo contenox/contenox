@@ -780,8 +780,8 @@ Lists all configured remote hooks with pagination support.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -1365,8 +1365,8 @@ Models not assigned to any pool exist in the configuration but are completely ig
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -2487,6 +2487,501 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## Lists all task chain definitions with pagination.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/taskchains', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /taskchains`
+
+Lists all task chain definitions with pagination.
+
+<h3 id="lists-all-task-chain-definitions-with-pagination.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "debug": true,
+    "description": "string",
+    "id": "string",
+    "tasks": {
+      "compose": {
+        "strategy": "string",
+        "with_var": "string"
+      },
+      "description": "Validates user input meets quality requirements",
+      "execute_config": {
+        "model": "mistral:instruct",
+        "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+        "provider": "ollama",
+        "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
+        "temperature": 0.7
+      },
+      "handler": "condition_key",
+      "hook": {
+        "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
+        "name": "slack_notification"
+      },
+      "id": "validate_input",
+      "input_var": "input",
+      "print": "Validation result: {{.validate_input}}",
+      "prompt_template": "Is this input valid? {{.input}}",
+      "retry_on_failure": 2,
+      "system_instruction": "You are a quality control assistant. Respond only with 'valid' or 'invalid'.",
+      "timeout": "30s",
+      "transition": {
+        "branches": {
+          "goto": "positive_response",
+          "operator": "equals",
+          "when": "yes"
+        },
+        "on_failure": "error_handler"
+      },
+      "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
+    },
+    "token_limit": 0
+  }
+]
+```
+
+<h3 id="lists-all-task-chain-definitions-with-pagination.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_taskengine_TaskChainDefinition](#schemaarray_taskengine_taskchaindefinition)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Creates a new task chain definition.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/taskchains', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /taskchains`
+
+Creates a new task chain definition.
+The task chain is stored in the system's KV store for later execution.
+Task chains define workflows with conditional branches, external hooks, and captured execution state.
+
+> Body parameter
+
+```json
+{
+  "debug": true,
+  "description": "string",
+  "id": "string",
+  "tasks": {
+    "compose": {
+      "strategy": "string",
+      "with_var": "string"
+    },
+    "description": "Validates user input meets quality requirements",
+    "execute_config": {
+      "model": "mistral:instruct",
+      "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "provider": "ollama",
+      "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
+      "temperature": 0.7
+    },
+    "handler": "condition_key",
+    "hook": {
+      "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
+      "name": "slack_notification"
+    },
+    "id": "validate_input",
+    "input_var": "input",
+    "print": "Validation result: {{.validate_input}}",
+    "prompt_template": "Is this input valid? {{.input}}",
+    "retry_on_failure": 2,
+    "system_instruction": "You are a quality control assistant. Respond only with 'valid' or 'invalid'.",
+    "timeout": "30s",
+    "transition": {
+      "branches": {
+        "goto": "positive_response",
+        "operator": "equals",
+        "when": "yes"
+      },
+      "on_failure": "error_handler"
+    },
+    "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
+  },
+  "token_limit": 0
+}
+```
+
+<h3 id="creates-a-new-task-chain-definition.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[taskengine_TaskChainDefinition](#schemataskengine_taskchaindefinition)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "debug": true,
+  "description": "string",
+  "id": "string",
+  "tasks": {
+    "compose": {
+      "strategy": "string",
+      "with_var": "string"
+    },
+    "description": "Validates user input meets quality requirements",
+    "execute_config": {
+      "model": "mistral:instruct",
+      "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "provider": "ollama",
+      "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
+      "temperature": 0.7
+    },
+    "handler": "condition_key",
+    "hook": {
+      "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
+      "name": "slack_notification"
+    },
+    "id": "validate_input",
+    "input_var": "input",
+    "print": "Validation result: {{.validate_input}}",
+    "prompt_template": "Is this input valid? {{.input}}",
+    "retry_on_failure": 2,
+    "system_instruction": "You are a quality control assistant. Respond only with 'valid' or 'invalid'.",
+    "timeout": "30s",
+    "transition": {
+      "branches": {
+        "goto": "positive_response",
+        "operator": "equals",
+        "when": "yes"
+      },
+      "on_failure": "error_handler"
+    },
+    "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
+  },
+  "token_limit": 0
+}
+```
+
+<h3 id="creates-a-new-task-chain-definition.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[taskengine_TaskChainDefinition](#schemataskengine_taskchaindefinition)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Deletes a task chain definition.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/taskchains/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /taskchains/{id}`
+
+Deletes a task chain definition.
+
+<h3 id="deletes-a-task-chain-definition.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|The unique identifier for the task chain.|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="deletes-a-task-chain-definition.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves a specific task chain by ID.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/taskchains/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /taskchains/{id}`
+
+Retrieves a specific task chain by ID.
+
+<h3 id="retrieves-a-specific-task-chain-by-id.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|The unique identifier for the task chain.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "debug": true,
+  "description": "string",
+  "id": "string",
+  "tasks": {
+    "compose": {
+      "strategy": "string",
+      "with_var": "string"
+    },
+    "description": "Validates user input meets quality requirements",
+    "execute_config": {
+      "model": "mistral:instruct",
+      "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "provider": "ollama",
+      "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
+      "temperature": 0.7
+    },
+    "handler": "condition_key",
+    "hook": {
+      "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
+      "name": "slack_notification"
+    },
+    "id": "validate_input",
+    "input_var": "input",
+    "print": "Validation result: {{.validate_input}}",
+    "prompt_template": "Is this input valid? {{.input}}",
+    "retry_on_failure": 2,
+    "system_instruction": "You are a quality control assistant. Respond only with 'valid' or 'invalid'.",
+    "timeout": "30s",
+    "transition": {
+      "branches": {
+        "goto": "positive_response",
+        "operator": "equals",
+        "when": "yes"
+      },
+      "on_failure": "error_handler"
+    },
+    "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
+  },
+  "token_limit": 0
+}
+```
+
+<h3 id="retrieves-a-specific-task-chain-by-id.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[taskengine_TaskChainDefinition](#schemataskengine_taskchaindefinition)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Updates an existing task chain definition.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/taskchains/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /taskchains/{id}`
+
+Updates an existing task chain definition.
+
+> Body parameter
+
+```json
+{
+  "debug": true,
+  "description": "string",
+  "id": "string",
+  "tasks": {
+    "compose": {
+      "strategy": "string",
+      "with_var": "string"
+    },
+    "description": "Validates user input meets quality requirements",
+    "execute_config": {
+      "model": "mistral:instruct",
+      "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "provider": "ollama",
+      "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
+      "temperature": 0.7
+    },
+    "handler": "condition_key",
+    "hook": {
+      "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
+      "name": "slack_notification"
+    },
+    "id": "validate_input",
+    "input_var": "input",
+    "print": "Validation result: {{.validate_input}}",
+    "prompt_template": "Is this input valid? {{.input}}",
+    "retry_on_failure": 2,
+    "system_instruction": "You are a quality control assistant. Respond only with 'valid' or 'invalid'.",
+    "timeout": "30s",
+    "transition": {
+      "branches": {
+        "goto": "positive_response",
+        "operator": "equals",
+        "when": "yes"
+      },
+      "on_failure": "error_handler"
+    },
+    "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
+  },
+  "token_limit": 0
+}
+```
+
+<h3 id="updates-an-existing-task-chain-definition.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[taskengine_TaskChainDefinition](#schemataskengine_taskchaindefinition)|true|none|
+|id|path|string|true|The unique identifier for the task chain.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "debug": true,
+  "description": "string",
+  "id": "string",
+  "tasks": {
+    "compose": {
+      "strategy": "string",
+      "with_var": "string"
+    },
+    "description": "Validates user input meets quality requirements",
+    "execute_config": {
+      "model": "mistral:instruct",
+      "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "provider": "ollama",
+      "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
+      "temperature": 0.7
+    },
+    "handler": "condition_key",
+    "hook": {
+      "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
+      "name": "slack_notification"
+    },
+    "id": "validate_input",
+    "input_var": "input",
+    "print": "Validation result: {{.validate_input}}",
+    "prompt_template": "Is this input valid? {{.input}}",
+    "retry_on_failure": 2,
+    "system_instruction": "You are a quality control assistant. Respond only with 'valid' or 'invalid'.",
+    "timeout": "30s",
+    "transition": {
+      "branches": {
+        "goto": "positive_response",
+        "operator": "equals",
+        "when": "yes"
+      },
+      "on_failure": "error_handler"
+    },
+    "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
+  },
+  "token_limit": 0
+}
+```
+
+<h3 id="updates-an-existing-task-chain-definition.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[taskengine_TaskChainDefinition](#schemataskengine_taskchaindefinition)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Executes dynamic task-chain workflows.
 
 > Code samples
@@ -2912,6 +3407,66 @@ X-API-Key
 ### Properties
 
 *None*
+
+<h2 id="tocS_array_taskengine_TaskChainDefinition">array_taskengine_TaskChainDefinition</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_taskengine_taskchaindefinition"></a>
+<a id="schema_array_taskengine_TaskChainDefinition"></a>
+<a id="tocSarray_taskengine_taskchaindefinition"></a>
+<a id="tocsarray_taskengine_taskchaindefinition"></a>
+
+```json
+[
+  {
+    "debug": true,
+    "description": "string",
+    "id": "string",
+    "tasks": {
+      "compose": {
+        "strategy": "string",
+        "with_var": "string"
+      },
+      "description": "Validates user input meets quality requirements",
+      "execute_config": {
+        "model": "mistral:instruct",
+        "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+        "provider": "ollama",
+        "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
+        "temperature": 0.7
+      },
+      "handler": "condition_key",
+      "hook": {
+        "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
+        "name": "slack_notification"
+      },
+      "id": "validate_input",
+      "input_var": "input",
+      "print": "Validation result: {{.validate_input}}",
+      "prompt_template": "Is this input valid? {{.input}}",
+      "retry_on_failure": 2,
+      "system_instruction": "You are a quality control assistant. Respond only with 'valid' or 'invalid'.",
+      "timeout": "30s",
+      "transition": {
+        "branches": {
+          "goto": "positive_response",
+          "operator": "equals",
+          "when": "yes"
+        },
+        "on_failure": "error_handler"
+      },
+      "valid_conditions": "{\\\"valid\\\": true, \\\"invalid\\\": true}"
+    },
+    "token_limit": 0
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[taskengine_TaskChainDefinition](#schemataskengine_taskchaindefinition)]|false|none|none|
 
 <h2 id="tocS_backendapi_OpenAICompatibleModelList">backendapi_OpenAICompatibleModelList</h2>
 <!-- backwards compatibility -->

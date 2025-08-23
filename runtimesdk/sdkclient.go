@@ -17,20 +17,22 @@ import (
 	"github.com/contenox/runtime/poolservice"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/stateservice"
+	"github.com/contenox/runtime/taskchainservice"
 )
 
 // Client is the main SDK client that provides access to all services
 type Client struct {
-	BackendService  backendservice.Service
-	ModelService    modelservice.Service
-	PoolService     poolservice.Service
-	HookService     hookproviderservice.Service
-	ExecService     execservice.ExecService
-	EnvService      execservice.TasksEnvService
-	ProviderService providerservice.Service
-	DownloadService downloadservice.Service
-	StateService    stateservice.Service
-	EmbedService    embedservice.Service
+	BackendService   backendservice.Service
+	ModelService     modelservice.Service
+	PoolService      poolservice.Service
+	HookService      hookproviderservice.Service
+	ExecService      execservice.ExecService
+	EnvService       execservice.TasksEnvService
+	ProviderService  providerservice.Service
+	DownloadService  downloadservice.Service
+	StateService     stateservice.Service
+	EmbedService     embedservice.Service
+	TaskChainService taskchainservice.Service
 }
 
 // Config holds configuration for the SDK client
@@ -40,18 +42,19 @@ type Config struct {
 }
 
 // NewClient creates a new SDK client with the provided configuration
-func createClient(config Config, http *http.Client) (*Client, error) {
+func createClient(config Config, httpClient *http.Client) (*Client, error) {
 	return &Client{
-		BackendService:  NewHTTPBackendService(config.BaseURL, config.Token, http),
-		ModelService:    NewHTTPModelService(config.BaseURL, config.Token, http),
-		PoolService:     NewHTTPPoolService(config.BaseURL, config.Token, http),
-		HookService:     NewHTTPRemoteHookService(config.BaseURL, config.Token, http),
-		ExecService:     NewHTTPExecService(config.BaseURL, config.Token, http),
-		EnvService:      NewHTTPTasksEnvService(config.BaseURL, config.Token, http),
-		ProviderService: NewHTTPProviderService(config.BaseURL, config.Token, http),
-		DownloadService: NewHTTPDownloadService(config.BaseURL, config.Token, http),
-		StateService:    NewHTTPStateService(config.BaseURL, config.Token, http),
-		EmbedService:    NewHTTPEmbedService(config.BaseURL, config.Token, http),
+		BackendService:   NewHTTPBackendService(config.BaseURL, config.Token, httpClient),
+		ModelService:     NewHTTPModelService(config.BaseURL, config.Token, httpClient),
+		PoolService:      NewHTTPPoolService(config.BaseURL, config.Token, httpClient),
+		HookService:      NewHTTPRemoteHookService(config.BaseURL, config.Token, httpClient),
+		ExecService:      NewHTTPExecService(config.BaseURL, config.Token, httpClient),
+		EnvService:       NewHTTPTasksEnvService(config.BaseURL, config.Token, httpClient),
+		ProviderService:  NewHTTPProviderService(config.BaseURL, config.Token, httpClient),
+		DownloadService:  NewHTTPDownloadService(config.BaseURL, config.Token, httpClient),
+		StateService:     NewHTTPStateService(config.BaseURL, config.Token, httpClient),
+		EmbedService:     NewHTTPEmbedService(config.BaseURL, config.Token, httpClient),
+		TaskChainService: NewHTTPTaskChainService(config.BaseURL, config.Token, httpClient),
 	}, nil
 }
 
