@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-34-ge025693-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-36-g1e98ded-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-34-ge025693-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-36-g1e98ded-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -587,6 +587,108 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## Retrieves the currently configured task chain ID for OpenAI compatibility.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/chat/taskchain', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /chat/taskchain`
+
+Retrieves the currently configured task chain ID for OpenAI compatibility.
+Returns the ID of the task chain that will be used for /v1/chat/completions requests.
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "taskChainID": "openai-compatible-chain"
+}
+```
+
+<h3 id="retrieves-the-currently-configured-task-chain-id-for-openai-compatibility.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[chatapi_chainIDResponse](#schemachatapi_chainidresponse)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Configures which task chain to use for OpenAI-compatible chat completions.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/chat/taskchain', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /chat/taskchain`
+
+Configures which task chain to use for OpenAI-compatible chat completions.
+The task chain must already exist in the system. After configuration,
+all /v1/chat/completions requests will use this task chain for processing.
+
+> Body parameter
+
+```json
+{
+  "taskChainID": "openai-compatible-chain"
+}
+```
+
+<h3 id="configures-which-task-chain-to-use-for-openai-compatible-chat-completions.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[chatapi_SetTaskChainRequest](#schemachatapi_settaskchainrequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="configures-which-task-chain-to-use-for-openai-compatible-chat-completions.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Returns the default model configured during system initialization.
 
 > Code samples
@@ -1086,8 +1188,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1365,8 +1467,8 @@ Models not assigned to any pool exist in the configuration but are completely ig
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -3100,6 +3202,83 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## Processes chat requests using the configured task chain.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/v1/chat/completions', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /v1/chat/completions`
+
+Processes chat requests using the configured task chain.
+This endpoint provides OpenAI-compatible chat completions by executing
+the configured task chain with the provided request data.
+The task chain must be configured first using the /chat/taskchain endpoint.
+
+> Body parameter
+
+```json
+{
+  "frequency_penalty": 0,
+  "max_tokens": 512,
+  "messages": {
+    "content": "Hello, how are you?",
+    "role": "user"
+  },
+  "model": "mistral:instruct",
+  "n": 1,
+  "presence_penalty": 0,
+  "stop": "[\\\"\\\\n\\\", \\\"###\\\"]",
+  "stream": false,
+  "temperature": 0.7,
+  "top_p": 1,
+  "user": "user_123"
+}
+```
+
+<h3 id="processes-chat-requests-using-the-configured-task-chain.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|stackTrace|query|string|false|If provided the stacktraces will be added to the response.|
+|body|body|[taskengine_OpenAIChatRequest](#schemataskengine_openaichatrequest)|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": "string"
+}
+```
+
+<h3 id="processes-chat-requests-using-the-configured-task-chain.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="processes-chat-requests-using-the-configured-task-chain.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 # Schemas
 
 <h2 id="tocS_ErrorResponse">ErrorResponse</h2>
@@ -3603,6 +3782,46 @@ X-API-Key
 |pulledModels|[statetype_ModelPullStatus](#schemastatetype_modelpullstatus)|true|none|none|
 |type|string|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
+
+<h2 id="tocS_chatapi_SetTaskChainRequest">chatapi_SetTaskChainRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemachatapi_settaskchainrequest"></a>
+<a id="schema_chatapi_SetTaskChainRequest"></a>
+<a id="tocSchatapi_settaskchainrequest"></a>
+<a id="tocschatapi_settaskchainrequest"></a>
+
+```json
+{
+  "taskChainID": "openai-compatible-chain"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|taskChainID|string|true|none|The ID of the task chain to use for OpenAI-compatible chat completions|
+
+<h2 id="tocS_chatapi_chainIDResponse">chatapi_chainIDResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemachatapi_chainidresponse"></a>
+<a id="schema_chatapi_chainIDResponse"></a>
+<a id="tocSchatapi_chainidresponse"></a>
+<a id="tocschatapi_chainidresponse"></a>
+
+```json
+{
+  "taskChainID": "openai-compatible-chain"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|taskChainID|string|true|none|The ID of the Task-Chain used as default for Open-AI chat/completions.|
 
 <h2 id="tocS_downloadservice_Job">downloadservice_Job</h2>
 <!-- backwards compatibility -->
@@ -4275,6 +4494,71 @@ X-API-Key
 |provider|string|false|none|none|
 |providers|[string]|false|none|none|
 |temperature|number|false|none|none|
+
+<h2 id="tocS_taskengine_OpenAIChatRequest">taskengine_OpenAIChatRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemataskengine_openaichatrequest"></a>
+<a id="schema_taskengine_OpenAIChatRequest"></a>
+<a id="tocStaskengine_openaichatrequest"></a>
+<a id="tocstaskengine_openaichatrequest"></a>
+
+```json
+{
+  "frequency_penalty": 0,
+  "max_tokens": 512,
+  "messages": {
+    "content": "Hello, how are you?",
+    "role": "user"
+  },
+  "model": "mistral:instruct",
+  "n": 1,
+  "presence_penalty": 0,
+  "stop": "[\\\"\\\\n\\\", \\\"###\\\"]",
+  "stream": false,
+  "temperature": 0.7,
+  "top_p": 1,
+  "user": "user_123"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|frequency_penalty|number|false|none|none|
+|max_tokens|integer|false|none|none|
+|messages|[taskengine_OpenAIChatRequestMessage](#schemataskengine_openaichatrequestmessage)|true|none|none|
+|model|string|true|none|none|
+|n|integer|false|none|none|
+|presence_penalty|number|false|none|none|
+|stop|[string]|false|none|none|
+|stream|boolean|false|none|none|
+|temperature|number|false|none|none|
+|top_p|number|false|none|none|
+|user|string|false|none|none|
+
+<h2 id="tocS_taskengine_OpenAIChatRequestMessage">taskengine_OpenAIChatRequestMessage</h2>
+<!-- backwards compatibility -->
+<a id="schemataskengine_openaichatrequestmessage"></a>
+<a id="schema_taskengine_OpenAIChatRequestMessage"></a>
+<a id="tocStaskengine_openaichatrequestmessage"></a>
+<a id="tocstaskengine_openaichatrequestmessage"></a>
+
+```json
+{
+  "content": "Hello, how are you?",
+  "role": "user"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|content|string|true|none|none|
+|role|string|true|none|none|
 
 <h2 id="tocS_taskengine_TaskChainDefinition">taskengine_TaskChainDefinition</h2>
 <!-- backwards compatibility -->
