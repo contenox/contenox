@@ -2,6 +2,7 @@ package chatservice
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/contenox/runtime/execservice"
@@ -57,9 +58,13 @@ func (s *service) SetTaskChainID(ctx context.Context, taskChainID string) error 
 		return fmt.Errorf("invalid task chain ID: %w", err)
 	}
 
-	tx := s.dbInstance.WithoutTransaction()
-	storeInstance := runtimetypes.New(tx)
-	return storeInstance.SetKV(ctx, OPENAICHAINKEY, []byte(taskChainID))
+	storeInstance := runtimetypes.New(s.dbInstance.WithoutTransaction())
+	jsonValue, err := json.Marshal(taskChainID)
+	if err != nil {
+		return fmt.Errorf("failed to marshal task chain ID: %w", err)
+	}
+
+	return storeInstance.SetKV(ctx, OPENAICHAINKEY, jsonValue)
 }
 
 func (s *service) OpenAIChatCompletions(ctx context.Context, req taskengine.OpenAIChatRequest) (*taskengine.OpenAIChatResponse, []taskengine.CapturedStateUnit, error) {

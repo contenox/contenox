@@ -19,6 +19,7 @@ import (
 	"github.com/contenox/runtime/hookproviderservice"
 	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/internal/backendapi"
+	"github.com/contenox/runtime/internal/chatapi"
 	"github.com/contenox/runtime/internal/execapi"
 	"github.com/contenox/runtime/internal/hooksapi"
 	"github.com/contenox/runtime/internal/llmrepo"
@@ -158,6 +159,8 @@ func New(
 		taskChainService,
 	)
 	chatService = chatservice.WithActivityTracker(chatService, serveropsChainedTracker)
+	chatapi.AddChatRoutes(mux, chatService)
+
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
 	if config.Token != "" {

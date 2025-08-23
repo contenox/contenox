@@ -24,7 +24,7 @@ build: set-version validate-version
 	docker compose build --build-arg DEFAULT_ADMIN_USER=$(DEFAULT_ADMIN_USER)
 
 down:
-	docker compose down
+	docker compose down --remove-orphans
 
 run: down build
 	docker compose up -d
