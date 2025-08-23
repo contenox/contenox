@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/backendservice"
+	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/execservice"
@@ -33,6 +34,7 @@ type Client struct {
 	StateService     stateservice.Service
 	EmbedService     embedservice.Service
 	TaskChainService taskchainservice.Service
+	ChatService      chatservice.Service
 }
 
 // Config holds configuration for the SDK client
@@ -55,6 +57,7 @@ func createClient(config Config, httpClient *http.Client) (*Client, error) {
 		StateService:     NewHTTPStateService(config.BaseURL, config.Token, httpClient),
 		EmbedService:     NewHTTPEmbedService(config.BaseURL, config.Token, httpClient),
 		TaskChainService: NewHTTPTaskChainService(config.BaseURL, config.Token, httpClient),
+		ChatService:      NewHTTPChatService(config.BaseURL, config.Token, httpClient),
 	}, nil
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/backendservice"
+	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/execservice"
@@ -151,6 +152,12 @@ func New(
 	hookproviderService := hookproviderservice.New(dbInstance)
 	hookproviderService = hookproviderservice.WithActivityTracker(hookproviderService, serveropsChainedTracker)
 	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
+	chatService := chatservice.New(
+		dbInstance,
+		taskService,
+		taskChainService,
+	)
+	chatService = chatservice.WithActivityTracker(chatService, serveropsChainedTracker)
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
 	if config.Token != "" {
