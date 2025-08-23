@@ -24,6 +24,7 @@ import (
 	"github.com/contenox/runtime/internal/poolapi"
 	"github.com/contenox/runtime/internal/providerapi"
 	"github.com/contenox/runtime/internal/runtimestate"
+	"github.com/contenox/runtime/internal/taskchainapi"
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libroutine"
@@ -32,6 +33,7 @@ import (
 	"github.com/contenox/runtime/poolservice"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/stateservice"
+	"github.com/contenox/runtime/taskchainservice"
 	"github.com/contenox/runtime/taskengine"
 )
 
@@ -134,11 +136,14 @@ func New(
 	modelService := modelservice.New(dbInstance, config.EmbedModel)
 	modelService = modelservice.WithActivityTracker(modelService, serveropsChainedTracker)
 	backendapi.AddModelRoutes(mux, modelService, downloadService)
-	execService := execservice.NewExec(ctx, repo, dbInstance)
+	execService := execservice.NewExec(ctx, repo)
 	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
 	taskService := execservice.NewTasksEnv(ctx, environmentExec, dbInstance, hookRegistry)
 	embedService := embedservice.New(repo, config.EmbedModel, config.EmbedProvider)
 	embedService = embedservice.WithActivityTracker(embedService, serveropsChainedTracker)
+	taskChainService := taskchainservice.New(dbInstance)
+	taskChainService = taskchainservice.WithActivityTracker(taskChainService, serveropsChainedTracker)
+	taskchainapi.AddTaskChainRoutes(mux, taskChainService)
 	execapi.AddExecRoutes(mux, execService, taskService, embedService)
 	providerService := providerservice.New(dbInstance)
 	providerService = providerservice.WithActivityTracker(providerService, serveropsChainedTracker)

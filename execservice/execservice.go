@@ -6,7 +6,6 @@ import (
 
 	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/internal/llmrepo"
-	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/google/uuid"
 )
 
@@ -16,13 +15,11 @@ type ExecService interface {
 
 type execService struct {
 	modelRepo llmrepo.ModelRepo
-	db        libdb.DBManager
 }
 
-func NewExec(ctx context.Context, modelRepo llmrepo.ModelRepo, dbInstance libdb.DBManager) ExecService {
+func NewExec(ctx context.Context, modelRepo llmrepo.ModelRepo) ExecService {
 	return &execService{
 		modelRepo: modelRepo,
-		db:        dbInstance,
 	}
 }
 
