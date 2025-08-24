@@ -57,15 +57,10 @@ def test_openai_sdk_compatibility(
     response = requests.post(f"{base_url}/taskchains", json=task_chain)
     assert_status_code(response, 201)
 
-    # Configure as active task chain for OpenAI endpoint
-    response = requests.post(f"{base_url}/chat/taskchain", json={
-        "taskChainID": chain_id
-    })
-    assert_status_code(response, 200)
 
     # Configure OpenAI client to point to our endpoint
     client = OpenAI(
-        base_url=f"{base_url}/v1",
+        base_url=f"{base_url}/{chain_id}/v1",
         api_key="empty-key-for-now"
     )
 

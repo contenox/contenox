@@ -143,24 +143,6 @@ components:
                 - createdAt
                 - updatedAt
             type: object
-        chatapi_SetTaskChainRequest:
-            properties:
-                taskChainID:
-                    description: The ID of the task chain to use for OpenAI-compatible chat completions
-                    example: openai-compatible-chain
-                    type: string
-            required:
-                - taskChainID
-            type: object
-        chatapi_chainIDResponse:
-            properties:
-                taskChainID:
-                    description: The ID of the Task-Chain used as default for Open-AI chat/completions.
-                    example: openai-compatible-chain
-                    type: string
-            required:
-                - taskChainID
-            type: object
         downloadservice_Job:
             properties:
                 createdAt:
@@ -832,9 +814,50 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-39-gbc2b115-dirty
+    version: v0.0.51-42-g4bb5a8d-dirty
 openapi: 3.1.0
 paths:
+    /{chainID}/v1/chat/completions:
+        parameters:
+            - description: The ID of the task chain to use.
+              in: path
+              name: chainID
+              required: true
+              schema:
+                type: string
+        post:
+            description: |-
+                Processes chat requests using the configured task chain.
+                This endpoint provides OpenAI-compatible chat completions by executing
+                the configured task chain with the provided request data.
+                The task chain must be configured first using the /chat/taskchain endpoint.
+            parameters:
+                - description: If provided the stacktraces will be added to the response.
+                  in: query
+                  name: stackTrace
+                  schema:
+                    default: "false"
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/taskengine_OpenAIChatRequest'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/chatapi_OpenAIChatResponse'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Processes chat requests using the configured task chain.
     /backend-associations/{backendID}/pools:
         get:
             description: |-
@@ -1064,50 +1087,6 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Updates an existing backend configuration.
-    /chat/taskchain:
-        get:
-            description: |-
-                Retrieves the currently configured task chain ID for OpenAI compatibility.
-                Returns the ID of the task chain that will be used for /v1/chat/completions requests.
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/chatapi_chainIDResponse'
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Retrieves the currently configured task chain ID for OpenAI compatibility.
-        post:
-            description: |-
-                Configures which task chain to use for OpenAI-compatible chat completions.
-                The task chain must already exist in the system. After configuration,
-                all /v1/chat/completions requests will use this task chain for processing.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/chatapi_SetTaskChainRequest'
-                required: true
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                type: string
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Configures which task chain to use for OpenAI-compatible chat completions.
     /defaultmodel:
         get:
             description: Returns the default model configured during system initialization.
@@ -1863,14 +1842,14 @@ paths:
                 Example: /queue/cancel?url=http://localhost:11434
                 /queue/cancel?model=mistral:latest
             parameters:
-                - description: The base URL of a specific backend to cancel downloads on.
-                  in: query
-                  name: url
-                  schema:
-                    type: string
                 - description: The model name to cancel downloads for across all backends.
                   in: query
                   name: model
+                  schema:
+                    type: string
+                - description: The base URL of a specific backend to cancel downloads on.
+                  in: query
+                  name: url
                   schema:
                     type: string
             responses:
@@ -2095,39 +2074,5 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Executes dynamic task-chain workflows.
-    /v1/chat/completions:
-        post:
-            description: |-
-                Processes chat requests using the configured task chain.
-                This endpoint provides OpenAI-compatible chat completions by executing
-                the configured task chain with the provided request data.
-                The task chain must be configured first using the /chat/taskchain endpoint.
-            parameters:
-                - description: If provided the stacktraces will be added to the response.
-                  in: query
-                  name: stackTrace
-                  schema:
-                    default: "false"
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/taskengine_OpenAIChatRequest'
-                required: true
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/chatapi_OpenAIChatResponse'
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Processes chat requests using the configured task chain.
 security:
     - X-API-Key: []

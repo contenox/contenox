@@ -14,12 +14,13 @@ type activityTrackerDecorator struct {
 }
 
 // OpenAIChatCompletions implements Service.
-func (d *activityTrackerDecorator) OpenAIChatCompletions(ctx context.Context, req taskengine.OpenAIChatRequest) (*taskengine.OpenAIChatResponse, []taskengine.CapturedStateUnit, error) {
+func (d *activityTrackerDecorator) OpenAIChatCompletions(ctx context.Context, chainID string, req taskengine.OpenAIChatRequest) (*taskengine.OpenAIChatResponse, []taskengine.CapturedStateUnit, error) {
 	// Start tracking with relevant context
 	reportErr, _, endFn := d.tracker.Start(
 		ctx,
 		"openai_chat_completions",
 		"chat",
+		"chain_id", chainID,
 		"model", req.Model,
 		"message_count", len(req.Messages),
 		"max_tokens", req.MaxTokens,
@@ -27,7 +28,7 @@ func (d *activityTrackerDecorator) OpenAIChatCompletions(ctx context.Context, re
 	defer endFn()
 
 	// Execute the operation
-	resp, traces, err := d.service.OpenAIChatCompletions(ctx, req)
+	resp, traces, err := d.service.OpenAIChatCompletions(ctx, chainID, req)
 	if err != nil {
 		// Report error with additional context
 		reportErr(fmt.Errorf("chat completions failed: %w", err))
@@ -35,49 +36,6 @@ func (d *activityTrackerDecorator) OpenAIChatCompletions(ctx context.Context, re
 	}
 
 	return resp, traces, nil
-}
-
-// SetTaskChainID implements Service.
-func (d *activityTrackerDecorator) SetTaskChainID(ctx context.Context, taskChainID string) error {
-	// Start tracking with relevant context
-	reportErr, _, endFn := d.tracker.Start(
-		ctx,
-		"set_task_chain_id",
-		"chat",
-		"chain_id", taskChainID,
-	)
-	defer endFn()
-
-	// Execute the operation
-	err := d.service.SetTaskChainID(ctx, taskChainID)
-	if err != nil {
-		// Report error with additional context
-		reportErr(fmt.Errorf("failed to set task chain ID: %w", err))
-		return err
-	}
-
-	return nil
-}
-
-// GetTaskChainID implements Service.
-func (d *activityTrackerDecorator) GetTaskChainID(ctx context.Context) (string, error) {
-	// Start tracking with relevant context
-	reportErr, _, endFn := d.tracker.Start(
-		ctx,
-		"get_task_chain_id",
-		"chat",
-	)
-	defer endFn()
-
-	// Execute the operation
-	chainID, err := d.service.GetTaskChainID(ctx)
-	if err != nil {
-		// Report error with additional context
-		reportErr(fmt.Errorf("failed to get task chain ID: %w", err))
-		return "", err
-	}
-
-	return chainID, nil
 }
 
 // WithActivityTracker creates a new decorated service that tracks activity
