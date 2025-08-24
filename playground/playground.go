@@ -19,6 +19,7 @@ import (
 	"github.com/contenox/runtime/internal/runtimestate"
 	"github.com/contenox/runtime/libbus"
 	"github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/modelservice"
 	"github.com/contenox/runtime/poolservice"
@@ -29,6 +30,8 @@ import (
 	"github.com/contenox/runtime/taskengine"
 )
 
+// Playground provides a fluent API for setting up a test environment.
+// Errors are chained, and execution stops on the first failure.
 type Playground struct {
 	cleanUps                []func()
 	db                      libdbexec.DBManager
@@ -38,6 +41,7 @@ type Playground struct {
 	llmRepo                 llmrepo.ModelRepo
 	hookrepo                taskengine.HookRepo
 	withPool                bool
+	routinesStarted         bool
 	embeddingsModel         string
 	embeddingsModelProvider string
 	llmPromptModel          string
@@ -47,68 +51,203 @@ type Playground struct {
 	Error                   error
 }
 
-func NewPlayground() *Playground {
+// A fixed tenant ID for testing purposes.
+const testTenantID = "00000000-0000-0000-0000-000000000000"
+
+// New creates a new Playground instance.
+func New() *Playground {
 	return &Playground{}
 }
 
+// AddCleanUp adds a cleanup function to be called by CleanUp.
 func (p *Playground) AddCleanUp(cleanUp func()) {
 	p.cleanUps = append(p.cleanUps, cleanUp)
 }
 
+// GetError returns the first error that occurred during the setup chain.
 func (p *Playground) GetError() error {
 	return p.Error
 }
 
-func (p *Playground) WithPostgres(ctx context.Context) {
-	connStr, _, cleanup, err := libdbexec.SetupLocalInstance(ctx, "test", "test", "test")
-	if err != nil {
-		p.Error = err
-		return
+// CleanUp runs all registered cleanup functions.
+func (p *Playground) CleanUp() {
+	// Run cleanups in reverse order of addition.
+	for i := len(p.cleanUps) - 1; i >= 0; i-- {
+		p.cleanUps[i]()
 	}
-	dbManager, err := libdbexec.NewPostgresDBManager(ctx, connStr, runtimetypes.Schema)
-	if err != nil {
-		p.Error = err
-		return
-	}
-	p.db = dbManager
-	p.AddCleanUp(cleanup)
 }
 
-func (p *Playground) WithNats(ctx context.Context) {
+// StartBackgroundRoutines starts the core background processes for backend and download cycles.
+func (p *Playground) StartBackgroundRoutines(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.state == nil {
+		p.Error = errors.New("cannot start background routines: runtime state is not initialized")
+		return p
+	}
+
+	pool := libroutine.GetPool()
+
+	pool.StartLoop(
+		ctx,
+		&libroutine.LoopConfig{
+			Key:          "backendCycle",
+			Threshold:    3,
+			ResetTimeout: 1 * time.Second,
+			Interval:     1 * time.Second,
+			Operation:    p.state.RunBackendCycle,
+		},
+	)
+
+	pool.StartLoop(
+		ctx,
+		&libroutine.LoopConfig{
+			Key:          "downloadCycle",
+			Threshold:    3,
+			ResetTimeout: 1 * time.Second,
+			Interval:     1 * time.Second,
+			Operation:    p.state.RunDownloadCycle,
+		},
+	)
+
+	// Force an initial run to kick things off immediately in the test environment.
+	pool.ForceUpdate("backendCycle")
+	pool.ForceUpdate("downloadCycle")
+
+	p.routinesStarted = true
+	return p
+}
+
+// WithInternalOllamaEmbedder initializes the internal embedding model and pool.
+func (p *Playground) WithInternalOllamaEmbedder(ctx context.Context, modelName string, contextLen int) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.db == nil {
+		p.Error = errors.New("cannot init internal embedder: database is not configured")
+		return p
+	}
+	p.embeddingsModel = modelName
+	p.embeddingsModelProvider = "ollama"
+	config := &runtimestate.Config{
+		EmbedModel: modelName,
+		TenantID:   testTenantID,
+	}
+
+	err := runtimestate.InitEmbeder(ctx, config, p.db, contextLen, p.state)
+	if err != nil {
+		p.Error = fmt.Errorf("failed to initialize internal embedder: %w", err)
+	}
+	return p
+}
+
+// WithInternalPromptExecutor initializes the internal task/prompt model and pool.
+func (p *Playground) WithInternalPromptExecutor(ctx context.Context, modelName string, contextLen int) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.db == nil {
+		p.Error = errors.New("cannot init internal prompt executor: database is not configured")
+		return p
+	}
+	if p.tokenizer == nil {
+		p.Error = errors.New("cannot init internal prompt executor: tokenizer is not configured")
+		return p
+	}
+
+	config := &runtimestate.Config{
+		TaskModel: modelName,
+		TenantID:  testTenantID,
+	}
+
+	err := runtimestate.InitPromptExec(ctx, config, p.db, p.state, contextLen, p.tokenizer)
+	if err != nil {
+		p.Error = fmt.Errorf("failed to initialize internal prompt executor: %w", err)
+	}
+	return p
+}
+
+// WithPostgresTestContainer sets up a test PostgreSQL container and initializes the DB manager.
+func (p *Playground) WithPostgresTestContainer(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	connStr, _, cleanup, err := libdbexec.SetupLocalInstance(ctx, "test", "test", "test")
+	if err != nil {
+		p.Error = fmt.Errorf("failed to setup postgres test container: %w", err)
+		return p
+	}
+	p.AddCleanUp(cleanup)
+
+	dbManager, err := libdbexec.NewPostgresDBManager(ctx, connStr, runtimetypes.Schema)
+	if err != nil {
+		p.Error = fmt.Errorf("failed to create postgres db manager: %w", err)
+		return p
+	}
+	p.db = dbManager
+	return p
+}
+
+// WithNats sets up a test NATS server.
+func (p *Playground) WithNats(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
 	ps, cleanup, err := libbus.NewTestPubSub()
 	if err != nil {
-		p.Error = err
-		return
+		p.Error = fmt.Errorf("failed to setup nats test server: %w", err)
+		return p
 	}
 	p.AddCleanUp(cleanup)
 	p.bus = ps
+	return p
 }
 
-func (p *Playground) WithDefaultEmbeddingsModel(model string, provider string) {
+// WithDefaultEmbeddingsModel sets the default embeddings model and provider.
+func (p *Playground) WithDefaultEmbeddingsModel(model string, provider string) *Playground {
+	if p.Error != nil {
+		return p
+	}
 	p.embeddingsModel = model
 	p.embeddingsModelProvider = provider
+	return p
 }
 
-func (p *Playground) WithDefaultPromptModel(model string, provider string) {
+// WithDefaultPromptModel sets the default prompt model and provider.
+func (p *Playground) WithDefaultPromptModel(model string, provider string) *Playground {
+	if p.Error != nil {
+		return p
+	}
 	p.llmPromptModel = model
 	p.llmPromptModelProvider = provider
+	return p
 }
 
-func (p *Playground) WithDefaultChatModel(model string, provider string) {
+// WithDefaultChatModel sets the default chat model and provider.
+func (p *Playground) WithDefaultChatModel(model string, provider string) *Playground {
+	if p.Error != nil {
+		return p
+	}
 	p.llmChatModel = model
 	p.llmChatModelProvider = provider
+	return p
 }
 
-func (p *Playground) WithRuntimeState(ctx context.Context, withPools bool) {
+// WithRuntimeState initializes the runtime state.
+func (p *Playground) WithRuntimeState(ctx context.Context, withPools bool) *Playground {
 	if p.Error != nil {
-		return
+		return p
 	}
 	if p.db == nil {
-		return
+		p.Error = errors.New("cannot initialize runtime state: database is not configured")
+		return p
 	}
 	if p.bus == nil {
-		return
+		p.Error = errors.New("cannot initialize runtime state: message bus is not configured")
+		return p
 	}
+
 	var state *runtimestate.State
 	var err error
 	p.withPool = withPools
@@ -117,58 +256,55 @@ func (p *Playground) WithRuntimeState(ctx context.Context, withPools bool) {
 	} else {
 		state, err = runtimestate.New(ctx, p.db, p.bus)
 	}
+
 	if err != nil {
-		p.Error = err
-		return
+		p.Error = fmt.Errorf("failed to initialize runtime state: %w", err)
+		return p
 	}
 	p.state = state
+	return p
 }
 
-func (p *Playground) WithMockHookRegistry() {
+// WithMockHookRegistry sets up a mock hook registry.
+func (p *Playground) WithMockHookRegistry() *Playground {
 	if p.Error != nil {
-		return
+		return p
 	}
 	if p.state == nil {
-		return
+		p.Error = errors.New("cannot initialize mock hook registry: runtime state is not configured")
+		return p
 	}
 	p.hookrepo = hooks.NewMockHookRegistry()
+	return p
 }
 
-func (p *Playground) WithMockTokenizer() {
+// WithMockTokenizer sets up a mock tokenizer.
+func (p *Playground) WithMockTokenizer() *Playground {
 	if p.Error != nil {
-		return
+		return p
 	}
 	if p.state == nil {
-		return
+		p.Error = errors.New("cannot initialize mock tokenizer: runtime state is not configured")
+		return p
 	}
 	p.tokenizer = ollamatokenizer.MockTokenizer{}
+	return p
 }
 
-func (p *Playground) WithLLMRepo() {
+// WithLLMRepo initializes the LLM repository.
+func (p *Playground) WithLLMRepo() *Playground {
 	if p.Error != nil {
-		return
+		return p
 	}
 	if p.state == nil {
-		return
+		p.Error = errors.New("cannot initialize llm repo: runtime state is not configured")
+		return p
 	}
 	if p.tokenizer == nil {
-		return
+		p.Error = errors.New("cannot initialize llm repo: tokenizer is not configured")
+		return p
 	}
-	if p.embeddingsModelProvider == "" {
-		return
-	}
-	if p.llmChatModel == "" {
-		return
-	}
-	if p.llmChatModelProvider == "" {
-		return
-	}
-	if p.llmPromptModel == "" {
-		return
-	}
-	if p.llmPromptModelProvider == "" {
-		return
-	}
+
 	var err error
 	p.llmRepo, err = llmrepo.NewModelManager(p.state, p.tokenizer, llmrepo.ModelManagerConfig{
 		DefaultEmbeddingModel: llmrepo.ModelConfig{
@@ -185,223 +321,240 @@ func (p *Playground) WithLLMRepo() {
 		},
 	})
 	if err != nil {
-		p.Error = err
-		return
+		p.Error = fmt.Errorf("failed to create llm repo model manager: %w", err)
+		return p
 	}
+	return p
 }
 
-func (p *Playground) WithOllamaBackend(ctx context.Context, name, tag string, assignEmbeddingModel, assignTasksModel bool) {
+// WithOllamaBackend sets up an Ollama test instance and registers it as a backend.
+func (p *Playground) WithOllamaBackend(ctx context.Context, name, tag string, assignEmbeddingModel, assignTasksModel bool) *Playground {
+	if p.Error != nil {
+		return p
+	}
 	uri, _, cleanup, err := modelrepo.SetupOllamaLocalInstance(ctx, tag)
 	if err != nil {
-		p.Error = err
-		return
+		p.Error = fmt.Errorf("failed to setup ollama local instance: %w", err)
+		return p
 	}
 	p.AddCleanUp(cleanup)
+
 	backends, err := p.GetBackendService()
 	if err != nil {
-		p.Error = err
-		return
+		p.Error = fmt.Errorf("failed to get backend service for ollama setup: %w", err)
+		return p
 	}
+
 	backend := &runtimetypes.Backend{
 		Name:    name,
 		BaseURL: uri,
 		Type:    "ollama",
 	}
-	err = backends.Create(ctx, backend)
-	if err != nil {
-		p.Error = err
-		return
+	if err := backends.Create(ctx, backend); err != nil {
+		p.Error = fmt.Errorf("failed to create ollama backend '%s': %w", name, err)
+		return p
 	}
+
 	if !p.withPool {
-		return
+		return p
 	}
+
 	pool, err := p.GetPoolService()
 	if err != nil {
-		p.Error = err
-		return
+		p.Error = fmt.Errorf("failed to get pool service for ollama setup: %w", err)
+		return p
 	}
+
 	if assignEmbeddingModel {
-		err = pool.AssignBackend(ctx, runtimestate.EmbedPoolID, backend.ID)
-		if err != nil {
-			p.Error = err
-			return
+		if err := pool.AssignBackend(ctx, runtimestate.EmbedPoolID, backend.ID); err != nil {
+			p.Error = fmt.Errorf("failed to assign ollama backend to embed pool: %w", err)
+			return p
 		}
 	}
 	if assignTasksModel {
-		err = pool.AssignBackend(ctx, runtimestate.TasksPoolID, backend.ID)
-		if err != nil {
-			p.Error = err
-			return
+		if err := pool.AssignBackend(ctx, runtimestate.TasksPoolID, backend.ID); err != nil {
+			p.Error = fmt.Errorf("failed to assign ollama backend to tasks pool: %w", err)
+			return p
 		}
 	}
+	return p
 }
 
+// GetBackendService returns a new backend service instance.
 func (p *Playground) GetBackendService() (backendservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.db == nil {
-		return nil, errors.New("database is not initialized")
+		return nil, errors.New("cannot get backend service: database is not initialized")
 	}
-	service := backendservice.New(p.db)
-	return service, nil
+	return backendservice.New(p.db), nil
 }
 
-func (p *Playground) WithDownloadService() (downloadservice.Service, error) {
+// GetDownloadService returns a new download service instance.
+func (p *Playground) GetDownloadService() (downloadservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.db == nil {
-		return nil, errors.New("database is not initialized")
+		return nil, errors.New("cannot get download service: database is not initialized")
 	}
-	service := downloadservice.New(p.db, p.bus)
-	return service, nil
+	if p.bus == nil {
+		return nil, errors.New("cannot get download service: message bus is not initialized")
+	}
+	return downloadservice.New(p.db, p.bus), nil
 }
 
+// GetModelService returns a new model service instance.
 func (p *Playground) GetModelService() (modelservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.db == nil {
-		return nil, errors.New("database is not initialized")
+		return nil, errors.New("cannot get model service: database is not initialized")
 	}
-	if p.embeddingsModel == "" {
-		return nil, errors.New("embeddings model is not initialized")
-	}
-	service := modelservice.New(p.db, p.embeddingsModel)
-	return service, nil
+	return modelservice.New(p.db, p.embeddingsModel), nil
 }
 
+// GetPoolService returns a new pool service instance.
 func (p *Playground) GetPoolService() (poolservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.db == nil {
-		return nil, errors.New("database is not initialized")
+		return nil, errors.New("cannot get pool service: database is not initialized")
 	}
-	service := poolservice.New(p.db)
-	return service, nil
+	return poolservice.New(p.db), nil
 }
 
+// GetProviderService returns a new provider service instance.
 func (p *Playground) GetProviderService() (providerservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.db == nil {
-		return nil, errors.New("database is not initialized")
+		return nil, errors.New("cannot get provider service: database is not initialized")
 	}
-	service := providerservice.New(p.db)
-	return service, nil
+	return providerservice.New(p.db), nil
 }
 
+// GetEmbedService returns a new embed service instance.
 func (p *Playground) GetEmbedService() (embedservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
-	if p.db == nil {
-		return nil, errors.New("database is not initialized")
+	if p.llmRepo == nil {
+		return nil, errors.New("cannot get embed service: llm repo is not initialized")
 	}
 	if p.embeddingsModel == "" {
-		return nil, errors.New("embeddings model is not initialized")
+		return nil, errors.New("cannot get embed service: embeddings model is not configured")
 	}
 	if p.embeddingsModelProvider == "" {
-		return nil, errors.New("embeddings model provider is not initialized")
+		return nil, errors.New("cannot get embed service: embeddings model provider is not configured")
 	}
-	service := embedservice.New(p.llmRepo, p.embeddingsModel, p.embeddingsModelProvider)
-	return service, nil
+	return embedservice.New(p.llmRepo, p.embeddingsModel, p.embeddingsModelProvider), nil
 }
 
+// GetStateService returns a new state service instance.
 func (p *Playground) GetStateService() (stateservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.state == nil {
-		return nil, errors.New("state is not initialized")
+		return nil, errors.New("cannot get state service: runtime state is not initialized")
 	}
-	service := stateservice.New(p.state)
-	return service, nil
+	return stateservice.New(p.state), nil
 }
 
+// GetTaskChainService returns a new task chain service instance.
 func (p *Playground) GetTaskChainService() (taskchainservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.db == nil {
-		return nil, errors.New("database is not initialized")
+		return nil, errors.New("cannot get task chain service: database is not initialized")
 	}
-	service := taskchainservice.New(p.db)
-	return service, nil
+	return taskchainservice.New(p.db), nil
 }
 
+// GetExecService returns a new exec service instance.
 func (p *Playground) GetExecService(ctx context.Context) (execservice.ExecService, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.llmRepo == nil {
-		return nil, errors.New("llmRepo is not initialized")
+		return nil, errors.New("cannot get exec service: llmRepo is not initialized")
 	}
-	service := execservice.NewExec(ctx, p.llmRepo)
-	return service, nil
+	return execservice.NewExec(ctx, p.llmRepo), nil
 }
 
+// GetTasksEnvService returns a new tasks environment service instance.
 func (p *Playground) GetTasksEnvService(ctx context.Context) (execservice.TasksEnvService, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.llmRepo == nil {
-		return nil, errors.New("llmRepo is not initialized")
+		return nil, errors.New("cannot get tasks env service: llmRepo is not initialized")
 	}
 	if p.hookrepo == nil {
-		return nil, errors.New("hookrepo is not initialized")
+		return nil, errors.New("cannot get tasks env service: hookrepo is not initialized")
 	}
+
 	exec, err := taskengine.NewExec(ctx, p.llmRepo, p.hookrepo, &libtracker.LogActivityTracker{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create task engine exec: %w", err)
 	}
+
 	env, err := taskengine.NewEnv(ctx, &libtracker.LogActivityTracker{}, exec, &taskengine.NoopInspector{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create task engine env: %w", err)
 	}
-	service := execservice.NewTasksEnv(ctx, env, p.hookrepo)
-	return service, nil
+
+	return execservice.NewTasksEnv(ctx, env, p.hookrepo), nil
 }
 
+// GetChatService returns a new chat service instance.
 func (p *Playground) GetChatService(ctx context.Context) (chatservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
+
 	envExec, err := p.GetTasksEnvService(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get tasks env service for chat service: %w", err)
 	}
+
 	taskChainService, err := p.GetTaskChainService()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get task chain service for chat service: %w", err)
 	}
-	service := chatservice.New(envExec, taskChainService)
 
-	return service, nil
+	return chatservice.New(envExec, taskChainService), nil
 }
 
+// GetHookProviderService returns a new hook provider service instance.
 func (p *Playground) GetHookProviderService() (hookproviderservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.db == nil {
-		return nil, errors.New("database is not initialized")
+		return nil, errors.New("cannot get hook provider service: database is not initialized")
 	}
-	service := hookproviderservice.New(p.db)
-	return service, nil
+	return hookproviderservice.New(p.db), nil
 }
 
+// WaitUntilModelIsReady blocks until the specified model is available on the specified backend.
 func (p *Playground) WaitUntilModelIsReady(ctx context.Context, backendName, modelName string) error {
 	if p.Error != nil {
 		return p.Error
 	}
+	if !p.routinesStarted {
+		return errors.New("WaitUntilModelIsReady called before WithBackgroundRoutines; routines are not running")
+	}
 
 	stateService, err := p.GetStateService()
 	if err != nil {
-		return fmt.Errorf("could not get state service: %w", err)
+		return fmt.Errorf("could not get state service to wait for model: %w", err)
 	}
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -415,6 +568,7 @@ func (p *Playground) WaitUntilModelIsReady(ctx context.Context, backendName, mod
 		case <-ticker.C:
 			allStates, err := stateService.Get(ctx)
 			if err != nil {
+				// Log or ignore transient errors and continue trying.
 				continue
 			}
 
@@ -426,6 +580,7 @@ func (p *Playground) WaitUntilModelIsReady(ctx context.Context, backendName, mod
 							return nil
 						}
 					}
+					// Found the backend, but not the model yet. Continue waiting.
 					break
 				}
 			}
