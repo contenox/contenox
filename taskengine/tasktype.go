@@ -48,6 +48,8 @@ const (
 	// Strips transition prefix if present in input.
 	HandleParseTransition TaskHandler = "parse_transition"
 
+	// HandleConvertToOpenAIChatResponse converts a chat history input to OpenAI Chat format.
+	// Requires DataTypeChatHistory input and ExecuteConfig configuration.
 	HandleConvertToOpenAIChatResponse TaskHandler = "convert_to_openai_chat_response"
 
 	// HandleNoop performs no operation, passing input through unchanged.
@@ -222,17 +224,13 @@ func ToOperatorTerm(s string) (OperatorTerm, error) {
 	}
 }
 
+// LLMExecutionConfig represents configuration for executing tasks using Large Language Models (LLMs).
 type LLMExecutionConfig struct {
 	Model       string   `yaml:"model" json:"model" example:"mistral:instruct"`
 	Models      []string `yaml:"models,omitempty" json:"models,omitempty" example:"[\"gpt-4\", \"gpt-3.5-turbo\"]"`
 	Provider    string   `yaml:"provider,omitempty" json:"provider,omitempty" example:"ollama"`
 	Providers   []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
 	Temperature float32  `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
-}
-
-type MessageConfig struct {
-	Role    string `yaml:"role" json:"role" example:"user"` // valid values:user/system/assistant
-	Content string `yaml:"content,omitempty" json:"content,omitempty" example:"Hello, world!"`
 }
 
 // HookCall represents an external integration or side-effect triggered during a task.

@@ -8,15 +8,15 @@ import (
 // MockTaskExecutor is a mock implementation of taskengine.TaskExecutor.
 type MockTaskExecutor struct {
 	// Single value responses
-	MockOutput      any
-	MockRawResponse string
-	MockError       error
+	MockOutput          any
+	MockTransitionValue string
+	MockError           error
 
 	// Sequence responses
-	MockOutputSequence      []any
-	MockTaskTypeSequence    []DataType
-	MockRawResponseSequence []string
-	ErrorSequence           []error
+	MockOutputSequence          []any
+	MockTaskTypeSequence        []DataType
+	MockTransitionValueSequence []string
+	ErrorSequence               []error
 
 	// Tracking
 	CalledWithTask   *TaskDefinition
@@ -89,35 +89,27 @@ func (m *MockTaskExecutor) TaskExec(ctx context.Context, startingTime time.Time,
 	}
 
 	// Get raw response from sequence or single value
-	var rawResponse string
-	if len(m.MockRawResponseSequence) > 0 {
-		rawResponse = m.MockRawResponseSequence[0]
-		if len(m.MockRawResponseSequence) > 1 {
-			m.MockRawResponseSequence = m.MockRawResponseSequence[1:]
+	var transitionResponse string
+	if len(m.MockTransitionValueSequence) > 0 {
+		transitionResponse = m.MockTransitionValueSequence[0]
+		if len(m.MockTransitionValueSequence) > 1 {
+			m.MockTransitionValueSequence = m.MockTransitionValueSequence[1:]
 		}
 	} else {
-		rawResponse = m.MockRawResponse
+		transitionResponse = m.MockTransitionValue
 	}
 
-	// Determine transition evaluation
-	transitionEval := "mock_transition_ok"
-	if s, ok := output.(string); ok {
-		transitionEval = s // Handlers like raw_string use their output for transitions.
-	} else if rawResponse != "" {
-		transitionEval = rawResponse
-	}
-
-	return output, outputDataType, transitionEval, err
+	return output, outputDataType, transitionResponse, err
 }
 
 // Reset clears all mock state between tests
 func (m *MockTaskExecutor) Reset() {
 	m.MockOutput = nil
-	m.MockRawResponse = ""
+	m.MockTransitionValue = ""
 	m.MockError = nil
 	m.MockOutputSequence = nil
 	m.MockTaskTypeSequence = nil
-	m.MockRawResponseSequence = nil
+	m.MockTransitionValueSequence = nil
 	m.ErrorSequence = nil
 	m.CalledWithTask = nil
 	m.CalledWithInput = nil

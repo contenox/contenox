@@ -182,7 +182,7 @@ func TestSystem_Ollama(t *testing.T) {
 		require.NoError(t, err)
 
 		// Test with low temperature for deterministic output
-		resp, err := promptClient.Prompt(ctx, "You are a Task Engine answering other Machines directly without explanation", 0.1, "How much is 2 + 2?")
+		resp, err := promptClient.Prompt(ctx, "You are a calculator", 0.1, "How much is 2 + 2?")
 		require.NoError(t, err)
 		assert.Contains(t, resp, "4")
 	})

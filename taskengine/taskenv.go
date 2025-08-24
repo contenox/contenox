@@ -514,7 +514,7 @@ func (exe SimpleEnv) evaluateTransitions(ctx context.Context, taskID string, tra
 		}
 	}
 
-	return "", fmt.Errorf("no matching transition found")
+	return "", fmt.Errorf("no matching transition found for eval: %s", eval)
 }
 
 // parseNumber attempts to parse a string as either an integer or float.

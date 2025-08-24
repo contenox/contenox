@@ -12,9 +12,9 @@ import (
 
 func TestUnit_SimpleEnv_ExecEnv_SingleTask(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
-		MockOutput:      "42",
-		MockRawResponse: "42",
-		MockError:       nil,
+		MockOutput:          "42",
+		MockTransitionValue: "42",
+		MockError:           nil,
 	}
 
 	tracker := libtracker.NoopTracker{}
@@ -73,9 +73,9 @@ func TestUnit_SimpleEnv_ExecEnv_FailsAfterRetries(t *testing.T) {
 
 func TestUnit_SimpleEnv_ExecEnv_TransitionsToNextTask(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
-		MockOutput:      "intermediate",
-		MockRawResponse: "continue",
-		MockError:       nil,
+		MockOutput:          "intermediate",
+		MockTransitionValue: "continue",
+		MockError:           nil,
 	}
 
 	tracker := libtracker.NoopTracker{}
@@ -85,38 +85,36 @@ func TestUnit_SimpleEnv_ExecEnv_TransitionsToNextTask(t *testing.T) {
 	chain := &taskengine.TaskChainDefinition{
 		Tasks: []taskengine.TaskDefinition{
 			{
-				ID:             "task1",
-				Handler:        taskengine.HandleRawString,
-				PromptTemplate: `{{.input}}`,
+				ID:      "task1",
+				Handler: taskengine.HandleNoop,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
-						{Operator: "equals", When: "continue", Goto: "task2"},
+						{Operator: taskengine.OpEquals, When: "continue", Goto: "task2"},
 					},
 				},
 			},
 			{
-				ID:             "task2",
-				Handler:        taskengine.HandleRawString,
-				PromptTemplate: `Follow up`,
+				ID:      "task2",
+				Handler: taskengine.HandleNoop,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
-						{Operator: "equals", When: "continue", Goto: taskengine.TermEnd},
+						{Operator: taskengine.OpEquals, When: "continue", Goto: taskengine.TermEnd},
 					},
 				},
 			},
 		},
 	}
 
-	result, _, _, err := env.ExecEnv(context.Background(), chain, "step one", taskengine.DataTypeString)
+	result, _, _, err := env.ExecEnv(context.Background(), chain, "test", taskengine.DataTypeString)
 	require.NoError(t, err)
 	require.Equal(t, "intermediate", result)
 }
 
 func TestUnit_SimpleEnv_ExecEnv_ErrorTransition(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
-		ErrorSequence:   []error{errors.New("first failure"), nil},
-		MockOutput:      "error recovered",
-		MockRawResponse: "recovered",
+		ErrorSequence:       []error{errors.New("first failure"), nil},
+		MockOutput:          "error recovered",
+		MockTransitionValue: "recovered",
 	}
 
 	tracker := libtracker.NoopTracker{}
@@ -153,8 +151,8 @@ func TestUnit_SimpleEnv_ExecEnv_ErrorTransition(t *testing.T) {
 
 func TestUnit_SimpleEnv_ExecEnv_PrintTemplate(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
-		MockOutput:      "printed-value",
-		MockRawResponse: "printed-value",
+		MockOutput:          "printed-value",
+		MockTransitionValue: "printed-value",
 	}
 
 	tracker := libtracker.NoopTracker{}
@@ -184,9 +182,9 @@ func TestUnit_SimpleEnv_ExecEnv_PrintTemplate(t *testing.T) {
 
 func TestUnit_SimpleEnv_ExecEnv_InputVar_OriginalInput(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
-		MockOutput:      "processed: hello",
-		MockRawResponse: "processed: hello",
-		MockError:       nil,
+		MockOutput:          "processed: hello",
+		MockTransitionValue: "processed: hello",
+		MockError:           nil,
 	}
 
 	tracker := libtracker.NoopTracker{}
@@ -216,8 +214,8 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_OriginalInput(t *testing.T) {
 
 func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
-		MockOutputSequence:      []any{"42", "processed: 42"},
-		MockRawResponseSequence: []string{"42", "processed: 42"},
+		MockOutputSequence:          []any{"42", "processed: 42"},
+		MockTransitionValueSequence: []string{"42", "processed: 42"},
 	}
 
 	tracker := libtracker.NoopTracker{}
@@ -257,8 +255,8 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 
 func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
-		MockOutputSequence:      []any{8, "user message stored"},
-		MockRawResponseSequence: []string{"8", "user message stored"},
+		MockOutputSequence:          []any{8, "user message stored"},
+		MockTransitionValueSequence: []string{"8", "user message stored"},
 	}
 
 	tracker := libtracker.NoopTracker{}
@@ -339,8 +337,8 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_InvalidVariable(t *testing.T) {
 
 func TestUnit_SimpleEnv_ExecEnv_InputVar_DefaultBehavior(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
-		MockOutputSequence:      []any{"first", "second"},
-		MockRawResponseSequence: []string{"first", "second"},
+		MockOutputSequence:          []any{"first", "second"},
+		MockTransitionValueSequence: []string{"first", "second"},
 	}
 
 	tracker := libtracker.NoopTracker{}
