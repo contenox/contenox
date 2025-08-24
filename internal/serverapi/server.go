@@ -140,7 +140,7 @@ func New(
 	backendapi.AddModelRoutes(mux, modelService, downloadService)
 	execService := execservice.NewExec(ctx, repo)
 	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
-	taskService := execservice.NewTasksEnv(ctx, environmentExec, dbInstance, hookRegistry)
+	taskService := execservice.NewTasksEnv(ctx, environmentExec, hookRegistry)
 	embedService := embedservice.New(repo, config.EmbedModel, config.EmbedProvider)
 	embedService = embedservice.WithActivityTracker(embedService, serveropsChainedTracker)
 	taskChainService := taskchainservice.New(dbInstance)
@@ -154,7 +154,6 @@ func New(
 	hookproviderService = hookproviderservice.WithActivityTracker(hookproviderService, serveropsChainedTracker)
 	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
 	chatService := chatservice.New(
-		dbInstance,
 		taskService,
 		taskChainService,
 	)

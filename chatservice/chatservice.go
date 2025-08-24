@@ -21,13 +21,11 @@ type service struct {
 }
 
 func New(
-	dbInstance libdbexec.DBManager,
 	env execservice.TasksEnvService,
 	chainService taskchainservice.Service,
 ) Service {
 	return &service{
 		chainService: chainService,
-		dbInstance:   dbInstance,
 		env:          env,
 	}
 }

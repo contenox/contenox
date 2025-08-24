@@ -24,7 +24,6 @@ type HookCallRecord struct {
 }
 
 type HookResponse struct {
-	Status     int
 	Output     any
 	OutputType taskengine.DataType
 	Transition string
@@ -50,7 +49,7 @@ func (m *MockHookRepo) Exec(
 	inputType taskengine.DataType,
 	transition string,
 	args *taskengine.HookCall,
-) (int, any, taskengine.DataType, string, error) {
+) (any, taskengine.DataType, string, error) {
 	m.callCount++
 
 	// Record call details
@@ -81,7 +80,7 @@ func (m *MockHookRepo) Exec(
 		resp = m.DefaultResponse
 	}
 
-	return resp.Status, resp.Output, resp.OutputType, resp.Transition, err
+	return resp.Output, resp.OutputType, resp.Transition, err
 }
 
 // Reset clears all recorded calls and resets counters

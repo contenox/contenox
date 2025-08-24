@@ -12,6 +12,8 @@ type MockTokenizer struct {
 	CustomTokens    map[string][]int
 }
 
+var _ Tokenizer = (*MockTokenizer)(nil)
+
 func (m MockTokenizer) Tokenize(ctx context.Context, modelName string, prompt string) ([]int, error) {
 	if tokens, ok := m.CustomTokens[prompt]; ok {
 		return tokens, nil

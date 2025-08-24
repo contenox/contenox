@@ -3,7 +3,6 @@ package execservice
 import (
 	"context"
 
-	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/taskengine"
 )
 
@@ -14,14 +13,12 @@ type TasksEnvService interface {
 
 type tasksEnvService struct {
 	environmentExec taskengine.EnvExecutor
-	db              libdb.DBManager
 	hookRegistry    taskengine.HookRegistry
 }
 
-func NewTasksEnv(ctx context.Context, environmentExec taskengine.EnvExecutor, dbInstance libdb.DBManager, hookRegistry taskengine.HookRegistry) TasksEnvService {
+func NewTasksEnv(ctx context.Context, environmentExec taskengine.EnvExecutor, hookRegistry taskengine.HookRegistry) TasksEnvService {
 	return &tasksEnvService{
 		environmentExec: environmentExec,
-		db:              dbInstance,
 		hookRegistry:    hookRegistry,
 	}
 }
