@@ -17,8 +17,6 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          # This is critical! We need the actual commit that was tagged
-          # not just the tag reference
           fetch-depth: 0
 
       - name: Log in to GHCR

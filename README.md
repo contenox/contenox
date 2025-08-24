@@ -12,6 +12,7 @@
 ✅ **Observability with passion**
 ✅ **Made with Go for intensive load**
 ✅ **Build agentic capabilities via hooks**
+✅ **Dropin for OpenAI chatcompletion API**
 
 ## ⚡ Get Started in 3 Minutes
 
