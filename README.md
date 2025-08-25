@@ -30,8 +30,9 @@ This single command will start all necessary services, configure the backend, an
 ```bash
 git clone https://github.com/contenox/runtime.git
 cd runtime
-./scripts/bootstrap.sh nomic-embed-text:latest phi3:3.8b # or any other models
-# at least one embedding model and one instruction model is required.
+./scripts/bootstrap.sh nomic-embed-text:latest phi3:3.8b phi3:3.8b # or any other models
+# at least one embedding model, one instruction model and one chat model is required as fallback models. They may be the same.
+# The fallback models should match the environment variables passed to the compose.yaml.
 ```
 
 Once the script finishes, the environment is fully configured and ready to use.

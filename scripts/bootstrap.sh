@@ -6,11 +6,10 @@
 # ensures the required models are downloaded and ready for use.
 #
 # Usage:
-#   ./scripts/bootstrap.sh [model1] [model2] ...
-#   (e.g., ./bootstrap.sh nomic-embed-text:latest phi3:3.8b)
+#   ./scripts/bootstrap.sh [embed_model] [task_model] [chat_model]
+#   (e.g., ./bootstrap.sh nomic-embed-text:latest phi3:3.8b phi3:3.8b)
 #
-# If no models are specified, it uses the default models:
-#   nomic-embed-text:latest phi3:3.8b
+# Three models are required: embedding model, task model, and chat model
 #
 
 # Exit immediately if a command exits with a non-zero status.
@@ -37,24 +36,40 @@ error_exit() {
 
 # --- Configuration ---
 API_BASE_URL="http://localhost:8081"
-DEFAULT_MODELS=("nomic-embed-text:latest" "phi3:3.8b")
+DEFAULT_EMBED_MODEL="nomic-embed-text:latest"
+DEFAULT_TASK_MODEL="phi3:3.8b"
+DEFAULT_CHAT_MODEL="phi3:3.8b"
 
 # --- Process Command-Line Arguments ---
 # If arguments provided, use them as models; otherwise use defaults
-if [ $# -gt 0 ]; then
-  log "Using command-line specified models: $*"
-  REQUIRED_MODELS=("$@")
-
-  # Validate all models are non-empty
-  for model in "${REQUIRED_MODELS[@]}"; do
-    if [ -z "$model" ]; then
-      error_exit "Empty model name detected. Please provide non-empty model names."
-    fi
-  done
+if [ $# -eq 3 ]; then
+  log "Using command-line specified models:"
+  log "  Embedding: $1"
+  log "  Task: $2"
+  log "  Chat: $3"
+  EMBED_MODEL="$1"
+  TASK_MODEL="$2"
+  CHAT_MODEL="$3"
+elif [ $# -eq 0 ]; then
+  log "No models specified. Using default models:"
+  log "  Embedding: ${DEFAULT_EMBED_MODEL}"
+  log "  Task: ${DEFAULT_TASK_MODEL}"
+  log "  Chat: ${DEFAULT_CHAT_MODEL}"
+  EMBED_MODEL="${DEFAULT_EMBED_MODEL}"
+  TASK_MODEL="${DEFAULT_TASK_MODEL}"
+  CHAT_MODEL="${DEFAULT_CHAT_MODEL}"
 else
-  log "No models specified. Using default models: ${DEFAULT_MODELS[*]}"
-  REQUIRED_MODELS=("${DEFAULT_MODELS[@]}")
+  error_exit "Three models are required: embedding model, task model, and chat model"
 fi
+
+# Validate all models are non-empty
+for model in "$EMBED_MODEL" "$TASK_MODEL" "$CHAT_MODEL"; do
+  if [ -z "$model" ]; then
+    error_exit "Empty model name detected. Please provide non-empty model names."
+  fi
+done
+
+REQUIRED_MODELS=("$EMBED_MODEL" "$TASK_MODEL" "$CHAT_MODEL")
 
 # --- Main Logic ---
 
@@ -161,6 +176,25 @@ else
   success "Backend already assigned to 'internal_embed_pool'."
 fi
 
+# Pool 3: internal_chat_pool
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_chat_pool/backends")
+http_code=$(echo "$response" | tail -n1)
+body=$(echo "$response" | sed '$d')
+if [ "$http_code" -ne 200 ]; then
+    error_exit "Failed to check chat pool associations. API returned status ${http_code}."
+fi
+CHAT_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id')
+
+if [ -z "$CHAT_POOL_CHECK" ]; then
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE_URL}/backend-associations/internal_chat_pool/backends/$BACKEND_ID")
+  if [ "$http_code" -ne 201 ] && [ "$http_code" -ne 200 ]; then
+      error_exit "Failed to assign backend to chat pool. API returned status ${http_code}."
+  fi
+  success "Assigned backend to 'internal_chat_pool'."
+else
+  success "Backend already assigned to 'internal_chat_pool'."
+fi
+
 # 6. Wait for models to be downloaded
 log "Handing off to model download monitor..."
 # Ensure the wait script is executable
@@ -170,4 +204,7 @@ chmod +x ./scripts/wait-for-models.sh
 # Final success message
 echo ""
 echo "🎉 Bootstrap complete! Your contenox/runtime environment is ready to use."
-echo "   Using models: ${REQUIRED_MODELS[*]}"
+echo "   Using models:"
+echo "   - Embedding: ${EMBED_MODEL}"
+echo "   - Task: ${TASK_MODEL}"
+echo "   - Chat: ${CHAT_MODEL}"

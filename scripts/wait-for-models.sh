@@ -4,7 +4,7 @@
 # This script monitors the real-time download progress of specified models
 # from the contenox/runtime API and displays a progress bar.
 #
-# Usage: ./wait-for-models.sh "model1:tag" "model2:tag" ...
+# Usage: ./wait-for-models.sh "embed_model:tag" "task_model:tag" "chat_model:tag"
 #
 
 # --- Configuration ---
@@ -35,11 +35,14 @@ error_exit() {
 # --- Script Logic ---
 
 # Check if model names are provided as arguments
-if [ "$#" -eq 0 ]; then
-  error_exit "No model names provided. Usage: $0 \"model1:tag\" \"model2:tag\" ..."
+if [ "$#" -ne 3 ]; then
+  error_exit "Three model names required. Usage: $0 \"embed_model:tag\" \"task_model:tag\" \"chat_model:tag\""
 fi
 
-REQUIRED_MODELS=("$@")
+EMBED_MODEL="$1"
+TASK_MODEL="$2"
+CHAT_MODEL="$3"
+REQUIRED_MODELS=("$EMBED_MODEL" "$TASK_MODEL" "$CHAT_MODEL")
 
 # --- Pre-flight Checks ---
 echo "🔎 Performing pre-flight checks..."
@@ -75,8 +78,14 @@ body=$(echo "$response" | sed '$d')
 if [ "$http_code" -ne 200 ]; then error_exit "Failed to check embed pool associations. API returned ${http_code}."; fi
 EMBED_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(.[] | select(.id==$BID) | .id) // empty')
 
-if [ -z "$TASK_POOL_CHECK" ] || [ -z "$EMBED_POOL_CHECK" ]; then
-  error_exit "Backend is not assigned to 'internal_tasks_pool' and/or 'internal_embed_pool'. Please run Step 3 from the README."
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_chat_pool/backends")
+http_code=$(echo "$response" | tail -n1)
+body=$(echo "$response" | sed '$d')
+if [ "$http_code" -ne 200 ]; then error_exit "Failed to check chat pool associations. API returned ${http_code}."; fi
+CHAT_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(.[] | select(.id==$BID) | .id) // empty')
+
+if [ -z "$TASK_POOL_CHECK" ] || [ -z "$EMBED_POOL_CHECK" ] || [ -z "$CHAT_POOL_CHECK" ]; then
+  error_exit "Backend is not assigned to 'internal_tasks_pool', 'internal_embed_pool', and/or 'internal_chat_pool'. Please run Step 3 from the README."
 fi
 echo "  ✅ Backend is correctly assigned to pools."
 
