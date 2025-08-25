@@ -134,7 +134,7 @@ graph TD
 
     %% --- Data Flow ---
     U -- API Requests --> API
-    API -- Triggers Workflow --> OE
+    API -- Triggers Task-Chain --> OE
     OE -- Executes via --> CONN
     CONN -- Routes to --> LLM
     CONN -- Calls --> HOOK
