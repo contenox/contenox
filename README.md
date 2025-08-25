@@ -158,7 +158,7 @@ graph TD
 ### Custom Hooks
 
 Hooks are external servers that can be called from within task chains when registered. They allow interaction with systems and data outside of the runtime and task chains themselves.
-[🔗 See Hook Documentation](https://www.google.com/search?q=./docs/hooks.md)
+[🔗 See Hook Documentation](./docs/hooks.md)
 
 -----
 
@@ -166,7 +166,7 @@ Hooks are external servers that can be called from within task chains when regis
 
 The full API surface is thoroughly documented and defined in the OpenAPI format, making it easy to integrate with other tools. You can find more details here:
 
-  * 🔗 [API Reference Documentation](https://www.google.com/search?q=./docs/api-reference.md)
-  * 🔗 [View OpenAPI Spec (YAML)](https://www.google.com/search?q=./docs/openapi.yaml)
+  * 🔗 [API Reference Documentation](./docs/api-reference.md)
+  * 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)
 
-The [API-Tests](https://www.google.com/search?q=./apitests) are available for additional context.
+The [API-Tests](./apitests) are available for additional context.
