@@ -122,8 +122,8 @@ graph TD
     end
 
     subgraph "contenox/runtime"
-        API[API Layer <br/> REST and OpenAI-compatible]
-        OE["Orchestration Engine <br/> State Machine and Task Execution"]
+        API[API Layer]
+        OE["Orchestration Engine <br/> Task Execution"]
         CONN["Connectors <br/> Model Resolver, Hooks"]
     end
 
