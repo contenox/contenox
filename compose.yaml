@@ -1,13 +1,7 @@
 services:
   runtime:
-    build:
-      context: ./
-      dockerfile: Dockerfile
-      args:
-        CORE_VERSION: "dev-build"
-        TENANT_ID: "e60604b5-77ba-4547-aff0-b1eceb0dabfc"
+    image: ghcr.io/contenox/runtime:latest
     container_name: contenox-runtime-kernel
-
     environment:
       - DATABASE_URL=postgres://username:password@postgres:5432/postgres?sslmode=disable
       - PORT=8080
@@ -21,7 +15,7 @@ services:
       - TASK_MODEL=phi3:3.8b
       - TASK_MODEL_CONTEXT_LENGTH=2048
       - TASK_PROVIDER=ollama
-      #- TOKEN=your_token_here
+      # - TOKEN=your_token_here
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,6 +30,7 @@ services:
       interval: 1s
       timeout: 1s
       retries: 20
+
   tokenizer:
     image: ghcr.io/contenox/ollamatokenizer-api:v0.0.7
     container_name: contenox-ollama-tokenizer
@@ -52,21 +47,21 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
   postgres:
     image: postgres:17-bookworm
     environment:
       - POSTGRES_USER=username
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=postgres
-    # ports:
-    #   - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U username -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
-    # volumes:
-    #   - postgres-data:/var/lib/postgresql/data
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
   nats:
     image: nats:latest
     command: "-js"
@@ -76,8 +71,9 @@ services:
     environment:
       - NATS_USER=natsuser
       - NATS_PASSWORD=natspassword
+
   ollama:
-    image: ollama/ollama:0.11.4
+    image: ollama/ollama:0.1.44
     ports:
       - "11435:11434"
     volumes:
@@ -87,6 +83,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
 volumes:
-  # postgres-data:
+  postgres-data:
   ollama-data:
