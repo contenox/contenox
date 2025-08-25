@@ -12,80 +12,45 @@
 ✅ **Observability with passion**
 ✅ **Made with Go for intensive load**
 ✅ **Build agentic capabilities via hooks**
-✅ **Dropin for OpenAI chatcompletion API**
+✅ **Drop-in for OpenAI chatcompletion API**
 
-## ⚡ Get Started in 3 Minutes
+-----
 
-Startup flow:
+## ⚡ Get Started in 1-3 Minutes
 
-* Launch runtime services via Docker
-* Register one or more model backends
-* Assign each backend to the relevant execution pools
-* Pull required models to the backends
-* Execute a workflow and observe the logs
-
-See your first workflow run in under 5 minutes:
+This single command will start all necessary services, configure the backend, and download the initial models.
 
 ### Prerequisites
 
-* Docker and Docker Compose
-* `curl` and `jq` (for CLI examples)
+  * Docker and Docker Compose
+  * `curl` and `jq`
 
-### 1. Launch the Runtime
+### Run the Bootstrap Script
 
 ```bash
 git clone https://github.com/contenox/runtime.git
 cd runtime
-docker compose up -d
+./scripts/bootstrap.sh nomic-embed-text:latest phi3:3.8b # or any other models
+# at least one embedding model and one instruction model is required.
 ```
 
-This starts the complete environment:
+Once the script finishes, the environment is fully configured and ready to use.
 
-* Runtime API (port 8081)
-* Ollama (port 11435)
-* Postgres, NATS, and tokenizer services
+-----
 
-### 2. Register Ollama Backends
+### Try It Out: Execute a Prompt
 
-```bash
-BACKEND_ID=$(curl -s -X POST http://localhost:8081/backends \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "local-ollama",
-    "baseURL": "http://ollama:11435",
-    "type": "ollama"
-  }' | jq -r '.id')
-
-echo "Backend ID: $BACKEND_ID"
-```
-
-### 3. Assign Backend to Default Pools
-
-```bash
-# For task execution
-curl -X POST http://localhost:8081/backend-associations/internal_tasks_pool/backends/$BACKEND_ID
-
-# For embeddings
-curl -X POST http://localhost:8081/backend-associations/internal_embed_pool/backends/$BACKEND_ID
-```
-
-### 4. Wait for Models to Download
-
-```bash
-./scripts/wait-for-models.sh "nomic-embed-text:latest" "phi3:3.8b"
-```
-
-### 5. Execute a Prompt
+After the bootstrap is complete, test the setup by executing a simple prompt:
 
 ```bash
 curl -X POST http://localhost:8081/execute \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Explain quantum computing"}'
+  -d '{"prompt": "Explain quantum computing in simple terms"}'
 ```
 
-### 6. Create a Task Chain Workflow
+### Next Steps: Create a Workflow
 
-Save as `qa.json`:
+Save the following as `qa.json`:
 
 ```json
 {
@@ -122,31 +87,30 @@ curl -X POST http://localhost:8081/tasks \
   -d @qa.json
 ```
 
-All runtime activity is captured in structured logs, providing deep observability into workflows and system behavior.
-
-Logs can be viewed using Docker:
+All runtime activity is captured in structured logs:
 
 ```bash
 docker logs contenox-runtime-kernel
 ```
 
+-----
+
 ## ✨ Key Features
 
 ### State Machine Engine
 
-* **Conditional Branching**: Route execution based on LLM outputs
-* **Built-in Handlers**:
-
-  * `condition_key`: Validate and route responses
-  * `parse_number`: Extract numerical values
-  * `parse_range`: Handle score ranges
-  * `raw_string`: Standard text generation
-  * `embedding`: Embedding generation
-  * `model_execution`: Model execution on a chat history
-  * `hook`: Calls a user-defined hook pointing to an external service
-* **Context Preservation**: Automatic input/output passing between steps
-* **Multi-Model Support**: Define preferred models for each task chain
-* **Retry and Timeout**: Configure task-level retries and timeouts for robust workflows
+  * **Conditional Branching**: Route execution based on LLM outputs
+  * **Built-in Handlers**:
+      * `condition_key`: Validate and route responses
+      * `parse_number`: Extract numerical values
+      * `parse_range`: Handle score ranges
+      * `raw_string`: Standard text generation
+      * `embedding`: Embedding generation
+      * `model_execution`: Model execution on a chat history
+      * `hook`: Calls a user-defined hook pointing to an external service
+  * **Context Preservation**: Automatic input/output passing between steps
+  * **Multi-Model Support**: Define preferred models for each task chain
+  * **Retry and Timeout**: Configure task-level retries and timeouts for robust workflows
 
 ### Multi-Provider Support
 
@@ -154,30 +118,61 @@ Define preferred model provider and backend resolution policy directly within ta
 
 ```mermaid
 graph LR
-    A[Workflow] --> B(Ollama)
-    A --> C(OpenAI)
-    A --> D(Gemini)
-    A --> E(vLLM)
+    subgraph User
+        IN[User Input]
+    end
+
+    subgraph Runtime
+        API[REST API] --> TE[Task Engine]
+        TE --> SE[State Execution]
+        SE --> MR[Model Repository]
+        MR --> RES[Model Resolver]
+    end
+
+    subgraph Providers
+        RES --> O[Ollama]
+        RES --> OP[OpenAI]
+        RES --> G[Gemini]
+        RES --> V[vLLM]
+    end
+
+    subgraph Backends
+        O --> OB[Ollama Backend]
+        OP --> OPB[OpenAI API]
+        G --> GB[Gemini API]
+        V --> VB[vLLM Server]
+    end
+
+    OB --> RET[Return Result]
+    OPB --> RET
+    GB --> RET
+    VB --> RET
+
+    RET --> API
+    API --> OUT[User / Next State]
 ```
 
-* **Unified Interface**: Consistent API across providers
-* **Automatic Sync**: Models stay consistent across backends
-* **Pool Management**: Assign backends to specific task types
-* **Backend Resolver**: Distribute requests to backends based on resolution policies
+  * **Unified Interface**: Consistent API across providers
+  * **Automatic Sync**: Models stay consistent across backends
+  * **Pool Management**: Assign backends to specific task types
+  * **Backend Resolver**: Distribute requests to backends based on resolution policies
+
+-----
 
 ## 🧩 Extensibility
 
 ### Custom Hooks
 
-Hooks are external servers that can be called from within task chains when registered.
-They allow interaction with systems and data outside of the runtime and task chains themselves.
-[🔗 See Hook Documentation](./docs/hooks.md)
+Hooks are external servers that can be called from within task chains when registered. They allow interaction with systems and data outside of the runtime and task chains themselves.
+[🔗 See Hook Documentation](https://www.google.com/search?q=./docs/hooks.md)
+
+-----
 
 ## 📘 API Documentation
 
 The full API surface is thoroughly documented and defined in the OpenAPI format, making it easy to integrate with other tools. You can find more details here:
 
-* 🔗 [API Reference Documentation](./docs/api-reference.md)
-* 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)
+  * 🔗 [API Reference Documentation](https://www.google.com/search?q=./docs/api-reference.md)
+  * 🔗 [View OpenAPI Spec (YAML)](https://www.google.com/search?q=./docs/openapi.yaml)
 
-Also review the [tests](./apitests) for additional context on the API documentation.
+The [API-Tests](https://www.google.com/search?q=./apitests) are available for additional context.

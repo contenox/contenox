@@ -59,8 +59,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
+    # volumes:
+    #   - postgres-data:/var/lib/postgresql/data
 
   nats:
     image: nats:latest
@@ -76,14 +76,13 @@ services:
     image: ollama/ollama:0.1.44
     ports:
       - "11435:11434"
-    volumes:
-      - ollama-data:/root/.ollama
+    # volumes:
+    #   - ollama-data:/root/.ollama
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:11434 || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 10
-
-volumes:
-  postgres-data:
-  ollama-data:
+# volumes:
+#   postgres-data:
+#   ollama-data:

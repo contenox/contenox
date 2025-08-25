@@ -458,3 +458,48 @@ func TestUnit_Pools_DuplicatePoolName(t *testing.T) {
 	err = s.CreatePool(ctx, pool2)
 	require.Error(t, err)
 }
+
+// TestUnit_Pools_ListEmptyAssociations verifies that listing associations
+// for a new resource correctly returns an empty slice, not nil.
+func TestUnit_Pools_ListEmptyAssociations(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	// 1. Test for a new pool
+	pool := &runtimetypes.Pool{ID: uuid.NewString(), Name: "EmptyPool"}
+	err := s.CreatePool(ctx, pool)
+	require.NoError(t, err)
+
+	// Backends for pool should be an empty slice
+	backends, err := s.ListBackendsForPool(ctx, pool.ID)
+	require.NoError(t, err)
+	require.NotNil(t, backends, "ListBackendsForPool should return an empty slice, not nil")
+	require.Len(t, backends, 0)
+
+	// Models for pool should be an empty slice
+	models, err := s.ListModelsForPool(ctx, pool.ID)
+	require.NoError(t, err)
+	require.NotNil(t, models, "ListModelsForPool should return an empty slice, not nil")
+	require.Len(t, models, 0)
+
+	// 2. Test for a new backend
+	backend := &runtimetypes.Backend{ID: uuid.NewString(), Name: "EmptyBackend"}
+	err = s.CreateBackend(ctx, backend)
+	require.NoError(t, err)
+
+	// Pools for backend should be an empty slice
+	pools, err := s.ListPoolsForBackend(ctx, backend.ID)
+	require.NoError(t, err)
+	require.NotNil(t, pools, "ListPoolsForBackend should return an empty slice, not nil")
+	require.Len(t, pools, 0)
+
+	// 3. Test for a new model
+	model := &runtimetypes.Model{Model: "empty-model", ContextLength: 1024}
+	err = s.AppendModel(ctx, model)
+	require.NoError(t, err)
+
+	// Pools for model should be an empty slice
+	poolsForModel, err := s.ListPoolsForModel(ctx, model.ID)
+	require.NoError(t, err)
+	require.NotNil(t, poolsForModel, "ListPoolsForModel should return an empty slice, not nil")
+	require.Len(t, poolsForModel, 0)
+}

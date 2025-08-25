@@ -140,7 +140,14 @@ func (s *store) ListPools(ctx context.Context, createdAtCursor *time.Time, limit
 		}
 		pools = append(pools, &pool)
 	}
-	return pools, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if pools == nil {
+		return []*Pool{}, nil
+	}
+	return pools, nil
 }
 
 // ListPoolsByPurpose retrieves a list of LLM pools for a specific purpose,
@@ -171,7 +178,14 @@ func (s *store) ListPoolsByPurpose(ctx context.Context, purposeType string, crea
 		}
 		pools = append(pools, &pool)
 	}
-	return pools, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if pools == nil {
+		return []*Pool{}, nil
+	}
+	return pools, nil
 }
 
 func (s *store) AssignBackendToPool(ctx context.Context, poolID, backendID string) error {
@@ -213,7 +227,14 @@ func (s *store) ListBackendsForPool(ctx context.Context, poolID string) ([]*Back
 		}
 		backends = append(backends, &b)
 	}
-	return backends, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if backends == nil {
+		return []*Backend{}, nil
+	}
+	return backends, nil
 }
 
 func (s *store) ListPoolsForBackend(ctx context.Context, backendID string) ([]*Pool, error) {
@@ -236,7 +257,14 @@ func (s *store) ListPoolsForBackend(ctx context.Context, backendID string) ([]*P
 		}
 		pools = append(pools, &p)
 	}
-	return pools, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if pools == nil {
+		return []*Pool{}, nil
+	}
+	return pools, nil
 }
 
 func (s *store) AssignModelToPool(ctx context.Context, poolID, modelID string) error {
@@ -288,7 +316,14 @@ func (s *store) ListModelsForPool(ctx context.Context, poolID string) ([]*Model,
 		}
 		models = append(models, &m)
 	}
-	return models, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if models == nil {
+		return []*Model{}, nil
+	}
+	return models, nil
 }
 
 func (s *store) ListPoolsForModel(ctx context.Context, modelID string) ([]*Pool, error) {
@@ -311,7 +346,14 @@ func (s *store) ListPoolsForModel(ctx context.Context, modelID string) ([]*Pool,
 		}
 		pools = append(pools, &p)
 	}
-	return pools, rows.Err()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if pools == nil {
+		return []*Pool{}, nil
+	}
+	return pools, nil
 }
 
 func (s *store) EstimatePoolCount(ctx context.Context) (int64, error) {
