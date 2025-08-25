@@ -123,25 +123,25 @@ graph TD
 
     subgraph "contenox/runtime"
         API[API Layer]
-        OE["Orchestration Engine <br/> Task Execution"]
-        CONN["Connectors"]
+        OE["Orchestration Engine <br/> Task Execution & State Management"]
+        CONN["Connectors <br/> Model Resolver & Hook Client"]
     end
 
     subgraph "External Services"
         LLM[LLM Backends <br/> Ollama, OpenAI, vLLM, etc.]
-        HOOK[Model Resolver, Hooks <br/> External Tools and APIs]
+        HOOK[External Tools and APIs <br/> Custom Hooks]
     end
 
     %% --- Data Flow ---
     U -- API Requests --> API
-    API -- Triggers Task-Chain --> OE
+    API -- Triggers Task Chain --> OE
     OE -- Executes via --> CONN
-    CONN -- Routes to --> LLM
-    CONN -- Calls --> HOOK
+    CONN -- Routes to LLMs --> LLM
+    CONN -- Calls External Hooks --> HOOK
 
-    LLM --> CONN
-    HOOK --> CONN
-    CONN --> OE
+    LLM -- LLM Responses --> CONN
+    HOOK -- Hook Responses --> CONN
+    CONN -- Results --> OE
     OE -- Returns Final Output --> API
     API -- API Responses --> U
 ```
