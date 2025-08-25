@@ -72,7 +72,7 @@ curl -X POST http://localhost:8081/backend-associations/internal_embed_pool/back
 ### 4. Wait for Models to Download
 
 ```bash
-./scripts/wait-for-models.sh "nomic-embed-text:latest" "qwen3:4b"
+./scripts/wait-for-models.sh "nomic-embed-text:latest" "phi3:3.8b"
 ```
 
 ### 5. Execute a Prompt
