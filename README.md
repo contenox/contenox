@@ -72,21 +72,7 @@ curl -X POST http://localhost:8081/backend-associations/internal_embed_pool/back
 ### 4. Wait for Models to Download
 
 ```bash
-EMBED_MODEL="nomic-embed-text:latest"
-TASK_MODEL="qwen3:4b"
-
-echo "⏳ Downloading models (2–5 minutes)..."
-while true; do
-  STATUS=$(curl -s http://localhost:8081/backends/$BACKEND_ID)
-
-  if jq -e ".pulledModels[] | select(.model == \"$EMBED_MODEL\")" <<< "$STATUS" >/dev/null && \
-     jq -e ".pulledModels[] | select(.model == \"$TASK_MODEL\")" <<< "$STATUS" >/dev/null; then
-    echo "✅ Models ready!"
-    break
-  fi
-  sleep 10
-  echo "⏳ Still downloading..."
-done
+./scripts/wait-for-models.sh "nomic-embed-text:latest" "qwen3:4b"
 ```
 
 ### 5. Execute a Prompt
