@@ -122,14 +122,14 @@ graph TD
     end
 
     subgraph "Contenox Runtime"
-        API[API Layer <br/> (REST & OpenAI-compatible)]
-        OE["Orchestration Engine <br/> (State Machine & Task Execution)"]
+        API[API Layer <br/> (REST and OpenAI-compatible)]
+        OE["Orchestration Engine <br/> (State Machine and Task Execution)"]
         CONN["Connectors <br/> (Model Resolver, Pools, Hooks)"]
     end
 
     subgraph "External Services"
         LLM[LLM Backends <br/> (Ollama, OpenAI, vLLM, etc.)]
-        HOOK[External Tools & APIs]
+        HOOK[External Tools and APIs]
     end
 
     %% --- Data Flow ---
