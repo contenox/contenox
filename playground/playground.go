@@ -143,6 +143,27 @@ func (p *Playground) WithInternalOllamaEmbedder(ctx context.Context, modelName s
 	return p
 }
 
+func (p *Playground) WithInternalChatExecutor(ctx context.Context, modelName string, contextLen int) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.db == nil {
+		p.Error = errors.New("cannot init internal chat executor: database is not configured")
+		return p
+	}
+
+	config := &runtimestate.Config{
+		ChatModel: modelName,
+		TenantID:  testTenantID,
+	}
+
+	err := runtimestate.InitChatExec(ctx, config, p.db, p.state, contextLen)
+	if err != nil {
+		p.Error = fmt.Errorf("failed to initialize internal chat executor: %w", err)
+	}
+	return p
+}
+
 // WithInternalPromptExecutor initializes the internal task/prompt model and pool.
 func (p *Playground) WithInternalPromptExecutor(ctx context.Context, modelName string, contextLen int) *Playground {
 	if p.Error != nil {
@@ -162,7 +183,7 @@ func (p *Playground) WithInternalPromptExecutor(ctx context.Context, modelName s
 		TenantID:  testTenantID,
 	}
 
-	err := runtimestate.InitPromptExec(ctx, config, p.db, p.state, contextLen, p.tokenizer)
+	err := runtimestate.InitPromptExec(ctx, config, p.db, p.state, contextLen)
 	if err != nil {
 		p.Error = fmt.Errorf("failed to initialize internal prompt executor: %w", err)
 	}

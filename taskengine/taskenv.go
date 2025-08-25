@@ -148,8 +148,8 @@ func NewEnv(
 //
 // It manages the full lifecycle of task execution: rendering prompts, calling the
 // TaskExecutor, handling timeouts, retries, transitions, and collecting final output.
-func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error) {
-	stack := exe.inspector.Start(ctx)
+func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error) {
+	stack := env.inspector.Start(ctx)
 
 	vars := map[string]any{
 		"input": input,
@@ -172,6 +172,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	var output any = input
 	var outputType DataType = dataType
 	var taskErr error
+	var inputVar string
 
 	for {
 		if ctx.Err() != nil {
@@ -181,13 +182,16 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		// Determine task input
 		taskInput := output
 		taskInputType := outputType
+		inputVar = currentTask.ID
 		if currentTask.InputVar != "" {
 			var ok bool
-			taskInput, ok = vars[currentTask.InputVar]
+			inputVar = currentTask.InputVar
+
+			taskInput, ok = vars[inputVar]
 			if !ok {
 				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: input variable %q not found", currentTask.ID, currentTask.InputVar)
 			}
-			taskInputType, ok = varTypes[currentTask.InputVar]
+			taskInputType, ok = varTypes[inputVar]
 			if !ok {
 				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: input variable %q missing type info", currentTask.ID, currentTask.InputVar)
 			}
@@ -222,7 +226,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				}
 				taskCtx, cancel = context.WithTimeout(ctx, timeout)
 			}
-			reportErrAttempt, reportChangeAttempt, endAttempt := exe.tracker.Start(
+			reportErrAttempt, reportChangeAttempt, endAttempt := env.tracker.Start(
 				taskCtx,
 				"task_attempt",
 				currentTask.ID,
@@ -232,7 +236,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 			startTime := time.Now().UTC()
 
-			output, outputType, transitionEval, taskErr = exe.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), currentTask, taskInput, taskInputType)
+			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), currentTask, taskInput, taskInputType)
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
 				reportErrAttempt(taskErr)
@@ -254,6 +258,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				TaskHandler: currentTask.Handler.String(),
 				InputType:   taskInputType,
 				OutputType:  outputType,
+				InputVar:    inputVar,
 				Transition:  transitionEval,
 				Duration:    duration,
 				Error:       errState,
@@ -415,7 +420,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("error transition target not found: %v", err)
 				}
 				// Track error-based transition
-				_, reportChangeErrTransition, endErrTransition := exe.tracker.Start(
+				_, reportChangeErrTransition, endErrTransition := env.tracker.Start(
 					ctx,
 					"next_task",
 					previousTaskID,
@@ -445,7 +450,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		}
 
 		// Evaluate transitions
-		nextTaskID, err := exe.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval)
+		nextTaskID, err := env.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval)
 		if err != nil {
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: transition error: %v", currentTask.ID, err)
 		}
@@ -453,7 +458,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		if nextTaskID == "" || nextTaskID == TermEnd {
 			finalOutput = output
 			// Track final output
-			_, reportChangeFinal, endFinal := exe.tracker.Start(
+			_, reportChangeFinal, endFinal := env.tracker.Start(
 				ctx,
 				"chain_complete",
 				"chain")
@@ -463,7 +468,7 @@ func (exe SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		}
 
 		// Track normal transition to next task
-		_, reportChangeTransition, endTransition := exe.tracker.Start(
+		_, reportChangeTransition, endTransition := env.tracker.Start(
 			ctx,
 			"next_task",
 			currentTask.ID,

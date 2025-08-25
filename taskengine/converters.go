@@ -4,7 +4,7 @@ import "time"
 
 // ConvertChatHistoryToOpenAI converts the internal ChatHistory format to an OpenAI-compatible response.
 // This is useful for adapting the task engine's output to systems expecting an OpenAI API format.
-func ConvertChatHistoryToOpenAI(id string, chatHistory ChatHistory, config *LLMExecutionConfig) OpenAIChatResponse {
+func ConvertChatHistoryToOpenAI(id string, chatHistory ChatHistory) OpenAIChatResponse {
 	resp := OpenAIChatResponse{
 		ID:      id,
 		Object:  "chat.completion",
@@ -17,12 +17,7 @@ func ConvertChatHistoryToOpenAI(id string, chatHistory ChatHistory, config *LLME
 		},
 		Choices: []OpenAIChatResponseChoice{},
 	}
-
-	// Override model from execution config if provided.
-	if config != nil && config.Model != "" {
-		resp.Model = config.Model
-	}
-
+	resp.Model = chatHistory.Model
 	// The last message in the history is assumed to be the assistant's completion.
 	if len(chatHistory.Messages) > 0 {
 		lastMessage := chatHistory.Messages[len(chatHistory.Messages)-1]

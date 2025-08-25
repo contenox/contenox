@@ -184,6 +184,9 @@ type Config struct {
 	TaskModel               string `json:"task_model"`
 	TaskProvider            string `json:"task_provider"`
 	TaskModelContextLength  string `json:"task_model_context_length"`
+	ChatModel               string `json:"chat_model"`
+	ChatProvider            string `json:"chat_provider"`
+	ChatModelContextLength  string `json:"chat_model_context_length"`
 	VectorStoreURL          string `json:"vector_store_url"`
 	Token                   string `json:"token"`
 }

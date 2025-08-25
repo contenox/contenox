@@ -3,11 +3,13 @@ package chatservice
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/taskchainservice"
 	"github.com/contenox/runtime/taskengine"
+	"github.com/google/uuid"
 )
 
 type Service interface {
@@ -43,6 +45,11 @@ func (s *service) OpenAIChatCompletions(ctx context.Context, taskChainID string,
 
 	if result == nil {
 		return nil, stackTrace, fmt.Errorf("empty result from chain execution")
+	}
+
+	if res, ok := result.(taskengine.ChatHistory); ok {
+		id := fmt.Sprintf("%d-%s", time.Now().Unix(), uuid.NewString()[:4])
+		result = taskengine.ConvertChatHistoryToOpenAI(id, res)
 	}
 
 	res, ok := result.(taskengine.OpenAIChatResponse)

@@ -14,7 +14,11 @@ services:
       - EMBED_MODEL_CONTEXT_LENGTH=2048
       - TASK_MODEL=phi3:3.8b
       - TASK_MODEL_CONTEXT_LENGTH=2048
+      - TASK_MODEL_PROVIDER=ollama
       - TASK_PROVIDER=ollama
+      - CHAT_MODEL=phi3:3.8b
+      - CHAT_MODEL_CONTEXT_LENGTH=2048
+      - CHAT_PROVIDER=ollama
       # - TOKEN=your_token_here
     depends_on:
       postgres:

@@ -1,0 +1,6 @@
+services:
+  runtime:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: contenox/runtime:local

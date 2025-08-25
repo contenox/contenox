@@ -3,6 +3,9 @@
 PROJECT_ROOT := $(shell pwd)
 VERSION_FILE := internal/apiframework/version.txt
 
+# Define the docker compose command with the local override file
+COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml
+
 validate-version:
 	@if [ ! -f "$(VERSION_FILE)" ]; then \
 		echo "ERROR: Version file $(VERSION_FILE) does not exist. Run 'make set-version' first."; \
@@ -21,16 +24,16 @@ clean:
 	@rm -f $(VERSION_FILE) 2>/dev/null || true
 
 build: set-version validate-version
-	docker compose build --build-arg DEFAULT_ADMIN_USER=$(DEFAULT_ADMIN_USER)
+	$(COMPOSE_CMD) build
 
 down:
-	docker compose down --remove-orphans
+	$(COMPOSE_CMD) down --volumes --remove-orphans
 
 run: down build
-	docker compose up -d
+	$(COMPOSE_CMD) up -d
 
 logs: run
-	docker compose logs -f runtime
+	$(COMPOSE_CMD) logs -f runtime
 
 test-unit:
 	GOMAXPROCS=4 go test -C ./ -run '^TestUnit_' ./...
@@ -42,7 +45,7 @@ test:
 	GOMAXPROCS=4 go test -C ./ ./...
 
 compose-wipe:
-	docker compose down --volumes --rmi all
+	$(COMPOSE_CMD) down --volumes --rmi all
 
 test-api-init:
 	python3 -m venv apitests/.venv

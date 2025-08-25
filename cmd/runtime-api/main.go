@@ -135,11 +135,22 @@ func main() {
 		TaskModel:   config.TaskModel,
 		EmbedModel:  config.EmbedModel,
 		TenantID:    Tenancy,
-	}, dbInstance, state, tcl, tokenizerSvc)
+	}, dbInstance, state, tcl)
 	if err != nil {
 		log.Fatalf("%s initializing promptexec failed: %v", nodeInstanceID, err)
 	}
-
+	tcl, err = strconv.Atoi(config.ChatModelContextLength)
+	if err != nil {
+		log.Fatalf("%s parsing chat model context length failed: %v", nodeInstanceID, err)
+	}
+	err = runtimestate.InitChatExec(ctx, &runtimestate.Config{
+		DatabaseURL: config.DatabaseURL,
+		ChatModel:   config.ChatModel,
+		TenantID:    Tenancy,
+	}, dbInstance, state, tcl)
+	if err != nil {
+		log.Fatalf("%s initializing task model failed: %v", nodeInstanceID, err)
+	}
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("%s initializing vector store failed: %v", nodeInstanceID, err)
@@ -154,15 +165,15 @@ func main() {
 	repo, err := llmrepo.NewModelManager(state, tokenizerSvc, llmrepo.ModelManagerConfig{
 		DefaultPromptModel: llmrepo.ModelConfig{
 			Name:     config.TaskModel,
-			Provider: "ollama",
+			Provider: config.TaskProvider,
 		},
 		DefaultEmbeddingModel: llmrepo.ModelConfig{
 			Name:     config.EmbedModel,
-			Provider: "ollama",
+			Provider: config.EmbedProvider,
 		},
 		DefaultChatModel: llmrepo.ModelConfig{
-			Name:     config.TaskModel,
-			Provider: "ollama",
+			Name:     config.ChatModel,
+			Provider: config.ChatProvider,
 		},
 	})
 	if err != nil {

@@ -530,6 +530,10 @@ components:
                 inputType:
                     example: string
                     type: string
+                inputVar:
+                    description: Which variable was used as input
+                    example: input
+                    type: string
                 output:
                     example: valid
                     type: string
@@ -555,6 +559,7 @@ components:
                 - error
                 - input
                 - output
+                - inputVar
             type: object
         taskengine_ComposeTask:
             properties:
@@ -969,16 +974,16 @@ paths:
                 NOTE: Only backends assigned to at least one pool will be used for request processing.
                 Backends not assigned to any pool exist in the configuration but are completely ignored by the routing system.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -1759,16 +1764,16 @@ paths:
         get:
             description: Lists all configured external providers with pagination support.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":

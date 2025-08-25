@@ -19,14 +19,11 @@ type StackTrace interface {
 	RecordStep(step CapturedStateUnit)
 	GetExecutionHistory() []CapturedStateUnit
 
-	// // Control
+	// Control
 	SetBreakpoint(taskID string)
 	ClearBreakpoints()
 
 	HasBreakpoint(taskID string) bool
-
-	// Debugging
-	GetCurrentState() ExecutionState
 }
 
 type ExecutionState struct {
@@ -45,6 +42,7 @@ type CapturedStateUnit struct {
 	Error       ErrorResponse `json:"error" openapi_include_type:"taskengine.ErrorResponse"`
 	Input       string        `json:"input" example:"This is a test input that needs validation"`
 	Output      string        `json:"output" example:"valid"`
+	InputVar    string        `json:"inputVar" example:"input"` // Which variable was used as input
 }
 
 type ErrorResponse struct {

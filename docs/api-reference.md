@@ -265,8 +265,8 @@ Backends not assigned to any pool exist in the configuration but are completely 
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -2029,8 +2029,8 @@ Lists all configured external providers with pagination support.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -3079,6 +3079,7 @@ If pools are enabled, models and backends not assigned to any pool will be compl
     },
     "input": "This is a test input that needs validation",
     "inputType": "string",
+    "inputVar": "input",
     "output": "valid",
     "outputType": "string",
     "taskHandler": "condition_key",
@@ -3857,6 +3858,7 @@ X-API-Key
     },
     "input": "This is a test input that needs validation",
     "inputType": "string",
+    "inputVar": "input",
     "output": "valid",
     "outputType": "string",
     "taskHandler": "condition_key",
@@ -4239,6 +4241,7 @@ X-API-Key
   },
   "input": "This is a test input that needs validation",
   "inputType": "string",
+  "inputVar": "input",
   "output": "valid",
   "outputType": "string",
   "taskHandler": "condition_key",
@@ -4256,6 +4259,7 @@ X-API-Key
 |error|[taskengine_ErrorResponse](#schemataskengine_errorresponse)|true|none|none|
 |input|string|true|none|none|
 |inputType|string|true|none|none|
+|inputVar|string|true|none|Which variable was used as input|
 |output|string|true|none|none|
 |outputType|string|true|none|none|
 |taskHandler|string|true|none|none|

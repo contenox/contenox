@@ -365,7 +365,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		}
 
 		id := fmt.Sprintf("chatcmpl-%d-%s", time.Now().UnixNano(), uuid.NewString()[:4])
-		openAIResponse := ConvertChatHistoryToOpenAI(id, chatHistory, currentTask.ExecuteConfig)
+		openAIResponse := ConvertChatHistoryToOpenAI(id, chatHistory)
 		output = openAIResponse
 		outputType = DataTypeOpenAIChatResponse
 		transitionEval = "converted"
