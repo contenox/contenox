@@ -121,7 +121,7 @@ graph TD
         U[User / Client Application]
     end
 
-    subgraph "Contenox Runtime"
+    subgraph "contenox/runtime"
         API[API Layer <br/> REST and OpenAI-compatible]
         OE["Orchestration Engine <br/> State Machine and Task Execution"]
         CONN["Connectors <br/> Model Resolver, Pools, Hooks"]
@@ -144,9 +144,6 @@ graph TD
     CONN --> OE
     OE -- Returns Final Output --> API
     API -- API Responses --> U
-
-    %% --- Styling ---
-    style "Contenox Runtime" fill:#e1f5fe,stroke:#333,stroke-width:2px
 ```
 
   * **Unified Interface**: Consistent API across providers
