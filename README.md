@@ -67,10 +67,7 @@ Save the following as `qa.json`:
         "systemInstruction": "You're a senior engineer. Provide concise, professional answers to technical questions.",
         "transition": {
           "branches": [
-            {
-              "operator": "default",
-              "goto": "end"
-            }
+            { "operator": "default", "goto": "end" }
           ]
         }
       }
@@ -116,84 +113,40 @@ docker logs contenox-runtime-kernel
 
 Define preferred model provider and backend resolution policy directly within task chains. This allows for seamless, dynamic orchestration across various LLM providers.
 
+#### Architecture Overview
+
 ```mermaid
-flowchart TB
-    subgraph User
-        U[User/Client Application]
+graph TD
+    subgraph "User Space"
+        U[User / Client Application]
     end
 
-    subgraph API_Layer["API Layer"]
-        EP1["POST /execute<br/>Simple Prompt"]
-        EP2["POST /tasks<br/>Task Chain"]
-        EP3["POST /embed<br/>Embeddings"]
-        EP4["GET /supported<br/>Hook Discovery"]
+    subgraph "Contenox Runtime"
+        API[API Layer <br/> (REST & OpenAI-compatible)]
+        OE["Orchestration Engine <br/> (State Machine & Task Execution)"]
+        CONN["Connectors <br/> (Model Resolver, Pools, Hooks)"]
     end
 
-    subgraph Core_Engine["Core Engine"]
-        TS[Task Service]
-        TE[Task Engine]
-        TExec[Task Executor]
-
-        TE --> TExec
-        TExec --> MR[Model Repository]
-        TExec --> HR[Hook Registry]
+    subgraph "External Services"
+        LLM[LLM Backends <br/> (Ollama, OpenAI, vLLM, etc.)]
+        HOOK[External Tools & APIs]
     end
 
-    subgraph Model_Management["Model Management"]
-        MR --> Resolver[Model Resolver]
-        Resolver --> RS[Runtime State]
-    end
+    %% --- Data Flow ---
+    U -- API Requests --> API
+    API -- Triggers Workflow --> OE
+    OE -- Executes via --> CONN
+    CONN -- Routes to --> LLM
+    CONN -- Calls --> HOOK
 
-    subgraph External_Systems["External Systems"]
-        subgraph LLM_Providers["LLM Providers"]
-            O[Ollama]
-            OP[OpenAI API]
-            G[Gemini]
-            V[vLLM]
-        end
+    LLM --> CONN
+    HOOK --> CONN
+    CONN --> OE
+    OE -- Returns Final Output --> API
+    API -- API Responses --> U
 
-        HS[External Hook Servers]
-    end
-
-    %% Data flow
-    U --> EP1
-    U --> EP2
-    U --> EP3
-    U --> EP4
-
-    EP1 --> TS
-    EP2 --> TE
-    EP3 --> MR
-    EP4 --> HR
-
-    TS --> MR
-
-    Resolver --> LLM_Providers
-    HR --> HS
-
-    LLM_Providers -- LLM Responses --> MR
-    HS -- Hook Responses --> HR
-
-    MR -- Model Outputs --> TS
-    MR -- Model Outputs --> TExec
-    HR -- Hook Outputs --> TExec
-
-    TExec -- Task Results --> TE
-    TE -- Final Output --> EP2
-    TS -- Simple Response --> EP1
-    MR -- Embeddings --> EP3
-    HR -- Supported Hooks --> EP4
-
-    EP1 --> U
-    EP2 --> U
-    EP3 --> U
-    EP4 --> U
-
-    style Core_Engine fill:#e1f5fe
-    style Model_Management fill:#f3e5f5
-    style External_Systems fill:#e8f5e8
-    style API_Layer fill:#fff3e0
-
+    %% --- Styling ---
+    style "Contenox Runtime" fill:#e1f5fe,stroke:#333,stroke-width:2px
 ```
 
   * **Unified Interface**: Consistent API across providers
