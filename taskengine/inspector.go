@@ -52,15 +52,15 @@ type ErrorResponse struct {
 	Error         string `json:"error" example:"validation failed: input contains prohibited content"`
 }
 
-func NewSimpleInspector() *SimpleInspector {
-	return &SimpleInspector{}
+func NewSimpleInspector() Inspector {
+	return &simpleInspector{}
 }
 
-type SimpleInspector struct {
+type simpleInspector struct {
 	kvManager libkv.KVManager
 }
 
-func (m SimpleInspector) Start(ctx context.Context) StackTrace {
+func (m simpleInspector) Start(ctx context.Context) StackTrace {
 	// Extract requestID from context
 	reqID, ok := ctx.Value(libtracker.ContextKeyRequestID).(string)
 	if !ok {

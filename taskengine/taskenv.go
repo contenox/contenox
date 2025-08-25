@@ -134,6 +134,9 @@ func NewEnv(
 	exec TaskExecutor,
 	inspector Inspector,
 ) (EnvExecutor, error) {
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
 	return &SimpleEnv{
 		exec:      exec,
 		tracker:   tracker,

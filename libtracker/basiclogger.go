@@ -6,22 +6,25 @@ import (
 	"time"
 )
 
-var _ ActivityTracker = (*LogActivityTracker)(nil)
+var _ ActivityTracker = (*logActivityTracker)(nil)
 
-// LogActivityTracker is a simple implementation of ActivityTracker that logs events using slog.
-type LogActivityTracker struct {
+// logActivityTracker is a simple implementation of ActivityTracker that logs events using slog.
+type logActivityTracker struct {
 	logger *slog.Logger
 }
 
-// NewLogActivityTracker creates a new instance of LogActivityTracker.
-func NewLogActivityTracker(logger *slog.Logger) *LogActivityTracker {
-	return &LogActivityTracker{
+// NewLogActivityTracker creates a new instance of logActivityTracker.
+func NewLogActivityTracker(logger *slog.Logger) ActivityTracker {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &logActivityTracker{
 		logger: logger,
 	}
 }
 
 // Start implements the ActivityTracker interface.
-func (t *LogActivityTracker) Start(
+func (t *logActivityTracker) Start(
 	ctx context.Context,
 	operation string,
 	subject string,

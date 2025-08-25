@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/contenox/runtime/backendservice"
@@ -500,12 +501,12 @@ func (p *Playground) GetTasksEnvService(ctx context.Context) (execservice.TasksE
 		return nil, errors.New("cannot get tasks env service: hookrepo is not initialized")
 	}
 
-	exec, err := taskengine.NewExec(ctx, p.llmRepo, p.hookrepo, &libtracker.LogActivityTracker{})
+	exec, err := taskengine.NewExec(ctx, p.llmRepo, p.hookrepo, libtracker.NewLogActivityTracker(slog.Default()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task engine exec: %w", err)
 	}
 
-	env, err := taskengine.NewEnv(ctx, &libtracker.LogActivityTracker{}, exec, &taskengine.NoopInspector{})
+	env, err := taskengine.NewEnv(ctx, libtracker.NewLogActivityTracker(slog.Default()), exec, taskengine.NewSimpleInspector())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task engine env: %w", err)
 	}

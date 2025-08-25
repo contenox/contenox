@@ -18,7 +18,7 @@ func TestUnit_SimpleEnv_ExecEnv_SingleTask(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(t.Context(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(t.Context(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -51,7 +51,7 @@ func TestUnit_SimpleEnv_ExecEnv_FailsAfterRetries(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -79,7 +79,7 @@ func TestUnit_SimpleEnv_ExecEnv_TransitionsToNextTask(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -118,7 +118,7 @@ func TestUnit_SimpleEnv_ExecEnv_ErrorTransition(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -156,7 +156,7 @@ func TestUnit_SimpleEnv_ExecEnv_PrintTemplate(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -188,7 +188,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_OriginalInput(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -219,7 +219,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -260,7 +260,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -311,7 +311,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_InvalidVariable(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{} // Shouldn't be called
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
@@ -342,7 +342,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_DefaultBehavior(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, &taskengine.SimpleInspector{})
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{

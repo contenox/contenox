@@ -455,7 +455,7 @@ func TestUnit_ComposeErrors(t *testing.T) {
 func setupTestEnv(exec taskengine.TaskExecutor) taskengine.EnvExecutor {
 	// Create no-op dependencies
 	tracker := &libtracker.NoopTracker{}
-	inspector := &taskengine.NoopInspector{}
+	inspector := taskengine.NewSimpleInspector()
 
 	env, _ := taskengine.NewEnv(
 		context.Background(),
