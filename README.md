@@ -117,39 +117,83 @@ docker logs contenox-runtime-kernel
 Define preferred model provider and backend resolution policy directly within task chains. This allows for seamless, dynamic orchestration across various LLM providers.
 
 ```mermaid
-graph LR
+flowchart TB
     subgraph User
-        IN[User Input]
+        U[User/Client Application]
     end
 
-    subgraph Runtime
-        API[REST API] --> TE[Task Engine]
-        TE --> SE[State Execution]
-        SE --> MR[Model Repository]
-        MR --> RES[Model Resolver]
+    subgraph API_Layer["API Layer"]
+        EP1["POST /execute<br/>Simple Prompt"]
+        EP2["POST /tasks<br/>Task Chain"]
+        EP3["POST /embed<br/>Embeddings"]
+        EP4["GET /supported<br/>Hook Discovery"]
     end
 
-    subgraph Providers
-        RES --> O[Ollama]
-        RES --> OP[OpenAI]
-        RES --> G[Gemini]
-        RES --> V[vLLM]
+    subgraph Core_Engine["Core Engine"]
+        TS[Task Service]
+        TE[Task Engine]
+        TExec[Task Executor]
+
+        TE --> TExec
+        TExec --> MR[Model Repository]
+        TExec --> HR[Hook Registry]
     end
 
-    subgraph Backends
-        O --> OB[Ollama Backend]
-        OP --> OPB[OpenAI API]
-        G --> GB[Gemini API]
-        V --> VB[vLLM Server]
+    subgraph Model_Management["Model Management"]
+        MR --> Resolver[Model Resolver]
+        Resolver --> RS[Runtime State]
     end
 
-    OB --> RET[Return Result]
-    OPB --> RET
-    GB --> RET
-    VB --> RET
+    subgraph External_Systems["External Systems"]
+        subgraph LLM_Providers["LLM Providers"]
+            O[Ollama]
+            OP[OpenAI API]
+            G[Gemini]
+            V[vLLM]
+        end
 
-    RET --> API
-    API --> OUT[User / Next State]
+        HS[External Hook Servers]
+    end
+
+    %% Data flow
+    U --> EP1
+    U --> EP2
+    U --> EP3
+    U --> EP4
+
+    EP1 --> TS
+    EP2 --> TE
+    EP3 --> MR
+    EP4 --> HR
+
+    TS --> MR
+
+    Resolver --> LLM_Providers
+    HR --> HS
+
+    LLM_Providers -- LLM Responses --> MR
+    HS -- Hook Responses --> HR
+
+    MR -- Model Outputs --> TS
+    MR -- Model Outputs --> TExec
+    HR -- Hook Outputs --> TExec
+
+    TExec -- Task Results --> TE
+    TE -- Final Output --> EP2
+    TS -- Simple Response --> EP1
+    MR -- Embeddings --> EP3
+    HR -- Supported Hooks --> EP4
+
+    EP1 --> U
+    EP2 --> U
+    EP3 --> U
+    EP4 --> U
+
+    style Core_Engine fill:#e1f5fe
+    style Model_Management fill:#f3e5f5
+    style External_Systems fill:#e8f5e8
+    style API_Layer fill:#fff3e0
+
 ```
 
   * **Unified Interface**: Consistent API across providers
