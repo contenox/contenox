@@ -36,7 +36,6 @@ See your first workflow run in under 5 minutes:
 ```bash
 git clone https://github.com/contenox/runtime.git
 cd runtime
-docker compose build
 docker compose up -d
 ```
 
