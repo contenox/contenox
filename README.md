@@ -146,8 +146,8 @@ graph TD
 
     subgraph "contenox/runtime"
         API[API Layer]
-        OE["Orchestration Engine <br/> Task Execution & State Management"]
-        CONN["Connectors <br/> ModelResolver & HookClient"]
+        OE["Orchestration Engine <br/> Task Execution <br/> & State Management"]
+        CONN["Connectors <br/> Model Resolver <br/> & Hook Client"]
     end
 
     subgraph "External Services"
