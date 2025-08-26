@@ -23,7 +23,10 @@ func main() {
 			fmt.Println("Error: Must specify bump type (major, minor, patch)")
 			os.Exit(1)
 		}
-		bumpVersion(os.Args[2])
+		if err := bumpVersion(os.Args[2]); err != nil {
+			fmt.Printf("❌ Version bump failed: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		showHelp()
 		os.Exit(1)
@@ -58,8 +61,7 @@ func setVersion() {
 	}
 
 	filePath := getVersionFile()
-	err = os.WriteFile(filePath, []byte(version), 0644)
-	if err != nil {
+	if err := os.WriteFile(filePath, []byte(version), 0644); err != nil {
 		fmt.Printf("Error writing version file: %v\n", err)
 		os.Exit(1)
 	}
@@ -67,89 +69,94 @@ func setVersion() {
 	fmt.Printf("Version set to: %s\n", version)
 }
 
-func bumpVersion(bumpType string) {
+// BumpVersion performs a version bump with proper cleanup on failure
+func bumpVersion(bumpType string) error {
+	// Start with a clean transaction context
+	tx := newBumpTransaction()
+
+	// Ensure cleanup happens on error or panic
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Printf("⚠️  Panic during version bump: %v\n", r)
+			tx.Rollback()
+			os.Exit(1)
+		} else if tx.hasError {
+			tx.Rollback()
+		}
+	}()
+
 	// 1. Verify we're in a git repository
 	if !isGitRepository() {
-		fmt.Println("ERROR: Not in a git repository")
-		os.Exit(1)
+		return fmt.Errorf("not in a git repository")
 	}
 
-	// 2. Check for uncommitted changes (this now correctly ignores the version file)
+	// 2. Check for uncommitted changes
 	if hasUncommittedChanges() {
-		fmt.Println("ERROR: Cannot create release with uncommitted changes.")
-		fmt.Println("Please commit or stash your changes first.")
-		os.Exit(1)
+		return fmt.Errorf("cannot create release with uncommitted changes. Please commit or stash your changes first")
 	}
 
 	// 3. Get current version
 	currentVersion, err := getCurrentTagVersion()
 	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to get current version: %w", err)
 	}
 	fmt.Printf("Current version: %s\n", currentVersion)
+	tx.currentVersion = currentVersion
 
 	// 4. Calculate new version
 	newVersion, err := calculateNewVersion(currentVersion, bumpType)
 	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to calculate new version: %w", err)
 	}
 	fmt.Printf("New version will be: %s\n", newVersion)
+	tx.newVersion = newVersion
 
-	// 5. Update compose file BEFORE committing anything
+	// 5. Update compose file
 	if err := updateComposeFile(newVersion); err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		// Revert the version file change if it was already done
-		os.WriteFile(getVersionFile(), []byte(currentVersion), 0644)
-		os.Exit(1)
+		return fmt.Errorf("failed to update compose file: %w", err)
 	}
+	tx.composeUpdated = true
 
 	// 6. Update version file
 	if err := updateVersionFile(newVersion); err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to update version file: %w", err)
 	}
+	tx.versionFileUpdated = true
 
-	// 7. Commit the version file
+	// 7. Commit changes
 	if err := commitVersionFile(newVersion); err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		// Revert the version file change
-		os.WriteFile(getVersionFile(), []byte(currentVersion), 0644)
-		updateComposeFile(currentVersion) // Revert compose file
-		os.Exit(1)
+		return fmt.Errorf("failed to commit version changes: %w", err)
 	}
+	tx.commitCreated = true
 
 	// 8. Create tag
 	if err := createTag(newVersion); err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-		// Revert the commit
-		exec.Command("git", "reset", "HEAD~1").Run()
-		// Revert the version file
-		os.WriteFile(getVersionFile(), []byte(currentVersion), 0644)
-		os.Exit(1)
+		return fmt.Errorf("failed to create tag: %w", err)
 	}
+	tx.tagCreated = true
 
-	// 9. Regenerate docs and amend the release commit
+	// 9. Regenerate docs
 	fmt.Println("\n🔄 Regenerating documentation with new version...")
 	if err := updateDocsAndAmendCommit(); err != nil {
-		fmt.Printf("⚠️  WARNING: Failed to update documentation: %v\n", err)
-		fmt.Println("   The tag was created, but the docs need to be updated and committed manually.")
+		return fmt.Errorf("failed to update documentation: %w", err)
 	}
+
+	// Success - no rollback needed
+	tx.markSuccessful()
 
 	fmt.Printf("\n✅ Release %s created successfully!\n", newVersion)
 	fmt.Printf("   Push with: git push && git push origin %s\n", newVersion)
+	return nil
 }
 
 func updateDocsAndAmendCommit() error {
-	// Regenerate OpenAPI spec and Markdown.
-	// We run 'make docs-markdown' as it handles both steps.
+	// Regenerate OpenAPI spec and Markdown
 	cmd := exec.Command("make", "docs-markdown")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to run 'make docs-markdown': %w\nOutput: %s", err, string(output))
 	}
 
-	// Add the updated docs to the index
+	// Add updated docs to index
 	cmd = exec.Command("git", "add", "docs/")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to git add docs/: %w\nOutput: %s", err, string(output))
@@ -157,7 +164,6 @@ func updateDocsAndAmendCommit() error {
 
 	cmd = exec.Command("git", "commit", "--amend", "--no-edit")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		// If the output indicates there's nothing to commit, it means the docs were already up-to-date.
 		if strings.Contains(string(output), "nothing to commit") {
 			fmt.Println("   Documentation was already up-to-date.")
 			return nil
@@ -171,8 +177,7 @@ func updateDocsAndAmendCommit() error {
 
 func isGitRepository() bool {
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
-	err := cmd.Run()
-	return err == nil
+	return cmd.Run() == nil
 }
 
 // hasUncommittedChanges checks for any changes in the git repository, ignoring the version file.
@@ -187,8 +192,6 @@ func hasUncommittedChanges() bool {
 	}
 
 	lines := strings.Split(string(output), "\n")
-
-	// Correctly iterate over the lines of output.
 	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 		if trimmedLine == "" {
@@ -197,7 +200,6 @@ func hasUncommittedChanges() bool {
 
 		// If a line indicates a change and it's NOT the version file,
 		// then we have uncommitted changes that need to be addressed.
-		// We check the file path at the end of the status line.
 		if !strings.HasSuffix(trimmedLine, versionFilePath) {
 			return true
 		}
@@ -208,32 +210,22 @@ func hasUncommittedChanges() bool {
 
 // getCurrentTagVersion fetches the latest semantic version tag from the repository.
 func getCurrentTagVersion() (string, error) {
-	// Fetch all tags from the remote repository to ensure we have the latest ones.
-	cmd := exec.Command("git", "fetch", "--tags")
-	cmd.Run() // We can ignore errors here, as it might fail in offline scenarios.
+	// Fetch all tags from the remote repository
+	exec.Command("git", "fetch", "--tags").Run() // Ignore errors for offline scenarios
 
-	// Get the latest tag by sorting them using version semantics (-v:refname).
-	cmd = exec.Command("git", "tag", "--sort=-v:refname")
+	// Get the latest tag by sorting them using version semantics
+	cmd := exec.Command("git", "tag", "--sort=-v:refname")
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// This might fail if there are no tags yet.
-		if strings.Contains(string(output), "No names found") || len(output) == 0 {
-			fmt.Println("No existing tags found. Starting with v0.1.0.")
-			return "v0.1.0", nil
-		}
-		return "", fmt.Errorf("failed to get latest git tag: %w\nOutput: %s", err, string(output))
+	if err != nil || len(output) == 0 {
+		return "v0.1.0", nil
 	}
 
 	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(tags) == 0 || tags[0] == "" {
-		// No tags exist, so we start from the initial version.
-		fmt.Println("No existing tags found. Starting with v0.1.0.")
 		return "v0.1.0", nil
 	}
 
-	// The first line will be the latest version tag.
-	latestTag := tags[0]
-	return latestTag, nil
+	return tags[0], nil
 }
 
 // calculateNewVersion increments a semantic version string based on the bump type.
@@ -246,8 +238,6 @@ func calculateNewVersion(currentVersion, bumpType string) (string, error) {
 
 	parts := strings.Split(tag, ".")
 	if len(parts) != 3 {
-		// Handle potential non-semver tags by starting fresh
-		fmt.Printf("Warning: Could not parse current tag '%s'. Defaulting to v0.1.0 for new version.\n", currentVersion)
 		return "v0.1.0", nil
 	}
 
@@ -290,17 +280,15 @@ func updateVersionFile(newVersion string) error {
 func commitVersionFile(newVersion string) error {
 	fmt.Println("📦 Committing version and compose files...")
 
-	// Add BOTH files to the commit
+	// Add both files to the commit
 	cmd := exec.Command("git", "add", getVersionFile(), "compose.yaml")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to add version and compose files: %w\nOutput: %s", err, string(output))
 	}
 
 	// Commit the change
 	cmd = exec.Command("git", "commit", "-m", fmt.Sprintf("chore: release %s", newVersion))
-	output, err = cmd.CombinedOutput()
-	if err != nil {
+	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to commit version file: %w\nOutput: %s", err, string(output))
 	}
 
@@ -312,8 +300,7 @@ func createTag(newVersion string) error {
 
 	// Create an annotated tag pointing to the release commit
 	cmd := exec.Command("git", "tag", "-a", newVersion, "-m", fmt.Sprintf("Release %s", newVersion))
-	output, err := cmd.CombinedOutput()
-	if err != nil {
+	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create tag: %w\nOutput: %s", err, string(output))
 	}
 
@@ -338,17 +325,88 @@ func updateComposeFile(newVersion string) error {
 	}
 
 	// Replace the runtime image tag
-	updatedContent := []byte(
-		regexp.MustCompile(`image: ghcr\.io/contenox/runtime:[^\s]+`).ReplaceAllString(
-			string(content),
-			"image: ghcr.io/contenox/runtime:"+newVersion,
-		),
-	)
+	re := regexp.MustCompile(`image: ghcr\.io/contenox/runtime:[^\s]+`)
+	updatedContent := re.ReplaceAllString(string(content), "image: ghcr.io/contenox/runtime:"+newVersion)
 
 	// Write the updated content
-	if err := os.WriteFile(composePath, updatedContent, 0644); err != nil {
+	if err := os.WriteFile(composePath, []byte(updatedContent), 0644); err != nil {
 		return fmt.Errorf("failed to write compose file: %w", err)
 	}
 
 	return nil
+}
+
+// BumpTransaction represents a version bump operation with state tracking for proper cleanup
+type bumpTransaction struct {
+	currentVersion      string
+	newVersion          string
+	composeUpdated      bool
+	versionFileUpdated  bool
+	commitCreated       bool
+	tagCreated          bool
+	hasError            bool
+	successful          bool
+	previousComposePath string
+	previousVersionPath string
+}
+
+// newBumpTransaction creates a new transaction context
+func newBumpTransaction() *bumpTransaction {
+	return &bumpTransaction{
+		hasError:   true, // Assume failure until proven otherwise
+		successful: false,
+	}
+}
+
+// markSuccessful marks the transaction as successful
+func (tx *bumpTransaction) markSuccessful() {
+	tx.successful = true
+	tx.hasError = false
+}
+
+// Rollback attempts to revert all changes made during the transaction
+func (tx *bumpTransaction) Rollback() {
+	fmt.Println("\n🔄 Rolling back version bump...")
+
+	// If we successfully created a tag, remove it
+	if tx.tagCreated {
+		fmt.Printf("   Removing tag %s...\n", tx.newVersion)
+		exec.Command("git", "tag", "-d", tx.newVersion).Run()
+	}
+
+	// If we successfully created a commit, reset it
+	if tx.commitCreated {
+		fmt.Println("   Resetting last commit...")
+		exec.Command("git", "reset", "HEAD~1").Run()
+	}
+
+	// If we updated the version file, revert it
+	if tx.versionFileUpdated {
+		fmt.Printf("   Restoring version file to %s...\n", tx.currentVersion)
+		os.WriteFile(getVersionFile(), []byte(tx.currentVersion), 0644)
+	}
+
+	// If we updated the compose file, revert it
+	if tx.composeUpdated {
+		fmt.Println("   Restoring compose file...")
+		composePath := "compose.yaml"
+
+		// Read the compose file
+		content, err := os.ReadFile(composePath)
+		if err != nil {
+			fmt.Printf("   Failed to read compose file: %v\n", err)
+			return
+		}
+
+		// Replace the runtime image tag back to current version
+		re := regexp.MustCompile(`image: ghcr\.io/contenox/runtime:[^\s]+`)
+		updatedContent := re.ReplaceAllString(string(content), "image: ghcr.io/contenox/runtime:"+tx.currentVersion)
+
+		// Write the restored content
+		if err := os.WriteFile(composePath, []byte(updatedContent), 0644); err != nil {
+			fmt.Printf("   Failed to restore compose file: %v\n", err)
+		}
+	}
+
+	fmt.Println("   Rollback completed.")
 }
