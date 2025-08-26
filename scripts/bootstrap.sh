@@ -98,14 +98,17 @@ if [ "$http_code" -ne 200 ]; then
     error_exit "Failed to get backends. API returned status ${http_code}."
 fi
 BACKEND_ID=$(echo "$body" | jq -r '(. // []) | .[] | select(.name=="local-ollama") | .id')
+# Add this after the environment variable section but before backend registration
+OLLAMA_BACKEND_URL="${OLLAMA_BACKEND_URL:-http://ollama:11434}"
 
+# Then modify the backend registration section:
 if [ -z "$BACKEND_ID" ]; then
   log "Backend not found. Registering 'local-ollama'..."
   response=$(curl -s -w "\n%{http_code}" -X POST ${API_BASE_URL}/backends \
     -H "Content-Type: application/json" \
     -d '{
       "name": "local-ollama",
-      "baseURL": "http://ollama:11434",
+      "baseURL": "'"$OLLAMA_BACKEND_URL"'",
       "type": "ollama"
     }')
   http_code=$(echo "$response" | tail -n1)

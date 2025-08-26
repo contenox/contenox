@@ -43,6 +43,8 @@ export TASK_PROVIDER=ollama
 export CHAT_MODEL=phi3:3.8b
 export CHAT_MODEL_CONTEXT_LENGTH=2048
 export CHAT_PROVIDER=ollama
+export OLLAMA_BACKEND_URL="http://ollama:11434"
+# or any other like: export OLLAMA_BACKEND_URL="http://host.docker.internal:11434"
 
 # Start the container services
 echo "Starting services with 'docker compose up -d'..."
@@ -50,6 +52,8 @@ docker compose up -d
 echo "Services are starting up."
 
 # Configure the runtime with your model preferences
+# the bootstraping script works only for ollama models/backends
+# for to use other providers refer to the API-Spec.
 ./scripts/bootstrap.sh $EMBED_MODEL $TASK_MODEL $CHAT_MODEL
 ```
 
