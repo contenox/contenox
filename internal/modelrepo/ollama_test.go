@@ -121,7 +121,7 @@ func TestSystem_Ollama(t *testing.T) {
 
 		// Test with options
 		messages := []modelrepo.Message{
-			{Role: "system", Content: "You are a Task Engine answering other Machines directly without explanation"},
+			{Role: "system", Content: "You are a calculator."},
 			{Role: "user", Content: "How much is 2+2?"},
 		}
 		resp, err := chatClient.Chat(ctx, messages,

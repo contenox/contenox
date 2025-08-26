@@ -17,7 +17,7 @@ func TestSystem_ModelService(t *testing.T) {
 	// Create playground with required dependencies
 	p := playground.New()
 	p = p.WithPostgresTestContainer(ctx)
-	p = p.WithDefaultEmbeddingsModel("test-embed-model", "test-provider") // Sets immutable model name
+	p = p.WithDefaultEmbeddingsModel("test-embed-model", "test-provider", 1024) // Sets immutable model name
 	modelService, err := p.GetModelService()
 	require.NoError(t, err)
 	defer p.CleanUp()

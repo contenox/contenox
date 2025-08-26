@@ -34,22 +34,25 @@ import (
 // Playground provides a fluent API for setting up a test environment.
 // Errors are chained, and execution stops on the first failure.
 type Playground struct {
-	cleanUps                []func()
-	db                      libdbexec.DBManager
-	bus                     libbus.Messenger
-	state                   *runtimestate.State
-	tokenizer               ollamatokenizer.Tokenizer
-	llmRepo                 llmrepo.ModelRepo
-	hookrepo                taskengine.HookRepo
-	withPool                bool
-	routinesStarted         bool
-	embeddingsModel         string
-	embeddingsModelProvider string
-	llmPromptModel          string
-	llmPromptModelProvider  string
-	llmChatModel            string
-	llmChatModelProvider    string
-	Error                   error
+	cleanUps                  []func()
+	db                        libdbexec.DBManager
+	bus                       libbus.Messenger
+	state                     *runtimestate.State
+	tokenizer                 ollamatokenizer.Tokenizer
+	llmRepo                   llmrepo.ModelRepo
+	hookrepo                  taskengine.HookRepo
+	withPool                  bool
+	routinesStarted           bool
+	embeddingsModel           string
+	embeddingsModelProvider   string
+	embeddingsModelContextLen int
+	llmPromptModel            string
+	llmPromptModelProvider    string
+	llmPromptModelContextLen  int
+	llmChatModel              string
+	llmChatModelProvider      string
+	llmChatModelContextLen    int
+	Error                     error
 }
 
 // A fixed tenant ID for testing purposes.
@@ -131,6 +134,8 @@ func (p *Playground) WithInternalOllamaEmbedder(ctx context.Context, modelName s
 	}
 	p.embeddingsModel = modelName
 	p.embeddingsModelProvider = "ollama"
+	// Store context length
+	p.embeddingsModelContextLen = contextLen
 	config := &runtimestate.Config{
 		EmbedModel: modelName,
 		TenantID:   testTenantID,
@@ -156,6 +161,10 @@ func (p *Playground) WithInternalChatExecutor(ctx context.Context, modelName str
 		ChatModel: modelName,
 		TenantID:  testTenantID,
 	}
+	// Store context length
+	p.llmChatModelContextLen = contextLen
+	p.llmChatModel = modelName
+	p.llmChatModelProvider = "ollama"
 
 	err := runtimestate.InitChatExec(ctx, config, p.db, p.state, contextLen)
 	if err != nil {
@@ -182,6 +191,10 @@ func (p *Playground) WithInternalPromptExecutor(ctx context.Context, modelName s
 		TaskModel: modelName,
 		TenantID:  testTenantID,
 	}
+	// Store context length
+	p.llmPromptModelContextLen = contextLen
+	p.llmPromptModel = modelName
+	p.llmPromptModelProvider = "ollama"
 
 	err := runtimestate.InitPromptExec(ctx, config, p.db, p.state, contextLen)
 	if err != nil {
@@ -227,32 +240,35 @@ func (p *Playground) WithNats(ctx context.Context) *Playground {
 }
 
 // WithDefaultEmbeddingsModel sets the default embeddings model and provider.
-func (p *Playground) WithDefaultEmbeddingsModel(model string, provider string) *Playground {
+func (p *Playground) WithDefaultEmbeddingsModel(model string, provider string, contextLength int) *Playground {
 	if p.Error != nil {
 		return p
 	}
 	p.embeddingsModel = model
 	p.embeddingsModelProvider = provider
+	p.embeddingsModelContextLen = contextLength
 	return p
 }
 
 // WithDefaultPromptModel sets the default prompt model and provider.
-func (p *Playground) WithDefaultPromptModel(model string, provider string) *Playground {
+func (p *Playground) WithDefaultPromptModel(model string, provider string, contextLength int) *Playground {
 	if p.Error != nil {
 		return p
 	}
 	p.llmPromptModel = model
 	p.llmPromptModelProvider = provider
+	p.llmPromptModelContextLen = contextLength
 	return p
 }
 
 // WithDefaultChatModel sets the default chat model and provider.
-func (p *Playground) WithDefaultChatModel(model string, provider string) *Playground {
+func (p *Playground) WithDefaultChatModel(model string, provider string, contextLength int) *Playground {
 	if p.Error != nil {
 		return p
 	}
 	p.llmChatModel = model
 	p.llmChatModelProvider = provider
+	p.llmChatModelContextLen = contextLength
 	return p
 }
 
@@ -399,6 +415,61 @@ func (p *Playground) WithOllamaBackend(ctx context.Context, name, tag string, as
 			return p
 		}
 	}
+	return p
+}
+
+// WithPostgresReal connects to a real PostgreSQL instance using the provided connection string.
+func (p *Playground) WithPostgresReal(ctx context.Context, connStr string) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	dbManager, err := libdbexec.NewPostgresDBManager(ctx, connStr, runtimetypes.Schema)
+	if err != nil {
+		p.Error = fmt.Errorf("failed to create postgres db manager: %w", err)
+		return p
+	}
+	p.db = dbManager
+	// No cleanup needed for real resources - user manages lifecycle
+	return p
+}
+
+// WithNatsReal sets up a connection to a real NATS server.
+func (p *Playground) WithNatsReal(ctx context.Context, natsURL, natsUser, natsPassword string) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	ps, err := libbus.NewPubSub(ctx, &libbus.Config{
+		NATSURL:      natsURL,
+		NATSUser:     natsUser,
+		NATSPassword: natsPassword,
+	})
+	if err != nil {
+		p.Error = fmt.Errorf("failed to setup nats server: %w", err)
+		return p
+	}
+	p.bus = ps
+	// No cleanup needed for real resources - user manages lifecycle
+	return p
+}
+
+// WithTokenizerService sets up the tokenizer service from a real service URL
+func (p *Playground) WithTokenizerService(ctx context.Context, tokenizerURL string) *Playground {
+	if p.Error != nil {
+		return p
+	}
+
+	tokenizerSvc, cleanup, err := ollamatokenizer.NewHTTPClient(ctx, ollamatokenizer.ConfigHTTP{
+		BaseURL: tokenizerURL,
+	})
+	if err != nil {
+		p.Error = fmt.Errorf("failed to setup tokenizer service: %w", err)
+		return p
+	}
+	wrappedCleanup := func() {
+		_ = cleanup()
+	}
+	p.tokenizer = tokenizerSvc
+	p.AddCleanUp(wrappedCleanup)
 	return p
 }
 
