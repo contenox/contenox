@@ -288,13 +288,13 @@ func updateVersionFile(newVersion string) error {
 }
 
 func commitVersionFile(newVersion string) error {
-	fmt.Println("📦 Committing version file...")
+	fmt.Println("📦 Committing version and compose files...")
 
-	// Add the file
-	cmd := exec.Command("git", "add", getVersionFile())
+	// Add BOTH files to the commit
+	cmd := exec.Command("git", "add", getVersionFile(), "compose.yaml")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to add version file: %w\nOutput: %s", err, string(output))
+		return fmt.Errorf("failed to add version and compose files: %w\nOutput: %s", err, string(output))
 	}
 
 	// Commit the change
