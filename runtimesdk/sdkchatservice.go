@@ -1,11 +1,14 @@
 package runtimesdk
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/internal/apiframework"
@@ -47,7 +50,7 @@ func (s *HTTPChatService) OpenAIChatCompletions(ctx context.Context, chainID str
 	}
 
 	// Create request
-	reqHTTP, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(body)))
+	reqHTTP, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -98,4 +101,75 @@ func (s *HTTPChatService) OpenAIChatCompletions(ctx context.Context, chainID str
 	}
 
 	return chatResponse, response.StackTrace, nil
+}
+
+// OpenAIChatCompletionsStream implements chatservice.Service.OpenAIChatCompletionsStream
+func (s *HTTPChatService) OpenAIChatCompletionsStream(ctx context.Context, chainID string, req taskengine.OpenAIChatRequest, speed time.Duration) (<-chan chatservice.OpenAIChatStreamChunk, error) {
+	// Ensure the request is marked for streaming
+	req.Stream = true
+	url := s.baseURL + "/" + chainID + "/v1/chat/completions"
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal chat stream request: %w", err)
+	}
+
+	reqHTTP, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	reqHTTP.Header.Set("Content-Type", "application/json")
+	reqHTTP.Header.Set("Accept", "text/event-stream")
+	if s.token != "" {
+		reqHTTP.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(reqHTTP)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	ch := make(chan chatservice.OpenAIChatStreamChunk)
+
+	go func() {
+		defer resp.Body.Close()
+		defer close(ch)
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				continue
+			}
+
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				return
+			}
+
+			var chunk chatservice.OpenAIChatStreamChunk
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				// TODO: error handling
+				return
+			}
+
+			select {
+			case ch <- chunk:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	return ch, nil
 }

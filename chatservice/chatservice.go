@@ -3,6 +3,7 @@ package chatservice
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/contenox/runtime/execservice"
@@ -14,6 +15,7 @@ import (
 
 type Service interface {
 	OpenAIChatCompletions(ctx context.Context, taskChainID string, req taskengine.OpenAIChatRequest) (*taskengine.OpenAIChatResponse, []taskengine.CapturedStateUnit, error)
+	OpenAIChatCompletionsStream(ctx context.Context, taskChainID string, req taskengine.OpenAIChatRequest, speed time.Duration) (<-chan OpenAIChatStreamChunk, error)
 }
 
 type service struct {
@@ -58,4 +60,93 @@ func (s *service) OpenAIChatCompletions(ctx context.Context, taskChainID string,
 	}
 
 	return &res, stackTrace, nil
+}
+
+// OpenAIChatCompletionsStream gets the full response and streams it back word-by-word.
+func (s *service) OpenAIChatCompletionsStream(ctx context.Context, taskChainID string, req taskengine.OpenAIChatRequest, speed time.Duration) (<-chan OpenAIChatStreamChunk, error) {
+	fullResponse, _, err := s.OpenAIChatCompletions(ctx, taskChainID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(fullResponse.Choices) == 0 {
+		return nil, fmt.Errorf("no choices returned from the model")
+	}
+
+	ch := make(chan OpenAIChatStreamChunk)
+
+	go func() {
+		defer close(ch)
+		content := fullResponse.Choices[0].Message.Content
+		words := strings.Fields(content)
+
+		// Stream word by word
+		for i, word := range words {
+			chunk := OpenAIChatStreamChunk{
+				ID:      fullResponse.ID,
+				Object:  "chat.completion.chunk",
+				Created: fullResponse.Created,
+				Model:   fullResponse.Model,
+				Choices: []OpenAIStreamChoice{
+					{
+						Index: 0,
+						Delta: OpenAIStreamDelta{
+							Content: " " + word,
+						},
+					},
+				},
+			}
+			// Remove leading space for the very first word
+			if i == 0 {
+				chunk.Choices[0].Delta.Content = word
+			}
+			ch <- chunk
+			time.Sleep(speed)
+		}
+
+		finishReason := "stop"
+		finalChunk := OpenAIChatStreamChunk{
+			ID:      fullResponse.ID,
+			Object:  "chat.completion.chunk",
+			Created: fullResponse.Created,
+			Model:   fullResponse.Model,
+			Choices: []OpenAIStreamChoice{
+				{
+					Index:        0,
+					Delta:        OpenAIStreamDelta{},
+					FinishReason: &finishReason,
+				},
+			},
+		}
+		ch <- finalChunk
+	}()
+
+	return ch, nil
+}
+
+// OpenAIChatStreamChunk represents a single chunk of data in an SSE stream
+// for an OpenAI-compatible chat completion.
+type OpenAIChatStreamChunk struct {
+	ID      string               `json:"id" example:"chatcmpl-123"`
+	Object  string               `json:"object" example:"chat.completion.chunk"`
+	Created int64                `json:"created" example:"1694268190"`
+	Model   string               `json:"model" example:"mistral:instruct"`
+	Choices []OpenAIStreamChoice `json:"choices" openapi_include_type:"chatservice.OpenAIStreamChoice"`
+}
+
+// OpenAIStreamChoice represents a choice within a stream chunk. It contains the
+// delta, which is the actual content being streamed.
+type OpenAIStreamChoice struct {
+	Index        int               `json:"index" example:"0"`
+	Delta        OpenAIStreamDelta `json:"delta" openapi_include_type:"chatservice.OpenAIStreamDelta"`
+	FinishReason *string           `json:"finish_reason,omitempty" example:"stop"`
+}
+
+// OpenAIStreamDelta contains the incremental content update (the "delta") for a
+// streaming chat response.
+type OpenAIStreamDelta struct {
+	// The role of the author of this message.
+	Role string `json:"role,omitempty" example:"assistant"`
+	// The contents of the chunk.
+	Content string `json:"content,omitempty" example:" world"`
 }

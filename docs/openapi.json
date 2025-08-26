@@ -1066,7 +1066,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.63"
+    "version": "v0.0.51-80-g49e5555-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1898,19 +1898,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one pool will be available for request processing.\nModels not assigned to any pool exist in the configuration but are completely ignored by the routing system.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -2106,19 +2106,19 @@
         "description": "Lists pools filtered by purpose type with pagination support.\nPurpose types categorize pools (e.g., \"Internal Embeddings\", \"Internal Tasks\").\nAccepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -2522,7 +2522,7 @@
                 }
               }
             },
-            "description": "Server-Sent Events stream"
+            "description": "OK"
           },
           "default": {
             "content": {
@@ -2868,7 +2868,7 @@
         }
       ],
       "post": {
-        "description": "Processes chat requests using the configured task chain.\nThis endpoint provides OpenAI-compatible chat completions by executing\nthe configured task chain with the provided request data.\nThe task chain must be configured first using the /chat/taskchain endpoint.",
+        "description": "Processes chat requests using the configured task chain.\nThis endpoint provides OpenAI-compatible chat completions by executing\nthe configured task chain with the provided request data.\nThe task chain must be configured first using the /chat/taskchain endpoint.\n--- SSE Streaming ---\nWhen 'stream: true' is set in the request body, the endpoint streams the response\nusing Server-Sent Events (SSE) in the OpenAI-compatible format.\nClients should concatenate the 'content' from the 'delta' object in each 'data' event\nto reconstruct the full message. The stream is terminated by a 'data: [DONE]' message.\nExample event stream:\ndata: {\"id\":\"chat_123\",\"object\":\"chat.completion.chunk\",\"created\":1690000000,\"model\":\"mistral:instruct\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\ndata: {\"id\":\"chat_123\",\"object\":\"chat.completion.chunk\",\"created\":1690000000,\"model\":\"mistral:instruct\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}]}\ndata: [DONE]",
         "parameters": [
           {
             "description": "If provided the stacktraces will be added to the response.",
@@ -2896,6 +2896,11 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/chatapi_OpenAIChatResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
                 }
               }
             },

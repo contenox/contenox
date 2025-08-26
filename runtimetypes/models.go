@@ -21,6 +21,9 @@ func (s *store) AppendModel(ctx context.Context, model *Model) error {
 	if model.ContextLength <= 0 {
 		return fmt.Errorf("context length cannot be zero")
 	}
+	if model.Model == "" {
+		return fmt.Errorf("model cannot be empty")
+	}
 	_, err := s.Exec.ExecContext(ctx, `
 		INSERT INTO ollama_models
 		(id, model, context_length, can_chat, can_embed, can_prompt, can_stream, created_at, updated_at)
@@ -142,7 +145,9 @@ func (s *store) ListAllModels(ctx context.Context) ([]*Model, error) {
 func (s *store) UpdateModel(ctx context.Context, data *Model) error {
 	now := time.Now().UTC()
 	data.UpdatedAt = now
-
+	if data.Model == "" {
+		return fmt.Errorf("model cannot be empty")
+	}
 	// Validate required fields
 	if data.ContextLength <= 0 {
 		return fmt.Errorf("context length cannot be zero or negative")

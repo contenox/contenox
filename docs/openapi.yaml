@@ -819,7 +819,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.63
+    version: v0.0.51-80-g49e5555-dirty
 openapi: 3.1.0
 paths:
     /{chainID}/v1/chat/completions:
@@ -836,6 +836,15 @@ paths:
                 This endpoint provides OpenAI-compatible chat completions by executing
                 the configured task chain with the provided request data.
                 The task chain must be configured first using the /chat/taskchain endpoint.
+                --- SSE Streaming ---
+                When 'stream: true' is set in the request body, the endpoint streams the response
+                using Server-Sent Events (SSE) in the OpenAI-compatible format.
+                Clients should concatenate the 'content' from the 'delta' object in each 'data' event
+                to reconstruct the full message. The stream is terminated by a 'data: [DONE]' message.
+                Example event stream:
+                data: {"id":"chat_123","object":"chat.completion.chunk","created":1690000000,"model":"mistral:instruct","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+                data: {"id":"chat_123","object":"chat.completion.chunk","created":1690000000,"model":"mistral:instruct","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
+                data: [DONE]
             parameters:
                 - description: If provided the stacktraces will be added to the response.
                   in: query
@@ -855,6 +864,9 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/chatapi_OpenAIChatResponse'
+                        text/event-stream:
+                            schema:
+                                type: string
                     description: OK
                 default:
                     content:
@@ -1426,16 +1438,16 @@ paths:
                 NOTE: Only models assigned to at least one pool will be available for request processing.
                 Models not assigned to any pool exist in the configuration but are completely ignored by the routing system.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -1570,16 +1582,16 @@ paths:
                 Purpose types categorize pools (e.g., "Internal Embeddings", "Internal Tasks").
                 Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -1886,7 +1898,7 @@ paths:
                         text/event-stream:
                             schema:
                                 type: string
-                    description: Server-Sent Events stream
+                    description: OK
                 default:
                     content:
                         application/json:

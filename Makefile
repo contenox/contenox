@@ -9,14 +9,25 @@ EMBED_PROVIDER ?= ollama
 EMBED_MODEL_CONTEXT_LENGTH ?= 2048
 TASK_MODEL ?= phi3:3.8b
 TASK_MODEL_CONTEXT_LENGTH ?= 2048
-TASK_MODEL_PROVIDER ?= ollama
 TASK_PROVIDER ?= ollama
 CHAT_MODEL ?= phi3:3.8b
-CHAT_MODEL_CONTEXT_LENGTH ?= 2048
 CHAT_PROVIDER ?= ollama
+CHAT_MODEL_CONTEXT_LENGTH ?= 2048
+TENANCY ?= 54882f1d-3788-44f9-aed6-19a793c4568f
+
+# CRITICAL: Export all variables so they're available to docker compose commands
+export EMBED_MODEL
+export EMBED_PROVIDER
+export EMBED_MODEL_CONTEXT_LENGTH
+export TASK_MODEL
+export TASK_MODEL_CONTEXT_LENGTH
+export TASK_PROVIDER
+export CHAT_MODEL
+export CHAT_PROVIDER
+export CHAT_MODEL_CONTEXT_LENGTH
+export TENANCY
 
 # Define the docker compose command with the local override file
-# The environment variables will be automatically picked up by docker compose
 COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml
 
 validate-version:
@@ -37,13 +48,13 @@ clean:
 	@rm -f $(VERSION_FILE) 2>/dev/null || true
 
 build: set-version validate-version
-	$(COMPOSE_CMD) build
+	$(COMPOSE_CMD) build \
+		--build-arg TENANCY=$(TENANCY)
 
 down:
 	$(COMPOSE_CMD) down --volumes --remove-orphans
 
 run: down build
-	# Start containers with model environment variables
 	$(COMPOSE_CMD) up -d
 
 logs: run
@@ -74,17 +85,9 @@ wait-for-server:
 	@echo "Server is up!"
 
 test-api: run wait-for-server
-	# Pass model variables to bootstrap script
-	EMBED_MODEL=$(EMBED_MODEL) \
-	TASK_MODEL=$(TASK_MODEL) \
-	CHAT_MODEL=$(CHAT_MODEL) \
 	. apitests/.venv/bin/activate && pytest apitests/
 
 test-api-logs: run wait-for-server
-	# Pass model variables to bootstrap script
-	EMBED_MODEL=$(EMBED_MODEL) \
-	TASK_MODEL=$(TASK_MODEL) \
-	CHAT_MODEL=$(CHAT_MODEL) \
 	. apitests/.venv/bin/activate && pytest --log-cli-level=DEBUG --capture=no -v apitests
 
 test-api-docker:

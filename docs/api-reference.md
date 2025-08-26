@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.63
+title: contenox/runtime – LLM Backend Management API v0.0.51-80-g49e5555-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.63</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-80-g49e5555-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1365,8 +1365,8 @@ Models not assigned to any pool exist in the configuration but are completely ig
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1679,8 +1679,8 @@ Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |purpose|path|string|true|The purpose category to filter pools by (e.g., 'embeddings').|
 
 > Example responses
@@ -2307,7 +2307,7 @@ data: {"status":"downloading","digest":"sha256:abc123","total":1000000,"complete
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|Server-Sent Events stream|string|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -3125,6 +3125,15 @@ Processes chat requests using the configured task chain.
 This endpoint provides OpenAI-compatible chat completions by executing
 the configured task chain with the provided request data.
 The task chain must be configured first using the /chat/taskchain endpoint.
+--- SSE Streaming ---
+When 'stream: true' is set in the request body, the endpoint streams the response
+using Server-Sent Events (SSE) in the OpenAI-compatible format.
+Clients should concatenate the 'content' from the 'delta' object in each 'data' event
+to reconstruct the full message. The stream is terminated by a 'data: [DONE]' message.
+Example event stream:
+data: {"id":"chat_123","object":"chat.completion.chunk","created":1690000000,"model":"mistral:instruct","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+data: {"id":"chat_123","object":"chat.completion.chunk","created":1690000000,"model":"mistral:instruct","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
+data: [DONE]
 
 > Body parameter
 
@@ -3157,6 +3166,8 @@ The task chain must be configured first using the /chat/taskchain endpoint.
 
 > Example responses
 
+> 200 Response
+
 > default Response
 
 ```json
@@ -3169,10 +3180,8 @@ The task chain must be configured first using the /chat/taskchain endpoint.
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="processes-chat-requests-using-the-configured-task-chain.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:

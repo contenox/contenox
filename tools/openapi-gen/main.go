@@ -366,17 +366,27 @@ func extractRoute(fset *token.FileSet, file *ast.File, call *ast.CallExpr, swagg
 	})
 
 	if isSSEHandler(handler) {
-		// Add SSE response definition
-		response := openapi3.NewResponse()
-		desc := "Server-Sent Events stream"
-		response.Description = &desc
+		responseRef := op.Responses.Map()["200"]
+		if responseRef == nil {
+			// If no 200 response exists, create a new one.
+			responseRef = &openapi3.ResponseRef{Value: openapi3.NewResponse()}
+			desc := "OK"
+			responseRef.Value.Description = &desc
+			op.Responses.Set("200", responseRef)
+		}
+
+		// Ensure the Content map is initialized.
+		if responseRef.Value.Content == nil {
+			responseRef.Value.Content = openapi3.NewContent()
+		}
+
+		// Add the text/event-stream media type to the existing 200 response.
 		mediaType := openapi3.NewMediaType()
 		mediaType.Schema = openapi3.NewStringSchema().NewRef()
-		content := openapi3.Content{"text/event-stream": mediaType}
-		response.Content = content
-		op.AddResponse(200, response)
-	} else if len(statusCodes) == 0 { // Existing response handling
-		// Add default response if no others found
+		responseRef.Value.Content["text/event-stream"] = mediaType
+
+	} else if len(statusCodes) == 0 {
+		// This fallback is for non-SSE handlers with no @response tags.
 		response := openapi3.NewResponse()
 		desc := "OK"
 		response.Description = &desc

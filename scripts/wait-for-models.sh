@@ -105,12 +105,25 @@ echo ""
 
 # --- Check for Existing Models ---
 echo "🔎 Checking if models are already available..."
-PULLED_MODELS=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '.[] | select(.id==$BID) | .pulledModels[].model')
+PULLED_MODELS=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '.[] | select(.id==$BID) | .pulledModels[].model' 2>/dev/null || echo "")
+
+# Debug output
+echo "  💡 Found pulled models:"
+if [ -z "$PULLED_MODELS" ]; then
+  echo "    (none)"
+else
+  echo "$PULLED_MODELS" | sed 's/^/    /'
+fi
+
 all_exist=true
 for model in "${REQUIRED_MODELS[@]}"; do
-  if ! echo "${PULLED_MODELS}" | grep -q -w "$model"; then
+  echo "  🔍 Checking for '$model'..."
+  if ! printf "%s" "$PULLED_MODELS" | grep -q -x -F "$model"; then
+    echo "    ❌ NOT FOUND"
     all_exist=false
     break
+  else
+    echo "    ✅ FOUND"
   fi
 done
 
@@ -119,7 +132,7 @@ if [ "$all_exist" = true ]; then
   trap - INT TERM EXIT
   exit 0
 fi
-echo "  - Some models need to be downloaded. Starting progress monitor..."
+echo "  ⏳ Some models need to be downloaded. Starting progress monitor..."
 echo ""
 
 # --- Main Logic ---
