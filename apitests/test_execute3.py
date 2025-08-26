@@ -1,4 +1,3 @@
-# apitests/test_new_features.py
 import requests
 from helpers import assert_status_code
 
