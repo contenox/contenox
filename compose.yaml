@@ -1,6 +1,6 @@
 services:
   runtime:
-    image: ghcr.io/contenox/runtime:latest
+    image: ghcr.io/contenox/runtime:v0.0.59
     container_name: contenox-runtime-kernel
     environment:
       - DATABASE_URL=postgres://username:password@postgres:5432/postgres?sslmode=disable
@@ -9,16 +9,16 @@ services:
       - NATS_USER=natsuser
       - NATS_PASSWORD=natspassword
       - TOKENIZER_SERVICE_URL=http://tokenizer:50051
-      - EMBED_MODEL=nomic-embed-text:latest
-      - EMBED_PROVIDER=ollama
-      - EMBED_MODEL_CONTEXT_LENGTH=2048
-      - TASK_MODEL=phi3:3.8b
-      - TASK_MODEL_CONTEXT_LENGTH=2048
-      - TASK_MODEL_PROVIDER=ollama
-      - TASK_PROVIDER=ollama
-      - CHAT_MODEL=phi3:3.8b
-      - CHAT_MODEL_CONTEXT_LENGTH=2048
-      - CHAT_PROVIDER=ollama
+      - EMBED_MODEL=${EMBED_MODEL}
+      - EMBED_PROVIDER=${EMBED_PROVIDER}
+      - EMBED_MODEL_CONTEXT_LENGTH=${EMBED_MODEL_CONTEXT_LENGTH}
+      - TASK_MODEL=${TASK_MODEL}
+      - TASK_MODEL_CONTEXT_LENGTH=${TASK_MODEL_CONTEXT_LENGTH}
+      - TASK_MODEL_PROVIDER=${TASK_MODEL_PROVIDER}
+      - TASK_PROVIDER=${TASK_PROVIDER}
+      - CHAT_MODEL=${CHAT_MODEL}
+      - CHAT_MODEL_CONTEXT_LENGTH=${CHAT_MODEL_CONTEXT_LENGTH}
+      - CHAT_PROVIDER=${CHAT_PROVIDER}
       # - TOKEN=your_token_here
     depends_on:
       postgres:

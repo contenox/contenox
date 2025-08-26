@@ -36,9 +36,6 @@ error_exit() {
 
 # --- Configuration ---
 API_BASE_URL="http://localhost:8081"
-DEFAULT_EMBED_MODEL="nomic-embed-text:latest"
-DEFAULT_TASK_MODEL="phi3:3.8b"
-DEFAULT_CHAT_MODEL="phi3:3.8b"
 
 # --- Process Command-Line Arguments ---
 # If arguments provided, use them as models; otherwise use defaults
@@ -50,14 +47,6 @@ if [ $# -eq 3 ]; then
   EMBED_MODEL="$1"
   TASK_MODEL="$2"
   CHAT_MODEL="$3"
-elif [ $# -eq 0 ]; then
-  log "No models specified. Using default models:"
-  log "  Embedding: ${DEFAULT_EMBED_MODEL}"
-  log "  Task: ${DEFAULT_TASK_MODEL}"
-  log "  Chat: ${DEFAULT_CHAT_MODEL}"
-  EMBED_MODEL="${DEFAULT_EMBED_MODEL}"
-  TASK_MODEL="${DEFAULT_TASK_MODEL}"
-  CHAT_MODEL="${DEFAULT_CHAT_MODEL}"
 else
   error_exit "Three models are required: embedding model, task model, and chat model"
 fi
@@ -81,11 +70,6 @@ for tool in docker curl jq; do
   fi
 done
 success "All tools are available."
-
-# 2. Start Docker services
-log "Starting services with 'docker compose up -d'..."
-docker compose up -d
-success "Services are starting up."
 
 # 3. Wait for the runtime API to be healthy
 log "Waiting for the runtime API to become healthy..."

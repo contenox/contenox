@@ -3,7 +3,20 @@
 PROJECT_ROOT := $(shell pwd)
 VERSION_FILE := internal/apiframework/version.txt
 
+# Default model configuration - can be overridden when calling make
+EMBED_MODEL ?= nomic-embed-text:latest
+EMBED_PROVIDER ?= ollama
+EMBED_MODEL_CONTEXT_LENGTH ?= 2048
+TASK_MODEL ?= phi3:3.8b
+TASK_MODEL_CONTEXT_LENGTH ?= 2048
+TASK_MODEL_PROVIDER ?= ollama
+TASK_PROVIDER ?= ollama
+CHAT_MODEL ?= phi3:3.8b
+CHAT_MODEL_CONTEXT_LENGTH ?= 2048
+CHAT_PROVIDER ?= ollama
+
 # Define the docker compose command with the local override file
+# The environment variables will be automatically picked up by docker compose
 COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml
 
 validate-version:
@@ -30,6 +43,7 @@ down:
 	$(COMPOSE_CMD) down --volumes --remove-orphans
 
 run: down build
+	# Start containers with model environment variables
 	$(COMPOSE_CMD) up -d
 
 logs: run
@@ -60,13 +74,24 @@ wait-for-server:
 	@echo "Server is up!"
 
 test-api: run wait-for-server
+	# Pass model variables to bootstrap script
+	EMBED_MODEL=$(EMBED_MODEL) \
+	TASK_MODEL=$(TASK_MODEL) \
+	CHAT_MODEL=$(CHAT_MODEL) \
 	. apitests/.venv/bin/activate && pytest apitests/
 
 test-api-logs: run wait-for-server
+	# Pass model variables to bootstrap script
+	EMBED_MODEL=$(EMBED_MODEL) \
+	TASK_MODEL=$(TASK_MODEL) \
+	CHAT_MODEL=$(CHAT_MODEL) \
 	. apitests/.venv/bin/activate && pytest --log-cli-level=DEBUG --capture=no -v apitests
 
 test-api-docker:
-	docker build -f Dockerfile.apitests -t contenox-apitests .
+	docker build -f Dockerfile.apitests --build-arg EMBED_MODEL=$(EMBED_MODEL) \
+		--build-arg TASK_MODEL=$(TASK_MODEL) \
+		--build-arg CHAT_MODEL=$(CHAT_MODEL) \
+		-t contenox-apitests .
 	docker run --rm --network=host contenox-apitests
 
 docs-gen:

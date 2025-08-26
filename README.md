@@ -28,11 +28,29 @@ This single command will start all necessary services, configure the backend, an
 ### Run the Bootstrap Script
 
 ```bash
+# Clone the repository
 git clone https://github.com/contenox/runtime.git
 cd runtime
-./scripts/bootstrap.sh nomic-embed-text:latest phi3:3.8b phi3:3.8b # or any other models
-# at least one embedding model, one instruction model and one chat model is required as fallback models. They may be the same.
-# The fallback models should match the environment variables passed to the compose.yaml.
+
+# Configure the systems fallback models
+export EMBED_MODEL=nomic-embed-text:latest
+export EMBED_PROVIDER=ollama
+export EMBED_MODEL_CONTEXT_LENGTH=2048
+export TASK_MODEL=phi3:3.8b
+export TASK_MODEL_CONTEXT_LENGTH=2048
+export TASK_MODEL_PROVIDER=ollama
+export TASK_PROVIDER=ollama
+export CHAT_MODEL=phi3:3.8b
+export CHAT_MODEL_CONTEXT_LENGTH=2048
+export CHAT_PROVIDER=ollama
+
+# Start the container services
+echo "Starting services with 'docker compose up -d'..."
+docker compose up -d
+echo "Services are starting up."
+
+# Configure the runtime with your model preferences
+./scripts/bootstrap.sh $EMBED_MODEL $TASK_MODEL $CHAT_MODEL
 ```
 
 Once the script finishes, the environment is fully configured and ready to use.

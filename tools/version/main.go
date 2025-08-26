@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -102,15 +103,22 @@ func bumpVersion(bumpType string) {
 		os.Exit(1)
 	}
 
-	// 6. Commit the version file
+	// 6. Update version file
+	if err := updateVersionFile(newVersion); err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 7. Commit the version file
 	if err := commitVersionFile(newVersion); err != nil {
 		fmt.Printf("ERROR: %v\n", err)
 		// Revert the version file change
 		os.WriteFile(getVersionFile(), []byte(currentVersion), 0644)
+		updateComposeFile(currentVersion) // Revert compose file
 		os.Exit(1)
 	}
 
-	// 7. Create tag
+	// 8. Create tag
 	if err := createTag(newVersion); err != nil {
 		fmt.Printf("ERROR: %v\n", err)
 		// Revert the commit
@@ -120,7 +128,7 @@ func bumpVersion(bumpType string) {
 		os.Exit(1)
 	}
 
-	// 8. Regenerate docs and amend the release commit
+	// 9. Regenerate docs and amend the release commit
 	fmt.Println("\n🔄 Regenerating documentation with new version...")
 	if err := updateDocsAndAmendCommit(); err != nil {
 		fmt.Printf("⚠️  WARNING: Failed to update documentation: %v\n", err)
@@ -305,6 +313,39 @@ func createTag(newVersion string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to create tag: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
+}
+
+func updateComposeFile(newVersion string) error {
+	composePath := "../compose.yaml"
+
+	// Check if compose file exists
+	if _, err := os.Stat(composePath); os.IsNotExist(err) {
+		fmt.Println("   ⚠️  compose.yaml not found, skipping compose update")
+		return nil
+	}
+
+	fmt.Printf("   🔄 Updating %s to use version %s...\n", composePath, newVersion)
+
+	// Read the compose file
+	content, err := os.ReadFile(composePath)
+	if err != nil {
+		return fmt.Errorf("failed to read compose file: %w", err)
+	}
+
+	// Replace the runtime image tag
+	updatedContent := []byte(
+		regexp.MustCompile(`image: ghcr\.io/contenox/runtime:[^\s]+`).ReplaceAllString(
+			string(content),
+			"image: ghcr.io/contenox/runtime:"+newVersion,
+		),
+	)
+
+	// Write the updated content
+	if err := os.WriteFile(composePath, updatedContent, 0644); err != nil {
+		return fmt.Errorf("failed to write compose file: %w", err)
 	}
 
 	return nil
