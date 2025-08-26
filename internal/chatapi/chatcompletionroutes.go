@@ -120,7 +120,7 @@ func (h *handler) handleStream(w http.ResponseWriter, r *http.Request, chainID s
 	for chunk := range streamChan {
 		jsonData, err := json.Marshal(chunk)
 		if err != nil {
-			// In a real-world scenario, you might want to log this error.
+			// TODO: deal with the error.
 			continue
 		}
 		fmt.Fprintf(w, "data: %s\n\n", jsonData)

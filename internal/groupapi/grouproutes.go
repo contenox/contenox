@@ -67,7 +67,7 @@ func (h *groupHandler) createAffinityGroup(w http.ResponseWriter, r *http.Reques
 	_ = serverops.Encode(w, r, http.StatusCreated, group) // @response runtimetypes.AffinityGroup
 }
 
-// Retrieves a specific affinity group by its unique ID.
+// Retrieves an specific affinity group by its unique ID.
 func (h *groupHandler) getAffinityGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := serverops.GetPathParam(r, "id", "The unique identifier of the affinity group.")
@@ -85,7 +85,7 @@ func (h *groupHandler) getAffinityGroup(w http.ResponseWriter, r *http.Request) 
 	_ = serverops.Encode(w, r, http.StatusOK, group) // @response runtimetypes.AffinityGroup
 }
 
-// Retrieves a affinity group by its human-readable name.
+// Retrieves an affinity group by its human-readable name.
 // Useful for configuration where ID might not be known but name is consistent.
 func (h *groupHandler) getAffinityGroupByName(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -218,7 +218,7 @@ func (h *groupHandler) listAffinityGroupsByPurpose(w http.ResponseWriter, r *htt
 	_ = serverops.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
 }
 
-// Associates a backend with a affinity group.
+// Associates a backend with an affinity group.
 //
 // After assignment, the backend can process requests for all models in the affinity group.
 // This enables request routing between the backend and models that share this affinity group.
@@ -239,7 +239,7 @@ func (h *groupHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusCreated, "backend assigned") // @response string
 }
 
-// Removes a backend from a affinity group.
+// Removes a backend from an affinity group.
 //
 // After removal, the backend will no longer be eligible to process requests for models in this affinity group.
 // Requests requiring models from this affinity group will no longer be routed to this backend.
@@ -300,7 +300,7 @@ func (h *groupHandler) listAffinityGroupsForBackend(w http.ResponseWriter, r *ht
 	_ = serverops.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
 }
 
-// Associates a model with a affinity group.
+// Associates a model with an affinity group.
 //
 // After assignment, requests for this model can be routed to any backend in the affinity group.
 // This enables request routing between the model and backends that share this affinity group.
@@ -322,7 +322,7 @@ func (h *groupHandler) assignModelToAffinityGroup(w http.ResponseWriter, r *http
 	_ = serverops.Encode(w, r, http.StatusOK, "model assigned") // @response string
 }
 
-// Removes a model from a affinity group.
+// Removes a model from an affinity group.
 //
 // After removal, requests for this model will no longer be routed to backends in this affinity group.
 // This model can still be used with backends in other groups where it remains assigned.
