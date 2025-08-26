@@ -100,6 +100,10 @@ while ! curl -s -f "${API_BASE_URL}/health" > /dev/null; do
 done
 success "Runtime API is healthy and responding."
 
+log "Checking runtime version..."
+VERSION=$(curl -s -f "${API_BASE_URL}/version" | jq -r .version)
+success "Runtime version is $VERSION."
+
 # 4. Register the 'local-ollama' backend if it doesn't exist
 log "Checking for 'local-ollama' backend..."
 response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backends")
@@ -187,7 +191,8 @@ CHAT_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] 
 
 if [ -z "$CHAT_POOL_CHECK" ]; then
   http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE_URL}/backend-associations/internal_chat_pool/backends/$BACKEND_ID")
-  if [ "$http_code" -ne 201 ] && [ "$http_code" -ne 200 ]; then
+  # Treat 409 (Conflict) as success since it means the backend is already assigned
+  if [ "$http_code" -ne 201 ] && [ "$http_code" -ne 200 ] && [ "$http_code" -ne 409 ]; then
       error_exit "Failed to assign backend to chat pool. API returned status ${http_code}."
   fi
   success "Assigned backend to 'internal_chat_pool'."
@@ -198,7 +203,9 @@ fi
 # 6. Wait for models to be downloaded
 log "Handing off to model download monitor..."
 # Ensure the wait script is executable
-chmod +x ./scripts/wait-for-models.sh
+log "Waiting for pool assignments to propagate..."
+sleep 2
+log "Handing off to model download monitor..."
 ./scripts/wait-for-models.sh "${REQUIRED_MODELS[@]}"
 
 # Final success message

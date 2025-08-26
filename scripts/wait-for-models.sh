@@ -70,19 +70,19 @@ response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/int
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
 if [ "$http_code" -ne 200 ]; then error_exit "Failed to check task pool associations. API returned ${http_code}."; fi
-TASK_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(.[] | select(.id==$BID) | .id) // empty')
+TASK_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
 
 response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_embed_pool/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
 if [ "$http_code" -ne 200 ]; then error_exit "Failed to check embed pool associations. API returned ${http_code}."; fi
-EMBED_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(.[] | select(.id==$BID) | .id) // empty')
+EMBED_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
 
 response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_chat_pool/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
 if [ "$http_code" -ne 200 ]; then error_exit "Failed to check chat pool associations. API returned ${http_code}."; fi
-CHAT_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(.[] | select(.id==$BID) | .id) // empty')
+CHAT_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
 
 if [ -z "$TASK_POOL_CHECK" ] || [ -z "$EMBED_POOL_CHECK" ] || [ -z "$CHAT_POOL_CHECK" ]; then
   error_exit "Backend is not assigned to 'internal_tasks_pool', 'internal_embed_pool', and/or 'internal_chat_pool'. Please run Step 3 from the README."
