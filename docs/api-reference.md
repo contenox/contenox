@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-82-g6bf2d9b-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.65
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-82-g6bf2d9b-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.65</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -2029,8 +2029,8 @@ Lists all configured external providers with pagination support.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -2512,8 +2512,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
