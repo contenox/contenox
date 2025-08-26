@@ -97,9 +97,11 @@ func bumpVersion(bumpType string) {
 	}
 	fmt.Printf("New version will be: %s\n", newVersion)
 
-	// 5. Update version file
-	if err := updateVersionFile(newVersion); err != nil {
+	// 5. Update compose file BEFORE committing anything
+	if err := updateComposeFile(newVersion); err != nil {
 		fmt.Printf("ERROR: %v\n", err)
+		// Revert the version file change if it was already done
+		os.WriteFile(getVersionFile(), []byte(currentVersion), 0644)
 		os.Exit(1)
 	}
 
@@ -319,7 +321,7 @@ func createTag(newVersion string) error {
 }
 
 func updateComposeFile(newVersion string) error {
-	composePath := "../compose.yaml"
+	composePath := "compose.yaml"
 
 	// Check if compose file exists
 	if _, err := os.Stat(composePath); os.IsNotExist(err) {
