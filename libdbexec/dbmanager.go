@@ -94,7 +94,7 @@ var (
 //	}
 type DBManager interface {
 	// WithoutTransaction returns an executor that operates directly on the underlying
-	// database connection pool (i.e., outside of an explicit transaction).
+	// database connection group (i.e., outside of an explicit transaction).
 	// Each operation may run on a different connection.
 	WithoutTransaction() Exec
 
@@ -110,13 +110,13 @@ type DBManager interface {
 	//               Called AFTER successful rollback. Must NOT use the transaction.
 	WithTransaction(ctx context.Context, onRollback ...func()) (Exec, CommitTx, ReleaseTx, error)
 
-	// Close terminates the underlying database connection pool.
+	// Close terminates the underlying database connection group.
 	// It should be called when the application is shutting down.
 	Close() error
 }
 
 // Exec defines the common interface for executing database operations,
-// whether within a transaction or directly on the connection pool.
+// whether within a transaction or directly on the connection group.
 // Errors returned by methods implementing this interface should be translated
 // into the package's predefined Err* variables where applicable.
 type Exec interface {

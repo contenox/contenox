@@ -16,12 +16,12 @@ func TestSystem_EmbedService(t *testing.T) {
 	p := playground.New()
 	p = p.WithPostgresTestContainer(ctx)
 	p = p.WithNats(ctx)
-	p = p.WithRuntimeState(ctx, true) // With pools
+	p = p.WithRuntimeState(ctx, true) // With groups
 	p = p.WithMockTokenizer()
 	// Configure model names and providers
 	p = p.WithInternalOllamaEmbedder(ctx, "nomic-embed-text:latest", 1024)
 
-	// Set up Ollama backend and assign to embedding pool
+	// Set up Ollama backend and assign to embedding group
 	p = p.WithOllamaBackend(ctx, "embed-backend", "latest", true, false)
 	p = p.StartBackgroundRoutines(ctx)
 	p = p.WithLLMRepo()

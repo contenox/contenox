@@ -55,18 +55,20 @@ type Model struct {
 	UpdatedAt     time.Time `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
-// Pool represents a routing affinity set that defines which models can be served by which backends.
-// Unlike traditional resource pools, a single model or backend can belong to multiple pools.
-// Pools enable:
+// AffinityGroup represents a logical grouping that defines preferred relationships
+// between models and backends. Entities can
+// belong to multiple affinity groups simultaneously.
+//
+// Affinity groups enable:
 //   - Selective model-backend relationships (not all backends serve all models)
-//   - Performance tiering (slower backends for some models, faster for others)
-//   - Custom routing domains based on application requirements
+//   - Performance tiering (assigning models to appropriate backend tiers)
+//   - Custom routing strategies based on application requirements
 //
 // Example use cases:
-//   - "internal_embed_pool": Contains embedding models and their dedicated backends
-//   - "high_latency_pool": Contains models that can tolerate slower response times
-//   - "low_latency_pool": Contains critical models that need fastest possible response
-type Pool struct {
+//   - "embedding-affinity": Contains embedding models and their dedicated backends
+//   - "low-latency-affinity": Contains critical models that need fastest response
+//   - "high-throughput-affinity": Contains models that benefit from batch processing
+type AffinityGroup struct {
 	ID          string `json:"id" example:"p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4"`
 	Name        string `json:"name" example:"production-chat"`
 	PurposeType string `json:"purposeType" example:"Internal Tasks"`
@@ -122,25 +124,25 @@ type Store interface {
 	ListModels(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Model, error)
 	EstimateModelCount(ctx context.Context) (int64, error)
 
-	CreatePool(ctx context.Context, pool *Pool) error
-	GetPool(ctx context.Context, id string) (*Pool, error)
-	GetPoolByName(ctx context.Context, name string) (*Pool, error)
-	UpdatePool(ctx context.Context, pool *Pool) error
-	DeletePool(ctx context.Context, id string) error
-	ListAllPools(ctx context.Context) ([]*Pool, error)
-	ListPools(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*Pool, error)
-	ListPoolsByPurpose(ctx context.Context, purposeType string, createdAtCursor *time.Time, limit int) ([]*Pool, error)
-	EstimatePoolCount(ctx context.Context) (int64, error)
+	CreateAffinityGroup(ctx context.Context, group *AffinityGroup) error
+	GetAffinityGroup(ctx context.Context, id string) (*AffinityGroup, error)
+	GetAffinityGroupByName(ctx context.Context, name string) (*AffinityGroup, error)
+	UpdateAffinityGroup(ctx context.Context, group *AffinityGroup) error
+	DeleteAffinityGroup(ctx context.Context, id string) error
+	ListAllAffinityGroups(ctx context.Context) ([]*AffinityGroup, error)
+	ListAffinityGroups(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*AffinityGroup, error)
+	ListAffinityGroupByPurpose(ctx context.Context, purposeType string, createdAtCursor *time.Time, limit int) ([]*AffinityGroup, error)
+	EstimateAffinityGroupCount(ctx context.Context) (int64, error)
 
-	AssignBackendToPool(ctx context.Context, poolID string, backendID string) error
-	RemoveBackendFromPool(ctx context.Context, poolID string, backendID string) error
-	ListBackendsForPool(ctx context.Context, poolID string) ([]*Backend, error)
-	ListPoolsForBackend(ctx context.Context, backendID string) ([]*Pool, error)
+	AssignBackendToAffinityGroup(ctx context.Context, groupID string, backendID string) error
+	RemoveBackendFromAffinityGroup(ctx context.Context, groupID string, backendID string) error
+	ListBackendsForAffinityGroup(ctx context.Context, groupID string) ([]*Backend, error)
+	ListAffinityGroupsForBackend(ctx context.Context, backendID string) ([]*AffinityGroup, error)
 
-	AssignModelToPool(ctx context.Context, poolID string, modelID string) error
-	RemoveModelFromPool(ctx context.Context, poolID string, modelID string) error
-	ListModelsForPool(ctx context.Context, poolID string) ([]*Model, error)
-	ListPoolsForModel(ctx context.Context, modelID string) ([]*Pool, error)
+	AssignModelToAffinityGroup(ctx context.Context, groupID string, modelID string) error
+	RemoveModelFromAffinityGroup(ctx context.Context, groupID string, modelID string) error
+	ListModelsForAffinityGroup(ctx context.Context, groupID string) ([]*Model, error)
+	ListAffinityGroupsForModel(ctx context.Context, modelID string) ([]*AffinityGroup, error)
 
 	AppendJob(ctx context.Context, job Job) error
 	AppendJobs(ctx context.Context, jobs ...*Job) error

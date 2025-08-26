@@ -47,7 +47,7 @@ type StatusResponse struct {
 // The 'upsert' parameter determines whether to update existing configuration.
 // After suggesful configuration the system will provision a virtual backend for that provider.
 // Also all available models from that given provider will be declared by the system.
-// This provider can then be added to one or many pools to allow usage of the models.
+// This provider can then be added to one or many groups to allow usage of the models.
 func (p *providerManager) configure(providerType string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		req, err := serverops.Decode[ConfigureRequest](r) // @request providerapi.ConfigureRequest

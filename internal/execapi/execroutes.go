@@ -34,8 +34,8 @@ type taskManager struct {
 // Runs the prompt through the default LLM.
 //
 // This endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.
-// Requests are routed ONLY to backends that have the default model available in any shared pool.
-// If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+// Requests are routed ONLY to backends that have the default model available in any shared group.
+// If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
 func (tm *taskManager) executeSimpleTask(w http.ResponseWriter, r *http.Request) {
 	req, err := serverops.Decode[execservice.TaskRequest](r) // @request execservice.TaskRequest
 	if err != nil {
@@ -67,8 +67,8 @@ type taskExecutionResponse struct {
 //
 // Task-chains are state-machine workflows (DAGs) with conditional branches,
 // external hooks, and captured execution state.
-// Requests are routed ONLY to backends that have the requested model available in any shared pool.
-// If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+// Requests are routed ONLY to backends that have the requested model available in any shared group.
+// If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
 func (tm *taskManager) executeTaskChain(w http.ResponseWriter, r *http.Request) {
 	req, err := serverops.Decode[taskExecutionRequest](r) // @request execapi.taskExecutionRequest
 	if err != nil {
@@ -265,8 +265,8 @@ type EmbedResponse struct {
 // Generates vector embeddings for text.
 //
 // Uses the system's default embedding model configured at startup.
-// Requests are routed ONLY to backends that have the default model available in any shared pool.
-// If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+// Requests are routed ONLY to backends that have the default model available in any shared group.
+// If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
 func (tm *taskManager) generateEmbeddings(w http.ResponseWriter, r *http.Request) {
 	req, err := serverops.Decode[EmbedRequest](r) // @request execapi.EmbedRequest
 	if err != nil {

@@ -63,18 +63,18 @@ def test_delete_immutable_model_fails(base_url):
     response = requests.delete(delete_url, params={"purge": "true"})
     assert_status_code(response, 403)
 
-def test_model_assigned_to_pool(base_url, create_model_and_assign_to_pool):
-    data = create_model_and_assign_to_pool
+def test_model_assigned_to_group(base_url, create_model_and_assign_to_group):
+    data = create_model_and_assign_to_group
     model_id = data["model_id"]
-    pool_id = data["pool_id"]
+    group_id = data["group_id"]
 
-    # Verify assignment by listing models in the pool
-    list_url = f"{base_url}/model-associations/{pool_id}/models"
+    # Verify assignment by listing models in the group
+    list_url = f"{base_url}/model-affinity/{group_id}/models"
     response = requests.get(list_url)
     assert response.status_code == 200
-    models_in_pool = response.json()
+    models_in_group = response.json()
 
-    assert any(m['id'] == model_id for m in models_in_pool), "Model not found in pool"
+    assert any(m['id'] == model_id for m in models_in_group), "Model not found in group"
 
 def test_update_model(base_url):
     """Test that an admin user can update an existing model."""

@@ -17,7 +17,7 @@ package runtimestate_test
 // 	"github.com/stretchr/testify/require"
 // )
 
-// func setupPoolTest(t *testing.T) (context.Context, string, *runtimestate.State, store.Store, func()) {
+// func setupgroupTest(t *testing.T) (context.Context, string, *runtimestate.State, store.Store, func()) {
 // 	ctx := context.TODO()
 
 // 	// Setup Ollama instance
@@ -35,8 +35,8 @@ package runtimestate_test
 // 	ps, cleanupPS, err := libbus.NewTestPubSub()
 // 	require.NoError(t, err)
 
-// 	// Create state with pool feature enabled
-// 	backendState, err := runtimestate.New(ctx, dbInstance, ps, runtimestate.WithPools())
+// 	// Create state with group feature enabled
+// 	backendState, err := runtimestate.New(ctx, dbInstance, ps, runtimestate.Withgroups())
 // 	require.NoError(t, err)
 
 // 	return ctx, ollamaUrl, backendState, store.New(dbInstance.WithoutTransaction()), func() {
@@ -46,8 +46,8 @@ package runtimestate_test
 // 	}
 // }
 
-// func TestSystem_PoolAwareState_ShouldSyncAndDownloadModels(t *testing.T) {
-// 	ctx, ollamaUrl, backendState, dbStore, cleanup := setupPoolTest(t)
+// func TestSystem_groupAwareState_ShouldSyncAndDownloadModels(t *testing.T) {
+// 	ctx, ollamaUrl, backendState, dbStore, cleanup := setupgroupTest(t)
 // 	defer cleanup()
 
 // 	triggerChan := make(chan struct{}, 10)
@@ -56,31 +56,31 @@ package runtimestate_test
 // 	breaker2 := libroutine.NewRoutine(3, 10*time.Second)
 // 	go breaker2.Loop(ctx, time.Second, triggerChan, backendState.RunDownloadCycle, func(err error) {})
 
-// 	// Create pool
-// 	poolID := uuid.NewString()
-// 	require.NoError(t, dbStore.CreatePool(ctx, &store.Pool{
-// 		ID:          poolID,
-// 		Name:        "test-pool",
+// 	// Create group
+// 	groupID := uuid.NewString()
+// 	require.NoError(t, dbStore.Creategroup(ctx, &store.group{
+// 		ID:          groupID,
+// 		Name:        "test-group",
 // 		PurposeType: "inference",
 // 	}))
 
-// 	// Create backend and assign to pool
+// 	// Create backend and assign to group
 // 	backendID := uuid.NewString()
 // 	require.NoError(t, dbStore.CreateBackend(ctx, &store.Backend{
 // 		ID:      backendID,
-// 		Name:    "pool-backend",
+// 		Name:    "group-backend",
 // 		BaseURL: ollamaUrl,
 // 		Type:    "ollama",
 // 	}))
-// 	require.NoError(t, dbStore.AssignBackendToPool(ctx, poolID, backendID))
+// 	require.NoError(t, dbStore.AssignBackendTogroup(ctx, groupID, backendID))
 
-// 	// Create model and assign to pool
+// 	// Create model and assign to group
 // 	modelID := uuid.NewString()
 // 	require.NoError(t, dbStore.AppendModel(ctx, &store.Model{
 // 		ID:    modelID,
 // 		Model: "granite-embedding:30m",
 // 	}))
-// 	require.NoError(t, dbStore.AssignModelToPool(ctx, poolID, modelID))
+// 	require.NoError(t, dbStore.AssignModelTogroup(ctx, groupID, modelID))
 
 // 	// Trigger sync and verify state
 // 	triggerChan <- struct{}{}
@@ -110,50 +110,50 @@ package runtimestate_test
 // 	}, 30*time.Second, 1*time.Second)
 // }
 
-// func TestSystem_PoolIsolation_ShouldNotLeakModelsAcrossPools(t *testing.T) {
-// 	ctx, ollamaUrl, backendState, dbStore, cleanup := setupPoolTest(t)
+// func TestSystem_groupIsolation_ShouldNotLeakModelsAcrossgroups(t *testing.T) {
+// 	ctx, ollamaUrl, backendState, dbStore, cleanup := setupgroupTest(t)
 // 	defer cleanup()
 
-// 	// Create two pools
-// 	pool1ID := uuid.NewString()
-// 	require.NoError(t, dbStore.CreatePool(ctx, &store.Pool{
-// 		ID:          pool1ID,
-// 		Name:        "pool-1",
+// 	// Create two groups
+// 	group1ID := uuid.NewString()
+// 	require.NoError(t, dbStore.Creategroup(ctx, &store.group{
+// 		ID:          group1ID,
+// 		Name:        "group-1",
 // 		PurposeType: "inference",
 // 	}))
-// 	pool2ID := uuid.NewString()
-// 	require.NoError(t, dbStore.CreatePool(ctx, &store.Pool{
-// 		ID:          pool2ID,
-// 		Name:        "pool-2",
+// 	group2ID := uuid.NewString()
+// 	require.NoError(t, dbStore.Creategroup(ctx, &store.group{
+// 		ID:          group2ID,
+// 		Name:        "group-2",
 // 		PurposeType: "training",
 // 	}))
 
-// 	// Create backends for each pool
+// 	// Create backends for each group
 // 	backend1ID := uuid.NewString()
 // 	require.NoError(t, dbStore.CreateBackend(ctx, &store.Backend{
 // 		ID:      backend1ID,
-// 		Name:    "pool-1-backend",
+// 		Name:    "group-1-backend",
 // 		BaseURL: ollamaUrl,
 // 		Type:    "ollama",
 // 	}))
-// 	require.NoError(t, dbStore.AssignBackendToPool(ctx, pool1ID, backend1ID))
+// 	require.NoError(t, dbStore.AssignBackendTogroup(ctx, group1ID, backend1ID))
 
 // 	backend2ID := uuid.NewString()
 // 	require.NoError(t, dbStore.CreateBackend(ctx, &store.Backend{
 // 		ID:      backend2ID,
-// 		Name:    "pool-2-backend",
+// 		Name:    "group-2-backend",
 // 		BaseURL: "http://localhost:11435",
 // 		Type:    "ollama",
 // 	}))
-// 	require.NoError(t, dbStore.AssignBackendToPool(ctx, pool2ID, backend2ID))
+// 	require.NoError(t, dbStore.AssignBackendTogroup(ctx, group2ID, backend2ID))
 
-// 	// Create model for pool1
+// 	// Create model for group1
 // 	modelID := uuid.NewString()
 // 	require.NoError(t, dbStore.AppendModel(ctx, &store.Model{
 // 		ID:    modelID,
 // 		Model: "granite-embedding:30m",
 // 	}))
-// 	require.NoError(t, dbStore.AssignModelToPool(ctx, pool1ID, modelID))
+// 	require.NoError(t, dbStore.AssignModelTogroup(ctx, group1ID, modelID))
 
 // 	// Trigger sync
 // 	triggerChan := make(chan struct{}, 10)
@@ -161,7 +161,7 @@ package runtimestate_test
 // 	go breaker.Loop(ctx, time.Second, triggerChan, backendState.RunBackendCycle, func(err error) {})
 // 	triggerChan <- struct{}{}
 
-// 	// Verify only pool1 backend has the model
+// 	// Verify only group1 backend has the model
 // 	require.Eventually(t, func() bool {
 // 		state := backendState.Get(ctx)
 // 		if len(state) != 2 {
@@ -172,26 +172,26 @@ package runtimestate_test
 // 	}, 5*time.Second, 100*time.Millisecond)
 // }
 
-// func TestPoolBackendRemoval(t *testing.T) {
-// 	ctx, ollamaUrl, backendState, dbStore, cleanup := setupPoolTest(t)
+// func TestgroupBackendRemoval(t *testing.T) {
+// 	ctx, ollamaUrl, backendState, dbStore, cleanup := setupgroupTest(t)
 // 	defer cleanup()
 
-// 	// Create pool and backend
-// 	poolID := uuid.NewString()
-// 	require.NoError(t, dbStore.CreatePool(ctx, &store.Pool{
-// 		ID:          poolID,
-// 		Name:        "test-pool",
+// 	// Create group and backend
+// 	groupID := uuid.NewString()
+// 	require.NoError(t, dbStore.Creategroup(ctx, &store.group{
+// 		ID:          groupID,
+// 		Name:        "test-group",
 // 		PurposeType: "inference",
 // 	}))
 
 // 	backendID := uuid.NewString()
 // 	require.NoError(t, dbStore.CreateBackend(ctx, &store.Backend{
 // 		ID:      backendID,
-// 		Name:    "pool-backend",
+// 		Name:    "group-backend",
 // 		BaseURL: ollamaUrl,
 // 		Type:    "ollama",
 // 	}))
-// 	require.NoError(t, dbStore.AssignBackendToPool(ctx, poolID, backendID))
+// 	require.NoError(t, dbStore.AssignBackendTogroup(ctx, groupID, backendID))
 
 // 	// Initial sync
 // 	triggerChan := make(chan struct{}, 10)
@@ -202,8 +202,8 @@ package runtimestate_test
 // 		return len(backendState.Get(ctx)) == 1
 // 	}, 5*time.Second, 100*time.Millisecond)
 
-// 	// Remove backend from pool
-// 	require.NoError(t, dbStore.RemoveBackendFromPool(ctx, poolID, backendID))
+// 	// Remove backend from group
+// 	require.NoError(t, dbStore.RemoveBackendFromgroup(ctx, groupID, backendID))
 // 	triggerChan <- struct{}{}
 
 // 	// Verify backend is removed from state

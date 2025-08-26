@@ -101,7 +101,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s initializing OpenSearch failed: %v", nodeInstanceID, err)
 	}
-	state, err := runtimestate.New(ctx, dbInstance, ps, runtimestate.WithPools())
+	state, err := runtimestate.New(ctx, dbInstance, ps, runtimestate.WithGroups())
 	// state, err := runtimestate.New(ctx, dbInstance, ps)
 	if err != nil {
 		log.Fatalf("%s initializing runtime state failed: %v", nodeInstanceID, err)
@@ -117,7 +117,7 @@ func main() {
 		TenantID:    Tenancy,
 	}, dbInstance, cl, state)
 	if err != nil {
-		log.Fatalf("%s initializing embedding pool failed: %v", nodeInstanceID, err)
+		log.Fatalf("%s initializing embedding group failed: %v", nodeInstanceID, err)
 	}
 	tokenizerSvc, cleanup, err := ollamatokenizer.NewHTTPClient(ctx, ollamatokenizer.ConfigHTTP{
 		BaseURL: config.TokenizerServiceURL,

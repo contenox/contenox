@@ -65,29 +65,29 @@ if [ -z "$BACKEND_ID" ]; then
 fi
 echo "  ✅ Backend 'local-ollama' found (ID: $BACKEND_ID)."
 
-# 3. Check if the backend is associated with the required pools
-response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_tasks_pool/backends")
+# 3. Check if the backend is associated with the required groups
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-affinity/internal_tasks_group/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
-if [ "$http_code" -ne 200 ]; then error_exit "Failed to check task pool associations. API returned ${http_code}."; fi
-TASK_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
+if [ "$http_code" -ne 200 ]; then error_exit "Failed to check task group associations. API returned ${http_code}."; fi
+TASK_group_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
 
-response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_embed_pool/backends")
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-affinity/internal_embed_group/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
-if [ "$http_code" -ne 200 ]; then error_exit "Failed to check embed pool associations. API returned ${http_code}."; fi
-EMBED_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
+if [ "$http_code" -ne 200 ]; then error_exit "Failed to check embed group associations. API returned ${http_code}."; fi
+EMBED_group_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
 
-response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_chat_pool/backends")
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-affinity/internal_chat_group/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
-if [ "$http_code" -ne 200 ]; then error_exit "Failed to check chat pool associations. API returned ${http_code}."; fi
-CHAT_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
+if [ "$http_code" -ne 200 ]; then error_exit "Failed to check chat group associations. API returned ${http_code}."; fi
+CHAT_group_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id // empty')
 
-if [ -z "$TASK_POOL_CHECK" ] || [ -z "$EMBED_POOL_CHECK" ] || [ -z "$CHAT_POOL_CHECK" ]; then
-  error_exit "Backend is not assigned to 'internal_tasks_pool', 'internal_embed_pool', and/or 'internal_chat_pool'. Please run Step 3 from the README."
+if [ -z "$TASK_group_CHECK" ] || [ -z "$EMBED_group_CHECK" ] || [ -z "$CHAT_group_CHECK" ]; then
+  error_exit "Backend is not assigned to 'internal_tasks_group', 'internal_embed_group', and/or 'internal_chat_group'. Please run Step 3 from the README."
 fi
-echo "  ✅ Backend is correctly assigned to pools."
+echo "  ✅ Backend is correctly assigned to groups."
 
 # 4. Check the runtime state of the backend for connection errors
 response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/state")

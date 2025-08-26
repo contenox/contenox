@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
@@ -23,7 +24,6 @@ import (
 	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/modelservice"
-	"github.com/contenox/runtime/poolservice"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/stateservice"
@@ -41,7 +41,7 @@ type Playground struct {
 	tokenizer                 ollamatokenizer.Tokenizer
 	llmRepo                   llmrepo.ModelRepo
 	hookrepo                  taskengine.HookRepo
-	withPool                  bool
+	withgroup                 bool
 	routinesStarted           bool
 	embeddingsModel           string
 	embeddingsModelProvider   string
@@ -91,9 +91,9 @@ func (p *Playground) StartBackgroundRoutines(ctx context.Context) *Playground {
 		return p
 	}
 
-	pool := libroutine.GetPool()
+	group := libroutine.Getgroup()
 
-	pool.StartLoop(
+	group.StartLoop(
 		ctx,
 		&libroutine.LoopConfig{
 			Key:          "backendCycle",
@@ -104,7 +104,7 @@ func (p *Playground) StartBackgroundRoutines(ctx context.Context) *Playground {
 		},
 	)
 
-	pool.StartLoop(
+	group.StartLoop(
 		ctx,
 		&libroutine.LoopConfig{
 			Key:          "downloadCycle",
@@ -116,14 +116,14 @@ func (p *Playground) StartBackgroundRoutines(ctx context.Context) *Playground {
 	)
 
 	// Force an initial run to kick things off immediately in the test environment.
-	pool.ForceUpdate("backendCycle")
-	pool.ForceUpdate("downloadCycle")
+	group.ForceUpdate("backendCycle")
+	group.ForceUpdate("downloadCycle")
 
 	p.routinesStarted = true
 	return p
 }
 
-// WithInternalOllamaEmbedder initializes the internal embedding model and pool.
+// WithInternalOllamaEmbedder initializes the internal embedding model and group.
 func (p *Playground) WithInternalOllamaEmbedder(ctx context.Context, modelName string, contextLen int) *Playground {
 	if p.Error != nil {
 		return p
@@ -173,7 +173,7 @@ func (p *Playground) WithInternalChatExecutor(ctx context.Context, modelName str
 	return p
 }
 
-// WithInternalPromptExecutor initializes the internal task/prompt model and pool.
+// WithInternalPromptExecutor initializes the internal task/prompt model and group.
 func (p *Playground) WithInternalPromptExecutor(ctx context.Context, modelName string, contextLen int) *Playground {
 	if p.Error != nil {
 		return p
@@ -273,7 +273,7 @@ func (p *Playground) WithDefaultChatModel(model string, provider string, context
 }
 
 // WithRuntimeState initializes the runtime state.
-func (p *Playground) WithRuntimeState(ctx context.Context, withPools bool) *Playground {
+func (p *Playground) WithRuntimeState(ctx context.Context, withgroups bool) *Playground {
 	if p.Error != nil {
 		return p
 	}
@@ -288,9 +288,9 @@ func (p *Playground) WithRuntimeState(ctx context.Context, withPools bool) *Play
 
 	var state *runtimestate.State
 	var err error
-	p.withPool = withPools
-	if withPools {
-		state, err = runtimestate.New(ctx, p.db, p.bus, runtimestate.WithPools())
+	p.withgroup = withgroups
+	if withgroups {
+		state, err = runtimestate.New(ctx, p.db, p.bus, runtimestate.WithGroups())
 	} else {
 		state, err = runtimestate.New(ctx, p.db, p.bus)
 	}
@@ -393,25 +393,25 @@ func (p *Playground) WithOllamaBackend(ctx context.Context, name, tag string, as
 		return p
 	}
 
-	if !p.withPool {
+	if !p.withgroup {
 		return p
 	}
 
-	pool, err := p.GetPoolService()
+	group, err := p.GetgroupService()
 	if err != nil {
-		p.Error = fmt.Errorf("failed to get pool service for ollama setup: %w", err)
+		p.Error = fmt.Errorf("failed to get group service for ollama setup: %w", err)
 		return p
 	}
 
 	if assignEmbeddingModel {
-		if err := pool.AssignBackend(ctx, runtimestate.EmbedPoolID, backend.ID); err != nil {
-			p.Error = fmt.Errorf("failed to assign ollama backend to embed pool: %w", err)
+		if err := group.AssignBackend(ctx, runtimestate.EmbedgroupID, backend.ID); err != nil {
+			p.Error = fmt.Errorf("failed to assign ollama backend to embed group: %w", err)
 			return p
 		}
 	}
 	if assignTasksModel {
-		if err := pool.AssignBackend(ctx, runtimestate.TasksPoolID, backend.ID); err != nil {
-			p.Error = fmt.Errorf("failed to assign ollama backend to tasks pool: %w", err)
+		if err := group.AssignBackend(ctx, runtimestate.TasksgroupID, backend.ID); err != nil {
+			p.Error = fmt.Errorf("failed to assign ollama backend to tasks group: %w", err)
 			return p
 		}
 	}
@@ -509,15 +509,15 @@ func (p *Playground) GetModelService() (modelservice.Service, error) {
 	return modelservice.New(p.db, p.embeddingsModel), nil
 }
 
-// GetPoolService returns a new pool service instance.
-func (p *Playground) GetPoolService() (poolservice.Service, error) {
+// GetgroupService returns a new group service instance.
+func (p *Playground) GetgroupService() (affinitygroupservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
 	if p.db == nil {
-		return nil, errors.New("cannot get pool service: database is not initialized")
+		return nil, errors.New("cannot get group service: database is not initialized")
 	}
-	return poolservice.New(p.db), nil
+	return affinitygroupservice.New(p.db), nil
 }
 
 // GetProviderService returns a new provider service instance.

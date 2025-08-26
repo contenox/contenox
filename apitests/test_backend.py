@@ -19,17 +19,17 @@ def test_create_backend(base_url):
     del_response = requests.delete(delete_url)
     assert_status_code(del_response, 200)
 
-def test_backend_assigned_to_pool(base_url, create_backend_and_assign_to_pool):
-    data = create_backend_and_assign_to_pool
+def test_backend_assigned_to_group(base_url, create_backend_and_assign_to_group):
+    data = create_backend_and_assign_to_group
     backend_id = data["backend_id"]
-    pool_id = data["pool_id"]
+    group_id = data["group_id"]
 
     # Verify assignment
-    list_url = f"{base_url}/backend-associations/{pool_id}/backends"
+    list_url = f"{base_url}/backend-affinity/{group_id}/backends"
     response = requests.get(list_url)
     assert_status_code(response, 200)
     backends = response.json()
-    assert any(b['id'] == backend_id for b in backends), "Backend not found in pool"
+    assert any(b['id'] == backend_id for b in backends), "Backend not found in group"
 
 def test_list_backends(base_url):
     response = requests.get(f"{base_url}/backends")
@@ -68,8 +68,8 @@ def test_update_backend(base_url, with_ollama_backend):
     delete_response = requests.delete(f"{base_url}/backends/{backend_id}")
     assert_status_code(delete_response, 200)
 
-def test_backend_state_details(base_url, create_backend_and_assign_to_pool):
-    backend_id = create_backend_and_assign_to_pool["backend_id"]
+def test_backend_state_details(base_url, create_backend_and_assign_to_group):
+    backend_id = create_backend_and_assign_to_group["backend_id"]
     response = requests.get(f"{base_url}/backends/{backend_id}")
     assert_status_code(response, 200)
     backend = response.json()

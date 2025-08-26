@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
@@ -15,7 +16,6 @@ import (
 	"github.com/contenox/runtime/hookproviderservice"
 	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/modelservice"
-	"github.com/contenox/runtime/poolservice"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/stateservice"
 	"github.com/contenox/runtime/taskchainservice"
@@ -25,7 +25,7 @@ import (
 type Client struct {
 	BackendService   backendservice.Service
 	ModelService     modelservice.Service
-	PoolService      poolservice.Service
+	groupService     affinitygroupservice.Service
 	HookService      hookproviderservice.Service
 	ExecService      execservice.ExecService
 	EnvService       execservice.TasksEnvService
@@ -48,7 +48,7 @@ func createClient(config Config, httpClient *http.Client) (*Client, error) {
 	return &Client{
 		BackendService:   NewHTTPBackendService(config.BaseURL, config.Token, httpClient),
 		ModelService:     NewHTTPModelService(config.BaseURL, config.Token, httpClient),
-		PoolService:      NewHTTPPoolService(config.BaseURL, config.Token, httpClient),
+		groupService:     NewHTTPgroupService(config.BaseURL, config.Token, httpClient),
 		HookService:      NewHTTPRemoteHookService(config.BaseURL, config.Token, httpClient),
 		ExecService:      NewHTTPExecService(config.BaseURL, config.Token, httpClient),
 		EnvService:       NewHTTPTasksEnvService(config.BaseURL, config.Token, httpClient),

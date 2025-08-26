@@ -11,19 +11,19 @@ import (
 	"github.com/contenox/runtime/libroutine"
 )
 
-func TestPoolSingleton(t *testing.T) {
+func TestgroupSingleton(t *testing.T) {
 	defer quiet()
 	t.Run("should return singleton instance", func(t *testing.T) {
-		pool1 := libroutine.GetPool()
-		pool2 := libroutine.GetPool()
-		if pool1 != pool2 {
-			t.Error("Expected pool to be singleton, got different instances")
+		group1 := libroutine.Getgroup()
+		group2 := libroutine.Getgroup()
+		if group1 != group2 {
+			t.Error("Expected group to be singleton, got different instances")
 		}
 	})
 }
 
-func TestPoolStartLoop(t *testing.T) {
-	pool := libroutine.GetPool()
+func TestgroupStartLoop(t *testing.T) {
+	group := libroutine.Getgroup()
 	ctx := t.Context()
 
 	t.Run("should create new manager and start loop", func(t *testing.T) {
@@ -31,7 +31,7 @@ func TestPoolStartLoop(t *testing.T) {
 		var callCount int
 		var mu sync.Mutex
 
-		pool.StartLoop(ctx, &libroutine.LoopConfig{
+		group.StartLoop(ctx, &libroutine.LoopConfig{
 			Key:          key,
 			Threshold:    2,
 			ResetTimeout: 100 * time.Millisecond,
@@ -54,7 +54,7 @@ func TestPoolStartLoop(t *testing.T) {
 		mu.Unlock()
 
 		// Verify loop tracking using the public accessor.
-		if !pool.IsLoopActive(key) {
+		if !group.IsLoopActive(key) {
 			t.Error("Loop should be tracked as active")
 		}
 	})
@@ -65,7 +65,7 @@ func TestPoolStartLoop(t *testing.T) {
 		var mu sync.Mutex
 
 		// Start first loop.
-		pool.StartLoop(ctx, &libroutine.LoopConfig{
+		group.StartLoop(ctx, &libroutine.LoopConfig{
 			Key:          key,
 			Threshold:    1,
 			ResetTimeout: time.Second,
@@ -79,7 +79,7 @@ func TestPoolStartLoop(t *testing.T) {
 		})
 
 		// Try to start duplicate loop.
-		pool.StartLoop(ctx, &libroutine.LoopConfig{
+		group.StartLoop(ctx, &libroutine.LoopConfig{
 			Key:          key,
 			Threshold:    1,
 			ResetTimeout: time.Second,
@@ -109,7 +109,7 @@ func TestPoolStartLoop(t *testing.T) {
 		key := "cleanup-test"
 		localCtx, localCancel := context.WithCancel(ctx)
 
-		pool.StartLoop(localCtx, &libroutine.LoopConfig{
+		group.StartLoop(localCtx, &libroutine.LoopConfig{
 			Key:          key,
 			Threshold:    1,
 			ResetTimeout: time.Second,
@@ -125,7 +125,7 @@ func TestPoolStartLoop(t *testing.T) {
 		// Wait for cleanup.
 		time.Sleep(50 * time.Millisecond) // Increased to ensure cleanup completes
 
-		if pool.IsLoopActive(key) {
+		if group.IsLoopActive(key) {
 			t.Error("Loop should be removed from active tracking")
 		}
 	})
@@ -140,7 +140,7 @@ func TestPoolStartLoop(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				pool.StartLoop(ctx, &libroutine.LoopConfig{
+				group.StartLoop(ctx, &libroutine.LoopConfig{
 					Key:          key,
 					Threshold:    1,
 					ResetTimeout: time.Second,
@@ -169,10 +169,10 @@ func TestPoolStartLoop(t *testing.T) {
 	})
 }
 
-func TestPoolCircuitBreaking(t *testing.T) {
+func TestgroupCircuitBreaking(t *testing.T) {
 	defer quiet()
 
-	pool := libroutine.GetPool()
+	group := libroutine.Getgroup()
 	ctx := context.Background()
 
 	t.Run("should enforce circuit breaker parameters", func(t *testing.T) {
@@ -183,7 +183,7 @@ func TestPoolCircuitBreaking(t *testing.T) {
 		var failures int
 
 		// Use a very long interval so that Execute only runs when triggered.
-		pool.StartLoop(ctx, &libroutine.LoopConfig{
+		group.StartLoop(ctx, &libroutine.LoopConfig{
 			Key:          key,
 			Threshold:    failureThreshold,
 			ResetTimeout: resetTimeout,
@@ -196,12 +196,12 @@ func TestPoolCircuitBreaking(t *testing.T) {
 
 		// Fire triggers to simulate failureThreshold number of calls.
 		for range failureThreshold {
-			pool.ForceUpdate(key)
+			group.ForceUpdate(key)
 			// Give time for the execution to complete.
 			time.Sleep(5 * time.Millisecond)
 		}
 
-		manager := pool.GetManager(key)
+		manager := group.GetManager(key)
 		if manager == nil {
 			t.Fatal("Manager not created")
 		}
@@ -226,9 +226,9 @@ func TestPoolCircuitBreaking(t *testing.T) {
 	})
 }
 
-func TestPoolParameterPersistence(t *testing.T) {
+func TestgroupParameterPersistence(t *testing.T) {
 	defer quiet()
-	pool := libroutine.GetPool()
+	group := libroutine.Getgroup()
 	ctx := context.Background() // Using Background instead of t.Context() for compatibility
 
 	t.Run("should persist initial parameters", func(t *testing.T) {
@@ -237,7 +237,7 @@ func TestPoolParameterPersistence(t *testing.T) {
 		initialTimeout := 100 * time.Millisecond
 
 		// First call with initial parameters.
-		pool.StartLoop(ctx, &libroutine.LoopConfig{
+		group.StartLoop(ctx, &libroutine.LoopConfig{
 			Key:          key,
 			Threshold:    initialThreshold,
 			ResetTimeout: initialTimeout,
@@ -248,7 +248,7 @@ func TestPoolParameterPersistence(t *testing.T) {
 		})
 
 		// Subsequent call with different parameters.
-		pool.StartLoop(ctx, &libroutine.LoopConfig{
+		group.StartLoop(ctx, &libroutine.LoopConfig{
 			Key:          key,
 			Threshold:    5,
 			ResetTimeout: 200 * time.Millisecond,
@@ -258,7 +258,7 @@ func TestPoolParameterPersistence(t *testing.T) {
 			},
 		})
 
-		manager := pool.GetManager(key)
+		manager := group.GetManager(key)
 		if manager == nil {
 			t.Fatal("Manager not created")
 		}
@@ -272,10 +272,10 @@ func TestPoolParameterPersistence(t *testing.T) {
 	})
 }
 
-// TestPoolResetRoutine verifies we can reset the circuit breaker state
-func TestPoolResetRoutine(t *testing.T) {
+// TestgroupResetRoutine verifies we can reset the circuit breaker state
+func TestgroupResetRoutine(t *testing.T) {
 	defer quiet()
-	pool := libroutine.GetPool()
+	group := libroutine.Getgroup()
 	ctx := t.Context()
 
 	key := "reset-routine-test"
@@ -283,7 +283,7 @@ func TestPoolResetRoutine(t *testing.T) {
 	var runCountMu sync.Mutex
 
 	// Start a loop that fails once then succeeds
-	pool.StartLoop(ctx, &libroutine.LoopConfig{
+	group.StartLoop(ctx, &libroutine.LoopConfig{
 		Key:          key,
 		Threshold:    1,
 		ResetTimeout: 10 * time.Millisecond,
@@ -306,7 +306,7 @@ func TestPoolResetRoutine(t *testing.T) {
 	time.Sleep(21 * time.Millisecond)
 
 	// Get the manager
-	manager := pool.GetManager(key)
+	manager := group.GetManager(key)
 	if manager == nil {
 		t.Fatalf("Manager for key %s not found", key)
 	}
@@ -325,7 +325,7 @@ func TestPoolResetRoutine(t *testing.T) {
 	}
 
 	// Force a call to transition to closed state
-	pool.ForceUpdate(key)
+	group.ForceUpdate(key)
 	time.Sleep(15 * time.Millisecond) // Allow time for execution
 
 	// Verify circuit is now closed

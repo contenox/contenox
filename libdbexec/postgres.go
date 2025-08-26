@@ -16,7 +16,7 @@ type postgresDBManager struct {
 }
 
 // NewPostgresDBManager creates a new DBManager for PostgreSQL.
-// It opens a connection pool using the provided DSN, pings the database
+// It opens a connection group using the provided DSN, pings the database
 // to verify connectivity, and optionally executes an initial schema setup query.
 // Note: For production schema management, using dedicated migration tools is recommended
 // over passing a simple schema string here.
@@ -45,7 +45,7 @@ func NewPostgresDBManager(ctx context.Context, dsn string, schema string) (DBMan
 	return &postgresDBManager{dbInstance: db}, nil
 }
 
-// WithoutTransaction returns an executor that operates directly on the connection pool.
+// WithoutTransaction returns an executor that operates directly on the connection group.
 func (sm *postgresDBManager) WithoutTransaction() Exec {
 	return &txAwareDB{db: sm.dbInstance}
 }
@@ -113,10 +113,10 @@ func (sm *postgresDBManager) WithTransaction(ctx context.Context, onRollback ...
 	return store, commitFn, releaseFn, nil
 }
 
-// Close shuts down the underlying database connection pool.
+// Close shuts down the underlying database connection group.
 func (sm *postgresDBManager) Close() error {
 	if sm.dbInstance != nil {
-		log.Println("Closing database connection pool.")
+		log.Println("Closing database connection group.")
 		return sm.dbInstance.Close()
 	}
 	return nil

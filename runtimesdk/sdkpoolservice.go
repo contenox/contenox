@@ -10,21 +10,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/internal/apiframework"
-	"github.com/contenox/runtime/poolservice"
 	"github.com/contenox/runtime/runtimetypes"
 )
 
-// HTTPPoolService implements the poolservice.Service interface
+// HTTPgroupService implements the groupservice.Service interface
 // using HTTP calls to the API
-type HTTPPoolService struct {
+type HTTPgroupService struct {
 	client  *http.Client
 	baseURL string
 	token   string
 }
 
-// NewHTTPPoolService creates a new HTTP client that implements poolservice.Service
-func NewHTTPPoolService(baseURL, token string, client *http.Client) poolservice.Service {
+// NewHTTPgroupService creates a new HTTP client that implements groupservice.Service
+func NewHTTPgroupService(baseURL, token string, client *http.Client) affinitygroupservice.Service {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -32,16 +32,16 @@ func NewHTTPPoolService(baseURL, token string, client *http.Client) poolservice.
 	// Ensure baseURL doesn't end with a slash
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
-	return &HTTPPoolService{
+	return &HTTPgroupService{
 		client:  client,
 		baseURL: baseURL,
 		token:   token,
 	}
 }
 
-// Create implements poolservice.Service.Create
-func (s *HTTPPoolService) Create(ctx context.Context, pool *runtimetypes.Pool) error {
-	url := s.baseURL + "/pools"
+// Create implements groupservice.Service.Create
+func (s *HTTPgroupService) Create(ctx context.Context, group *runtimetypes.AffinityGroup) error {
+	url := s.baseURL + "/groups"
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
 	if err != nil {
@@ -55,7 +55,7 @@ func (s *HTTPPoolService) Create(ctx context.Context, pool *runtimetypes.Pool) e
 	}
 
 	// Encode request body
-	body, err := json.Marshal(pool)
+	body, err := json.Marshal(group)
 	if err != nil {
 		return err
 	}
@@ -72,17 +72,17 @@ func (s *HTTPPoolService) Create(ctx context.Context, pool *runtimetypes.Pool) e
 		return apiframework.HandleAPIError(resp)
 	}
 
-	// Decode response into the provided pool
-	if err := json.NewDecoder(resp.Body).Decode(pool); err != nil {
+	// Decode response into the provided group
+	if err := json.NewDecoder(resp.Body).Decode(group); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// GetByID implements poolservice.Service.GetByID
-func (s *HTTPPoolService) GetByID(ctx context.Context, id string) (*runtimetypes.Pool, error) {
-	url := fmt.Sprintf("%s/pools/%s", s.baseURL, url.PathEscape(id))
+// GetByID implements groupservice.Service.GetByID
+func (s *HTTPgroupService) GetByID(ctx context.Context, id string) (*runtimetypes.AffinityGroup, error) {
+	url := fmt.Sprintf("%s/groups/%s", s.baseURL, url.PathEscape(id))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -106,17 +106,17 @@ func (s *HTTPPoolService) GetByID(ctx context.Context, id string) (*runtimetypes
 	}
 
 	// Decode response
-	var pool runtimetypes.Pool
-	if err := json.NewDecoder(resp.Body).Decode(&pool); err != nil {
+	var group runtimetypes.AffinityGroup
+	if err := json.NewDecoder(resp.Body).Decode(&group); err != nil {
 		return nil, err
 	}
 
-	return &pool, nil
+	return &group, nil
 }
 
-// GetByName implements poolservice.Service.GetByName
-func (s *HTTPPoolService) GetByName(ctx context.Context, name string) (*runtimetypes.Pool, error) {
-	url := fmt.Sprintf("%s/pool-by-name/%s", s.baseURL, url.PathEscape(name))
+// GetByName implements groupservice.Service.GetByName
+func (s *HTTPgroupService) GetByName(ctx context.Context, name string) (*runtimetypes.AffinityGroup, error) {
+	url := fmt.Sprintf("%s/group-by-name/%s", s.baseURL, url.PathEscape(name))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -140,17 +140,17 @@ func (s *HTTPPoolService) GetByName(ctx context.Context, name string) (*runtimet
 	}
 
 	// Decode response
-	var pool runtimetypes.Pool
-	if err := json.NewDecoder(resp.Body).Decode(&pool); err != nil {
+	var group runtimetypes.AffinityGroup
+	if err := json.NewDecoder(resp.Body).Decode(&group); err != nil {
 		return nil, err
 	}
 
-	return &pool, nil
+	return &group, nil
 }
 
-// Update implements poolservice.Service.Update
-func (s *HTTPPoolService) Update(ctx context.Context, pool *runtimetypes.Pool) error {
-	url := fmt.Sprintf("%s/pools/%s", s.baseURL, url.PathEscape(pool.ID))
+// Update implements groupservice.Service.Update
+func (s *HTTPgroupService) Update(ctx context.Context, group *runtimetypes.AffinityGroup) error {
+	url := fmt.Sprintf("%s/groups/%s", s.baseURL, url.PathEscape(group.ID))
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
 	if err != nil {
@@ -164,7 +164,7 @@ func (s *HTTPPoolService) Update(ctx context.Context, pool *runtimetypes.Pool) e
 	}
 
 	// Encode request body
-	body, err := json.Marshal(pool)
+	body, err := json.Marshal(group)
 	if err != nil {
 		return err
 	}
@@ -181,17 +181,17 @@ func (s *HTTPPoolService) Update(ctx context.Context, pool *runtimetypes.Pool) e
 		return apiframework.HandleAPIError(resp)
 	}
 
-	// Decode response into the provided pool
-	if err := json.NewDecoder(resp.Body).Decode(pool); err != nil {
+	// Decode response into the provided group
+	if err := json.NewDecoder(resp.Body).Decode(group); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// Delete implements poolservice.Service.Delete
-func (s *HTTPPoolService) Delete(ctx context.Context, id string) error {
-	url := fmt.Sprintf("%s/pools/%s", s.baseURL, url.PathEscape(id))
+// Delete implements groupservice.Service.Delete
+func (s *HTTPgroupService) Delete(ctx context.Context, id string) error {
+	url := fmt.Sprintf("%s/groups/%s", s.baseURL, url.PathEscape(id))
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {
@@ -217,9 +217,9 @@ func (s *HTTPPoolService) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// ListAll implements poolservice.Service.ListAll
-func (s *HTTPPoolService) ListAll(ctx context.Context) ([]*runtimetypes.Pool, error) {
-	url := s.baseURL + "/pools"
+// ListAll implements groupservice.Service.ListAll
+func (s *HTTPgroupService) ListAll(ctx context.Context) ([]*runtimetypes.AffinityGroup, error) {
+	url := s.baseURL + "/groups"
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -243,18 +243,18 @@ func (s *HTTPPoolService) ListAll(ctx context.Context) ([]*runtimetypes.Pool, er
 	}
 
 	// Decode response
-	var pools []*runtimetypes.Pool
-	if err := json.NewDecoder(resp.Body).Decode(&pools); err != nil {
+	var groups []*runtimetypes.AffinityGroup
+	if err := json.NewDecoder(resp.Body).Decode(&groups); err != nil {
 		return nil, err
 	}
 
-	return pools, nil
+	return groups, nil
 }
 
-// ListByPurpose implements poolservice.Service.ListByPurpose
-func (s *HTTPPoolService) ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Pool, error) {
+// ListByPurpose implements groupservice.Service.ListByPurpose
+func (s *HTTPgroupService) ListByPurpose(ctx context.Context, purpose string, createdAtCursor *time.Time, limit int) ([]*runtimetypes.AffinityGroup, error) {
 	// Build URL with query parameters
-	rUrl := fmt.Sprintf("%s/pool-by-purpose/%s?limit=%d", s.baseURL, url.PathEscape(purpose), limit)
+	rUrl := fmt.Sprintf("%s/group-by-purpose/%s?limit=%d", s.baseURL, url.PathEscape(purpose), limit)
 	if createdAtCursor != nil {
 		rUrl += "&cursor=" + url.QueryEscape(createdAtCursor.Format(time.RFC3339Nano))
 	}
@@ -281,18 +281,18 @@ func (s *HTTPPoolService) ListByPurpose(ctx context.Context, purpose string, cre
 	}
 
 	// Decode response
-	var pools []*runtimetypes.Pool
-	if err := json.NewDecoder(resp.Body).Decode(&pools); err != nil {
+	var groups []*runtimetypes.AffinityGroup
+	if err := json.NewDecoder(resp.Body).Decode(&groups); err != nil {
 		return nil, err
 	}
 
-	return pools, nil
+	return groups, nil
 }
 
-// AssignBackend implements poolservice.Service.AssignBackend
-func (s *HTTPPoolService) AssignBackend(ctx context.Context, poolID, backendID string) error {
-	url := fmt.Sprintf("%s/backend-associations/%s/backends/%s",
-		s.baseURL, url.PathEscape(poolID), url.PathEscape(backendID))
+// AssignBackend implements groupservice.Service.AssignBackend
+func (s *HTTPgroupService) AssignBackend(ctx context.Context, groupID, backendID string) error {
+	url := fmt.Sprintf("%s/backend-affinity/%s/backends/%s",
+		s.baseURL, url.PathEscape(groupID), url.PathEscape(backendID))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
 	if err != nil {
@@ -318,10 +318,10 @@ func (s *HTTPPoolService) AssignBackend(ctx context.Context, poolID, backendID s
 	return nil
 }
 
-// RemoveBackend implements poolservice.Service.RemoveBackend
-func (s *HTTPPoolService) RemoveBackend(ctx context.Context, poolID, backendID string) error {
-	url := fmt.Sprintf("%s/backend-associations/%s/backends/%s",
-		s.baseURL, url.PathEscape(poolID), url.PathEscape(backendID))
+// RemoveBackend implements groupservice.Service.RemoveBackend
+func (s *HTTPgroupService) RemoveBackend(ctx context.Context, groupID, backendID string) error {
+	url := fmt.Sprintf("%s/backend-affinity/%s/backends/%s",
+		s.baseURL, url.PathEscape(groupID), url.PathEscape(backendID))
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {
@@ -347,9 +347,9 @@ func (s *HTTPPoolService) RemoveBackend(ctx context.Context, poolID, backendID s
 	return nil
 }
 
-// ListBackends implements poolservice.Service.ListBackends
-func (s *HTTPPoolService) ListBackends(ctx context.Context, poolID string) ([]*runtimetypes.Backend, error) {
-	url := fmt.Sprintf("%s/backend-associations/%s/backends", s.baseURL, url.PathEscape(poolID))
+// ListBackends implements groupservice.Service.ListBackends
+func (s *HTTPgroupService) ListBackends(ctx context.Context, groupID string) ([]*runtimetypes.Backend, error) {
+	url := fmt.Sprintf("%s/backend-affinity/%s/backends", s.baseURL, url.PathEscape(groupID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -381,9 +381,9 @@ func (s *HTTPPoolService) ListBackends(ctx context.Context, poolID string) ([]*r
 	return backends, nil
 }
 
-// ListPoolsForBackend implements poolservice.Service.ListPoolsForBackend
-func (s *HTTPPoolService) ListPoolsForBackend(ctx context.Context, backendID string) ([]*runtimetypes.Pool, error) {
-	url := fmt.Sprintf("%s/backend-associations/%s/pools", s.baseURL, url.PathEscape(backendID))
+// ListAffinityGroupsForBackend implements groupservice.Service.ListAffinityGroupsForBackend
+func (s *HTTPgroupService) ListAffinityGroupsForBackend(ctx context.Context, backendID string) ([]*runtimetypes.AffinityGroup, error) {
+	url := fmt.Sprintf("%s/backend-affinity/%s/groups", s.baseURL, url.PathEscape(backendID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -407,18 +407,18 @@ func (s *HTTPPoolService) ListPoolsForBackend(ctx context.Context, backendID str
 	}
 
 	// Decode response
-	var pools []*runtimetypes.Pool
-	if err := json.NewDecoder(resp.Body).Decode(&pools); err != nil {
+	var groups []*runtimetypes.AffinityGroup
+	if err := json.NewDecoder(resp.Body).Decode(&groups); err != nil {
 		return nil, err
 	}
 
-	return pools, nil
+	return groups, nil
 }
 
-// AssignModel implements poolservice.Service.AssignModel
-func (s *HTTPPoolService) AssignModel(ctx context.Context, poolID, modelID string) error {
-	url := fmt.Sprintf("%s/model-associations/%s/models/%s",
-		s.baseURL, url.PathEscape(poolID), url.PathEscape(modelID))
+// AssignModel implements groupservice.Service.AssignModel
+func (s *HTTPgroupService) AssignModel(ctx context.Context, groupID, modelID string) error {
+	url := fmt.Sprintf("%s/model-affinity/%s/models/%s",
+		s.baseURL, url.PathEscape(groupID), url.PathEscape(modelID))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
 	if err != nil {
@@ -444,10 +444,10 @@ func (s *HTTPPoolService) AssignModel(ctx context.Context, poolID, modelID strin
 	return nil
 }
 
-// RemoveModel implements poolservice.Service.RemoveModel
-func (s *HTTPPoolService) RemoveModel(ctx context.Context, poolID, modelID string) error {
-	url := fmt.Sprintf("%s/model-associations/%s/models/%s",
-		s.baseURL, url.PathEscape(poolID), url.PathEscape(modelID))
+// RemoveModel implements groupservice.Service.RemoveModel
+func (s *HTTPgroupService) RemoveModel(ctx context.Context, groupID, modelID string) error {
+	url := fmt.Sprintf("%s/model-affinity/%s/models/%s",
+		s.baseURL, url.PathEscape(groupID), url.PathEscape(modelID))
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {
@@ -473,9 +473,9 @@ func (s *HTTPPoolService) RemoveModel(ctx context.Context, poolID, modelID strin
 	return nil
 }
 
-// ListModels implements poolservice.Service.ListModels
-func (s *HTTPPoolService) ListModels(ctx context.Context, poolID string) ([]*runtimetypes.Model, error) {
-	url := fmt.Sprintf("%s/model-associations/%s/models", s.baseURL, url.PathEscape(poolID))
+// ListModels implements groupservice.Service.ListModels
+func (s *HTTPgroupService) ListModels(ctx context.Context, groupID string) ([]*runtimetypes.Model, error) {
+	url := fmt.Sprintf("%s/model-affinity/%s/models", s.baseURL, url.PathEscape(groupID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -507,9 +507,9 @@ func (s *HTTPPoolService) ListModels(ctx context.Context, poolID string) ([]*run
 	return models, nil
 }
 
-// ListPoolsForModel implements poolservice.Service.ListPoolsForModel
-func (s *HTTPPoolService) ListPoolsForModel(ctx context.Context, modelID string) ([]*runtimetypes.Pool, error) {
-	url := fmt.Sprintf("%s/model-associations/%s/pools", s.baseURL, url.PathEscape(modelID))
+// ListAffinityGroupsForModel implements groupservice.Service.ListAffinityGroupsForModel
+func (s *HTTPgroupService) ListAffinityGroupsForModel(ctx context.Context, modelID string) ([]*runtimetypes.AffinityGroup, error) {
+	url := fmt.Sprintf("%s/model-affinity/%s/groups", s.baseURL, url.PathEscape(modelID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -533,10 +533,10 @@ func (s *HTTPPoolService) ListPoolsForModel(ctx context.Context, modelID string)
 	}
 
 	// Decode response
-	var pools []*runtimetypes.Pool
-	if err := json.NewDecoder(resp.Body).Decode(&pools); err != nil {
+	var groups []*runtimetypes.AffinityGroup
+	if err := json.NewDecoder(resp.Body).Decode(&groups); err != nil {
 		return nil, err
 	}
 
-	return pools, nil
+	return groups, nil
 }

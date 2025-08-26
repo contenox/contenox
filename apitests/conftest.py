@@ -41,10 +41,10 @@ def with_ollama_backend():
 
 
 @pytest.fixture(scope="session")
-def create_backend_and_assign_to_pool(base_url, with_ollama_backend):
+def create_backend_and_assign_to_group(base_url, with_ollama_backend):
     """
-    Fixture that creates a backend and assigns it to the 'internal_embed_pool'.
-    Returns: dict containing backend_id and pool_id
+    Fixture that creates a backend and assigns it to the 'internal_embed_group'.
+    Returns: dict containing backend_id and group_id
     """
     ollama_url = with_ollama_backend
 
@@ -58,45 +58,45 @@ def create_backend_and_assign_to_pool(base_url, with_ollama_backend):
     backend = response.json()
     backend_id = backend["id"]
     backend_url = backend["baseUrl"]
-    pool_id = "internal_embed_pool"
-    assign_url = f"{base_url}/backend-associations/{pool_id}/backends/{backend_id}"
+    group_id = "internal_embed_group"
+    assign_url = f"{base_url}/backend-affinity/{group_id}/backends/{backend_id}"
     response = requests.post(assign_url)
     response.raise_for_status()
     assert response.json() == "backend assigned"
 
-    logger.info("Backend %s assigned to pool %s", backend_id, pool_id)
+    logger.info("Backend %s assigned to group %s", backend_id, group_id)
 
-    pool_id = "internal_chat_pool"
-    assign_url = f"{base_url}/backend-associations/{pool_id}/backends/{backend_id}"
+    group_id = "internal_chat_group"
+    assign_url = f"{base_url}/backend-affinity/{group_id}/backends/{backend_id}"
     response = requests.post(assign_url)
     response.raise_for_status()
     assert response.json() == "backend assigned"
 
-    logger.info("Backend %s assigned to pool %s", backend_id, pool_id)
+    logger.info("Backend %s assigned to group %s", backend_id, group_id)
 
-    pool_id = "internal_tasks_pool"
-    assign_url = f"{base_url}/backend-associations/{pool_id}/backends/{backend_id}"
+    group_id = "internal_tasks_group"
+    assign_url = f"{base_url}/backend-affinity/{group_id}/backends/{backend_id}"
     response = requests.post(assign_url)
     response.raise_for_status()
     assert response.json() == "backend assigned"
 
-    logger.info("Backend %s assigned to pool %s", backend_id, pool_id)
+    logger.info("Backend %s assigned to group %s", backend_id, group_id)
 
     yield {
         "backend_id": backend_id,
         "backend_url": backend_url,
-        "pool_id": pool_id,
+        "group_id": group_id,
         "backend": backend,
     }
 
 @pytest.fixture(scope="session")
-def create_model_and_assign_to_pool(base_url):
+def create_model_and_assign_to_group(base_url):
     """
-    Fixture that creates a model 'smollm2:135m' and assigns it to the Embedder pool.
-    Returns: dict containing model_id and pool_id
+    Fixture that creates a model 'smollm2:135m' and assigns it to the Embedder group.
+    Returns: dict containing model_id and group_id
     """
     model_name = "smollm2:135m"
-    pool_id = "internal_tasks_pool"
+    group_id = "internal_tasks_group"
 
     payload = {"model": model_name, "canChat": True, "canPrompt": True, "contextLength": 1024}
     create_url = f"{base_url}/models"
@@ -106,16 +106,16 @@ def create_model_and_assign_to_pool(base_url):
     model_id = model["id"]
     logger.info("Created model: %s", model_id)
 
-    assign_url = f"{base_url}/model-associations/{pool_id}/models/{model_id}"
+    assign_url = f"{base_url}/model-affinity/{group_id}/models/{model_id}"
     response = requests.post(assign_url)
-    assert response.status_code == 200, f"Failed to assign model to pool: {response.text}"
+    assert response.status_code == 200, f"Failed to assign model to group: {response.text}"
     assert response.json() == "model assigned", "Unexpected response when assigning model"
-    logger.info("Assigned model %s to pool %s", model_id, pool_id)
+    logger.info("Assigned model %s to group %s", model_id, group_id)
 
     yield {
         "model_id": model_id,
         "model_name": model_name,
-        "pool_id": pool_id,
+        "group_id": group_id,
     }
 
 @pytest.fixture(scope="session")
@@ -276,12 +276,12 @@ TASK_MODEL_NAME = "phi3:3.8b"
 @pytest.fixture(scope="session")
 def wait_for_declared_models(
     base_url,
-    create_backend_and_assign_to_pool,
-    create_model_and_assign_to_pool,
+    create_backend_and_assign_to_group,
+    create_model_and_assign_to_group,
     wait_for_model_in_backend
 ):
     """Fixture that waits for all declared models to be downloaded"""
-    backend_id = create_backend_and_assign_to_pool["backend_id"]
+    backend_id = create_backend_and_assign_to_group["backend_id"]
 
     # Get all models from the internal API endpoint
     response = requests.get(f"{base_url}/internal/models")

@@ -17,7 +17,7 @@ func TestSystem_ExecService(t *testing.T) {
 	p := playground.New()
 	p.WithPostgresTestContainer(ctx)
 	p.WithNats(ctx)
-	p.WithRuntimeState(ctx, true) // Enable pools for model assignment
+	p.WithRuntimeState(ctx, true) // Enable groups for model assignment
 	p.WithMockTokenizer()
 	p.WithInternalPromptExecutor(ctx, "smollm2:135m", 2048)
 

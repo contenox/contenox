@@ -19,6 +19,10 @@ components:
             items:
                 $ref: '#/components/schemas/runtimestate_ProviderConfig'
             type: array
+        array_runtimetypes_AffinityGroup:
+            items:
+                $ref: '#/components/schemas/runtimetypes_AffinityGroup'
+            type: array
         array_runtimetypes_Backend:
             items:
                 $ref: '#/components/schemas/runtimetypes_Backend'
@@ -26,10 +30,6 @@ components:
         array_runtimetypes_Model:
             items:
                 $ref: '#/components/schemas/runtimetypes_Model'
-            type: array
-        array_runtimetypes_Pool:
-            items:
-                $ref: '#/components/schemas/runtimetypes_Pool'
             type: array
         array_runtimetypes_RemoteHook:
             items:
@@ -263,6 +263,32 @@ components:
                 - APIKey
                 - Type
             type: object
+        runtimetypes_AffinityGroup:
+            properties:
+                createdAt:
+                    example: "2023-11-15T14:30:45Z"
+                    format: date-time
+                    type: string
+                id:
+                    example: p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4
+                    type: string
+                name:
+                    example: production-chat
+                    type: string
+                purposeType:
+                    example: Internal Tasks
+                    type: string
+                updatedAt:
+                    example: "2023-11-15T14:30:45Z"
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - name
+                - purposeType
+                - createdAt
+                - updatedAt
+            type: object
         runtimetypes_Backend:
             properties:
                 baseUrl:
@@ -332,32 +358,6 @@ components:
                 - canEmbed
                 - canPrompt
                 - canStream
-                - createdAt
-                - updatedAt
-            type: object
-        runtimetypes_Pool:
-            properties:
-                createdAt:
-                    example: "2023-11-15T14:30:45Z"
-                    format: date-time
-                    type: string
-                id:
-                    example: p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4
-                    type: string
-                name:
-                    example: production-chat
-                    type: string
-                purposeType:
-                    example: Internal Tasks
-                    type: string
-                updatedAt:
-                    example: "2023-11-15T14:30:45Z"
-                    format: date-time
-                    type: string
-            required:
-                - id
-                - name
-                - purposeType
                 - createdAt
                 - updatedAt
             type: object
@@ -819,7 +819,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.64
+    version: v0.0.51-82-g6bf2d9b-dirty
 openapi: 3.1.0
 paths:
     /{chainID}/v1/chat/completions:
@@ -875,17 +875,17 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Processes chat requests using the configured task chain.
-    /backend-associations/{backendID}/pools:
+    /backend-affinity/{backendID}/groups:
         get:
             description: |-
-                Lists all pools that a specific backend belongs to.
+                Lists all affinity groups that a specific backend belongs to.
                 Useful for understanding which model sets a backend has access to.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_runtimetypes_Pool'
+                                $ref: '#/components/schemas/array_runtimetypes_AffinityGroup'
                     description: OK
                 default:
                     content:
@@ -893,7 +893,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists all pools that a specific backend belongs to.
+            summary: Lists all affinity groups that a specific backend belongs to.
         parameters:
             - description: The unique identifier of the backend.
               in: path
@@ -901,10 +901,10 @@ paths:
               required: true
               schema:
                 type: string
-    /backend-associations/{poolID}/backends:
+    /backend-affinity/{groupID}/backends:
         get:
             description: |-
-                Lists all backends associated with a specific pool.
+                Lists all backends associated with a specific affinity group.
                 Returns basic backend information without runtime state.
             responses:
                 "200":
@@ -919,20 +919,20 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists all backends associated with a specific pool.
+            summary: Lists all backends associated with a specific affinity group.
         parameters:
-            - description: The unique identifier of the pool.
+            - description: The unique identifier of the affinity group.
               in: path
-              name: poolID
+              name: groupID
               required: true
               schema:
                 type: string
-    /backend-associations/{poolID}/backends/{backendID}:
+    /backend-affinity/{groupID}/backends/{backendID}:
         delete:
             description: |-
-                Removes a backend from a pool.
-                After removal, the backend will no longer be eligible to process requests for models in this pool.
-                Requests requiring models from this pool will no longer be routed to this backend.
+                Removes a backend from a affinity group.
+                After removal, the backend will no longer be eligible to process requests for models in this affinity group.
+                Requests requiring models from this affinity group will no longer be routed to this backend.
             responses:
                 "200":
                     content:
@@ -946,11 +946,11 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Removes a backend from a pool.
+            summary: Removes a backend from a affinity group.
         parameters:
-            - description: The unique identifier of the pool.
+            - description: The unique identifier of the affinity group.
               in: path
-              name: poolID
+              name: groupID
               required: true
               schema:
                 type: string
@@ -962,9 +962,9 @@ paths:
                 type: string
         post:
             description: |-
-                Associates a backend with a pool.
-                After assignment, the backend can process requests for all models in the pool.
-                This enables request routing between the backend and models that share this pool.
+                Associates a backend with a affinity group.
+                After assignment, the backend can process requests for all models in the affinity group.
+                This enables request routing between the backend and models that share this affinity group.
             responses:
                 "201":
                     content:
@@ -978,13 +978,13 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Associates a backend with a pool.
+            summary: Associates a backend with a affinity group.
     /backends:
         get:
             description: |-
                 Lists all configured backend connections with runtime status.
-                NOTE: Only backends assigned to at least one pool will be used for request processing.
-                Backends not assigned to any pool exist in the configuration but are completely ignored by the routing system.
+                NOTE: Only backends assigned to at least one group will be used for request processing.
+                Backends not assigned to any group exist in the configuration but are completely ignored by the routing system.
             parameters:
                 - description: The maximum number of items to return per page.
                   in: query
@@ -1126,8 +1126,8 @@ paths:
             description: |-
                 Generates vector embeddings for text.
                 Uses the system's default embedding model configured at startup.
-                Requests are routed ONLY to backends that have the default model available in any shared pool.
-                If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+                Requests are routed ONLY to backends that have the default model available in any shared group.
+                If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
             requestBody:
                 content:
                     application/json:
@@ -1153,8 +1153,8 @@ paths:
             description: |-
                 Runs the prompt through the default LLM.
                 This endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.
-                Requests are routed ONLY to backends that have the default model available in any shared pool.
-                If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+                Requests are routed ONLY to backends that have the default model available in any shared group.
+                If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
             requestBody:
                 content:
                     application/json:
@@ -1175,20 +1175,201 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Runs the prompt through the default LLM.
-    /hooks/remote:
+    /group-by-name/{name}:
         get:
-            description: Lists all configured remote hooks with pagination support.
+            description: |-
+                Retrieves a affinity group by its human-readable name.
+                Useful for configuration where ID might not be known but name is consistent.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/runtimetypes_AffinityGroup'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Retrieves a affinity group by its human-readable name.
+        parameters:
+            - description: The unique, human-readable name of the affinity group.
+              in: path
+              name: name
+              required: true
+              schema:
+                type: string
+    /group-by-purpose/{purpose}:
+        get:
+            description: |-
+                Lists groups filtered by purpose type with pagination support.
+                Purpose types categorize groups (e.g., "Internal Embeddings", "Internal Tasks").
+                Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/array_runtimetypes_AffinityGroup'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Lists groups filtered by purpose type with pagination support.
+        parameters:
+            - description: The purpose category to filter groups by (e.g., 'embeddings').
+              in: path
+              name: purpose
+              required: true
+              schema:
+                type: string
+    /groups:
+        get:
+            description: |-
+                Lists all affinity groups in the system.
+                Returns basic group information without associated backends or models.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/array_runtimetypes_AffinityGroup'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Lists all affinity groups in the system.
+        post:
+            description: |-
+                Creates a new affinity group for organizing backends and models.
+                group names must be unique within the system.
+                groups allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).
+                When affinity groups are enabled in the system, request routing ONLY considers resources that share a affinity group.
+                - Models not assigned to any group will NOT be available for execution
+                - Backends not assigned to any group will NOT receive models or process requests
+                - Resources must be explicitly associated with the same group to work together
+                This is a fundamental operational requirement - resources outside groups are effectively invisible to the routing system.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/runtimetypes_AffinityGroup'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/runtimetypes_AffinityGroup'
+                    description: Created
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Creates a new affinity group for organizing backends and models.
+    /groups/{id}:
+        delete:
+            description: |-
+                Removes an affinity group from the system.
+                This does not delete the group's backends or models, only the group relationship.
+                Returns a simple "deleted" confirmation message on success.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                type: string
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Removes an affinity group from the system.
+        get:
+            description: Retrieves a specific affinity group by its unique ID.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/runtimetypes_AffinityGroup'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Retrieves a specific affinity group by its unique ID.
+        parameters:
+            - description: The unique identifier of the affinity group.
+              in: path
+              name: id
+              required: true
+              schema:
+                type: string
+        put:
+            description: |-
+                Updates an existing affinity group configuration.
+                The ID from the URL path overrides any ID in the request body.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/runtimetypes_AffinityGroup'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/runtimetypes_AffinityGroup'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Updates an existing affinity group configuration.
+    /hooks/remote:
+        get:
+            description: Lists all configured remote hooks with pagination support.
+            parameters:
+                - description: The maximum number of items to return per page.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -1301,16 +1482,16 @@ paths:
                 This endpoint returns full model details including timestamps and capabilities.
                 Intended for administrative and debugging purposes.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -1326,36 +1507,10 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Lists all registered models in internal format.
-    /model-associations/{modelID}/pools:
+    /model-affinity/{groupID}/models:
         get:
             description: |-
-                Lists all pools that a specific model belongs to.
-                Useful for understanding where a model is deployed across the system.
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/array_runtimetypes_Pool'
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Lists all pools that a specific model belongs to.
-        parameters:
-            - description: The unique identifier of the model.
-              in: path
-              name: modelID
-              required: true
-              schema:
-                type: string
-    /model-associations/{poolID}/models:
-        get:
-            description: |-
-                Lists all models associated with a specific pool.
+                Lists all models associated with a specific affinity group.
                 Returns basic model information without backend-specific details.
             responses:
                 "200":
@@ -1370,20 +1525,20 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists all models associated with a specific pool.
+            summary: Lists all models associated with a specific affinity group.
         parameters:
-            - description: The unique identifier of the pool.
+            - description: The unique identifier of the affinity group.
               in: path
-              name: poolID
+              name: groupID
               required: true
               schema:
                 type: string
-    /model-associations/{poolID}/models/{modelID}:
+    /model-affinity/{groupID}/models/{modelID}:
         delete:
             description: |-
-                Removes a model from a pool.
-                After removal, requests for this model will no longer be routed to backends in this pool.
-                This model can still be used with backends in other pools where it remains assigned.
+                Removes a model from a affinity group.
+                After removal, requests for this model will no longer be routed to backends in this affinity group.
+                This model can still be used with backends in other groups where it remains assigned.
             responses:
                 "200":
                     content:
@@ -1397,11 +1552,11 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Removes a model from a pool.
+            summary: Removes a model from a affinity group.
         parameters:
-            - description: The unique identifier of the pool.
+            - description: The unique identifier of the affinity group.
               in: path
-              name: poolID
+              name: groupID
               required: true
               schema:
                 type: string
@@ -1413,9 +1568,9 @@ paths:
                 type: string
         post:
             description: |-
-                Associates a model with a pool.
-                After assignment, requests for this model can be routed to any backend in the pool.
-                This enables request routing between the model and backends that share this pool.
+                Associates a model with a affinity group.
+                After assignment, requests for this model can be routed to any backend in the affinity group.
+                This enables request routing between the model and backends that share this affinity group.
             responses:
                 "200":
                     content:
@@ -1429,14 +1584,40 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Associates a model with a pool.
+            summary: Associates a model with a affinity group.
+    /model-affinity/{modelID}/groups:
+        get:
+            description: |-
+                Lists all affinity groups that a specific model belongs to.
+                Useful for understanding where a model is deployed across the system.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/array_runtimetypes_AffinityGroup'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Lists all affinity groups that a specific model belongs to.
+        parameters:
+            - description: The unique identifier of the model.
+              in: path
+              name: modelID
+              required: true
+              schema:
+                type: string
     /models:
         get:
             description: |-
                 Lists all registered models in OpenAI-compatible format.
                 Returns models as they would appear in OpenAI's /v1/models endpoint.
-                NOTE: Only models assigned to at least one pool will be available for request processing.
-                Models not assigned to any pool exist in the configuration but are completely ignored by the routing system.
+                NOTE: Only models assigned to at least one group will be available for request processing.
+                Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
             parameters:
                 - description: The maximum number of items to return per page.
                   in: query
@@ -1467,8 +1648,8 @@ paths:
             description: |-
                 Declares a new model to the system.
                 The model must be available in a configured backend or will be queued for download.
-                IMPORTANT: Models not assigned to any pool will NOT be available for request processing.
-                If pools are enabled, to make a model available to backends, it must be explicitly added to at least one pool.
+                IMPORTANT: Models not assigned to any group will NOT be available for request processing.
+                If groups are enabled, to make a model available to backends, it must be explicitly added to at least one group.
             requestBody:
                 content:
                     application/json:
@@ -1549,187 +1730,6 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Updates an existing model registration.
-    /pool-by-name/{name}:
-        get:
-            description: |-
-                Retrieves a pool by its human-readable name.
-                Useful for configuration where ID might not be known but name is consistent.
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/runtimetypes_Pool'
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Retrieves a pool by its human-readable name.
-        parameters:
-            - description: The unique, human-readable name of the pool.
-              in: path
-              name: name
-              required: true
-              schema:
-                type: string
-    /pool-by-purpose/{purpose}:
-        get:
-            description: |-
-                Lists pools filtered by purpose type with pagination support.
-                Purpose types categorize pools (e.g., "Internal Embeddings", "Internal Tasks").
-                Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
-            parameters:
-                - description: The maximum number of items to return per page.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/array_runtimetypes_Pool'
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Lists pools filtered by purpose type with pagination support.
-        parameters:
-            - description: The purpose category to filter pools by (e.g., 'embeddings').
-              in: path
-              name: purpose
-              required: true
-              schema:
-                type: string
-    /pools:
-        get:
-            description: |-
-                Lists all resource pools in the system.
-                Returns basic pool information without associated backends or models.
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/array_runtimetypes_Pool'
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Lists all resource pools in the system.
-        post:
-            description: |-
-                Creates a new resource pool for organizing backends and models.
-                Pool names must be unique within the system.
-                Pools allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).
-                When pools are configured in the system, request routing ONLY considers resources that share a pool.
-                - Models not assigned to any pool will NOT be available for execution
-                - Backends not assigned to any pool will NOT receive models or process requests
-                - Resources must be explicitly associated with the same pool to work together
-                This is a fundamental operational requirement - resources outside pools are effectively invisible to the routing system.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/runtimetypes_Pool'
-                required: true
-            responses:
-                "201":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/runtimetypes_Pool'
-                    description: Created
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Creates a new resource pool for organizing backends and models.
-    /pools/{id}:
-        delete:
-            description: |-
-                Removes a pool from the system.
-                This does not deletePool associated backends or models, only the pool relationship.
-                Returns a simple "deleted" confirmation message on success.
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                type: string
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Removes a pool from the system.
-        get:
-            description: Retrieves a specific pool by its unique ID.
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/runtimetypes_Pool'
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Retrieves a specific pool by its unique ID.
-        parameters:
-            - description: The unique identifier of the pool.
-              in: path
-              name: id
-              required: true
-              schema:
-                type: string
-        put:
-            description: |-
-                Updates an existing pool configuration.
-                The ID from the URL path overrides any ID in the request body.
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/runtimetypes_Pool'
-                required: true
-            responses:
-                "200":
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/runtimetypes_Pool'
-                    description: OK
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Default error response
-            summary: Updates an existing pool configuration.
     /providers/{providerType}/config:
         delete:
             description: |-
@@ -1807,8 +1807,8 @@ paths:
                 Retrieves the current model download queue state.
                 Returns a list of models waiting to be downloaded.
                 Downloading models is only supported for ollama backends.
-                If pools are enabled, models will only be downloaded to backends
-                that are associated with at least one pool.
+                If groups are enabled, models will only be downloaded to backends
+                that are associated with at least one group.
             responses:
                 "200":
                     content:
@@ -1912,7 +1912,7 @@ paths:
                 Retrieves the current runtime state of all LLM backends.
                 Includes connection status, loaded models, and error information.
                 NOTE: This shows the physical state of backends, but the routing system only considers
-                backends and models that are assigned to the same pool. Resources not in pools are ignored
+                backends and models that are assigned to the same group. Resources not in groups are ignored
                 for request processing even if they appear in this response.
             responses:
                 "200":
@@ -2069,8 +2069,8 @@ paths:
                 Executes dynamic task-chain workflows.
                 Task-chains are state-machine workflows (DAGs) with conditional branches,
                 external hooks, and captured execution state.
-                Requests are routed ONLY to backends that have the requested model available in any shared pool.
-                If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+                Requests are routed ONLY to backends that have the requested model available in any shared group.
+                If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
             requestBody:
                 content:
                     application/json:

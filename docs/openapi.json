@@ -30,6 +30,12 @@
         },
         "type": "array"
       },
+      "array_runtimetypes_AffinityGroup": {
+        "items": {
+          "$ref": "#/components/schemas/runtimetypes_AffinityGroup"
+        },
+        "type": "array"
+      },
       "array_runtimetypes_Backend": {
         "items": {
           "$ref": "#/components/schemas/runtimetypes_Backend"
@@ -39,12 +45,6 @@
       "array_runtimetypes_Model": {
         "items": {
           "$ref": "#/components/schemas/runtimetypes_Model"
-        },
-        "type": "array"
-      },
-      "array_runtimetypes_Pool": {
-        "items": {
-          "$ref": "#/components/schemas/runtimetypes_Pool"
         },
         "type": "array"
       },
@@ -370,6 +370,40 @@
         ],
         "type": "object"
       },
+      "runtimetypes_AffinityGroup": {
+        "properties": {
+          "createdAt": {
+            "example": "2023-11-15T14:30:45Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "example": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+            "type": "string"
+          },
+          "name": {
+            "example": "production-chat",
+            "type": "string"
+          },
+          "purposeType": {
+            "example": "Internal Tasks",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2023-11-15T14:30:45Z",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "purposeType",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "runtimetypes_Backend": {
         "properties": {
           "baseUrl": {
@@ -458,40 +492,6 @@
           "canEmbed",
           "canPrompt",
           "canStream",
-          "createdAt",
-          "updatedAt"
-        ],
-        "type": "object"
-      },
-      "runtimetypes_Pool": {
-        "properties": {
-          "createdAt": {
-            "example": "2023-11-15T14:30:45Z",
-            "format": "date-time",
-            "type": "string"
-          },
-          "id": {
-            "example": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-            "type": "string"
-          },
-          "name": {
-            "example": "production-chat",
-            "type": "string"
-          },
-          "purposeType": {
-            "example": "Internal Tasks",
-            "type": "string"
-          },
-          "updatedAt": {
-            "example": "2023-11-15T14:30:45Z",
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "purposeType",
           "createdAt",
           "updatedAt"
         ],
@@ -1066,19 +1066,19 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.64"
+    "version": "v0.0.51-82-g6bf2d9b-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
-    "/backend-associations/{backendID}/pools": {
+    "/backend-affinity/{backendID}/groups": {
       "get": {
-        "description": "Lists all pools that a specific backend belongs to.\nUseful for understanding which model sets a backend has access to.",
+        "description": "Lists all affinity groups that a specific backend belongs to.\nUseful for understanding which model sets a backend has access to.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/array_runtimetypes_Pool"
+                  "$ref": "#/components/schemas/array_runtimetypes_AffinityGroup"
                 }
               }
             },
@@ -1095,7 +1095,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Lists all pools that a specific backend belongs to."
+        "summary": "Lists all affinity groups that a specific backend belongs to."
       },
       "parameters": [
         {
@@ -1109,9 +1109,9 @@
         }
       ]
     },
-    "/backend-associations/{poolID}/backends": {
+    "/backend-affinity/{groupID}/backends": {
       "get": {
-        "description": "Lists all backends associated with a specific pool.\nReturns basic backend information without runtime state.",
+        "description": "Lists all backends associated with a specific affinity group.\nReturns basic backend information without runtime state.",
         "responses": {
           "200": {
             "content": {
@@ -1134,13 +1134,13 @@
             "description": "Default error response"
           }
         },
-        "summary": "Lists all backends associated with a specific pool."
+        "summary": "Lists all backends associated with a specific affinity group."
       },
       "parameters": [
         {
-          "description": "The unique identifier of the pool.",
+          "description": "The unique identifier of the affinity group.",
           "in": "path",
-          "name": "poolID",
+          "name": "groupID",
           "required": true,
           "schema": {
             "type": "string"
@@ -1148,9 +1148,9 @@
         }
       ]
     },
-    "/backend-associations/{poolID}/backends/{backendID}": {
+    "/backend-affinity/{groupID}/backends/{backendID}": {
       "delete": {
-        "description": "Removes a backend from a pool.\nAfter removal, the backend will no longer be eligible to process requests for models in this pool.\nRequests requiring models from this pool will no longer be routed to this backend.",
+        "description": "Removes a backend from a affinity group.\nAfter removal, the backend will no longer be eligible to process requests for models in this affinity group.\nRequests requiring models from this affinity group will no longer be routed to this backend.",
         "responses": {
           "200": {
             "content": {
@@ -1173,13 +1173,13 @@
             "description": "Default error response"
           }
         },
-        "summary": "Removes a backend from a pool."
+        "summary": "Removes a backend from a affinity group."
       },
       "parameters": [
         {
-          "description": "The unique identifier of the pool.",
+          "description": "The unique identifier of the affinity group.",
           "in": "path",
-          "name": "poolID",
+          "name": "groupID",
           "required": true,
           "schema": {
             "type": "string"
@@ -1196,7 +1196,7 @@
         }
       ],
       "post": {
-        "description": "Associates a backend with a pool.\nAfter assignment, the backend can process requests for all models in the pool.\nThis enables request routing between the backend and models that share this pool.",
+        "description": "Associates a backend with a affinity group.\nAfter assignment, the backend can process requests for all models in the affinity group.\nThis enables request routing between the backend and models that share this affinity group.",
         "responses": {
           "201": {
             "content": {
@@ -1219,12 +1219,12 @@
             "description": "Default error response"
           }
         },
-        "summary": "Associates a backend with a pool."
+        "summary": "Associates a backend with a affinity group."
       }
     },
     "/backends": {
       "get": {
-        "description": "Lists all configured backend connections with runtime status.\nNOTE: Only backends assigned to at least one pool will be used for request processing.\nBackends not assigned to any pool exist in the configuration but are completely ignored by the routing system.",
+        "description": "Lists all configured backend connections with runtime status.\nNOTE: Only backends assigned to at least one group will be used for request processing.\nBackends not assigned to any group exist in the configuration but are completely ignored by the routing system.",
         "parameters": [
           {
             "description": "The maximum number of items to return per page.",
@@ -1436,7 +1436,7 @@
     },
     "/embed": {
       "post": {
-        "description": "Generates vector embeddings for text.\nUses the system's default embedding model configured at startup.\nRequests are routed ONLY to backends that have the default model available in any shared pool.\nIf pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.",
+        "description": "Generates vector embeddings for text.\nUses the system's default embedding model configured at startup.\nRequests are routed ONLY to backends that have the default model available in any shared group.\nIf groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1474,7 +1474,7 @@
     },
     "/execute": {
       "post": {
-        "description": "Runs the prompt through the default LLM.\nThis endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.\nRequests are routed ONLY to backends that have the default model available in any shared pool.\nIf pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.",
+        "description": "Runs the prompt through the default LLM.\nThis endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.\nRequests are routed ONLY to backends that have the default model available in any shared group.\nIf groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1510,10 +1510,58 @@
         "summary": "Runs the prompt through the default LLM."
       }
     },
-    "/hooks/remote": {
+    "/group-by-name/{name}": {
       "get": {
-        "description": "Lists all configured remote hooks with pagination support.",
+        "description": "Retrieves a affinity group by its human-readable name.\nUseful for configuration where ID might not be known but name is consistent.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_AffinityGroup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Retrieves a affinity group by its human-readable name."
+      },
+      "parameters": [
+        {
+          "description": "The unique, human-readable name of the affinity group.",
+          "in": "path",
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/group-by-purpose/{purpose}": {
+      "get": {
+        "description": "Lists groups filtered by purpose type with pagination support.\nPurpose types categorize groups (e.g., \"Internal Embeddings\", \"Internal Tasks\").\nAccepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.",
         "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
           {
             "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
             "in": "query",
@@ -1521,13 +1569,227 @@
             "schema": {
               "type": "string"
             }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_runtimetypes_AffinityGroup"
+                }
+              }
+            },
+            "description": "OK"
           },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists groups filtered by purpose type with pagination support."
+      },
+      "parameters": [
+        {
+          "description": "The purpose category to filter groups by (e.g., 'embeddings').",
+          "in": "path",
+          "name": "purpose",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/groups": {
+      "get": {
+        "description": "Lists all affinity groups in the system.\nReturns basic group information without associated backends or models.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_runtimetypes_AffinityGroup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists all affinity groups in the system."
+      },
+      "post": {
+        "description": "Creates a new affinity group for organizing backends and models.\ngroup names must be unique within the system.\ngroups allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).\nWhen affinity groups are enabled in the system, request routing ONLY considers resources that share a affinity group.\n- Models not assigned to any group will NOT be available for execution\n- Backends not assigned to any group will NOT receive models or process requests\n- Resources must be explicitly associated with the same group to work together\nThis is a fundamental operational requirement - resources outside groups are effectively invisible to the routing system.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_AffinityGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_AffinityGroup"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Creates a new affinity group for organizing backends and models."
+      }
+    },
+    "/groups/{id}": {
+      "delete": {
+        "description": "Removes an affinity group from the system.\nThis does not delete the group's backends or models, only the group relationship.\nReturns a simple \"deleted\" confirmation message on success.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Removes an affinity group from the system."
+      },
+      "get": {
+        "description": "Retrieves a specific affinity group by its unique ID.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_AffinityGroup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Retrieves a specific affinity group by its unique ID."
+      },
+      "parameters": [
+        {
+          "description": "The unique identifier of the affinity group.",
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "description": "Updates an existing affinity group configuration.\nThe ID from the URL path overrides any ID in the request body.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_AffinityGroup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_AffinityGroup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Updates an existing affinity group configuration."
+      }
+    },
+    "/hooks/remote": {
+      "get": {
+        "description": "Lists all configured remote hooks with pagination support.",
+        "parameters": [
           {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -1699,19 +1961,19 @@
         "description": "Lists all registered models in internal format.\nThis endpoint returns full model details including timestamps and capabilities.\nIntended for administrative and debugging purposes.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -1741,48 +2003,9 @@
         "summary": "Lists all registered models in internal format."
       }
     },
-    "/model-associations/{modelID}/pools": {
+    "/model-affinity/{groupID}/models": {
       "get": {
-        "description": "Lists all pools that a specific model belongs to.\nUseful for understanding where a model is deployed across the system.",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/array_runtimetypes_Pool"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Lists all pools that a specific model belongs to."
-      },
-      "parameters": [
-        {
-          "description": "The unique identifier of the model.",
-          "in": "path",
-          "name": "modelID",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ]
-    },
-    "/model-associations/{poolID}/models": {
-      "get": {
-        "description": "Lists all models associated with a specific pool.\nReturns basic model information without backend-specific details.",
+        "description": "Lists all models associated with a specific affinity group.\nReturns basic model information without backend-specific details.",
         "responses": {
           "200": {
             "content": {
@@ -1805,13 +2028,13 @@
             "description": "Default error response"
           }
         },
-        "summary": "Lists all models associated with a specific pool."
+        "summary": "Lists all models associated with a specific affinity group."
       },
       "parameters": [
         {
-          "description": "The unique identifier of the pool.",
+          "description": "The unique identifier of the affinity group.",
           "in": "path",
-          "name": "poolID",
+          "name": "groupID",
           "required": true,
           "schema": {
             "type": "string"
@@ -1819,9 +2042,9 @@
         }
       ]
     },
-    "/model-associations/{poolID}/models/{modelID}": {
+    "/model-affinity/{groupID}/models/{modelID}": {
       "delete": {
-        "description": "Removes a model from a pool.\nAfter removal, requests for this model will no longer be routed to backends in this pool.\nThis model can still be used with backends in other pools where it remains assigned.",
+        "description": "Removes a model from a affinity group.\nAfter removal, requests for this model will no longer be routed to backends in this affinity group.\nThis model can still be used with backends in other groups where it remains assigned.",
         "responses": {
           "200": {
             "content": {
@@ -1844,13 +2067,13 @@
             "description": "Default error response"
           }
         },
-        "summary": "Removes a model from a pool."
+        "summary": "Removes a model from a affinity group."
       },
       "parameters": [
         {
-          "description": "The unique identifier of the pool.",
+          "description": "The unique identifier of the affinity group.",
           "in": "path",
-          "name": "poolID",
+          "name": "groupID",
           "required": true,
           "schema": {
             "type": "string"
@@ -1867,7 +2090,7 @@
         }
       ],
       "post": {
-        "description": "Associates a model with a pool.\nAfter assignment, requests for this model can be routed to any backend in the pool.\nThis enables request routing between the model and backends that share this pool.",
+        "description": "Associates a model with a affinity group.\nAfter assignment, requests for this model can be routed to any backend in the affinity group.\nThis enables request routing between the model and backends that share this affinity group.",
         "responses": {
           "200": {
             "content": {
@@ -1890,12 +2113,51 @@
             "description": "Default error response"
           }
         },
-        "summary": "Associates a model with a pool."
+        "summary": "Associates a model with a affinity group."
       }
+    },
+    "/model-affinity/{modelID}/groups": {
+      "get": {
+        "description": "Lists all affinity groups that a specific model belongs to.\nUseful for understanding where a model is deployed across the system.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_runtimetypes_AffinityGroup"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists all affinity groups that a specific model belongs to."
+      },
+      "parameters": [
+        {
+          "description": "The unique identifier of the model.",
+          "in": "path",
+          "name": "modelID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/models": {
       "get": {
-        "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one pool will be available for request processing.\nModels not assigned to any pool exist in the configuration but are completely ignored by the routing system.",
+        "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.",
         "parameters": [
           {
             "description": "The maximum number of items to return per page.",
@@ -1940,7 +2202,7 @@
         "summary": "Lists all registered models in OpenAI-compatible format."
       },
       "post": {
-        "description": "Declares a new model to the system.\nThe model must be available in a configured backend or will be queued for download.\nIMPORTANT: Models not assigned to any pool will NOT be available for request processing.\nIf pools are enabled, to make a model available to backends, it must be explicitly added to at least one pool.",
+        "description": "Declares a new model to the system.\nThe model must be available in a configured backend or will be queued for download.\nIMPORTANT: Models not assigned to any group will NOT be available for request processing.\nIf groups are enabled, to make a model available to backends, it must be explicitly added to at least one group.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2062,268 +2324,6 @@
         "summary": "Updates an existing model registration."
       }
     },
-    "/pool-by-name/{name}": {
-      "get": {
-        "description": "Retrieves a pool by its human-readable name.\nUseful for configuration where ID might not be known but name is consistent.",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/runtimetypes_Pool"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Retrieves a pool by its human-readable name."
-      },
-      "parameters": [
-        {
-          "description": "The unique, human-readable name of the pool.",
-          "in": "path",
-          "name": "name",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ]
-    },
-    "/pool-by-purpose/{purpose}": {
-      "get": {
-        "description": "Lists pools filtered by purpose type with pagination support.\nPurpose types categorize pools (e.g., \"Internal Embeddings\", \"Internal Tasks\").\nAccepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.",
-        "parameters": [
-          {
-            "description": "The maximum number of items to return per page.",
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/array_runtimetypes_Pool"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Lists pools filtered by purpose type with pagination support."
-      },
-      "parameters": [
-        {
-          "description": "The purpose category to filter pools by (e.g., 'embeddings').",
-          "in": "path",
-          "name": "purpose",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ]
-    },
-    "/pools": {
-      "get": {
-        "description": "Lists all resource pools in the system.\nReturns basic pool information without associated backends or models.",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/array_runtimetypes_Pool"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Lists all resource pools in the system."
-      },
-      "post": {
-        "description": "Creates a new resource pool for organizing backends and models.\nPool names must be unique within the system.\nPools allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).\nWhen pools are configured in the system, request routing ONLY considers resources that share a pool.\n- Models not assigned to any pool will NOT be available for execution\n- Backends not assigned to any pool will NOT receive models or process requests\n- Resources must be explicitly associated with the same pool to work together\nThis is a fundamental operational requirement - resources outside pools are effectively invisible to the routing system.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/runtimetypes_Pool"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/runtimetypes_Pool"
-                }
-              }
-            },
-            "description": "Created"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Creates a new resource pool for organizing backends and models."
-      }
-    },
-    "/pools/{id}": {
-      "delete": {
-        "description": "Removes a pool from the system.\nThis does not deletePool associated backends or models, only the pool relationship.\nReturns a simple \"deleted\" confirmation message on success.",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Removes a pool from the system."
-      },
-      "get": {
-        "description": "Retrieves a specific pool by its unique ID.",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/runtimetypes_Pool"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Retrieves a specific pool by its unique ID."
-      },
-      "parameters": [
-        {
-          "description": "The unique identifier of the pool.",
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "put": {
-        "description": "Updates an existing pool configuration.\nThe ID from the URL path overrides any ID in the request body.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/runtimetypes_Pool"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/runtimetypes_Pool"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Updates an existing pool configuration."
-      }
-    },
     "/providers/configs": {
       "get": {
         "description": "Lists all configured external providers with pagination support.",
@@ -2438,7 +2438,7 @@
     },
     "/queue": {
       "get": {
-        "description": "Retrieves the current model download queue state.\nReturns a list of models waiting to be downloaded.\nDownloading models is only supported for ollama backends.\nIf pools are enabled, models will only be downloaded to backends\nthat are associated with at least one pool.",
+        "description": "Retrieves the current model download queue state.\nReturns a list of models waiting to be downloaded.\nDownloading models is only supported for ollama backends.\nIf groups are enabled, models will only be downloaded to backends\nthat are associated with at least one group.",
         "responses": {
           "200": {
             "content": {
@@ -2579,7 +2579,7 @@
     },
     "/state": {
       "get": {
-        "description": "Retrieves the current runtime state of all LLM backends.\nIncludes connection status, loaded models, and error information.\nNOTE: This shows the physical state of backends, but the routing system only considers\nbackends and models that are assigned to the same pool. Resources not in pools are ignored\nfor request processing even if they appear in this response.",
+        "description": "Retrieves the current runtime state of all LLM backends.\nIncludes connection status, loaded models, and error information.\nNOTE: This shows the physical state of backends, but the routing system only considers\nbackends and models that are assigned to the same group. Resources not in groups are ignored\nfor request processing even if they appear in this response.",
         "responses": {
           "200": {
             "content": {
@@ -2819,7 +2819,7 @@
     },
     "/tasks": {
       "post": {
-        "description": "Executes dynamic task-chain workflows.\nTask-chains are state-machine workflows (DAGs) with conditional branches,\nexternal hooks, and captured execution state.\nRequests are routed ONLY to backends that have the requested model available in any shared pool.\nIf pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.",
+        "description": "Executes dynamic task-chain workflows.\nTask-chains are state-machine workflows (DAGs) with conditional branches,\nexternal hooks, and captured execution state.\nRequests are routed ONLY to backends that have the requested model available in any shared group.\nIf groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.",
         "requestBody": {
           "content": {
             "application/json": {

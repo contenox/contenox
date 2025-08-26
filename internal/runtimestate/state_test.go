@@ -163,7 +163,7 @@ package runtimestate_test
 // 	}, 2*time.Second, 100*time.Millisecond)
 // }
 
-// func TestPoolBasedModelAssignment(t *testing.T) {
+// func TestgroupBasedModelAssignment(t *testing.T) {
 // 	// if os.Getenv("SystemTestS") == "" {
 // 	// 	t.Skip("Set env SystemTestS to true to run this test")
 // 	// }
@@ -184,19 +184,19 @@ package runtimestate_test
 // 	defer cleanup2()
 // 	require.NoError(t, err)
 
-// 	// Create backend and pool
+// 	// Create backend and group
 // 	backendID := uuid.NewString()
-// 	poolID := uuid.NewString()
+// 	groupID := uuid.NewString()
 
-// 	// 1. Create pool
-// 	err = dbStore.CreatePool(ctx, &store.Pool{
-// 		ID:          poolID,
-// 		Name:        "embed-pool",
+// 	// 1. Create group
+// 	err = dbStore.Creategroup(ctx, &store.group{
+// 		ID:          groupID,
+// 		Name:        "embed-group",
 // 		PurposeType: "embed",
 // 	})
 // 	require.NoError(t, err)
 
-// 	// 2. Create backend and assign to pool
+// 	// 2. Create backend and assign to group
 // 	err = dbStore.CreateBackend(ctx, &store.Backend{
 // 		ID:      backendID,
 // 		Name:    "embed-backend",
@@ -204,10 +204,10 @@ package runtimestate_test
 // 		Type:    "ollama",
 // 	})
 // 	require.NoError(t, err)
-// 	err = dbStore.AssignBackendToPool(ctx, poolID, backendID)
+// 	err = dbStore.AssignBackendTogroup(ctx, groupID, backendID)
 // 	require.NoError(t, err)
 
-// 	// 3. Create model and assign to pool
+// 	// 3. Create model and assign to group
 // 	modelName := "granite-embedding:30m"
 // 	modelID := uuid.NewString()
 // 	err = dbStore.AppendModel(ctx, &store.Model{
@@ -215,11 +215,11 @@ package runtimestate_test
 // 		Model: modelName,
 // 	})
 // 	require.NoError(t, err)
-// 	err = dbStore.AssignModelToPool(ctx, poolID, modelID)
+// 	err = dbStore.AssignModelTogroup(ctx, groupID, modelID)
 // 	require.NoError(t, err)
 
-// 	// Initialize state with pool support
-// 	backendState, err := runtimestate.New(ctx, dbInstance, ps, runtimestate.WithPools())
+// 	// Initialize state with group support
+// 	backendState, err := runtimestate.New(ctx, dbInstance, ps, runtimestate.Withgroups())
 // 	require.NoError(t, err)
 // 	triggerChan := make(chan struct{}, 10)
 

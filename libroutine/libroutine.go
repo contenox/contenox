@@ -16,7 +16,7 @@
 //   - Automatic Recovery: Gives the failing service/resource time to recover before
 //     trying again automatically.
 //
-// 2. Managed Background Loops (`Pool`): This component manages multiple circuit breakers
+// 2. Managed Background Loops (`group`): This component manages multiple circuit breakers
 // (`Routine` instances) identified by unique keys. It handles the lifecycle of running
 // the associated task (`fn`) in a background goroutine, ensuring:
 //   - Organization: Keeps track of different background tasks centrally.
@@ -27,6 +27,6 @@
 //
 // In essence, use `routine` to reliably run background jobs that need to be
 // resilient to temporary failures without overwhelming either your application or
-// the dependencies they rely on. See `Pool.StartLoop` for the primary entry point
+// the dependencies they rely on. See `group.StartLoop` for the primary entry point
 // for running managed routines.
 package libroutine

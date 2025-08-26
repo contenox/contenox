@@ -15,7 +15,7 @@ var (
 	ErrInvalidParameterValue = errors.New("serverops: invalid parameter value type")
 	ErrBadPathValue          = errors.New("serverops: bad path value")
 	ErrImmutableModel        = errors.New("serverops: immutable model")
-	ErrImmutablePool         = errors.New("serverops: immutable pool")
+	ErrImmutableGroup        = errors.New("serverops: immutable group")
 	ErrMissingParameter      = errors.New("serverops: missing parameter")
 	ErrEmptyRequest          = errors.New("serverops: empty request")
 	ErrEmptyRequestBody      = errors.New("serverops: empty request body")
@@ -201,7 +201,7 @@ func mapErrorToStatus(op Operation, err error) int {
 	if errors.Is(err, ErrImmutableModel) {
 		return http.StatusForbidden // 403
 	}
-	if errors.Is(err, ErrImmutablePool) {
+	if errors.Is(err, ErrImmutableGroup) {
 		return http.StatusForbidden // 403
 	}
 	if errors.Is(err, ErrMissingParameter) {

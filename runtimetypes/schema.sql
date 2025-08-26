@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS ollama_models (
     updated_at TIMESTAMP NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS llm_pool (
+CREATE TABLE IF NOT EXISTS llm_affinity_group (
     id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(512) NOT NULL UNIQUE,
     purpose_type VARCHAR(512) NOT NULL,
@@ -32,17 +32,17 @@ CREATE TABLE IF NOT EXISTS llm_backends (
     updated_at TIMESTAMP NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS llm_pool_backend_assignments (
-    pool_id VARCHAR(255) NOT NULL REFERENCES llm_pool(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS llm_affinity_group_backend_assignments (
+    group_id VARCHAR(255) NOT NULL REFERENCES llm_affinity_group(id) ON DELETE CASCADE,
     backend_id VARCHAR(255) NOT NULL REFERENCES llm_backends(id) ON DELETE CASCADE,
-    PRIMARY KEY (pool_id, backend_id),
+    PRIMARY KEY (group_id, backend_id),
     assigned_at TIMESTAMP NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS ollama_model_assignments (
     model_id VARCHAR(255) NOT NULL REFERENCES ollama_models(id) ON DELETE CASCADE,
-    llm_pool_id VARCHAR(255) NOT NULL REFERENCES llm_pool(id) ON DELETE CASCADE,
-    PRIMARY KEY (model_id, llm_pool_id),
+    llm_group_id VARCHAR(255) NOT NULL REFERENCES llm_affinity_group(id) ON DELETE CASCADE,
+    PRIMARY KEY (model_id, llm_group_id),
 
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL

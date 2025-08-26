@@ -27,8 +27,8 @@ type downloadManager struct {
 //
 // Returns a list of models waiting to be downloaded.
 // Downloading models is only supported for ollama backends.
-// If pools are enabled, models will only be downloaded to backends
-// that are associated with at least one pool.
+// If groups are enabled, models will only be downloaded to backends
+// that are associated with at least one group.
 func (s *downloadManager) getQueue(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

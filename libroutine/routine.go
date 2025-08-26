@@ -59,7 +59,7 @@ var ErrCircuitOpen = errors.New("circuit breaker is open")
 // Routine implements a circuit breaker pattern to protect functions from repeated failures.
 // It tracks failures, opens the circuit when a threshold is reached, and attempts
 // to reset automatically after a timeout (via the HalfOpen state).
-// Routines are typically managed by the Pool but can be used standalone if needed.
+// Routines are typically managed by the group but can be used standalone if needed.
 type Routine struct {
 	mu            sync.Mutex    // Protects access to the fields below
 	state         State         // Current state (Closed, Open, HalfOpen)
@@ -169,7 +169,7 @@ func (rm *Routine) MarkFailure() {
 // Use this method when you need to protect a single, on-demand operation
 // with circuit breaking, without requiring automatic looping or retries.
 // For automatic retries, see `ExecuteWithRetry`. For recurring background tasks,
-// see `Pool.StartLoop` or `Routine.Loop`.
+// see `group.StartLoop` or `Routine.Loop`.
 func (rm *Routine) Execute(ctx context.Context, fn func(ctx context.Context) error) error {
 	if !rm.Allow() {
 		// log.Println("Execution denied: Circuit breaker is open")
@@ -219,7 +219,7 @@ func (rm *Routine) ExecuteWithRetry(ctx context.Context, interval time.Duration,
 }
 
 // Loop continuously executes the function `fn` based on the circuit breaker state
-// and a timer or trigger channel. This is the core execution logic used by `Pool.StartLoop`.
+// and a timer or trigger channel. This is the core execution logic used by `group.StartLoop`.
 //
 // The loop runs `Execute(fn)`:
 // 1. Immediately when the loop starts.
@@ -230,7 +230,7 @@ func (rm *Routine) ExecuteWithRetry(ctx context.Context, interval time.Duration,
 // Parameters:
 //   - ctx: Context for cancellation. The loop terminates when ctx is done.
 //   - interval: The duration between scheduled executions when the circuit allows.
-//   - triggerChan: A channel used to force immediate execution attempts (e.g., via `Pool.ForceUpdate`). Reads are non-blocking.
+//   - triggerChan: A channel used to force immediate execution attempts (e.g., via `group.ForceUpdate`). Reads are non-blocking.
 //   - fn: The function to execute in each cycle.
 //   - errHandling: A callback function invoked when `Execute(fn)` returns an error.
 //     Use this for logging or custom error handling specific to the loop runner.
@@ -306,7 +306,7 @@ func (rm *Routine) GetResetTimeout() time.Duration {
 // 'Closed' state, resetting any tracked failures.
 // This is useful for manual intervention or resetting state during tests.
 // If no routine manager exists for the key, this function does nothing.
-func (p *Pool) ResetRoutine(key string) {
+func (p *group) ResetRoutine(key string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if manager, exists := p.managers[key]; exists {

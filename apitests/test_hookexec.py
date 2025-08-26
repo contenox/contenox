@@ -6,14 +6,14 @@ from conftest import MOCK_HOOK_RESPONSE
 def test_hook_task_in_chain(
     base_url,
     with_ollama_backend,
-    create_model_and_assign_to_pool,
-    create_backend_and_assign_to_pool,
+    create_model_and_assign_to_group,
+    create_backend_and_assign_to_group,
     wait_for_model_in_backend,
     mock_hook_server
 ):
     # Setup model and backend
-    model_info = create_model_and_assign_to_pool
-    backend_info = create_backend_and_assign_to_pool
+    model_info = create_model_and_assign_to_group
+    backend_info = create_backend_and_assign_to_group
     model_name = model_info["model_name"]
     backend_id = backend_info["backend_id"]
     _ = wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)

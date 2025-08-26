@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.64
+title: contenox/runtime – LLM Backend Management API v0.0.51-82-g6bf2d9b-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.64</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-82-g6bf2d9b-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -25,7 +25,7 @@ headingLevel: 2
 
 <h1 id="contenox-runtime-llm-backend-management-api-default">Default</h1>
 
-## Lists all pools that a specific backend belongs to.
+## Lists all affinity groups that a specific backend belongs to.
 
 > Code samples
 
@@ -36,18 +36,18 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.get('/backend-associations/{backendID}/pools', headers = headers)
+r = requests.get('/backend-affinity/{backendID}/groups', headers = headers)
 
 print(r.json())
 
 ```
 
-`GET /backend-associations/{backendID}/pools`
+`GET /backend-affinity/{backendID}/groups`
 
-Lists all pools that a specific backend belongs to.
+Lists all affinity groups that a specific backend belongs to.
 Useful for understanding which model sets a backend has access to.
 
-<h3 id="lists-all-pools-that-a-specific-backend-belongs-to.-parameters">Parameters</h3>
+<h3 id="lists-all-affinity-groups-that-a-specific-backend-belongs-to.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -69,11 +69,11 @@ Useful for understanding which model sets a backend has access to.
 ]
 ```
 
-<h3 id="lists-all-pools-that-a-specific-backend-belongs-to.-responses">Responses</h3>
+<h3 id="lists-all-affinity-groups-that-a-specific-backend-belongs-to.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_Pool](#schemaarray_runtimetypes_pool)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_AffinityGroup](#schemaarray_runtimetypes_affinitygroup)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -81,7 +81,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Lists all backends associated with a specific pool.
+## Lists all backends associated with a specific affinity group.
 
 > Code samples
 
@@ -92,22 +92,22 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.get('/backend-associations/{poolID}/backends', headers = headers)
+r = requests.get('/backend-affinity/{groupID}/backends', headers = headers)
 
 print(r.json())
 
 ```
 
-`GET /backend-associations/{poolID}/backends`
+`GET /backend-affinity/{groupID}/backends`
 
-Lists all backends associated with a specific pool.
+Lists all backends associated with a specific affinity group.
 Returns basic backend information without runtime state.
 
-<h3 id="lists-all-backends-associated-with-a-specific-pool.-parameters">Parameters</h3>
+<h3 id="lists-all-backends-associated-with-a-specific-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|poolID|path|string|true|The unique identifier of the pool.|
+|groupID|path|string|true|The unique identifier of the affinity group.|
 
 > Example responses
 
@@ -126,7 +126,7 @@ Returns basic backend information without runtime state.
 ]
 ```
 
-<h3 id="lists-all-backends-associated-with-a-specific-pool.-responses">Responses</h3>
+<h3 id="lists-all-backends-associated-with-a-specific-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -138,7 +138,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Removes a backend from a pool.
+## Removes a backend from a affinity group.
 
 > Code samples
 
@@ -149,23 +149,23 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.delete('/backend-associations/{poolID}/backends/{backendID}', headers = headers)
+r = requests.delete('/backend-affinity/{groupID}/backends/{backendID}', headers = headers)
 
 print(r.json())
 
 ```
 
-`DELETE /backend-associations/{poolID}/backends/{backendID}`
+`DELETE /backend-affinity/{groupID}/backends/{backendID}`
 
-Removes a backend from a pool.
-After removal, the backend will no longer be eligible to process requests for models in this pool.
-Requests requiring models from this pool will no longer be routed to this backend.
+Removes a backend from a affinity group.
+After removal, the backend will no longer be eligible to process requests for models in this affinity group.
+Requests requiring models from this affinity group will no longer be routed to this backend.
 
-<h3 id="removes-a-backend-from-a-pool.-parameters">Parameters</h3>
+<h3 id="removes-a-backend-from-a-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|poolID|path|string|true|The unique identifier of the pool.|
+|groupID|path|string|true|The unique identifier of the affinity group.|
 |backendID|path|string|true|The unique identifier of the backend to be assigned.|
 
 > Example responses
@@ -176,7 +176,7 @@ Requests requiring models from this pool will no longer be routed to this backen
 "string"
 ```
 
-<h3 id="removes-a-backend-from-a-pool.-responses">Responses</h3>
+<h3 id="removes-a-backend-from-a-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -188,7 +188,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Associates a backend with a pool.
+## Associates a backend with a affinity group.
 
 > Code samples
 
@@ -199,23 +199,23 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.post('/backend-associations/{poolID}/backends/{backendID}', headers = headers)
+r = requests.post('/backend-affinity/{groupID}/backends/{backendID}', headers = headers)
 
 print(r.json())
 
 ```
 
-`POST /backend-associations/{poolID}/backends/{backendID}`
+`POST /backend-affinity/{groupID}/backends/{backendID}`
 
-Associates a backend with a pool.
-After assignment, the backend can process requests for all models in the pool.
-This enables request routing between the backend and models that share this pool.
+Associates a backend with a affinity group.
+After assignment, the backend can process requests for all models in the affinity group.
+This enables request routing between the backend and models that share this affinity group.
 
-<h3 id="associates-a-backend-with-a-pool.-parameters">Parameters</h3>
+<h3 id="associates-a-backend-with-a-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|poolID|path|string|true|The unique identifier of the pool.|
+|groupID|path|string|true|The unique identifier of the affinity group.|
 |backendID|path|string|true|The unique identifier of the backend to be assigned.|
 
 > Example responses
@@ -226,7 +226,7 @@ This enables request routing between the backend and models that share this pool
 "string"
 ```
 
-<h3 id="associates-a-backend-with-a-pool.-responses">Responses</h3>
+<h3 id="associates-a-backend-with-a-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -258,8 +258,8 @@ print(r.json())
 `GET /backends`
 
 Lists all configured backend connections with runtime status.
-NOTE: Only backends assigned to at least one pool will be used for request processing.
-Backends not assigned to any pool exist in the configuration but are completely ignored by the routing system.
+NOTE: Only backends assigned to at least one group will be used for request processing.
+Backends not assigned to any group exist in the configuration but are completely ignored by the routing system.
 
 <h3 id="lists-all-configured-backend-connections-with-runtime-status.-parameters">Parameters</h3>
 
@@ -652,8 +652,8 @@ print(r.json())
 
 Generates vector embeddings for text.
 Uses the system's default embedding model configured at startup.
-Requests are routed ONLY to backends that have the default model available in any shared pool.
-If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+Requests are routed ONLY to backends that have the default model available in any shared group.
+If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
 
 > Body parameter
 
@@ -713,8 +713,8 @@ print(r.json())
 
 Runs the prompt through the default LLM.
 This endpoint provides basic chat completion optimized for machine-to-machine (M2M) communication.
-Requests are routed ONLY to backends that have the default model available in any shared pool.
-If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+Requests are routed ONLY to backends that have the default model available in any shared group.
+If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
 
 > Body parameter
 
@@ -755,6 +755,412 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## Retrieves a affinity group by its human-readable name.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/group-by-name/{name}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /group-by-name/{name}`
+
+Retrieves a affinity group by its human-readable name.
+Useful for configuration where ID might not be known but name is consistent.
+
+<h3 id="retrieves-a-affinity-group-by-its-human-readable-name.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|name|path|string|true|The unique, human-readable name of the affinity group.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+  "name": "production-chat",
+  "purposeType": "Internal Tasks",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="retrieves-a-affinity-group-by-its-human-readable-name.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_AffinityGroup](#schemaruntimetypes_affinitygroup)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists groups filtered by purpose type with pagination support.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/group-by-purpose/{purpose}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /group-by-purpose/{purpose}`
+
+Lists groups filtered by purpose type with pagination support.
+Purpose types categorize groups (e.g., "Internal Embeddings", "Internal Tasks").
+Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
+
+<h3 id="lists-groups-filtered-by-purpose-type-with-pagination-support.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|purpose|path|string|true|The purpose category to filter groups by (e.g., 'embeddings').|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "createdAt": "2023-11-15T14:30:45Z",
+    "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+    "name": "production-chat",
+    "purposeType": "Internal Tasks",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+```
+
+<h3 id="lists-groups-filtered-by-purpose-type-with-pagination-support.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_AffinityGroup](#schemaarray_runtimetypes_affinitygroup)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists all affinity groups in the system.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/groups', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /groups`
+
+Lists all affinity groups in the system.
+Returns basic group information without associated backends or models.
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "createdAt": "2023-11-15T14:30:45Z",
+    "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+    "name": "production-chat",
+    "purposeType": "Internal Tasks",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+```
+
+<h3 id="lists-all-affinity-groups-in-the-system.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_AffinityGroup](#schemaarray_runtimetypes_affinitygroup)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Creates a new affinity group for organizing backends and models.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/groups', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /groups`
+
+Creates a new affinity group for organizing backends and models.
+group names must be unique within the system.
+groups allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).
+When affinity groups are enabled in the system, request routing ONLY considers resources that share a affinity group.
+- Models not assigned to any group will NOT be available for execution
+- Backends not assigned to any group will NOT receive models or process requests
+- Resources must be explicitly associated with the same group to work together
+This is a fundamental operational requirement - resources outside groups are effectively invisible to the routing system.
+
+> Body parameter
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+  "name": "production-chat",
+  "purposeType": "Internal Tasks",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="creates-a-new-affinity-group-for-organizing-backends-and-models.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[runtimetypes_AffinityGroup](#schemaruntimetypes_affinitygroup)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+  "name": "production-chat",
+  "purposeType": "Internal Tasks",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="creates-a-new-affinity-group-for-organizing-backends-and-models.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[runtimetypes_AffinityGroup](#schemaruntimetypes_affinitygroup)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Removes an affinity group from the system.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/groups/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /groups/{id}`
+
+Removes an affinity group from the system.
+This does not delete the group's backends or models, only the group relationship.
+Returns a simple "deleted" confirmation message on success.
+
+<h3 id="removes-an-affinity-group-from-the-system.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|The unique identifier of the affinity group.|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="removes-an-affinity-group-from-the-system.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves a specific affinity group by its unique ID.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/groups/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /groups/{id}`
+
+Retrieves a specific affinity group by its unique ID.
+
+<h3 id="retrieves-a-specific-affinity-group-by-its-unique-id.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|The unique identifier of the affinity group.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+  "name": "production-chat",
+  "purposeType": "Internal Tasks",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="retrieves-a-specific-affinity-group-by-its-unique-id.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_AffinityGroup](#schemaruntimetypes_affinitygroup)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Updates an existing affinity group configuration.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/groups/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /groups/{id}`
+
+Updates an existing affinity group configuration.
+The ID from the URL path overrides any ID in the request body.
+
+> Body parameter
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+  "name": "production-chat",
+  "purposeType": "Internal Tasks",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="updates-an-existing-affinity-group-configuration.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[runtimetypes_AffinityGroup](#schemaruntimetypes_affinitygroup)|true|none|
+|id|path|string|true|The unique identifier of the affinity group.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+  "name": "production-chat",
+  "purposeType": "Internal Tasks",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="updates-an-existing-affinity-group-configuration.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_AffinityGroup](#schemaruntimetypes_affinitygroup)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Lists all configured remote hooks with pagination support.
 
 > Code samples
@@ -780,8 +1186,8 @@ Lists all configured remote hooks with pagination support.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -1086,8 +1492,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1121,7 +1527,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Lists all pools that a specific model belongs to.
+## Lists all models associated with a specific affinity group.
 
 > Code samples
 
@@ -1132,78 +1538,22 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.get('/model-associations/{modelID}/pools', headers = headers)
+r = requests.get('/model-affinity/{groupID}/models', headers = headers)
 
 print(r.json())
 
 ```
 
-`GET /model-associations/{modelID}/pools`
+`GET /model-affinity/{groupID}/models`
 
-Lists all pools that a specific model belongs to.
-Useful for understanding where a model is deployed across the system.
-
-<h3 id="lists-all-pools-that-a-specific-model-belongs-to.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|modelID|path|string|true|The unique identifier of the model.|
-
-> Example responses
-
-> 200 Response
-
-```json
-[
-  {
-    "createdAt": "2023-11-15T14:30:45Z",
-    "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-    "name": "production-chat",
-    "purposeType": "Internal Tasks",
-    "updatedAt": "2023-11-15T14:30:45Z"
-  }
-]
-```
-
-<h3 id="lists-all-pools-that-a-specific-model-belongs-to.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_Pool](#schemaarray_runtimetypes_pool)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## Lists all models associated with a specific pool.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.get('/model-associations/{poolID}/models', headers = headers)
-
-print(r.json())
-
-```
-
-`GET /model-associations/{poolID}/models`
-
-Lists all models associated with a specific pool.
+Lists all models associated with a specific affinity group.
 Returns basic model information without backend-specific details.
 
-<h3 id="lists-all-models-associated-with-a-specific-pool.-parameters">Parameters</h3>
+<h3 id="lists-all-models-associated-with-a-specific-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|poolID|path|string|true|The unique identifier of the pool.|
+|groupID|path|string|true|The unique identifier of the affinity group.|
 
 > Example responses
 
@@ -1225,7 +1575,7 @@ Returns basic model information without backend-specific details.
 ]
 ```
 
-<h3 id="lists-all-models-associated-with-a-specific-pool.-responses">Responses</h3>
+<h3 id="lists-all-models-associated-with-a-specific-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -1237,7 +1587,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Removes a model from a pool.
+## Removes a model from a affinity group.
 
 > Code samples
 
@@ -1248,23 +1598,23 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.delete('/model-associations/{poolID}/models/{modelID}', headers = headers)
+r = requests.delete('/model-affinity/{groupID}/models/{modelID}', headers = headers)
 
 print(r.json())
 
 ```
 
-`DELETE /model-associations/{poolID}/models/{modelID}`
+`DELETE /model-affinity/{groupID}/models/{modelID}`
 
-Removes a model from a pool.
-After removal, requests for this model will no longer be routed to backends in this pool.
-This model can still be used with backends in other pools where it remains assigned.
+Removes a model from a affinity group.
+After removal, requests for this model will no longer be routed to backends in this affinity group.
+This model can still be used with backends in other groups where it remains assigned.
 
-<h3 id="removes-a-model-from-a-pool.-parameters">Parameters</h3>
+<h3 id="removes-a-model-from-a-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|poolID|path|string|true|The unique identifier of the pool.|
+|groupID|path|string|true|The unique identifier of the affinity group.|
 |modelID|path|string|true|The unique identifier of the model to be assigned.|
 
 > Example responses
@@ -1275,7 +1625,7 @@ This model can still be used with backends in other pools where it remains assig
 "string"
 ```
 
-<h3 id="removes-a-model-from-a-pool.-responses">Responses</h3>
+<h3 id="removes-a-model-from-a-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -1287,7 +1637,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Associates a model with a pool.
+## Associates a model with a affinity group.
 
 > Code samples
 
@@ -1298,23 +1648,23 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.post('/model-associations/{poolID}/models/{modelID}', headers = headers)
+r = requests.post('/model-affinity/{groupID}/models/{modelID}', headers = headers)
 
 print(r.json())
 
 ```
 
-`POST /model-associations/{poolID}/models/{modelID}`
+`POST /model-affinity/{groupID}/models/{modelID}`
 
-Associates a model with a pool.
-After assignment, requests for this model can be routed to any backend in the pool.
-This enables request routing between the model and backends that share this pool.
+Associates a model with a affinity group.
+After assignment, requests for this model can be routed to any backend in the affinity group.
+This enables request routing between the model and backends that share this affinity group.
 
-<h3 id="associates-a-model-with-a-pool.-parameters">Parameters</h3>
+<h3 id="associates-a-model-with-a-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|poolID|path|string|true|The unique identifier of the pool.|
+|groupID|path|string|true|The unique identifier of the affinity group.|
 |modelID|path|string|true|The unique identifier of the model to be assigned.|
 
 > Example responses
@@ -1325,11 +1675,67 @@ This enables request routing between the model and backends that share this pool
 "string"
 ```
 
-<h3 id="associates-a-model-with-a-pool.-responses">Responses</h3>
+<h3 id="associates-a-model-with-a-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists all affinity groups that a specific model belongs to.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/model-affinity/{modelID}/groups', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /model-affinity/{modelID}/groups`
+
+Lists all affinity groups that a specific model belongs to.
+Useful for understanding where a model is deployed across the system.
+
+<h3 id="lists-all-affinity-groups-that-a-specific-model-belongs-to.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|modelID|path|string|true|The unique identifier of the model.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "createdAt": "2023-11-15T14:30:45Z",
+    "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+    "name": "production-chat",
+    "purposeType": "Internal Tasks",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+```
+
+<h3 id="lists-all-affinity-groups-that-a-specific-model-belongs-to.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_AffinityGroup](#schemaarray_runtimetypes_affinitygroup)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -1358,8 +1764,8 @@ print(r.json())
 
 Lists all registered models in OpenAI-compatible format.
 Returns models as they would appear in OpenAI's /v1/models endpoint.
-NOTE: Only models assigned to at least one pool will be available for request processing.
-Models not assigned to any pool exist in the configuration but are completely ignored by the routing system.
+NOTE: Only models assigned to at least one group will be available for request processing.
+Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
 
 <h3 id="lists-all-registered-models-in-openai-compatible-format.-parameters">Parameters</h3>
 
@@ -1415,8 +1821,8 @@ print(r.json())
 
 Declares a new model to the system.
 The model must be available in a configured backend or will be queued for download.
-IMPORTANT: Models not assigned to any pool will NOT be available for request processing.
-If pools are enabled, to make a model available to backends, it must be explicitly added to at least one pool.
+IMPORTANT: Models not assigned to any group will NOT be available for request processing.
+If groups are enabled, to make a model available to backends, it must be explicitly added to at least one group.
 
 > Body parameter
 
@@ -1598,412 +2004,6 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Retrieves a pool by its human-readable name.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.get('/pool-by-name/{name}', headers = headers)
-
-print(r.json())
-
-```
-
-`GET /pool-by-name/{name}`
-
-Retrieves a pool by its human-readable name.
-Useful for configuration where ID might not be known but name is consistent.
-
-<h3 id="retrieves-a-pool-by-its-human-readable-name.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|name|path|string|true|The unique, human-readable name of the pool.|
-
-> Example responses
-
-> 200 Response
-
-```json
-{
-  "createdAt": "2023-11-15T14:30:45Z",
-  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-  "name": "production-chat",
-  "purposeType": "Internal Tasks",
-  "updatedAt": "2023-11-15T14:30:45Z"
-}
-```
-
-<h3 id="retrieves-a-pool-by-its-human-readable-name.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_Pool](#schemaruntimetypes_pool)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## Lists pools filtered by purpose type with pagination support.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.get('/pool-by-purpose/{purpose}', headers = headers)
-
-print(r.json())
-
-```
-
-`GET /pool-by-purpose/{purpose}`
-
-Lists pools filtered by purpose type with pagination support.
-Purpose types categorize pools (e.g., "Internal Embeddings", "Internal Tasks").
-Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
-
-<h3 id="lists-pools-filtered-by-purpose-type-with-pagination-support.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
-|purpose|path|string|true|The purpose category to filter pools by (e.g., 'embeddings').|
-
-> Example responses
-
-> 200 Response
-
-```json
-[
-  {
-    "createdAt": "2023-11-15T14:30:45Z",
-    "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-    "name": "production-chat",
-    "purposeType": "Internal Tasks",
-    "updatedAt": "2023-11-15T14:30:45Z"
-  }
-]
-```
-
-<h3 id="lists-pools-filtered-by-purpose-type-with-pagination-support.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_Pool](#schemaarray_runtimetypes_pool)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## Lists all resource pools in the system.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.get('/pools', headers = headers)
-
-print(r.json())
-
-```
-
-`GET /pools`
-
-Lists all resource pools in the system.
-Returns basic pool information without associated backends or models.
-
-> Example responses
-
-> 200 Response
-
-```json
-[
-  {
-    "createdAt": "2023-11-15T14:30:45Z",
-    "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-    "name": "production-chat",
-    "purposeType": "Internal Tasks",
-    "updatedAt": "2023-11-15T14:30:45Z"
-  }
-]
-```
-
-<h3 id="lists-all-resource-pools-in-the-system.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_Pool](#schemaarray_runtimetypes_pool)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## Creates a new resource pool for organizing backends and models.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Content-Type': 'application/json',
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.post('/pools', headers = headers)
-
-print(r.json())
-
-```
-
-`POST /pools`
-
-Creates a new resource pool for organizing backends and models.
-Pool names must be unique within the system.
-Pools allow grouping of backends and models for specific operational purposes (e.g., embeddings, tasks).
-When pools are configured in the system, request routing ONLY considers resources that share a pool.
-- Models not assigned to any pool will NOT be available for execution
-- Backends not assigned to any pool will NOT receive models or process requests
-- Resources must be explicitly associated with the same pool to work together
-This is a fundamental operational requirement - resources outside pools are effectively invisible to the routing system.
-
-> Body parameter
-
-```json
-{
-  "createdAt": "2023-11-15T14:30:45Z",
-  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-  "name": "production-chat",
-  "purposeType": "Internal Tasks",
-  "updatedAt": "2023-11-15T14:30:45Z"
-}
-```
-
-<h3 id="creates-a-new-resource-pool-for-organizing-backends-and-models.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|body|body|[runtimetypes_Pool](#schemaruntimetypes_pool)|true|none|
-
-> Example responses
-
-> 201 Response
-
-```json
-{
-  "createdAt": "2023-11-15T14:30:45Z",
-  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-  "name": "production-chat",
-  "purposeType": "Internal Tasks",
-  "updatedAt": "2023-11-15T14:30:45Z"
-}
-```
-
-<h3 id="creates-a-new-resource-pool-for-organizing-backends-and-models.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[runtimetypes_Pool](#schemaruntimetypes_pool)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## Removes a pool from the system.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.delete('/pools/{id}', headers = headers)
-
-print(r.json())
-
-```
-
-`DELETE /pools/{id}`
-
-Removes a pool from the system.
-This does not deletePool associated backends or models, only the pool relationship.
-Returns a simple "deleted" confirmation message on success.
-
-<h3 id="removes-a-pool-from-the-system.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|id|path|string|true|The unique identifier of the pool.|
-
-> Example responses
-
-> 200 Response
-
-```json
-"string"
-```
-
-<h3 id="removes-a-pool-from-the-system.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## Retrieves a specific pool by its unique ID.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.get('/pools/{id}', headers = headers)
-
-print(r.json())
-
-```
-
-`GET /pools/{id}`
-
-Retrieves a specific pool by its unique ID.
-
-<h3 id="retrieves-a-specific-pool-by-its-unique-id.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|id|path|string|true|The unique identifier of the pool.|
-
-> Example responses
-
-> 200 Response
-
-```json
-{
-  "createdAt": "2023-11-15T14:30:45Z",
-  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-  "name": "production-chat",
-  "purposeType": "Internal Tasks",
-  "updatedAt": "2023-11-15T14:30:45Z"
-}
-```
-
-<h3 id="retrieves-a-specific-pool-by-its-unique-id.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_Pool](#schemaruntimetypes_pool)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## Updates an existing pool configuration.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Content-Type': 'application/json',
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.put('/pools/{id}', headers = headers)
-
-print(r.json())
-
-```
-
-`PUT /pools/{id}`
-
-Updates an existing pool configuration.
-The ID from the URL path overrides any ID in the request body.
-
-> Body parameter
-
-```json
-{
-  "createdAt": "2023-11-15T14:30:45Z",
-  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-  "name": "production-chat",
-  "purposeType": "Internal Tasks",
-  "updatedAt": "2023-11-15T14:30:45Z"
-}
-```
-
-<h3 id="updates-an-existing-pool-configuration.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|body|body|[runtimetypes_Pool](#schemaruntimetypes_pool)|true|none|
-|id|path|string|true|The unique identifier of the pool.|
-
-> Example responses
-
-> 200 Response
-
-```json
-{
-  "createdAt": "2023-11-15T14:30:45Z",
-  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-  "name": "production-chat",
-  "purposeType": "Internal Tasks",
-  "updatedAt": "2023-11-15T14:30:45Z"
-}
-```
-
-<h3 id="updates-an-existing-pool-configuration.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_Pool](#schemaruntimetypes_pool)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
 ## Lists all configured external providers with pagination support.
 
 > Code samples
@@ -2177,8 +2177,8 @@ print(r.json())
 Retrieves the current model download queue state.
 Returns a list of models waiting to be downloaded.
 Downloading models is only supported for ollama backends.
-If pools are enabled, models will only be downloaded to backends
-that are associated with at least one pool.
+If groups are enabled, models will only be downloaded to backends
+that are associated with at least one group.
 
 > Example responses
 
@@ -2385,7 +2385,7 @@ print(r.json())
 Retrieves the current runtime state of all LLM backends.
 Includes connection status, loaded models, and error information.
 NOTE: This shows the physical state of backends, but the routing system only considers
-backends and models that are assigned to the same pool. Resources not in pools are ignored
+backends and models that are assigned to the same group. Resources not in groups are ignored
 for request processing even if they appear in this response.
 
 > Example responses
@@ -3005,8 +3005,8 @@ print(r.json())
 Executes dynamic task-chain workflows.
 Task-chains are state-machine workflows (DAGs) with conditional branches,
 external hooks, and captured execution state.
-Requests are routed ONLY to backends that have the requested model available in any shared pool.
-If pools are enabled, models and backends not assigned to any pool will be completely ignored by the routing system.
+Requests are routed ONLY to backends that have the requested model available in any shared group.
+If groups are enabled, models and backends not assigned to any group will be completely ignored by the routing system.
 
 > Body parameter
 
@@ -3314,6 +3314,32 @@ X-API-Key
 |---|---|---|---|---|
 |*anonymous*|[[runtimestate_ProviderConfig](#schemaruntimestate_providerconfig)]|false|none|none|
 
+<h2 id="tocS_array_runtimetypes_AffinityGroup">array_runtimetypes_AffinityGroup</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_runtimetypes_affinitygroup"></a>
+<a id="schema_array_runtimetypes_AffinityGroup"></a>
+<a id="tocSarray_runtimetypes_affinitygroup"></a>
+<a id="tocsarray_runtimetypes_affinitygroup"></a>
+
+```json
+[
+  {
+    "createdAt": "2023-11-15T14:30:45Z",
+    "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+    "name": "production-chat",
+    "purposeType": "Internal Tasks",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[runtimetypes_AffinityGroup](#schemaruntimetypes_affinitygroup)]|false|none|none|
+
 <h2 id="tocS_array_runtimetypes_Backend">array_runtimetypes_Backend</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_runtimetypes_backend"></a>
@@ -3370,32 +3396,6 @@ X-API-Key
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |*anonymous*|[[runtimetypes_Model](#schemaruntimetypes_model)]|false|none|none|
-
-<h2 id="tocS_array_runtimetypes_Pool">array_runtimetypes_Pool</h2>
-<!-- backwards compatibility -->
-<a id="schemaarray_runtimetypes_pool"></a>
-<a id="schema_array_runtimetypes_Pool"></a>
-<a id="tocSarray_runtimetypes_pool"></a>
-<a id="tocsarray_runtimetypes_pool"></a>
-
-```json
-[
-  {
-    "createdAt": "2023-11-15T14:30:45Z",
-    "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-    "name": "production-chat",
-    "purposeType": "Internal Tasks",
-    "updatedAt": "2023-11-15T14:30:45Z"
-  }
-]
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|*anonymous*|[[runtimetypes_Pool](#schemaruntimetypes_pool)]|false|none|none|
 
 <h2 id="tocS_array_runtimetypes_RemoteHook">array_runtimetypes_RemoteHook</h2>
 <!-- backwards compatibility -->
@@ -3954,6 +3954,34 @@ X-API-Key
 |APIKey|string|true|none|none|
 |Type|string|true|none|none|
 
+<h2 id="tocS_runtimetypes_AffinityGroup">runtimetypes_AffinityGroup</h2>
+<!-- backwards compatibility -->
+<a id="schemaruntimetypes_affinitygroup"></a>
+<a id="schema_runtimetypes_AffinityGroup"></a>
+<a id="tocSruntimetypes_affinitygroup"></a>
+<a id="tocsruntimetypes_affinitygroup"></a>
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
+  "name": "production-chat",
+  "purposeType": "Internal Tasks",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|createdAt|string(date-time)|true|none|none|
+|id|string|true|none|none|
+|name|string|true|none|none|
+|purposeType|string|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
+
 <h2 id="tocS_runtimetypes_Backend">runtimetypes_Backend</h2>
 <!-- backwards compatibility -->
 <a id="schemaruntimetypes_backend"></a>
@@ -4018,34 +4046,6 @@ X-API-Key
 |createdAt|string(date-time)|true|none|none|
 |id|string|true|none|none|
 |model|string|true|none|none|
-|updatedAt|string(date-time)|true|none|none|
-
-<h2 id="tocS_runtimetypes_Pool">runtimetypes_Pool</h2>
-<!-- backwards compatibility -->
-<a id="schemaruntimetypes_pool"></a>
-<a id="schema_runtimetypes_Pool"></a>
-<a id="tocSruntimetypes_pool"></a>
-<a id="tocsruntimetypes_pool"></a>
-
-```json
-{
-  "createdAt": "2023-11-15T14:30:45Z",
-  "id": "p9a8b7c6-d5e4-f3a2-b1c0-d9e8f7a6b5c4",
-  "name": "production-chat",
-  "purposeType": "Internal Tasks",
-  "updatedAt": "2023-11-15T14:30:45Z"
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|createdAt|string(date-time)|true|none|none|
-|id|string|true|none|none|
-|name|string|true|none|none|
-|purposeType|string|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_runtimetypes_QueueItem">runtimetypes_QueueItem</h2>

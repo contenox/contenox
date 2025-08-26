@@ -3,116 +3,116 @@ from helpers import assert_status_code
 
 import uuid
 
-def create_test_pool(base_url):
-    """Helper to create unique pool"""
-    unique_name = f"TestPool-{uuid.uuid4().hex[:8]}"
+def create_test_group(base_url):
+    """Helper to create unique group"""
+    unique_name = f"Testgroup-{uuid.uuid4().hex[:8]}"
     payload = {
         "name": unique_name,
         "purposeType": "testing"
     }
-    response = requests.post(f"{base_url}/pools", json=payload)
+    response = requests.post(f"{base_url}/groups", json=payload)
     assert_status_code(response, 201)
     return response.json()["id"]
 
-def test_create_pool(base_url):
-    pool_id = create_test_pool(base_url)
-    assert pool_id is not None
+def test_create_group(base_url):
+    group_id = create_test_group(base_url)
+    assert group_id is not None
 
-def test_get_pool(base_url):
-    pool_id = create_test_pool(base_url)
-    response = requests.get(f"{base_url}/pools/{pool_id}")
+def test_get_group(base_url):
+    group_id = create_test_group(base_url)
+    response = requests.get(f"{base_url}/groups/{group_id}")
     assert_status_code(response, 200)
-    assert response.json()["id"] == pool_id
+    assert response.json()["id"] == group_id
 
-def test_update_pool(base_url):
-    pool_id = create_test_pool(base_url)
-    new_name = f"UpdatedPool-{uuid.uuid4().hex[:8]}"
+def test_update_group(base_url):
+    group_id = create_test_group(base_url)
+    new_name = f"UpdatedGroup-{uuid.uuid4().hex[:8]}"
     update_payload = {"name": new_name}
-    response = requests.put(f"{base_url}/pools/{pool_id}", json=update_payload)
+    response = requests.put(f"{base_url}/groups/{group_id}", json=update_payload)
     assert_status_code(response, 200)
     assert response.json()["name"] == new_name
 
-def test_delete_pool(base_url):
-    pool_id = create_test_pool(base_url)
-    response = requests.delete(f"{base_url}/pools/{pool_id}")
+def test_delete_group(base_url):
+    group_id = create_test_group(base_url)
+    response = requests.delete(f"{base_url}/groups/{group_id}")
     assert_status_code(response, 200)
 
     # Verify deletion
-    response = requests.get(f"{base_url}/pools/{pool_id}")
+    response = requests.get(f"{base_url}/groups/{group_id}")
     assert_status_code(response, 404)
 
-def test_list_pools(base_url):
-    initial_response = requests.get(f"{base_url}/pools")
+def test_list_groups(base_url):
+    initial_response = requests.get(f"{base_url}/groups")
     initial_count = len(initial_response.json())
 
-    pool_id = create_test_pool(base_url)
-    response = requests.get(f"{base_url}/pools")
+    group_id = create_test_group(base_url)
+    response = requests.get(f"{base_url}/groups")
     assert_status_code(response, 200)
-    pools = response.json()
-    assert len(pools) == initial_count + 1
-    assert any(p["id"] == pool_id for p in pools)
+    groups = response.json()
+    assert len(groups) == initial_count + 1
+    assert any(p["id"] == group_id for p in groups)
 
-def test_assign_backend_to_pool(base_url, create_backend_and_assign_to_pool):
-    data = create_backend_and_assign_to_pool
+def test_assign_backend_to_group(base_url, create_backend_and_assign_to_group):
+    data = create_backend_and_assign_to_group
     backend_id = data["backend_id"]
-    pool_id = data["pool_id"]
+    group_id = data["group_id"]
 
     # Verify assignment
-    response = requests.get(f"{base_url}/backend-associations/{pool_id}/backends")
+    response = requests.get(f"{base_url}/backend-affinity/{group_id}/backends")
     assert_status_code(response, 200)
     assert any(b["id"] == backend_id for b in response.json())
 
-def test_pool_by_name(base_url):
-    """Test retrieving a pool by name"""
-    # First get all pools to find a known name
-    response = requests.get(f"{base_url}/pools")
+def test_group_by_name(base_url):
+    """Test retrieving a group by name"""
+    # First get all groups to find a known name
+    response = requests.get(f"{base_url}/groups")
     assert_status_code(response, 200)
 
-    pools = response.json()
-    if pools:
-        pool_name = pools[0]["name"]
+    groups = response.json()
+    if groups:
+        group_name = groups[0]["name"]
 
-        # Get pool by name
-        response = requests.get(f"{base_url}/pool-by-name/{pool_name}")
+        # Get group by name
+        response = requests.get(f"{base_url}/group-by-name/{group_name}")
         assert_status_code(response, 200)
 
-        pool = response.json()
-        assert pool["name"] == pool_name
+        group = response.json()
+        assert group["name"] == group_name
 
-def test_pool_by_purpose(base_url):
-    """Test filtering pools by purpose"""
-    # Get a known purpose type from existing pools
-    response = requests.get(f"{base_url}/pools")
+def test_group_by_purpose(base_url):
+    """Test filtering groups by purpose"""
+    # Get a known purpose type from existing groups
+    response = requests.get(f"{base_url}/groups")
     assert_status_code(response, 200)
 
-    pools = response.json()
-    if pools:
-        purpose_type = pools[0]["purposeType"]
+    groups = response.json()
+    if groups:
+        purpose_type = groups[0]["purposeType"]
 
         # Filter by purpose
-        response = requests.get(f"{base_url}/pool-by-purpose/{purpose_type}")
+        response = requests.get(f"{base_url}/group-by-purpose/{purpose_type}")
         assert_status_code(response, 200)
 
-        filtered_pools = response.json()
-        assert isinstance(filtered_pools, list)
-        assert all(p["purposeType"] == purpose_type for p in filtered_pools)
+        filtered_groups = response.json()
+        assert isinstance(filtered_groups, list)
+        assert all(p["purposeType"] == purpose_type for p in filtered_groups)
 
-def test_backend_pools_association(base_url, create_backend_and_assign_to_pool):
-    """Test getting pools for a backend"""
-    backend_id = create_backend_and_assign_to_pool["backend_id"]
+def test_backend_groups_association(base_url, create_backend_and_assign_to_group):
+    """Test getting groups for a backend"""
+    backend_id = create_backend_and_assign_to_group["backend_id"]
 
-    response = requests.get(f"{base_url}/backend-associations/{backend_id}/pools")
+    response = requests.get(f"{base_url}/backend-affinity/{backend_id}/groups")
     assert_status_code(response, 200)
 
-    pools = response.json()
-    assert isinstance(pools, list)
+    groups = response.json()
+    assert isinstance(groups, list)
 
-def test_model_pools_association(base_url, create_model_and_assign_to_pool):
-    """Test getting pools for a model"""
-    model_id = create_model_and_assign_to_pool["model_id"]
+def test_model_groups_association(base_url, create_model_and_assign_to_group):
+    """Test getting groups for a model"""
+    model_id = create_model_and_assign_to_group["model_id"]
 
-    response = requests.get(f"{base_url}/model-associations/{model_id}/pools")
+    response = requests.get(f"{base_url}/model-affinity/{model_id}/groups")
     assert_status_code(response, 200)
 
-    pools = response.json()
-    assert isinstance(pools, list)
+    groups = response.json()
+    assert isinstance(groups, list)

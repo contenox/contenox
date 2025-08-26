@@ -5,15 +5,15 @@ def test_parse_number_handler(
     base_url,
     with_ollama_backend,
     wait_for_declared_models,
-    create_model_and_assign_to_pool,
-    create_backend_and_assign_to_pool,
+    create_model_and_assign_to_group,
+    create_backend_and_assign_to_group,
     wait_for_model_in_backend
 ):
     """Test parse_number handler with predictable numeric response"""
     _ = with_ollama_backend
     _ = wait_for_declared_models
-    model_info = create_model_and_assign_to_pool
-    backend_info = create_backend_and_assign_to_pool
+    model_info = create_model_and_assign_to_group
+    backend_info = create_backend_and_assign_to_group
     model_name = model_info["model_name"]
     backend_id = backend_info["backend_id"]
     _ = wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)
@@ -80,15 +80,15 @@ def test_parse_range_handler(
     base_url,
     with_ollama_backend,
     wait_for_declared_models,
-    create_model_and_assign_to_pool,
-    create_backend_and_assign_to_pool,
+    create_model_and_assign_to_group,
+    create_backend_and_assign_to_group,
     wait_for_model_in_backend
 ):
     """Test parse_range handler with numeric range validation"""
     _ = with_ollama_backend
     _ = wait_for_declared_models
-    model_info = create_model_and_assign_to_pool
-    backend_info = create_backend_and_assign_to_pool
+    model_info = create_model_and_assign_to_group
+    backend_info = create_backend_and_assign_to_group
     model_name = model_info["model_name"]
     backend_id = backend_info["backend_id"]
     _ = wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)
@@ -153,15 +153,15 @@ def test_transition_operators(
     base_url,
     with_ollama_backend,
     wait_for_declared_models,
-    create_model_and_assign_to_pool,
-    create_backend_and_assign_to_pool,
+    create_model_and_assign_to_group,
+    create_backend_and_assign_to_group,
     wait_for_model_in_backend
 ):
     """Test different transition operators with predictable conditions"""
     _ = with_ollama_backend
     _ = wait_for_declared_models
-    model_info = create_model_and_assign_to_pool
-    backend_info = create_backend_and_assign_to_pool
+    model_info = create_model_and_assign_to_group
+    backend_info = create_backend_and_assign_to_group
     model_name = model_info["model_name"]
     backend_id = backend_info["backend_id"]
     _ = wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)
@@ -265,15 +265,15 @@ def test_compose_strategies(
     base_url,
     with_ollama_backend,
     wait_for_declared_models,
-    create_model_and_assign_to_pool,
-    create_backend_and_assign_to_pool,
+    create_model_and_assign_to_group,
+    create_backend_and_assign_to_group,
     wait_for_model_in_backend
 ):
     """Test different compose strategies with chat history"""
     _ = with_ollama_backend
     _ = wait_for_declared_models
-    model_info = create_model_and_assign_to_pool
-    backend_info = create_backend_and_assign_to_pool
+    model_info = create_model_and_assign_to_group
+    backend_info = create_backend_and_assign_to_group
     model_name = model_info["model_name"]
     backend_id = backend_info["backend_id"]
     _ = wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)
@@ -338,14 +338,14 @@ def test_print_statements_with_templates(
     base_url,
     with_ollama_backend,
     wait_for_declared_models,
-    create_model_and_assign_to_pool,
-    create_backend_and_assign_to_pool,
+    create_model_and_assign_to_group,
+    create_backend_and_assign_to_group,
     wait_for_model_in_backend):
     """Test print statements with template variables (verifies via logs)"""
     _ = with_ollama_backend
     _ = wait_for_declared_models
-    model_info = create_model_and_assign_to_pool
-    backend_info = create_backend_and_assign_to_pool
+    model_info = create_model_and_assign_to_group
+    backend_info = create_backend_and_assign_to_group
     model_name = model_info["model_name"]
     backend_id = backend_info["backend_id"]
     _ = wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)

@@ -2,7 +2,7 @@
 
 #
 # This script automates the entire bootstrapping process for the contenox/runtime.
-# It starts the necessary services, configures the backend and pools, and
+# It starts the necessary services, configures the backend and affinity groups, and
 # ensures the required models are downloaded and ready for use.
 #
 # Usage:
@@ -127,70 +127,70 @@ else
   success "Backend 'local-ollama' already exists with ID: $BACKEND_ID"
 fi
 
-# 5. Assign backend to default pools if not already assigned
-log "Assigning backend to default pools..."
-# Pool 1: internal_tasks_pool
-response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_tasks_pool/backends")
+# 5. Assign backend to default affinity groups if not already assigned
+log "Assigning backend to default affinity groups..."
+# group 1: internal_tasks_group
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-affinity/internal_tasks_group/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
 if [ "$http_code" -ne 200 ]; then
-    error_exit "Failed to check task pool associations. API returned status ${http_code}."
+    error_exit "Failed to check task affinity group associations. API returned status ${http_code}."
 fi
-TASK_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id')
+TASK_group_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id')
 
-if [ -z "$TASK_POOL_CHECK" ]; then
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE_URL}/backend-associations/internal_tasks_pool/backends/$BACKEND_ID")
+if [ -z "$TASK_group_CHECK" ]; then
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE_URL}/backend-affinity/internal_tasks_group/backends/$BACKEND_ID")
   if [ "$http_code" -ne 201 ] && [ "$http_code" -ne 200 ]; then
-      error_exit "Failed to assign backend to task pool. API returned status ${http_code}."
+      error_exit "Failed to assign backend to task affinity group. API returned status ${http_code}."
   fi
-  success "Assigned backend to 'internal_tasks_pool'."
+  success "Assigned backend to 'internal_tasks_group'."
 else
-  success "Backend already assigned to 'internal_tasks_pool'."
+  success "Backend already assigned to 'internal_tasks_group'."
 fi
 
-# Pool 2: internal_embed_pool
-response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_embed_pool/backends")
+# group 2: internal_embed_group
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-affinity/internal_embed_group/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
 if [ "$http_code" -ne 200 ]; then
-    error_exit "Failed to check embed pool associations. API returned status ${http_code}."
+    error_exit "Failed to check embed affinity group associations. API returned status ${http_code}."
 fi
-EMBED_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id')
+EMBED_group_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id')
 
-if [ -z "$EMBED_POOL_CHECK" ]; then
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE_URL}/backend-associations/internal_embed_pool/backends/$BACKEND_ID")
+if [ -z "$EMBED_group_CHECK" ]; then
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE_URL}/backend-affinity/internal_embed_group/backends/$BACKEND_ID")
   if [ "$http_code" -ne 201 ] && [ "$http_code" -ne 200 ]; then
-      error_exit "Failed to assign backend to embed pool. API returned status ${http_code}."
+      error_exit "Failed to assign backend to embed affinity group. API returned status ${http_code}."
   fi
-  success "Assigned backend to 'internal_embed_pool'."
+  success "Assigned backend to 'internal_embed_group'."
 else
-  success "Backend already assigned to 'internal_embed_pool'."
+  success "Backend already assigned to 'internal_embed_group'."
 fi
 
-# Pool 3: internal_chat_pool
-response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-associations/internal_chat_pool/backends")
+# group 2: internal_embed_group
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-affinity/internal_embed_group/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
 if [ "$http_code" -ne 200 ]; then
-    error_exit "Failed to check chat pool associations. API returned status ${http_code}."
+    error_exit "Failed to check embed affinity group associations. API returned status ${http_code}."
 fi
-CHAT_POOL_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id')
+CHAT_group_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id')
 
-if [ -z "$CHAT_POOL_CHECK" ]; then
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE_URL}/backend-associations/internal_chat_pool/backends/$BACKEND_ID")
+if [ -z "$CHAT_group_CHECK" ]; then
+  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${API_BASE_URL}/backend-affinity/internal_chat_group/backends/$BACKEND_ID")
   # Treat 409 (Conflict) as success since it means the backend is already assigned
   if [ "$http_code" -ne 201 ] && [ "$http_code" -ne 200 ] && [ "$http_code" -ne 409 ]; then
-      error_exit "Failed to assign backend to chat pool. API returned status ${http_code}."
+      error_exit "Failed to assign backend to chat affinity group. API returned status ${http_code}."
   fi
-  success "Assigned backend to 'internal_chat_pool'."
+  success "Assigned backend to 'internal_chat_group'."
 else
-  success "Backend already assigned to 'internal_chat_pool'."
+  success "Backend already assigned to 'internal_chat_group'."
 fi
 
 # 6. Wait for models to be downloaded
 log "Handing off to model download monitor..."
 # Ensure the wait script is executable
-log "Waiting for pool assignments to propagate..."
+log "Waiting for affinity group assignments to propagate..."
 sleep 2
 log "Handing off to model download monitor..."
 ./scripts/wait-for-models.sh "${REQUIRED_MODELS[@]}"

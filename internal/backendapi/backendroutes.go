@@ -66,8 +66,8 @@ func (b *backendManager) createBackend(w http.ResponseWriter, r *http.Request) {
 
 // Lists all configured backend connections with runtime status.
 //
-// NOTE: Only backends assigned to at least one pool will be used for request processing.
-// Backends not assigned to any pool exist in the configuration but are completely ignored by the routing system.
+// NOTE: Only backends assigned to at least one group will be used for request processing.
+// Backends not assigned to any group exist in the configuration but are completely ignored by the routing system.
 func (b *backendManager) listBackends(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

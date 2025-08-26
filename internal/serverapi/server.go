@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
@@ -21,9 +22,9 @@ import (
 	"github.com/contenox/runtime/internal/backendapi"
 	"github.com/contenox/runtime/internal/chatapi"
 	"github.com/contenox/runtime/internal/execapi"
+	"github.com/contenox/runtime/internal/groupapi"
 	"github.com/contenox/runtime/internal/hooksapi"
 	"github.com/contenox/runtime/internal/llmrepo"
-	"github.com/contenox/runtime/internal/poolapi"
 	"github.com/contenox/runtime/internal/providerapi"
 	"github.com/contenox/runtime/internal/runtimestate"
 	"github.com/contenox/runtime/internal/taskchainapi"
@@ -32,7 +33,6 @@ import (
 	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/modelservice"
-	"github.com/contenox/runtime/poolservice"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/stateservice"
 	"github.com/contenox/runtime/taskchainservice"
@@ -76,14 +76,14 @@ func New(
 	stateService := stateservice.New(state)
 	stateService = stateservice.WithActivityTracker(stateService, serveropsChainedTracker)
 	backendapi.AddBackendRoutes(mux, backendService, stateService)
-	poolservice := poolservice.New(dbInstance)
+	groupservice := affinitygroupservice.New(dbInstance)
 	backendapi.AddStateRoutes(mux, stateService)
-	poolapi.AddPoolRoutes(mux, poolservice)
-	// Get circuit breaker pool instance
-	pool := libroutine.GetPool()
+	groupapi.AddgroupRoutes(mux, groupservice)
+	// Get circuit breaker group instance
+	group := libroutine.Getgroup()
 
-	// Start managed loops using the pool
-	pool.StartLoop(
+	// Start managed loops using the group
+	group.StartLoop(
 		ctx,
 		&libroutine.LoopConfig{
 			Key:          "backendCycle",
@@ -94,7 +94,7 @@ func New(
 		},
 	)
 
-	pool.StartLoop(
+	group.StartLoop(
 		ctx,
 		&libroutine.LoopConfig{
 			Key:          "downloadCycle",
@@ -105,7 +105,7 @@ func New(
 		},
 	)
 
-	// Add this after the pool loops are started in serverapi.New
+	// Add this after the group loops are started in serverapi.New
 	triggerCh := make(chan []byte, 10)
 	err := pubsub.Publish(ctx, "trigger_cycle", []byte("trigger"))
 	if err != nil {
@@ -126,8 +126,8 @@ func New(
 					return
 				}
 				// Force immediate execution of both cycles
-				pool.ForceUpdate("backendCycle")
-				pool.ForceUpdate("downloadCycle")
+				group.ForceUpdate("backendCycle")
+				group.ForceUpdate("downloadCycle")
 			}
 		}
 	}()

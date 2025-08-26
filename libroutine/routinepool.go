@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-// Pool provides a centralized way to manage and run keyed background routines.
+// group provides a centralized way to manage and run keyed background routines.
 // It ensures that for any given key, only one instance of the associated routine's
 // loop is active at a time.
-// Access to the Pool is done via the singleton instance returned by GetPool.
-type Pool struct {
+// Access to the group is done via the singleton instance returned by Getgroup.
+type group struct {
 	managers   map[string]*Routine      // Maps keys to Routine instances
 	loops      map[string]bool          // Tracks whether a loop is active for a key
 	triggerChs map[string]chan struct{} // Per-key trigger channels for forcing an update
@@ -19,21 +19,21 @@ type Pool struct {
 }
 
 var (
-	poolInstance *Pool
-	poolOnce     sync.Once
+	groupInstance *group
+	groupOnce     sync.Once
 )
 
-// GetPool returns the singleton instance of the Pool.
-func GetPool() *Pool {
-	poolOnce.Do(func() {
-		log.Println("Initializing routine pool")
-		poolInstance = &Pool{
+// Getgroup returns the singleton instance of the group.
+func Getgroup() *group {
+	groupOnce.Do(func() {
+		log.Println("Initializing routine group")
+		groupInstance = &group{
 			managers:   make(map[string]*Routine),
 			loops:      make(map[string]bool),
 			triggerChs: make(map[string]chan struct{}),
 		}
 	})
-	return poolInstance
+	return groupInstance
 }
 
 type LoopConfig struct {
@@ -63,8 +63,8 @@ type LoopConfig struct {
 //
 //	ctx, cancel := context.WithCancel(context.Background())
 //	defer cancel() // Ensure cleanup
-//	pool := routine.GetPool()
-//	pool.StartLoop(
+//	group := routine.Getgroup()
+//	group.StartLoop(
 //	    ctx,
 //	    &LoopConfig{
 //	        Key: "my-data-processor",
@@ -80,7 +80,7 @@ type LoopConfig struct {
 //	    },
 //	)
 //	// The loop now runs in the background.
-func (p *Pool) StartLoop(ctx context.Context, cfg *LoopConfig) {
+func (p *group) StartLoop(ctx context.Context, cfg *LoopConfig) {
 	p.mu.Lock()
 	log.Printf("Starting loop for key: %s", cfg.Key)
 	defer p.mu.Unlock()
@@ -122,10 +122,10 @@ func (p *Pool) StartLoop(ctx context.Context, cfg *LoopConfig) {
 }
 
 // IsLoopActive checks if a background loop associated with the given key is
-// currently marked as active within the pool.
+// currently marked as active within the group.
 // This is primarily intended for testing or monitoring purposes.
 // Returns true if a loop is active, false otherwise.
-func (p *Pool) IsLoopActive(key string) bool {
+func (p *group) IsLoopActive(key string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.loops[key]
@@ -137,7 +137,7 @@ func (p *Pool) IsLoopActive(key string) bool {
 // until the breaker transitions to 'HalfOpen'.
 // If no loop is active for the key, or if an update is already pending (channel is full),
 // this call has no effect.
-func (p *Pool) ForceUpdate(key string) {
+func (p *group) ForceUpdate(key string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	log.Printf("Forcing update for key: %s", key)
@@ -152,7 +152,7 @@ func (p *Pool) ForceUpdate(key string) {
 }
 
 // GetManager exposes the Routine associated with a key for testing.
-func (p *Pool) GetManager(key string) *Routine {
+func (p *group) GetManager(key string) *Routine {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	log.Printf("Retrieving manager for key: %s", key)

@@ -20,18 +20,18 @@ type Config struct {
 }
 
 const (
-	EmbedPoolID   = "internal_embed_pool"
-	EmbedPoolName = "Embedder"
+	EmbedgroupID   = "internal_embed_group"
+	EmbedgroupName = "Embedder"
 )
 
 const (
-	TasksPoolID   = "internal_tasks_pool"
-	TasksPoolName = "Tasks"
+	TasksgroupID   = "internal_tasks_group"
+	TasksgroupName = "Tasks"
 )
 
 const (
-	ChatPoolID   = "internal_chat_pool"
-	ChatPoolName = "Chat"
+	ChatgroupID   = "internal_chat_group"
+	ChatgroupName = "Chat"
 )
 
 type modelCapability int
@@ -42,7 +42,7 @@ const (
 	canChat
 )
 
-// InitEmbeder initializes the embedding pool and its designated model.
+// InitEmbeder initializes the embedding group and its designated model.
 func InitEmbeder(ctx context.Context, config *Config, dbInstance libdb.DBManager, contextLen int, runtime *State) error {
 	tx, com, r, err := dbInstance.WithTransaction(ctx)
 	if err != nil {
@@ -53,21 +53,21 @@ func InitEmbeder(ctx context.Context, config *Config, dbInstance libdb.DBManager
 	if contextLen <= 0 {
 		return fmt.Errorf("invalid context length")
 	}
-	pool, err := initEmbedPool(ctx, config, tx, false)
+	group, err := initEmbedgroup(ctx, config, tx, false)
 	if err != nil {
-		return fmt.Errorf("init embed pool: %w", err)
+		return fmt.Errorf("init embed group: %w", err)
 	}
 	model, err := initEmbedModel(ctx, config, tx, contextLen)
 	if err != nil {
 		return fmt.Errorf("init embed model: %w", err)
 	}
-	if err = assignModelToPool(ctx, config, tx, model, pool); err != nil {
-		return fmt.Errorf("assign embed model to pool: %w", err)
+	if err = assignModelTogroup(ctx, config, tx, model, group); err != nil {
+		return fmt.Errorf("assign embed model to group: %w", err)
 	}
 	return com(ctx)
 }
 
-// InitPromptExec initializes the tasks pool and its designated model.
+// InitPromptExec initializes the tasks group and its designated model.
 func InitPromptExec(ctx context.Context, config *Config, dbInstance libdb.DBManager, runtime *State, contextLen int) error {
 	tx, com, r, err := dbInstance.WithTransaction(ctx)
 	if err != nil {
@@ -78,21 +78,21 @@ func InitPromptExec(ctx context.Context, config *Config, dbInstance libdb.DBMana
 	if contextLen <= 0 {
 		return fmt.Errorf("invalid context length")
 	}
-	pool, err := initTaskPool(ctx, config, tx, false)
+	group, err := initTaskgroup(ctx, config, tx, false)
 	if err != nil {
-		return fmt.Errorf("init task pool: %w", err)
+		return fmt.Errorf("init task group: %w", err)
 	}
 	model, err := initTaskModel(ctx, config, tx, contextLen)
 	if err != nil {
 		return fmt.Errorf("init task model: %w", err)
 	}
-	if err = assignModelToPool(ctx, config, tx, model, pool); err != nil {
-		return fmt.Errorf("assign task model to pool: %w", err)
+	if err = assignModelTogroup(ctx, config, tx, model, group); err != nil {
+		return fmt.Errorf("assign task model to group: %w", err)
 	}
 	return com(ctx)
 }
 
-// InitChatExec initializes the chat pool and its designated model.
+// InitChatExec initializes the chat group and its designated model.
 func InitChatExec(ctx context.Context, config *Config, dbInstance libdb.DBManager, runtime *State, contextLen int) error {
 	tx, com, r, err := dbInstance.WithTransaction(ctx)
 	if err != nil {
@@ -103,75 +103,75 @@ func InitChatExec(ctx context.Context, config *Config, dbInstance libdb.DBManage
 	if contextLen <= 0 {
 		return fmt.Errorf("invalid context length")
 	}
-	pool, err := initChatPool(ctx, config, tx, false)
+	group, err := initChatgroup(ctx, config, tx, false)
 	if err != nil {
-		return fmt.Errorf("init chat pool: %w", err)
+		return fmt.Errorf("init chat group: %w", err)
 	}
 	model, err := initChatModel(ctx, config, tx, contextLen)
 	if err != nil {
 		return fmt.Errorf("init chat model: %w", err)
 	}
-	if err = assignModelToPool(ctx, config, tx, model, pool); err != nil {
-		return fmt.Errorf("assign chat model to pool: %w", err)
+	if err = assignModelTogroup(ctx, config, tx, model, group); err != nil {
+		return fmt.Errorf("assign chat model to group: %w", err)
 	}
 	return com(ctx)
 }
 
-func initEmbedPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Pool, error) {
-	pool, err := runtimetypes.New(tx).GetPool(ctx, EmbedPoolID)
+func initEmbedgroup(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.AffinityGroup, error) {
+	group, err := runtimetypes.New(tx).GetAffinityGroup(ctx, EmbedgroupID)
 	if !created && errors.Is(err, libdb.ErrNotFound) {
-		err = runtimetypes.New(tx).CreatePool(ctx, &runtimetypes.Pool{
-			ID:          EmbedPoolID,
-			Name:        EmbedPoolName,
+		err = runtimetypes.New(tx).CreateAffinityGroup(ctx, &runtimetypes.AffinityGroup{
+			ID:          EmbedgroupID,
+			Name:        EmbedgroupName,
 			PurposeType: "Internal Embeddings",
 		})
 		if err != nil {
 			return nil, err
 		}
-		return initEmbedPool(ctx, config, tx, true)
+		return initEmbedgroup(ctx, config, tx, true)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return pool, nil
+	return group, nil
 }
 
-func initTaskPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Pool, error) {
-	pool, err := runtimetypes.New(tx).GetPool(ctx, TasksPoolID)
+func initTaskgroup(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.AffinityGroup, error) {
+	group, err := runtimetypes.New(tx).GetAffinityGroup(ctx, TasksgroupID)
 	if !created && errors.Is(err, libdb.ErrNotFound) {
-		err = runtimetypes.New(tx).CreatePool(ctx, &runtimetypes.Pool{
-			ID:          TasksPoolID,
-			Name:        TasksPoolName,
+		err = runtimetypes.New(tx).CreateAffinityGroup(ctx, &runtimetypes.AffinityGroup{
+			ID:          TasksgroupID,
+			Name:        TasksgroupName,
 			PurposeType: "Internal Tasks",
 		})
 		if err != nil {
 			return nil, err
 		}
-		return initTaskPool(ctx, config, tx, true)
+		return initTaskgroup(ctx, config, tx, true)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return pool, nil
+	return group, nil
 }
 
-func initChatPool(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.Pool, error) {
-	pool, err := runtimetypes.New(tx).GetPool(ctx, ChatPoolID)
+func initChatgroup(ctx context.Context, config *Config, tx libdb.Exec, created bool) (*runtimetypes.AffinityGroup, error) {
+	group, err := runtimetypes.New(tx).GetAffinityGroup(ctx, ChatgroupID)
 	if !created && errors.Is(err, libdb.ErrNotFound) {
-		err = runtimetypes.New(tx).CreatePool(ctx, &runtimetypes.Pool{
-			ID:          ChatPoolID,
-			Name:        ChatPoolName,
+		err = runtimetypes.New(tx).CreateAffinityGroup(ctx, &runtimetypes.AffinityGroup{
+			ID:          ChatgroupID,
+			Name:        ChatgroupName,
 			PurposeType: "Internal Chat",
 		})
 		if err != nil {
 			return nil, err
 		}
-		return initChatPool(ctx, config, tx, true)
+		return initChatgroup(ctx, config, tx, true)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return pool, nil
+	return group, nil
 }
 
 // initOrUpdateModel is a generic helper that handles the creation or update of a model.
@@ -262,9 +262,9 @@ func initChatModel(ctx context.Context, config *Config, tx libdb.Exec, contextLe
 	return initOrUpdateModel(ctx, tx, config.TenantID, config.ChatModel, contextLength, canChat)
 }
 
-func assignModelToPool(ctx context.Context, _ *Config, tx libdb.Exec, model *runtimetypes.Model, pool *runtimetypes.Pool) error {
+func assignModelTogroup(ctx context.Context, _ *Config, tx libdb.Exec, model *runtimetypes.Model, group *runtimetypes.AffinityGroup) error {
 	storeInstance := runtimetypes.New(tx)
-	models, err := storeInstance.ListModelsForPool(ctx, pool.ID)
+	models, err := storeInstance.ListModelsForAffinityGroup(ctx, group.ID)
 	if err != nil {
 		return err
 	}
@@ -273,7 +273,7 @@ func assignModelToPool(ctx context.Context, _ *Config, tx libdb.Exec, model *run
 			return nil
 		}
 	}
-	if err := storeInstance.AssignModelToPool(ctx, pool.ID, model.ID); err != nil {
+	if err := storeInstance.AssignModelToAffinityGroup(ctx, group.ID, model.ID); err != nil {
 		return err
 	}
 	return nil

@@ -31,8 +31,8 @@ type service struct {
 // Declares a new model to the system.
 //
 // The model must be available in a configured backend or will be queued for download.
-// IMPORTANT: Models not assigned to any pool will NOT be available for request processing.
-// If pools are enabled, to make a model available to backends, it must be explicitly added to at least one pool.
+// IMPORTANT: Models not assigned to any group will NOT be available for request processing.
+// If groups are enabled, to make a model available to backends, it must be explicitly added to at least one group.
 func (s *service) createModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -66,8 +66,8 @@ type OpenAICompatibleModelList struct {
 // Lists all registered models in OpenAI-compatible format.
 //
 // Returns models as they would appear in OpenAI's /v1/models endpoint.
-// NOTE: Only models assigned to at least one pool will be available for request processing.
-// Models not assigned to any pool exist in the configuration but are completely ignored by the routing system.
+// NOTE: Only models assigned to at least one group will be available for request processing.
+// Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
 func (s *service) listModels(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

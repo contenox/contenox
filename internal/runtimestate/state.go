@@ -43,22 +43,22 @@ type State struct {
 	state         sync.Map
 	psInstance    libbus.Messenger
 	dwQueue       dwqueue
-	withPools     bool
+	withgroups    bool
 	providerCache sync.Map
 }
 
 type Option func(*State)
 
-func WithPools() Option {
+func WithGroups() Option {
 	return func(s *State) {
-		s.withPools = true
+		s.withgroups = true
 	}
 }
 
 // New creates and initializes a new State manager.
 // It requires a database manager (dbInstance) to load the desired configurations
 // and a messenger instance (psInstance) for event handling and progress updates.
-// Options allow enabling experimental features like pool-based reconciliation.
+// Options allow enabling experimental features like group-based reconciliation.
 // Returns an initialized State ready for use.
 func New(ctx context.Context, dbInstance libdb.DBManager, psInstance libbus.Messenger, options ...Option) (*State, error) {
 	s := &State{
@@ -93,10 +93,10 @@ func New(ctx context.Context, dbInstance libdb.DBManager, psInstance libbus.Mess
 //
 // Consequently, this method should be called periodically by an external process
 // responsible for its scheduling and lifecycle.
-// When the pool feature is enabled via WithPools option, it uses pool-aware reconciliation.
+// When the group feature is enabled via Withgroups option, it uses group-aware reconciliation.
 func (s *State) RunBackendCycle(ctx context.Context) error {
-	if s.withPools {
-		return s.syncBackendsWithPools(ctx)
+	if s.withgroups {
+		return s.syncBackendsWithgroups(ctx)
 	}
 	return s.syncBackends(ctx)
 }
@@ -224,46 +224,46 @@ func (s *State) cleanupStaleBackends(currentIDs map[string]struct{}) error {
 	return err
 }
 
-// syncBackendsWithPools is the pool-aware reconciliation logic called by RunBackendCycle.
+// syncBackendsWithgroups is the group-aware reconciliation logic called by RunBackendCycle.
 // It:
-//  1. Fetches all configured pools from the database.
-//  2. For each pool:
+//  1. Fetches all configured groups from the database.
+//  2. For each group:
 //     a. Retrieves its associated backends and models.
 //     b. Aggregates models for each backend, collecting a unique set of all models
-//     that a backend should have based on all pools it belongs to.
+//     that a backend should have based on all groups it belongs to.
 //     c. Tracks all active backend IDs encountered.
-//  3. After processing all pools and aggregating models:
+//  3. After processing all groups and aggregating models:
 //     a. For each unique backend, processes it once with its complete aggregated set of models.
-//  4. Performs global cleanup of state entries for backends not found in any pool (those not
-//     associated with any pool).
+//  4. Performs global cleanup of state entries for backends not found in any group (those not
+//     associated with any group).
 //
-// This fixed version aggregates backend IDs across all pools before cleanup to prevent
-// premature deletion of valid cross-pool backends.
-func (s *State) syncBackendsWithPools(ctx context.Context) error {
+// This fixed version aggregates backend IDs across all groups before cleanup to prevent
+// premature deletion of valid cross-group backends.
+func (s *State) syncBackendsWithgroups(ctx context.Context) error {
 	tx := s.dbInstance.WithoutTransaction()
 	dbStore := runtimetypes.New(tx)
 
-	allPools, err := dbStore.ListAllPools(ctx)
+	allgroups, err := dbStore.ListAllAffinityGroups(ctx)
 	if err != nil {
-		return fmt.Errorf("fetching pools: %v", err)
+		return fmt.Errorf("fetching groups: %v", err)
 	}
 
 	allBackendObjects := make(map[string]*runtimetypes.Backend)
 	backendToAggregatedModels := make(map[string]map[string]*runtimetypes.Model)
 	activeBackendIDs := make(map[string]struct{})
 
-	for _, pool := range allPools {
-		poolBackends, err := dbStore.ListBackendsForPool(ctx, pool.ID)
+	for _, group := range allgroups {
+		groupBackends, err := dbStore.ListBackendsForAffinityGroup(ctx, group.ID)
 		if err != nil {
-			return fmt.Errorf("fetching backends for pool %s: %v", pool.ID, err)
+			return fmt.Errorf("fetching backends for group %s: %v", group.ID, err)
 		}
 
-		poolModels, err := dbStore.ListModelsForPool(ctx, pool.ID)
+		groupModels, err := dbStore.ListModelsForAffinityGroup(ctx, group.ID)
 		if err != nil {
-			return fmt.Errorf("fetching models for pool %s: %v", pool.ID, err)
+			return fmt.Errorf("fetching models for group %s: %v", group.ID, err)
 		}
 
-		for _, backend := range poolBackends {
+		for _, backend := range groupBackends {
 			activeBackendIDs[backend.ID] = struct{}{}
 			if _, exists := allBackendObjects[backend.ID]; !exists {
 				allBackendObjects[backend.ID] = backend
@@ -271,7 +271,7 @@ func (s *State) syncBackendsWithPools(ctx context.Context) error {
 			if _, exists := backendToAggregatedModels[backend.ID]; !exists {
 				backendToAggregatedModels[backend.ID] = make(map[string]*runtimetypes.Model)
 			}
-			for _, model := range poolModels {
+			for _, model := range groupModels {
 				backendToAggregatedModels[backend.ID][model.Model] = model
 			}
 		}
@@ -292,10 +292,10 @@ func (s *State) syncBackendsWithPools(ctx context.Context) error {
 // syncBackends is the global reconciliation logic called by RunBackendCycle.
 // It:
 // 1. Fetches all configured backends from the database
-// 2. Retrieves all models regardless of pool association
+// 2. Retrieves all models regardless of group association
 // 3. Processes each backend with the full model list
 // 4. Cleans up state entries for backends no longer present in the database
-// This version uses the shared helper methods but maintains its original non-pool
+// This version uses the shared helper methods but maintains its original non-group
 // behavior by operating on the global backend/model lists.
 func (s *State) syncBackends(ctx context.Context) error {
 	tx := s.dbInstance.WithoutTransaction()
@@ -522,7 +522,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 
 // processVLLMBackend handles the state reconciliation for a single vLLM backend.
 // Since vLLM instances typically serve a single model, we verify that the running model
-// matches one of the models assigned to the backend through its pools.
+// matches one of the models assigned to the backend through its groups.
 func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
 	// Create HTTP client with timeout
 	client := &http.Client{

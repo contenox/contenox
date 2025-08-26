@@ -170,7 +170,7 @@ graph TD
 
   * **Unified Interface**: Consistent API across providers
   * **Automatic Sync**: Models stay consistent across backends
-  * **Pool Management**: Assign backends to specific task types
+  * **Affinity Group Management**: Map models to backends for performance tiering and routing strategies
   * **Backend Resolver**: Distribute requests to backends based on resolution policies
 
 -----

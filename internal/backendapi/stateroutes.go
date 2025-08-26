@@ -21,7 +21,7 @@ type statemux struct {
 //
 // Includes connection status, loaded models, and error information.
 // NOTE: This shows the physical state of backends, but the routing system only considers
-// backends and models that are assigned to the same pool. Resources not in pools are ignored
+// backends and models that are assigned to the same group. Resources not in groups are ignored
 // for request processing even if they appear in this response.
 func (s *statemux) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
