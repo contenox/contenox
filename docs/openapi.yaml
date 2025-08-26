@@ -819,7 +819,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.62
+    version: v0.0.63
 openapi: 3.1.0
 paths:
     /{chainID}/v1/chat/completions:
