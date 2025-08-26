@@ -1150,7 +1150,7 @@
     },
     "/backend-affinity/{groupID}/backends/{backendID}": {
       "delete": {
-        "description": "Removes a backend from a affinity group.\nAfter removal, the backend will no longer be eligible to process requests for models in this affinity group.\nRequests requiring models from this affinity group will no longer be routed to this backend.",
+        "description": "Removes a backend from an affinity group.\nAfter removal, the backend will no longer be eligible to process requests for models in this affinity group.\nRequests requiring models from this affinity group will no longer be routed to this backend.",
         "responses": {
           "200": {
             "content": {
@@ -1173,7 +1173,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Removes a backend from a affinity group."
+        "summary": "Removes a backend from an affinity group."
       },
       "parameters": [
         {
@@ -1196,7 +1196,7 @@
         }
       ],
       "post": {
-        "description": "Associates a backend with a affinity group.\nAfter assignment, the backend can process requests for all models in the affinity group.\nThis enables request routing between the backend and models that share this affinity group.",
+        "description": "Associates a backend with an affinity group.\nAfter assignment, the backend can process requests for all models in the affinity group.\nThis enables request routing between the backend and models that share this affinity group.",
         "responses": {
           "201": {
             "content": {
@@ -1219,7 +1219,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Associates a backend with a affinity group."
+        "summary": "Associates a backend with an affinity group."
       }
     },
     "/backends": {
@@ -1512,7 +1512,7 @@
     },
     "/group-by-name/{name}": {
       "get": {
-        "description": "Retrieves a affinity group by its human-readable name.\nUseful for configuration where ID might not be known but name is consistent.",
+        "description": "Retrieves an affinity group by its human-readable name.\nUseful for configuration where ID might not be known but name is consistent.",
         "responses": {
           "200": {
             "content": {
@@ -1535,7 +1535,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Retrieves a affinity group by its human-readable name."
+        "summary": "Retrieves an affinity group by its human-readable name."
       },
       "parameters": [
         {
@@ -1699,7 +1699,7 @@
         "summary": "Removes an affinity group from the system."
       },
       "get": {
-        "description": "Retrieves a specific affinity group by its unique ID.",
+        "description": "Retrieves an specific affinity group by its unique ID.",
         "responses": {
           "200": {
             "content": {
@@ -1722,7 +1722,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Retrieves a specific affinity group by its unique ID."
+        "summary": "Retrieves an specific affinity group by its unique ID."
       },
       "parameters": [
         {
@@ -1961,19 +1961,19 @@
         "description": "Lists all registered models in internal format.\nThis endpoint returns full model details including timestamps and capabilities.\nIntended for administrative and debugging purposes.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -2044,7 +2044,7 @@
     },
     "/model-affinity/{groupID}/models/{modelID}": {
       "delete": {
-        "description": "Removes a model from a affinity group.\nAfter removal, requests for this model will no longer be routed to backends in this affinity group.\nThis model can still be used with backends in other groups where it remains assigned.",
+        "description": "Removes a model from an affinity group.\nAfter removal, requests for this model will no longer be routed to backends in this affinity group.\nThis model can still be used with backends in other groups where it remains assigned.",
         "responses": {
           "200": {
             "content": {
@@ -2067,7 +2067,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Removes a model from a affinity group."
+        "summary": "Removes a model from an affinity group."
       },
       "parameters": [
         {
@@ -2090,7 +2090,7 @@
         }
       ],
       "post": {
-        "description": "Associates a model with a affinity group.\nAfter assignment, requests for this model can be routed to any backend in the affinity group.\nThis enables request routing between the model and backends that share this affinity group.",
+        "description": "Associates a model with an affinity group.\nAfter assignment, requests for this model can be routed to any backend in the affinity group.\nThis enables request routing between the model and backends that share this affinity group.",
         "responses": {
           "200": {
             "content": {
@@ -2113,7 +2113,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Associates a model with a affinity group."
+        "summary": "Associates a model with an affinity group."
       }
     },
     "/model-affinity/{modelID}/groups": {

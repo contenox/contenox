@@ -138,7 +138,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Removes a backend from a affinity group.
+## Removes a backend from an affinity group.
 
 > Code samples
 
@@ -157,11 +157,11 @@ print(r.json())
 
 `DELETE /backend-affinity/{groupID}/backends/{backendID}`
 
-Removes a backend from a affinity group.
+Removes a backend from an affinity group.
 After removal, the backend will no longer be eligible to process requests for models in this affinity group.
 Requests requiring models from this affinity group will no longer be routed to this backend.
 
-<h3 id="removes-a-backend-from-a-affinity-group.-parameters">Parameters</h3>
+<h3 id="removes-a-backend-from-an-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -176,7 +176,7 @@ Requests requiring models from this affinity group will no longer be routed to t
 "string"
 ```
 
-<h3 id="removes-a-backend-from-a-affinity-group.-responses">Responses</h3>
+<h3 id="removes-a-backend-from-an-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -188,7 +188,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Associates a backend with a affinity group.
+## Associates a backend with an affinity group.
 
 > Code samples
 
@@ -207,11 +207,11 @@ print(r.json())
 
 `POST /backend-affinity/{groupID}/backends/{backendID}`
 
-Associates a backend with a affinity group.
+Associates a backend with an affinity group.
 After assignment, the backend can process requests for all models in the affinity group.
 This enables request routing between the backend and models that share this affinity group.
 
-<h3 id="associates-a-backend-with-a-affinity-group.-parameters">Parameters</h3>
+<h3 id="associates-a-backend-with-an-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -226,7 +226,7 @@ This enables request routing between the backend and models that share this affi
 "string"
 ```
 
-<h3 id="associates-a-backend-with-a-affinity-group.-responses">Responses</h3>
+<h3 id="associates-a-backend-with-an-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -755,7 +755,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Retrieves a affinity group by its human-readable name.
+## Retrieves an affinity group by its human-readable name.
 
 > Code samples
 
@@ -774,10 +774,10 @@ print(r.json())
 
 `GET /group-by-name/{name}`
 
-Retrieves a affinity group by its human-readable name.
+Retrieves an affinity group by its human-readable name.
 Useful for configuration where ID might not be known but name is consistent.
 
-<h3 id="retrieves-a-affinity-group-by-its-human-readable-name.-parameters">Parameters</h3>
+<h3 id="retrieves-an-affinity-group-by-its-human-readable-name.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -797,7 +797,7 @@ Useful for configuration where ID might not be known but name is consistent.
 }
 ```
 
-<h3 id="retrieves-a-affinity-group-by-its-human-readable-name.-responses">Responses</h3>
+<h3 id="retrieves-an-affinity-group-by-its-human-readable-name.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -1040,7 +1040,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Retrieves a specific affinity group by its unique ID.
+## Retrieves an specific affinity group by its unique ID.
 
 > Code samples
 
@@ -1059,9 +1059,9 @@ print(r.json())
 
 `GET /groups/{id}`
 
-Retrieves a specific affinity group by its unique ID.
+Retrieves an specific affinity group by its unique ID.
 
-<h3 id="retrieves-a-specific-affinity-group-by-its-unique-id.-parameters">Parameters</h3>
+<h3 id="retrieves-an-specific-affinity-group-by-its-unique-id.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -1081,7 +1081,7 @@ Retrieves a specific affinity group by its unique ID.
 }
 ```
 
-<h3 id="retrieves-a-specific-affinity-group-by-its-unique-id.-responses">Responses</h3>
+<h3 id="retrieves-an-specific-affinity-group-by-its-unique-id.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -1492,8 +1492,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -1587,7 +1587,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Removes a model from a affinity group.
+## Removes a model from an affinity group.
 
 > Code samples
 
@@ -1606,11 +1606,11 @@ print(r.json())
 
 `DELETE /model-affinity/{groupID}/models/{modelID}`
 
-Removes a model from a affinity group.
+Removes a model from an affinity group.
 After removal, requests for this model will no longer be routed to backends in this affinity group.
 This model can still be used with backends in other groups where it remains assigned.
 
-<h3 id="removes-a-model-from-a-affinity-group.-parameters">Parameters</h3>
+<h3 id="removes-a-model-from-an-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -1625,7 +1625,7 @@ This model can still be used with backends in other groups where it remains assi
 "string"
 ```
 
-<h3 id="removes-a-model-from-a-affinity-group.-responses">Responses</h3>
+<h3 id="removes-a-model-from-an-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -1637,7 +1637,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Associates a model with a affinity group.
+## Associates a model with an affinity group.
 
 > Code samples
 
@@ -1656,11 +1656,11 @@ print(r.json())
 
 `POST /model-affinity/{groupID}/models/{modelID}`
 
-Associates a model with a affinity group.
+Associates a model with an affinity group.
 After assignment, requests for this model can be routed to any backend in the affinity group.
 This enables request routing between the model and backends that share this affinity group.
 
-<h3 id="associates-a-model-with-a-affinity-group.-parameters">Parameters</h3>
+<h3 id="associates-a-model-with-an-affinity-group.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -1675,7 +1675,7 @@ This enables request routing between the model and backends that share this affi
 "string"
 ```
 
-<h3 id="associates-a-model-with-a-affinity-group.-responses">Responses</h3>
+<h3 id="associates-a-model-with-an-affinity-group.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|

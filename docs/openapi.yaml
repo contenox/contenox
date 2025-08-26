@@ -930,7 +930,7 @@ paths:
     /backend-affinity/{groupID}/backends/{backendID}:
         delete:
             description: |-
-                Removes a backend from a affinity group.
+                Removes a backend from an affinity group.
                 After removal, the backend will no longer be eligible to process requests for models in this affinity group.
                 Requests requiring models from this affinity group will no longer be routed to this backend.
             responses:
@@ -946,7 +946,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Removes a backend from a affinity group.
+            summary: Removes a backend from an affinity group.
         parameters:
             - description: The unique identifier of the affinity group.
               in: path
@@ -962,7 +962,7 @@ paths:
                 type: string
         post:
             description: |-
-                Associates a backend with a affinity group.
+                Associates a backend with an affinity group.
                 After assignment, the backend can process requests for all models in the affinity group.
                 This enables request routing between the backend and models that share this affinity group.
             responses:
@@ -978,7 +978,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Associates a backend with a affinity group.
+            summary: Associates a backend with an affinity group.
     /backends:
         get:
             description: |-
@@ -1178,7 +1178,7 @@ paths:
     /group-by-name/{name}:
         get:
             description: |-
-                Retrieves a affinity group by its human-readable name.
+                Retrieves an affinity group by its human-readable name.
                 Useful for configuration where ID might not be known but name is consistent.
             responses:
                 "200":
@@ -1193,7 +1193,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Retrieves a affinity group by its human-readable name.
+            summary: Retrieves an affinity group by its human-readable name.
         parameters:
             - description: The unique, human-readable name of the affinity group.
               in: path
@@ -1310,7 +1310,7 @@ paths:
                     description: Default error response
             summary: Removes an affinity group from the system.
         get:
-            description: Retrieves a specific affinity group by its unique ID.
+            description: Retrieves an specific affinity group by its unique ID.
             responses:
                 "200":
                     content:
@@ -1324,7 +1324,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Retrieves a specific affinity group by its unique ID.
+            summary: Retrieves an specific affinity group by its unique ID.
         parameters:
             - description: The unique identifier of the affinity group.
               in: path
@@ -1482,16 +1482,16 @@ paths:
                 This endpoint returns full model details including timestamps and capabilities.
                 Intended for administrative and debugging purposes.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -1536,7 +1536,7 @@ paths:
     /model-affinity/{groupID}/models/{modelID}:
         delete:
             description: |-
-                Removes a model from a affinity group.
+                Removes a model from an affinity group.
                 After removal, requests for this model will no longer be routed to backends in this affinity group.
                 This model can still be used with backends in other groups where it remains assigned.
             responses:
@@ -1552,7 +1552,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Removes a model from a affinity group.
+            summary: Removes a model from an affinity group.
         parameters:
             - description: The unique identifier of the affinity group.
               in: path
@@ -1568,7 +1568,7 @@ paths:
                 type: string
         post:
             description: |-
-                Associates a model with a affinity group.
+                Associates a model with an affinity group.
                 After assignment, requests for this model can be routed to any backend in the affinity group.
                 This enables request routing between the model and backends that share this affinity group.
             responses:
@@ -1584,7 +1584,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Associates a model with a affinity group.
+            summary: Associates a model with an affinity group.
     /model-affinity/{modelID}/groups:
         get:
             description: |-
