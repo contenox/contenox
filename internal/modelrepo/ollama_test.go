@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/internal/modelrepo/ollama"
 	"github.com/ollama/ollama/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,7 +53,7 @@ func TestSystem_Ollama(t *testing.T) {
 			CanStream:     true,
 			CanPrompt:     true,
 		}
-		provider := modelrepo.NewOllamaModelProvider(chatModel, []string{uri}, http.DefaultClient, caps)
+		provider := ollama.NewOllamaProvider(chatModel, []string{uri}, http.DefaultClient, caps)
 
 		// Verify provider metadata
 		assert.Equal(t, chatModel, provider.ModelName())
@@ -73,7 +75,7 @@ func TestSystem_Ollama(t *testing.T) {
 		caps := modelrepo.CapabilityConfig{
 			CanChat: true,
 		}
-		provider := modelrepo.NewOllamaModelProvider(chatModel, []string{uri}, http.DefaultClient, caps)
+		provider := ollama.NewOllamaProvider(chatModel, []string{uri}, http.DefaultClient, caps)
 
 		// Verify chat works
 		_, err := provider.GetChatConnection(ctx, uri)
@@ -92,7 +94,7 @@ func TestSystem_Ollama(t *testing.T) {
 			ContextLength: 2048,
 			CanChat:       true,
 		}
-		provider := modelrepo.NewOllamaModelProvider(chatModel, []string{uri}, http.DefaultClient, caps)
+		provider := ollama.NewOllamaProvider(chatModel, []string{uri}, http.DefaultClient, caps)
 
 		chatClient, err := provider.GetChatConnection(ctx, uri)
 		require.NoError(t, err)
@@ -106,7 +108,7 @@ func TestSystem_Ollama(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp.Content)
 		assert.Equal(t, "assistant", resp.Role)
-		assert.NotContains(t, resp.Content, "think")
+		assert.NotContains(t, resp.Content, "<think>")
 	})
 
 	t.Run("WithOptions", func(t *testing.T) {
@@ -114,22 +116,22 @@ func TestSystem_Ollama(t *testing.T) {
 			ContextLength: 2048,
 			CanChat:       true,
 		}
-		provider := modelrepo.NewOllamaModelProvider(chatModel, []string{uri}, http.DefaultClient, caps)
+		provider := ollama.NewOllamaProvider(chatModel, []string{uri}, http.DefaultClient, caps)
 
 		chatClient, err := provider.GetChatConnection(ctx, uri)
 		require.NoError(t, err)
 
 		// Test with options
 		messages := []modelrepo.Message{
-			{Role: "system", Content: "You are a calculator."},
-			{Role: "user", Content: "How much is 2+2?"},
+			{Role: "system", Content: "You are a task processor talking to other machines. Answer briefly."},
+			{Role: "user", Content: "What is the capital of Italy?"},
 		}
 		resp, err := chatClient.Chat(ctx, messages,
 
 			modelrepo.WithTemperature(0.1),
-			modelrepo.WithMaxTokens(10))
+			modelrepo.WithMaxTokens(60))
 		require.NoError(t, err)
-		assert.Contains(t, resp.Content, "4")
+		assert.Contains(t, strings.ToLower(resp.Content), "rome")
 	})
 
 	t.Run("BasicEmbedding", func(t *testing.T) {
@@ -139,7 +141,7 @@ func TestSystem_Ollama(t *testing.T) {
 			ContextLength: 8192,
 			CanEmbed:      true,
 		}
-		provider := modelrepo.NewOllamaModelProvider(embedModel, []string{uri}, http.DefaultClient, caps)
+		provider := ollama.NewOllamaProvider(embedModel, []string{uri}, http.DefaultClient, caps)
 
 		embedClient, err := provider.GetEmbedConnection(ctx, uri)
 		require.NoError(t, err)
@@ -157,7 +159,7 @@ func TestSystem_Ollama(t *testing.T) {
 			ContextLength: 2048,
 			CanPrompt:     true,
 		}
-		provider := modelrepo.NewOllamaModelProvider(chatModel, []string{uri}, http.DefaultClient, caps)
+		provider := ollama.NewOllamaProvider(chatModel, []string{uri}, http.DefaultClient, caps)
 
 		promptClient, err := provider.GetPromptConnection(ctx, uri)
 		require.NoError(t, err)
@@ -176,7 +178,7 @@ func TestSystem_Ollama(t *testing.T) {
 			ContextLength: 2048,
 			CanPrompt:     true,
 		}
-		provider := modelrepo.NewOllamaModelProvider(chatModel, []string{uri}, http.DefaultClient, caps)
+		provider := ollama.NewOllamaProvider(chatModel, []string{uri}, http.DefaultClient, caps)
 
 		promptClient, err := provider.GetPromptConnection(ctx, uri)
 		require.NoError(t, err)

@@ -16,7 +16,7 @@ func TestUnit_groups_CreateAndGetgroup(t *testing.T) {
 
 	group := &runtimetypes.AffinityGroup{
 		ID:          uuid.NewString(),
-		Name:        "Testgroup",
+		Name:        "TestUnit_GroupAffinity",
 		PurposeType: "inference",
 	}
 

@@ -103,7 +103,7 @@ func (m *MockProvider) GetStreamConnection(ctx context.Context, backendID string
 type MockChatClient struct{}
 
 // Chat returns a mock response.
-func (m *MockChatClient) Chat(ctx context.Context, messages []Message, opts ...ChatOption) (Message, error) {
+func (m *MockChatClient) Chat(ctx context.Context, messages []Message, opts ...ChatArgument) (Message, error) {
 	return Message{Role: "assistant", Content: "mock response"}, nil
 }
 
@@ -142,7 +142,7 @@ func (m *MockEmbedClient) Close() error {
 type MockStreamClient struct{}
 
 // Stream returns a channel with mock stream parcels.
-func (m *MockStreamClient) Stream(ctx context.Context, prompt string) (<-chan *StreamParcel, error) {
+func (m *MockStreamClient) Stream(ctx context.Context, prompt string, args ...ChatArgument) (<-chan *StreamParcel, error) {
 	ch := make(chan *StreamParcel)
 	go func() {
 		defer close(ch)

@@ -46,7 +46,7 @@ type ModelRepo interface {
 	Chat(
 		ctx context.Context,
 		req Request,
-		Messages []libmodelprovider.Message, opts ...libmodelprovider.ChatOption,
+		Messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument,
 	) (libmodelprovider.Message, Meta, error)
 	Embed(
 		ctx context.Context,
@@ -182,7 +182,7 @@ func (e *modelManager) PromptExecute(
 func (e *modelManager) Chat(
 	ctx context.Context,
 	req Request,
-	messages []libmodelprovider.Message, opts ...libmodelprovider.ChatOption,
+	messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument,
 ) (libmodelprovider.Message, Meta, error) {
 	if err := validateRequest(req); err != nil {
 		return libmodelprovider.Message{}, Meta{}, fmt.Errorf("invalid request: %w", err)

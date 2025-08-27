@@ -1,16 +1,17 @@
-package modelrepo
+package ollama
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/contenox/runtime/internal/modelrepo"
 	"github.com/ollama/ollama/api"
 )
 
 type OllamaPromptClient struct {
-	ollamaClient *api.Client // The underlying Ollama API client
-	modelName    string      // The specific model this client targets (e.g., "llama3:latest")
-	backendURL   string      // backend URL
+	ollamaClient *api.Client
+	modelName    string
+	backendURL   string
 }
 
 // Prompt implements serverops.LLMPromptClient.
@@ -23,7 +24,7 @@ func (o *OllamaPromptClient) Prompt(ctx context.Context, systeminstruction strin
 		Model:  o.modelName,
 		Prompt: prompt,
 		System: systeminstruction,
-		Stream: &stream, // Disable streaming to get a single response
+		Stream: &stream,
 		Options: map[string]any{
 			"temperature": temperature,
 		},
@@ -66,4 +67,4 @@ func (o *OllamaPromptClient) Prompt(ctx context.Context, systeminstruction strin
 	return content, nil
 }
 
-var _ LLMPromptExecClient = (*OllamaPromptClient)(nil)
+var _ modelrepo.LLMPromptExecClient = (*OllamaPromptClient)(nil)

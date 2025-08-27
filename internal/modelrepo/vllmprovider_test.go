@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/internal/modelrepo/vllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -219,12 +220,74 @@ func TestSystem_VLLM_Smoke(t *testing.T) {
 					"streamed response should contain 'hello': %q", fullResponse)
 			},
 		},
+		{
+			name: "chat_with_seed_reproducibility",
+			caps: modelrepo.CapabilityConfig{
+				ContextLength: 512,
+				CanChat:       true,
+			},
+			testFunc: func(t *testing.T, provider modelrepo.Provider, apiBase string) {
+				chatClient, err := provider.GetChatConnection(ctx, apiBase)
+				require.NoError(t, err, "failed to get chat connection")
+
+				// Simple prompt where we can verify determinism
+				messages := []modelrepo.Message{
+					{Role: "system", Content: "You are a helpful assistant. Answer briefly."},
+					{Role: "user", Content: "How many moons does Earth have?"},
+				}
+
+				ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+				defer cancel()
+
+				// First request with seed 123
+				resp1, err := chatClient.Chat(ctx, messages,
+					modelrepo.WithSeed(123),
+					modelrepo.WithTemperature(0.7), // Keep some randomness but controlled
+					modelrepo.WithMaxTokens(10),
+				)
+				require.NoError(t, err, "failed to get first response")
+				require.NotEmpty(t, resp1.Content, "first response should not be empty")
+
+				// Second request with SAME seed
+				resp2, err := chatClient.Chat(ctx, messages,
+					modelrepo.WithSeed(123),
+					modelrepo.WithTemperature(0.7),
+					modelrepo.WithMaxTokens(10),
+				)
+				require.NoError(t, err, "failed to get second response")
+				require.NotEmpty(t, resp2.Content, "second response should not be empty")
+
+				// Critical check: same seed = same output
+				assert.Equal(t, resp1.Content, resp2.Content,
+					"Responses with identical seed should be identical")
+
+				t.Logf("Verified deterministic output with seed 123: %q", resp1.Content)
+
+				// Third request with DIFFERENT seed
+				resp3, err := chatClient.Chat(ctx, messages,
+					modelrepo.WithSeed(456),
+					modelrepo.WithTemperature(0.7),
+					modelrepo.WithMaxTokens(10),
+				)
+				require.NoError(t, err, "failed to get third response")
+				require.NotEmpty(t, resp3.Content, "third response should not be empty")
+
+				// Sanity check: different seed should produce different output
+				// (not guaranteed but highly likely - warn if same)
+				if resp1.Content == resp3.Content {
+					t.Logf("WARNING: Responses with different seeds were identical. "+
+						"This is unusual but can happen with very short completions. \n\n%s\n%s\n%s", resp1.Content, resp2.Content, resp3.Content)
+				} else {
+					t.Logf("Confirmed different outputs with different seeds")
+				}
+			},
+		},
 	}
 
 	// Run all test cases with shared container
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			provider := modelrepo.NewVLLMModelProvider(
+			provider := vllm.NewVLLMProvider(
 				model,
 				[]string{apiBase},
 				http.DefaultClient,

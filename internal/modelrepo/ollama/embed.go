@@ -1,9 +1,10 @@
-package modelrepo
+package ollama
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/contenox/runtime/internal/modelrepo"
 	"github.com/ollama/ollama/api"
 )
 
@@ -26,3 +27,5 @@ func (c *OllamaEmbedClient) Embed(ctx context.Context, text string) ([]float64, 
 
 	return resp.Embedding, nil
 }
+
+var _ modelrepo.LLMEmbedClient = (*OllamaEmbedClient)(nil)

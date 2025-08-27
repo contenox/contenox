@@ -11,7 +11,7 @@ import (
 	"github.com/contenox/runtime/libroutine"
 )
 
-func TestgroupSingleton(t *testing.T) {
+func TestUnit_GroupAffinitySingleton(t *testing.T) {
 	defer quiet()
 	t.Run("should return singleton instance", func(t *testing.T) {
 		group1 := libroutine.Getgroup()
@@ -22,7 +22,7 @@ func TestgroupSingleton(t *testing.T) {
 	})
 }
 
-func TestgroupStartLoop(t *testing.T) {
+func TestUnit_GroupAffinityStartLoop(t *testing.T) {
 	group := libroutine.Getgroup()
 	ctx := t.Context()
 
@@ -169,7 +169,7 @@ func TestgroupStartLoop(t *testing.T) {
 	})
 }
 
-func TestgroupCircuitBreaking(t *testing.T) {
+func TestUnit_GroupAffinityCircuitBreaking(t *testing.T) {
 	defer quiet()
 
 	group := libroutine.Getgroup()
@@ -226,7 +226,7 @@ func TestgroupCircuitBreaking(t *testing.T) {
 	})
 }
 
-func TestgroupParameterPersistence(t *testing.T) {
+func TestUnit_GroupAffinityParameterPersistence(t *testing.T) {
 	defer quiet()
 	group := libroutine.Getgroup()
 	ctx := context.Background() // Using Background instead of t.Context() for compatibility
@@ -272,8 +272,8 @@ func TestgroupParameterPersistence(t *testing.T) {
 	})
 }
 
-// TestgroupResetRoutine verifies we can reset the circuit breaker state
-func TestgroupResetRoutine(t *testing.T) {
+// TestUnit_GroupAffinityResetRoutine verifies we can reset the circuit breaker state
+func TestUnit_GroupAffinityResetRoutine(t *testing.T) {
 	defer quiet()
 	group := libroutine.Getgroup()
 	ctx := t.Context()

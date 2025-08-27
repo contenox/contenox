@@ -163,7 +163,7 @@ package runtimestate_test
 // 	}, 2*time.Second, 100*time.Millisecond)
 // }
 
-// func TestgroupBasedModelAssignment(t *testing.T) {
+// func TestUnit_GroupAffinityBasedModelAssignment(t *testing.T) {
 // 	// if os.Getenv("SystemTestS") == "" {
 // 	// 	t.Skip("Set env SystemTestS to true to run this test")
 // 	// }

@@ -1,4 +1,4 @@
-package modelrepo
+package ollama
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/contenox/runtime/internal/modelrepo"
 	"github.com/ollama/ollama/api"
 )
 
@@ -20,6 +21,21 @@ type OllamaProvider struct {
 	SupportsThink  bool
 	httpClient     *http.Client
 	Backends       []string
+}
+
+func NewOllamaProvider(name string, backends []string, httpClient *http.Client, caps modelrepo.CapabilityConfig) modelrepo.Provider {
+	return &OllamaProvider{
+		Name:           name,
+		ID:             "ollama:" + name,
+		ContextLength:  caps.ContextLength,
+		SupportsChat:   caps.CanChat,
+		SupportsEmbed:  caps.CanEmbed,
+		SupportsStream: caps.CanStream,
+		SupportsPrompt: caps.CanPrompt,
+		SupportsThink:  caps.CanThink,
+		Backends:       backends,
+		httpClient:     httpClient,
+	}
 }
 
 func (p *OllamaProvider) GetBackendIDs() []string {
@@ -62,92 +78,78 @@ func (p *OllamaProvider) CanThink() bool {
 	return p.SupportsThink
 }
 
-func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string) (LLMChatClient, error) {
+func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {
 	if !p.CanChat() {
 		return nil, fmt.Errorf("provider %s (model %s) does not support chat", p.GetID(), p.ModelName())
 	}
+
 	u, err := url.Parse(backendID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
+
 	httpClient := p.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
 	ollamaAPIClient := api.NewClient(u, httpClient)
 
-	chatClient := &OllamaChatClient{
+	return &OllamaChatClient{
 		ollamaClient: ollamaAPIClient,
 		modelName:    p.ModelName(),
 		backendURL:   backendID,
-	}
-
-	return chatClient, nil
+	}, nil
 }
 
-func (p *OllamaProvider) GetEmbedConnection(ctx context.Context, backendID string) (LLMEmbedClient, error) {
+func (p *OllamaProvider) GetEmbedConnection(ctx context.Context, backendID string) (modelrepo.LLMEmbedClient, error) {
 	if !p.CanEmbed() {
 		return nil, fmt.Errorf("provider %s (model %s) does not support embeddings", p.GetID(), p.ModelName())
 	}
+
 	u, err := url.Parse(backendID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
+
 	httpClient := p.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
 	ollamaAPIClient := api.NewClient(u, httpClient)
 
-	embedClient := &OllamaEmbedClient{
+	return &OllamaEmbedClient{
 		ollamaClient: ollamaAPIClient,
 		modelName:    p.ModelName(),
 		backendURL:   backendID,
-	}
-
-	return embedClient, nil
+	}, nil
 }
 
-func (p *OllamaProvider) GetPromptConnection(ctx context.Context, backendID string) (LLMPromptExecClient, error) {
+func (p *OllamaProvider) GetPromptConnection(ctx context.Context, backendID string) (modelrepo.LLMPromptExecClient, error) {
 	if !p.CanPrompt() {
 		return nil, fmt.Errorf("provider %s (model %s) does not support prompting", p.GetID(), p.ModelName())
 	}
+
 	u, err := url.Parse(backendID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
+
 	httpClient := p.httpClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+
 	ollamaAPIClient := api.NewClient(u, httpClient)
 
-	promptClient := &OllamaPromptClient{
+	return &OllamaPromptClient{
 		ollamaClient: ollamaAPIClient,
 		modelName:    p.ModelName(),
 		backendURL:   backendID,
-	}
-
-	return promptClient, nil
+	}, nil
 }
 
-func (p *OllamaProvider) GetStreamConnection(ctx context.Context, backendID string) (LLMStreamClient, error) {
+func (p *OllamaProvider) GetStreamConnection(ctx context.Context, backendID string) (modelrepo.LLMStreamClient, error) {
 	return nil, fmt.Errorf("streaming not implemented for Ollama provider")
-}
-
-// CapabilityConfig holds the required capability information
-type CapabilityConfig struct {
-	ContextLength int
-	CanChat       bool
-	CanEmbed      bool
-	CanStream     bool
-	CanPrompt     bool
-	CanThink      bool
-}
-
-// NewOllamaModelProvider creates a provider with explicit capabilities
-func NewOllamaModelProvider(name string, backends []string, httpClient *http.Client, caps CapabilityConfig) Provider {
-	return &OllamaProvider{
-		Name:           name,
-		ID:             "ollama:" + name,
-		ContextLength:  caps.ContextLength,
-		SupportsChat:   caps.CanChat,
-		SupportsEmbed:  caps.CanEmbed,
-		SupportsStream: caps.CanStream,
-		SupportsPrompt: caps.CanPrompt,
-		SupportsThink:  caps.CanThink,
-		Backends:       backends,
-		httpClient:     httpClient,
-	}
 }

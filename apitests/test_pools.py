@@ -5,7 +5,7 @@ import uuid
 
 def create_test_group(base_url):
     """Helper to create unique group"""
-    unique_name = f"Testgroup-{uuid.uuid4().hex[:8]}"
+    unique_name = f"TestUnit_GroupAffinity-{uuid.uuid4().hex[:8]}"
     payload = {
         "name": unique_name,
         "purposeType": "testing"

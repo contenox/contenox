@@ -5,6 +5,10 @@ import (
 	"net/http"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/internal/modelrepo/gemini"
+	"github.com/contenox/runtime/internal/modelrepo/ollama"
+	"github.com/contenox/runtime/internal/modelrepo/openai"
+	"github.com/contenox/runtime/internal/modelrepo/vllm"
 	"github.com/contenox/runtime/statetype"
 )
 
@@ -36,7 +40,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.Back
 			case "ollama":
 				providersByType[backendType] = append(
 					providersByType[backendType],
-					modelrepo.NewOllamaModelProvider(
+					ollama.NewOllamaProvider(
 						model.Model,
 						[]string{state.Backend.BaseURL},
 						http.DefaultClient,
@@ -46,7 +50,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.Back
 			case "vllm":
 				providersByType[backendType] = append(
 					providersByType[backendType],
-					modelrepo.NewVLLMModelProvider(
+					vllm.NewVLLMProvider(
 						model.Model,
 						[]string{state.Backend.BaseURL},
 						http.DefaultClient,
@@ -57,7 +61,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.Back
 			case "openai":
 				providersByType[backendType] = append(
 					providersByType[backendType],
-					modelrepo.NewOpenAIProvider(
+					openai.NewOpenAIProvider(
 						state.GetAPIKey(),
 						model.Model,
 						[]string{state.Backend.BaseURL},
@@ -68,7 +72,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.Back
 			case "gemini":
 				providersByType[backendType] = append(
 					providersByType[backendType],
-					modelrepo.NewGeminiProvider(
+					gemini.NewGeminiProvider(
 						state.GetAPIKey(),
 						model.Model,
 						[]string{state.Backend.BaseURL},

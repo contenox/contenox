@@ -172,7 +172,7 @@ package runtimestate_test
 // 	}, 5*time.Second, 100*time.Millisecond)
 // }
 
-// func TestgroupBackendRemoval(t *testing.T) {
+// func TestUnit_GroupAffinityBackendRemoval(t *testing.T) {
 // 	ctx, ollamaUrl, backendState, dbStore, cleanup := setupgroupTest(t)
 // 	defer cleanup()
 

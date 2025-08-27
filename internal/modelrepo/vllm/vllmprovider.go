@@ -1,13 +1,14 @@
-package modelrepo
+package vllm
 
 import (
 	"context"
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/contenox/runtime/internal/modelrepo"
 )
 
-// vLLMProvider implements the Provider interface for vLLM models
 type vLLMProvider struct {
 	Name           string
 	ID             string
@@ -16,13 +17,12 @@ type vLLMProvider struct {
 	SupportsEmbed  bool
 	SupportsStream bool
 	SupportsPrompt bool
-	Backends       []string // Base URLs to vLLM instances (e.g., "http://vllm-server:8000")
+	Backends       []string
 	authToken      string
 	client         *http.Client
 }
 
-// NewVLLMModelProvider creates a new vLLM model provider with explicit capabilities
-func NewVLLMModelProvider(modelName string, backends []string, client *http.Client, caps CapabilityConfig, authToken string) Provider {
+func NewVLLMProvider(modelName string, backends []string, client *http.Client, caps modelrepo.CapabilityConfig, authToken string) modelrepo.Provider {
 	return &vLLMProvider{
 		Name:           modelName,
 		ID:             "vllm:" + modelName,
@@ -35,6 +35,20 @@ func NewVLLMModelProvider(modelName string, backends []string, client *http.Clie
 		authToken:      authToken,
 		client:         client,
 	}
+}
+
+func (p *vLLMProvider) validateBackend(backendID string) error {
+	u, err := url.Parse(backendID)
+	if err != nil {
+		return fmt.Errorf("invalid backend URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("invalid URL scheme (must be http/https): %s", backendID)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("missing host in backend URL: %s", backendID)
+	}
+	return nil
 }
 
 func (p *vLLMProvider) GetBackendIDs() []string {
@@ -77,44 +91,40 @@ func (p *vLLMProvider) CanThink() bool {
 	return false
 }
 
-func (p *vLLMProvider) GetChatConnection(ctx context.Context, backendID string) (LLMChatClient, error) {
+func (p *vLLMProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {
 	if !p.CanChat() {
 		return nil, fmt.Errorf("provider %s (model %s) does not support chat", p.GetID(), p.ModelName())
 	}
-
-	// Validate backend URL
-	if _, err := url.Parse(backendID); err != nil {
-		return nil, fmt.Errorf("invalid backend URL '%s': %w", backendID, err)
+	if err := p.validateBackend(backendID); err != nil {
+		return nil, err
 	}
 
 	return NewVLLMChatClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken)
 }
 
-func (p *vLLMProvider) GetPromptConnection(ctx context.Context, backendID string) (LLMPromptExecClient, error) {
+func (p *vLLMProvider) GetPromptConnection(ctx context.Context, backendID string) (modelrepo.LLMPromptExecClient, error) {
 	if !p.CanPrompt() {
 		return nil, fmt.Errorf("provider %s (model %s) does not support prompting", p.GetID(), p.ModelName())
 	}
 
-	// Validate backend URL
-	if _, err := url.Parse(backendID); err != nil {
-		return nil, fmt.Errorf("invalid backend URL '%s': %w", backendID, err)
+	if err := p.validateBackend(backendID); err != nil {
+		return nil, err
 	}
 
 	return NewVLLMPromptClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken)
 }
 
-func (p *vLLMProvider) GetEmbedConnection(ctx context.Context, backendID string) (LLMEmbedClient, error) {
+func (p *vLLMProvider) GetEmbedConnection(ctx context.Context, backendID string) (modelrepo.LLMEmbedClient, error) {
 	return nil, fmt.Errorf("provider %s (model %s) does not support embeddings", p.GetID(), p.ModelName())
 }
 
-func (p *vLLMProvider) GetStreamConnection(ctx context.Context, backendID string) (LLMStreamClient, error) {
+func (p *vLLMProvider) GetStreamConnection(ctx context.Context, backendID string) (modelrepo.LLMStreamClient, error) {
 	if !p.CanStream() {
 		return nil, fmt.Errorf("provider %s (model %s) does not support streaming", p.GetID(), p.ModelName())
 	}
 
-	// Validate backend URL
-	if _, err := url.Parse(backendID); err != nil {
-		return nil, fmt.Errorf("invalid backend URL '%s': %w", backendID, err)
+	if err := p.validateBackend(backendID); err != nil {
+		return nil, err
 	}
 
 	return NewVLLMStreamClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken)

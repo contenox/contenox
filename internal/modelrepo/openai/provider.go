@@ -1,12 +1,12 @@
-package modelrepo
+package openai
 
 import (
 	"context"
 	"fmt"
 	"net/http"
-)
 
-var _ Provider = (*OpenAIProvider)(nil)
+	"github.com/contenox/runtime/internal/modelrepo"
+)
 
 type OpenAIProvider struct {
 	id            string
@@ -21,7 +21,7 @@ type OpenAIProvider struct {
 	canStream     bool
 }
 
-func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capability CapabilityConfig, httpClient *http.Client) *OpenAIProvider {
+func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capability modelrepo.CapabilityConfig, httpClient *http.Client) modelrepo.Provider {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -86,11 +86,11 @@ func (p *OpenAIProvider) CanThink() bool {
 	return false
 }
 
-func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string) (LLMChatClient, error) {
+func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {
 	if !p.CanChat() {
 		return nil, fmt.Errorf("model %s does not support chat interactions", p.modelName)
 	}
-	return &openAIChatClient{
+	return &OpenAIChatClient{
 		openAIClient: openAIClient{
 			baseURL:    p.baseURL,
 			apiKey:     p.apiKey,
@@ -101,11 +101,11 @@ func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string
 	}, nil
 }
 
-func (p *OpenAIProvider) GetPromptConnection(ctx context.Context, backendID string) (LLMPromptExecClient, error) {
+func (p *OpenAIProvider) GetPromptConnection(ctx context.Context, backendID string) (modelrepo.LLMPromptExecClient, error) {
 	if !p.CanPrompt() {
-		return nil, fmt.Errorf("model %s does not support prompt (legacy completion) interactions. Consider using Chat API", p.modelName)
+		return nil, fmt.Errorf("model %s does not support prompt interactions", p.modelName)
 	}
-	return &openAIPromptClient{
+	return &OpenAIPromptClient{
 		openAIClient: openAIClient{
 			baseURL:    p.baseURL,
 			apiKey:     p.apiKey,
@@ -116,11 +116,11 @@ func (p *OpenAIProvider) GetPromptConnection(ctx context.Context, backendID stri
 	}, nil
 }
 
-func (p *OpenAIProvider) GetEmbedConnection(ctx context.Context, backendID string) (LLMEmbedClient, error) {
+func (p *OpenAIProvider) GetEmbedConnection(ctx context.Context, backendID string) (modelrepo.LLMEmbedClient, error) {
 	if !p.CanEmbed() {
 		return nil, fmt.Errorf("model %s does not support embedding interactions", p.modelName)
 	}
-	return &openAIEmbedClient{
+	return &OpenAIEmbedClient{
 		openAIClient: openAIClient{
 			baseURL:    p.baseURL,
 			apiKey:     p.apiKey,
@@ -130,11 +130,11 @@ func (p *OpenAIProvider) GetEmbedConnection(ctx context.Context, backendID strin
 	}, nil
 }
 
-func (p *OpenAIProvider) GetStreamConnection(ctx context.Context, backendID string) (LLMStreamClient, error) {
+func (p *OpenAIProvider) GetStreamConnection(ctx context.Context, backendID string) (modelrepo.LLMStreamClient, error) {
 	if !p.CanStream() {
 		return nil, fmt.Errorf("model %s does not support streaming interactions", p.modelName)
 	}
-	return &openAIStreamClient{
+	return &OpenAIStreamClient{
 		openAIClient: openAIClient{
 			baseURL:    p.baseURL,
 			apiKey:     p.apiKey,
