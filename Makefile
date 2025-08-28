@@ -15,7 +15,6 @@ CHAT_PROVIDER ?= ollama
 CHAT_MODEL_CONTEXT_LENGTH ?= 2048
 TENANCY ?= 54882f1d-3788-44f9-aed6-19a793c4568f
 
-# CRITICAL: Export all variables so they're available to docker compose commands
 export EMBED_MODEL
 export EMBED_PROVIDER
 export EMBED_MODEL_CONTEXT_LENGTH
@@ -27,7 +26,7 @@ export CHAT_PROVIDER
 export CHAT_MODEL_CONTEXT_LENGTH
 export TENANCY
 
-COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml -f compose.web-ui.yaml
+COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml
 
 validate-version:
 	@if [ ! -f "$(VERSION_FILE)" ]; then \
