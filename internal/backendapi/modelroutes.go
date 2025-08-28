@@ -16,9 +16,10 @@ func AddModelRoutes(mux *http.ServeMux, modelService modelservice.Service, dwSer
 	s := &service{service: modelService, dwService: dwService}
 
 	mux.HandleFunc("POST /models", s.createModel)
-	mux.HandleFunc("GET /models", s.listModels)
+	mux.HandleFunc("GET /openai/v1/models", s.listModels)
+	mux.HandleFunc("GET /openai/{chainID}/v1/models", s.listModels)
 	mux.HandleFunc("PUT /models/{id}", s.updateModel)
-	mux.HandleFunc("GET /internal/models", s.listInternal)
+	mux.HandleFunc("GET /models", s.listInternal)
 	// mux.HandleFunc("GET /v1/models/{model}", s.modelDetails) // TODO: Implement model details endpoint
 	mux.HandleFunc("DELETE /models/{model}", s.deleteModel)
 }
@@ -68,13 +69,14 @@ type OpenAICompatibleModelList struct {
 // Returns models as they would appear in OpenAI's /v1/models endpoint.
 // NOTE: Only models assigned to at least one group will be available for request processing.
 // Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
+// the chainID parameter is currently unused.
 func (s *service) listModels(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Parse pagination parameters using the helper
 	limitStr := serverops.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
 	cursorStr := serverops.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
-
+	_ = serverops.GetPathParam(r, "chainID", "The ID of the chain that links to the openAI completion API. Currently unused.")
 	var cursor *time.Time
 	if cursorStr != "" {
 		t, err := time.Parse(time.RFC3339Nano, cursorStr)

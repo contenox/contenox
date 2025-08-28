@@ -27,8 +27,7 @@ export CHAT_PROVIDER
 export CHAT_MODEL_CONTEXT_LENGTH
 export TENANCY
 
-# Define the docker compose command with the local override file
-COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml
+COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml -f compose.web-ui.yaml
 
 validate-version:
 	@if [ ! -f "$(VERSION_FILE)" ]; then \

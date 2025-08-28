@@ -167,12 +167,12 @@ else
   success "Backend already assigned to 'internal_embed_group'."
 fi
 
-# group 2: internal_embed_group
-response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-affinity/internal_embed_group/backends")
+# group 2: internal_chat_group
+response=$(curl -s -w "\n%{http_code}" "${API_BASE_URL}/backend-affinity/internal_chat_group/backends")
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
 if [ "$http_code" -ne 200 ]; then
-    error_exit "Failed to check embed affinity group associations. API returned status ${http_code}."
+    error_exit "Failed to check chat affinity group associations. API returned status ${http_code}."
 fi
 CHAT_group_CHECK=$(echo "$body" | jq -r --arg BID "$BACKEND_ID" '(. // []) | .[] | select(.id==$BID) | .id')
 

@@ -61,7 +61,7 @@ def test_openai_sdk_compatibility(
 
     # Configure OpenAI client to point to our endpoint
     client = OpenAI(
-        base_url=f"{base_url}/{chain_id}/v1",
+        base_url=f"{base_url}/openai/{chain_id}/v1",
         api_key="empty-key-for-now"
     )
 
@@ -110,7 +110,7 @@ def test_openai_sdk_streaming_compatibility(
     assert_status_code(response, 201)
 
     client = OpenAI(
-        base_url=f"{base_url}/{chain_id}/v1",
+        base_url=f"{base_url}/openai/{chain_id}/v1",
         api_key="a-key"
     )
 

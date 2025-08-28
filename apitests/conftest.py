@@ -284,7 +284,7 @@ def wait_for_declared_models(
     backend_id = create_backend_and_assign_to_group["backend_id"]
 
     # Get all models from the internal API endpoint
-    response = requests.get(f"{base_url}/internal/models")
+    response = requests.get(f"{base_url}/models")
     response.raise_for_status()
     all_models = response.json()
 

@@ -23,7 +23,7 @@ func AddChatRoutes(mux *http.ServeMux, chatService chatservice.Service) {
 	h := &handler{service: chatService}
 
 	// OpenAI-compatible endpoints
-	mux.HandleFunc("POST /{chainID}/v1/chat/completions", h.openAIChatCompletions)
+	mux.HandleFunc("POST /openai/{chainID}/v1/chat/completions", h.openAIChatCompletions)
 }
 
 type handler struct {

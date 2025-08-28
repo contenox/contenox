@@ -23,7 +23,7 @@ def test_model_execution_with_openai_chat_input(
 
     openai_request_payload = {
         "model": model_info["model_name"],
-        "messages": [{"role": "user", "content": "What is the capital of Germany? Respond only with the city name."}],
+        "messages": [{"role": "user", "content": "What is the capital of Italy? Respond only with the city name."}],
         "temperature": 0.1
     }
 
@@ -38,7 +38,7 @@ def test_model_execution_with_openai_chat_input(
     output_history = data["output"]
     assert len(output_history["messages"]) == 3
     assistant_msg = next(m for m in output_history["messages"] if m["role"] == "assistant")
-    assert "Berlin" in assistant_msg["content"]
+    assert "Rome" in assistant_msg["content"]
 
 def test_embedding_handler_with_openai_chat_input(
     base_url,

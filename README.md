@@ -44,6 +44,8 @@ export CHAT_MODEL_CONTEXT_LENGTH=2048
 export CHAT_PROVIDER=ollama
 export OLLAMA_BACKEND_URL="http://ollama:11434"
 # or any other like: export OLLAMA_BACKEND_URL="http://host.docker.internal:11434"
+# to use OLLAMA_BACKEND_URL with host.docker.internal
+# remember sudo systemctl edit ollama.service -> Environment="OLLAMA_HOST=172.17.0.1" or 0.0.0.0
 
 # Start the container services
 echo "Starting services with 'docker compose up -d'..."
@@ -54,6 +56,8 @@ echo "Services are starting up."
 # the bootstraping script works only for ollama models/backends
 # for to use other providers refer to the API-Spec.
 ./scripts/bootstrap.sh $EMBED_MODEL $TASK_MODEL $CHAT_MODEL
+# setup a demo OpenAI chat-completion and model endpoint
+./scripts/openai-demo.sh $CHAT_MODEL demo
 ```
 
 Once the script finishes, the environment is fully configured and ready to use.

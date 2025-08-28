@@ -19,7 +19,6 @@ def test_create_model(base_url):
     assert model["model"] == payload["model"], "Model name does not match"
     assert "id" in model, "Missing model ID"
 
-    # Clean up
     model_id = model["model"]
     delete_url = f"{base_url}/models/{model_id}"
     del_response = requests.delete(delete_url, params={"purge": "true"})
@@ -27,7 +26,7 @@ def test_create_model(base_url):
 
 
 def test_list_models(base_url):
-    response = requests.get(f"{base_url}/models")
+    response = requests.get(f"{base_url}/openai/v1/models")
     assert_status_code(response, 200)
 
     data = response.json()
@@ -38,20 +37,17 @@ def test_list_models(base_url):
     assert "nomic-embed-text:latest" in model_ids, "nomic-embed-text:latest model not found in the list of model IDs"
 
 def test_delete_model(base_url):
-    # Step 1: Create a model
     payload = {"model": "temp-delete-model", "canPrompt": True, "contextLength": 2048}
     response = requests.post(f"{base_url}/models", json=payload)
     assert_status_code(response, 201)
     model = response.json()
 
-    # Step 2: Delete it
     model_id = model["model"]
     delete_url = f"{base_url}/models/{model_id}"
     del_response = requests.delete(delete_url, params={"purge": "true"})
     assert_status_code(del_response, 200)
 
-    # Optional: Verify it's gone
-    get_response = requests.get(f"{base_url}/models")
+    get_response = requests.get(f"{base_url}/openai/v1/models")
     models = get_response.json()["data"]
     assert not any(m["id"] == model_id for m in models), "Model was not deleted"
 
@@ -68,7 +64,6 @@ def test_model_assigned_to_group(base_url, create_model_and_assign_to_group):
     model_id = data["model_id"]
     group_id = data["group_id"]
 
-    # Verify assignment by listing models in the group
     list_url = f"{base_url}/model-affinity/{group_id}/models"
     response = requests.get(list_url)
     assert response.status_code == 200
@@ -79,7 +74,6 @@ def test_model_assigned_to_group(base_url, create_model_and_assign_to_group):
 def test_update_model(base_url):
     """Test that an admin user can update an existing model."""
 
-    # Step 1: Create a model
     create_payload = {
         "model": "test-update-model",
         "contextLength": 2048,
@@ -118,7 +112,6 @@ def test_update_model(base_url):
 
     updated_model = update_response.json()
 
-    # Step 3: Verify all fields were updated
     assert updated_model["model"] == update_payload["model"], "Model name should remain unchanged"
     assert updated_model["contextLength"] == update_payload["contextLength"], "Context length should be updated"
     assert updated_model["canChat"] == update_payload["canChat"], "canChat flag should be updated"
@@ -126,11 +119,9 @@ def test_update_model(base_url):
     assert updated_model["canEmbed"] == update_payload["canEmbed"], "canEmbed flag should be updated"
     assert updated_model["canStream"] == update_payload["canStream"], "canStream flag should be updated"
 
-    # Ensure timestamps were updated (UpdatedAt should be >= CreatedAt)
     assert updated_model["updatedAt"] >= updated_model["createdAt"], "UpdatedAt should be >= CreatedAt"
 
-    # Optional: Verify update is persistent
-    get_url = f"{base_url}/internal/models"
+    get_url = f"{base_url}/models"
     get_response = requests.get(get_url)
     assert_status_code(get_response, 200)
     models = get_response.json()
@@ -139,14 +130,13 @@ def test_update_model(base_url):
     assert updated_model_in_list["contextLength"] == 4096
     assert updated_model_in_list["canChat"] is True
 
-    # Step 4: Clean up
     delete_url = f"{base_url}/models/{model_id}"
     del_response = requests.delete(delete_url, params={"purge": "true"})
     assert_status_code(del_response, 200)
 
 def test_internal_models_endpoint(base_url):
     """Test the internal models endpoint that returns full details"""
-    response = requests.get(f"{base_url}/internal/models")
+    response = requests.get(f"{base_url}/models")
     assert_status_code(response, 200)
 
     models = response.json()
