@@ -58,6 +58,9 @@ echo "Services are starting up."
 ./scripts/bootstrap.sh $EMBED_MODEL $TASK_MODEL $CHAT_MODEL
 # setup a demo OpenAI chat-completion and model endpoint
 ./scripts/openai-demo.sh $CHAT_MODEL demo
+# this will setup the following endpoints:
+# - http://localhost:8081/openai/demo/v1/chat/completions
+# - http://localhost:8081/openai/demo/v1/models
 ```
 
 Once the script finishes, the environment is fully configured and ready to use.
