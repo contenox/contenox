@@ -1066,7 +1066,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.65"
+    "version": "v0.0.51-88-ge7761b9-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1956,53 +1956,6 @@
         "summary": "Updates an existing remote hook configuration."
       }
     },
-    "/internal/models": {
-      "get": {
-        "description": "Lists all registered models in internal format.\nThis endpoint returns full model details including timestamps and capabilities.\nIntended for administrative and debugging purposes.",
-        "parameters": [
-          {
-            "description": "The maximum number of items to return per page.",
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/array_runtimetypes_Model"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Lists all registered models in internal format."
-      }
-    },
     "/model-affinity/{groupID}/models": {
       "get": {
         "description": "Lists all models associated with a specific affinity group.\nReturns basic model information without backend-specific details.",
@@ -2157,22 +2110,22 @@
     },
     "/models": {
       "get": {
-        "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.",
+        "description": "Lists all registered models in internal format.\nThis endpoint returns full model details including timestamps and capabilities.\nIntended for administrative and debugging purposes.",
         "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -2182,7 +2135,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/backendapi_OpenAICompatibleModelList"
+                  "$ref": "#/components/schemas/array_runtimetypes_Model"
                 }
               }
             },
@@ -2199,7 +2152,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Lists all registered models in OpenAI-compatible format."
+        "summary": "Lists all registered models in internal format."
       },
       "post": {
         "description": "Declares a new model to the system.\nThe model must be available in a configured backend or will be queued for download.\nIMPORTANT: Models not assigned to any group will NOT be available for request processing.\nIf groups are enabled, to make a model available to backends, it must be explicitly added to at least one group.",
@@ -2323,6 +2276,176 @@
         },
         "summary": "Updates an existing model registration."
       }
+    },
+    "/openai/v1/models": {
+      "get": {
+        "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backendapi_OpenAICompatibleModelList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists all registered models in OpenAI-compatible format."
+      }
+    },
+    "/openai/{chainID}/v1/chat/completions": {
+      "parameters": [
+        {
+          "description": "The ID of the task chain to use.",
+          "in": "path",
+          "name": "chainID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "description": "Processes chat requests using the configured task chain.\nThis endpoint provides OpenAI-compatible chat completions by executing\nthe configured task chain with the provided request data.\nThe task chain must be configured first using the /chat/taskchain endpoint.\n--- SSE Streaming ---\nWhen 'stream: true' is set in the request body, the endpoint streams the response\nusing Server-Sent Events (SSE) in the OpenAI-compatible format.\nClients should concatenate the 'content' from the 'delta' object in each 'data' event\nto reconstruct the full message. The stream is terminated by a 'data: [DONE]' message.\nExample event stream:\ndata: {\"id\":\"chat_123\",\"object\":\"chat.completion.chunk\",\"created\":1690000000,\"model\":\"mistral:instruct\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\ndata: {\"id\":\"chat_123\",\"object\":\"chat.completion.chunk\",\"created\":1690000000,\"model\":\"mistral:instruct\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}]}\ndata: [DONE]",
+        "parameters": [
+          {
+            "description": "If provided the stacktraces will be added to the response.",
+            "in": "query",
+            "name": "stackTrace",
+            "schema": {
+              "default": "false",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/taskengine_OpenAIChatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/chatapi_OpenAIChatResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Processes chat requests using the configured task chain."
+      }
+    },
+    "/openai/{chainID}/v1/models": {
+      "get": {
+        "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backendapi_OpenAICompatibleModelList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists all registered models in OpenAI-compatible format."
+      },
+      "parameters": [
+        {
+          "description": "The ID of the chain that links to the openAI completion API. Currently unused.",
+          "in": "path",
+          "name": "chainID",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "/providers/configs": {
       "get": {
@@ -2853,71 +2976,6 @@
           }
         },
         "summary": "Executes dynamic task-chain workflows."
-      }
-    },
-    "/{chainID}/v1/chat/completions": {
-      "parameters": [
-        {
-          "description": "The ID of the task chain to use.",
-          "in": "path",
-          "name": "chainID",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "post": {
-        "description": "Processes chat requests using the configured task chain.\nThis endpoint provides OpenAI-compatible chat completions by executing\nthe configured task chain with the provided request data.\nThe task chain must be configured first using the /chat/taskchain endpoint.\n--- SSE Streaming ---\nWhen 'stream: true' is set in the request body, the endpoint streams the response\nusing Server-Sent Events (SSE) in the OpenAI-compatible format.\nClients should concatenate the 'content' from the 'delta' object in each 'data' event\nto reconstruct the full message. The stream is terminated by a 'data: [DONE]' message.\nExample event stream:\ndata: {\"id\":\"chat_123\",\"object\":\"chat.completion.chunk\",\"created\":1690000000,\"model\":\"mistral:instruct\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\ndata: {\"id\":\"chat_123\",\"object\":\"chat.completion.chunk\",\"created\":1690000000,\"model\":\"mistral:instruct\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}]}\ndata: [DONE]",
-        "parameters": [
-          {
-            "description": "If provided the stacktraces will be added to the response.",
-            "in": "query",
-            "name": "stackTrace",
-            "schema": {
-              "default": "false",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/taskengine_OpenAIChatRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/chatapi_OpenAIChatResponse"
-                }
-              },
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "Processes chat requests using the configured task chain."
       }
     }
   },

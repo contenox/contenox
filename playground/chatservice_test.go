@@ -122,7 +122,7 @@ func TestChatService_OpenAIChatCompletions(t *testing.T) {
 					Messages: []taskengine.OpenAIChatRequestMessage{
 						{
 							Role:    "user",
-							Content: "What is the capital of Germany? Respond only with the city name.",
+							Content: "What is the capital of Italy? Respond only with the city name.",
 						},
 					},
 					Temperature: 0.1,
@@ -141,7 +141,7 @@ func TestChatService_OpenAIChatCompletions(t *testing.T) {
 				assert.Equal(t, "assistant", response.Choices[0].Message.Role)
 
 				// Verify the content contains the expected answer
-				assert.Contains(t, strings.ToLower(response.Choices[0].Message.Content), "berlin")
+				assert.Contains(t, strings.ToLower(response.Choices[0].Message.Content), "rome")
 			})
 		}
 	})

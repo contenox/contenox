@@ -129,10 +129,10 @@ func (s *HTTPModelService) Update(ctx context.Context, data *runtimetypes.Model)
 }
 
 // List implements modelservice.Service.List
-// Uses the internal /internal/models endpoint to get full model details
+// Uses the /models endpoint to get full model details
 func (s *HTTPModelService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.Model, error) {
 	// Build URL for internal endpoint
-	rUrl := fmt.Sprintf("%s/internal/models?limit=%d", s.baseURL, limit)
+	rUrl := fmt.Sprintf("%s/models?limit=%d", s.baseURL, limit)
 	if createdAtCursor != nil {
 		rUrl += "&cursor=" + url.QueryEscape(createdAtCursor.Format(time.RFC3339Nano))
 	}

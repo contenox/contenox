@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.65
+title: contenox/runtime – LLM Backend Management API v0.0.51-88-ge7761b9-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.65</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-88-ge7761b9-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1465,68 +1465,6 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Lists all registered models in internal format.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.get('/internal/models', headers = headers)
-
-print(r.json())
-
-```
-
-`GET /internal/models`
-
-Lists all registered models in internal format.
-This endpoint returns full model details including timestamps and capabilities.
-Intended for administrative and debugging purposes.
-
-<h3 id="lists-all-registered-models-in-internal-format.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
-
-> Example responses
-
-> 200 Response
-
-```json
-[
-  {
-    "canChat": true,
-    "canEmbed": false,
-    "canPrompt": true,
-    "canStream": true,
-    "contextLength": 8192,
-    "createdAt": "2023-11-15T14:30:45Z",
-    "id": "m7d8e9f0a-1b2c-3d4e-5f6a-7b8c9d0e1f2a",
-    "model": "mistral:instruct",
-    "updatedAt": "2023-11-15T14:30:45Z"
-  }
-]
-```
-
-<h3 id="lists-all-registered-models-in-internal-format.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_Model](#schemaarray_runtimetypes_model)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
 ## Lists all models associated with a specific affinity group.
 
 > Code samples
@@ -1743,7 +1681,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Lists all registered models in OpenAI-compatible format.
+## Lists all registered models in internal format.
 
 > Code samples
 
@@ -1762,36 +1700,42 @@ print(r.json())
 
 `GET /models`
 
-Lists all registered models in OpenAI-compatible format.
-Returns models as they would appear in OpenAI's /v1/models endpoint.
-NOTE: Only models assigned to at least one group will be available for request processing.
-Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
+Lists all registered models in internal format.
+This endpoint returns full model details including timestamps and capabilities.
+Intended for administrative and debugging purposes.
 
-<h3 id="lists-all-registered-models-in-openai-compatible-format.-parameters">Parameters</h3>
+<h3 id="lists-all-registered-models-in-internal-format.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
 > 200 Response
 
 ```json
-{
-  "data": [
-    {}
-  ],
-  "object": "list"
-}
+[
+  {
+    "canChat": true,
+    "canEmbed": false,
+    "canPrompt": true,
+    "canStream": true,
+    "contextLength": 8192,
+    "createdAt": "2023-11-15T14:30:45Z",
+    "id": "m7d8e9f0a-1b2c-3d4e-5f6a-7b8c9d0e1f2a",
+    "model": "mistral:instruct",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
 ```
 
-<h3 id="lists-all-registered-models-in-openai-compatible-format.-responses">Responses</h3>
+<h3 id="lists-all-registered-models-in-internal-format.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[backendapi_OpenAICompatibleModelList](#schemabackendapi_openaicompatiblemodellist)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_runtimetypes_Model](#schemaarray_runtimetypes_model)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -1997,6 +1941,151 @@ Returns the updated model configuration.
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_Model](#schemaruntimetypes_model)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists all registered models in OpenAI-compatible format.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/openai/{chainID}/v1/models', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /openai/{chainID}/v1/models`
+
+Lists all registered models in OpenAI-compatible format.
+Returns models as they would appear in OpenAI's /v1/models endpoint.
+NOTE: Only models assigned to at least one group will be available for request processing.
+Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
+the chainID parameter is currently unused.
+
+<h3 id="lists-all-registered-models-in-openai-compatible-format.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "data": [
+    {}
+  ],
+  "object": "list"
+}
+```
+
+<h3 id="lists-all-registered-models-in-openai-compatible-format.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[backendapi_OpenAICompatibleModelList](#schemabackendapi_openaicompatiblemodellist)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Processes chat requests using the configured task chain.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/openai/{chainID}/v1/chat/completions', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /openai/{chainID}/v1/chat/completions`
+
+Processes chat requests using the configured task chain.
+This endpoint provides OpenAI-compatible chat completions by executing
+the configured task chain with the provided request data.
+The task chain must be configured first using the /chat/taskchain endpoint.
+--- SSE Streaming ---
+When 'stream: true' is set in the request body, the endpoint streams the response
+using Server-Sent Events (SSE) in the OpenAI-compatible format.
+Clients should concatenate the 'content' from the 'delta' object in each 'data' event
+to reconstruct the full message. The stream is terminated by a 'data: [DONE]' message.
+Example event stream:
+data: {"id":"chat_123","object":"chat.completion.chunk","created":1690000000,"model":"mistral:instruct","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+data: {"id":"chat_123","object":"chat.completion.chunk","created":1690000000,"model":"mistral:instruct","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
+data: [DONE]
+
+> Body parameter
+
+```json
+{
+  "frequency_penalty": 0,
+  "max_tokens": 512,
+  "messages": {
+    "content": "Hello, how are you?",
+    "role": "user"
+  },
+  "model": "mistral:instruct",
+  "n": 1,
+  "presence_penalty": 0,
+  "stop": "[\\\"\\\\n\\\", \\\"###\\\"]",
+  "stream": false,
+  "temperature": 0.7,
+  "top_p": 1,
+  "user": "user_123"
+}
+```
+
+<h3 id="processes-chat-requests-using-the-configured-task-chain.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|stackTrace|query|string|false|If provided the stacktraces will be added to the response.|
+|body|body|[taskengine_OpenAIChatRequest](#schemataskengine_openaichatrequest)|true|none|
+|chainID|path|string|true|The ID of the task chain to use.|
+
+> Example responses
+
+> 200 Response
+
+> default Response
+
+```json
+{
+  "error": "string"
+}
+```
+
+<h3 id="processes-chat-requests-using-the-configured-task-chain.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -3094,93 +3183,6 @@ If groups are enabled, models and backends not assigned to any group will be com
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[execapi_taskExecutionResponse](#schemaexecapi_taskexecutionresponse)|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## Processes chat requests using the configured task chain.
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Content-Type': 'application/json',
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.post('/{chainID}/v1/chat/completions', headers = headers)
-
-print(r.json())
-
-```
-
-`POST /{chainID}/v1/chat/completions`
-
-Processes chat requests using the configured task chain.
-This endpoint provides OpenAI-compatible chat completions by executing
-the configured task chain with the provided request data.
-The task chain must be configured first using the /chat/taskchain endpoint.
---- SSE Streaming ---
-When 'stream: true' is set in the request body, the endpoint streams the response
-using Server-Sent Events (SSE) in the OpenAI-compatible format.
-Clients should concatenate the 'content' from the 'delta' object in each 'data' event
-to reconstruct the full message. The stream is terminated by a 'data: [DONE]' message.
-Example event stream:
-data: {"id":"chat_123","object":"chat.completion.chunk","created":1690000000,"model":"mistral:instruct","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
-data: {"id":"chat_123","object":"chat.completion.chunk","created":1690000000,"model":"mistral:instruct","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
-data: [DONE]
-
-> Body parameter
-
-```json
-{
-  "frequency_penalty": 0,
-  "max_tokens": 512,
-  "messages": {
-    "content": "Hello, how are you?",
-    "role": "user"
-  },
-  "model": "mistral:instruct",
-  "n": 1,
-  "presence_penalty": 0,
-  "stop": "[\\\"\\\\n\\\", \\\"###\\\"]",
-  "stream": false,
-  "temperature": 0.7,
-  "top_p": 1,
-  "user": "user_123"
-}
-```
-
-<h3 id="processes-chat-requests-using-the-configured-task-chain.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|stackTrace|query|string|false|If provided the stacktraces will be added to the response.|
-|body|body|[taskengine_OpenAIChatRequest](#schemataskengine_openaichatrequest)|true|none|
-|chainID|path|string|true|The ID of the task chain to use.|
-
-> Example responses
-
-> 200 Response
-
-> default Response
-
-```json
-{
-  "error": "string"
-}
-```
-
-<h3 id="processes-chat-requests-using-the-configured-task-chain.-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
