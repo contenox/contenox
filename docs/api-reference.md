@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-94-gd75bac1-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.68
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-94-gd75bac1-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.68</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -2123,8 +2123,8 @@ Lists all configured external providers with pagination support.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
