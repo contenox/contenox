@@ -39,3 +39,19 @@ func WithSeed(seed int) ChatArgument {
 		},
 	}
 }
+
+func WithTool(tool Tool) ChatArgument {
+	return &chatArgument{
+		applyFunc: func(config *ChatConfig) {
+			config.Tools = append(config.Tools, tool)
+		},
+	}
+}
+
+func WithTools(tools ...Tool) ChatArgument {
+	return &chatArgument{
+		applyFunc: func(config *ChatConfig) {
+			config.Tools = append(config.Tools, tools...)
+		},
+	}
+}

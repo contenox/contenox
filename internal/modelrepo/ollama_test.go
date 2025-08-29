@@ -106,9 +106,9 @@ func TestSystem_Ollama(t *testing.T) {
 		}
 		resp, err := chatClient.Chat(ctx, messages)
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp.Content)
-		assert.Equal(t, "assistant", resp.Role)
-		assert.NotContains(t, resp.Content, "<think>")
+		assert.NotEmpty(t, resp.Message.Content)
+		assert.Equal(t, "assistant", resp.Message.Role)
+		assert.NotContains(t, resp.Message.Content, "<think>")
 	})
 
 	t.Run("WithOptions", func(t *testing.T) {
@@ -131,7 +131,7 @@ func TestSystem_Ollama(t *testing.T) {
 			modelrepo.WithTemperature(0.1),
 			modelrepo.WithMaxTokens(60))
 		require.NoError(t, err)
-		assert.Contains(t, strings.ToLower(resp.Content), "rome")
+		assert.Contains(t, strings.ToLower(resp.Message.Content), "rome")
 	})
 
 	t.Run("BasicEmbedding", func(t *testing.T) {

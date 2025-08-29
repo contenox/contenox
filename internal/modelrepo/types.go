@@ -2,6 +2,20 @@ package modelrepo
 
 import "context"
 
+type ChatResult struct {
+	Message   Message
+	ToolCalls []ToolCall
+}
+
+type ToolCall struct {
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type"` // only "function" for now
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -16,16 +30,28 @@ type StreamParcel struct {
 	Error error
 }
 
+type Tool struct {
+	Type     string        `json:"type"`
+	Function *FunctionTool `json:"function,omitempty"`
+}
+
+type FunctionTool struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	Parameters  interface{} `json:"parameters,omitempty"`
+}
+
 type ChatConfig struct {
 	Temperature *float64 `json:"temperature,omitempty"`
 	MaxTokens   *int     `json:"max_tokens,omitempty"`
 	TopP        *float64 `json:"top_p,omitempty"`
 	Seed        *int     `json:"seed,omitempty"`
+	Tools       []Tool   `json:"tools,omitempty"`
 }
 
 // Client interfaces
 type LLMChatClient interface {
-	Chat(ctx context.Context, messages []Message, args ...ChatArgument) (Message, error)
+	Chat(ctx context.Context, messages []Message, args ...ChatArgument) (*ChatResult, error)
 }
 
 type LLMEmbedClient interface {

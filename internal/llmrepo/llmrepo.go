@@ -223,7 +223,7 @@ func (e *modelManager) Chat(
 		ProviderType: provider.GetType(),
 		BackendID:    backend,
 	}
-	return response, meta, nil
+	return response.Message, meta, nil
 }
 
 func (e *modelManager) Embed(

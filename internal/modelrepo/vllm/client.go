@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/contenox/runtime/internal/modelrepo"
@@ -36,6 +37,7 @@ type chatRequest struct {
 	TopP        *float64            `json:"top_p,omitempty"`
 	Seed        *int                `json:"seed,omitempty"`
 	Stream      bool                `json:"stream,omitempty"`
+	Tools       []modelrepo.Tool    `json:"tools,omitempty"`
 }
 
 func (c *vLLMClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
@@ -61,7 +63,8 @@ func (c *vLLMClient) sendRequest(ctx context.Context, endpoint string, request i
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("vLLM API returned non-200 status: %d for model %s", resp.StatusCode, c.modelName)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("vLLM API returned non-200 status: %d, body: %s for model %s", resp.StatusCode, string(bodyBytes), c.modelName)
 	}
 
 	return json.NewDecoder(resp.Body).Decode(response)
@@ -81,5 +84,6 @@ func buildChatRequest(modelName string, messages []modelrepo.Message, args []mod
 		TopP:        config.TopP,
 		Seed:        config.Seed,
 		Stream:      false,
+		Tools:       config.Tools,
 	}
 }

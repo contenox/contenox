@@ -23,6 +23,7 @@ type geminiGenerateContentRequest struct {
 	SystemInstruction *geminiSystemInstruction `json:"system_instruction,omitempty"`
 	Contents          []geminiContent          `json:"contents"`
 	GenerationConfig  *geminiGenerationConfig  `json:"generationConfig,omitempty"`
+	Tools             []modelrepo.Tool         `json:"tools,omitempty"`
 }
 
 type geminiGenerationConfig struct {
@@ -106,6 +107,7 @@ func buildGeminiRequest(modelName string, messages []modelrepo.Message, systemIn
 		request.GenerationConfig.MaxOutputTokens = config.MaxTokens
 	}
 	request.GenerationConfig.Seed = config.Seed
+	request.Tools = config.Tools
 
 	return request
 }

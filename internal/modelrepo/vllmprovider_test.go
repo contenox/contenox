@@ -24,7 +24,7 @@ func TestSystem_VLLM_Smoke(t *testing.T) {
 	t.Logf("Setting up vLLM container with model: %s", model)
 
 	// Set up vLLM instance (shared across all subtests)
-	apiBase, _, cleanup, err := modelrepo.SetupVLLMLocalInstance(ctx, model, tag)
+	apiBase, _, cleanup, err := modelrepo.SetupVLLMLocalInstance(ctx, model, tag, "none")
 	require.NoError(t, err, "failed to setup vLLM instance")
 	defer cleanup()
 
@@ -69,10 +69,10 @@ func TestSystem_VLLM_Smoke(t *testing.T) {
 				elapsed := time.Since(start)
 
 				require.NoError(t, err, "failed to get chat response")
-				assert.NotEmpty(t, resp.Content, "response content should not be empty")
-				assert.Equal(t, "assistant", resp.Role, "response role should be assistant")
+				assert.NotEmpty(t, resp.Message.Content, "response content should not be empty")
+				assert.Equal(t, "assistant", resp.Message.Role, "response role should be assistant")
 
-				t.Logf("Response received in %v: %q", elapsed, resp.Content)
+				t.Logf("Response received in %v: %q", elapsed, resp.Message.Content)
 			},
 		},
 		{
@@ -100,10 +100,10 @@ func TestSystem_VLLM_Smoke(t *testing.T) {
 					modelrepo.WithMaxTokens(30),
 				)
 				require.NoError(t, err, "failed to get chat response with options")
-				assert.NotEmpty(t, resp.Content, "response should not be empty")
+				assert.NotEmpty(t, resp.Message.Content, "response should not be empty")
 
 				// More flexible validation - check for presence of numbers
-				content := strings.ToLower(resp.Content)
+				content := strings.ToLower(resp.Message.Content)
 				t.Logf("Received response: %q", content)
 
 				// Check if response contains all required numbers
@@ -246,7 +246,7 @@ func TestSystem_VLLM_Smoke(t *testing.T) {
 					modelrepo.WithMaxTokens(10),
 				)
 				require.NoError(t, err, "failed to get first response")
-				require.NotEmpty(t, resp1.Content, "first response should not be empty")
+				require.NotEmpty(t, resp1.Message.Content, "first response should not be empty")
 
 				// Second request with SAME seed
 				resp2, err := chatClient.Chat(ctx, messages,
@@ -255,13 +255,13 @@ func TestSystem_VLLM_Smoke(t *testing.T) {
 					modelrepo.WithMaxTokens(10),
 				)
 				require.NoError(t, err, "failed to get second response")
-				require.NotEmpty(t, resp2.Content, "second response should not be empty")
+				require.NotEmpty(t, resp2.Message.Content, "second response should not be empty")
 
 				// Critical check: same seed = same output
-				assert.Equal(t, resp1.Content, resp2.Content,
+				assert.Equal(t, resp1.Message.Content, resp2.Message.Content,
 					"Responses with identical seed should be identical")
 
-				t.Logf("Verified deterministic output with seed 123: %q", resp1.Content)
+				t.Logf("Verified deterministic output with seed 123: %q", resp1.Message.Content)
 
 				// Third request with DIFFERENT seed
 				resp3, err := chatClient.Chat(ctx, messages,
@@ -270,13 +270,13 @@ func TestSystem_VLLM_Smoke(t *testing.T) {
 					modelrepo.WithMaxTokens(10),
 				)
 				require.NoError(t, err, "failed to get third response")
-				require.NotEmpty(t, resp3.Content, "third response should not be empty")
+				require.NotEmpty(t, resp3.Message.Content, "third response should not be empty")
 
 				// Sanity check: different seed should produce different output
 				// (not guaranteed but highly likely - warn if same)
-				if resp1.Content == resp3.Content {
+				if resp1.Message.Content == resp3.Message.Content {
 					t.Logf("WARNING: Responses with different seeds were identical. "+
-						"This is unusual but can happen with very short completions. \n\n%s\n%s\n%s", resp1.Content, resp2.Content, resp3.Content)
+						"This is unusual but can happen with very short completions. \n\n%s\n%s\n%s", resp1.Message.Content, resp2.Message.Content, resp3.Message.Content)
 				} else {
 					t.Logf("Confirmed different outputs with different seeds")
 				}

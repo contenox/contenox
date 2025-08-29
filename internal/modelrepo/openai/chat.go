@@ -11,31 +11,67 @@ type OpenAIChatClient struct {
 	openAIClient
 }
 
-func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.Message, error) {
+func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (*modelrepo.ChatResult, error) {
 	request := buildOpenAIRequest(c.modelName, messages, args)
 
 	var response struct {
 		Choices []struct {
-			Index        int               `json:"index"`
-			Message      modelrepo.Message `json:"message"`
-			FinishReason string            `json:"finish_reason"`
+			Index   int `json:"index"`
+			Message struct {
+				Role      string `json:"role"`
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Type     string `json:"type"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
 	}
 
 	if err := c.sendRequest(ctx, "/chat/completions", request, &response); err != nil {
-		return modelrepo.Message{}, err
+		return nil, err
 	}
 
 	if len(response.Choices) == 0 {
-		return modelrepo.Message{}, fmt.Errorf("no chat completion choices returned from OpenAI for model %s", c.modelName)
+		return nil, fmt.Errorf("no chat completion choices returned from OpenAI for model %s", c.modelName)
 	}
 
 	choice := response.Choices[0]
-	if choice.Message.Content == "" {
-		return modelrepo.Message{}, fmt.Errorf("empty content from model %s despite normal completion. Finish reason: %s", c.modelName, choice.FinishReason)
+	if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
+		return nil, fmt.Errorf("empty content from model %s despite normal completion. Finish reason: %s", c.modelName, choice.FinishReason)
 	}
 
-	return choice.Message, nil
+	// Convert to our format
+	message := modelrepo.Message{
+		Role:    choice.Message.Role,
+		Content: choice.Message.Content,
+	}
+
+	// Convert tool calls
+	var toolCalls []modelrepo.ToolCall
+	for _, tc := range choice.Message.ToolCalls {
+		toolCalls = append(toolCalls, modelrepo.ToolCall{
+			ID:   tc.ID,
+			Type: tc.Type,
+			Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			},
+		})
+	}
+
+	return &modelrepo.ChatResult{
+		Message:   message,
+		ToolCalls: toolCalls,
+	}, nil
 }
 
 var _ modelrepo.LLMChatClient = (*OpenAIChatClient)(nil)

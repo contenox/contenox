@@ -103,8 +103,10 @@ func (m *MockProvider) GetStreamConnection(ctx context.Context, backendID string
 type MockChatClient struct{}
 
 // Chat returns a mock response.
-func (m *MockChatClient) Chat(ctx context.Context, messages []Message, opts ...ChatArgument) (Message, error) {
-	return Message{Role: "assistant", Content: "mock response"}, nil
+func (m *MockChatClient) Chat(ctx context.Context, messages []Message, opts ...ChatArgument) (*ChatResult, error) {
+	return &ChatResult{
+		Message: Message{Role: "assistant", Content: "mock response"},
+	}, nil
 }
 
 // Close is a no-op for the mock client.

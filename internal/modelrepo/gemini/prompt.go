@@ -29,7 +29,7 @@ func (c *GeminiPromptClient) Prompt(ctx context.Context, systemInstruction strin
 		return "", fmt.Errorf("Gemini prompt execution failed: %w", err)
 	}
 
-	return response.Content, nil
+	return response.Message.Content, nil
 }
 
 var _ modelrepo.LLMPromptExecClient = (*GeminiPromptClient)(nil)

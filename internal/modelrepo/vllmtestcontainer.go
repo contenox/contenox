@@ -26,19 +26,24 @@ const (
 )
 
 // SetupVLLMLocalInstance creates a vLLM container for testing.
-func SetupVLLMLocalInstance(ctx context.Context, model string, tag string) (string, testcontainers.Container, func(), error) {
+func SetupVLLMLocalInstance(ctx context.Context, model string, tag string, toolParser string) (string, testcontainers.Container, func(), error) {
 	// Use default values if none are provided.
 	if model == "" {
 		model = defaultModel
 	}
-	if tag == "" {
+	if tag == "" || toolParser == "none" {
 		tag = defaultTag
 	}
 
 	// Define a no-op cleanup function to start. This ensures we can always
 	// return a valid, non-nil function.
 	cleanup := func() {}
-
+	cmd := []string{
+		"--model", model,
+	}
+	if toolParser != "" {
+		cmd = append(cmd, "--enable-auto-tool-choice", "--tool-call-parser", toolParser)
+	}
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: "openeuler/vllm-cpu:" + tag,
@@ -46,9 +51,7 @@ func SetupVLLMLocalInstance(ctx context.Context, model string, tag string) (stri
 				"MODEL":         model,
 				"MAX_MODEL_LEN": defaultMaxModelLen,
 			},
-			Cmd: []string{
-				"--model", model,
-			},
+			Cmd:          cmd,
 			Privileged:   true,
 			ExposedPorts: []string{vllmPort},
 			WaitingFor: wait.ForHTTP(vllmHealthPath).

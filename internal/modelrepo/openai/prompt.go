@@ -31,7 +31,12 @@ func (c *OpenAIPromptClient) Prompt(ctx context.Context, systemInstruction strin
 
 func (c *OpenAIPromptClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.Message, error) {
 	chatClient := &OpenAIChatClient{openAIClient: c.openAIClient}
-	return chatClient.Chat(ctx, messages, args...)
+	resp, err := chatClient.Chat(ctx, messages, args...)
+	if err != nil {
+		return modelrepo.Message{}, fmt.Errorf("OpenAI chat execution failed: %w", err)
+	}
+
+	return resp.Message, nil
 }
 
 var _ modelrepo.LLMPromptExecClient = (*OpenAIPromptClient)(nil)

@@ -27,6 +27,7 @@ type openAIChatRequest struct {
 	TopP        *float64            `json:"top_p,omitempty"`
 	Seed        *int                `json:"seed,omitempty"`
 	Stream      bool                `json:"stream,omitempty"`
+	Tools       []modelrepo.Tool    `json:"tools,omitempty"`
 }
 
 func (c *openAIClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
@@ -97,6 +98,7 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 	request.MaxTokens = config.MaxTokens
 	request.TopP = config.TopP
 	request.Seed = config.Seed
+	request.Tools = config.Tools
 
 	return request
 }
