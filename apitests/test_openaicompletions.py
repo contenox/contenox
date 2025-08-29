@@ -117,7 +117,7 @@ def test_openai_sdk_streaming_compatibility(
     # --- Test: Call the API with stream=True ---
     stream = client.chat.completions.create(
         model=model_name,
-        messages=[{"role": "user", "content": "What is the capital of Germany? Respond with only the city name."}],
+        messages=[{"role": "user", "content": "What is the capital of France?"}],
         stream=True
     )
 
@@ -134,4 +134,4 @@ def test_openai_sdk_streaming_compatibility(
             full_response_content += chunk.choices[0].delta.content
 
     assert chunk_count > 1 # Ensure we received multiple chunks
-    assert "Berlin" in full_response_content
+    assert "Paris" in full_response_content

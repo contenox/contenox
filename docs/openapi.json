@@ -4,7 +4,31 @@
       "ErrorResponse": {
         "properties": {
           "error": {
-            "type": "string"
+            "properties": {
+              "code": {
+                "description": "A specific error code identifier (e.g., 'invalid_parameter_value', 'unauthorized')",
+                "type": "string"
+              },
+              "message": {
+                "description": "A human-readable error message",
+                "type": "string"
+              },
+              "param": {
+                "description": "The parameter that caused the error, if applicable",
+                "nullable": true,
+                "type": "string"
+              },
+              "type": {
+                "description": "The error type category (e.g., 'invalid_request_error', 'authentication_error')",
+                "type": "string"
+              }
+            },
+            "required": [
+              "message",
+              "type",
+              "code"
+            ],
+            "type": "object"
           }
         },
         "required": [
@@ -1066,7 +1090,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.67"
+    "version": "v0.0.51-94-gd75bac1-dirty"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.67
+title: contenox/runtime – LLM Backend Management API v0.0.51-94-gd75bac1-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.67</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-94-gd75bac1-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -2077,7 +2077,12 @@ data: [DONE]
 
 ```json
 {
-  "error": "string"
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
 }
 ```
 
@@ -2388,7 +2393,12 @@ data: {"status":"downloading","digest":"sha256:abc123","total":1000000,"complete
 
 ```json
 {
-  "error": "string"
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
 }
 ```
 
@@ -3201,7 +3211,12 @@ X-API-Key
 
 ```json
 {
-  "error": "string"
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
 }
 
 ```
@@ -3210,7 +3225,11 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|error|string|true|none|none|
+|error|object|true|none|none|
+|» code|string|true|none|A specific error code identifier (e.g., 'invalid_parameter_value', 'unauthorized')|
+|» message|string|true|none|A human-readable error message|
+|» param|string¦null|false|none|The parameter that caused the error, if applicable|
+|» type|string|true|none|The error type category (e.g., 'invalid_request_error', 'authentication_error')|
 
 <h2 id="tocS_array_backendapi_backendSummary">array_backendapi_backendSummary</h2>
 <!-- backwards compatibility -->

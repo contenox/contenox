@@ -64,12 +64,41 @@ func main() {
 		}
 	}
 
-	// Define standard error response schema
 	errorResponseSchema := openapi3.NewSchema()
 	errorResponseSchema.Type = &openapi3.Types{openapi3.TypeObject}
 	errorResponseSchema.Properties = openapi3.Schemas{
 		"error": &openapi3.SchemaRef{
-			Value: openapi3.NewStringSchema(),
+			Value: &openapi3.Schema{
+				Type: &openapi3.Types{openapi3.TypeObject},
+				Properties: openapi3.Schemas{
+					"message": &openapi3.SchemaRef{
+						Value: &openapi3.Schema{
+							Type:        &openapi3.Types{openapi3.TypeString},
+							Description: "A human-readable error message",
+						},
+					},
+					"type": &openapi3.SchemaRef{
+						Value: &openapi3.Schema{
+							Type:        &openapi3.Types{openapi3.TypeString},
+							Description: "The error type category (e.g., 'invalid_request_error', 'authentication_error')",
+						},
+					},
+					"param": &openapi3.SchemaRef{
+						Value: &openapi3.Schema{
+							Type:        &openapi3.Types{openapi3.TypeString},
+							Description: "The parameter that caused the error, if applicable",
+							Nullable:    true,
+						},
+					},
+					"code": &openapi3.SchemaRef{
+						Value: &openapi3.Schema{
+							Type:        &openapi3.Types{openapi3.TypeString},
+							Description: "A specific error code identifier (e.g., 'invalid_parameter_value', 'unauthorized')",
+						},
+					},
+				},
+				Required: []string{"message", "type", "code"},
+			},
 		},
 	}
 	errorResponseSchema.Required = []string{"error"}

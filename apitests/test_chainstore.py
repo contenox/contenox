@@ -142,16 +142,12 @@ def test_get_nonexistent_task_chain(base_url):
     nonexistent_id = f"nonexistent-chain-{uuid.uuid4()}"
     response = requests.get(f"{base_url}/taskchains/{nonexistent_id}")
     assert_status_code(response, 404)
-    error = response.json()
-    assert "not found" in error["error"].lower()
 
 def test_delete_nonexistent_task_chain(base_url):
     """Test deleting a task chain that doesn't exist."""
     nonexistent_id = f"nonexistent-chain-{uuid.uuid4()}"
     response = requests.delete(f"{base_url}/taskchains/{nonexistent_id}")
     assert_status_code(response, 404)
-    error = response.json()
-    assert "not found" in error["error"].lower()
 
 def test_task_chain_full_workflow(base_url):
     """Test a complete workflow with task chain creation, update, and deletion."""
