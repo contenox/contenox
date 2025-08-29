@@ -19,18 +19,27 @@ func HandleAPIError(resp *http.Response) error {
 	// Try to decode as OpenAI-style JSON error
 	var apiErr struct {
 		Error struct {
-			Message string `json:"message"`
-			Type    string `json:"type"`
-			Param   string `json:"param"`
-			Code    string `json:"code"`
+			Message string  `json:"message"`
+			Type    string  `json:"type"`
+			Param   *string `json:"param"`
+			Code    string  `json:"code"`
 		} `json:"error"`
 	}
 
 	if jsonErr := json.Unmarshal(body, &apiErr); jsonErr == nil && apiErr.Error.Message != "" {
-		if apiErr.Error.Code != "" {
-			return fmt.Errorf("%s (code: %s)", apiErr.Error.Message, apiErr.Error.Code)
+		param := ""
+		if apiErr.Error.Param != nil {
+			param = *apiErr.Error.Param
 		}
-		return errors.New(apiErr.Error.Message)
+
+		// Return structured APIError instead of string
+		return &APIError{
+			err:       errors.New(apiErr.Error.Message),
+			message:   apiErr.Error.Message,
+			param:     param,
+			errorType: apiErr.Error.Type,
+			errorCode: apiErr.Error.Code,
+		}
 	}
 
 	// Fallback to generic error
