@@ -837,7 +837,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-98-g6cf26b1-dirty
+    version: v0.0.69
 openapi: 3.1.0
 paths:
     /backend-affinity/{backendID}/groups:
@@ -1919,14 +1919,14 @@ paths:
                 Example: /queue/cancel?url=http://localhost:11434
                 /queue/cancel?model=mistral:latest
             parameters:
-                - description: The model name to cancel downloads for across all backends.
-                  in: query
-                  name: model
-                  schema:
-                    type: string
                 - description: The base URL of a specific backend to cancel downloads on.
                   in: query
                   name: url
+                  schema:
+                    type: string
+                - description: The model name to cancel downloads for across all backends.
+                  in: query
+                  name: model
                   schema:
                     type: string
             responses:
