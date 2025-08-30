@@ -23,12 +23,22 @@ func ConvertChatHistoryToOpenAI(id string, chatHistory ChatHistory) OpenAIChatRe
 		lastMessage := chatHistory.Messages[len(chatHistory.Messages)-1]
 		choice := OpenAIChatResponseChoice{
 			Index: 0,
-			Message: OpenAIChatRequestMessage{
-				Role:    lastMessage.Role,
-				Content: lastMessage.Content,
+			Message: OpenAIChatResponseMessage{
+				Role: lastMessage.Role,
 			},
-			FinishReason: "stop",
 		}
+
+		if len(lastMessage.CallTools) > 0 {
+			choice.FinishReason = "tool_calls"
+			choice.Message.ToolCalls = lastMessage.CallTools
+			// Content remains nil for tool calls
+		} else {
+			choice.FinishReason = "stop"
+			// Pointer to the content string
+			content := lastMessage.Content
+			choice.Message.Content = &content
+		}
+
 		resp.Choices = append(resp.Choices, choice)
 	}
 

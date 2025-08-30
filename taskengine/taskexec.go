@@ -522,17 +522,34 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 	if err != nil {
 		return nil, DataTypeAny, "", fmt.Errorf("chat failed: %w", err)
 	}
+
+	callTools := make([]ToolCall, len(resp.ToolCalls))
+	for i, tc := range resp.ToolCalls {
+		function := FunctionCall{
+			Name:      tc.Function.Name,
+			Arguments: tc.Function.Arguments,
+		}
+		callTools[i] = ToolCall{
+			ID:       tc.ID,
+			Function: function,
+			Type:     tc.Type,
+		}
+	}
+	respMessage := resp.Message
 	input.Messages = append(input.Messages, Message{
-		Role:      resp.Role,
-		Content:   resp.Content,
+		Role:      respMessage.Role,
+		Content:   respMessage.Content,
+		CallTools: callTools,
 		Timestamp: time.Now().UTC(),
 	})
-
-	outputTokensCount, err := exe.repo.CountTokens(ctx, meta.ModelName, resp.Content)
-	if err != nil {
-		err = fmt.Errorf("tokenizer failed: %w", err)
-		reportErr(err)
-		return nil, DataTypeAny, "", err
+	var outputTokensCount int
+	if message := resp.Message; len(message.Content) != 0 {
+		outputTokensCount, err = exe.repo.CountTokens(ctx, meta.ModelName, message.Content)
+		if err != nil {
+			err = fmt.Errorf("tokenizer failed: %w", err)
+			reportErr(err)
+			return nil, DataTypeAny, "", err
+		}
 	}
 	input.OutputTokens = outputTokensCount
 

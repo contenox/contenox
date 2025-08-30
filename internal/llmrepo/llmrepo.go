@@ -47,7 +47,7 @@ type ModelRepo interface {
 		ctx context.Context,
 		req Request,
 		Messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument,
-	) (libmodelprovider.Message, Meta, error)
+	) (libmodelprovider.ChatResult, Meta, error)
 	Embed(
 		ctx context.Context,
 		embedReq EmbedRequest,
@@ -183,13 +183,13 @@ func (e *modelManager) Chat(
 	ctx context.Context,
 	req Request,
 	messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument,
-) (libmodelprovider.Message, Meta, error) {
+) (libmodelprovider.ChatResult, Meta, error) {
 	if err := validateRequest(req); err != nil {
-		return libmodelprovider.Message{}, Meta{}, fmt.Errorf("invalid request: %w", err)
+		return libmodelprovider.ChatResult{}, Meta{}, fmt.Errorf("invalid request: %w", err)
 	}
 
 	if len(messages) == 0 {
-		return libmodelprovider.Message{}, Meta{}, errors.New("messages cannot be empty")
+		return libmodelprovider.ChatResult{}, Meta{}, errors.New("messages cannot be empty")
 	}
 
 	runtimeStateResolution := e.GetRuntime(ctx)
@@ -209,13 +209,13 @@ func (e *modelManager) Chat(
 		llmresolver.Randomly,
 	)
 	if err != nil {
-		return libmodelprovider.Message{}, Meta{}, fmt.Errorf("chat: client resolution failed: %w", err)
+		return libmodelprovider.ChatResult{}, Meta{}, fmt.Errorf("chat: client resolution failed: %w", err)
 	}
 	defer safeClose(client)
 
 	response, err := client.Chat(ctx, messages, opts...)
 	if err != nil {
-		return libmodelprovider.Message{}, Meta{}, fmt.Errorf("chat execution failed: %w", err)
+		return libmodelprovider.ChatResult{}, Meta{}, fmt.Errorf("chat execution failed: %w", err)
 	}
 
 	meta := Meta{
@@ -223,7 +223,7 @@ func (e *modelManager) Chat(
 		ProviderType: provider.GetType(),
 		BackendID:    backend,
 	}
-	return response.Message, meta, nil
+	return response, meta, nil
 }
 
 func (e *modelManager) Embed(

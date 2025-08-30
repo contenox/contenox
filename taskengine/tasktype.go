@@ -394,7 +394,9 @@ type Message struct {
 	// Role is the role of the message sender.
 	Role string `json:"role" example:"user"`
 	// Content is the content of the message.
-	Content string `json:"content" example:"What is the capital of France?"`
+	Content string `json:"content,omitempty" example:"What is the capital of France?"`
+	// CallTools is the tool call of the message sender.
+	CallTools []ToolCall `json:"callTools,omitempty"`
 	// Timestamp is the time the message was sent.
 	Timestamp time.Time `json:"timestamp" example:"2023-11-15T14:30:45Z"`
 }
@@ -429,14 +431,34 @@ type OpenAIChatResponse struct {
 	SystemFingerprint string                     `json:"system_fingerprint,omitempty" example:"system_456"`
 }
 
+// OpenAIChatResponseChoice represents a single choice in an OpenAI chat response.
 type OpenAIChatResponseChoice struct {
-	Index        int                      `json:"index" example:"0"`
-	Message      OpenAIChatRequestMessage `json:"message" openapi_include_type:"taskengine.OpenAIChatRequestMessage"`
-	FinishReason string                   `json:"finish_reason" example:"stop"`
+	Index        int                       `json:"index" example:"0"`
+	Message      OpenAIChatResponseMessage `json:"message" openapi_include_type:"taskengine.OpenAIChatResponseMessage"`
+	FinishReason string                    `json:"finish_reason" example:"stop"`
 }
 
 type OpenAITokenUsage struct {
 	PromptTokens     int `json:"prompt_tokens" example:"100"`
 	CompletionTokens int `json:"completion_tokens" example:"50"`
 	TotalTokens      int `json:"total_tokens" example:"150"`
+}
+
+// ToolCall represents a tool call requested by the model.
+type ToolCall struct {
+	ID       string       `json:"id" example:"call_abc123"`
+	Type     string       `json:"type" example:"function"`
+	Function FunctionCall `json:"function" openapi_include_type:"taskengine.FunctionCall"`
+}
+
+// FunctionCall specifies the function name and arguments for a tool call.
+type FunctionCall struct {
+	Name      string `json:"name" example:"get_current_weather"`
+	Arguments string `json:"arguments" example:"{\n  \"location\": \"San Francisco, CA\",\n  \"unit\": \"celsius\"\n}"`
+}
+
+type OpenAIChatResponseMessage struct {
+	Role      string     `json:"role" example:"assistant"`
+	Content   *string    `json:"content,omitempty" example:"I can help with that."` // Pointer to handle null content for tool calls
+	ToolCalls []ToolCall `json:"tool_calls,omitempty" openapi_include_type:"taskengine.ToolCall"`
 }

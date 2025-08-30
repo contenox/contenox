@@ -26,7 +26,7 @@ func NewVLLMChatClient(ctx context.Context, baseURL, modelName string, contextLe
 	return client, nil
 }
 
-func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (*modelrepo.ChatResult, error) {
+func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
 	request := buildChatRequest(c.modelName, messages, args)
 
 	var response struct {
@@ -48,11 +48,11 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message,
 	}
 
 	if err := c.sendRequest(ctx, "/v1/chat/completions", request, &response); err != nil {
-		return nil, err
+		return modelrepo.ChatResult{}, err
 	}
 
 	if len(response.Choices) == 0 {
-		return nil, fmt.Errorf("no completion choices returned")
+		return modelrepo.ChatResult{}, fmt.Errorf("no completion choices returned")
 	}
 
 	choice := response.Choices[0]
@@ -81,15 +81,15 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message,
 
 	switch choice.FinishReason {
 	case "stop":
-		return &modelrepo.ChatResult{
+		return modelrepo.ChatResult{
 			Message:   message,
 			ToolCalls: toolCalls,
 		}, nil
 	case "length":
-		return nil, fmt.Errorf("token limit reached")
+		return modelrepo.ChatResult{}, fmt.Errorf("token limit reached")
 	case "content_filter":
-		return nil, fmt.Errorf("content filtered")
+		return modelrepo.ChatResult{}, fmt.Errorf("content filtered")
 	default:
-		return nil, fmt.Errorf("unexpected completion reason: %s", choice.FinishReason)
+		return modelrepo.ChatResult{}, fmt.Errorf("unexpected completion reason: %s", choice.FinishReason)
 	}
 }

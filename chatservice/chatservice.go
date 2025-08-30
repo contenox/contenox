@@ -77,11 +77,26 @@ func (s *service) OpenAIChatCompletionsStream(ctx context.Context, taskChainID s
 
 	go func() {
 		defer close(ch)
-		content := fullResponse.Choices[0].Message.Content
-		words := strings.Fields(content)
 
-		// Stream word by word
-		for i, word := range words {
+		choice := fullResponse.Choices[0]
+		finishReason := "stop"
+
+		// Handle tool call "streaming"
+		if len(choice.Message.ToolCalls) > 0 {
+			finishReason = "tool_calls"
+			toolCallChunks := make([]OpenAIStreamToolCall, len(choice.Message.ToolCalls))
+			for i, tc := range choice.Message.ToolCalls {
+				toolCallChunks[i] = OpenAIStreamToolCall{
+					Index: i,
+					ID:    tc.ID,
+					Type:  tc.Type,
+					Function: &OpenAIStreamFunctionCall{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					},
+				}
+			}
+
 			chunk := OpenAIChatStreamChunk{
 				ID:      fullResponse.ID,
 				Object:  "chat.completion.chunk",
@@ -91,20 +106,43 @@ func (s *service) OpenAIChatCompletionsStream(ctx context.Context, taskChainID s
 					{
 						Index: 0,
 						Delta: OpenAIStreamDelta{
-							Content: " " + word,
+							ToolCalls: toolCallChunks,
 						},
 					},
 				},
 			}
-			// Remove leading space for the very first word
-			if i == 0 {
-				chunk.Choices[0].Delta.Content = word
-			}
 			ch <- chunk
-			time.Sleep(speed)
+		} else if choice.Message.Content != nil {
+			// Handle content streaming
+			content := *choice.Message.Content
+			words := strings.Fields(content)
+
+			// Stream word by word
+			for i, word := range words {
+				chunk := OpenAIChatStreamChunk{
+					ID:      fullResponse.ID,
+					Object:  "chat.completion.chunk",
+					Created: fullResponse.Created,
+					Model:   fullResponse.Model,
+					Choices: []OpenAIStreamChoice{
+						{
+							Index: 0,
+							Delta: OpenAIStreamDelta{
+								Content: " " + word,
+							},
+						},
+					},
+				}
+				// Remove leading space for the very first word
+				if i == 0 {
+					chunk.Choices[0].Delta.Content = word
+				}
+				ch <- chunk
+				time.Sleep(speed)
+			}
 		}
 
-		finishReason := "stop"
+		// Send the final chunk with the appropriate finish reason
 		finalChunk := OpenAIChatStreamChunk{
 			ID:      fullResponse.ID,
 			Object:  "chat.completion.chunk",
@@ -142,11 +180,26 @@ type OpenAIStreamChoice struct {
 	FinishReason *string           `json:"finish_reason,omitempty" example:"stop"`
 }
 
+// OpenAIStreamToolCall represents a tool call within a stream chunk.
+type OpenAIStreamToolCall struct {
+	Index    int                       `json:"index"`
+	ID       string                    `json:"id,omitempty"`
+	Type     string                    `json:"type,omitempty"`
+	Function *OpenAIStreamFunctionCall `json:"function,omitempty"`
+}
+
+// OpenAIStreamFunctionCall represents function details within a tool call stream chunk.
+type OpenAIStreamFunctionCall struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+}
+
 // OpenAIStreamDelta contains the incremental content update (the "delta") for a
 // streaming chat response.
 type OpenAIStreamDelta struct {
 	// The role of the author of this message.
 	Role string `json:"role,omitempty" example:"assistant"`
 	// The contents of the chunk.
-	Content string `json:"content,omitempty" example:" world"`
+	Content   string                 `json:"content,omitempty" example:" world"`
+	ToolCalls []OpenAIStreamToolCall `json:"tool_calls,omitempty"`
 }

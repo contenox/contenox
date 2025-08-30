@@ -15,7 +15,7 @@ type OllamaChatClient struct {
 	backendURL   string
 }
 
-func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (*modelrepo.ChatResult, error) {
+func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
 	// Convert messages to Ollama API format
 	apiMessages := make([]api.Message, 0, len(messages))
 	for _, msg := range messages {
@@ -71,11 +71,11 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 			if tool.Function.Parameters != nil {
 				paramsData, err := json.Marshal(tool.Function.Parameters)
 				if err != nil {
-					return nil, fmt.Errorf("failed to marshal tool parameters: %w", err)
+					return modelrepo.ChatResult{}, fmt.Errorf("failed to marshal tool parameters: %w", err)
 				}
 
 				if err := json.Unmarshal(paramsData, &params); err != nil {
-					return nil, fmt.Errorf("failed to unmarshal tool parameters: %w", err)
+					return modelrepo.ChatResult{}, fmt.Errorf("failed to unmarshal tool parameters: %w", err)
 				}
 			}
 
@@ -112,37 +112,37 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("ollama API chat request failed for model %s: %w", c.modelName, err)
+		return modelrepo.ChatResult{}, fmt.Errorf("ollama API chat request failed for model %s: %w", c.modelName, err)
 	}
 
 	// Check if we received any response
 	if finalResponse.Message.Role == "" {
-		return nil, fmt.Errorf("no response received from ollama for model %s", c.modelName)
+		return modelrepo.ChatResult{}, fmt.Errorf("no response received from ollama for model %s", c.modelName)
 	}
 
 	// Handle completion reasons
 	switch finalResponse.DoneReason {
 	case "error":
-		return nil, fmt.Errorf(
+		return modelrepo.ChatResult{}, fmt.Errorf(
 			"ollama generation error for model %s: %s",
 			c.modelName,
 			finalResponse.Message.Content,
 		)
 	case "length":
-		return nil, fmt.Errorf(
+		return modelrepo.ChatResult{}, fmt.Errorf(
 			"token limit reached for model %s (partial response: %q)",
 			c.modelName,
 			finalResponse.Message.Content,
 		)
 	case "stop":
 		if finalResponse.Message.Content == "" && len(finalResponse.Message.ToolCalls) == 0 {
-			return nil, fmt.Errorf(
+			return modelrepo.ChatResult{}, fmt.Errorf(
 				"empty content from model %s despite normal completion",
 				c.modelName,
 			)
 		}
 	default:
-		return nil, fmt.Errorf(
+		return modelrepo.ChatResult{}, fmt.Errorf(
 			"unexpected completion reason %q for model %s",
 			finalResponse.DoneReason,
 			c.modelName,
@@ -161,7 +161,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		// Convert arguments from map to JSON string
 		argsBytes, err := json.Marshal(tc.Function.Arguments)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal tool call arguments: %w", err)
+			return modelrepo.ChatResult{}, fmt.Errorf("failed to marshal tool call arguments: %w", err)
 		}
 
 		toolCalls = append(toolCalls, modelrepo.ToolCall{
@@ -177,7 +177,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		})
 	}
 
-	return &modelrepo.ChatResult{
+	return modelrepo.ChatResult{
 		Message:   message,
 		ToolCalls: toolCalls,
 	}, nil

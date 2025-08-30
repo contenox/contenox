@@ -51,7 +51,7 @@ type ChatConfig struct {
 
 // Client interfaces
 type LLMChatClient interface {
-	Chat(ctx context.Context, messages []Message, args ...ChatArgument) (*ChatResult, error)
+	Chat(ctx context.Context, messages []Message, args ...ChatArgument) (ChatResult, error)
 }
 
 type LLMEmbedClient interface {

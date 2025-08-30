@@ -11,7 +11,7 @@ type OpenAIChatClient struct {
 	openAIClient
 }
 
-func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (*modelrepo.ChatResult, error) {
+func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
 	request := buildOpenAIRequest(c.modelName, messages, args)
 
 	var response struct {
@@ -34,16 +34,16 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	if err := c.sendRequest(ctx, "/chat/completions", request, &response); err != nil {
-		return nil, err
+		return modelrepo.ChatResult{}, err
 	}
 
 	if len(response.Choices) == 0 {
-		return nil, fmt.Errorf("no chat completion choices returned from OpenAI for model %s", c.modelName)
+		return modelrepo.ChatResult{}, fmt.Errorf("no chat completion choices returned from OpenAI for model %s", c.modelName)
 	}
 
 	choice := response.Choices[0]
 	if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
-		return nil, fmt.Errorf("empty content from model %s despite normal completion. Finish reason: %s", c.modelName, choice.FinishReason)
+		return modelrepo.ChatResult{}, fmt.Errorf("empty content from model %s despite normal completion. Finish reason: %s", c.modelName, choice.FinishReason)
 	}
 
 	// Convert to our format
@@ -68,7 +68,7 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		})
 	}
 
-	return &modelrepo.ChatResult{
+	return modelrepo.ChatResult{
 		Message:   message,
 		ToolCalls: toolCalls,
 	}, nil

@@ -141,7 +141,11 @@ func TestChatService_OpenAIChatCompletions(t *testing.T) {
 				assert.Equal(t, "assistant", response.Choices[0].Message.Role)
 
 				// Verify the content contains the expected answer
-				assert.Contains(t, strings.ToLower(response.Choices[0].Message.Content), "rome")
+				if response.Choices[0].Message.Content == nil {
+					t.Errorf("response.Choices[0].Message is nil")
+				}
+				message := response.Choices[0].Message.Content
+				assert.Contains(t, strings.ToLower(*message), "rome")
 			})
 		}
 	})
