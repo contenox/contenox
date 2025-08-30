@@ -62,7 +62,8 @@ echo "Services are starting up."
 # - http://localhost:8081/openai/demo/v1/chat/completions
 # - http://localhost:8081/openai/demo/v1/models
 #
-# example docker run -d -p 3000:8080 \
+# example:
+# docker run -d -p 3000:8080 \
 # -e OPENAI_API_BASE_URL='http://host.docker.internal:8081/openai/demo/v1' \
 # -e OPENAI_API_KEY='any-key-for-demo-env' \
 # --add-host=host.docker.internal:host-gateway \
