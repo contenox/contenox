@@ -849,7 +849,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-108-gf04feba-dirty
+    version: v0.0.72
 openapi: 3.1.0
 paths:
     /backend-affinity/{backendID}/groups:
@@ -1185,16 +1185,16 @@ paths:
                 Purpose types categorize groups (e.g., "Internal Embeddings", "Internal Tasks").
                 Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2023,16 +2023,16 @@ paths:
         get:
             description: Lists all task chain definitions with pagination.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
