@@ -48,6 +48,11 @@ const (
 	// Strips transition prefix if present in input.
 	HandleParseTransition TaskHandler = "parse_transition"
 
+	// HandleParseKeyValue expects a string of key=value pairs and parses it into a JSON object.
+	// Example input: "name=John, age=30, city=New York"
+	// Returns a map[string]string that can be serialized as JSON.
+	HandleParseKeyValue TaskHandler = "parse_key_value"
+
 	// HandleConvertToOpenAIChatResponse converts a chat history input to OpenAI Chat format.
 	// Requires DataTypeChatHistory input and ExecuteConfig configuration.
 	HandleConvertToOpenAIChatResponse TaskHandler = "convert_to_openai_chat_response"

@@ -299,7 +299,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		return output, dataType, transitionEval, fmt.Errorf("%w: task-type is empty", ErrUnsupportedTaskType)
 	}
 	switch currentTask.Handler {
-	case HandleRawString, HandleConditionKey, HandleParseNumber, HandleParseScore, HandleParseRange, HandleParseTransition, HandleEmbedding, HandleRaiseError:
+	case HandleRawString, HandleConditionKey, HandleParseNumber, HandleParseScore, HandleParseRange, HandleParseTransition, HandleEmbedding, HandleRaiseError, HandleParseKeyValue:
 		prompt, err := getPrompt()
 		if err != nil {
 			return nil, DataTypeAny, "", err
@@ -354,7 +354,31 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
 			}
 			return nil, DataTypeAny, "", errors.New(message)
+		case HandleParseKeyValue:
+			var message string
+			switch outputType {
+			case DataTypeJSON:
+				// If already JSON, just pass through
+				output = input
+				outputType = DataTypeJSON
+				transitionEval = "already_json"
+			default:
+				message, err = getPrompt()
+				if err != nil {
+					return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
+				}
+				// Parse key-value pairs
+				result, err := parseKeyValueString(message)
+				if err != nil {
+					return nil, DataTypeAny, "", fmt.Errorf("failed to parse key-value string: %w", err)
+				}
+
+				output = result
+				outputType = DataTypeJSON
+				transitionEval = "parsed"
+			}
 		}
+
 	case HandleConvertToOpenAIChatResponse:
 		if dataType != DataTypeChatHistory {
 			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'chat_history', but got '%s'", currentTask.Handler, dataType.String())
@@ -587,4 +611,66 @@ func (exe *SimpleExec) condition(ctx context.Context, systemInstruction string, 
 	}
 
 	return strings.EqualFold(strings.TrimSpace(response), "yes"), nil
+}
+
+func parseKeyValueString(input string) (map[string]any, error) {
+	result := make(map[string]any)
+
+	// Handle empty input
+	if input == "" {
+		return result, nil
+	}
+
+	// Try to detect delimiter - could be comma, semicolon, or newline
+	var pairs []string
+	if strings.Contains(input, ";") {
+		pairs = strings.Split(input, ";")
+	} else if strings.Contains(input, "\n") {
+		pairs = strings.Split(input, "\n")
+	} else {
+		pairs = strings.Split(input, ",")
+	}
+
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+
+		// Split by equals sign
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			// Try colon as alternative delimiter
+			kv = strings.SplitN(pair, ":", 2)
+			if len(kv) != 2 {
+				return nil, fmt.Errorf("invalid key-value pair: %q", pair)
+			}
+		}
+
+		key := strings.TrimSpace(kv[0])
+		value := strings.TrimSpace(kv[1])
+
+		// Handle quoted values
+		if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+			(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+			value = value[1 : len(value)-1]
+		}
+
+		// Try to parse value as number or boolean
+		if num, err := strconv.ParseFloat(value, 64); err == nil {
+			if num == float64(int(num)) {
+				result[key] = int(num)
+			} else {
+				result[key] = num
+			}
+		} else if value == "true" {
+			result[key] = true
+		} else if value == "false" {
+			result[key] = false
+		} else {
+			result[key] = value
+		}
+	}
+
+	return result, nil
 }

@@ -1,6 +1,7 @@
 package playground_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/contenox/runtime/playground"
@@ -135,5 +136,70 @@ func TestSystem_TasksEnvService(t *testing.T) {
 		supportedHooks, err := tasksEnvService.Supports(ctx)
 		require.NoError(t, err)
 		assert.NotNil(t, supportedHooks)
+	})
+
+	t.Run("ExecuteJSONInputPropertyAccess", func(t *testing.T) {
+		chain := &taskengine.TaskChainDefinition{
+			ID:          "json-input-access-chain",
+			Description: "Test chain for accessing JSON input properties",
+			TokenLimit:  2048,
+			Debug:       true,
+			Tasks: []taskengine.TaskDefinition{
+				{
+					ID:      "check_boiling_point",
+					Handler: taskengine.HandleRawString,
+					SystemInstruction: "You are a precise science assistant. Water boils at exactly 100°C or 212°F. " +
+						"If the temperature is >= boiling point, respond with exactly 'yes'. " +
+						"If the temperature is < boiling point, respond with exactly 'no'. " +
+						"Do not add any explanation or additional text.",
+					PromptTemplate: `Is this temperature where water would boil?
+Temperature: {{.input.temperature}}
+Unit: {{.input.unit}}`,
+					ExecuteConfig: &taskengine.LLMExecutionConfig{
+						Model:       "smollm2:135m",
+						Provider:    "ollama",
+						Temperature: 0.0,
+					},
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{
+								Operator: taskengine.OpDefault,
+								Goto:     taskengine.TermEnd,
+							},
+						},
+					},
+				},
+			},
+		}
+
+		// JSON input with temperature and unit
+		inputJSON := map[string]interface{}{
+			"temperature": 100,
+			"unit":        "C",
+		}
+
+		// Execute the chain with JSON input
+		output, outputType, capturedStates, err := tasksEnvService.Execute(
+			ctx,
+			chain,
+			inputJSON,
+			taskengine.DataTypeJSON,
+		)
+
+		// Verify execution succeeded
+		require.NoError(t, err)
+		assert.Equal(t, taskengine.DataTypeString, outputType)
+		assert.Len(t, capturedStates, 1)
+		assert.Equal(t, "check_boiling_point", capturedStates[0].TaskID)
+
+		// Check that the template rendered correctly
+		step := capturedStates[0]
+		assert.Contains(t, step.Input, "Temperature: 100", "Template should have rendered temperature correctly")
+		assert.Contains(t, step.Input, "Unit: C", "Template should have rendered unit correctly")
+
+		// Verify the output is "yes" (case-insensitive)
+		outputStr := strings.ToLower(strings.TrimSpace(output.(string)))
+		assert.Contains(t, outputStr, "yes",
+			"Should indicate that 100°C is boiling point of water. Actual output: %s", output)
 	})
 }

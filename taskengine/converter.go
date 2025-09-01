@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // ConvertToType converts a value to the specified DataType
@@ -28,7 +29,7 @@ func ConvertToType(value interface{}, dataType DataType) (interface{}, error) {
 	case DataTypeVector:
 		return convertToFloatSlice(value)
 	case DataTypeJSON:
-		return value, nil // Already in generic JSON form
+		return convertToJSON(value)
 	default:
 		return value, nil // For DataTypeAny, return as-is
 	}
@@ -179,5 +180,32 @@ func convertToFloatSlice(value interface{}) ([]float64, error) {
 		return floats, nil
 	default:
 		return nil, fmt.Errorf("cannot convert %T to []float64", value)
+	}
+}
+
+func convertToJSON(value interface{}) (interface{}, error) {
+	switch v := value.(type) {
+	case map[string]interface{}, []interface{}:
+		return v, nil
+	case string:
+		// If it's a string that looks like JSON, try to unmarshal it
+		if strings.HasPrefix(v, "{") || strings.HasPrefix(v, "[") {
+			var result interface{}
+			if err := json.Unmarshal([]byte(v), &result); err == nil {
+				return result, nil
+			}
+		}
+		return v, nil // Keep as string if not valid JSON
+	default:
+		// Try to marshal to JSON and back to get proper structure
+		data, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		var result interface{}
+		if err := json.Unmarshal(data, &result); err != nil {
+			return nil, err
+		}
+		return result, nil
 	}
 }
