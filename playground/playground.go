@@ -51,6 +51,7 @@ type Playground struct {
 	llmPromptModelContextLen  int
 	llmChatModel              string
 	llmChatModelProvider      string
+	ollamaBackendName         string
 	llmChatModelContextLen    int
 	Error                     error
 }
@@ -634,6 +635,59 @@ func (p *Playground) GetHookProviderService() (hookproviderservice.Service, erro
 		return nil, errors.New("cannot get hook provider service: database is not initialized")
 	}
 	return hookproviderservice.New(p.db), nil
+}
+
+// New method for real Ollama backend (complements container-based)
+func (p *Playground) WithOllamaBackendReal(ctx context.Context, name, uri string, assignEmbeddingModel, assignTasksModel bool) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.state == nil {
+		p.Error = errors.New("cannot setup ollama backend real: runtime state not configured")
+		return p
+	}
+
+	backends, err := p.GetBackendService()
+	if err != nil {
+		p.Error = fmt.Errorf("backend service error: %w", err)
+		return p
+	}
+
+	backend := &runtimetypes.Backend{
+		Name:    name,
+		BaseURL: uri,
+		Type:    "ollama",
+	}
+	if err := backends.Create(ctx, backend); err != nil {
+		p.Error = fmt.Errorf("create backend '%s' failed: %w", name, err)
+		return p
+	}
+
+	p.ollamaBackendName = name // Track for WaitUntilModelIsReady
+
+	if !p.withgroup {
+		return p
+	}
+
+	group, err := p.GetgroupService()
+	if err != nil {
+		p.Error = fmt.Errorf("group service error: %w", err)
+		return p
+	}
+
+	if assignEmbeddingModel {
+		if err := group.AssignBackend(ctx, runtimestate.EmbedgroupID, backend.ID); err != nil {
+			p.Error = fmt.Errorf("assign to embed group failed: %w", err)
+			return p
+		}
+	}
+	if assignTasksModel {
+		if err := group.AssignBackend(ctx, runtimestate.TasksgroupID, backend.ID); err != nil {
+			p.Error = fmt.Errorf("assign to tasks group failed: %w", err)
+			return p
+		}
+	}
+	return p
 }
 
 // WaitUntilModelIsReady blocks until the specified model is available on the specified backend.
