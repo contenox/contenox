@@ -7,7 +7,7 @@ import (
 	"github.com/contenox/runtime/taskengine"
 )
 
-// MockHookRepo is a mock implementation of the HookProvider interface.
+// MockHookRepo is a mock implementation of the HookRepo interface.
 type MockHookRepo struct {
 	Calls           []HookCallRecord
 	ResponseMap     map[string]HookResponse
@@ -16,48 +16,40 @@ type MockHookRepo struct {
 	callCount       int
 }
 
+// HookCallRecord now only stores the arguments passed to the hook.
 type HookCallRecord struct {
-	Args       taskengine.HookCall
-	Input      any
-	InputType  taskengine.DataType
-	Transition string
+	Args  taskengine.HookCall
+	Input any
 }
 
+// HookResponse is simplified to only contain the direct output.
 type HookResponse struct {
-	Output     any
-	OutputType taskengine.DataType
-	Transition string
+	Output any
 }
 
-// NewMockHookRegistry returns a new instance of MockHookProvider.
+// NewMockHookRegistry returns a new instance of MockHookRepo.
 func NewMockHookRegistry() *MockHookRepo {
 	return &MockHookRepo{
 		ResponseMap: make(map[string]HookResponse),
 		DefaultResponse: HookResponse{
-			Output:     "default mock response",
-			OutputType: taskengine.DataTypeString,
-			Transition: "",
+			Output: "default mock response",
 		},
 	}
 }
 
-// Exec simulates execution of a hook call.
+// Exec simulates execution of a hook call using the new simplified signature.
 func (m *MockHookRepo) Exec(
 	ctx context.Context,
 	startingTime time.Time,
 	input any,
-	inputType taskengine.DataType,
-	transition string,
 	args *taskengine.HookCall,
-) (any, taskengine.DataType, string, error) {
+) (any, error) {
 	m.callCount++
 
-	// Record call details
+	// Record call details with the new simplified struct.
 	call := HookCallRecord{
-		Args:       *args,
-		Input:      input,
-		InputType:  inputType,
-		Transition: transition,
+		Args:  *args,
+		Input: input,
 	}
 	m.Calls = append(m.Calls, call)
 
@@ -80,7 +72,8 @@ func (m *MockHookRepo) Exec(
 		resp = m.DefaultResponse
 	}
 
-	return resp.Output, resp.OutputType, resp.Transition, err
+	// Return the direct output and error, matching the new interface.
+	return resp.Output, err
 }
 
 // Reset clears all recorded calls and resets counters
@@ -103,7 +96,7 @@ func (m *MockHookRepo) LastCall() *HookCallRecord {
 	return &m.Calls[len(m.Calls)-1]
 }
 
-// WithResponse configures a response for a specific hook type
+// WithResponse configures a response for a specific hook type using the new simplified HookResponse.
 func (m *MockHookRepo) WithResponse(hookType string, response HookResponse) *MockHookRepo {
 	m.ResponseMap[hookType] = response
 	return m
@@ -123,4 +116,5 @@ func (m *MockHookRepo) Supports(ctx context.Context) ([]string, error) {
 	return supported, nil
 }
 
-var _ taskengine.HookRegistry = (*MockHookRepo)(nil)
+// Ensure MockHookRepo correctly implements the updated HookRepo interface.
+var _ taskengine.HookRepo = (*MockHookRepo)(nil)

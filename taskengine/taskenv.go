@@ -3,6 +3,7 @@ package taskengine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -107,8 +108,8 @@ var ErrUnsupportedTaskType = errors.New("executor does not support the task type
 // HookRepo defines interface for external system integrations and side effects.
 type HookRepo interface {
 	// Exec executes a hook with the given input and arguments.
-	// Returns output, output type, transition value, and error.
-	Exec(ctx context.Context, startingTime time.Time, input any, dataType DataType, transition string, args *HookCall) (any, DataType, string, error)
+	// Returns the hook's output or an error.
+	Exec(ctx context.Context, startingTime time.Time, input any, args *HookCall) (any, error)
 	// HookRegistry provides hook discovery functionality.
 	HookRegistry
 }
@@ -265,7 +266,13 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			}
 			if chain.Debug {
 				step.Input = fmt.Sprintf("%v", taskInput)
-				step.Output = fmt.Sprintf("%v", output)
+				outputBytes, err := json.Marshal(output)
+				if err == nil {
+					step.Output = string(outputBytes)
+				} else {
+					// Fallback for types that can't be marshaled
+					step.Output = fmt.Sprintf("%v", output)
+				}
 			}
 			stack.RecordStep(step)
 
@@ -487,7 +494,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	return finalOutput, outputType, stack.GetExecutionHistory(), nil
 }
 
-func renderTemplate(tmplStr string, vars map[string]any) (string, error) {
+func renderTemplate(tmplStr string, vars any) (string, error) {
 	tmpl, err := template.New("prompt").Parse(tmplStr)
 	if err != nil {
 		return "", err

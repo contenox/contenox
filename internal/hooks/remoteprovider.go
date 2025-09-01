@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,70 +33,67 @@ func NewPersistentRepo(
 	}
 }
 
+// Exec now implements the new, simplified HookRepo interface.
 func (p *PersistentRepo) Exec(
 	ctx context.Context,
 	startingTime time.Time,
 	input any,
-	dataType taskengine.DataType,
-	transition string,
 	args *taskengine.HookCall,
-) (any, taskengine.DataType, string, error) {
+) (any, error) {
 	// Check local hooks first
 	if hook, ok := p.localHooks[args.Name]; ok {
-		return hook.Exec(ctx, startingTime, input, dataType, transition, args)
+		return hook.Exec(ctx, startingTime, input, args)
 	}
 
 	// Check remote
 	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
 	remoteHook, err := storeInstance.GetRemoteHookByName(ctx, args.Name)
 	if err != nil {
-		return nil, taskengine.DataTypeAny, transition,
-			fmt.Errorf("unknown hook: %s", args.Name)
+		return nil, fmt.Errorf("unknown hook: %s", args.Name)
 	}
 
-	return p.execRemoteHook(ctx, remoteHook, startingTime, input, dataType, transition, args)
+	return p.execRemoteHook(ctx, remoteHook, startingTime, input, args)
 }
 
+// execRemoteHook is updated to match the new simplified signature and return values.
 func (p *PersistentRepo) execRemoteHook(
 	ctx context.Context,
 	hook *runtimetypes.RemoteHook,
 	startingTime time.Time,
 	input any,
-	dataType taskengine.DataType,
-	transition string,
 	args *taskengine.HookCall,
-) (any, taskengine.DataType, string, error) {
-	request := struct {
-		StartingTime time.Time            `json:"startingTime"`
-		Input        any                  `json:"input"`
-		DataType     string               `json:"dataType"`
-		Transition   string               `json:"transition"`
-		Args         *taskengine.HookCall `json:"args"`
-	}{
-		StartingTime: startingTime,
-		Input:        input,
-		DataType:     dataType.String(),
-		Transition:   transition,
-		Args:         args,
+) (any, error) {
+	// Prepare arguments for the OpenAI-compatible function call.
+	argumentsMap := make(map[string]any)
+	argumentsMap["input"] = input
+	for key, val := range args.Args {
+		argumentsMap[key] = val
 	}
 
-	jsonBody, err := json.Marshal(request)
+	argumentsJSON, err := json.Marshal(argumentsMap)
 	if err != nil {
-		return nil, taskengine.DataTypeAny, transition,
-			fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal hook arguments to JSON: %w", err)
+	}
+
+	// Create the request payload in the FunctionCall format.
+	requestPayload := taskengine.FunctionCall{
+		Name:      args.Name,
+		Arguments: string(argumentsJSON),
+	}
+
+	jsonBody, err := json.Marshal(requestPayload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 	u, parseErr := url.Parse(hook.EndpointURL)
 	if parseErr != nil {
-		return nil, taskengine.DataTypeAny, transition,
-			fmt.Errorf("invalid endpoint URL format: %w", parseErr)
+		return nil, fmt.Errorf("invalid endpoint URL format: %w", parseErr)
 	}
 	if u.Scheme == "" || u.Host == "" {
-		return nil, taskengine.DataTypeAny, transition,
-			fmt.Errorf("endpoint URL must be absolute (include http:// or https://): %s", hook.EndpointURL)
+		return nil, fmt.Errorf("endpoint URL must be absolute (include http:// or https://): %s", hook.EndpointURL)
 	}
 	if hook.TimeoutMs <= 0 {
-		return nil, taskengine.DataTypeAny, transition,
-			fmt.Errorf("timeout must be positive: %d", hook.TimeoutMs)
+		return nil, fmt.Errorf("timeout must be positive: %d", hook.TimeoutMs)
 	}
 	timeout := time.Duration(hook.TimeoutMs) * time.Millisecond
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -110,8 +106,7 @@ func (p *PersistentRepo) execRemoteHook(
 		bytes.NewReader(jsonBody),
 	)
 	if err != nil {
-		return nil, taskengine.DataTypeAny, transition,
-			fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	for key, value := range hook.Headers {
@@ -120,70 +115,34 @@ func (p *PersistentRepo) execRemoteHook(
 
 	httpReq.Header.Set("Content-Type", "application/json")
 
-	client := p.httpClient
-	resp, err := client.Do(httpReq)
+	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, taskengine.DataTypeAny, transition,
-			fmt.Errorf("remote hook request failed: %w", err)
+		return nil, fmt.Errorf("remote hook request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	errorStatus := false
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errorStatus = true
-	}
-	response := struct {
-		Output     any    `json:"output"`
-		DataType   string `json:"dataType"`
-		Error      string `json:"error,omitempty"`
-		Transition string `json:"transition"`
-	}{}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		if errorStatus {
-			return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-				fmt.Errorf("failed to read response body: %w", err)
-		}
-		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-			fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
-	bodySample := string(body)
+
+	// Handle non-successful status codes.
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errorStatus = true
+		bodySample := string(body)
 		if len(bodySample) > 200 {
 			bodySample = bodySample[:200] + "..."
 		}
-		err = fmt.Errorf("hook failed with status %d: %s", resp.StatusCode, bodySample)
+		return nil, fmt.Errorf("remote hook '%s' failed with status %d: %s", hook.Name, resp.StatusCode, bodySample)
 	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		if errorStatus {
-			err = fmt.Errorf("hook failed with status %d, body: %s, error: %w", resp.StatusCode, bodySample, err)
-			return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-				err
-		}
-		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-			fmt.Errorf("failed to unmarshal hook response: %w", err)
+
+	// The response body is the output. It must be valid JSON.
+	var output any
+	if err := json.Unmarshal(body, &output); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal remote hook response as JSON: %w", err)
 	}
-	dt, err := taskengine.DataTypeFromString(response.DataType)
-	if err != nil {
-		if errorStatus {
-			return nil, dt, fmt.Sprint(resp.StatusCode),
-				fmt.Errorf("invalid data type in response: %s", response.DataType)
-		}
-		return nil, taskengine.DataTypeAny, fmt.Sprint(resp.StatusCode),
-			fmt.Errorf("invalid data type in response: %s", response.DataType)
-	}
-	if response.Error != "" {
-		err = errors.New(response.Error)
-	} else if errorStatus {
-		err = fmt.Errorf("failed with status %d", resp.StatusCode)
-	}
-	convertedOutput, convErr := taskengine.ConvertToType(response.Output, dt)
-	if convErr != nil {
-		return nil, dt, response.Transition,
-			fmt.Errorf("failed to convert hook output to %s: %w", dt.String(), convErr)
-	}
-	return convertedOutput, dt, response.Transition, err
+
+	// Return the direct output or an error.
+	return output, nil
 }
 
 func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
@@ -197,7 +156,7 @@ func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
 	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
 	var remoteHooks []*runtimetypes.RemoteHook
 	var lastCursor *time.Time
-	limit := 100 // A reasonable page size?
+	limit := 100 // A reasonable page size
 
 	for {
 		page, err := storeInstance.ListRemoteHooks(ctx, lastCursor, limit)

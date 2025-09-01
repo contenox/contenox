@@ -18,11 +18,18 @@ func NewSimpleProvider(hooks map[string]taskengine.HookRepo) taskengine.HookRepo
 	}
 }
 
-func (m *SimpleRepo) Exec(ctx context.Context, startingTime time.Time, input any, dataType taskengine.DataType, transition string, args *taskengine.HookCall) (any, taskengine.DataType, string, error) {
+// Exec now implements the new, simplified HookRepo interface.
+func (m *SimpleRepo) Exec(
+	ctx context.Context,
+	startingTime time.Time,
+	input any,
+	args *taskengine.HookCall,
+) (any, error) {
 	if hook, ok := m.hooks[args.Name]; ok {
-		return hook.Exec(ctx, startingTime, input, dataType, transition, args)
+		// Delegate the call using the new signature.
+		return hook.Exec(ctx, startingTime, input, args)
 	}
-	return nil, taskengine.DataTypeAny, transition, fmt.Errorf("unknown hook type: %s", args.Name)
+	return nil, fmt.Errorf("unknown hook type: %s", args.Name)
 }
 
 func (m *SimpleRepo) Supports(ctx context.Context) ([]string, error) {

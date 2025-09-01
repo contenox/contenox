@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.71
+title: contenox/runtime – LLM Backend Management API v0.0.51-108-gf04feba-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.71</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-108-gf04feba-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -265,8 +265,8 @@ Backends not assigned to any group exist in the configuration but are completely
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1983,8 +1983,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -2342,8 +2342,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|model|query|string|false|The model name to cancel downloads for across all backends.|
 |url|query|string|false|The base URL of a specific backend to cancel downloads on.|
+|model|query|string|false|The model name to cancel downloads for across all backends.|
 
 > Example responses
 
@@ -2650,6 +2650,7 @@ Lists all task chain definitions with pagination.
       },
       "id": "validate_input",
       "input_var": "input",
+      "output_template": "Hook result: {{.status}}",
       "print": "Validation result: {{.validate_input}}",
       "prompt_template": "Is this input valid? {{.input}}",
       "retry_on_failure": 2,
@@ -2733,6 +2734,7 @@ Task chains define workflows with conditional branches, external hooks, and capt
     },
     "id": "validate_input",
     "input_var": "input",
+    "output_template": "Hook result: {{.status}}",
     "print": "Validation result: {{.validate_input}}",
     "prompt_template": "Is this input valid? {{.input}}",
     "retry_on_failure": 2,
@@ -2787,6 +2789,7 @@ Task chains define workflows with conditional branches, external hooks, and capt
     },
     "id": "validate_input",
     "input_var": "input",
+    "output_template": "Hook result: {{.status}}",
     "print": "Validation result: {{.validate_input}}",
     "prompt_template": "Is this input valid? {{.input}}",
     "retry_on_failure": 2,
@@ -2921,6 +2924,7 @@ Retrieves a specific task chain by ID.
     },
     "id": "validate_input",
     "input_var": "input",
+    "output_template": "Hook result: {{.status}}",
     "print": "Validation result: {{.validate_input}}",
     "prompt_template": "Is this input valid? {{.input}}",
     "retry_on_failure": 2,
@@ -3001,6 +3005,7 @@ Updates an existing task chain definition.
     },
     "id": "validate_input",
     "input_var": "input",
+    "output_template": "Hook result: {{.status}}",
     "print": "Validation result: {{.validate_input}}",
     "prompt_template": "Is this input valid? {{.input}}",
     "retry_on_failure": 2,
@@ -3056,6 +3061,7 @@ Updates an existing task chain definition.
     },
     "id": "validate_input",
     "input_var": "input",
+    "output_template": "Hook result: {{.status}}",
     "print": "Validation result: {{.validate_input}}",
     "prompt_template": "Is this input valid? {{.input}}",
     "retry_on_failure": 2,
@@ -3141,6 +3147,7 @@ If groups are enabled, models and backends not assigned to any group will be com
       },
       "id": "validate_input",
       "input_var": "input",
+      "output_template": "Hook result: {{.status}}",
       "print": "Validation result: {{.validate_input}}",
       "prompt_template": "Is this input valid? {{.input}}",
       "retry_on_failure": 2,
@@ -3557,6 +3564,7 @@ X-API-Key
       },
       "id": "validate_input",
       "input_var": "input",
+      "output_template": "Hook result: {{.status}}",
       "print": "Validation result: {{.validate_input}}",
       "prompt_template": "Is this input valid? {{.input}}",
       "retry_on_failure": 2,
@@ -3846,6 +3854,7 @@ X-API-Key
       },
       "id": "validate_input",
       "input_var": "input",
+      "output_template": "Hook result: {{.status}}",
       "print": "Validation result: {{.validate_input}}",
       "prompt_template": "Is this input valid? {{.input}}",
       "retry_on_failure": 2,
@@ -4494,6 +4503,7 @@ X-API-Key
     },
     "id": "validate_input",
     "input_var": "input",
+    "output_template": "Hook result: {{.status}}",
     "print": "Validation result: {{.validate_input}}",
     "prompt_template": "Is this input valid? {{.input}}",
     "retry_on_failure": 2,
@@ -4552,6 +4562,7 @@ X-API-Key
   },
   "id": "validate_input",
   "input_var": "input",
+  "output_template": "Hook result: {{.status}}",
   "print": "Validation result: {{.validate_input}}",
   "prompt_template": "Is this input valid? {{.input}}",
   "retry_on_failure": 2,
@@ -4581,6 +4592,7 @@ X-API-Key
 |hook|[taskengine_HookCall](#schemataskengine_hookcall)|false|none|none|
 |id|string|true|none|ID uniquely identifies the task within the chain.|
 |input_var|string|false|none|InputVar is the name of the variable to use as input for the task.<br>Example: "input" for the original input.<br>Each task stores its output in a variable named with it's task id.|
+|output_template|string|false|none|OutputTemplate is an optional go template to format the output of a hook.<br>If specified, the hook's JSON output will be used as data for the template.<br>The final output of the task will be the rendered string.<br>Example: "The weather is {{.weather}} with a temperature of {{.temperature}}."|
 |print|string|false|none|Print optionally formats the output for display/logging.<br>Supports template variables from previous task outputs.<br>Optional for all task types except Hook where it's rarely used.<br>Example: "The score is: {{.previous_output}}"|
 |prompt_template|string|true|none|PromptTemplate is the text prompt sent to the LLM.<br>It's Required and only applicable for the raw_string type.<br>Supports template variables from previous task outputs.<br>Example: "Rate the quality from 1-10: {{.input}}"|
 |retry_on_failure|integer|false|none|RetryOnFailure sets how many times to retry this task on failure.<br>Applies to all task types including Hooks.<br>Default: 0 (no retries)|

@@ -461,9 +461,8 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				taskCtx,
 				startingTime,
 				output,
-				outputType,
-				transitionEval,
 				currentTask.Hook,
+				currentTask.OutputTemplate,
 			)
 		}
 
@@ -580,9 +579,43 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 	return input, DataTypeChatHistory, "executed", nil
 }
 
-func (exe *SimpleExec) hookengine(ctx context.Context, startingTime time.Time, input any, dataType DataType, transition string, hook *HookCall) (any, DataType, string, error) {
-	res, dataType, transition, err := exe.hookProvider.Exec(ctx, startingTime, input, dataType, transition, hook)
-	return res, dataType, transition, err
+// hookengine handles the execution of a hook, including output templating.
+func (exe *SimpleExec) hookengine(
+	ctx context.Context,
+	startingTime time.Time,
+	input any,
+	hook *HookCall,
+	outputTemplate string,
+) (any, DataType, string, error) {
+	if hook.Args == nil {
+		hook.Args = make(map[string]string)
+	}
+
+	// Call the provider with the new, simple signature.
+	hookOutput, err := exe.hookProvider.Exec(ctx, startingTime, input, hook)
+	if err != nil {
+		return nil, DataTypeAny, "failed", err
+	}
+
+	// On success, process the output.
+	finalOutput := hookOutput
+	finalOutputType := DataTypeJSON
+	finalTransitionEval := "ok"
+
+	// Apply the output template if it's defined.
+	if outputTemplate != "" {
+		rendered, tplErr := renderTemplate(outputTemplate, finalOutput)
+		if tplErr != nil {
+			// Return a descriptive error if templating fails.
+			return nil, DataTypeAny, "failed", fmt.Errorf("failed to render hook output template: %w", tplErr)
+		}
+		finalOutput = rendered
+		finalOutputType = DataTypeString
+		finalTransitionEval = rendered
+	}
+
+	// Return the processed results.
+	return finalOutput, finalOutputType, finalTransitionEval, nil
 }
 
 // condition executes a prompt and evaluates its result against a provided condition mapping.

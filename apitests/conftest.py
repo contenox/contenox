@@ -15,11 +15,29 @@ DEFAULT_POLL_INTERVAL = 3
 DEFAULT_TIMEOUT = 420
 
 # Configure the root logger
-logging.basicConfig(level=logging.ERROR,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
 # Create a logger object for your test module
 logger = logging.getLogger(__name__)
+
+def check_function_call_request(request):
+    """Asserts the request body is a valid OpenAI-style FunctionCall."""
+    try:
+        body = request.get_json()
+        assert "name" in body, "Request body missing 'name'"
+        assert "arguments" in body, "Request body missing 'arguments'"
+
+        # Arguments should be a string containing valid JSON
+        try:
+            json.loads(body["arguments"])
+        except (json.JSONDecodeError, TypeError):
+            pytest.fail("'arguments' field is not a valid JSON string")
+
+        return True
+    except Exception as e:
+        pytest.fail(f"Request body is not a valid FunctionCall: {e}")
+
 
 @pytest.fixture(scope="session")
 def base_url():
@@ -193,7 +211,7 @@ def create_test_chain(base_url):
     }
 
     response = requests.post(f"{base_url}/chains",
-                           json=payload)
+                              json=payload)
     assert response.status_code == 201
 
     yield response.json()
@@ -201,13 +219,6 @@ def create_test_chain(base_url):
     # Teardown
     requests.delete(
         f"{base_url}/chains/{payload['id']}")
-
-# Define a mock hook response for testing
-MOCK_HOOK_RESPONSE = {
-    "output": "Hook executed successfully",
-    "dataType": "string",
-    "transition": "ok"
-}
 
 @pytest.fixture(scope="session")
 def httpserver(request) -> Generator[HTTPServer, Any, Any]:
@@ -227,7 +238,8 @@ def httpserver(request) -> Generator[HTTPServer, Any, Any]:
 @pytest.fixture(scope="function")
 def mock_hook_server(httpserver: HTTPServer):
     endpoint = "/test-hook-endpoint"
-    httpserver.expect_request(endpoint, method="POST").respond_with_json(MOCK_HOOK_RESPONSE)
+    # Default response is a simple JSON object now
+    httpserver.expect_request(endpoint, method="POST").respond_with_json({"status": "ok"})
     full_mock_url = httpserver.url_for(suffix=endpoint)
     logger.info(f"Mock hook server endpoint registered at: {full_mock_url}")
     return {
@@ -237,9 +249,9 @@ def mock_hook_server(httpserver: HTTPServer):
 
 @pytest.fixture
 def configurable_mock_hook_server(httpserver: HTTPServer):
-    def _setup_mock(status_code=200, response_json=None, delay_seconds=0, expected_headers=None):
+    def _setup_mock(status_code=200, response_json=None, delay_seconds=0, expected_headers=None, request_validator=None):
         if response_json is None:
-            response_json = MOCK_HOOK_RESPONSE
+            response_json = {"status": "default_ok"}
 
         if expected_headers is None:
             expected_headers = {}
@@ -249,6 +261,17 @@ def configurable_mock_hook_server(httpserver: HTTPServer):
         def handler(request):
             if delay_seconds > 0:
                 time.sleep(delay_seconds)
+
+            # Validate request format if a validator is provided
+            if request_validator:
+                try:
+                    request_validator(request)
+                except Exception as e:
+                    return Response(
+                        json.dumps({"error": f"Request validation failed: {str(e)}"}),
+                        400,
+                        {"Content-Type": "application/json"}
+                    )
 
             if expected_headers:
                 for header_name, expected_value in expected_headers.items():

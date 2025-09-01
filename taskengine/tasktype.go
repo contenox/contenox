@@ -258,6 +258,7 @@ type HookCall struct {
 // | ValidConditions     | Required     | -           | -          | -          | -         | -     | -     |
 // | Hook                | -            | -           | -          | -          | -         | Req   | -     |
 // | PromptTemplate      | Required     | Required    | Required   | Required   | Required  | -     | Opt   |
+// | OutputTemplate      | -            | -           | -          | -          | -         | Opt   | -     |
 // | Print               | Optional     | Optional    | Optional   | Optional   | Optional  | Opt   | Opt   |
 // | ExecuteConfig       | Optional     | Optional    | Optional   | Optional   | Optional  | -     | -     |
 // | InputVar            | Optional     | Optional    | Optional   | Optional   | Optional  | Opt   | Opt   |
@@ -301,6 +302,12 @@ type TaskDefinition struct {
 	// Supports template variables from previous task outputs.
 	// Example: "Rate the quality from 1-10: {{.input}}"
 	PromptTemplate string `yaml:"prompt_template" json:"prompt_template" example:"Is this input valid? {{.input}}"`
+
+	// OutputTemplate is an optional go template to format the output of a hook.
+	// If specified, the hook's JSON output will be used as data for the template.
+	// The final output of the task will be the rendered string.
+	// Example: "The weather is {{.weather}} with a temperature of {{.temperature}}."
+	OutputTemplate string `yaml:"output_template,omitempty" json:"output_template,omitempty" example:"Hook result: {{.status}}"`
 
 	// InputVar is the name of the variable to use as input for the task.
 	// Example: "input" for the original input.
