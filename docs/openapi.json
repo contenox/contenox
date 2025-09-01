@@ -549,6 +549,11 @@
             "example": "http://hooks-endpoint:port",
             "type": "string"
           },
+          "headers": {
+            "additionalProperties": true,
+            "example": "Authorization:Bearer token,Content-Type:application/json",
+            "type": "object"
+          },
           "id": {
             "example": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
             "type": "string"
@@ -1090,7 +1095,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.70"
+    "version": "v0.0.51-106-g3d0ade6-dirty"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.70
+title: contenox/runtime – LLM Backend Management API v0.0.51-106-g3d0ade6-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.70</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-106-g3d0ade6-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1198,6 +1198,7 @@ Lists all configured remote hooks with pagination support.
   {
     "createdAt": "2023-11-15T14:30:45Z",
     "endpointUrl": "http://hooks-endpoint:port",
+    "headers": "Authorization:Bearer token,Content-Type:application/json",
     "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
     "method": "POST",
     "name": "send-email",
@@ -1248,6 +1249,7 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
 {
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
+  "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
@@ -1270,6 +1272,7 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
 {
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
+  "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
@@ -1373,6 +1376,7 @@ Retrieves a specific remote hook configuration by ID.
 {
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
+  "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
@@ -1422,6 +1426,7 @@ The ID from the URL path overrides any ID in the request body.
 {
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
+  "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
@@ -1445,6 +1450,7 @@ The ID from the URL path overrides any ID in the request body.
 {
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
+  "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
@@ -3430,6 +3436,7 @@ X-API-Key
   {
     "createdAt": "2023-11-15T14:30:45Z",
     "endpointUrl": "http://hooks-endpoint:port",
+    "headers": "Authorization:Bearer token,Content-Type:application/json",
     "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
     "method": "POST",
     "name": "send-email",
@@ -4102,6 +4109,7 @@ X-API-Key
 {
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
+  "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
@@ -4117,6 +4125,7 @@ X-API-Key
 |---|---|---|---|---|
 |createdAt|string(date-time)|true|none|none|
 |endpointUrl|string|true|none|none|
+|headers|object|false|none|none|
 |id|string|true|none|none|
 |method|string|true|none|none|
 |name|string|true|none|none|

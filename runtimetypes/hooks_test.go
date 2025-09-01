@@ -22,6 +22,7 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 		EndpointURL: "https://example.com/hook",
 		Method:      "POST",
 		TimeoutMs:   5000,
+		Headers:     map[string]string{"X-Trace-ID": "test"},
 	}
 
 	// Create the hook
@@ -36,6 +37,7 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 	require.Equal(t, hook.EndpointURL, retrieved.EndpointURL)
 	require.Equal(t, hook.Method, retrieved.Method)
 	require.Equal(t, hook.TimeoutMs, retrieved.TimeoutMs)
+	require.Equal(t, hook.Headers, retrieved.Headers)
 	require.WithinDuration(t, time.Now().UTC(), retrieved.CreatedAt, 1*time.Second)
 	require.WithinDuration(t, time.Now().UTC(), retrieved.UpdatedAt, 1*time.Second)
 
@@ -43,6 +45,82 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 	retrievedByName, err := s.GetRemoteHookByName(ctx, hook.Name)
 	require.NoError(t, err)
 	require.Equal(t, hook.ID, retrievedByName.ID)
+}
+
+func TestUnit_RemoteHooks_WithHeaders(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	t.Run("create with headers", func(t *testing.T) {
+		headers := map[string]string{
+			"Content-Type":  "application/json",
+			"Authorization": "Bearer some-token",
+		}
+		hook := &runtimetypes.RemoteHook{
+			ID:          uuid.New().String(),
+			Name:        "hook-with-headers",
+			EndpointURL: "https://example.com/hook",
+			Method:      "POST",
+			TimeoutMs:   5000,
+			Headers:     headers,
+		}
+
+		err := s.CreateRemoteHook(ctx, hook)
+		require.NoError(t, err)
+
+		retrieved, err := s.GetRemoteHook(ctx, hook.ID)
+		require.NoError(t, err)
+		require.NotNil(t, retrieved.Headers)
+		require.Equal(t, headers, retrieved.Headers)
+	})
+
+	t.Run("create with nil headers", func(t *testing.T) {
+		hook := &runtimetypes.RemoteHook{
+			ID:          uuid.New().String(),
+			Name:        "hook-with-nil-headers",
+			EndpointURL: "https://example.com/nil-hook",
+			Method:      "POST",
+			TimeoutMs:   5000,
+			Headers:     nil,
+		}
+
+		err := s.CreateRemoteHook(ctx, hook)
+		require.NoError(t, err)
+
+		retrieved, err := s.GetRemoteHook(ctx, hook.ID)
+		require.NoError(t, err)
+		require.Nil(t, retrieved.Headers)
+	})
+
+	t.Run("update headers", func(t *testing.T) {
+		initialHeaders := map[string]string{"Initial": "Value"}
+		hook := &runtimetypes.RemoteHook{
+			ID:          uuid.New().String(),
+			Name:        "hook-to-update-headers",
+			EndpointURL: "https://example.com/update-hook",
+			Method:      "PUT",
+			TimeoutMs:   3000,
+			Headers:     initialHeaders,
+		}
+		require.NoError(t, s.CreateRemoteHook(ctx, hook))
+
+		updatedHeaders := map[string]string{"Updated": "NewValue", "Another": "Header"}
+		hook.Headers = updatedHeaders
+		err := s.UpdateRemoteHook(ctx, hook)
+		require.NoError(t, err)
+
+		retrieved, err := s.GetRemoteHook(ctx, hook.ID)
+		require.NoError(t, err)
+		require.Equal(t, updatedHeaders, retrieved.Headers)
+
+		// Test updating to nil
+		hook.Headers = nil
+		err = s.UpdateRemoteHook(ctx, hook)
+		require.NoError(t, err)
+
+		retrieved, err = s.GetRemoteHook(ctx, hook.ID)
+		require.NoError(t, err)
+		require.Nil(t, retrieved.Headers)
+	})
 }
 
 func TestUnit_RemoteHooks_Update(t *testing.T) {
@@ -54,6 +132,7 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 		EndpointURL: "https://original.com",
 		Method:      "GET",
 		TimeoutMs:   3000,
+		Headers:     map[string]string{"Version": "1"},
 	}
 
 	require.NoError(t, s.CreateRemoteHook(ctx, original))
@@ -64,6 +143,7 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 	updated.EndpointURL = "https://updated.com"
 	updated.Method = "POST"
 	updated.TimeoutMs = 10000
+	updated.Headers = map[string]string{"Version": "2"}
 
 	err := s.UpdateRemoteHook(ctx, &updated)
 	require.NoError(t, err)
@@ -75,6 +155,7 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 	require.Equal(t, updated.EndpointURL, retrieved.EndpointURL)
 	require.Equal(t, updated.Method, retrieved.Method)
 	require.Equal(t, updated.TimeoutMs, retrieved.TimeoutMs)
+	require.Equal(t, updated.Headers, retrieved.Headers)
 	require.True(t, retrieved.UpdatedAt.After(original.UpdatedAt), "UpdatedAt should change")
 }
 

@@ -237,22 +237,38 @@ def mock_hook_server(httpserver: HTTPServer):
 
 @pytest.fixture
 def configurable_mock_hook_server(httpserver: HTTPServer):
-    def _setup_mock(status_code=200, response_json=None, delay_seconds=0):
+    def _setup_mock(status_code=200, response_json=None, delay_seconds=0, expected_headers=None):
         if response_json is None:
             response_json = MOCK_HOOK_RESPONSE
+
+        if expected_headers is None:
+            expected_headers = {}
 
         endpoint = f"/test-hook-endpoint-{uuid.uuid4().hex[:8]}"
 
         def handler(request):
             if delay_seconds > 0:
                 time.sleep(delay_seconds)
-            # Use Response from werkzeug.wrappers
+
+            if expected_headers:
+                for header_name, expected_value in expected_headers.items():
+                    actual_value = request.headers.get(header_name)
+                    if actual_value != expected_value:
+                        return Response(
+                            json.dumps({
+                                "error": f"Header validation failed: {header_name} expected={expected_value}, got={actual_value}"
+                            }),
+                            400,
+                            {"Content-Type": "application/json"}
+                        )
+
             return Response(json.dumps(response_json), status_code, {"Content-Type": "application/json"})
 
         httpserver.expect_request(endpoint, method="POST").respond_with_handler(handler)
         return {
             "url": httpserver.url_for(endpoint),
-            "server": httpserver
+            "server": httpserver,
+            "expected_headers": expected_headers
         }
 
     return _setup_mock

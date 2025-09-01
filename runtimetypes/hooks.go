@@ -3,6 +3,7 @@ package runtimetypes
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -18,15 +19,23 @@ func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 	if hook.ID == "" {
 		hook.ID = uuid.NewString()
 	}
-	_, err := s.Exec.ExecContext(ctx, `
+
+	// Marshal the map into a byte slice right before the query.
+	headersJSON, err := json.Marshal(hook.Headers)
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook headers: %w", err)
+	}
+
+	_, err = s.Exec.ExecContext(ctx, `
 		INSERT INTO remote_hooks
-		(id, name, endpoint_url, method, timeout_ms, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		(id, name, endpoint_url, method, timeout_ms, headers, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		hook.ID,
 		hook.Name,
 		hook.EndpointURL,
 		hook.Method,
 		hook.TimeoutMs,
+		headersJSON,
 		hook.CreatedAt,
 		hook.UpdatedAt,
 	)
@@ -35,8 +44,10 @@ func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 
 func (s *store) GetRemoteHook(ctx context.Context, id string) (*RemoteHook, error) {
 	var hook RemoteHook
+	var headersJSON []byte
+
 	err := s.Exec.QueryRowContext(ctx, `
-		SELECT id, name, endpoint_url, method, timeout_ms, created_at, updated_at
+		SELECT id, name, endpoint_url, method, timeout_ms, headers, created_at, updated_at
 		FROM remote_hooks
 		WHERE id = $1`, id).Scan(
 		&hook.ID,
@@ -44,20 +55,32 @@ func (s *store) GetRemoteHook(ctx context.Context, id string) (*RemoteHook, erro
 		&hook.EndpointURL,
 		&hook.Method,
 		&hook.TimeoutMs,
+		&headersJSON,
 		&hook.CreatedAt,
 		&hook.UpdatedAt,
 	)
 
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, libdb.ErrNotFound
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, libdb.ErrNotFound
+		}
+		return nil, err
 	}
-	return &hook, err
+
+	// Unmarshal the byte slice into the map.
+	if err := json.Unmarshal(headersJSON, &hook.Headers); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal hook headers: %w", err)
+	}
+
+	return &hook, nil
 }
 
 func (s *store) GetRemoteHookByName(ctx context.Context, name string) (*RemoteHook, error) {
 	var hook RemoteHook
+	var headersJSON []byte
+
 	err := s.Exec.QueryRowContext(ctx, `
-		SELECT id, name, endpoint_url, method, timeout_ms, created_at, updated_at
+		SELECT id, name, endpoint_url, method, timeout_ms, headers, created_at, updated_at
 		FROM remote_hooks
 		WHERE name = $1`, name).Scan(
 		&hook.ID,
@@ -65,41 +88,47 @@ func (s *store) GetRemoteHookByName(ctx context.Context, name string) (*RemoteHo
 		&hook.EndpointURL,
 		&hook.Method,
 		&hook.TimeoutMs,
+		&headersJSON,
 		&hook.CreatedAt,
 		&hook.UpdatedAt,
 	)
 
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, libdb.ErrNotFound
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, libdb.ErrNotFound
+		}
+		return nil, err
 	}
-	return &hook, err
+
+	// Unmarshal into the map.
+	if err := json.Unmarshal(headersJSON, &hook.Headers); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal hook headers: %w", err)
+	}
+
+	return &hook, nil
 }
 
 func (s *store) UpdateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 	hook.UpdatedAt = time.Now().UTC()
 
+	// Marshal the map into a byte slice.
+	headersJSON, err := json.Marshal(hook.Headers)
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook headers for update: %w", err)
+	}
+
 	result, err := s.Exec.ExecContext(ctx, `
 		UPDATE remote_hooks
-		SET name = $2, endpoint_url = $3, method = $4, timeout_ms = $5, updated_at = $6
+		SET name = $2, endpoint_url = $3, method = $4, timeout_ms = $5, headers = $6, updated_at = $7
 		WHERE id = $1`,
 		hook.ID,
 		hook.Name,
 		hook.EndpointURL,
 		hook.Method,
 		hook.TimeoutMs,
+		headersJSON,
 		hook.UpdatedAt,
 	)
-
-	if err != nil {
-		return err
-	}
-	return checkRowsAffected(result)
-}
-
-func (s *store) DeleteRemoteHook(ctx context.Context, id string) error {
-	result, err := s.Exec.ExecContext(ctx, `
-		DELETE FROM remote_hooks
-		WHERE id = $1`, id)
 
 	if err != nil {
 		return err
@@ -117,7 +146,7 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 	}
 
 	rows, err := s.Exec.QueryContext(ctx, `
-        SELECT id, name, endpoint_url, method, timeout_ms, created_at, updated_at
+        SELECT id, name, endpoint_url, method, timeout_ms, headers, created_at, updated_at
         FROM remote_hooks
         WHERE created_at < $1
         ORDER BY created_at DESC, id DESC
@@ -131,16 +160,23 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 	hooks := []*RemoteHook{}
 	for rows.Next() {
 		var hook RemoteHook
+		var headersJSON []byte
 		if err := rows.Scan(
 			&hook.ID,
 			&hook.Name,
 			&hook.EndpointURL,
 			&hook.Method,
 			&hook.TimeoutMs,
+			&headersJSON,
 			&hook.CreatedAt,
 			&hook.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan remote hook: %w", err)
+		}
+
+		// Unmarshal into the map for each hook.
+		if err := json.Unmarshal(headersJSON, &hook.Headers); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal hook headers from list: %w", err)
 		}
 		hooks = append(hooks, &hook)
 	}
@@ -150,6 +186,17 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 	}
 
 	return hooks, nil
+}
+
+func (s *store) DeleteRemoteHook(ctx context.Context, id string) error {
+	result, err := s.Exec.ExecContext(ctx, `
+		DELETE FROM remote_hooks
+		WHERE id = $1`, id)
+
+	if err != nil {
+		return err
+	}
+	return checkRowsAffected(result)
 }
 
 func (s *store) EstimateRemoteHookCount(ctx context.Context) (int64, error) {

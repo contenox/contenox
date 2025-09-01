@@ -114,6 +114,10 @@ func (p *PersistentRepo) execRemoteHook(
 			fmt.Errorf("failed to create request: %w", err)
 	}
 
+	for key, value := range hook.Headers {
+		httpReq.Header.Set(key, value)
+	}
+
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	client := p.httpClient

@@ -90,5 +90,16 @@ func validate(hook *runtimetypes.RemoteHook) error {
 	case hook.TimeoutMs <= 0:
 		return fmt.Errorf("%w %w: timeout must be positive", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	}
+
+	// Validate headers if provided
+	for key, value := range hook.Headers {
+		if key == "" {
+			return fmt.Errorf("%w %w: header name cannot be empty", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
+		}
+		if value == "" {
+			return fmt.Errorf("%w %w: header value for %s cannot be empty", ErrInvalidHook, apiframework.ErrUnprocessableEntity, key)
+		}
+	}
+
 	return nil
 }
