@@ -197,6 +197,9 @@ graph TD
 ### Custom Hooks
 
 Hooks are external servers that can be called from within task chains when registered. They allow interaction with systems and data outside of the runtime and task chains themselves.
+
+The runtime communicates with hooks using an OpenAI-compatible function call format, making it easy to integrate with a wide range of existing tool servers.
+
 [🔗 See Hook Documentation](./docs/hooks.md)
 
 -----
