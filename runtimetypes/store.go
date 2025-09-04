@@ -95,16 +95,56 @@ type KV struct {
 	UpdatedAt time.Time       `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
-type RemoteHook struct {
-	ID          string            `json:"id" example:"h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
-	Name        string            `json:"name" example:"send-email"`
-	EndpointURL string            `json:"endpointUrl" example:"http://hooks-endpoint:port"`
-	Method      string            `json:"method" example:"POST"`
-	TimeoutMs   int               `json:"timeoutMs" example:"5000"`
-	Headers     map[string]string `json:"headers,omitempty" example:"Authorization:Bearer token,Content-Type:application/json"`
-	CreatedAt   time.Time         `json:"createdAt" example:"2023-11-15T14:30:45Z"`
-	UpdatedAt   time.Time         `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
+// HookProtocolType defines the standard protocols for remote hooks
+type HookProtocolType string
+
+const (
+	// ProtocolOpenAI is the standard OpenAI tool call format
+	// Request: {"name": "tool", "arguments": "{\"param\": \"value\"}"}
+	ProtocolOpenAI HookProtocolType = "openai"
+
+	// ProtocolLangServeDirect is LangServe's direct invocation format
+	// Request: {"param": "value"}
+	ProtocolLangServeDirect HookProtocolType = "langserve"
+
+	// ProtocolLangServeOpenAI is LangServe's OpenAI-compatible endpoint format
+	// Request: {"name": "tool", "arguments": "{\"param\": \"value\"}"}
+	// But with different response handling
+	ProtocolLangServeOpenAI HookProtocolType = "langserve-openai"
+
+	// ProtocolOpenAIObject OpenAI-compatible endpoint format without stringfied arguments
+	// Request: {"name": "tool", "arguments": {"param": "value"}}
+	ProtocolOpenAIObject HookProtocolType = "openai-object"
+
+	// ProtocolOllama Ollama-compatible endpoint format
+	// Request: {"name": "tool", "arguments": {"param": "value"}}
+	ProtocolOllama HookProtocolType = "ollama"
+
+	// MCP will come later as its own thing
+)
+
+// Validate ensures the protocol type is valid
+func (p HookProtocolType) Validate() error {
+	switch p {
+	case ProtocolOpenAI, ProtocolLangServeDirect, ProtocolLangServeOpenAI, ProtocolOpenAIObject, ProtocolOllama:
+		return nil
+	default:
+		return fmt.Errorf("invalid protocol type: %s", p)
+	}
 }
+
+type RemoteHook struct {
+	ID           string            `json:"id" example:"h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
+	Name         string            `json:"name" example:"send-email"`
+	EndpointURL  string            `json:"endpointUrl" example:"http://hooks-endpoint:port"`
+	Method       string            `json:"method" example:"POST"`
+	TimeoutMs    int               `json:"timeoutMs" example:"5000"`
+	Headers      map[string]string `json:"headers,omitempty" example:"Authorization:Bearer token,Content-Type:application/json"`
+	ProtocolType HookProtocolType  `json:"protocolType" example:"openai"` // enum:"openai,langserve,langserve-openai,custom"
+	CreatedAt    time.Time         `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt    time.Time         `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
+}
+
 type Store interface {
 	CreateBackend(ctx context.Context, backend *Backend) error
 	GetBackend(ctx context.Context, id string) (*Backend, error)

@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.72
+title: contenox/runtime – LLM Backend Management API v0.0.51-111-g80c18b9-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.72</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-111-g80c18b9-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -836,8 +836,8 @@ Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |purpose|path|string|true|The purpose category to filter groups by (e.g., 'embeddings').|
 
 > Example responses
@@ -1202,6 +1202,7 @@ Lists all configured remote hooks with pagination support.
     "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
     "method": "POST",
     "name": "send-email",
+    "protocolType": null,
     "timeoutMs": 5000,
     "updatedAt": "2023-11-15T14:30:45Z"
   }
@@ -1253,6 +1254,7 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
+  "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1276,6 +1278,7 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
+  "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1380,6 +1383,7 @@ Retrieves a specific remote hook configuration by ID.
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
+  "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1430,6 +1434,7 @@ The ID from the URL path overrides any ID in the request body.
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
+  "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1454,6 +1459,7 @@ The ID from the URL path overrides any ID in the request body.
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
+  "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1714,8 +1720,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -3447,6 +3453,7 @@ X-API-Key
     "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
     "method": "POST",
     "name": "send-email",
+    "protocolType": null,
     "timeoutMs": 5000,
     "updatedAt": "2023-11-15T14:30:45Z"
   }
@@ -4122,6 +4129,7 @@ X-API-Key
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
   "name": "send-email",
+  "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -4138,6 +4146,7 @@ X-API-Key
 |id|string|true|none|none|
 |method|string|true|none|none|
 |name|string|true|none|none|
+|protocolType|[runtimetypes_HookProtocolType](#schemaruntimetypes_hookprotocoltype)|true|none|none|
 |timeoutMs|integer|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
 

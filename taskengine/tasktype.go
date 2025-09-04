@@ -469,6 +469,11 @@ type FunctionCall struct {
 	Arguments string `json:"arguments" example:"{\n  \"location\": \"San Francisco, CA\",\n  \"unit\": \"celsius\"\n}"`
 }
 
+type FunctionCallObject struct {
+	Name      string `json:"name" example:"get_current_weather"`
+	Arguments any    `json:"arguments"`
+}
+
 type OpenAIChatResponseMessage struct {
 	Role      string     `json:"role" example:"assistant"`
 	Content   *string    `json:"content,omitempty" example:"I can help with that."` // Pointer to handle null content for tool calls

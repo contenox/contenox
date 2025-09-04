@@ -42,7 +42,8 @@ def test_remote_hook_with_headers(
             "endpointUrl": endpoint_url,
             "method": "POST",
             "timeoutMs": 5000,
-            "headers": expected_headers
+            "headers": expected_headers,
+            "protocolType": "openai"
         },
         headers=auth_headers
     )
@@ -124,6 +125,7 @@ def test_remote_hook_header_validation_failure(
             "endpointUrl": endpoint_url,
             "method": "POST",
             "timeoutMs": 5000,
+            "protocolType": "openai",
             "headers": {"X-Different-Header": "different-value"}  # Mismatch
         },
         headers=auth_headers
@@ -177,7 +179,8 @@ def test_remote_hook_without_headers(
             "name": hook_name,
             "endpointUrl": endpoint_url,
             "method": "POST",
-            "timeoutMs": 5000
+            "timeoutMs": 5000,
+            "protocolType": "openai",
         },
         headers=auth_headers
     )

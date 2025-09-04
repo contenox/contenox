@@ -1,4 +1,5 @@
 import pytest
+import os
 import uuid
 import requests
 import logging
@@ -256,7 +257,11 @@ def configurable_mock_hook_server(httpserver: HTTPServer):
         if expected_headers is None:
             expected_headers = {}
 
+        # Clear any existing expectations to prevent test pollution
+        httpserver.clear()
+
         endpoint = f"/test-hook-endpoint-{uuid.uuid4().hex[:8]}"
+        print(f"Setting up mock endpoint: {endpoint} for test: {os.environ.get('PYTEST_CURRENT_TEST')}")
 
         def handler(request):
             if delay_seconds > 0:
@@ -295,7 +300,6 @@ def configurable_mock_hook_server(httpserver: HTTPServer):
         }
 
     return _setup_mock
-
 
 API_TOKEN = "my-secret-test-token"
 
@@ -338,3 +342,31 @@ def wait_for_declared_models(
         wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)
 
     logger.info("✅ All models downloaded successfully")
+
+def check_langserve_direct_request(request):
+    """Asserts the request body is a valid LangServe direct format."""
+    try:
+        body = request.get_json()
+        assert "name" not in body, "LangServe direct format should not have 'name' field"
+        assert "arguments" not in body, "LangServe direct format should not have 'arguments' field"
+        assert "input" in body, "Request body missing 'input'"
+        return True
+    except Exception as e:
+        pytest.fail(f"Request body is not a valid LangServe direct format: {e}")
+
+
+def check_langserve_openai_request(request):
+    """Asserts the request body is a valid LangServe OpenAI format (same as standard)."""
+    return check_function_call_request(request)
+
+
+def check_ollama_request(request):
+    """Asserts the request body is a valid Ollama format (OpenAI Object format)."""
+    try:
+        body = request.get_json()
+        assert "name" in body, "Request body missing 'name'"
+        assert "arguments" in body, "Request body missing 'arguments'"
+        assert isinstance(body["arguments"], dict), "'arguments' field should be an object in Ollama format"
+        return True
+    except Exception as e:
+        pytest.fail(f"Request body is not a valid Ollama format: {e}")

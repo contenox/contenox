@@ -13,6 +13,11 @@ import (
 )
 
 func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
+	// Validate protocol type
+	if err := hook.ProtocolType.Validate(); err != nil {
+		return err
+	}
+
 	now := time.Now().UTC()
 	hook.CreatedAt = now
 	hook.UpdatedAt = now
@@ -20,22 +25,22 @@ func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 		hook.ID = uuid.NewString()
 	}
 
-	// Marshal the map into a byte slice right before the query.
 	headersJSON, err := json.Marshal(hook.Headers)
 	if err != nil {
 		return fmt.Errorf("failed to marshal hook headers: %w", err)
 	}
 
 	_, err = s.Exec.ExecContext(ctx, `
-		INSERT INTO remote_hooks
-		(id, name, endpoint_url, method, timeout_ms, headers, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        INSERT INTO remote_hooks
+        (id, name, endpoint_url, method, timeout_ms, headers, protocol_type, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		hook.ID,
 		hook.Name,
 		hook.EndpointURL,
 		hook.Method,
 		hook.TimeoutMs,
 		headersJSON,
+		string(hook.ProtocolType),
 		hook.CreatedAt,
 		hook.UpdatedAt,
 	)
@@ -45,17 +50,19 @@ func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 func (s *store) GetRemoteHook(ctx context.Context, id string) (*RemoteHook, error) {
 	var hook RemoteHook
 	var headersJSON []byte
+	var protocolType string
 
 	err := s.Exec.QueryRowContext(ctx, `
-		SELECT id, name, endpoint_url, method, timeout_ms, headers, created_at, updated_at
-		FROM remote_hooks
-		WHERE id = $1`, id).Scan(
+        SELECT id, name, endpoint_url, method, timeout_ms, headers, protocol_type, created_at, updated_at
+        FROM remote_hooks
+        WHERE id = $1`, id).Scan(
 		&hook.ID,
 		&hook.Name,
 		&hook.EndpointURL,
 		&hook.Method,
 		&hook.TimeoutMs,
 		&headersJSON,
+		&protocolType,
 		&hook.CreatedAt,
 		&hook.UpdatedAt,
 	)
@@ -65,6 +72,12 @@ func (s *store) GetRemoteHook(ctx context.Context, id string) (*RemoteHook, erro
 			return nil, libdb.ErrNotFound
 		}
 		return nil, err
+	}
+
+	// Set protocol type with validation
+	hook.ProtocolType = HookProtocolType(protocolType)
+	if err := hook.ProtocolType.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid protocol type in database: %w", err)
 	}
 
 	// Unmarshal the byte slice into the map.
@@ -78,17 +91,19 @@ func (s *store) GetRemoteHook(ctx context.Context, id string) (*RemoteHook, erro
 func (s *store) GetRemoteHookByName(ctx context.Context, name string) (*RemoteHook, error) {
 	var hook RemoteHook
 	var headersJSON []byte
+	var protocolType string
 
 	err := s.Exec.QueryRowContext(ctx, `
-		SELECT id, name, endpoint_url, method, timeout_ms, headers, created_at, updated_at
-		FROM remote_hooks
-		WHERE name = $1`, name).Scan(
+        SELECT id, name, endpoint_url, method, timeout_ms, headers, protocol_type, created_at, updated_at
+        FROM remote_hooks
+        WHERE name = $1`, name).Scan(
 		&hook.ID,
 		&hook.Name,
 		&hook.EndpointURL,
 		&hook.Method,
 		&hook.TimeoutMs,
 		&headersJSON,
+		&protocolType,
 		&hook.CreatedAt,
 		&hook.UpdatedAt,
 	)
@@ -98,6 +113,12 @@ func (s *store) GetRemoteHookByName(ctx context.Context, name string) (*RemoteHo
 			return nil, libdb.ErrNotFound
 		}
 		return nil, err
+	}
+
+	// Set protocol type with validation (same as GetRemoteHook)
+	hook.ProtocolType = HookProtocolType(protocolType)
+	if err := hook.ProtocolType.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid protocol type in database: %w", err)
 	}
 
 	// Unmarshal into the map.
@@ -119,7 +140,7 @@ func (s *store) UpdateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 
 	result, err := s.Exec.ExecContext(ctx, `
 		UPDATE remote_hooks
-		SET name = $2, endpoint_url = $3, method = $4, timeout_ms = $5, headers = $6, updated_at = $7
+		SET name = $2, endpoint_url = $3, method = $4, timeout_ms = $5, headers = $6, protocol_type = $7, updated_at = $8
 		WHERE id = $1`,
 		hook.ID,
 		hook.Name,
@@ -127,6 +148,7 @@ func (s *store) UpdateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 		hook.Method,
 		hook.TimeoutMs,
 		headersJSON,
+		hook.ProtocolType,
 		hook.UpdatedAt,
 	)
 
@@ -146,7 +168,7 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 	}
 
 	rows, err := s.Exec.QueryContext(ctx, `
-        SELECT id, name, endpoint_url, method, timeout_ms, headers, created_at, updated_at
+        SELECT id, name, endpoint_url, method, timeout_ms, headers, protocol_type, created_at, updated_at
         FROM remote_hooks
         WHERE created_at < $1
         ORDER BY created_at DESC, id DESC
@@ -168,6 +190,7 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 			&hook.Method,
 			&hook.TimeoutMs,
 			&headersJSON,
+			&hook.ProtocolType,
 			&hook.CreatedAt,
 			&hook.UpdatedAt,
 		); err != nil {

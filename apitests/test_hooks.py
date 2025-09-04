@@ -8,14 +8,16 @@ VALID_HOOK = {
     "name": "test-hook",
     "endpointUrl": "https://example.com/webhook",
     "method": "POST",
-    "timeoutMs": 5000
+    "timeoutMs": 5000,
+    "protocolType": "openai"
 }
 
 VALID_HOOK_2 = {
     "name": "test-hook_2",
     "endpointUrl": "https://example.com/webhook",
     "method": "POST",
-    "timeoutMs": 5000
+    "timeoutMs": 5000,
+    "protocolType": "openai"
 }
 
 
@@ -113,7 +115,8 @@ def test_update_remote_hook(base_url):
         "name": "updated-name",
         "endpointUrl": "https://new.example.com/webhook",
         "method": "PUT",
-        "timeoutMs": 10000
+        "timeoutMs": 10000,
+        "protocolType": "ollama"
     }
 
     update_response = requests.put(update_url, json=update_payload)
@@ -126,6 +129,7 @@ def test_update_remote_hook(base_url):
     assert data["endpointUrl"] == update_payload["endpointUrl"], "Endpoint should be updated"
     assert data["method"] == "PUT", "Method should be updated"
     assert data["timeoutMs"] == 10000, "Timeout should be updated"
+    assert data["protocolType"] == "ollama", "Protocol type should be updated"
 
 def test_delete_remote_hook(base_url):
     """Test deleting a remote hook"""

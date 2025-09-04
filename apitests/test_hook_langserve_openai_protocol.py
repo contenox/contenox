@@ -2,34 +2,24 @@ import requests
 from helpers import assert_status_code
 import uuid
 import json
-from conftest import check_function_call_request
+from conftest import check_langserve_openai_request
 
-def test_hook_task_in_chain(
+def test_langserve_openai_protocol(
     base_url,
-    with_ollama_backend,
-    create_model_and_assign_to_group,
-    create_backend_and_assign_to_group,
-    wait_for_model_in_backend,
     configurable_mock_hook_server
 ):
-    # Setup model and backend
-    model_info = create_model_and_assign_to_group
-    backend_info = create_backend_and_assign_to_group
-    model_name = model_info["model_name"]
-    backend_id = backend_info["backend_id"]
-    _ = wait_for_model_in_backend(model_name=model_name, backend_id=backend_id)
-
-    # The mock server now returns a direct JSON object
-    expected_hook_response = {"status": "ok", "data": "Hook executed successfully"}
+    """Test execution with LangServe OpenAI protocol"""
+    # Setup mock server for LangServe OpenAI
+    expected_hook_response = {"status": "ok", "data": "LangServe OpenAI executed"}
 
     mock_server = configurable_mock_hook_server(
         status_code=200,
-        response_json=expected_hook_response,
-        request_validator=check_function_call_request
+        response_json={"output": expected_hook_response},  # LangServe wraps output
+        request_validator=check_langserve_openai_request
     )
 
-    # Create a remote hook
-    hook_name = f"test-hook-{uuid.uuid4().hex[:8]}"
+    # Create a remote hook with LangServe OpenAI protocol
+    hook_name = f"test-langserve-openai-{uuid.uuid4().hex[:8]}"
     endpoint = mock_server["url"].replace("http://0.0.0.0", "http://host.docker.internal")
     create_response = requests.post(
         f"{base_url}/hooks/remote",
@@ -38,16 +28,16 @@ def test_hook_task_in_chain(
             "endpointUrl": endpoint,
             "method": "POST",
             "timeoutMs": 5000,
-            "protocolType": "openai"
+            "protocolType": "langserve-openai"
         }
     )
     assert_status_code(create_response, 201)
 
     # Define a task chain that uses the hook
     task_chain = {
-        "id": "hook-test-chain",
+        "id": "langserve-openai-test-chain",
         "debug": True,
-        "description": "Test chain with hook execution",
+        "description": "Test chain with LangServe OpenAI protocol",
         "tasks": [
             {
                 "id": "hook_task",
@@ -71,7 +61,7 @@ def test_hook_task_in_chain(
     response = requests.post(
         f"{base_url}/tasks",
         json={
-            "input": "Trigger hook",
+            "input": "Trigger LangServe OpenAI hook",
             "chain": task_chain,
             "inputType": "string"
         }
@@ -89,22 +79,20 @@ def test_hook_task_in_chain(
 
     assert hook_task_state["taskHandler"] == "hook", "Wrong task handler"
     assert hook_task_state["inputType"] == "string", "Wrong input type"
-    # The output type from a successful hook is now always 'json'
     assert hook_task_state["outputType"] == "json", "Wrong output type"
-    # The output in the state is a string representation of the JSON object
     assert json.loads(hook_task_state["output"]) == expected_hook_response, "Task output mismatch"
-    # The default transition for a JSON object output is 'ok'
     assert hook_task_state["transition"] == "ok", "Task transition mismatch"
 
     # Verify the mock server was called correctly
     assert len(mock_server["server"].log) > 0, "Mock server not called"
     request = mock_server["server"].log[0][0]
     request_data = request.json
-    print(request_data)
+
+    # In LangServe OpenAI, parameters are sent in OpenAI format
     assert request_data["name"] == hook_name, "Hook name mismatch"
 
-    # Arguments are now a JSON string, so we parse it to verify
+    # Arguments are a JSON string that needs parsing
     arguments = json.loads(request_data["arguments"])
     assert arguments["param1"] == "value1", "Hook arg mismatch"
     assert arguments["param2"] == "value2", "Hook arg mismatch"
-    assert arguments["input"] == "Trigger hook", "Input mismatch"
+    assert arguments["input"] == "Trigger LangServe OpenAI hook", "Input mismatch"
