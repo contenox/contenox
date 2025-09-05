@@ -20,7 +20,7 @@ This example demonstrates how to create a simple external web service and integr
 
 ### 1\. Implement the Hook Service
 
-Create a Python file `ping_pong.py`. The service now expects an OpenAI-style `FunctionCall` object and returns a direct JSON object as its output.
+Create a Python file `ping_pong.py`. The service expects an LangChain, Ollama or OpenAI-style `FunctionCall` object and returns a direct JSON object as its output.
 
 ```python
 from flask import Flask, request, jsonify
@@ -73,7 +73,8 @@ curl -X POST http://localhost:8081/hooks/remote \
     "name": "ping-pong",
     "endpointUrl": "http://host.docker.internal:5000/ping-pong",
     "method": "POST",
-    "timeoutMs": 2000
+    "timeoutMs": 2000,
+    "protocolType": "openai"
   }'
 ```
 
