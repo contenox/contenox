@@ -60,8 +60,8 @@ func (p *PersistentRepo) Exec(
 		return nil, fmt.Errorf("unknown hook: %s", args.Name)
 	}
 
-	if remoteHook.Name != args.Name {
-		return nil, fmt.Errorf("internal consistency error: hook name mismatch: requested '%s', but found '%s'", args.Name, remoteHook.Name)
+	if remoteHook.ServerName != args.Name {
+		return nil, fmt.Errorf("internal consistency error: hook name mismatch: requested '%s', but found '%s'", args.Name, remoteHook.ServerName)
 	}
 
 	return p.execRemoteHook(ctx, remoteHook, startingTime, input, args)
@@ -87,7 +87,8 @@ func (p *PersistentRepo) execRemoteHook(
 		argumentsMap[key] = val
 	}
 
-	jsonBody, err := handler.BuildRequest(hook.Name, argumentsMap)
+	// Build request with body properties
+	jsonBody, err := handler.BuildRequest(hook.ServerName, argumentsMap, hook.BodyProperties)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build request body for protocol %s: %w", hook.ProtocolType, err)
 	}
@@ -145,10 +146,10 @@ func (p *PersistentRepo) execRemoteHook(
 		if len(bodySample) > 200 {
 			bodySample = bodySample[:200] + "..."
 		}
-		return nil, fmt.Errorf("remote hook '%s' failed with status %d: %s", hook.Name, resp.StatusCode, bodySample)
+		return nil, fmt.Errorf("remote hook '%s' failed with status %d: %s", hook.ServerName, resp.StatusCode, bodySample)
 	}
 
-	// 2. Parse response using the specific protocol handler.
+	// Parse response using the specific protocol handler.
 	output, err := handler.ParseResponse(body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse response for protocol %s: %w", hook.ProtocolType, err)
@@ -189,7 +190,7 @@ func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
 	}
 
 	for _, hook := range remoteHooks {
-		localSupported = append(localSupported, hook.Name)
+		localSupported = append(localSupported, hook.ServerName)
 	}
 
 	return localSupported, nil

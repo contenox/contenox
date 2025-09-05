@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.73
+title: contenox/runtime – LLM Backend Management API v0.0.51-114-g0d6261f-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.73</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-114-g0d6261f-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -265,8 +265,8 @@ Backends not assigned to any group exist in the configuration but are completely
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1196,6 +1196,7 @@ Lists all configured remote hooks with pagination support.
 ```json
 [
   {
+    "bodyProperties": "access_token:secret-token,environment:production",
     "createdAt": "2023-11-15T14:30:45Z",
     "endpointUrl": "http://hooks-endpoint:port",
     "headers": "Authorization:Bearer token,Content-Type:application/json",
@@ -1248,6 +1249,7 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
 
 ```json
 {
+  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
@@ -1272,6 +1274,7 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
 
 ```json
 {
+  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
@@ -1377,6 +1380,7 @@ Retrieves a specific remote hook configuration by ID.
 
 ```json
 {
+  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
@@ -1428,6 +1432,7 @@ The ID from the URL path overrides any ID in the request body.
 
 ```json
 {
+  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
@@ -1453,6 +1458,7 @@ The ID from the URL path overrides any ID in the request body.
 
 ```json
 {
+  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
@@ -3447,6 +3453,7 @@ X-API-Key
 ```json
 [
   {
+    "bodyProperties": "access_token:secret-token,environment:production",
     "createdAt": "2023-11-15T14:30:45Z",
     "endpointUrl": "http://hooks-endpoint:port",
     "headers": "Authorization:Bearer token,Content-Type:application/json",
@@ -4123,6 +4130,7 @@ X-API-Key
 
 ```json
 {
+  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
@@ -4140,6 +4148,7 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
+|bodyProperties|object|false|none|none|
 |createdAt|string(date-time)|true|none|none|
 |endpointUrl|string|true|none|none|
 |headers|object|false|none|none|

@@ -7,11 +7,9 @@ import (
 	"github.com/contenox/runtime/taskengine"
 )
 
-// ProtocolHandler defines the contract for building requests and parsing responses
-// for a specific remote hook protocol.
 type ProtocolHandler interface {
 	// BuildRequest creates the HTTP request body for the given protocol.
-	BuildRequest(toolName string, argsMap map[string]any) ([]byte, error)
+	BuildRequest(toolName string, argsMap map[string]any, bodyProperties map[string]any) ([]byte, error)
 
 	// ParseResponse extracts the meaningful output from the HTTP response body.
 	ParseResponse(body []byte) (any, error)
@@ -19,8 +17,17 @@ type ProtocolHandler interface {
 
 type OpenAIProtocol struct{}
 
-func (p *OpenAIProtocol) BuildRequest(toolName string, argsMap map[string]any) ([]byte, error) {
-	argsJSON, err := json.Marshal(argsMap)
+func (p *OpenAIProtocol) BuildRequest(toolName string, argsMap map[string]any, bodyProperties map[string]any) ([]byte, error) {
+	// Merge body properties into args
+	mergedArgs := make(map[string]any)
+	for k, v := range bodyProperties {
+		mergedArgs[k] = v
+	}
+	for k, v := range argsMap {
+		mergedArgs[k] = v
+	}
+
+	argsJSON, err := json.Marshal(mergedArgs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal args for openai: %w", err)
 	}
@@ -40,8 +47,8 @@ func (p *OpenAIProtocol) ParseResponse(body []byte) (any, error) {
 
 type LangServeOpenAIProtocol struct{}
 
-func (p *LangServeOpenAIProtocol) BuildRequest(toolName string, argsMap map[string]any) ([]byte, error) {
-	return (&OpenAIProtocol{}).BuildRequest(toolName, argsMap)
+func (p *LangServeOpenAIProtocol) BuildRequest(toolName string, argsMap map[string]any, bodyProperties map[string]any) ([]byte, error) {
+	return (&OpenAIProtocol{}).BuildRequest(toolName, argsMap, bodyProperties)
 }
 
 func (p *LangServeOpenAIProtocol) ParseResponse(body []byte) (any, error) {
@@ -57,10 +64,19 @@ func (p *LangServeOpenAIProtocol) ParseResponse(body []byte) (any, error) {
 
 type OllamaProtocol struct{}
 
-func (p *OllamaProtocol) BuildRequest(toolName string, argsMap map[string]any) ([]byte, error) {
+func (p *OllamaProtocol) BuildRequest(toolName string, argsMap map[string]any, bodyProperties map[string]any) ([]byte, error) {
+	// Merge body properties into args
+	mergedArgs := make(map[string]any)
+	for k, v := range bodyProperties {
+		mergedArgs[k] = v
+	}
+	for k, v := range argsMap {
+		mergedArgs[k] = v
+	}
+
 	return json.Marshal(taskengine.FunctionCallObject{
 		Name:      toolName,
-		Arguments: argsMap,
+		Arguments: mergedArgs,
 	})
 }
 
@@ -79,8 +95,17 @@ func (p *OllamaProtocol) ParseResponse(body []byte) (any, error) {
 
 type LangServeDirectProtocol struct{}
 
-func (p *LangServeDirectProtocol) BuildRequest(toolName string, argsMap map[string]any) ([]byte, error) {
-	return json.Marshal(argsMap)
+func (p *LangServeDirectProtocol) BuildRequest(toolName string, argsMap map[string]any, bodyProperties map[string]any) ([]byte, error) {
+	// Merge body properties into args
+	mergedArgs := make(map[string]any)
+	for k, v := range bodyProperties {
+		mergedArgs[k] = v
+	}
+	for k, v := range argsMap {
+		mergedArgs[k] = v
+	}
+
+	return json.Marshal(mergedArgs)
 }
 
 func (p *LangServeDirectProtocol) ParseResponse(body []byte) (any, error) {
@@ -93,10 +118,48 @@ func (p *LangServeDirectProtocol) ParseResponse(body []byte) (any, error) {
 
 type OpenAIObjectProtocol struct{}
 
-func (p *OpenAIObjectProtocol) BuildRequest(toolName string, argsMap map[string]any) ([]byte, error) {
-	return (&OllamaProtocol{}).BuildRequest(toolName, argsMap)
+func (p *OpenAIObjectProtocol) BuildRequest(toolName string, argsMap map[string]any, bodyProperties map[string]any) ([]byte, error) {
+	return (&OllamaProtocol{}).BuildRequest(toolName, argsMap, bodyProperties)
 }
 
 func (p *OpenAIObjectProtocol) ParseResponse(body []byte) (any, error) {
 	return (&OpenAIProtocol{}).ParseResponse(body)
+}
+
+// OpenAIProtocol
+func (p *OpenAIProtocol) GetFunctionSchema(toolName string) (map[string]interface{}, error) {
+	// For OpenAI protocol, we need to know the specific function schema
+	// This would typically be fetched from a registry or configuration
+	return map[string]interface{}{
+		"name":        toolName,
+		"description": "Function executed via OpenAI protocol",
+		"parameters": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"input": map[string]interface{}{
+					"type":        "any",
+					"description": "Input data for the function",
+				},
+			},
+			"required": []string{"input"},
+		},
+	}, nil
+}
+
+// LangServeOpenAIProtocol
+func (p *LangServeOpenAIProtocol) GetFunctionSchema(toolName string) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"name":        toolName,
+		"description": "Function executed via LangServe OpenAI protocol",
+		"parameters": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"input": map[string]interface{}{
+					"type":        "any",
+					"description": "Input data for the function",
+				},
+			},
+			"required": []string{"input"},
+		},
+	}, nil
 }

@@ -81,7 +81,7 @@ func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit in
 
 func validate(hook *runtimetypes.RemoteHook) error {
 	switch {
-	case hook.Name == "":
+	case hook.ServerName == "":
 		return fmt.Errorf("%w %w: name is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	case hook.EndpointURL == "":
 		return fmt.Errorf("%w %w: endpoint URL is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)

@@ -20,7 +20,7 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, hook *runtimetype
 		ctx,
 		"create",
 		"remote_hook",
-		"name", hook.Name,
+		"name", hook.ServerName,
 		"endpoint_url", hook.EndpointURL,
 	)
 	defer endFn()
@@ -37,7 +37,7 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, hook *runtimetype
 			TimeoutMs   int    `json:"timeoutMs"`
 		}{
 			ID:          hook.ID,
-			Name:        hook.Name,
+			Name:        hook.ServerName,
 			EndpointURL: hook.EndpointURL,
 			Method:      hook.Method,
 			TimeoutMs:   hook.TimeoutMs,
@@ -78,7 +78,7 @@ func (d *activityTrackerDecorator) Update(ctx context.Context, hook *runtimetype
 		"update",
 		"remote_hook",
 		"id", hook.ID,
-		"name", hook.Name,
+		"name", hook.ServerName,
 	)
 	defer endFn()
 
@@ -94,7 +94,7 @@ func (d *activityTrackerDecorator) Update(ctx context.Context, hook *runtimetype
 			TimeoutMs   int    `json:"timeoutMs"`
 		}{
 			ID:          hook.ID,
-			Name:        hook.Name,
+			Name:        hook.ServerName,
 			EndpointURL: hook.EndpointURL,
 			Method:      hook.Method,
 			TimeoutMs:   hook.TimeoutMs,
@@ -116,7 +116,7 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, id string) error 
 		"delete",
 		"remote_hook",
 		"id", id,
-		"name", hook.Name,
+		"name", hook.ServerName,
 	)
 	defer endFn()
 

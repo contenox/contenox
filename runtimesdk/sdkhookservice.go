@@ -124,7 +124,7 @@ func (s *HTTPRemoteHookService) GetByName(ctx context.Context, name string) (*ru
 	}
 
 	for _, hook := range hooks {
-		if hook.Name == name {
+		if hook.ServerName == name {
 			return hook, nil
 		}
 	}

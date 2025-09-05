@@ -11,12 +11,20 @@ func TestUnit_OpenAIProtocol(t *testing.T) {
 	handler := &hooks.OpenAIProtocol{}
 	toolName := "openai_tool"
 	args := map[string]any{"arg1": "val1"}
-	expectedRequest := `{"name":"openai_tool","arguments":"{\"arg1\":\"val1\"}"}`
+	bodyProps := map[string]any{"access_token": "secret-token"}
+	expectedRequest := `{"name":"openai_tool","arguments":"{\"access_token\":\"secret-token\",\"arg1\":\"val1\"}"}`
 
 	t.Run("BuildRequest", func(t *testing.T) {
-		body, err := handler.BuildRequest(toolName, args)
+		body, err := handler.BuildRequest(toolName, args, bodyProps)
 		require.NoError(t, err)
 		require.JSONEq(t, expectedRequest, string(body))
+	})
+
+	t.Run("BuildRequest_NoBodyProps", func(t *testing.T) {
+		expectedRequestNoProps := `{"name":"openai_tool","arguments":"{\"arg1\":\"val1\"}"}`
+		body, err := handler.BuildRequest(toolName, args, nil)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedRequestNoProps, string(body))
 	})
 
 	t.Run("ParseResponse", func(t *testing.T) {
@@ -34,12 +42,20 @@ func TestUnit_OllamaProtocol(t *testing.T) {
 	handler := &hooks.OllamaProtocol{}
 	toolName := "ollama_tool"
 	args := map[string]any{"arg1": "val1"}
-	expectedRequest := `{"name":"ollama_tool","arguments":{"arg1":"val1"}}`
+	bodyProps := map[string]any{"access_token": "secret-token"}
+	expectedRequest := `{"name":"ollama_tool","arguments":{"access_token":"secret-token","arg1":"val1"}}`
 
 	t.Run("BuildRequest", func(t *testing.T) {
-		body, err := handler.BuildRequest(toolName, args)
+		body, err := handler.BuildRequest(toolName, args, bodyProps)
 		require.NoError(t, err)
 		require.JSONEq(t, expectedRequest, string(body))
+	})
+
+	t.Run("BuildRequest_NoBodyProps", func(t *testing.T) {
+		expectedRequestNoProps := `{"name":"ollama_tool","arguments":{"arg1":"val1"}}`
+		body, err := handler.BuildRequest(toolName, args, nil)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedRequestNoProps, string(body))
 	})
 
 	t.Run("ParseResponse_Success", func(t *testing.T) {
@@ -64,12 +80,20 @@ func TestUnit_LangServeOpenAIProtocol(t *testing.T) {
 	handler := &hooks.LangServeOpenAIProtocol{}
 	toolName := "langserve_openai_tool"
 	args := map[string]any{"arg1": "val1"}
-	expectedRequest := `{"name":"langserve_openai_tool","arguments":"{\"arg1\":\"val1\"}"}`
+	bodyProps := map[string]any{"access_token": "secret-token"}
+	expectedRequest := `{"name":"langserve_openai_tool","arguments":"{\"access_token\":\"secret-token\",\"arg1\":\"val1\"}"}`
 
 	t.Run("BuildRequest", func(t *testing.T) {
-		body, err := handler.BuildRequest(toolName, args)
+		body, err := handler.BuildRequest(toolName, args, bodyProps)
 		require.NoError(t, err)
 		require.JSONEq(t, expectedRequest, string(body))
+	})
+
+	t.Run("BuildRequest_NoBodyProps", func(t *testing.T) {
+		expectedRequestNoProps := `{"name":"langserve_openai_tool","arguments":"{\"arg1\":\"val1\"}"}`
+		body, err := handler.BuildRequest(toolName, args, nil)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedRequestNoProps, string(body))
 	})
 
 	t.Run("ParseResponse_Success", func(t *testing.T) {
@@ -94,12 +118,20 @@ func TestUnit_LangServeDirectProtocol(t *testing.T) {
 	handler := &hooks.LangServeDirectProtocol{}
 	toolName := "langserve_direct_tool"
 	args := map[string]any{"arg1": "val1"}
-	expectedRequest := `{"arg1":"val1"}`
+	bodyProps := map[string]any{"access_token": "secret-token"}
+	expectedRequest := `{"access_token":"secret-token","arg1":"val1"}`
 
 	t.Run("BuildRequest", func(t *testing.T) {
-		body, err := handler.BuildRequest(toolName, args)
+		body, err := handler.BuildRequest(toolName, args, bodyProps)
 		require.NoError(t, err)
 		require.JSONEq(t, expectedRequest, string(body))
+	})
+
+	t.Run("BuildRequest_NoBodyProps", func(t *testing.T) {
+		expectedRequestNoProps := `{"arg1":"val1"}`
+		body, err := handler.BuildRequest(toolName, args, nil)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedRequestNoProps, string(body))
 	})
 
 	t.Run("ParseResponse", func(t *testing.T) {
@@ -117,12 +149,20 @@ func TestUnit_OpenAIObjectProtocol(t *testing.T) {
 	handler := &hooks.OpenAIObjectProtocol{}
 	toolName := "openai_object_tool"
 	args := map[string]any{"arg1": "val1"}
-	expectedRequest := `{"name":"openai_object_tool","arguments":{"arg1":"val1"}}`
+	bodyProps := map[string]any{"access_token": "secret-token"}
+	expectedRequest := `{"name":"openai_object_tool","arguments":{"access_token":"secret-token","arg1":"val1"}}`
 
 	t.Run("BuildRequest", func(t *testing.T) {
-		body, err := handler.BuildRequest(toolName, args)
+		body, err := handler.BuildRequest(toolName, args, bodyProps)
 		require.NoError(t, err)
 		require.JSONEq(t, expectedRequest, string(body))
+	})
+
+	t.Run("BuildRequest_NoBodyProps", func(t *testing.T) {
+		expectedRequestNoProps := `{"name":"openai_object_tool","arguments":{"arg1":"val1"}}`
+		body, err := handler.BuildRequest(toolName, args, nil)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedRequestNoProps, string(body))
 	})
 
 	t.Run("ParseResponse", func(t *testing.T) {
@@ -161,5 +201,50 @@ func TestUnit_OpenAIObjectProtocol_BugHunt(t *testing.T) {
 		contentField, ok := messageField["content"].(map[string]any)
 		require.True(t, ok)
 		require.Equal(t, "ok", contentField["status"])
+	})
+}
+
+// New tests for body properties merging behavior
+func TestUnit_Protocols_BodyProperties_Merging(t *testing.T) {
+	t.Run("OpenAIProtocol_Merge_With_Conflict", func(t *testing.T) {
+		handler := &hooks.OpenAIProtocol{}
+		toolName := "test_tool"
+		args := map[string]any{"access_token": "arg-token", "arg1": "val1"}
+		bodyProps := map[string]any{"access_token": "body-token", "env": "prod"}
+
+		// Arguments should take precedence over body properties in case of conflict
+		expectedRequest := `{"name":"test_tool","arguments":"{\"access_token\":\"arg-token\",\"arg1\":\"val1\",\"env\":\"prod\"}"}`
+
+		body, err := handler.BuildRequest(toolName, args, bodyProps)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedRequest, string(body))
+	})
+
+	t.Run("OllamaProtocol_Merge_With_Conflict", func(t *testing.T) {
+		handler := &hooks.OllamaProtocol{}
+		toolName := "test_tool"
+		args := map[string]any{"access_token": "arg-token", "arg1": "val1"}
+		bodyProps := map[string]any{"access_token": "body-token", "env": "prod"}
+
+		// Arguments should take precedence over body properties in case of conflict
+		expectedRequest := `{"name":"test_tool","arguments":{"access_token":"arg-token","arg1":"val1","env":"prod"}}`
+
+		body, err := handler.BuildRequest(toolName, args, bodyProps)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedRequest, string(body))
+	})
+
+	t.Run("LangServeDirectProtocol_Merge_With_Conflict", func(t *testing.T) {
+		handler := &hooks.LangServeDirectProtocol{}
+		toolName := "test_tool"
+		args := map[string]any{"access_token": "arg-token", "arg1": "val1"}
+		bodyProps := map[string]any{"access_token": "body-token", "env": "prod"}
+
+		// Arguments should take precedence over body properties in case of conflict
+		expectedRequest := `{"access_token":"arg-token","arg1":"val1","env":"prod"}`
+
+		body, err := handler.BuildRequest(toolName, args, bodyProps)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedRequest, string(body))
 	})
 }
