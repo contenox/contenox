@@ -49,7 +49,7 @@ func New(
 	repo llmrepo.ModelRepo,
 	environmentExec taskengine.EnvExecutor,
 	state *runtimestate.State,
-	hookRegistry taskengine.HookRegistry,
+	hookRegistry taskengine.HookProvider,
 	// kvManager libkv.KVManager,
 ) (http.Handler, func() error, error) {
 	cleanup := func() error { return nil }
@@ -150,7 +150,7 @@ func New(
 	providerService := providerservice.New(dbInstance)
 	providerService = providerservice.WithActivityTracker(providerService, serveropsChainedTracker)
 	providerapi.AddProviderRoutes(mux, providerService)
-	hookproviderService := hookproviderservice.New(dbInstance)
+	hookproviderService := hookproviderservice.New(dbInstance, hookRegistry)
 	hookproviderService = hookproviderservice.WithActivityTracker(hookproviderService, serveropsChainedTracker)
 	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
 	chatService := chatservice.New(

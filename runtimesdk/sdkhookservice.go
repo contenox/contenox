@@ -1,10 +1,10 @@
 package runtimesdk
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,14 +16,14 @@ import (
 )
 
 // HTTPRemoteHookService implements the hookproviderservice.Service interface
-// using HTTP calls to the API
+// using HTTP calls to the API.
 type HTTPRemoteHookService struct {
 	client  *http.Client
 	baseURL string
 	token   string
 }
 
-// NewHTTPRemoteHookService creates a new HTTP client that implements hookproviderservice.Service
+// NewHTTPRemoteHookService creates a new HTTP client that implements hookproviderservice.Service.
 func NewHTTPRemoteHookService(baseURL, token string, client *http.Client) hookproviderservice.Service {
 	if client == nil {
 		client = http.DefaultClient
@@ -39,27 +39,55 @@ func NewHTTPRemoteHookService(baseURL, token string, client *http.Client) hookpr
 	}
 }
 
-// Create implements hookproviderservice.Service.Create
-func (s *HTTPRemoteHookService) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {
-	url := s.baseURL + "/hooks/remote"
+// GetSchemasForSupportedHooks implements hookproviderservice.Service.GetSchemasForSupportedHooks.
+func (s *HTTPRemoteHookService) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
+	reqUrl := s.baseURL + "/hooks/schemas"
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
 		req.Header.Set("X-API-Key", s.token)
 	}
 
-	// Encode request body
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var schemas map[string]map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&schemas); err != nil {
+		return nil, err
+	}
+
+	return schemas, nil
+}
+
+// Create implements hookproviderservice.Service.Create.
+func (s *HTTPRemoteHookService) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {
+	reqUrl := s.baseURL + "/hooks/remote"
+
 	body, err := json.Marshal(hook)
 	if err != nil {
 		return err
 	}
-	req.Body = io.NopCloser(strings.NewReader(string(body)))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqUrl, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if s.token != "" {
+		req.Header.Set("X-API-Key", s.token)
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -67,12 +95,10 @@ func (s *HTTPRemoteHookService) Create(ctx context.Context, hook *runtimetypes.R
 	}
 	defer resp.Body.Close()
 
-	// Check for error status codes
 	if resp.StatusCode != http.StatusCreated {
 		return apiframework.HandleAPIError(resp)
 	}
 
-	// Decode response into the provided hook
 	if err := json.NewDecoder(resp.Body).Decode(hook); err != nil {
 		return err
 	}
@@ -80,18 +106,17 @@ func (s *HTTPRemoteHookService) Create(ctx context.Context, hook *runtimetypes.R
 	return nil
 }
 
-// Get implements hookproviderservice.Service.Get
+// Get implements hookproviderservice.Service.Get.
 func (s *HTTPRemoteHookService) Get(ctx context.Context, id string) (*runtimetypes.RemoteHook, error) {
-	url := fmt.Sprintf("%s/hooks/remote/%s", s.baseURL, url.PathEscape(id))
+	reqUrl := fmt.Sprintf("%s/hooks/remote/%s", s.baseURL, url.PathEscape(id))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Set headers
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	resp, err := s.client.Do(req)
@@ -100,12 +125,10 @@ func (s *HTTPRemoteHookService) Get(ctx context.Context, id string) (*runtimetyp
 	}
 	defer resp.Body.Close()
 
-	// Check for error status codes
 	if resp.StatusCode != http.StatusOK {
 		return nil, apiframework.HandleAPIError(resp)
 	}
 
-	// Decode response
 	var hook runtimetypes.RemoteHook
 	if err := json.NewDecoder(resp.Body).Decode(&hook); err != nil {
 		return nil, err
@@ -114,45 +137,55 @@ func (s *HTTPRemoteHookService) Get(ctx context.Context, id string) (*runtimetyp
 	return &hook, nil
 }
 
-// GetByName implements hookproviderservice.Service.GetByName
+// GetByName implements hookproviderservice.Service.GetByName.
 func (s *HTTPRemoteHookService) GetByName(ctx context.Context, name string) (*runtimetypes.RemoteHook, error) {
-	// The API doesn't have a direct endpoint for getting hooks by name,
-	// so we'll need to list all hooks and find the one with the matching name
-	hooks, err := s.List(ctx, nil, 1000)
+	reqUrl := fmt.Sprintf("%s/hooks/remote/by-name/%s", s.baseURL, url.PathEscape(name))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, hook := range hooks {
-		if hook.ServerName == name {
-			return hook, nil
-		}
+	if s.token != "" {
+		req.Header.Set("X-API-Key", s.token)
 	}
 
-	return nil, fmt.Errorf("hook not found with name: %s", name)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var hook runtimetypes.RemoteHook
+	if err := json.NewDecoder(resp.Body).Decode(&hook); err != nil {
+		return nil, err
+	}
+
+	return &hook, nil
 }
 
-// Update implements hookproviderservice.Service.Update
+// Update implements hookproviderservice.Service.Update.
 func (s *HTTPRemoteHookService) Update(ctx context.Context, hook *runtimetypes.RemoteHook) error {
-	url := fmt.Sprintf("%s/hooks/remote/%s", s.baseURL, url.PathEscape(hook.ID))
+	reqUrl := fmt.Sprintf("%s/hooks/remote/%s", s.baseURL, url.PathEscape(hook.ID))
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
-	if err != nil {
-		return err
-	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
-	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
-	}
-
-	// Encode request body
 	body, err := json.Marshal(hook)
 	if err != nil {
 		return err
 	}
-	req.Body = io.NopCloser(strings.NewReader(string(body)))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, reqUrl, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if s.token != "" {
+		req.Header.Set("X-API-Key", s.token)
+	}
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -160,12 +193,10 @@ func (s *HTTPRemoteHookService) Update(ctx context.Context, hook *runtimetypes.R
 	}
 	defer resp.Body.Close()
 
-	// Check for error status codes
 	if resp.StatusCode != http.StatusOK {
 		return apiframework.HandleAPIError(resp)
 	}
 
-	// Decode response into the provided hook
 	if err := json.NewDecoder(resp.Body).Decode(hook); err != nil {
 		return err
 	}
@@ -173,18 +204,17 @@ func (s *HTTPRemoteHookService) Update(ctx context.Context, hook *runtimetypes.R
 	return nil
 }
 
-// Delete implements hookproviderservice.Service.Delete
+// Delete implements hookproviderservice.Service.Delete.
 func (s *HTTPRemoteHookService) Delete(ctx context.Context, id string) error {
-	url := fmt.Sprintf("%s/hooks/remote/%s", s.baseURL, url.PathEscape(id))
+	reqUrl := fmt.Sprintf("%s/hooks/remote/%s", s.baseURL, url.PathEscape(id))
 
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqUrl, nil)
 	if err != nil {
 		return err
 	}
 
-	// Set headers
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	resp, err := s.client.Do(req)
@@ -193,7 +223,6 @@ func (s *HTTPRemoteHookService) Delete(ctx context.Context, id string) error {
 	}
 	defer resp.Body.Close()
 
-	// Check for error status codes
 	if resp.StatusCode != http.StatusOK {
 		return apiframework.HandleAPIError(resp)
 	}
@@ -201,22 +230,26 @@ func (s *HTTPRemoteHookService) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// List implements hookproviderservice.Service.List
+// List implements hookproviderservice.Service.List.
 func (s *HTTPRemoteHookService) List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.RemoteHook, error) {
-	// Build URL with query parameters
-	rURL := fmt.Sprintf("%s/hooks/remote?limit=%d", s.baseURL, limit)
-	if createdAtCursor != nil {
-		rURL += "&cursor=" + url.QueryEscape(createdAtCursor.Format(time.RFC3339Nano))
+	u, err := url.Parse(s.baseURL + "/hooks/remote")
+	if err != nil {
+		return nil, err
 	}
+	q := u.Query()
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	if createdAtCursor != nil {
+		q.Set("cursor", createdAtCursor.Format(time.RFC3339Nano))
+	}
+	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", rURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Set headers
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	resp, err := s.client.Do(req)
@@ -225,12 +258,10 @@ func (s *HTTPRemoteHookService) List(ctx context.Context, createdAtCursor *time.
 	}
 	defer resp.Body.Close()
 
-	// Check for error status codes
 	if resp.StatusCode != http.StatusOK {
 		return nil, apiframework.HandleAPIError(resp)
 	}
 
-	// Decode response
 	var hooks []*runtimetypes.RemoteHook
 	if err := json.NewDecoder(resp.Body).Decode(&hooks); err != nil {
 		return nil, err

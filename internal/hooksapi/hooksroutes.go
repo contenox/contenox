@@ -1,6 +1,7 @@
 package hooksapi
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,15 +14,33 @@ import (
 func AddRemoteHookRoutes(mux *http.ServeMux, service hookproviderservice.Service) {
 	s := &remoteHookService{service: service}
 
+	// CRUD for remote hook configurations
 	mux.HandleFunc("POST /hooks/remote", s.create)
 	mux.HandleFunc("GET /hooks/remote", s.list)
 	mux.HandleFunc("GET /hooks/remote/{id}", s.get)
+	mux.HandleFunc("GET /hooks/remote/by-name/{name}", s.getByName)
 	mux.HandleFunc("PUT /hooks/remote/{id}", s.update)
 	mux.HandleFunc("DELETE /hooks/remote/{id}", s.delete)
+
+	// Endpoint to get all hook schemas
+	mux.HandleFunc("GET /hooks/schemas", s.getSchemas)
 }
 
 type remoteHookService struct {
 	service hookproviderservice.Service
+}
+
+// Retrieves the JSON schemas for all supported hook types.
+func (s *remoteHookService) getSchemas(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	schemas, err := s.service.GetSchemasForSupportedHooks(ctx)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, schemas) // @response map[string]map[string]interface{}
 }
 
 // Creates a new remote hook configuration.
@@ -43,22 +62,27 @@ func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusCreated, hook) // @response runtimetypes.RemoteHook
 }
 
-// Lists all configured remote hooks with pagination support.
+// Lists remote hooks, optionally filtering by a unique name.
 func (s *remoteHookService) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Parse pagination parameters using the helper
 	limitStr := serverops.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
 	cursorStr := serverops.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
 
 	var cursor *time.Time
 	if cursorStr != "" {
-		// ... parsing logic remains the same
+		parsedTime, err := time.Parse(time.RFC3339Nano, cursorStr)
+		if err != nil {
+			_ = serverops.Error(w, r, fmt.Errorf("invalid cursor format: %w", err), serverops.ListOperation)
+			return
+		}
+		cursor = &parsedTime
 	}
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		// ... error handling remains the same
+		_ = serverops.Error(w, r, fmt.Errorf("invalid limit format: %w", err), serverops.ListOperation)
+		return
 	}
 
 	hooks, err := s.service.List(ctx, cursor, limit)
@@ -119,4 +143,15 @@ func (s *remoteHookService) delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = serverops.Encode(w, r, http.StatusOK, "deleted") // @response string
+}
+
+func (s *remoteHookService) getByName(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	name := serverops.GetPathParam(r, "name", "The unique name for the remote hook.")
+	hook, err := s.service.GetByName(ctx, name)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.GetOperation)
+		return
+	}
+	_ = serverops.Encode(w, r, http.StatusOK, hook) // @response runtimetypes.RemoteHook
 }

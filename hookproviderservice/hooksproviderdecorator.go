@@ -15,12 +15,29 @@ type activityTrackerDecorator struct {
 	tracker libtracker.ActivityTracker
 }
 
+// GetSchemasForSupportedHooks wraps the underlying service call with activity tracking.
+func (d *activityTrackerDecorator) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
+	reportErrFn, _, endFn := d.tracker.Start(
+		ctx,
+		"get_schemas",
+		"hooks",
+	)
+	defer endFn()
+
+	schemas, err := d.service.GetSchemasForSupportedHooks(ctx)
+	if err != nil {
+		reportErrFn(err)
+	}
+
+	return schemas, err
+}
+
 func (d *activityTrackerDecorator) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {
 	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
 		ctx,
 		"create",
 		"remote_hook",
-		"name", hook.ServerName,
+		"name", hook.Name,
 		"endpoint_url", hook.EndpointURL,
 	)
 	defer endFn()
@@ -37,7 +54,7 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, hook *runtimetype
 			TimeoutMs   int    `json:"timeoutMs"`
 		}{
 			ID:          hook.ID,
-			Name:        hook.ServerName,
+			Name:        hook.Name,
 			EndpointURL: hook.EndpointURL,
 			Method:      hook.Method,
 			TimeoutMs:   hook.TimeoutMs,
@@ -78,7 +95,7 @@ func (d *activityTrackerDecorator) Update(ctx context.Context, hook *runtimetype
 		"update",
 		"remote_hook",
 		"id", hook.ID,
-		"name", hook.ServerName,
+		"name", hook.Name,
 	)
 	defer endFn()
 
@@ -94,7 +111,7 @@ func (d *activityTrackerDecorator) Update(ctx context.Context, hook *runtimetype
 			TimeoutMs   int    `json:"timeoutMs"`
 		}{
 			ID:          hook.ID,
-			Name:        hook.ServerName,
+			Name:        hook.Name,
 			EndpointURL: hook.EndpointURL,
 			Method:      hook.Method,
 			TimeoutMs:   hook.TimeoutMs,
@@ -116,7 +133,7 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, id string) error 
 		"delete",
 		"remote_hook",
 		"id", id,
-		"name", hook.ServerName,
+		"name", hook.Name,
 	)
 	defer endFn()
 
@@ -143,6 +160,7 @@ func (d *activityTrackerDecorator) List(ctx context.Context, createdAtCursor *ti
 	return d.service.List(ctx, createdAtCursor, limit)
 }
 
+// WithActivityTracker wraps a Service with activity tracking functionality.
 func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Service {
 	return &activityTrackerDecorator{
 		service: service,

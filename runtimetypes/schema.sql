@@ -83,13 +83,13 @@ CREATE TABLE IF NOT EXISTS remote_hooks (
     method VARCHAR(10) NOT NULL DEFAULT 'POST',
     timeout_ms INT NOT NULL DEFAULT 5000,
     headers JSONB,
-    body_properties JSONB,
+    body_properties BYTEA,
     protocol_type TEXT NOT NULL,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
 
-ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS body_properties JSONB;
+ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS body_properties BYTEA;
 ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS headers JSONB;
 ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS protocol_type TEXT NOT NULL;
 

@@ -1,10 +1,10 @@
 package runtimesdk
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -46,7 +46,13 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Tas
 		"chain":     chain,
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	// Encode request body
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, taskengine.DataTypeAny, nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, taskengine.DataTypeAny, nil, err
 	}
@@ -56,13 +62,6 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Tas
 	if s.token != "" {
 		req.Header.Set("X-API-Key", s.token)
 	}
-
-	// Encode request body
-	body, err := json.Marshal(request)
-	if err != nil {
-		return nil, taskengine.DataTypeAny, nil, err
-	}
-	req.Body = io.NopCloser(strings.NewReader(string(body)))
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -95,7 +94,7 @@ func (s *HTTPTasksEnvService) Execute(ctx context.Context, chain *taskengine.Tas
 	return converted, dt, response.State, nil
 }
 
-// Supports implements execservice.TasksEnvService.Supports (via taskengine.HookRegistry)
+// Supports implements execservice.TasksEnvService.Supports
 func (s *HTTPTasksEnvService) Supports(ctx context.Context) ([]string, error) {
 	url := s.baseURL + "/supported"
 
@@ -106,7 +105,7 @@ func (s *HTTPTasksEnvService) Supports(ctx context.Context) ([]string, error) {
 
 	// Set headers
 	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+		req.Header.Set("X-API-Key", s.token)
 	}
 
 	resp, err := s.client.Do(req)

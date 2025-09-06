@@ -9,12 +9,14 @@ import (
 	"github.com/contenox/runtime/internal/apiframework"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
+	"github.com/contenox/runtime/taskengine"
 )
 
 var (
 	ErrInvalidHook = errors.New("invalid remote hook data")
 )
 
+// Service defines the interface for managing remote hooks and querying hook capabilities.
 type Service interface {
 	Create(ctx context.Context, hook *runtimetypes.RemoteHook) error
 	Get(ctx context.Context, id string) (*runtimetypes.RemoteHook, error)
@@ -22,16 +24,28 @@ type Service interface {
 	Update(ctx context.Context, hook *runtimetypes.RemoteHook) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.RemoteHook, error)
+	GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error)
 }
 
 type service struct {
-	dbInstance libdb.DBManager
+	dbInstance   libdb.DBManager
+	hookRegistry taskengine.HookProvider
 }
 
-func New(dbInstance libdb.DBManager) Service {
+// New creates a new service instance.
+func New(dbInstance libdb.DBManager, hookRegistry taskengine.HookProvider) Service {
 	return &service{
-		dbInstance: dbInstance,
+		dbInstance:   dbInstance,
+		hookRegistry: hookRegistry,
 	}
+}
+
+// GetSchemasForSupportedHooks delegates the call to the hook registry.
+func (s *service) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
+	if s.hookRegistry == nil {
+		return nil, errors.New("hook registry is not configured for this service")
+	}
+	return s.hookRegistry.GetSchemasForSupportedHooks(ctx)
 }
 
 func (s *service) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {
@@ -81,7 +95,7 @@ func (s *service) List(ctx context.Context, createdAtCursor *time.Time, limit in
 
 func validate(hook *runtimetypes.RemoteHook) error {
 	switch {
-	case hook.ServerName == "":
+	case hook.Name == "":
 		return fmt.Errorf("%w %w: name is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	case hook.EndpointURL == "":
 		return fmt.Errorf("%w %w: endpoint URL is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)

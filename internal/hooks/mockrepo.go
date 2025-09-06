@@ -25,6 +25,7 @@ type HookCallRecord struct {
 // HookResponse is simplified to only contain the direct output.
 type HookResponse struct {
 	Output any
+	Schema map[string]interface{}
 }
 
 // NewMockHookRegistry returns a new instance of MockHookRepo.
@@ -114,6 +115,14 @@ func (m *MockHookRepo) Supports(ctx context.Context) ([]string, error) {
 		supported = append(supported, k)
 	}
 	return supported, nil
+}
+
+func (m *MockHookRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
+	schemas := make(map[string]map[string]interface{})
+	for hookType, response := range m.ResponseMap {
+		schemas[hookType] = response.Schema
+	}
+	return schemas, nil
 }
 
 // Ensure MockHookRepo correctly implements the updated HookRepo interface.

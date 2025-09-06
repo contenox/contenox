@@ -60,14 +60,13 @@ func (p *PersistentRepo) Exec(
 		return nil, fmt.Errorf("unknown hook: %s", args.Name)
 	}
 
-	if remoteHook.ServerName != args.Name {
-		return nil, fmt.Errorf("internal consistency error: hook name mismatch: requested '%s', but found '%s'", args.Name, remoteHook.ServerName)
+	if remoteHook.Name != args.Name {
+		return nil, fmt.Errorf("internal consistency error: hook name mismatch: requested '%s', but found '%s'", args.Name, remoteHook.Name)
 	}
 
 	return p.execRemoteHook(ctx, remoteHook, startingTime, input, args)
 }
 
-// execRemoteHook is now refactored to use the protocol handlers.
 func (p *PersistentRepo) execRemoteHook(
 	ctx context.Context,
 	hook *runtimetypes.RemoteHook,
@@ -88,7 +87,7 @@ func (p *PersistentRepo) execRemoteHook(
 	}
 
 	// Build request with body properties
-	jsonBody, err := handler.BuildRequest(hook.ServerName, argumentsMap, hook.BodyProperties)
+	jsonBody, err := handler.BuildRequest(hook.Name, argumentsMap, hook.BodyProperties)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build request body for protocol %s: %w", hook.ProtocolType, err)
 	}
@@ -146,7 +145,7 @@ func (p *PersistentRepo) execRemoteHook(
 		if len(bodySample) > 200 {
 			bodySample = bodySample[:200] + "..."
 		}
-		return nil, fmt.Errorf("remote hook '%s' failed with status %d: %s", hook.ServerName, resp.StatusCode, bodySample)
+		return nil, fmt.Errorf("remote hook '%s' failed with status %d: %s", hook.Name, resp.StatusCode, bodySample)
 	}
 
 	// Parse response using the specific protocol handler.
@@ -190,8 +189,51 @@ func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
 	}
 
 	for _, hook := range remoteHooks {
-		localSupported = append(localSupported, hook.ServerName)
+		localSupported = append(localSupported, hook.Name)
 	}
 
 	return localSupported, nil
+}
+
+// GetSchemasForSupportedHooks returns the schemas for all supported hooks.
+func (p *PersistentRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
+	schemas := make(map[string]map[string]interface{})
+
+	for name := range p.localHooks {
+		schemas[name] = nil
+	}
+
+	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
+	var allRemoteHooks []*runtimetypes.RemoteHook
+	var lastCursor *time.Time
+	limit := 100
+
+	for {
+		page, err := storeInstance.ListRemoteHooks(ctx, lastCursor, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list remote hooks for schemas: %w", err)
+		}
+		allRemoteHooks = append(allRemoteHooks, page...)
+		if len(page) < limit {
+			break
+		}
+		lastCursor = &page[len(page)-1].CreatedAt
+	}
+
+	for _, remoteHook := range allRemoteHooks {
+		handler, ok := p.protocolHandlers[remoteHook.ProtocolType]
+		if !ok {
+			continue
+		}
+
+		schema, err := handler.FetchSchema(ctx, remoteHook.EndpointURL, p.httpClient)
+		if err == nil && schema != nil {
+			schemas[remoteHook.Name] = schema
+		}
+		// intentionally ignore errors for individual schema fetches so that
+		// one failing hook doesn't prevent others from loading.
+		// TODO: log error for individual schema fetches
+	}
+
+	return schemas, nil
 }

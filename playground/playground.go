@@ -634,7 +634,10 @@ func (p *Playground) GetHookProviderService() (hookproviderservice.Service, erro
 	if p.db == nil {
 		return nil, errors.New("cannot get hook provider service: database is not initialized")
 	}
-	return hookproviderservice.New(p.db), nil
+	if p.hookrepo == nil {
+		return nil, errors.New("cannot get hook provider service: hook repository is not initialized")
+	}
+	return hookproviderservice.New(p.db, p.hookrepo), nil
 }
 
 // New method for real Ollama backend (complements container-based)

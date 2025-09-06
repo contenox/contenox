@@ -180,3 +180,32 @@ def test_duplicate_name_validation(base_url):
     response2 = requests.post(f"{base_url}/hooks/remote", json=duplicate_hook)
 
     assert_status_code(response2, 409)
+
+def test_get_remote_hook_by_name(base_url):
+    """Test retrieving a hook by its unique name"""
+    # Setup: Create a hook with a unique name to fetch
+    hook_name = f"unique-name-for-get-test-{uuid.uuid4()}"
+    payload = {**VALID_HOOK, "name": hook_name}
+
+    create_url = f"{base_url}/hooks/remote"
+    create_response = requests.post(create_url, json=payload)
+    assert_status_code(create_response, 201)
+    hook_id = create_response.json()["id"]
+
+    # Act: Test the GET by-name endpoint
+    get_url = f"{base_url}/hooks/remote/by-name/{hook_name}"
+    get_response = requests.get(get_url)
+
+    # Assert: Verify the response is correct
+    assert_status_code(get_response, 200)
+    data = get_response.json()
+    assert data["id"] == hook_id
+    assert data["name"] == hook_name
+    assert data["endpointUrl"] == payload["endpointUrl"]
+
+def test_get_remote_hook_by_name_not_found(base_url):
+    """Test getting a hook by a non-existent name returns 404"""
+    non_existent_name = f"this-name-does-not-exist-{uuid.uuid4()}"
+    url = f"{base_url}/hooks/remote/by-name/{non_existent_name}"
+    response = requests.get(url)
+    assert_status_code(response, 404)

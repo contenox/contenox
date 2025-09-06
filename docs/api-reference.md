@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-114-g0d6261f-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-115-g64cca26-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-114-g0d6261f-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-115-g64cca26-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -265,8 +265,8 @@ Backends not assigned to any group exist in the configuration but are completely
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -1161,7 +1161,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Lists all configured remote hooks with pagination support.
+## Lists remote hooks, optionally filtering by a unique name.
 
 > Code samples
 
@@ -1180,14 +1180,14 @@ print(r.json())
 
 `GET /hooks/remote`
 
-Lists all configured remote hooks with pagination support.
+Lists remote hooks, optionally filtering by a unique name.
 
-<h3 id="lists-all-configured-remote-hooks-with-pagination-support.-parameters">Parameters</h3>
+<h3 id="lists-remote-hooks,-optionally-filtering-by-a-unique-name.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1202,7 +1202,7 @@ Lists all configured remote hooks with pagination support.
     "headers": "Authorization:Bearer token,Content-Type:application/json",
     "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
     "method": "POST",
-    "name": "send-email",
+    "name": "mailing-tools",
     "protocolType": null,
     "timeoutMs": 5000,
     "updatedAt": "2023-11-15T14:30:45Z"
@@ -1210,7 +1210,7 @@ Lists all configured remote hooks with pagination support.
 ]
 ```
 
-<h3 id="lists-all-configured-remote-hooks-with-pagination-support.-responses">Responses</h3>
+<h3 id="lists-remote-hooks,-optionally-filtering-by-a-unique-name.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -1255,7 +1255,7 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
-  "name": "send-email",
+  "name": "mailing-tools",
   "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
@@ -1280,7 +1280,7 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
-  "name": "send-email",
+  "name": "mailing-tools",
   "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
@@ -1292,6 +1292,62 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[runtimetypes_RemoteHook](#schemaruntimetypes_remotehook)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## getByName
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/hooks/remote/by-name/{name}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /hooks/remote/by-name/{name}`
+
+<h3 id="getbyname-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|name|path|string|true|The unique name for the remote hook.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "bodyProperties": "access_token:secret-token,environment:production",
+  "createdAt": "2023-11-15T14:30:45Z",
+  "endpointUrl": "http://hooks-endpoint:port",
+  "headers": "Authorization:Bearer token,Content-Type:application/json",
+  "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
+  "method": "POST",
+  "name": "mailing-tools",
+  "protocolType": null,
+  "timeoutMs": 5000,
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="getbyname-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_RemoteHook](#schemaruntimetypes_remotehook)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -1386,7 +1442,7 @@ Retrieves a specific remote hook configuration by ID.
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
-  "name": "send-email",
+  "name": "mailing-tools",
   "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
@@ -1438,7 +1494,7 @@ The ID from the URL path overrides any ID in the request body.
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
-  "name": "send-email",
+  "name": "mailing-tools",
   "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
@@ -1464,7 +1520,7 @@ The ID from the URL path overrides any ID in the request body.
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
-  "name": "send-email",
+  "name": "mailing-tools",
   "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
@@ -1477,6 +1533,56 @@ The ID from the URL path overrides any ID in the request body.
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_RemoteHook](#schemaruntimetypes_remotehook)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves the JSON schemas for all supported hook types.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/hooks/schemas', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /hooks/schemas`
+
+Retrieves the JSON schemas for all supported hook types.
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="retrieves-the-json-schemas-for-all-supported-hook-types.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="retrieves-the-json-schemas-for-all-supported-hook-types.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -1995,8 +2101,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -2354,8 +2460,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 |model|query|string|false|The model name to cancel downloads for across all backends.|
+|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 
 > Example responses
 
@@ -3459,7 +3565,7 @@ X-API-Key
     "headers": "Authorization:Bearer token,Content-Type:application/json",
     "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
     "method": "POST",
-    "name": "send-email",
+    "name": "mailing-tools",
     "protocolType": null,
     "timeoutMs": 5000,
     "updatedAt": "2023-11-15T14:30:45Z"
@@ -4136,7 +4242,7 @@ X-API-Key
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
   "method": "POST",
-  "name": "send-email",
+  "name": "mailing-tools",
   "protocolType": null,
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"

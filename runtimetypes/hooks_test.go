@@ -18,7 +18,7 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 
 	hook := &runtimetypes.RemoteHook{
 		ID:           uuid.New().String(),
-		ServerName:   "test-hook",
+		Name:         "test-hook",
 		EndpointURL:  "https://example.com/hook",
 		Method:       "POST",
 		TimeoutMs:    5000,
@@ -34,7 +34,7 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 	retrieved, err := s.GetRemoteHook(ctx, hook.ID)
 	require.NoError(t, err)
 	require.Equal(t, hook.ID, retrieved.ID)
-	require.Equal(t, hook.ServerName, retrieved.ServerName)
+	require.Equal(t, hook.Name, retrieved.Name)
 	require.Equal(t, hook.EndpointURL, retrieved.EndpointURL)
 	require.Equal(t, hook.Method, retrieved.Method)
 	require.Equal(t, hook.TimeoutMs, retrieved.TimeoutMs)
@@ -44,7 +44,7 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 	require.WithinDuration(t, time.Now().UTC(), retrieved.UpdatedAt, 1*time.Second)
 
 	// Retrieve by name
-	retrievedByName, err := s.GetRemoteHookByName(ctx, hook.ServerName)
+	retrievedByName, err := s.GetRemoteHookByName(ctx, hook.Name)
 	require.NoError(t, err)
 	require.Equal(t, hook.ID, retrievedByName.ID)
 }
@@ -59,7 +59,7 @@ func TestUnit_RemoteHooks_WithHeaders(t *testing.T) {
 		}
 		hook := &runtimetypes.RemoteHook{
 			ID:           uuid.New().String(),
-			ServerName:   "hook-with-headers",
+			Name:         "hook-with-headers",
 			EndpointURL:  "https://example.com/hook",
 			Method:       "POST",
 			TimeoutMs:    5000,
@@ -79,7 +79,7 @@ func TestUnit_RemoteHooks_WithHeaders(t *testing.T) {
 	t.Run("create with nil headers", func(t *testing.T) {
 		hook := &runtimetypes.RemoteHook{
 			ID:           uuid.New().String(),
-			ServerName:   "hook-with-nil-headers",
+			Name:         "hook-with-nil-headers",
 			EndpointURL:  "https://example.com/nil-hook",
 			Method:       "POST",
 			TimeoutMs:    5000,
@@ -99,7 +99,7 @@ func TestUnit_RemoteHooks_WithHeaders(t *testing.T) {
 		initialHeaders := map[string]string{"Initial": "Value"}
 		hook := &runtimetypes.RemoteHook{
 			ID:           uuid.New().String(),
-			ServerName:   "hook-to-update-headers",
+			Name:         "hook-to-update-headers",
 			EndpointURL:  "https://example.com/update-hook",
 			Method:       "PUT",
 			TimeoutMs:    3000,
@@ -133,7 +133,7 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 
 	original := &runtimetypes.RemoteHook{
 		ID:           uuid.New().String(),
-		ServerName:   "original-hook",
+		Name:         "original-hook",
 		EndpointURL:  "https://original.com",
 		Method:       "GET",
 		TimeoutMs:    3000,
@@ -145,7 +145,7 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 
 	// Update the hook
 	updated := *original
-	updated.ServerName = "updated-hook"
+	updated.Name = "updated-hook"
 	updated.EndpointURL = "https://updated.com"
 	updated.Method = "POST"
 	updated.TimeoutMs = 10000
@@ -158,7 +158,7 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 	// Verify updates
 	retrieved, err := s.GetRemoteHook(ctx, original.ID)
 	require.NoError(t, err)
-	require.Equal(t, updated.ServerName, retrieved.ServerName)
+	require.Equal(t, updated.Name, retrieved.Name)
 	require.Equal(t, updated.EndpointURL, retrieved.EndpointURL)
 	require.Equal(t, updated.Method, retrieved.Method)
 	require.Equal(t, updated.TimeoutMs, retrieved.TimeoutMs)
@@ -172,7 +172,7 @@ func TestUnit_RemoteHooks_Delete(t *testing.T) {
 
 	hook := &runtimetypes.RemoteHook{
 		ID:           uuid.New().String(),
-		ServerName:   "hook-to-delete",
+		Name:         "hook-to-delete",
 		EndpointURL:  "https://delete.com",
 		Method:       "DELETE",
 		TimeoutMs:    2000,
@@ -198,7 +198,7 @@ func TestUnit_RemoteHooks_List(t *testing.T) {
 	hooks := []*runtimetypes.RemoteHook{
 		{
 			ID:           uuid.New().String(),
-			ServerName:   "hook-1",
+			Name:         "hook-1",
 			EndpointURL:  "https://hook1.com",
 			Method:       "POST",
 			TimeoutMs:    1000,
@@ -206,7 +206,7 @@ func TestUnit_RemoteHooks_List(t *testing.T) {
 		},
 		{
 			ID:           uuid.New().String(),
-			ServerName:   "hook-2",
+			Name:         "hook-2",
 			EndpointURL:  "https://hook2.com",
 			Method:       "PUT",
 			TimeoutMs:    2000,
@@ -214,7 +214,7 @@ func TestUnit_RemoteHooks_List(t *testing.T) {
 		},
 		{
 			ID:           uuid.New().String(),
-			ServerName:   "hook-3",
+			Name:         "hook-3",
 			EndpointURL:  "https://hook3.com",
 			Method:       "PATCH",
 			TimeoutMs:    3000,
@@ -245,7 +245,7 @@ func TestUnit_RemoteHooks_ListPagination(t *testing.T) {
 	for i := range 5 {
 		hook := &runtimetypes.RemoteHook{
 			ID:           uuid.New().String(),
-			ServerName:   fmt.Sprintf("pagination-hook-%d", i),
+			Name:         fmt.Sprintf("pagination-hook-%d", i),
 			EndpointURL:  "https://example.com",
 			Method:       "POST",
 			TimeoutMs:    1000,
@@ -304,7 +304,7 @@ func TestUnit_RemoteHooks_UniqueNameConstraint(t *testing.T) {
 
 	hook1 := &runtimetypes.RemoteHook{
 		ID:           uuid.New().String(),
-		ServerName:   "unique-hook",
+		Name:         "unique-hook",
 		EndpointURL:  "https://unique1.com",
 		Method:       "POST",
 		TimeoutMs:    1000,
@@ -355,7 +355,7 @@ func TestUnit_RemoteHooks_UpdateNonExistent(t *testing.T) {
 
 	hook := &runtimetypes.RemoteHook{
 		ID:           uuid.New().String(), // Doesn't exist
-		ServerName:   "non-existent",
+		Name:         "non-existent",
 		EndpointURL:  "https://update.com",
 		Method:       "PUT",
 		TimeoutMs:    5000,
@@ -381,7 +381,7 @@ func TestUnit_RemoteHooks_ConcurrentUpdates(t *testing.T) {
 	// Create initial hook
 	hook := &runtimetypes.RemoteHook{
 		ID:           uuid.New().String(),
-		ServerName:   "concurrent-hook",
+		Name:         "concurrent-hook",
 		EndpointURL:  "https://concurrent.com",
 		Method:       "POST",
 		TimeoutMs:    1000,
@@ -394,7 +394,7 @@ func TestUnit_RemoteHooks_ConcurrentUpdates(t *testing.T) {
 		h, err := s.GetRemoteHook(ctx, hook.ID)
 		require.NoError(t, err)
 
-		h.ServerName = name
+		h.Name = name
 		err = s.UpdateRemoteHook(ctx, h)
 		require.NoError(t, err)
 	}
@@ -416,7 +416,7 @@ func TestUnit_RemoteHooks_ConcurrentUpdates(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should have one of the updated names
-	require.Contains(t, names, final.ServerName)
+	require.Contains(t, names, final.Name)
 	require.True(t, final.UpdatedAt.After(hook.UpdatedAt))
 }
 
@@ -426,7 +426,7 @@ func TestUnit_RemoteHooks_DeleteCascade(t *testing.T) {
 	// Create hook
 	hook := &runtimetypes.RemoteHook{
 		ID:           uuid.New().String(),
-		ServerName:   "cascade-test",
+		Name:         "cascade-test",
 		EndpointURL:  "https://cascade.com",
 		Method:       "POST",
 		TimeoutMs:    5000,
@@ -442,7 +442,7 @@ func TestUnit_RemoteHooks_DeleteCascade(t *testing.T) {
 	require.NoError(t, s.CreateRemoteHook(ctx, &newHook))
 
 	// Verify new hook exists
-	retrieved, err := s.GetRemoteHookByName(ctx, hook.ServerName)
+	retrieved, err := s.GetRemoteHookByName(ctx, hook.Name)
 	require.NoError(t, err)
 	require.Equal(t, newHook.ID, retrieved.ID)
 }
@@ -463,7 +463,7 @@ func TestUnit_RemoteHooks_GetByName_ProtocolType(t *testing.T) {
 		t.Run(string(protocol), func(t *testing.T) {
 			hook := &runtimetypes.RemoteHook{
 				ID:           uuid.New().String(),
-				ServerName:   fmt.Sprintf("test-hook-%s", protocol),
+				Name:         fmt.Sprintf("test-hook-%s", protocol),
 				EndpointURL:  "https://example.com/hook",
 				Method:       "POST",
 				TimeoutMs:    5000,
@@ -474,7 +474,7 @@ func TestUnit_RemoteHooks_GetByName_ProtocolType(t *testing.T) {
 			require.NoError(t, err)
 
 			// Retrieve by name and verify protocol type
-			retrieved, err := s.GetRemoteHookByName(ctx, hook.ServerName)
+			retrieved, err := s.GetRemoteHookByName(ctx, hook.Name)
 			require.NoError(t, err)
 			require.Equal(t, protocol, retrieved.ProtocolType)
 		})
@@ -492,7 +492,7 @@ func TestUnit_RemoteHooks_WithBodyProperties(t *testing.T) {
 		}
 		hook := &runtimetypes.RemoteHook{
 			ID:             uuid.New().String(),
-			ServerName:     "hook-with-body-props",
+			Name:           "hook-with-body-props",
 			EndpointURL:    "https://example.com/hook",
 			Method:         "POST",
 			TimeoutMs:      5000,
@@ -512,7 +512,7 @@ func TestUnit_RemoteHooks_WithBodyProperties(t *testing.T) {
 	t.Run("create with nil body properties", func(t *testing.T) {
 		hook := &runtimetypes.RemoteHook{
 			ID:           uuid.New().String(),
-			ServerName:   "hook-with-nil-body-props",
+			Name:         "hook-with-nil-body-props",
 			EndpointURL:  "https://example.com/nil-hook",
 			Method:       "POST",
 			TimeoutMs:    5000,
@@ -531,7 +531,7 @@ func TestUnit_RemoteHooks_WithBodyProperties(t *testing.T) {
 		initialProps := map[string]any{"initial": "value"}
 		hook := &runtimetypes.RemoteHook{
 			ID:             uuid.New().String(),
-			ServerName:     "hook-to-update-body-props",
+			Name:           "hook-to-update-body-props",
 			EndpointURL:    "https://example.com/update-hook",
 			Method:         "PUT",
 			TimeoutMs:      3000,

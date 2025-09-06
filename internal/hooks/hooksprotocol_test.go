@@ -176,7 +176,6 @@ func TestUnit_OpenAIObjectProtocol(t *testing.T) {
 	})
 }
 
-// This test suite is designed to expose the bug in OpenAIObjectProtocol.ParseResponse.
 func TestUnit_OpenAIObjectProtocol_BugHunt(t *testing.T) {
 	handler := &hooks.OpenAIObjectProtocol{}
 

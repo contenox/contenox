@@ -132,12 +132,6 @@ func TestSystem_TasksEnvService(t *testing.T) {
 		assert.Len(t, capturedStates, 1)
 	})
 
-	t.Run("SupportsHookRegistry", func(t *testing.T) {
-		supportedHooks, err := tasksEnvService.Supports(ctx)
-		require.NoError(t, err)
-		assert.NotNil(t, supportedHooks)
-	})
-
 	t.Run("ExecuteJSONInputPropertyAccess", func(t *testing.T) {
 		chain := &taskengine.TaskChainDefinition{
 			ID:          "json-input-access-chain",

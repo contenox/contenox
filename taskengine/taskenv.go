@@ -112,10 +112,20 @@ type HookRepo interface {
 	Exec(ctx context.Context, startingTime time.Time, input any, args *HookCall) (any, error)
 	// HookRegistry provides hook discovery functionality.
 	HookRegistry
+	HooksWithSchema
+}
+
+type HookProvider interface {
+	HookRegistry
+	HooksWithSchema
 }
 
 type HookRegistry interface {
 	Supports(ctx context.Context) ([]string, error)
+}
+
+type HooksWithSchema interface {
+	GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error)
 }
 
 // SimpleEnv is the default implementation of EnvExecutor.

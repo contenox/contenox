@@ -136,7 +136,7 @@ func (p HookProtocolType) Validate() error {
 // RemoteHook represents a remote hook configuration
 type RemoteHook struct {
 	ID             string            `json:"id" example:"h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
-	ServerName     string            `json:"serverName" example:"mailing-tools"`
+	Name           string            `json:"name" example:"mailing-tools"`
 	EndpointURL    string            `json:"endpointUrl" example:"http://hooks-endpoint:port"`
 	Method         string            `json:"method" example:"POST"`
 	TimeoutMs      int               `json:"timeoutMs" example:"5000"`
