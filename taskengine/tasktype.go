@@ -231,11 +231,13 @@ func ToOperatorTerm(s string) (OperatorTerm, error) {
 
 // LLMExecutionConfig represents configuration for executing tasks using Large Language Models (LLMs).
 type LLMExecutionConfig struct {
-	Model       string   `yaml:"model" json:"model" example:"mistral:instruct"`
-	Models      []string `yaml:"models,omitempty" json:"models,omitempty" example:"[\"gpt-4\", \"gpt-3.5-turbo\"]"`
-	Provider    string   `yaml:"provider,omitempty" json:"provider,omitempty" example:"ollama"`
-	Providers   []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
-	Temperature float32  `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
+	Model            string   `yaml:"model" json:"model" example:"mistral:instruct"`
+	Models           []string `yaml:"models,omitempty" json:"models,omitempty" example:"[\"gpt-4\", \"gpt-3.5-turbo\"]"`
+	Provider         string   `yaml:"provider,omitempty" json:"provider,omitempty" example:"ollama"`
+	Providers        []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
+	Temperature      float32  `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
+	Hooks            []string `yaml:"hooks,omitempty" json:"hooks,omitempty" example:"[\"slack_notification\", \"email_notification\"]"`
+	PassClientsTools bool     `yaml:"pass_clients_tools" json:"pass_clients_tools"`
 }
 
 // HookCall represents an external integration or side-effect triggered during a task.
@@ -414,9 +416,25 @@ type Message struct {
 }
 
 // OpenAIChatRequest represents a request compatible with OpenAI's chat API.
+// Tool represents a tool that can be called by the model.
+type Tool struct {
+	Type     string       `json:"type"`
+	Function FunctionTool `json:"function"`
+}
+
+// FunctionTool defines the schema for a function-type tool.
+type FunctionTool struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	Parameters  interface{} `json:"parameters,omitempty"` // JSON Schema object
+}
+
+// OpenAIChatRequest represents a request compatible with OpenAI's chat API.
 type OpenAIChatRequest struct {
 	Model            string                     `json:"model" example:"mistral:instruct"`
 	Messages         []OpenAIChatRequestMessage `json:"messages" openapi_include_type:"taskengine.OpenAIChatRequestMessage"`
+	Tools            []Tool                     `json:"tools,omitempty"`
+	ToolChoice       interface{}                `json:"tool_choice,omitempty"` // Can be "none", "auto", or {"type": "function", "function": {"name": "my_function"}}
 	MaxTokens        int                        `json:"max_tokens,omitempty" example:"512"`
 	Temperature      float64                    `json:"temperature,omitempty" example:"0.7"`
 	TopP             float64                    `json:"top_p,omitempty" example:"1.0"`

@@ -32,7 +32,7 @@ type TaskExecutor interface {
 	// - currentTask: The task definition to execute
 	// - input: Task input data
 	// - dataType: Type of the input data
-	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error)
+	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, clientTools []Tool, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error)
 }
 
 // SimpleExec is a basic implementation of TaskExecutor.
@@ -246,7 +246,7 @@ func (exe *SimpleExec) score(ctx context.Context, systemInstruction string, llmC
 }
 
 // TaskExec dispatches task execution based on the task type.
-func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time, ctxLength int, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error) {
+func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time, ctxLength int, clientTools []Tool, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error) {
 	var transitionEval string
 	var taskErr error
 	var output any = input
@@ -411,7 +411,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 
 			var requestConfig LLMExecutionConfig
-			chatHistory, _, requestConfig = ConvertOpenAIToChatHistory(openAIRequest)
+			chatHistory, _, _, requestConfig = ConvertOpenAIToChatHistory(openAIRequest)
 
 			finalExecConfig = &requestConfig
 			if err := mergo.Merge(finalExecConfig, currentTask.ExecuteConfig, mergo.WithOverride); err != nil {
@@ -448,6 +448,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			chatHistory,
 			ctxLength,
 			finalExecConfig,
+			clientTools,
 		)
 
 	case HandleHook:
@@ -492,7 +493,13 @@ func (exe *SimpleExec) parseTransition(inputStr string) (string, error) {
 	return command, nil
 }
 
-func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLength int, llmCall *LLMExecutionConfig) (any, DataType, string, error) {
+func (exe *SimpleExec) executeLLM(
+	ctx context.Context,
+	input ChatHistory,
+	ctxLength int,
+	llmCall *LLMExecutionConfig,
+	clientTools []Tool,
+) (any, DataType, string, error) {
 	reportErr, _, end := exe.tracker.Start(ctx, "SimpleExec", "prompt_model",
 		"model_name", llmCall.Model,
 		"model_names", llmCall.Models,
@@ -536,12 +543,46 @@ func (exe *SimpleExec) executeLLM(ctx context.Context, input ChatHistory, ctxLen
 			Content: m.Content,
 		})
 	}
+
+	tools := []libmodelprovider.Tool{}
+	if llmCall.PassClientsTools {
+		for _, t := range clientTools {
+			tools = append(tools, libmodelprovider.Tool{
+				Type: t.Type,
+				Function: &libmodelprovider.FunctionTool{
+					Name:        t.Function.Name,
+					Description: t.Function.Description,
+					Parameters:  t.Function.Parameters,
+				},
+			})
+		}
+	}
+
+	if len(llmCall.Hooks) > 0 {
+		for _, v := range llmCall.Hooks {
+			hooksTools, err := exe.hookProvider.GetToolsForHookByName(ctx, v)
+			if err != nil {
+				return nil, DataTypeAny, "", fmt.Errorf("failed to get tools for hook %s: %w", v, err)
+			}
+			for _, t := range hooksTools {
+				tools = append(tools, libmodelprovider.Tool{
+					Type: t.Type,
+					Function: &libmodelprovider.FunctionTool{
+						Name:        t.Function.Name,
+						Description: t.Function.Description,
+						Parameters:  t.Function.Parameters,
+					},
+				})
+			}
+		}
+	}
+
 	resp, meta, err := exe.repo.Chat(ctx, llmrepo.Request{
 		ProviderTypes: providerNames,
 		ModelNames:    modelNames,
 		ContextLength: input.InputTokens,
 		Tracker:       exe.tracker,
-	}, messagesC)
+	}, messagesC, libmodelprovider.WithTools(tools...))
 	if err != nil {
 		return nil, DataTypeAny, "", fmt.Errorf("chat failed: %w", err)
 	}

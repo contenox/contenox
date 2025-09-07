@@ -31,7 +31,7 @@ func SetupVLLMLocalInstance(ctx context.Context, model string, tag string, toolP
 	if model == "" {
 		model = defaultModel
 	}
-	if tag == "" || toolParser == "none" {
+	if tag == "" {
 		tag = defaultTag
 	}
 
@@ -41,7 +41,8 @@ func SetupVLLMLocalInstance(ctx context.Context, model string, tag string, toolP
 	cmd := []string{
 		"--model", model,
 	}
-	if toolParser != "" {
+	if toolParser != "" && toolParser != "none" {
+		// deepseek_v3,granite-20b-fc,granite,hermes,internlm,jamba,llama4_pythonic,llama4_json,llama3_json,mistral,phi4_mini_json,pythonic
 		cmd = append(cmd, "--enable-auto-tool-choice", "--tool-call-parser", toolParser)
 	}
 	req := testcontainers.GenericContainerRequest{

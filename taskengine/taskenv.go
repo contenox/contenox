@@ -126,6 +126,7 @@ type HookRegistry interface {
 
 type HooksWithSchema interface {
 	GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error)
+	GetToolsForHookByName(ctx context.Context, name string) ([]Tool, error)
 }
 
 // SimpleEnv is the default implementation of EnvExecutor.
@@ -219,6 +220,15 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		}
 		maxRetries := max(currentTask.RetryOnFailure, 0)
 
+		clientTools := []Tool{}
+		if taskInputType == DataTypeOpenAIChat {
+			req, ok := taskInput.(OpenAIChatRequest)
+			if !ok {
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: invalid input type", currentTask.ID)
+			}
+			clientTools = req.Tools
+		}
+
 	retryLoop:
 		for retry := 0; retry <= maxRetries; retry++ {
 			// Note: Return on breakpoint for now
@@ -229,6 +239,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			// Track task attempt start
 			taskCtx := context.Background()
 			taskCtx = libtracker.CopyTrackingValues(ctx, taskCtx)
+
 			var cancel context.CancelFunc
 			if currentTask.Timeout != "" {
 				timeout, err := time.ParseDuration(currentTask.Timeout)
@@ -247,7 +258,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 			startTime := time.Now().UTC()
 
-			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), currentTask, taskInput, taskInputType)
+			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), clientTools, currentTask, taskInput, taskInputType)
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
 				reportErrAttempt(taskErr)
@@ -398,7 +409,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 					outputType = DataTypeOpenAIChat
 					if leftWasHistory && rightWasHistory {
-						history, _, _ := ConvertOpenAIToChatHistory(mergedReq)
+						history, _, _, _ := ConvertOpenAIToChatHistory(mergedReq)
 						history.InputTokens = inputTokenCountLeft + inputTokenCountRight
 						history.OutputTokens = outputTokenCountLeft + outputTokenCountRight
 						merged = history

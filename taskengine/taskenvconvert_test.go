@@ -14,7 +14,7 @@ type smartMockExecutor struct {
 	jsonData map[string]interface{}
 }
 
-func (m *smartMockExecutor) TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, currentTask *taskengine.TaskDefinition, input any, dataType taskengine.DataType) (any, taskengine.DataType, string, error) {
+func (m *smartMockExecutor) TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, tools []taskengine.Tool, currentTask *taskengine.TaskDefinition, input any, dataType taskengine.DataType) (any, taskengine.DataType, string, error) {
 	if currentTask.ID == "get_data" {
 		return m.jsonData, taskengine.DataTypeJSON, "success", nil
 	}

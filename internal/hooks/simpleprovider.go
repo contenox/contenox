@@ -60,4 +60,11 @@ func (m *SimpleRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[strin
 	return allSchemas, nil
 }
 
+func (m *SimpleRepo) GetToolsForHookByName(ctx context.Context, name string) ([]taskengine.Tool, error) {
+	if hook, ok := m.hooks[name]; ok {
+		return hook.GetToolsForHookByName(ctx, name)
+	}
+	return nil, fmt.Errorf("unknown hook type: %s", name)
+}
+
 var _ taskengine.HookRepo = (*SimpleRepo)(nil)

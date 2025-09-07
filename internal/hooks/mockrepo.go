@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/contenox/runtime/taskengine"
@@ -123,6 +124,13 @@ func (m *MockHookRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[str
 		schemas[hookType] = response.Schema
 	}
 	return schemas, nil
+}
+
+func (m *MockHookRepo) GetToolsForHookByName(ctx context.Context, name string) ([]taskengine.Tool, error) {
+	if _, ok := m.ResponseMap[name]; ok {
+		return nil, fmt.Errorf("not implemented")
+	}
+	return nil, fmt.Errorf("unknown hook: %s", name)
 }
 
 // Ensure MockHookRepo correctly implements the updated HookRepo interface.

@@ -47,7 +47,7 @@ func ConvertChatHistoryToOpenAI(id string, chatHistory ChatHistory) OpenAIChatRe
 
 // ConvertOpenAIToChatHistory converts an OpenAI-compatible chat request into the internal
 // ChatHistory and LLMExecutionConfig formats used by the task engine.
-func ConvertOpenAIToChatHistory(request OpenAIChatRequest) (ChatHistory, int, LLMExecutionConfig) {
+func ConvertOpenAIToChatHistory(request OpenAIChatRequest) (ChatHistory, int, []Tool, LLMExecutionConfig) {
 	chatHistory := ChatHistory{
 		Model:    request.Model,
 		Messages: make([]Message, 0, len(request.Messages)),
@@ -66,7 +66,7 @@ func ConvertOpenAIToChatHistory(request OpenAIChatRequest) (ChatHistory, int, LL
 		Temperature: float32(request.Temperature),
 	}
 
-	return chatHistory, request.MaxTokens, config
+	return chatHistory, request.MaxTokens, request.Tools, config
 }
 
 func ConvertChatHistoryToOpenAIRequest(

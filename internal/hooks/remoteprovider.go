@@ -237,3 +237,32 @@ func (p *PersistentRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[s
 
 	return schemas, nil
 }
+
+// GetToolsForHookByName returns the tools for a specific hook.
+func (p *PersistentRepo) GetToolsForHookByName(ctx context.Context, name string) ([]taskengine.Tool, error) {
+	// Check local hooks first.
+	if _, ok := p.localHooks[name]; ok {
+		return nil, fmt.Errorf("tool retrieval for local hook '%s' is not yet implemented", name)
+	}
+
+	// If not found locally, check for a remote hook.
+	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
+	remoteHook, err := storeInstance.GetRemoteHookByName(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("unknown hook: %s", name)
+	}
+
+	// Find the correct protocol handler for the hook.
+	handler, ok := p.protocolHandlers[remoteHook.ProtocolType]
+	if !ok {
+		return nil, fmt.Errorf("unsupported protocol '%s' for hook '%s'", remoteHook.ProtocolType, name)
+	}
+
+	// Fetch the tools from the remote endpoint using the handler's FetchTools method.
+	tools, err := handler.FetchTools(ctx, remoteHook.EndpointURL, p.httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch tools for hook '%s': %w", name, err)
+	}
+
+	return tools, nil
+}

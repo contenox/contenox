@@ -836,8 +836,8 @@ Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |purpose|path|string|true|The purpose category to filter groups by (e.g., 'embeddings').|
 
 > Example responses
@@ -2180,6 +2180,10 @@ data: [DONE]
   "stop": "[\\\"\\\\n\\\", \\\"###\\\"]",
   "stream": false,
   "temperature": 0.7,
+  "tool_choice": null,
+  "tools": [
+    {}
+  ],
   "top_p": 1,
   "user": "user_123"
 }
@@ -2755,8 +2759,10 @@ Lists all task chain definitions with pagination.
       },
       "description": "Validates user input meets quality requirements",
       "execute_config": {
+        "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
         "model": "mistral:instruct",
         "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+        "pass_clients_tools": true,
         "provider": "ollama",
         "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
         "temperature": 0.7
@@ -2839,8 +2845,10 @@ Task chains define workflows with conditional branches, external hooks, and capt
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "pass_clients_tools": true,
       "provider": "ollama",
       "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
       "temperature": 0.7
@@ -2894,8 +2902,10 @@ Task chains define workflows with conditional branches, external hooks, and capt
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "pass_clients_tools": true,
       "provider": "ollama",
       "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
       "temperature": 0.7
@@ -3029,8 +3039,10 @@ Retrieves a specific task chain by ID.
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "pass_clients_tools": true,
       "provider": "ollama",
       "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
       "temperature": 0.7
@@ -3110,8 +3122,10 @@ Updates an existing task chain definition.
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "pass_clients_tools": true,
       "provider": "ollama",
       "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
       "temperature": 0.7
@@ -3166,8 +3180,10 @@ Updates an existing task chain definition.
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "pass_clients_tools": true,
       "provider": "ollama",
       "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
       "temperature": 0.7
@@ -3252,8 +3268,10 @@ If groups are enabled, models and backends not assigned to any group will be com
       },
       "description": "Validates user input meets quality requirements",
       "execute_config": {
+        "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
         "model": "mistral:instruct",
         "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+        "pass_clients_tools": true,
         "provider": "ollama",
         "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
         "temperature": 0.7
@@ -3671,8 +3689,10 @@ X-API-Key
       },
       "description": "Validates user input meets quality requirements",
       "execute_config": {
+        "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
         "model": "mistral:instruct",
         "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+        "pass_clients_tools": true,
         "provider": "ollama",
         "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
         "temperature": 0.7
@@ -3961,8 +3981,10 @@ X-API-Key
       },
       "description": "Validates user input meets quality requirements",
       "execute_config": {
+        "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
         "model": "mistral:instruct",
         "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+        "pass_clients_tools": true,
         "provider": "ollama",
         "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
         "temperature": 0.7
@@ -4511,8 +4533,10 @@ X-API-Key
 
 ```json
 {
+  "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
   "model": "mistral:instruct",
   "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+  "pass_clients_tools": true,
   "provider": "ollama",
   "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
   "temperature": 0.7
@@ -4524,8 +4548,10 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
+|hooks|[string]|false|none|none|
 |model|string|true|none|none|
 |models|[string]|false|none|none|
+|pass_clients_tools|boolean|true|none|none|
 |provider|string|false|none|none|
 |providers|[string]|false|none|none|
 |temperature|number|false|none|none|
@@ -4551,6 +4577,10 @@ X-API-Key
   "stop": "[\\\"\\\\n\\\", \\\"###\\\"]",
   "stream": false,
   "temperature": 0.7,
+  "tool_choice": null,
+  "tools": [
+    {}
+  ],
   "top_p": 1,
   "user": "user_123"
 }
@@ -4570,6 +4600,8 @@ X-API-Key
 |stop|[string]|false|none|none|
 |stream|boolean|false|none|none|
 |temperature|number|false|none|none|
+|tool_choice|any|false|none|Can be "none", "auto", or {"type": "function", "function": {"name": "my_function"}}|
+|tools|[object]|false|none|none|
 |top_p|number|false|none|none|
 |user|string|false|none|none|
 
@@ -4614,8 +4646,10 @@ X-API-Key
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+      "pass_clients_tools": true,
       "provider": "ollama",
       "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
       "temperature": 0.7
@@ -4673,8 +4707,10 @@ X-API-Key
   },
   "description": "Validates user input meets quality requirements",
   "execute_config": {
+    "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
     "model": "mistral:instruct",
     "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
+    "pass_clients_tools": true,
     "provider": "ollama",
     "providers": "[\\\"ollama\\\", \\\"openai\\\"]",
     "temperature": 0.7

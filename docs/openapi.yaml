@@ -630,6 +630,11 @@ components:
             type: object
         taskengine_LLMExecutionConfig:
             properties:
+                hooks:
+                    example: '[\"slack_notification\", \"email_notification\"]'
+                    items:
+                        type: string
+                    type: array
                 model:
                     example: mistral:instruct
                     type: string
@@ -638,6 +643,8 @@ components:
                     items:
                         type: string
                     type: array
+                pass_clients_tools:
+                    type: boolean
                 provider:
                     example: ollama
                     type: string
@@ -651,6 +658,7 @@ components:
                     type: number
             required:
                 - model
+                - pass_clients_tools
             type: object
         taskengine_OpenAIChatRequest:
             properties:
@@ -682,6 +690,12 @@ components:
                 temperature:
                     example: 0.7
                     type: number
+                tool_choice:
+                    description: 'Can be "none", "auto", or {"type": "function", "function": {"name": "my_function"}}'
+                tools:
+                    items:
+                        type: object
+                    type: array
                 top_p:
                     example: 1
                     type: number
@@ -1192,16 +1206,16 @@ paths:
                 Purpose types categorize groups (e.g., "Internal Embeddings", "Internal Tasks").
                 Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -1824,16 +1838,16 @@ paths:
                 Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
                 the chainID parameter is currently unused.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":

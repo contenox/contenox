@@ -842,6 +842,13 @@
       },
       "taskengine_LLMExecutionConfig": {
         "properties": {
+          "hooks": {
+            "example": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "model": {
             "example": "mistral:instruct",
             "type": "string"
@@ -852,6 +859,9 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "pass_clients_tools": {
+            "type": "boolean"
           },
           "provider": {
             "example": "ollama",
@@ -870,7 +880,8 @@
           }
         },
         "required": [
-          "model"
+          "model",
+          "pass_clients_tools"
         ],
         "type": "object"
       },
@@ -913,6 +924,15 @@
           "temperature": {
             "example": 0.7,
             "type": "number"
+          },
+          "tool_choice": {
+            "description": "Can be \"none\", \"auto\", or {\"type\": \"function\", \"function\": {\"name\": \"my_function\"}}"
+          },
+          "tools": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
           },
           "top_p": {
             "example": 1,
@@ -1597,19 +1617,19 @@
         "description": "Lists groups filtered by purpose type with pagination support.\nPurpose types categorize groups (e.g., \"Internal Embeddings\", \"Internal Tasks\").\nAccepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -2391,19 +2411,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
