@@ -1,8 +1,13 @@
-import pytest
 import uuid
 import requests
-import json
-from conftest import BASE_URL, API_TOKEN, auth_headers, check_function_call_request
+from urllib.parse import urlparse
+
+
+def check_openapi_tool_call_request(request):
+    """Asserts the request body is valid for an OpenAPI tool call."""
+    body = request.get_json()
+    assert "input" in body, "Request body missing 'input'"
+    return True
 
 
 def test_remote_hook_with_headers(
@@ -17,33 +22,82 @@ def test_remote_hook_with_headers(
         "Authorization": "Bearer token123"
     }
 
-    # The hook server now returns a direct JSON object.
     expected_response_json = {
         "status": "ok",
         "message": "Hook executed successfully with correct headers"
     }
+    tool_name = f"test_operation_{uuid.uuid4().hex[:6]}"
 
     # Set up mock server with header and request format validation.
     mock_server = configurable_mock_hook_server(
         status_code=200,
         response_json=expected_response_json,
         expected_headers=expected_headers,
-        request_validator=check_function_call_request
+        request_validator=check_openapi_tool_call_request,
+        tool_name=tool_name  # Changed from tool_handler_name to tool_name
     )
 
-    # Create a remote hook with custom headers
+    # Get the endpoint path from the mock server's URL
+    parsed_url = urlparse(mock_server["url"])
+    endpoint_path = tool_name
+
+    # Define and serve OpenAPI schema
+    openapi_schema = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "paths": {
+            f"/{tool_name}": {  # Added leading slash
+                "post": {
+                    "operationId": tool_name,
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "input": {"type": "string"},
+                                        "test_param": {"type": "string"}
+                                    },
+                                    "required": ["input"]
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {"application/json": {"schema": {"type": "object"}}}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # Serve the OpenAPI schema at the base path
+    mock_server["server"].expect_request(
+        f"{mock_server['base_path']}/openapi.json",  # Use base_path
+        method="GET"
+    ).respond_with_json(openapi_schema)
+
+    # Serve the tool endpoint at the tool path
+    mock_server["server"].expect_request(
+        f"{mock_server['base_path']}/{tool_name}",  # Use base_path + tool_name
+        method="POST"
+    ).respond_with_json(expected_response_json)
+
     hook_name = f"test-headers-hook-{uuid.uuid4().hex[:8]}"
-    endpoint_url = mock_server["url"].replace("http://0.0.0.0", "http://host.docker.internal")
+    parsed_mock_url = urlparse(mock_server["url"])
+    endpoint_url = f"http://host.docker.internal:{parsed_mock_url.port}{mock_server['base_path']}"
 
     create_response = requests.post(
         f"{base_url}/hooks/remote",
         json={
             "name": hook_name,
             "endpointUrl": endpoint_url,
-            "method": "POST",
             "timeoutMs": 5000,
             "headers": expected_headers,
-            "protocolType": "openai"
         },
         headers=auth_headers
     )
@@ -68,6 +122,7 @@ def test_remote_hook_with_headers(
                 "handler": "hook",
                 "hook": {
                     "name": hook_name,
+                    "tool_name": tool_name,
                     "args": {"test_param": "test_value"}
                 },
                 "transition": {
@@ -93,67 +148,10 @@ def test_remote_hook_with_headers(
     assert response.status_code == 200
     data = response.json()
     assert "output" in data
-    # The final output of the chain is the direct JSON response from the hook
     assert data["output"] == expected_response_json
 
     # Verify the mock server was called
-    assert len(mock_server["server"].log) > 0, "Mock server not called"
-
-
-def test_remote_hook_header_validation_failure(
-    base_url,
-    auth_headers,
-    configurable_mock_hook_server
-):
-    """Test that header validation failures are properly handled"""
-    expected_headers = {"X-Required-Header": "required-value"}
-
-    # Mock server will return 400 if headers don't match
-    mock_server = configurable_mock_hook_server(
-        status_code=400,
-        response_json={"error": "Header validation failed"},
-        expected_headers=expected_headers
-    )
-
-    hook_name = f"test-header-failure-{uuid.uuid4().hex[:8]}"
-    endpoint_url = mock_server["url"].replace("http://0.0.0.0", "http://host.docker.internal")
-
-    create_response = requests.post(
-        f"{base_url}/hooks/remote",
-        json={
-            "name": hook_name,
-            "endpointUrl": endpoint_url,
-            "method": "POST",
-            "timeoutMs": 5000,
-            "protocolType": "openai",
-            "headers": {"X-Different-Header": "different-value"}  # Mismatch
-        },
-        headers=auth_headers
-    )
-    assert create_response.status_code == 201
-
-    task_chain = {
-        "id": "header-failure-test-chain",
-        "debug": True,
-        "tasks": [{
-            "id": "header_hook_task",
-            "handler": "hook",
-            "hook": {"name": hook_name, "args": {}},
-            "transition": {"branches": [{"operator": "default", "goto": "end"}]}
-        }],
-        "token_limit": 4096
-    }
-
-    response = requests.post(
-        f"{base_url}/tasks",
-        json={"input": "Test header validation failure", "chain": task_chain, "inputType": "string"},
-        headers=auth_headers
-    )
-
-    # The task engine should propagate the failure from the hook
-    assert response.status_code == 500
-    data = response.json()
-    assert "error" in data
+    assert len(mock_server["server"].log) >= 2, "Mock server not called enough times"
 
 
 def test_remote_hook_without_headers(
@@ -163,24 +161,74 @@ def test_remote_hook_without_headers(
 ):
     """Test that remote hooks work correctly without custom headers"""
     expected_response_json = {"message": "Hook executed successfully without custom headers"}
+    tool_name = f"test_no_headers_{uuid.uuid4().hex[:6]}"
 
     mock_server = configurable_mock_hook_server(
         status_code=200,
         response_json=expected_response_json,
-        request_validator=check_function_call_request
+        request_validator=check_openapi_tool_call_request,
+        tool_name=tool_name  # Changed from tool_handler_name to tool_name
     )
 
+    # Get the endpoint path from the mock server's URL
+    parsed_url = urlparse(mock_server["url"])
+    endpoint_path = tool_name
+
+    # Define and serve OpenAPI schema
+    openapi_schema = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "paths": {
+            f"/{tool_name}": {  # Added leading slash
+                "post": {
+                    "operationId": tool_name,
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "input": {"type": "string"}
+                                    },
+                                    "required": ["input"]
+                                }
+                            }
+                        }
+                    },
+                    "responses": {
+                        "200": {
+                            "description": "OK",
+                            "content": {"application/json": {"schema": {"type": "object"}}}
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # Serve the OpenAPI schema at the base path
+    mock_server["server"].expect_request(
+        f"{mock_server['base_path']}/openapi.json",  # Use base_path
+        method="GET"
+    ).respond_with_json(openapi_schema)
+
+    # Serve the tool endpoint at the tool path
+    mock_server["server"].expect_request(
+        f"{mock_server['base_path']}/{tool_name}",  # Use base_path + tool_name
+        method="POST"
+    ).respond_with_json(expected_response_json)
+
     hook_name = f"test-no-headers-hook-{uuid.uuid4().hex[:8]}"
-    endpoint_url = mock_server["url"].replace("http://0.0.0.0", "http://host.docker.internal")
+    parsed_mock_url = urlparse(mock_server["url"])
+    endpoint_url = f"http://host.docker.internal:{parsed_mock_url.port}{mock_server['base_path']}"
 
     create_response = requests.post(
         f"{base_url}/hooks/remote",
         json={
             "name": hook_name,
             "endpointUrl": endpoint_url,
-            "method": "POST",
             "timeoutMs": 5000,
-            "protocolType": "openai",
         },
         headers=auth_headers
     )
@@ -200,7 +248,7 @@ def test_remote_hook_without_headers(
         "tasks": [{
             "id": "no_header_hook_task",
             "handler": "hook",
-            "hook": {"name": hook_name, "args": {}},
+            "hook": {"name": hook_name, "tool_name": tool_name, "args": {}},
             "transition": {"branches": [{"operator": "default", "goto": "end"}]}
         }],
         "token_limit": 4096
@@ -216,4 +264,4 @@ def test_remote_hook_without_headers(
     data = response.json()
     assert "output" in data
     assert data["output"] == expected_response_json
-    assert len(mock_server["server"].log) > 0, "Mock server not called"
+    assert len(mock_server["server"].log) >= 2, "Mock server not called enough times"

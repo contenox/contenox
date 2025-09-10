@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-116-gb047982-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-118-g9d270b4-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-116-gb047982-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-118-g9d270b4-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1186,8 +1186,8 @@ Lists remote hooks, optionally filtering by a unique name.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1196,14 +1196,16 @@ Lists remote hooks, optionally filtering by a unique name.
 ```json
 [
   {
-    "bodyProperties": "access_token:secret-token,environment:production",
     "createdAt": "2023-11-15T14:30:45Z",
     "endpointUrl": "http://hooks-endpoint:port",
     "headers": "Authorization:Bearer token,Content-Type:application/json",
     "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-    "method": "POST",
     "name": "mailing-tools",
-    "protocolType": null,
+    "properties": {
+      "in": "body",
+      "name": "access_token",
+      "value": null
+    },
     "timeoutMs": 5000,
     "updatedAt": "2023-11-15T14:30:45Z"
   }
@@ -1249,14 +1251,16 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
 
 ```json
 {
-  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-  "method": "POST",
   "name": "mailing-tools",
-  "protocolType": null,
+  "properties": {
+    "in": "body",
+    "name": "access_token",
+    "value": null
+  },
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1274,14 +1278,16 @@ Remote hooks allow task-chains to trigger external HTTP services during executio
 
 ```json
 {
-  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-  "method": "POST",
   "name": "mailing-tools",
-  "protocolType": null,
+  "properties": {
+    "in": "body",
+    "name": "access_token",
+    "value": null
+  },
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1330,14 +1336,16 @@ print(r.json())
 
 ```json
 {
-  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-  "method": "POST",
   "name": "mailing-tools",
-  "protocolType": null,
+  "properties": {
+    "in": "body",
+    "name": "access_token",
+    "value": null
+  },
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1436,14 +1444,16 @@ Retrieves a specific remote hook configuration by ID.
 
 ```json
 {
-  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-  "method": "POST",
   "name": "mailing-tools",
-  "protocolType": null,
+  "properties": {
+    "in": "body",
+    "name": "access_token",
+    "value": null
+  },
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1488,14 +1498,16 @@ The ID from the URL path overrides any ID in the request body.
 
 ```json
 {
-  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-  "method": "POST",
   "name": "mailing-tools",
-  "protocolType": null,
+  "properties": {
+    "in": "body",
+    "name": "access_token",
+    "value": null
+  },
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1514,14 +1526,16 @@ The ID from the URL path overrides any ID in the request body.
 
 ```json
 {
-  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-  "method": "POST",
   "name": "mailing-tools",
-  "protocolType": null,
+  "properties": {
+    "in": "body",
+    "name": "access_token",
+    "value": null
+  },
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -1539,7 +1553,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Retrieves the JSON schemas for all supported hook types.
+## Retrieves the JSON openAPI schemas for all supported hook types.
 
 > Code samples
 
@@ -1558,31 +1572,24 @@ print(r.json())
 
 `GET /hooks/schemas`
 
-Retrieves the JSON schemas for all supported hook types.
+Retrieves the JSON openAPI schemas for all supported hook types.
 
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
+{}
 ```
 
-<h3 id="retrieves-the-json-schemas-for-all-supported-hook-types.-responses">Responses</h3>
+<h3 id="retrieves-the-json-openapi-schemas-for-all-supported-hook-types.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|Inline|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="retrieves-the-json-schemas-for-all-supported-hook-types.-responseschema">Response Schema</h3>
+<h3 id="retrieves-the-json-openapi-schemas-for-all-supported-hook-types.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -2101,8 +2108,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -2251,8 +2258,8 @@ Lists all configured external providers with pagination support.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -2770,7 +2777,8 @@ Lists all task chain definitions with pagination.
       "handler": "condition_key",
       "hook": {
         "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-        "name": "slack_notification"
+        "name": "slack",
+        "tool_name": "send_slack_notification"
       },
       "id": "validate_input",
       "input_var": "input",
@@ -2856,7 +2864,8 @@ Task chains define workflows with conditional branches, external hooks, and capt
     "handler": "condition_key",
     "hook": {
       "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-      "name": "slack_notification"
+      "name": "slack",
+      "tool_name": "send_slack_notification"
     },
     "id": "validate_input",
     "input_var": "input",
@@ -2913,7 +2922,8 @@ Task chains define workflows with conditional branches, external hooks, and capt
     "handler": "condition_key",
     "hook": {
       "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-      "name": "slack_notification"
+      "name": "slack",
+      "tool_name": "send_slack_notification"
     },
     "id": "validate_input",
     "input_var": "input",
@@ -3050,7 +3060,8 @@ Retrieves a specific task chain by ID.
     "handler": "condition_key",
     "hook": {
       "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-      "name": "slack_notification"
+      "name": "slack",
+      "tool_name": "send_slack_notification"
     },
     "id": "validate_input",
     "input_var": "input",
@@ -3133,7 +3144,8 @@ Updates an existing task chain definition.
     "handler": "condition_key",
     "hook": {
       "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-      "name": "slack_notification"
+      "name": "slack",
+      "tool_name": "send_slack_notification"
     },
     "id": "validate_input",
     "input_var": "input",
@@ -3191,7 +3203,8 @@ Updates an existing task chain definition.
     "handler": "condition_key",
     "hook": {
       "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-      "name": "slack_notification"
+      "name": "slack",
+      "tool_name": "send_slack_notification"
     },
     "id": "validate_input",
     "input_var": "input",
@@ -3279,7 +3292,8 @@ If groups are enabled, models and backends not assigned to any group will be com
       "handler": "condition_key",
       "hook": {
         "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-        "name": "slack_notification"
+        "name": "slack",
+        "tool_name": "send_slack_notification"
       },
       "id": "validate_input",
       "input_var": "input",
@@ -3577,14 +3591,16 @@ X-API-Key
 ```json
 [
   {
-    "bodyProperties": "access_token:secret-token,environment:production",
     "createdAt": "2023-11-15T14:30:45Z",
     "endpointUrl": "http://hooks-endpoint:port",
     "headers": "Authorization:Bearer token,Content-Type:application/json",
     "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-    "method": "POST",
     "name": "mailing-tools",
-    "protocolType": null,
+    "properties": {
+      "in": "body",
+      "name": "access_token",
+      "value": null
+    },
     "timeoutMs": 5000,
     "updatedAt": "2023-11-15T14:30:45Z"
   }
@@ -3700,7 +3716,8 @@ X-API-Key
       "handler": "condition_key",
       "hook": {
         "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-        "name": "slack_notification"
+        "name": "slack",
+        "tool_name": "send_slack_notification"
       },
       "id": "validate_input",
       "input_var": "input",
@@ -3992,7 +4009,8 @@ X-API-Key
       "handler": "condition_key",
       "hook": {
         "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-        "name": "slack_notification"
+        "name": "slack",
+        "tool_name": "send_slack_notification"
       },
       "id": "validate_input",
       "input_var": "input",
@@ -4191,6 +4209,30 @@ X-API-Key
 |type|string|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
 
+<h2 id="tocS_runtimetypes_InjectionArg">runtimetypes_InjectionArg</h2>
+<!-- backwards compatibility -->
+<a id="schemaruntimetypes_injectionarg"></a>
+<a id="schema_runtimetypes_InjectionArg"></a>
+<a id="tocSruntimetypes_injectionarg"></a>
+<a id="tocsruntimetypes_injectionarg"></a>
+
+```json
+{
+  "in": "body",
+  "name": "access_token",
+  "value": null
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|in|string|true|none|none|
+|name|string|true|none|none|
+|value|[runtimetypes_any](#schemaruntimetypes_any)|true|none|none|
+
 <h2 id="tocS_runtimetypes_Model">runtimetypes_Model</h2>
 <!-- backwards compatibility -->
 <a id="schemaruntimetypes_model"></a>
@@ -4258,14 +4300,16 @@ X-API-Key
 
 ```json
 {
-  "bodyProperties": "access_token:secret-token,environment:production",
   "createdAt": "2023-11-15T14:30:45Z",
   "endpointUrl": "http://hooks-endpoint:port",
   "headers": "Authorization:Bearer token,Content-Type:application/json",
   "id": "h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6",
-  "method": "POST",
   "name": "mailing-tools",
-  "protocolType": null,
+  "properties": {
+    "in": "body",
+    "name": "access_token",
+    "value": null
+  },
   "timeoutMs": 5000,
   "updatedAt": "2023-11-15T14:30:45Z"
 }
@@ -4276,14 +4320,12 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|bodyProperties|object|false|none|none|
 |createdAt|string(date-time)|true|none|none|
 |endpointUrl|string|true|none|none|
 |headers|object|false|none|none|
 |id|string|true|none|none|
-|method|string|true|none|none|
 |name|string|true|none|none|
-|protocolType|[runtimetypes_HookProtocolType](#schemaruntimetypes_hookprotocoltype)|true|none|none|
+|properties|[runtimetypes_InjectionArg](#schemaruntimetypes_injectionarg)|true|none|none|
 |timeoutMs|integer|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
 
@@ -4512,7 +4554,8 @@ X-API-Key
 ```json
 {
   "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-  "name": "slack_notification"
+  "name": "slack",
+  "tool_name": "send_slack_notification"
 }
 
 ```
@@ -4522,7 +4565,8 @@ X-API-Key
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |args|object|true|none|Args are key-value pairs to parameterize the hook call.<br>Example: {"to": "user@example.com", "subject": "Notification"}|
-|name|string|true|none|Name is the registered hook name to invoke (e.g., "send_email").|
+|name|string|true|none|Name is the registered hook-service (e.g., "send_email").|
+|tool_name|string|true|none|ToolName is the name of the tool to invoke (e.g., "send_slack_notification").|
 
 <h2 id="tocS_taskengine_LLMExecutionConfig">taskengine_LLMExecutionConfig</h2>
 <!-- backwards compatibility -->
@@ -4657,7 +4701,8 @@ X-API-Key
     "handler": "condition_key",
     "hook": {
       "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-      "name": "slack_notification"
+      "name": "slack",
+      "tool_name": "send_slack_notification"
     },
     "id": "validate_input",
     "input_var": "input",
@@ -4718,7 +4763,8 @@ X-API-Key
   "handler": "condition_key",
   "hook": {
     "args": "{\\\"channel\\\": \\\"#alerts\\\", \\\"message\\\": \\\"Task completed successfully\\\"}",
-    "name": "slack_notification"
+    "name": "slack",
+    "tool_name": "send_slack_notification"
   },
   "id": "validate_input",
   "input_var": "input",

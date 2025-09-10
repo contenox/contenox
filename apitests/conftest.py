@@ -250,7 +250,7 @@ def mock_hook_server(httpserver: HTTPServer):
 
 @pytest.fixture
 def configurable_mock_hook_server(httpserver: HTTPServer):
-    def _setup_mock(status_code=200, response_json=None, delay_seconds=0, expected_headers=None, request_validator=None):
+    def _setup_mock(status_code=200, response_json=None, delay_seconds=0, expected_headers=None, request_validator=None, tool_name=""):
         if response_json is None:
             response_json = {"status": "default_ok"}
 
@@ -260,8 +260,9 @@ def configurable_mock_hook_server(httpserver: HTTPServer):
         # Clear any existing expectations to prevent test pollution
         httpserver.clear()
 
-        endpoint = f"/test-hook-endpoint-{uuid.uuid4().hex[:8]}"
-        print(f"Setting up mock endpoint: {endpoint} for test: {os.environ.get('PYTEST_CURRENT_TEST')}")
+        # Create a unique base path for this test
+        base_path = f"/test-hook-endpoint-{uuid.uuid4().hex[:8]}"
+        print(f"Setting up mock endpoint: {base_path} for test: {os.environ.get('PYTEST_CURRENT_TEST')}")
 
         def handler(request):
             if delay_seconds > 0:
@@ -292,9 +293,17 @@ def configurable_mock_hook_server(httpserver: HTTPServer):
 
             return Response(json.dumps(response_json), status_code, {"Content-Type": "application/json"})
 
-        httpserver.expect_request(endpoint, method="POST").respond_with_handler(handler)
+        # Set up the tool endpoint
+        tool_path = f"{base_path}/{tool_name}" if tool_name else base_path
+        httpserver.expect_request(
+            tool_path,
+            method="POST"
+        ).respond_with_handler(handler)
+
         return {
-            "url": httpserver.url_for(endpoint),
+            "url": httpserver.url_for(base_path),
+            "base_path": base_path,
+            "tool_path": tool_path,
             "server": httpserver,
             "expected_headers": expected_headers
         }

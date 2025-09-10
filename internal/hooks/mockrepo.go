@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/taskengine"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // MockHookRepo is a mock implementation of the HookRepo interface.
@@ -23,10 +24,10 @@ type HookCallRecord struct {
 	Input any
 }
 
-// HookResponse is simplified to only contain the direct output.
+// HookResponse is simplified to only contain the direct output and optional OpenAPI schema.
 type HookResponse struct {
 	Output any
-	Schema map[string]interface{}
+	Schema *openapi3.T // Updated to match interface
 }
 
 // NewMockHookRegistry returns a new instance of MockHookRepo.
@@ -35,6 +36,7 @@ func NewMockHookRegistry() *MockHookRepo {
 		ResponseMap: make(map[string]HookResponse),
 		DefaultResponse: HookResponse{
 			Output: "default mock response",
+			Schema: nil, // explicitly nil
 		},
 	}
 }
@@ -118,8 +120,9 @@ func (m *MockHookRepo) Supports(ctx context.Context) ([]string, error) {
 	return supported, nil
 }
 
-func (m *MockHookRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
-	schemas := make(map[string]map[string]interface{})
+// GetSchemasForSupportedHooks returns OpenAPI schemas for all mocked hooks.
+func (m *MockHookRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error) {
+	schemas := make(map[string]*openapi3.T)
 	for hookType, response := range m.ResponseMap {
 		schemas[hookType] = response.Schema
 	}

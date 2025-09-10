@@ -15,6 +15,7 @@ import (
 	"dario.cat/mergo"
 	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // DataType represents the type of data passed between tasks.
@@ -125,7 +126,7 @@ type HookRegistry interface {
 }
 
 type HooksWithSchema interface {
-	GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error)
+	GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error)
 	GetToolsForHookByName(ctx context.Context, name string) ([]Tool, error)
 }
 

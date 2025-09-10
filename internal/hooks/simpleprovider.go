@@ -3,10 +3,10 @@ package hooks
 import (
 	"context"
 	"fmt"
-	"maps"
 	"time"
 
 	"github.com/contenox/runtime/taskengine"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // SimpleRepo holds a map of locally registered hooks.
@@ -20,7 +20,6 @@ func NewSimpleProvider(hooks map[string]taskengine.HookRepo) taskengine.HookRepo
 	}
 }
 
-// Exec finds the correct hook by name from its internal map and delegates the execution.
 func (m *SimpleRepo) Exec(
 	ctx context.Context,
 	startingTime time.Time,
@@ -43,21 +42,24 @@ func (m *SimpleRepo) Supports(ctx context.Context) ([]string, error) {
 }
 
 // GetSchemasForSupportedHooks aggregates the schemas from all registered hooks.
-func (m *SimpleRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
-	allSchemas := make(map[string]map[string]interface{})
+func (m *SimpleRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error) {
+	return nil, nil
+	// allSchemas := make(map[string]*openapi3.T)
 
-	// Iterate through each registered hook implementation.
-	for hookName, hookImpl := range m.hooks {
-		// Get the schemas provided by this specific hook's implementation.
-		implSchemas, err := hookImpl.GetSchemasForSupportedHooks(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("error getting schema for hook '%s': %w", hookName, err)
-		}
+	// // Iterate through each registered hook implementation.
+	// for hookName, hookImpl := range m.hooks {
+	// 	// Get the schemas provided by this specific hook's implementation.
+	// 	implSchemas, err := hookImpl.GetSchemasForSupportedHooks(ctx)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("error getting schema for hook '%s': %w", hookName, err)
+	// 	}
 
-		// Merge the returned schemas into our main map.
-		maps.Copy(allSchemas, implSchemas)
-	}
-	return allSchemas, nil
+	// 	// Merge the returned schemas into our main map.
+	// 	for k, v := range implSchemas {
+	// 		allSchemas[k] = v // cannot use v (variable of type map[string]interface{}) as *openapi3.T value in assignment (compiler IncompatibleAssign)
+	// 	}
+	// }
+	// return allSchemas, nil
 }
 
 func (m *SimpleRepo) GetToolsForHookByName(ctx context.Context, name string) ([]taskengine.Tool, error) {

@@ -1,24 +1,24 @@
 package hooks
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"time"
 
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/taskengine"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
+// PersistentRepo implements taskengine.HookRepo using a single OpenAPI-based protocol.
 type PersistentRepo struct {
-	localHooks       map[string]taskengine.HookRepo
-	dbInstance       libdb.DBManager
-	httpClient       *http.Client
-	protocolHandlers map[runtimetypes.HookProtocolType]ProtocolHandler
+	localHooks   map[string]taskengine.HookRepo
+	dbInstance   libdb.DBManager
+	httpClient   *http.Client
+	toolProtocol ToolProtocol
 }
 
 func NewPersistentRepo(
@@ -26,22 +26,19 @@ func NewPersistentRepo(
 	dbInstance libdb.DBManager,
 	httpClient *http.Client,
 ) taskengine.HookRepo {
-	handlers := make(map[runtimetypes.HookProtocolType]ProtocolHandler)
-	handlers[runtimetypes.ProtocolOpenAI] = &OpenAIProtocol{}
-	handlers[runtimetypes.ProtocolOllama] = &OllamaProtocol{}
-	handlers[runtimetypes.ProtocolLangServeOpenAI] = &LangServeOpenAIProtocol{}
-	handlers[runtimetypes.ProtocolLangServeDirect] = &LangServeDirectProtocol{}
-	handlers[runtimetypes.ProtocolOpenAIObject] = &OpenAIObjectProtocol{}
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
 
 	return &PersistentRepo{
-		localHooks:       localHooks,
-		dbInstance:       dbInstance,
-		httpClient:       httpClient,
-		protocolHandlers: handlers,
+		localHooks:   localHooks,
+		dbInstance:   dbInstance,
+		httpClient:   httpClient,
+		toolProtocol: &OpenAPIToolProtocol{},
 	}
 }
 
-// Exec remains the same.
+// Exec executes a hook by name.
 func (p *PersistentRepo) Exec(
 	ctx context.Context,
 	startingTime time.Time,
@@ -53,216 +50,196 @@ func (p *PersistentRepo) Exec(
 		return hook.Exec(ctx, startingTime, input, args)
 	}
 
-	// Check remote
-	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
-	remoteHook, err := storeInstance.GetRemoteHookByName(ctx, args.Name)
+	// Fetch remote hook
+	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
+	remoteHook, err := store.GetRemoteHookByName(ctx, args.Name)
 	if err != nil {
 		return nil, fmt.Errorf("unknown hook: %s", args.Name)
 	}
 
-	if remoteHook.Name != args.Name {
-		return nil, fmt.Errorf("internal consistency error: hook name mismatch: requested '%s', but found '%s'", args.Name, remoteHook.Name)
-	}
-
-	return p.execRemoteHook(ctx, remoteHook, startingTime, input, args)
+	return p.execRemoteHook(ctx, remoteHook, input, args)
 }
 
 func (p *PersistentRepo) execRemoteHook(
 	ctx context.Context,
 	hook *runtimetypes.RemoteHook,
-	startingTime time.Time,
 	input any,
 	args *taskengine.HookCall,
 ) (any, error) {
-	// Find the correct protocol handler from the map.
-	handler, ok := p.protocolHandlers[hook.ProtocolType]
-	if !ok {
-		return nil, fmt.Errorf("unsupported protocol: %s", hook.ProtocolType)
-	}
-
-	argumentsMap := make(map[string]any)
-	argumentsMap["input"] = input
-	for key, val := range args.Args {
-		argumentsMap[key] = val
-	}
-
-	// Build request with body properties
-	jsonBody, err := handler.BuildRequest(hook.Name, argumentsMap, hook.BodyProperties)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build request body for protocol %s: %w", hook.ProtocolType, err)
-	}
-
-	// Validate endpoint URL
-	u, parseErr := url.Parse(hook.EndpointURL)
-	if parseErr != nil {
-		return nil, fmt.Errorf("invalid endpoint URL format: %w", parseErr)
-	}
-	if u.Scheme == "" || u.Host == "" {
-		return nil, fmt.Errorf("endpoint URL must be absolute (include http:// or https://): %s", hook.EndpointURL)
-	}
+	// Validate hook
 	if hook.TimeoutMs <= 0 {
-		return nil, fmt.Errorf("timeout must be positive: %d", hook.TimeoutMs)
+		return nil, fmt.Errorf("timeout must be positive: %dms", hook.TimeoutMs)
 	}
 
-	// Set up request with timeout
-	timeout := time.Duration(hook.TimeoutMs) * time.Millisecond
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	// Build injection map from hook.Properties
+	injectParams := make(map[string]ParamArg)
+	if hook.Properties.Name != "" {
+		loc := p.mapLocation(hook.Properties.In)
+		injectParams[hook.Properties.Name] = ParamArg{
+			Name:  hook.Properties.Name,
+			Value: fmt.Sprintf("%v", hook.Properties.Value),
+			In:    loc,
+		}
+	}
+	for k, v := range hook.Headers {
+		injectParams[k] = ParamArg{
+			Name:  k,
+			Value: fmt.Sprintf("%v", v),
+			In:    ArgLocationHeader,
+		}
+	}
+	// Construct ToolCall
+	toolCall := taskengine.ToolCall{
+		Function: taskengine.FunctionCall{
+			Name:      args.ToolName,
+			Arguments: "{}", // Will be replaced
+		},
+	}
+
+	// Merge input into arguments
+	argumentsMap := map[string]any{"input": input}
+	for k, v := range args.Args {
+		argumentsMap[k] = v
+	}
+
+	// Serialize arguments safely
+	argsJSON, err := safeJSONString(argumentsMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare tool arguments: %w", err)
+	}
+	toolCall.Function.Arguments = argsJSON
+
+	// Set timeout
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(hook.TimeoutMs)*time.Millisecond)
 	defer cancel()
 
-	// Create HTTP request
-	httpReq, err := http.NewRequestWithContext(
-		ctx,
-		hook.Method,
+	// Execute via OpenAPI protocol
+	result, err := p.toolProtocol.ExecuteTool(
+		timeoutCtx,
 		hook.EndpointURL,
-		bytes.NewReader(jsonBody),
+		p.httpClient,
+		injectParams,
+		toolCall,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("execution failed for hook '%s': %w", hook.Name, err)
 	}
 
-	// Set headers
-	httpReq.Header.Set("Content-Type", "application/json")
-	for key, value := range hook.Headers {
-		httpReq.Header.Set(key, value)
-	}
-
-	// Execute request
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("remote hook request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response body
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Handle non-successful status codes
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodySample := string(body)
-		if len(bodySample) > 200 {
-			bodySample = bodySample[:200] + "..."
-		}
-		return nil, fmt.Errorf("remote hook '%s' failed with status %d: %s", hook.Name, resp.StatusCode, bodySample)
-	}
-
-	// Parse response using the specific protocol handler.
-	output, err := handler.ParseResponse(body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse response for protocol %s: %w", hook.ProtocolType, err)
-	}
-
-	return output, nil
+	return result, nil
 }
 
-// Supports remains the same.
-func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
-	// Start with local hooks
-	localSupported := make([]string, 0, len(p.localHooks))
-	for k := range p.localHooks {
-		localSupported = append(localSupported, k)
-	}
-
-	// Fetch all remote hooks by paginating through the store
-	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
-	var remoteHooks []*runtimetypes.RemoteHook
-	var lastCursor *time.Time
-	limit := 100 // A reasonable page size
-
-	for {
-		page, err := storeInstance.ListRemoteHooks(ctx, lastCursor, limit)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list remote hooks: %w", err)
-		}
-
-		remoteHooks = append(remoteHooks, page...)
-
-		// If the page size is less than the limit, we've reached the end
-		if len(page) < limit {
-			break
-		}
-
-		// Update the cursor for the next iteration
-		lastCursor = &page[len(page)-1].CreatedAt
-	}
-
-	for _, hook := range remoteHooks {
-		localSupported = append(localSupported, hook.Name)
-	}
-
-	return localSupported, nil
-}
-
-// GetSchemasForSupportedHooks returns the schemas for all supported hooks.
-func (p *PersistentRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
-	schemas := make(map[string]map[string]interface{})
-
-	for name := range p.localHooks {
-		schemas[name] = nil
-	}
-
-	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
-	var allRemoteHooks []*runtimetypes.RemoteHook
-	var lastCursor *time.Time
-	limit := 100
-
-	for {
-		page, err := storeInstance.ListRemoteHooks(ctx, lastCursor, limit)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list remote hooks for schemas: %w", err)
-		}
-		allRemoteHooks = append(allRemoteHooks, page...)
-		if len(page) < limit {
-			break
-		}
-		lastCursor = &page[len(page)-1].CreatedAt
-	}
-
-	for _, remoteHook := range allRemoteHooks {
-		handler, ok := p.protocolHandlers[remoteHook.ProtocolType]
-		if !ok {
-			continue
-		}
-
-		schema, err := handler.FetchSchema(ctx, remoteHook.EndpointURL, p.httpClient)
-		if err == nil && schema != nil {
-			schemas[remoteHook.Name] = schema
-		}
-		// intentionally ignore errors for individual schema fetches so that
-		// one failing hook doesn't prevent others from loading.
-		// TODO: log error for individual schema fetches
-	}
-
-	return schemas, nil
-}
-
-// GetToolsForHookByName returns the tools for a specific hook.
+// GetToolsForHookByName returns the list of tools exposed by the remote hook.
 func (p *PersistentRepo) GetToolsForHookByName(ctx context.Context, name string) ([]taskengine.Tool, error) {
-	// Check local hooks first.
 	if _, ok := p.localHooks[name]; ok {
 		return nil, fmt.Errorf("tool retrieval for local hook '%s' is not yet implemented", name)
 	}
 
-	// If not found locally, check for a remote hook.
-	storeInstance := runtimetypes.New(p.dbInstance.WithoutTransaction())
-	remoteHook, err := storeInstance.GetRemoteHookByName(ctx, name)
+	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
+	remoteHook, err := store.GetRemoteHookByName(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("unknown hook: %s", name)
 	}
 
-	// Find the correct protocol handler for the hook.
-	handler, ok := p.protocolHandlers[remoteHook.ProtocolType]
-	if !ok {
-		return nil, fmt.Errorf("unsupported protocol '%s' for hook '%s'", remoteHook.ProtocolType, name)
-	}
-
-	// Fetch the tools from the remote endpoint using the handler's FetchTools method.
-	tools, err := handler.FetchTools(ctx, remoteHook.EndpointURL, p.httpClient)
+	tools, err := p.toolProtocol.FetchTools(ctx, remoteHook.EndpointURL, p.httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch tools for hook '%s': %w", name, err)
 	}
 
 	return tools, nil
+}
+
+// GetSchemasForSupportedHooks returns OpenAPI schemas for all remote hooks.
+func (p *PersistentRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error) {
+	schemas := make(map[string]*openapi3.T)
+
+	// Local hooks have no schema (for now)
+	for name := range p.localHooks {
+		schemas[name] = nil // or omit entirely if preferred
+	}
+
+	// Fetch and process remote hooks page by page
+	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
+	var cursor *time.Time
+	const limit = 100
+
+	for {
+		page, err := store.ListRemoteHooks(ctx, cursor, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list remote hooks: %w", err)
+		}
+
+		// Process this page immediately
+		for _, hook := range page {
+			schema, err := p.toolProtocol.FetchSchema(ctx, hook.EndpointURL, p.httpClient)
+			if err != nil {
+				// Optionally log here (e.g., via p.logger.Warn(...)) in real implementation
+				continue // Graceful: one failing hook doesn't break all
+			}
+			schemas[hook.Name] = schema // Store the *openapi3.T directly
+		}
+
+		// Break if this is the last page
+		if len(page) < limit {
+			break
+		}
+		cursor = &page[len(page)-1].CreatedAt
+	}
+
+	return schemas, nil
+}
+
+// Supports returns a list of all hook names (local + remote).
+func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
+	names := make([]string, 0, len(p.localHooks))
+
+	// Add local hooks
+	for name := range p.localHooks {
+		names = append(names, name)
+	}
+
+	// Add remote hooks page by page
+	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
+	var cursor *time.Time
+	const limit = 100
+
+	for {
+		page, err := store.ListRemoteHooks(ctx, cursor, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list remote hooks: %w", err)
+		}
+
+		for _, hook := range page {
+			names = append(names, hook.Name)
+		}
+
+		if len(page) < limit {
+			break
+		}
+		cursor = &page[len(page)-1].CreatedAt
+	}
+
+	return names, nil
+}
+
+// --- Helper Functions ---
+
+func (p *PersistentRepo) mapLocation(in string) ArgLocation {
+	switch in {
+	case runtimetypes.LocationPath:
+		return ArgLocationPath
+	case runtimetypes.LocationQuery:
+		return ArgLocationQuery
+	case runtimetypes.LocationBody:
+		return ArgLocationBody
+	default:
+		return ArgLocationBody // default fallback
+	}
+}
+
+func safeJSONString(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize arguments to JSON: %w", err)
+	}
+	return string(b), nil
 }

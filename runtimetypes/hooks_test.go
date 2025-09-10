@@ -17,13 +17,16 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	hook := &runtimetypes.RemoteHook{
-		ID:           uuid.New().String(),
-		Name:         "test-hook",
-		EndpointURL:  "https://example.com/hook",
-		Method:       "POST",
-		TimeoutMs:    5000,
-		Headers:      map[string]string{"X-Trace-ID": "test"},
-		ProtocolType: "openai",
+		ID:          uuid.New().String(),
+		Name:        "test-hook",
+		EndpointURL: "https://example.com/hook",
+		TimeoutMs:   5000,
+		Headers:     map[string]string{"X-Trace-ID": "test"},
+		Properties: runtimetypes.InjectionArg{
+			Name:  "access_token",
+			Value: "secret-token",
+			In:    "body",
+		},
 	}
 
 	// Create the hook
@@ -36,10 +39,9 @@ func TestUnit_RemoteHooks_CreateAndGet(t *testing.T) {
 	require.Equal(t, hook.ID, retrieved.ID)
 	require.Equal(t, hook.Name, retrieved.Name)
 	require.Equal(t, hook.EndpointURL, retrieved.EndpointURL)
-	require.Equal(t, hook.Method, retrieved.Method)
 	require.Equal(t, hook.TimeoutMs, retrieved.TimeoutMs)
 	require.Equal(t, hook.Headers, retrieved.Headers)
-	require.Equal(t, hook.ProtocolType, retrieved.ProtocolType)
+	require.Equal(t, hook.Properties, retrieved.Properties)
 	require.WithinDuration(t, time.Now().UTC(), retrieved.CreatedAt, 1*time.Second)
 	require.WithinDuration(t, time.Now().UTC(), retrieved.UpdatedAt, 1*time.Second)
 
@@ -58,13 +60,16 @@ func TestUnit_RemoteHooks_WithHeaders(t *testing.T) {
 			"Authorization": "Bearer some-token",
 		}
 		hook := &runtimetypes.RemoteHook{
-			ID:           uuid.New().String(),
-			Name:         "hook-with-headers",
-			EndpointURL:  "https://example.com/hook",
-			Method:       "POST",
-			TimeoutMs:    5000,
-			Headers:      headers,
-			ProtocolType: "openai",
+			ID:          uuid.New().String(),
+			Name:        "hook-with-headers",
+			EndpointURL: "https://example.com/hook",
+			TimeoutMs:   5000,
+			Headers:     headers,
+			Properties: runtimetypes.InjectionArg{
+				Name:  "api_key",
+				Value: "12345",
+				In:    "header",
+			},
 		}
 
 		err := s.CreateRemoteHook(ctx, hook)
@@ -78,13 +83,16 @@ func TestUnit_RemoteHooks_WithHeaders(t *testing.T) {
 
 	t.Run("create with nil headers", func(t *testing.T) {
 		hook := &runtimetypes.RemoteHook{
-			ID:           uuid.New().String(),
-			Name:         "hook-with-nil-headers",
-			EndpointURL:  "https://example.com/nil-hook",
-			Method:       "POST",
-			TimeoutMs:    5000,
-			Headers:      nil,
-			ProtocolType: "openai",
+			ID:          uuid.New().String(),
+			Name:        "hook-with-nil-headers",
+			EndpointURL: "https://example.com/nil-hook",
+			TimeoutMs:   5000,
+			Headers:     nil,
+			Properties: runtimetypes.InjectionArg{
+				Name:  "default_prop",
+				Value: true,
+				In:    "body",
+			},
 		}
 
 		err := s.CreateRemoteHook(ctx, hook)
@@ -98,13 +106,16 @@ func TestUnit_RemoteHooks_WithHeaders(t *testing.T) {
 	t.Run("update headers", func(t *testing.T) {
 		initialHeaders := map[string]string{"Initial": "Value"}
 		hook := &runtimetypes.RemoteHook{
-			ID:           uuid.New().String(),
-			Name:         "hook-to-update-headers",
-			EndpointURL:  "https://example.com/update-hook",
-			Method:       "PUT",
-			TimeoutMs:    3000,
-			Headers:      initialHeaders,
-			ProtocolType: "openai",
+			ID:          uuid.New().String(),
+			Name:        "hook-to-update-headers",
+			EndpointURL: "https://example.com/update-hook",
+			TimeoutMs:   3000,
+			Headers:     initialHeaders,
+			Properties: runtimetypes.InjectionArg{
+				Name:  "initial_prop",
+				Value: "initial",
+				In:    "body",
+			},
 		}
 		require.NoError(t, s.CreateRemoteHook(ctx, hook))
 
@@ -132,13 +143,16 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	original := &runtimetypes.RemoteHook{
-		ID:           uuid.New().String(),
-		Name:         "original-hook",
-		EndpointURL:  "https://original.com",
-		Method:       "GET",
-		TimeoutMs:    3000,
-		Headers:      map[string]string{"Version": "1"},
-		ProtocolType: "openai",
+		ID:          uuid.New().String(),
+		Name:        "original-hook",
+		EndpointURL: "https://original.com",
+		TimeoutMs:   3000,
+		Headers:     map[string]string{"Version": "1"},
+		Properties: runtimetypes.InjectionArg{
+			Name:  "prop1",
+			Value: "value1",
+			In:    "body",
+		},
 	}
 
 	require.NoError(t, s.CreateRemoteHook(ctx, original))
@@ -147,10 +161,13 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 	updated := *original
 	updated.Name = "updated-hook"
 	updated.EndpointURL = "https://updated.com"
-	updated.Method = "POST"
 	updated.TimeoutMs = 10000
 	updated.Headers = map[string]string{"Version": "2"}
-	updated.ProtocolType = "langserve"
+	updated.Properties = runtimetypes.InjectionArg{
+		Name:  "prop2",
+		Value: "value2",
+		In:    "header",
+	}
 
 	err := s.UpdateRemoteHook(ctx, &updated)
 	require.NoError(t, err)
@@ -160,10 +177,9 @@ func TestUnit_RemoteHooks_Update(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, updated.Name, retrieved.Name)
 	require.Equal(t, updated.EndpointURL, retrieved.EndpointURL)
-	require.Equal(t, updated.Method, retrieved.Method)
 	require.Equal(t, updated.TimeoutMs, retrieved.TimeoutMs)
 	require.Equal(t, updated.Headers, retrieved.Headers)
-	require.Equal(t, updated.ProtocolType, retrieved.ProtocolType)
+	require.Equal(t, updated.Properties, retrieved.Properties)
 	require.True(t, retrieved.UpdatedAt.After(original.UpdatedAt), "UpdatedAt should change")
 }
 
@@ -171,12 +187,15 @@ func TestUnit_RemoteHooks_Delete(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	hook := &runtimetypes.RemoteHook{
-		ID:           uuid.New().String(),
-		Name:         "hook-to-delete",
-		EndpointURL:  "https://delete.com",
-		Method:       "DELETE",
-		TimeoutMs:    2000,
-		ProtocolType: "langserve",
+		ID:          uuid.New().String(),
+		Name:        "hook-to-delete",
+		EndpointURL: "https://delete.com",
+		TimeoutMs:   2000,
+		Properties: runtimetypes.InjectionArg{
+			Name:  "temp",
+			Value: "delete_me",
+			In:    "body",
+		},
 	}
 
 	require.NoError(t, s.CreateRemoteHook(ctx, hook))
@@ -197,28 +216,37 @@ func TestUnit_RemoteHooks_List(t *testing.T) {
 	// Create multiple hooks with slight delay
 	hooks := []*runtimetypes.RemoteHook{
 		{
-			ID:           uuid.New().String(),
-			Name:         "hook-1",
-			EndpointURL:  "https://hook1.com",
-			Method:       "POST",
-			TimeoutMs:    1000,
-			ProtocolType: "langserve",
+			ID:          uuid.New().String(),
+			Name:        "hook-1",
+			EndpointURL: "https://hook1.com",
+			TimeoutMs:   1000,
+			Properties: runtimetypes.InjectionArg{
+				Name:  "hook1_prop",
+				Value: "val1",
+				In:    "body",
+			},
 		},
 		{
-			ID:           uuid.New().String(),
-			Name:         "hook-2",
-			EndpointURL:  "https://hook2.com",
-			Method:       "PUT",
-			TimeoutMs:    2000,
-			ProtocolType: "langserve",
+			ID:          uuid.New().String(),
+			Name:        "hook-2",
+			EndpointURL: "https://hook2.com",
+			TimeoutMs:   2000,
+			Properties: runtimetypes.InjectionArg{
+				Name:  "hook2_prop",
+				Value: "val2",
+				In:    "body",
+			},
 		},
 		{
-			ID:           uuid.New().String(),
-			Name:         "hook-3",
-			EndpointURL:  "https://hook3.com",
-			Method:       "PATCH",
-			TimeoutMs:    3000,
-			ProtocolType: "langserve",
+			ID:          uuid.New().String(),
+			Name:        "hook-3",
+			EndpointURL: "https://hook3.com",
+			TimeoutMs:   3000,
+			Properties: runtimetypes.InjectionArg{
+				Name:  "hook3_prop",
+				Value: "val3",
+				In:    "body",
+			},
 		},
 	}
 
@@ -244,12 +272,15 @@ func TestUnit_RemoteHooks_ListPagination(t *testing.T) {
 	var createdHooks []*runtimetypes.RemoteHook
 	for i := range 5 {
 		hook := &runtimetypes.RemoteHook{
-			ID:           uuid.New().String(),
-			Name:         fmt.Sprintf("pagination-hook-%d", i),
-			EndpointURL:  "https://example.com",
-			Method:       "POST",
-			TimeoutMs:    1000,
-			ProtocolType: "langserve",
+			ID:          uuid.New().String(),
+			Name:        fmt.Sprintf("pagination-hook-%d", i),
+			EndpointURL: "https://example.com",
+			TimeoutMs:   1000,
+			Properties: runtimetypes.InjectionArg{
+				Name:  fmt.Sprintf("prop-%d", i),
+				Value: i,
+				In:    "body",
+			},
 		}
 		err := s.CreateRemoteHook(ctx, hook)
 		require.NoError(t, err)
@@ -303,17 +334,25 @@ func TestUnit_RemoteHooks_UniqueNameConstraint(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	hook1 := &runtimetypes.RemoteHook{
-		ID:           uuid.New().String(),
-		Name:         "unique-hook",
-		EndpointURL:  "https://unique1.com",
-		Method:       "POST",
-		TimeoutMs:    1000,
-		ProtocolType: "langserve",
+		ID:          uuid.New().String(),
+		Name:        "unique-hook",
+		EndpointURL: "https://unique1.com",
+		TimeoutMs:   1000,
+		Properties: runtimetypes.InjectionArg{
+			Name:  "unique_prop",
+			Value: "val1",
+			In:    "body",
+		},
 	}
 
 	hook2 := *hook1
 	hook2.ID = uuid.New().String()
 	hook2.EndpointURL = "https://unique2.com"
+	hook2.Properties = runtimetypes.InjectionArg{
+		Name:  "unique_prop2",
+		Value: "val2",
+		In:    "body",
+	}
 
 	// First creation should succeed
 	require.NoError(t, s.CreateRemoteHook(ctx, hook1))
@@ -339,7 +378,14 @@ func TestUnit_RemoteHooks_NotFoundCases(t *testing.T) {
 	})
 
 	t.Run("update_non_existent", func(t *testing.T) {
-		hook := &runtimetypes.RemoteHook{ID: uuid.New().String()}
+		hook := &runtimetypes.RemoteHook{
+			ID: uuid.New().String(),
+			Properties: runtimetypes.InjectionArg{
+				Name:  "temp",
+				Value: "temp",
+				In:    "body",
+			},
+		}
 		err := s.UpdateRemoteHook(ctx, hook)
 		require.Error(t, err)
 	})
@@ -354,12 +400,15 @@ func TestUnit_RemoteHooks_UpdateNonExistent(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
 	hook := &runtimetypes.RemoteHook{
-		ID:           uuid.New().String(), // Doesn't exist
-		Name:         "non-existent",
-		EndpointURL:  "https://update.com",
-		Method:       "PUT",
-		TimeoutMs:    5000,
-		ProtocolType: "langserve",
+		ID:          uuid.New().String(), // Doesn't exist
+		Name:        "non-existent",
+		EndpointURL: "https://update.com",
+		TimeoutMs:   5000,
+		Properties: runtimetypes.InjectionArg{
+			Name:  "non_existent",
+			Value: "test",
+			In:    "body",
+		},
 	}
 
 	err := s.UpdateRemoteHook(ctx, hook)
@@ -380,12 +429,15 @@ func TestUnit_RemoteHooks_ConcurrentUpdates(t *testing.T) {
 
 	// Create initial hook
 	hook := &runtimetypes.RemoteHook{
-		ID:           uuid.New().String(),
-		Name:         "concurrent-hook",
-		EndpointURL:  "https://concurrent.com",
-		Method:       "POST",
-		TimeoutMs:    1000,
-		ProtocolType: "langserve",
+		ID:          uuid.New().String(),
+		Name:        "concurrent-hook",
+		EndpointURL: "https://concurrent.com",
+		TimeoutMs:   1000,
+		Properties: runtimetypes.InjectionArg{
+			Name:  "initial",
+			Value: "value",
+			In:    "body",
+		},
 	}
 	require.NoError(t, s.CreateRemoteHook(ctx, hook))
 
@@ -425,12 +477,15 @@ func TestUnit_RemoteHooks_DeleteCascade(t *testing.T) {
 
 	// Create hook
 	hook := &runtimetypes.RemoteHook{
-		ID:           uuid.New().String(),
-		Name:         "cascade-test",
-		EndpointURL:  "https://cascade.com",
-		Method:       "POST",
-		TimeoutMs:    5000,
-		ProtocolType: "langserve",
+		ID:          uuid.New().String(),
+		Name:        "cascade-test",
+		EndpointURL: "https://cascade.com",
+		TimeoutMs:   5000,
+		Properties: runtimetypes.InjectionArg{
+			Name:  "cascade_prop",
+			Value: "test",
+			In:    "body",
+		},
 	}
 	require.NoError(t, s.CreateRemoteHook(ctx, hook))
 
@@ -439,6 +494,11 @@ func TestUnit_RemoteHooks_DeleteCascade(t *testing.T) {
 
 	newHook := *hook
 	newHook.ID = uuid.New().String()
+	newHook.Properties = runtimetypes.InjectionArg{
+		Name:  "new_cascade_prop",
+		Value: "new_test",
+		In:    "body",
+	}
 	require.NoError(t, s.CreateRemoteHook(ctx, &newHook))
 
 	// Verify new hook exists
@@ -447,57 +507,57 @@ func TestUnit_RemoteHooks_DeleteCascade(t *testing.T) {
 	require.Equal(t, newHook.ID, retrieved.ID)
 }
 
-func TestUnit_RemoteHooks_GetByName_ProtocolType(t *testing.T) {
+func TestUnit_RemoteHooks_WithProperties(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
-	// Test with different protocol types
-	protocols := []runtimetypes.HookProtocolType{
-		"openai",
-		"langserve",
-		"langserve-openai",
-		"openai-object",
-		"ollama",
-	}
-
-	for _, protocol := range protocols {
-		t.Run(string(protocol), func(t *testing.T) {
-			hook := &runtimetypes.RemoteHook{
-				ID:           uuid.New().String(),
-				Name:         fmt.Sprintf("test-hook-%s", protocol),
-				EndpointURL:  "https://example.com/hook",
-				Method:       "POST",
-				TimeoutMs:    5000,
-				ProtocolType: protocol,
-			}
-
-			err := s.CreateRemoteHook(ctx, hook)
-			require.NoError(t, err)
-
-			// Retrieve by name and verify protocol type
-			retrieved, err := s.GetRemoteHookByName(ctx, hook.Name)
-			require.NoError(t, err)
-			require.Equal(t, protocol, retrieved.ProtocolType)
-		})
-	}
-}
-
-func TestUnit_RemoteHooks_WithBodyProperties(t *testing.T) {
-	ctx, s := runtimetypes.SetupStore(t)
-
-	t.Run("create with body properties", func(t *testing.T) {
-		bodyProps := map[string]any{
-			"access_token": "secret-token",
-			"environment":  "production",
-			"version":      1.0,
+	t.Run("create with different property types", func(t *testing.T) {
+		testCases := []struct {
+			name  string
+			value any
+			in    string
+		}{
+			{"string_prop", "secret-token", "body"},
+			{"bool_prop", true, "header"},
+			{"int_prop", 42, "query"},
+			{"float_prop", 3.14, "path"},
 		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				hook := &runtimetypes.RemoteHook{
+					ID:          uuid.New().String(),
+					Name:        fmt.Sprintf("hook-with-%s", tc.name),
+					EndpointURL: "https://example.com/hook",
+					TimeoutMs:   5000,
+					Properties: runtimetypes.InjectionArg{
+						Name:  tc.name,
+						Value: tc.value,
+						In:    tc.in,
+					},
+				}
+
+				err := s.CreateRemoteHook(ctx, hook)
+				require.NoError(t, err)
+
+				retrieved, err := s.GetRemoteHook(ctx, hook.ID)
+				require.NoError(t, err)
+				require.NotNil(t, retrieved.Properties)
+				require.Equal(t, tc.name, retrieved.Properties.Name)
+				require.Equal(t, tc.value, retrieved.Properties.Value)
+				require.Equal(t, tc.in, retrieved.Properties.In)
+			})
+		}
+	})
+
+	t.Run("create with nil properties", func(t *testing.T) {
+		// Note: Properties is not a pointer, so it can't be nil.
+		// Instead, we can test with zero values.
 		hook := &runtimetypes.RemoteHook{
-			ID:             uuid.New().String(),
-			Name:           "hook-with-body-props",
-			EndpointURL:    "https://example.com/hook",
-			Method:         "POST",
-			TimeoutMs:      5000,
-			BodyProperties: bodyProps,
-			ProtocolType:   "openai",
+			ID:          uuid.New().String(),
+			Name:        "hook-with-zero-props",
+			EndpointURL: "https://example.com/zero-hook",
+			TimeoutMs:   5000,
+			Properties:  runtimetypes.InjectionArg{}, // Zero value
 		}
 
 		err := s.CreateRemoteHook(ctx, hook)
@@ -505,57 +565,34 @@ func TestUnit_RemoteHooks_WithBodyProperties(t *testing.T) {
 
 		retrieved, err := s.GetRemoteHook(ctx, hook.ID)
 		require.NoError(t, err)
-		require.NotNil(t, retrieved.BodyProperties)
-		require.Equal(t, bodyProps, retrieved.BodyProperties)
+		require.Equal(t, runtimetypes.InjectionArg{}, retrieved.Properties)
 	})
 
-	t.Run("create with nil body properties", func(t *testing.T) {
+	t.Run("update properties", func(t *testing.T) {
 		hook := &runtimetypes.RemoteHook{
-			ID:           uuid.New().String(),
-			Name:         "hook-with-nil-body-props",
-			EndpointURL:  "https://example.com/nil-hook",
-			Method:       "POST",
-			TimeoutMs:    5000,
-			ProtocolType: "openai",
-		}
-
-		err := s.CreateRemoteHook(ctx, hook)
-		require.NoError(t, err)
-
-		retrieved, err := s.GetRemoteHook(ctx, hook.ID)
-		require.NoError(t, err)
-		require.Nil(t, retrieved.BodyProperties)
-	})
-
-	t.Run("update body properties", func(t *testing.T) {
-		initialProps := map[string]any{"initial": "value"}
-		hook := &runtimetypes.RemoteHook{
-			ID:             uuid.New().String(),
-			Name:           "hook-to-update-body-props",
-			EndpointURL:    "https://example.com/update-hook",
-			Method:         "PUT",
-			TimeoutMs:      3000,
-			BodyProperties: initialProps,
-			ProtocolType:   "openai",
+			ID:          uuid.New().String(),
+			Name:        "hook-to-update-props",
+			EndpointURL: "https://example.com/update-hook",
+			TimeoutMs:   3000,
+			Properties: runtimetypes.InjectionArg{
+				Name:  "initial",
+				Value: "old_value",
+				In:    "body",
+			},
 		}
 		require.NoError(t, s.CreateRemoteHook(ctx, hook))
 
-		updatedProps := map[string]any{"updated": "new-value", "number": 42}
-		hook.BodyProperties = updatedProps
+		updatedProps := runtimetypes.InjectionArg{
+			Name:  "updated",
+			Value: "new_value",
+			In:    "header",
+		}
+		hook.Properties = updatedProps
 		err := s.UpdateRemoteHook(ctx, hook)
 		require.NoError(t, err)
 
 		retrieved, err := s.GetRemoteHook(ctx, hook.ID)
 		require.NoError(t, err)
-		require.Equal(t, updatedProps, retrieved.BodyProperties)
-
-		// Test updating to nil
-		hook.BodyProperties = nil
-		err = s.UpdateRemoteHook(ctx, hook)
-		require.NoError(t, err)
-
-		retrieved, err = s.GetRemoteHook(ctx, hook.ID)
-		require.NoError(t, err)
-		require.Nil(t, retrieved.BodyProperties)
+		require.Equal(t, updatedProps, retrieved.Properties)
 	})
 }

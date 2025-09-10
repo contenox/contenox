@@ -80,18 +80,15 @@ CREATE TABLE IF NOT EXISTS remote_hooks (
     id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     endpoint_url VARCHAR(512) NOT NULL,
-    method VARCHAR(10) NOT NULL DEFAULT 'POST',
     timeout_ms INT NOT NULL DEFAULT 5000,
     headers JSONB,
-    body_properties BYTEA,
-    protocol_type TEXT NOT NULL,
+    properties BYTEA,
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
 
 ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS body_properties BYTEA;
 ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS headers JSONB;
-ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS protocol_type TEXT NOT NULL;
 
 
 CREATE INDEX IF NOT EXISTS idx_job_queue_v2_task_type ON job_queue_v2 USING hash(task_type);

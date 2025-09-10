@@ -7,6 +7,7 @@ import (
 
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtimetypes"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // activityTrackerDecorator implementation
@@ -16,7 +17,7 @@ type activityTrackerDecorator struct {
 }
 
 // GetSchemasForSupportedHooks wraps the underlying service call with activity tracking.
-func (d *activityTrackerDecorator) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
+func (d *activityTrackerDecorator) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,
 		"get_schemas",
@@ -50,13 +51,11 @@ func (d *activityTrackerDecorator) Create(ctx context.Context, hook *runtimetype
 			ID          string `json:"id"`
 			Name        string `json:"name"`
 			EndpointURL string `json:"endpointUrl"`
-			Method      string `json:"method"`
 			TimeoutMs   int    `json:"timeoutMs"`
 		}{
 			ID:          hook.ID,
 			Name:        hook.Name,
 			EndpointURL: hook.EndpointURL,
-			Method:      hook.Method,
 			TimeoutMs:   hook.TimeoutMs,
 		}
 		reportChangeFn(hook.ID, hookData)
@@ -107,13 +106,11 @@ func (d *activityTrackerDecorator) Update(ctx context.Context, hook *runtimetype
 			ID          string `json:"id"`
 			Name        string `json:"name"`
 			EndpointURL string `json:"endpointUrl"`
-			Method      string `json:"method"`
 			TimeoutMs   int    `json:"timeoutMs"`
 		}{
 			ID:          hook.ID,
 			Name:        hook.Name,
 			EndpointURL: hook.EndpointURL,
-			Method:      hook.Method,
 			TimeoutMs:   hook.TimeoutMs,
 		}
 		reportChangeFn(hook.ID, hookData)

@@ -10,6 +10,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/taskengine"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 var (
@@ -24,7 +25,7 @@ type Service interface {
 	Update(ctx context.Context, hook *runtimetypes.RemoteHook) error
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.RemoteHook, error)
-	GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error)
+	GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error)
 }
 
 type service struct {
@@ -41,7 +42,7 @@ func New(dbInstance libdb.DBManager, hookRegistry taskengine.HookProvider) Servi
 }
 
 // GetSchemasForSupportedHooks delegates the call to the hook registry.
-func (s *service) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
+func (s *service) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error) {
 	if s.hookRegistry == nil {
 		return nil, errors.New("hook registry is not configured for this service")
 	}
@@ -99,8 +100,6 @@ func validate(hook *runtimetypes.RemoteHook) error {
 		return fmt.Errorf("%w %w: name is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	case hook.EndpointURL == "":
 		return fmt.Errorf("%w %w: endpoint URL is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
-	case hook.Method == "":
-		return fmt.Errorf("%w %w: HTTP method is required", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	case hook.TimeoutMs <= 0:
 		return fmt.Errorf("%w %w: timeout must be positive", ErrInvalidHook, apiframework.ErrUnprocessableEntity)
 	}

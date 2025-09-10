@@ -243,9 +243,11 @@ type LLMExecutionConfig struct {
 // HookCall represents an external integration or side-effect triggered during a task.
 // Hooks allow tasks to interact with external systems (e.g., "send_email", "update_db").
 type HookCall struct {
-	// Name is the registered hook name to invoke (e.g., "send_email").
-	Name string `yaml:"name" json:"name" example:"slack_notification"`
+	// Name is the registered hook-service (e.g., "send_email").
+	Name string `yaml:"name" json:"name" example:"slack"`
 
+	// ToolName is the name of the tool to invoke (e.g., "send_slack_notification").
+	ToolName string `yaml:"tool_name" json:"tool_name" example:"send_slack_notification"`
 	// Args are key-value pairs to parameterize the hook call.
 	// Example: {"to": "user@example.com", "subject": "Notification"}
 	Args map[string]string `yaml:"args" json:"args" example:"{\"channel\": \"#alerts\", \"message\": \"Task completed successfully\"}"`

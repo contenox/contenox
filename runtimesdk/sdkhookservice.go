@@ -13,6 +13,7 @@ import (
 	"github.com/contenox/runtime/hookproviderservice"
 	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/runtimetypes"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // HTTPRemoteHookService implements the hookproviderservice.Service interface
@@ -40,7 +41,8 @@ func NewHTTPRemoteHookService(baseURL, token string, client *http.Client) hookpr
 }
 
 // GetSchemasForSupportedHooks implements hookproviderservice.Service.GetSchemasForSupportedHooks.
-func (s *HTTPRemoteHookService) GetSchemasForSupportedHooks(ctx context.Context) (map[string]map[string]interface{}, error) {
+// GetSchemasForSupportedHooks implements hookproviderservice.Service.GetSchemasForSupportedHooks.
+func (s *HTTPRemoteHookService) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error) {
 	reqUrl := s.baseURL + "/hooks/schemas"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
@@ -62,7 +64,7 @@ func (s *HTTPRemoteHookService) GetSchemasForSupportedHooks(ctx context.Context)
 		return nil, apiframework.HandleAPIError(resp)
 	}
 
-	var schemas map[string]map[string]interface{}
+	var schemas map[string]*openapi3.T
 	if err := json.NewDecoder(resp.Body).Decode(&schemas); err != nil {
 		return nil, err
 	}

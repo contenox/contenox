@@ -7,24 +7,19 @@ from helpers import assert_status_code
 VALID_HOOK = {
     "name": "test-hook",
     "endpointUrl": "https://example.com/webhook",
-    "method": "POST",
     "timeoutMs": 5000,
-    "protocolType": "openai"
 }
 
 VALID_HOOK_2 = {
     "name": "test-hook_2",
     "endpointUrl": "https://example.com/webhook",
-    "method": "POST",
     "timeoutMs": 5000,
-    "protocolType": "openai"
 }
 
 
 INVALID_HOOKS = [
     ({**VALID_HOOK, "name": ""}, "empty name"),
     ({**VALID_HOOK, "endpointUrl": ""}, "empty endpointUrl"),
-    ({**VALID_HOOK, "method": ""}, "empty method"),
     ({**VALID_HOOK, "timeoutMs": 0}, "zero timeout"),
     ({**VALID_HOOK, "timeoutMs": -100}, "negative timeout"),
 ]
@@ -50,7 +45,6 @@ def test_create_remote_hook_success(base_url):
     assert "id" in data, "Response should contain hook ID"
     assert data["name"] == payload["name"], "Name should match"
     assert data["endpointUrl"] == payload["endpointUrl"], "Endpoint URL should match"
-    assert data["method"] == payload["method"], "Method should match"
     assert data["timeoutMs"] == payload["timeoutMs"], "Timeout should match"
 
 @pytest.mark.parametrize("payload,description", INVALID_HOOKS)
@@ -114,11 +108,8 @@ def test_update_remote_hook(base_url):
     update_payload = {
         "name": "updated-name",
         "endpointUrl": "https://new.example.com/webhook",
-        "method": "PUT",
         "timeoutMs": 10000,
-        "protocolType": "ollama"
     }
-
     update_response = requests.put(update_url, json=update_payload)
     assert_status_code(update_response, 200)
 
@@ -127,9 +118,7 @@ def test_update_remote_hook(base_url):
     data = get_response.json()
     assert data["name"] == "updated-name", "Name should be updated"
     assert data["endpointUrl"] == update_payload["endpointUrl"], "Endpoint should be updated"
-    assert data["method"] == "PUT", "Method should be updated"
     assert data["timeoutMs"] == 10000, "Timeout should be updated"
-    assert data["protocolType"] == "ollama", "Protocol type should be updated"
 
 def test_delete_remote_hook(base_url):
     """Test deleting a remote hook"""

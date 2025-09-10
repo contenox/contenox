@@ -30,7 +30,7 @@ type remoteHookService struct {
 	service hookproviderservice.Service
 }
 
-// Retrieves the JSON schemas for all supported hook types.
+// Retrieves the JSON openAPI schemas for all supported hook types.
 func (s *remoteHookService) getSchemas(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -40,7 +40,7 @@ func (s *remoteHookService) getSchemas(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, schemas) // @response map[string]map[string]interface{}
+	_ = serverops.Encode(w, r, http.StatusOK, schemas) // @response any
 }
 
 // Creates a new remote hook configuration.
