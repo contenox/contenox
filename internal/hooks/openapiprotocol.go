@@ -117,16 +117,16 @@ func (p *OpenAPIToolProtocol) ExecuteTool(
 	httpClient *http.Client,
 	injectParams map[string]ParamArg,
 	toolCall taskengine.ToolCall,
-) (interface{}, error) {
+) (interface{}, taskengine.DataType, error) {
 	details, err := p.findOperationDetails(ctx, endpointURL, httpClient, toolCall.Function.Name)
 	if err != nil {
-		return nil, err
+		return nil, taskengine.DataTypeAny, err
 	}
 
 	// Consolidate arguments, with injectParams taking priority.
 	finalArgs := make(map[string]interface{})
 	if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &finalArgs); err != nil {
-		return nil, fmt.Errorf("failed to parse tool arguments: %w", err)
+		return nil, taskengine.DataTypeAny, fmt.Errorf("failed to parse tool arguments: %w", err)
 	}
 	for _, p := range injectParams {
 		finalArgs[p.Name] = p.Value
@@ -178,7 +178,7 @@ func (p *OpenAPIToolProtocol) ExecuteTool(
 		if len(finalArgs) > 0 {
 			bodyBytes, err := json.Marshal(finalArgs)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal request body: %w", err)
+				return nil, taskengine.DataTypeAny, fmt.Errorf("failed to marshal request body: %w", err)
 			}
 			reqBody = bytes.NewBuffer(bodyBytes)
 		}
@@ -186,7 +186,7 @@ func (p *OpenAPIToolProtocol) ExecuteTool(
 
 	req, err := http.NewRequestWithContext(ctx, strings.ToUpper(details.Method), finalURL, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+		return nil, taskengine.DataTypeAny, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 
 	req.Header = headers
@@ -197,35 +197,35 @@ func (p *OpenAPIToolProtocol) ExecuteTool(
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute tool request: %w", err)
+		return nil, taskengine.DataTypeAny, fmt.Errorf("failed to execute tool request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		responseBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseBody))
+		return nil, taskengine.DataTypeAny, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseBody))
 	}
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, taskengine.DataTypeAny, fmt.Errorf("failed to read response body: %w", err)
 	}
 	if len(responseBody) == 0 {
-		return nil, nil
+		return nil, taskengine.DataTypeAny, nil
 	}
 
 	// Return structured JSON if possible, otherwise fall back to a raw string.
 	if strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
 		var result interface{}
 		if err := json.Unmarshal(responseBody, &result); err != nil {
-			return nil, fmt.Errorf("failed to parse JSON response: %w", err)
+			return nil, taskengine.DataTypeAny, fmt.Errorf("failed to parse JSON response: %w", err)
 		}
-		return result, nil
+		return result, taskengine.DataTypeJSON, nil
 	}
-	return string(responseBody), nil
+	return string(responseBody), taskengine.DataTypeString, nil
 }
 
-func (p *OpenAPIToolProtocol) FetchTools(ctx context.Context, endpointURL string, httpClient *http.Client) ([]taskengine.Tool, error) {
+func (p *OpenAPIToolProtocol) FetchTools(ctx context.Context, endpointURL string, injectParams map[string]ParamArg, httpClient *http.Client) ([]taskengine.Tool, error) {
 	schema, err := p.FetchSchema(ctx, endpointURL, httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch schema for tools: %w", err)
@@ -266,7 +266,7 @@ func (p *OpenAPIToolProtocol) FetchTools(ctx context.Context, endpointURL string
 			}
 
 			// --- 🧩 STEP 3: Build parameters schema ---
-			parameters, err := p.buildParametersSchema(pathItem, operation, method)
+			parameters, err := p.buildParametersSchema(pathItem, operation, method, injectParams)
 			if err != nil {
 				continue
 			}
@@ -310,123 +310,117 @@ func (p *OpenAPIToolProtocol) extractToolName(path, method string, operation *op
 	return fmt.Sprintf("%s_%s", baseName, strings.ToLower(method))
 }
 
-func (p *OpenAPIToolProtocol) buildParametersSchema(pathItem *openapi3.PathItem, operation *openapi3.Operation, method string) (map[string]interface{}, error) {
+func (p *OpenAPIToolProtocol) buildParametersSchema(
+	pathItem *openapi3.PathItem,
+	operation *openapi3.Operation,
+	method string,
+	injectParams map[string]ParamArg,
+) (map[string]interface{}, error) {
 	properties := make(map[string]interface{})
 	required := make([]string, 0)
 
-	// Helper to add a parameter schema to properties/required
-	addParam := func(paramRef *openapi3.ParameterRef, isRequiredOverride bool) error {
+	// Helper to map an OpenAPI 'in' string to our ArgLocation enum.
+	mapOA3LocationToArgLocation := func(in string) ArgLocation {
+		switch in {
+		case "query":
+			return ArgLocationQuery
+		case "path":
+			return ArgLocationPath
+		case "header":
+			return ArgLocationHeader
+		default:
+			return -1 // Represents an unsupported or unknown location.
+		}
+	}
+
+	// 1. Process Path and Query Parameters
+	// Consolidate all parameters defined at the path and operation level.
+	allParams := append(openapi3.Parameters{}, pathItem.Parameters...)
+	allParams = append(allParams, operation.Parameters...)
+
+	for _, paramRef := range allParams {
 		if paramRef == nil || paramRef.Value == nil {
-			return nil
+			continue
 		}
 		param := paramRef.Value
 
-		name := param.Name
-		if name == "" {
-			return nil
+		// Check if the parameter should be hidden because it will be injected.
+		if injectedParam, ok := injectParams[param.Name]; ok {
+			paramLocation := mapOA3LocationToArgLocation(param.In)
+			if injectedParam.In == paramLocation {
+				continue // Skip: This parameter is injected by the system.
+			}
 		}
 
-		// Only support path + query for now
+		// Only expose 'path' and 'query' parameters to the LLM.
 		if param.In != "path" && param.In != "query" {
-			return nil
+			continue
 		}
 
-		schemaRef := param.Schema
-		if schemaRef == nil || schemaRef.Value == nil {
-			return nil
-		}
-
-		schemaJSON, err := schemaRef.Value.MarshalJSON()
-		if err != nil {
-			return err
-		}
-
-		var propSchema map[string]interface{}
-		if err := json.Unmarshal(schemaJSON, &propSchema); err != nil {
-			return err
-		}
-
-		properties[name] = propSchema
-
-		if isRequiredOverride || param.Required {
-			required = append(required, name)
-		}
-
-		return nil
-	}
-
-	// Add path parameters from PathItem (shared across operations)
-	for _, paramRef := range pathItem.Parameters {
-		if err := addParam(paramRef, true); err != nil { // path params always required
-			return nil, err
-		}
-	}
-
-	// Add operation-specific parameters
-	for _, paramRef := range operation.Parameters {
-		if err := addParam(paramRef, false); err != nil {
-			return nil, err
-		}
-	}
-
-	// Add request body (only for POST/PUT/PATCH)
-	if operation.RequestBody != nil && (method == "POST" || method == "PUT" || method == "PATCH") {
-		content := operation.RequestBody.Value.Content
-		if jsonContent, ok := content["application/json"]; ok && jsonContent.Schema != nil {
-			schema := jsonContent.Schema.Value
-
-			// If it's an object, lift its properties into the top-level schema
-			if schema.Type.Is("object") && len(schema.Properties) > 0 {
-				for propName, propSchemaRef := range schema.Properties {
-					if propSchemaRef != nil && propSchemaRef.Value != nil {
-						schemaJSON, err := propSchemaRef.Value.MarshalJSON()
-						if err != nil {
-							continue
-						}
-						var propSchema map[string]interface{}
-						if err := json.Unmarshal(schemaJSON, &propSchema); err != nil {
-							continue
-						}
-						properties[propName] = propSchema
-
-						if schema.Required != nil {
-							if slices.Contains(schema.Required, propName) {
-								required = append(required, propName)
-							}
-						}
-					}
-				}
-			} else {
-				// Not an object? Just embed the whole schema under a "body" property
-				schemaJSON, err := schema.MarshalJSON()
-				if err != nil {
-					return nil, err
-				}
-				var bodySchema map[string]interface{}
-				if err := json.Unmarshal(schemaJSON, &bodySchema); err != nil {
-					return nil, err
-				}
-				properties["body"] = bodySchema
-				if operation.RequestBody.Value.Required {
-					required = append(required, "body")
+		// Add the parameter's schema to the properties map.
+		if param.Schema != nil && param.Schema.Value != nil {
+			schemaJSON, err := param.Schema.Value.MarshalJSON()
+			if err != nil {
+				// Optionally log the error for debugging.
+				continue
+			}
+			var propSchema map[string]interface{}
+			if err := json.Unmarshal(schemaJSON, &propSchema); err == nil {
+				properties[param.Name] = propSchema
+				if param.Required {
+					required = append(required, param.Name)
 				}
 			}
 		}
 	}
 
-	// If no properties, return nil (or empty schema)
+	// 2. Process Request Body for methods that support it.
+	if operation.RequestBody != nil && slices.Contains([]string{"POST", "PUT", "PATCH"}, strings.ToUpper(method)) {
+		if content := operation.RequestBody.Value.Content; content != nil {
+			if jsonContent, ok := content["application/json"]; ok && jsonContent.Schema != nil {
+				schema := jsonContent.Schema.Value
+
+				// If the body is a single object, lift its properties to the top level.
+				if schema.Type.Is("object") {
+					for propName, propSchemaRef := range schema.Properties {
+						// Check if this body property should be hidden.
+						if injectedParam, ok := injectParams[propName]; ok && injectedParam.In == ArgLocationBody {
+							continue // Skip: This property is injected by the system.
+						}
+
+						if propSchemaRef != nil && propSchemaRef.Value != nil {
+							schemaJSON, err := propSchemaRef.Value.MarshalJSON()
+							if err != nil {
+								continue
+							}
+							var propSchema map[string]interface{}
+							if err := json.Unmarshal(schemaJSON, &propSchema); err == nil {
+								properties[propName] = propSchema
+							}
+						}
+					}
+					// Add any required properties from the body schema.
+					required = append(required, schema.Required...)
+				}
+			}
+		}
+	}
+
+	// If no parameters are exposed to the LLM, return nil.
 	if len(properties) == 0 {
 		return nil, nil
 	}
 
-	// Construct final schema
+	// 3. Construct the Final JSON Schema for the LLM
 	finalSchema := map[string]interface{}{
 		"type":       "object",
 		"properties": properties,
 	}
 
 	if len(required) > 0 {
-		finalSchema["required"] = required
+		// Remove duplicates from the required list before adding it to the schema.
+		slices.Sort(required)
+		finalSchema["required"] = slices.Compact(required)
 	}
 
 	return finalSchema, nil

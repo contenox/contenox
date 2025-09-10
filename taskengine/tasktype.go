@@ -44,6 +44,9 @@ const (
 	// Requires DataTypeChatHistory input and ExecuteConfig configuration.
 	HandleModelExecution TaskHandler = "model_execution"
 
+	// HandleExecuteToolCalls executes specified tool calls on chat history input.
+	HandleExecuteToolCalls TaskHandler = "execute_tool_calls"
+
 	// HandleParseTransition attempts to parse transition commands (e.g., "/command").
 	// Strips transition prefix if present in input.
 	HandleParseTransition TaskHandler = "parse_transition"
@@ -237,6 +240,7 @@ type LLMExecutionConfig struct {
 	Providers        []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
 	Temperature      float32  `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
 	Hooks            []string `yaml:"hooks,omitempty" json:"hooks,omitempty" example:"[\"slack_notification\", \"email_notification\"]"`
+	HideTools        []string `yaml:"hide_tools,omitempty" json:"hide_tools,omitempty" example:"[\"tool1\", \"hook_name1.tool1\"]"`
 	PassClientsTools bool     `yaml:"pass_clients_tools" json:"pass_clients_tools"`
 }
 
@@ -411,6 +415,8 @@ type Message struct {
 	Role string `json:"role" example:"user"`
 	// Content is the content of the message.
 	Content string `json:"content,omitempty" example:"What is the capital of France?"`
+	// ToolCallID is the ID of the tool call associated with the message.
+	ToolCallID string `json:"tool_call_id,omitempty"`
 	// CallTools is the tool call of the message sender.
 	CallTools []ToolCall `json:"callTools,omitempty"`
 	// Timestamp is the time the message was sent.

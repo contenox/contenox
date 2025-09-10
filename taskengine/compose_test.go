@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/contenox/runtime/internal/hooks"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskengine"
 	"github.com/stretchr/testify/assert"
@@ -462,6 +463,7 @@ func setupTestEnv(exec taskengine.TaskExecutor) taskengine.EnvExecutor {
 		tracker,
 		exec,
 		inspector,
+		hooks.NewMockHookRegistry(),
 	)
 	return env
 }

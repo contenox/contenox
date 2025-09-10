@@ -25,11 +25,11 @@ func (m *SimpleRepo) Exec(
 	startingTime time.Time,
 	input any,
 	args *taskengine.HookCall,
-) (any, error) {
+) (any, taskengine.DataType, error) {
 	if hook, ok := m.hooks[args.Name]; ok {
 		return hook.Exec(ctx, startingTime, input, args)
 	}
-	return nil, fmt.Errorf("unknown hook type: %s", args.Name)
+	return nil, taskengine.DataTypeAny, fmt.Errorf("unknown hook type: %s", args.Name)
 }
 
 // Supports returns a list of all hook names registered in the internal map.

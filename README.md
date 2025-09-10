@@ -52,7 +52,7 @@ echo "Starting services with 'docker compose up -d'..."
 docker compose up -d
 echo "Services are starting up."
 
-# Configure the runtime with your model preferences
+# Configure the runtime with the preferenced models
 # the bootstraping script works only for ollama models/backends
 # for to use other providers refer to the API-Spec.
 ./scripts/bootstrap.sh $EMBED_MODEL $TASK_MODEL $CHAT_MODEL
@@ -136,6 +136,7 @@ docker logs contenox-runtime-kernel
 ### State Machine Engine
 
   * **Conditional Branching**: Route execution based on LLM outputs
+  * **Agentic Capabilities**: Create autonomous agents and LLM-Call Loops to plan and execute actions using external tools.
   * **Built-in Handlers**:
       * `condition_key`: Validate and route responses
       * `parse_number`: Extract numerical values
@@ -144,7 +145,8 @@ docker logs contenox-runtime-kernel
       * `embedding`: Embedding generation
       * `model_execution`: Model execution on a chat history
       * `hook`: Calls a user-defined hook pointing to an external service
-  * **Context Preservation**: Automatic input/output passing between steps
+  * **Context Preservation**: Automatic input/output passing between states
+  * **Data Composition**: Merge and manipulate data between states, enabling sophisticated data pipelines.
   * **Multi-Model Support**: Define preferred models for each task chain
   * **Retry and Timeout**: Configure task-level retries and timeouts for robust workflows
 
@@ -192,21 +194,21 @@ graph TD
 
 -----
 
-## 🧩 Extensibility
+#### 🧩 Extensibility with Hooks
 
-### Custom Hooks
+Hooks are the bridge between AI workflows and any external system. They allow agents to fetch real-time information and perform meaningful actions. The runtime can connect to any external server that exposes its capabilities via a standard OpenAPI v3 schema.
 
-Hooks are external servers that can be called from within task chains when registered. They allow interaction with systems and data outside of the runtime and task chains themselves.
+  * **Automatic Tool Discovery**: Simply register a remote hook with its OpenAPI endpoint (`/openapi.json`). The runtime will automatically parse the schema and make every valid API operation available as a callable tool for the LLMs.
+  * **Secure Credential Injection**: Securely manage API keys, tokens, and other configuration. Configure hooks to automatically inject headers (`Authorization: Bearer ...`) or other properties into every API call, keeping them hidden from the LLM and the workflow definition.
+  * **Scoping & Controlling**: Control what Tools are available to the LLMs in which state and branch of the task-chain.
 
-The runtime communicates with hooks using OpenAI, LangChain or Ollama-compatible function call formats, making it easy to integrate with a wide range of existing tool servers.
-
-[🔗 See Hook Documentation](./docs/hooks.md)
+[🔗 **Deep Dive: See the Advanced Hooks Guide**](https://www.google.com/search?q=./docs/hooks.md)
 
 -----
 
 ## 📘 API Documentation
 
-The full API surface is thoroughly documented and defined in the OpenAPI format, making it easy to integrate with other tools. You can find more details here:
+The full API surface is thoroughly documented and defined in the OpenAPI format, making it easy to integrate with other tools. More details here:
 
   * 🔗 [API Reference Documentation](./docs/api-reference.md)
   * 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)

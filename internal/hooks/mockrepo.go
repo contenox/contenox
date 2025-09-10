@@ -47,7 +47,7 @@ func (m *MockHookRepo) Exec(
 	startingTime time.Time,
 	input any,
 	args *taskengine.HookCall,
-) (any, error) {
+) (any, taskengine.DataType, error) {
 	m.callCount++
 
 	// Record call details with the new simplified struct.
@@ -77,7 +77,7 @@ func (m *MockHookRepo) Exec(
 	}
 
 	// Return the direct output and error, matching the new interface.
-	return resp.Output, err
+	return resp.Output, taskengine.DataTypeAny, err
 }
 
 // Reset clears all recorded calls and resets counters

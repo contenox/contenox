@@ -599,7 +599,7 @@ func (p *Playground) GetTasksEnvService(ctx context.Context) (execservice.TasksE
 		return nil, fmt.Errorf("failed to create task engine exec: %w", err)
 	}
 
-	env, err := taskengine.NewEnv(ctx, libtracker.NewLogActivityTracker(slog.Default()), exec, taskengine.NewSimpleInspector())
+	env, err := taskengine.NewEnv(ctx, libtracker.NewLogActivityTracker(slog.Default()), exec, taskengine.NewSimpleInspector(), p.hookrepo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task engine env: %w", err)
 	}

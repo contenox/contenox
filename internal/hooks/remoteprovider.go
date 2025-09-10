@@ -44,7 +44,7 @@ func (p *PersistentRepo) Exec(
 	startingTime time.Time,
 	input any,
 	args *taskengine.HookCall,
-) (any, error) {
+) (any, taskengine.DataType, error) {
 	// Check local hooks first
 	if hook, ok := p.localHooks[args.Name]; ok {
 		return hook.Exec(ctx, startingTime, input, args)
@@ -54,7 +54,7 @@ func (p *PersistentRepo) Exec(
 	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
 	remoteHook, err := store.GetRemoteHookByName(ctx, args.Name)
 	if err != nil {
-		return nil, fmt.Errorf("unknown hook: %s", args.Name)
+		return nil, taskengine.DataTypeAny, fmt.Errorf("unknown hook: %s", args.Name)
 	}
 
 	return p.execRemoteHook(ctx, remoteHook, input, args)
@@ -65,10 +65,10 @@ func (p *PersistentRepo) execRemoteHook(
 	hook *runtimetypes.RemoteHook,
 	input any,
 	args *taskengine.HookCall,
-) (any, error) {
+) (any, taskengine.DataType, error) {
 	// Validate hook
 	if hook.TimeoutMs <= 0 {
-		return nil, fmt.Errorf("timeout must be positive: %dms", hook.TimeoutMs)
+		return nil, taskengine.DataTypeAny, fmt.Errorf("timeout must be positive: %dms", hook.TimeoutMs)
 	}
 
 	// Build injection map from hook.Properties
@@ -105,7 +105,7 @@ func (p *PersistentRepo) execRemoteHook(
 	// Serialize arguments safely
 	argsJSON, err := safeJSONString(argumentsMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare tool arguments: %w", err)
+		return nil, taskengine.DataTypeAny, fmt.Errorf("failed to prepare tool arguments: %w", err)
 	}
 	toolCall.Function.Arguments = argsJSON
 
@@ -114,7 +114,7 @@ func (p *PersistentRepo) execRemoteHook(
 	defer cancel()
 
 	// Execute via OpenAPI protocol
-	result, err := p.toolProtocol.ExecuteTool(
+	result, dataType, err := p.toolProtocol.ExecuteTool(
 		timeoutCtx,
 		hook.EndpointURL,
 		p.httpClient,
@@ -122,10 +122,10 @@ func (p *PersistentRepo) execRemoteHook(
 		toolCall,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("execution failed for hook '%s': %w", hook.Name, err)
+		return nil, dataType, fmt.Errorf("execution failed for hook '%s': %w", hook.Name, err)
 	}
 
-	return result, nil
+	return result, dataType, nil
 }
 
 // GetToolsForHookByName returns the list of tools exposed by the remote hook.
@@ -139,8 +139,23 @@ func (p *PersistentRepo) GetToolsForHookByName(ctx context.Context, name string)
 	if err != nil {
 		return nil, fmt.Errorf("unknown hook: %s", name)
 	}
-
-	tools, err := p.toolProtocol.FetchTools(ctx, remoteHook.EndpointURL, p.httpClient)
+	injectParams := make(map[string]ParamArg)
+	if remoteHook.Properties.Name != "" {
+		loc := p.mapLocation(remoteHook.Properties.In)
+		injectParams[remoteHook.Properties.Name] = ParamArg{
+			Name:  remoteHook.Properties.Name,
+			Value: fmt.Sprintf("%v", remoteHook.Properties.Value),
+			In:    loc,
+		}
+	}
+	for k, v := range remoteHook.Headers {
+		injectParams[k] = ParamArg{
+			Name:  k,
+			Value: fmt.Sprintf("%v", v),
+			In:    ArgLocationHeader,
+		}
+	}
+	tools, err := p.toolProtocol.FetchTools(ctx, remoteHook.EndpointURL, injectParams, p.httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch tools for hook '%s': %w", name, err)
 	}

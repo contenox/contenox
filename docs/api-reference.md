@@ -1839,8 +1839,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -2108,8 +2108,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -2258,8 +2258,8 @@ Lists all configured external providers with pagination support.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -2766,6 +2766,7 @@ Lists all task chain definitions with pagination.
       },
       "description": "Validates user input meets quality requirements",
       "execute_config": {
+        "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
         "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
         "model": "mistral:instruct",
         "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -2853,6 +2854,7 @@ Task chains define workflows with conditional branches, external hooks, and capt
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
       "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -2911,6 +2913,7 @@ Task chains define workflows with conditional branches, external hooks, and capt
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
       "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -3049,6 +3052,7 @@ Retrieves a specific task chain by ID.
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
       "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -3133,6 +3137,7 @@ Updates an existing task chain definition.
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
       "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -3192,6 +3197,7 @@ Updates an existing task chain definition.
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
       "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -3281,6 +3287,7 @@ If groups are enabled, models and backends not assigned to any group will be com
       },
       "description": "Validates user input meets quality requirements",
       "execute_config": {
+        "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
         "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
         "model": "mistral:instruct",
         "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -3705,6 +3712,7 @@ X-API-Key
       },
       "description": "Validates user input meets quality requirements",
       "execute_config": {
+        "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
         "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
         "model": "mistral:instruct",
         "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -3998,6 +4006,7 @@ X-API-Key
       },
       "description": "Validates user input meets quality requirements",
       "execute_config": {
+        "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
         "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
         "model": "mistral:instruct",
         "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -4577,6 +4586,7 @@ X-API-Key
 
 ```json
 {
+  "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
   "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
   "model": "mistral:instruct",
   "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -4592,6 +4602,7 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
+|hide_tools|[string]|false|none|none|
 |hooks|[string]|false|none|none|
 |model|string|true|none|none|
 |models|[string]|false|none|none|
@@ -4690,6 +4701,7 @@ X-API-Key
     },
     "description": "Validates user input meets quality requirements",
     "execute_config": {
+      "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
       "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
       "model": "mistral:instruct",
       "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",
@@ -4752,6 +4764,7 @@ X-API-Key
   },
   "description": "Validates user input meets quality requirements",
   "execute_config": {
+    "hide_tools": "[\\\"tool1\\\", \\\"hook_name1.tool1\\\"]",
     "hooks": "[\\\"slack_notification\\\", \\\"email_notification\\\"]",
     "model": "mistral:instruct",
     "models": "[\\\"gpt-4\\\", \\\"gpt-3.5-turbo\\\"]",

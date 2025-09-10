@@ -2,6 +2,7 @@ package taskengine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -29,10 +30,11 @@ type TaskExecutor interface {
 	// - ctx: Context for cancellation and timeouts
 	// - startingTime: Chain start time for consistent timing
 	// - ctxLength: Token context length limit for LLM operations
+	// - chainContext: Immutable context of the chain
 	// - currentTask: The task definition to execute
 	// - input: Task input data
 	// - dataType: Type of the input data
-	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, clientTools []Tool, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error)
+	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, chainContext *ChainContext, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error)
 }
 
 // SimpleExec is a basic implementation of TaskExecutor.
@@ -246,7 +248,7 @@ func (exe *SimpleExec) score(ctx context.Context, systemInstruction string, llmC
 }
 
 // TaskExec dispatches task execution based on the task type.
-func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time, ctxLength int, clientTools []Tool, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error) {
+func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time, ctxLength int, chainContext *ChainContext, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error) {
 	var transitionEval string
 	var taskErr error
 	var output any = input
@@ -448,9 +450,78 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			chatHistory,
 			ctxLength,
 			finalExecConfig,
-			clientTools,
+			chainContext.ClientTools,
+			chainContext.Tools,
 		)
 
+	case HandleExecuteToolCalls:
+		if dataType != DataTypeChatHistory {
+			taskErr = fmt.Errorf("handler '%s' requires 'chat_history' input, but got '%s'", currentTask.Handler, dataType.String())
+			break
+		}
+		chatHistory, _ := input.(ChatHistory)
+		if len(chatHistory.Messages) == 0 {
+			transitionEval = "no_op"
+			break
+		}
+
+		lastMessage := chatHistory.Messages[len(chatHistory.Messages)-1]
+		if len(lastMessage.CallTools) == 0 {
+			transitionEval = "no_calls_found"
+			break
+		}
+
+		for _, toolCall := range lastMessage.CallTools {
+			resolutionInfo, found := chainContext.Tools[toolCall.Function.Name]
+			if !found {
+				continue
+			}
+
+			var args map[string]string
+			err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
+			if err != nil {
+				taskErr = err
+				break
+			}
+
+			hookCall := &HookCall{
+				Name:     resolutionInfo.HookName,
+				ToolName: toolCall.Function.Name,
+				Args:     args,
+			}
+
+			result, dataType, err := exe.hookProvider.Exec(taskCtx, startingTime, chainContext, hookCall)
+			if err != nil {
+				taskErr = err
+				break
+			}
+			content := ""
+			switch dataType {
+			case DataTypeNil:
+				content = "nil"
+			case DataTypeAny, DataTypeJSON:
+				resultBytes, err := json.Marshal(result)
+				if err != nil {
+					taskErr = err
+					break
+				}
+				content = string(resultBytes)
+			default:
+				content = fmt.Sprintf("%v", result)
+			}
+
+			toolResultMessage := Message{
+				Role:       "tool",
+				Content:    content,
+				ToolCallID: toolCall.ID,
+				Timestamp:  time.Now().UTC(),
+			}
+			chatHistory.Messages = append(chatHistory.Messages, toolResultMessage)
+		}
+
+		output = chatHistory
+		outputType = DataTypeChatHistory
+		transitionEval = "tools_executed"
 	case HandleHook:
 		if currentTask.Hook == nil {
 			taskErr = fmt.Errorf("hook task missing hook definition")
@@ -499,6 +570,7 @@ func (exe *SimpleExec) executeLLM(
 	ctxLength int,
 	llmCall *LLMExecutionConfig,
 	clientTools []Tool,
+	hookResolution map[string]ToolWithResolution,
 ) (any, DataType, string, error) {
 	reportErr, _, end := exe.tracker.Start(ctx, "SimpleExec", "prompt_model",
 		"model_name", llmCall.Model,
@@ -545,8 +617,15 @@ func (exe *SimpleExec) executeLLM(
 	}
 
 	tools := []libmodelprovider.Tool{}
+	hiddenTools := map[string]struct{}{}
+	for _, toolName := range llmCall.HideTools {
+		hiddenTools[toolName] = struct{}{}
+	}
 	if llmCall.PassClientsTools {
 		for _, t := range clientTools {
+			if _, ok := hiddenTools[t.Function.Name]; ok {
+				continue
+			}
 			tools = append(tools, libmodelprovider.Tool{
 				Type: t.Type,
 				Function: &libmodelprovider.FunctionTool{
@@ -560,19 +639,17 @@ func (exe *SimpleExec) executeLLM(
 
 	if len(llmCall.Hooks) > 0 {
 		for _, v := range llmCall.Hooks {
-			hooksTools, err := exe.hookProvider.GetToolsForHookByName(ctx, v)
-			if err != nil {
-				return nil, DataTypeAny, "", fmt.Errorf("failed to get tools for hook %s: %w", v, err)
-			}
-			for _, t := range hooksTools {
-				tools = append(tools, libmodelprovider.Tool{
-					Type: t.Type,
-					Function: &libmodelprovider.FunctionTool{
-						Name:        t.Function.Name,
-						Description: t.Function.Description,
-						Parameters:  t.Function.Parameters,
-					},
-				})
+			for _, twr := range hookResolution {
+				if v == twr.HookName {
+					tools = append(tools, libmodelprovider.Tool{
+						Type: twr.Type,
+						Function: &libmodelprovider.FunctionTool{
+							Name:        twr.Function.Name,
+							Description: twr.Function.Description,
+							Parameters:  twr.Function.Parameters,
+						},
+					})
+				}
 			}
 		}
 	}
@@ -617,6 +694,10 @@ func (exe *SimpleExec) executeLLM(
 	}
 	input.OutputTokens = outputTokensCount
 
+	if len(callTools) > 0 {
+		return input, DataTypeChatHistory, "tool-call", nil
+	}
+
 	return input, DataTypeChatHistory, "executed", nil
 }
 
@@ -633,14 +714,14 @@ func (exe *SimpleExec) hookengine(
 	}
 
 	// Call the provider with the new, simple signature.
-	hookOutput, err := exe.hookProvider.Exec(ctx, startingTime, input, hook)
+	hookOutput, dataType, err := exe.hookProvider.Exec(ctx, startingTime, input, hook)
 	if err != nil {
-		return nil, DataTypeAny, "failed", err
+		return nil, dataType, "failed", err
 	}
 
 	// On success, process the output.
 	finalOutput := hookOutput
-	finalOutputType := DataTypeJSON
+	finalOutputType := dataType
 	finalTransitionEval := "ok"
 
 	// Apply the output template if it's defined.

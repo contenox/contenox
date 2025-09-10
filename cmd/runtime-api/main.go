@@ -185,7 +185,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s initializing task engine engine failed: %v", nodeInstanceID, err)
 	}
-	environmentExec, err := taskengine.NewEnv(ctx, serveropsChainedTracker, exec, taskengine.NewSimpleInspector())
+	environmentExec, err := taskengine.NewEnv(ctx, serveropsChainedTracker, exec, taskengine.NewSimpleInspector(), hookRepo)
 	if err != nil {
 		log.Fatalf("%s initializing task engine failed: %v", nodeInstanceID, err)
 	}

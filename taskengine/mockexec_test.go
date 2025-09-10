@@ -20,7 +20,7 @@ func TestUnit_TaskExec_PromptToString(t *testing.T) {
 		Handler: taskengine.HandleRawString,
 	}
 
-	output, _, _, err := mockExec.TaskExec(context.Background(), time.Now(), 100, []taskengine.Tool{}, task, "What is 2+2?", taskengine.DataTypeString)
+	output, _, _, err := mockExec.TaskExec(context.Background(), time.Now(), 100, &taskengine.ChainContext{}, task, "What is 2+2?", taskengine.DataTypeString)
 	require.NoError(t, err)
 	require.Equal(t, "mock-result", output)
 }

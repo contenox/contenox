@@ -34,6 +34,7 @@ const (
 	DataTypeChatHistory                        // Chat conversation history
 	DataTypeOpenAIChat                         // OpenAI chat request format
 	DataTypeOpenAIChatResponse                 // OpenAI chat response format
+	DataTypeNil                                // Nil value
 )
 
 // String returns the string representation of the data type.
@@ -61,6 +62,8 @@ func (d *DataType) String() string {
 		return "openai_chat"
 	case DataTypeOpenAIChatResponse:
 		return "openai_chat_response"
+	case DataTypeNil:
+		return "nil"
 	default:
 		return "unknown"
 	}
@@ -91,6 +94,8 @@ func DataTypeFromString(s string) (DataType, error) {
 		return DataTypeOpenAIChat, nil
 	case "openai_chat_response":
 		return DataTypeOpenAIChatResponse, nil
+	case "nil":
+		return DataTypeNil, nil
 	default:
 		return DataTypeAny, fmt.Errorf("unknown data type: %s", s)
 	}
@@ -110,7 +115,7 @@ var ErrUnsupportedTaskType = errors.New("executor does not support the task type
 type HookRepo interface {
 	// Exec executes a hook with the given input and arguments.
 	// Returns the hook's output or an error.
-	Exec(ctx context.Context, startingTime time.Time, input any, args *HookCall) (any, error)
+	Exec(ctx context.Context, startingTime time.Time, input any, args *HookCall) (any, DataType, error)
 	// HookRegistry provides hook discovery functionality.
 	HookRegistry
 	HooksWithSchema
@@ -135,9 +140,10 @@ type HooksWithSchema interface {
 // It executes tasks in order, using retry and timeout policies, and tracks execution
 // progress using an ActivityTracker.
 type SimpleEnv struct {
-	exec      TaskExecutor
-	tracker   libtracker.ActivityTracker
-	inspector Inspector
+	exec         TaskExecutor
+	tracker      libtracker.ActivityTracker
+	inspector    Inspector
+	hookProvider HookRepo
 }
 
 // NewEnv creates a new SimpleEnv with the given tracker and task executor.
@@ -146,15 +152,27 @@ func NewEnv(
 	tracker libtracker.ActivityTracker,
 	exec TaskExecutor,
 	inspector Inspector,
+	hookProvider HookRepo,
 ) (EnvExecutor, error) {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
 	}
 	return &SimpleEnv{
-		exec:      exec,
-		tracker:   tracker,
-		inspector: inspector,
+		exec:         exec,
+		tracker:      tracker,
+		inspector:    inspector,
+		hookProvider: hookProvider,
 	}, nil
+}
+
+type ChainContext struct {
+	Tools       map[string]ToolWithResolution
+	ClientTools []Tool
+}
+
+type ToolWithResolution struct {
+	Tool
+	HookName string
 }
 
 // ExecEnv executes the given chain with the provided input.
@@ -186,6 +204,37 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	var outputType DataType = dataType
 	var taskErr error
 	var inputVar string
+
+	clientTools := []Tool{}
+	if dataType == DataTypeOpenAIChat {
+		req, ok := input.(OpenAIChatRequest)
+		if !ok {
+			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: invalid input type", currentTask.ID)
+		}
+		clientTools = req.Tools
+	}
+
+	chainContext := &ChainContext{}
+	filter := map[string]ToolWithResolution{}
+	for _, task := range chain.Tasks {
+		if task.ExecuteConfig != nil && len(task.ExecuteConfig.Hooks) > 0 {
+			for _, hookName := range task.ExecuteConfig.Hooks {
+				hookTools, err := env.hookProvider.GetToolsForHookByName(ctx, hookName)
+				if err != nil {
+					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: failed to get tools for hook %s: %v", currentTask.ID, hookName, err)
+				}
+				for _, tool := range hookTools {
+					tool.Function.Name = hookName + "." + tool.Function.Name
+					filter[tool.Function.Name] = ToolWithResolution{Tool: tool, HookName: hookName}
+				}
+			}
+		}
+	}
+
+	for _, twr := range filter {
+		chainContext.Tools[twr.Function.Name] = twr
+	}
+	chainContext.ClientTools = clientTools
 
 	for {
 		if ctx.Err() != nil {
@@ -221,15 +270,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		}
 		maxRetries := max(currentTask.RetryOnFailure, 0)
 
-		clientTools := []Tool{}
-		if taskInputType == DataTypeOpenAIChat {
-			req, ok := taskInput.(OpenAIChatRequest)
-			if !ok {
-				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: invalid input type", currentTask.ID)
-			}
-			clientTools = req.Tools
-		}
-
 	retryLoop:
 		for retry := 0; retry <= maxRetries; retry++ {
 			// Note: Return on breakpoint for now
@@ -259,7 +299,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 			startTime := time.Now().UTC()
 
-			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), clientTools, currentTask, taskInput, taskInputType)
+			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), chainContext, currentTask, taskInput, taskInputType)
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
 				reportErrAttempt(taskErr)

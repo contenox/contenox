@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/contenox/runtime/internal/hooks"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskengine"
 	"github.com/stretchr/testify/require"
@@ -14,7 +15,7 @@ type smartMockExecutor struct {
 	jsonData map[string]interface{}
 }
 
-func (m *smartMockExecutor) TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, tools []taskengine.Tool, currentTask *taskengine.TaskDefinition, input any, dataType taskengine.DataType) (any, taskengine.DataType, string, error) {
+func (m *smartMockExecutor) TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, chainContext *taskengine.ChainContext, currentTask *taskengine.TaskDefinition, input any, dataType taskengine.DataType) (any, taskengine.DataType, string, error) {
 	if currentTask.ID == "get_data" {
 		return m.jsonData, taskengine.DataTypeJSON, "success", nil
 	}
@@ -59,7 +60,7 @@ func TestUnit_SimpleEnv_ExecEnv_JSONTemplateAccess(t *testing.T) {
 	}
 
 	tracker := libtracker.NoopTracker{}
-	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector())
+	env, err := taskengine.NewEnv(context.Background(), tracker, mockExec, taskengine.NewSimpleInspector(), hooks.NewMockHookRegistry())
 	require.NoError(t, err)
 
 	chain := &taskengine.TaskChainDefinition{
