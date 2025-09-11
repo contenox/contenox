@@ -241,6 +241,22 @@ func (p *OpenAPIToolProtocol) FetchTools(ctx context.Context, endpointURL string
 			continue
 		}
 
+		// Exclude health check endpoints from being exposed as tools.
+		lowerPath := strings.ToLower(strings.TrimSpace(path))
+		if lowerPath == "/health" || lowerPath == "/healthz" {
+			continue
+		}
+
+		// Exclude readiness check endpoints from being exposed as tools.
+		if lowerPath == "/ready" || lowerPath == "/readyz" {
+			continue
+		}
+
+		// Exclude prometheus endpoints from being exposed as tools.
+		if lowerPath == "/metrics" {
+			continue
+		}
+
 		operations := pathItem.Operations()
 		for method, operation := range operations {
 			switch strings.ToUpper(method) {
