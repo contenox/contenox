@@ -86,6 +86,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+  echo:
+    image: ghcr.io/contenox/contenox/tool-echo:latest
+    container_name: contenox-echo
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/health || exit 1"]
+      interval: 1s
+      timeout: 1s
+      retries: 20
 # volumes:
 #   postgres-data:
 #   ollama-data:
