@@ -87,7 +87,7 @@ services:
       timeout: 5s
       retries: 10
   echo:
-    image: ghcr.io/contenox/contenox/tool-echo:latest
+    image: ghcr.io/contenox/contenox/tool-echo:v0.3.0
     container_name: contenox-echo
     ports:
       - "8000:8000"
