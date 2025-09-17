@@ -1,6 +1,7 @@
 package runtimesdk
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -332,4 +333,89 @@ func (s *HTTPEvenSourceService) DeleteEventsByTypeInRange(
 	}
 
 	return nil
+}
+
+func (s *HTTPEvenSourceService) SubscribeToEvents(ctx context.Context, eventType string, ch chan<- []byte) (eventsourceservice.Subscription, error) {
+	url := fmt.Sprintf("%s/events/stream/%s", s.baseURL, eventType)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Accept", "text/event-stream")
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	// Create a subscription that will handle the SSE stream
+	sub := &httpEventSubscription{
+		resp:    resp,
+		eventCh: ch,
+		done:    make(chan struct{}),
+	}
+
+	// Start reading the SSE stream
+	go sub.readStream()
+
+	return sub, nil
+}
+
+// httpEventSubscription implements the eventsourceservice.Subscription interface
+type httpEventSubscription struct {
+	resp    *http.Response
+	eventCh chan<- []byte
+	done    chan struct{}
+}
+
+// readStream reads the Server-Sent Events stream and sends events to the channel
+func (s *httpEventSubscription) readStream() {
+	defer s.resp.Body.Close()
+	defer close(s.done)
+
+	scanner := bufio.NewScanner(s.resp.Body)
+	for scanner.Scan() {
+		select {
+		case <-s.done:
+			return // Unsubscribe was called
+		default:
+			line := scanner.Text()
+			if line == "" {
+				continue
+			}
+
+			// SSE format: "data: {json}\n\n"
+			if strings.HasPrefix(line, "data: ") {
+				// Extract the JSON data
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" {
+					return // Stream ended
+				}
+
+				// Send the event data to the channel
+				select {
+				case s.eventCh <- []byte(data):
+				case <-s.done:
+					return
+				}
+			}
+		}
+	}
+}
+
+// Unsubscribe implements eventsourceservice.Subscription.Unsubscribe.
+// It closes the connection and stops the stream.
+func (s *httpEventSubscription) Unsubscribe() error {
+	close(s.done)
+	return s.resp.Body.Close()
 }

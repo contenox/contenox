@@ -149,6 +149,11 @@ func (d *activityTrackerDecorator) DeleteEventsByTypeInRange(ctx context.Context
 	return err
 }
 
+// SubscribeToEvents implements Service.
+func (d *activityTrackerDecorator) SubscribeToEvents(ctx context.Context, eventType string, ch chan<- []byte) (Subscription, error) {
+	return d.service.SubscribeToEvents(ctx, eventType, ch)
+}
+
 // WithActivityTracker decorates a Service with activity tracking
 func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Service {
 	if service == nil {

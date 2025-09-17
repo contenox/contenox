@@ -927,7 +927,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-126-gb0897bf-dirty
+    version: v0.0.51-127-g3d14671-dirty
 openapi: 3.1.0
 paths:
     /backend-affinity/{backendID}/groups:
@@ -1306,6 +1306,39 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Retrieves events from a specific source within a time range.
+    /events/stream/{eventType}:
+        get:
+            description: |-
+                Streams events of a specific type in real-time using Server-Sent Events (SSE)
+                This endpoint provides real-time event streaming for the specified event type.
+                Clients will receive new events as they are appended to the event store.
+                --- SSE Streaming ---
+                The endpoint streams events using Server-Sent Events (SSE) format.
+                Each event is sent as a JSON object in the data field.
+                Example event stream:
+                data: {"id":"evt_123","event_type":"user_created","aggregate_type":"user","aggregate_id":"usr_456","version":1,"data":{"name":"John Doe"},"created_at":"2023-01-01T00:00:00Z"}
+                data: {"id":"evt_124","event_type":"user_updated","aggregate_type":"user","aggregate_id":"usr_456","version":2,"data":{"name":"Jane Doe"},"created_at":"2023-01-01T00:01:00Z"}
+            responses:
+                "200":
+                    content:
+                        text/event-stream:
+                            schema:
+                                type: string
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Streams events of a specific type in real-time using Server-Sent Events (SSE)
+        parameters:
+            - description: The type of events to stream.
+              in: path
+              name: eventType
+              required: true
+              schema:
+                type: string
     /events/type:
         delete:
             description: |-
@@ -1876,16 +1909,16 @@ paths:
                 This endpoint returns full model details including timestamps and capabilities.
                 Intended for administrative and debugging purposes.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2049,16 +2082,16 @@ paths:
                 Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
                 the chainID parameter is currently unused.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -2090,16 +2123,16 @@ paths:
                 Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
                 the chainID parameter is currently unused.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":

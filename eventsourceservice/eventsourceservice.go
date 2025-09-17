@@ -2,12 +2,14 @@ package eventsourceservice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/contenox/runtime/eventstore"
+	"github.com/contenox/runtime/libbus"
 	"github.com/contenox/runtime/libdbexec"
 )
 
@@ -16,7 +18,9 @@ type Service interface {
 	AppendEvent(ctx context.Context, event *eventstore.Event) error
 	GetEventsByAggregate(ctx context.Context, eventType string, from, to time.Time, aggregateType, aggregateID string, limit int) ([]eventstore.Event, error)
 	GetEventsByType(ctx context.Context, eventType string, from, to time.Time, limit int) ([]eventstore.Event, error)
-	GetEventsBySource(ctx context.Context, eventType string, from, to time.Time, eventSource string, limit int) ([]eventstore.Event, error) // ADDED
+	GetEventsBySource(ctx context.Context, eventType string, from, to time.Time, eventSource string, limit int) ([]eventstore.Event, error)
+	SubscribeToEvents(ctx context.Context, eventType string, ch chan<- []byte) (Subscription, error)
+
 	GetEventTypesInRange(ctx context.Context, from, to time.Time, limit int) ([]string, error)
 	DeleteEventsByTypeInRange(ctx context.Context, eventType string, from, to time.Time) error
 }
@@ -31,6 +35,7 @@ type EventSource struct {
 	dbInstance libdbexec.DBManager
 	store      eventstore.EventStore
 	manager    partitionManager
+	messenger  libbus.Messenger
 }
 
 type partitionManager struct {
@@ -40,7 +45,7 @@ type partitionManager struct {
 }
 
 // NewEventSourceService creates a new event source service with partition management
-func NewEventSourceService(ctx context.Context, dbInstance libdbexec.DBManager) (Service, error) {
+func NewEventSourceService(ctx context.Context, dbInstance libdbexec.DBManager, messenger libbus.Messenger) (Service, error) {
 	exec := dbInstance.WithoutTransaction()
 	store := eventstore.New(exec)
 
@@ -51,6 +56,7 @@ func NewEventSourceService(ctx context.Context, dbInstance libdbexec.DBManager) 
 			initialized: false,
 			lock:        sync.Mutex{},
 		},
+		messenger: messenger,
 	}
 
 	// Initialize partitions on startup
@@ -59,6 +65,15 @@ func NewEventSourceService(ctx context.Context, dbInstance libdbexec.DBManager) 
 	}
 
 	return service, nil
+}
+
+type Subscription interface {
+	Unsubscribe() error
+}
+
+func (s *EventSource) SubscribeToEvents(ctx context.Context, eventType string, ch chan<- []byte) (Subscription, error) {
+	subject := fmt.Sprintf("events.%s", eventType)
+	return s.messenger.Stream(ctx, subject, ch)
 }
 
 func (s *EventSource) ensurePartitions(ctx context.Context) error {
@@ -180,6 +195,15 @@ func (s *EventSource) AppendEvent(ctx context.Context, event *eventstore.Event) 
 	// Ensure partitions exist for this event
 	if err := s.ensurePartitionsForEvent(ctx, event.CreatedAt); err != nil {
 		return fmt.Errorf("failed to ensure partitions: %w", err)
+	}
+	eventData, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal event: %w", err)
+	}
+
+	subject := fmt.Sprintf("events.%s", event.EventType)
+	if err := s.messenger.Publish(context.Background(), subject, eventData); err != nil {
+		return fmt.Errorf("failed to publish event to NATS: %w", err)
 	}
 
 	return s.store.AppendEvent(ctx, event)

@@ -21,11 +21,13 @@ func AddEventSourceRoutes(mux *http.ServeMux, service eventsourceservice.Service
 	// Read operations
 	mux.HandleFunc("GET /events/aggregate", e.getEventsByAggregate)
 	mux.HandleFunc("GET /events/type", e.getEventsByType)
-	mux.HandleFunc("GET /events/source", e.getEventsBySource) // NEW
+	mux.HandleFunc("GET /events/source", e.getEventsBySource)
 	mux.HandleFunc("GET /events/types", e.getEventTypesInRange)
 
 	// Delete operations
 	mux.HandleFunc("DELETE /events/type", e.deleteEventsByTypeInRange)
+
+	mux.HandleFunc("GET /events/stream/{eventType}", e.streamEvents)
 }
 
 type eventSourceManager struct {
@@ -276,4 +278,68 @@ func (e *eventSourceManager) deleteEventsByTypeInRange(w http.ResponseWriter, r 
 	}
 
 	_ = serverops.Encode(w, r, http.StatusOK, "events deleted") // @response string
+}
+
+// Streams events of a specific type in real-time using Server-Sent Events (SSE)
+//
+// This endpoint provides real-time event streaming for the specified event type.
+// Clients will receive new events as they are appended to the event store.
+//
+// --- SSE Streaming ---
+// The endpoint streams events using Server-Sent Events (SSE) format.
+// Each event is sent as a JSON object in the data field.
+//
+// Example event stream:
+// data: {"id":"evt_123","event_type":"user_created","aggregate_type":"user","aggregate_id":"usr_456","version":1,"data":{"name":"John Doe"},"created_at":"2023-01-01T00:00:00Z"}
+//
+// data: {"id":"evt_124","event_type":"user_updated","aggregate_type":"user","aggregate_id":"usr_456","version":2,"data":{"name":"Jane Doe"},"created_at":"2023-01-01T00:01:00Z"}
+func (e *eventSourceManager) streamEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	eventType := serverops.GetPathParam(r, "eventType", "The type of events to stream.")
+	if eventType == "" {
+		_ = serverops.Error(w, r, fmt.Errorf("event_type is required %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+	// Set headers for Server-Sent Events (SSE)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		_ = serverops.Error(w, r, fmt.Errorf("streaming unsupported"), serverops.ListOperation)
+		return
+	}
+
+	// Create a channel to receive events
+	eventCh := make(chan []byte, 10)
+
+	// Subscribe to events using the service
+	// Note: This requires adding a SubscribeToEvents method to the eventsourceservice.Service interface
+	sub, err := e.service.SubscribeToEvents(ctx, eventType, eventCh)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+	defer sub.Unsubscribe()
+
+	// Send initial message to establish connection
+	fmt.Fprintf(w, "data: Connected to event stream for type: %s\n\n", eventType)
+	flusher.Flush()
+
+	// Listen for events and stream them to the client
+	for {
+		select {
+		case eventData := <-eventCh:
+			fmt.Fprintf(w, "data: %s\n\n", eventData)
+			flusher.Flush()
+		case <-ctx.Done():
+			// Client disconnected
+			return
+		case <-r.Context().Done():
+			// Request context cancelled
+			return
+		}
+	}
 }

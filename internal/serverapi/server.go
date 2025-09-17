@@ -161,13 +161,13 @@ func New(
 	)
 	chatService = chatservice.WithActivityTracker(chatService, serveropsChainedTracker)
 	chatapi.AddChatRoutes(mux, chatService)
-	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance)
+	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance, pubsub)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("failed to initialize event source service: %w", err)
 	}
 	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
 	eventsourceapi.AddEventSourceRoutes(mux, eventSourceService)
-	
+
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
 	if config.Token != "" {

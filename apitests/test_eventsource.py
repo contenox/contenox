@@ -4,6 +4,8 @@ import uuid
 import time
 from datetime import datetime, timezone, timedelta
 from helpers import assert_status_code
+import json
+import threading
 
 BASE_EVENT = {
     "event_type": "user.created",
