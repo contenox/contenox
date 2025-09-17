@@ -207,3 +207,89 @@ func TestUnit_EventStore_DeleteInvalidRange(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid time range")
 }
+
+func TestUnit_EventStore_GetEventsBySource(t *testing.T) {
+	ctx, store := SetupStore(t)
+
+	eventType := "user.action"
+	eventSource1 := "web-api"
+	eventSource2 := "mobile-app"
+	now := time.Now().UTC()
+
+	err := store.EnsurePartitionExists(ctx, now)
+	require.NoError(t, err)
+
+	// Append events with different sources
+	for i := 1; i <= 3; i++ {
+		event := eventstore.Event{
+			EventType:     eventType,
+			EventSource:   eventSource1, // web-api source
+			AggregateID:   uuid.NewString(),
+			AggregateType: "user",
+			Version:       i,
+			Data:          []byte(`{"action": "login"}`),
+			Metadata:      []byte(`{"device": "browser"}`),
+			CreatedAt:     now.Add(time.Duration(i) * time.Minute),
+		}
+		err := store.AppendEvent(ctx, &event)
+		require.NoError(t, err)
+	}
+
+	// Append events with a different source
+	for i := 1; i <= 2; i++ {
+		event := eventstore.Event{
+			EventType:     eventType,
+			EventSource:   eventSource2, // mobile-app source
+			AggregateID:   uuid.NewString(),
+			AggregateType: "user",
+			Version:       i,
+			Data:          []byte(`{"action": "logout"}`),
+			Metadata:      []byte(`{"device": "phone"}`),
+			CreatedAt:     now.Add(time.Duration(i+3) * time.Minute), // different timestamps
+		}
+		err := store.AppendEvent(ctx, &event)
+		require.NoError(t, err)
+	}
+
+	// Query events by source 1 (web-api)
+	events, err := store.GetEventsBySource(ctx, eventType,
+		now.Add(-time.Hour),
+		now.Add(time.Hour),
+		eventSource1,
+		10,
+	)
+	require.NoError(t, err)
+	require.Len(t, events, 3)
+
+	// Verify all returned events have the correct source
+	for _, event := range events {
+		require.Equal(t, eventSource1, event.EventSource)
+		require.Equal(t, eventType, event.EventType)
+	}
+
+	// Query events by source 2 (mobile-app)
+	events, err = store.GetEventsBySource(ctx, eventType,
+		now.Add(-time.Hour),
+		now.Add(time.Hour),
+		eventSource2,
+		10,
+	)
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+
+	// Verify all returned events have the correct source
+	for _, event := range events {
+		require.Equal(t, eventSource2, event.EventSource)
+		require.Equal(t, eventType, event.EventType)
+	}
+
+	// Query with non-existent source
+	events, err = store.GetEventsBySource(ctx, eventType,
+		now.Add(-time.Hour),
+		now.Add(time.Hour),
+		"non-existent-source",
+		10,
+	)
+	require.NoError(t, err)
+	require.Len(t, events, 0)
+}

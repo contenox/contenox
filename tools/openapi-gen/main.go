@@ -792,6 +792,27 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 				}
 			}
 		}
+		if field.Type != nil {
+			var typeName string
+
+			// Handle *json.RawMessage
+			if starExpr, ok := field.Type.(*ast.StarExpr); ok {
+				if ident, ok := starExpr.X.(*ast.Ident); ok {
+					typeName = ident.Name
+				}
+			} else if ident, ok := field.Type.(*ast.Ident); ok {
+				typeName = ident.Name
+			} else if selExpr, ok := field.Type.(*ast.SelectorExpr); ok {
+				typeName = selExpr.Sel.Name
+			}
+
+			if typeName == "RawMessage" {
+				fieldSchema.Type = &openapi3.Types{openapi3.TypeString}
+				fieldSchema.Format = "json"
+				fieldSchema.Description = "JSON-encoded string"
+				hasOverride = true
+			}
+		}
 
 		if !hasOverride {
 			switch fieldType := field.Type.(type) {

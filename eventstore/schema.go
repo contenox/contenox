@@ -15,12 +15,13 @@ func InitSchema(ctx context.Context, exec libdbexec.Exec) error {
 			partition_key TEXT NOT NULL,
 			created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 			event_type TEXT NOT NULL,
+			event_source TEXT NOT NULL,
 			aggregate_id TEXT NOT NULL,
 			aggregate_type TEXT NOT NULL,
 			version INTEGER NOT NULL,
 			data JSONB NOT NULL,
 			metadata JSONB,
-			PRIMARY KEY (id, partition_key)
+			PRIMARY KEY (id, event_type, event_source, partition_key)
 		) PARTITION BY LIST (partition_key);
 	`)
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
+	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/hookproviderservice"
 	"github.com/contenox/runtime/internal/apiframework"
@@ -23,18 +24,19 @@ import (
 
 // Client is the main SDK client that provides access to all services
 type Client struct {
-	BackendService   backendservice.Service
-	ModelService     modelservice.Service
-	groupService     affinitygroupservice.Service
-	HookService      hookproviderservice.Service
-	ExecService      execservice.ExecService
-	EnvService       execservice.TasksEnvService
-	ProviderService  providerservice.Service
-	DownloadService  downloadservice.Service
-	StateService     stateservice.Service
-	EmbedService     embedservice.Service
-	TaskChainService taskchainservice.Service
-	ChatService      chatservice.Service
+	BackendService     backendservice.Service
+	ModelService       modelservice.Service
+	groupService       affinitygroupservice.Service
+	HookService        hookproviderservice.Service
+	ExecService        execservice.ExecService
+	EnvService         execservice.TasksEnvService
+	ProviderService    providerservice.Service
+	DownloadService    downloadservice.Service
+	StateService       stateservice.Service
+	EmbedService       embedservice.Service
+	TaskChainService   taskchainservice.Service
+	ChatService        chatservice.Service
+	EventSourceService eventsourceservice.Service
 }
 
 // Config holds configuration for the SDK client
@@ -46,18 +48,19 @@ type Config struct {
 // NewClient creates a new SDK client with the provided configuration
 func createClient(config Config, httpClient *http.Client) (*Client, error) {
 	return &Client{
-		BackendService:   NewHTTPBackendService(config.BaseURL, config.Token, httpClient),
-		ModelService:     NewHTTPModelService(config.BaseURL, config.Token, httpClient),
-		groupService:     NewHTTPgroupService(config.BaseURL, config.Token, httpClient),
-		HookService:      NewHTTPRemoteHookService(config.BaseURL, config.Token, httpClient),
-		ExecService:      NewHTTPExecService(config.BaseURL, config.Token, httpClient),
-		EnvService:       NewHTTPTasksEnvService(config.BaseURL, config.Token, httpClient),
-		ProviderService:  NewHTTPProviderService(config.BaseURL, config.Token, httpClient),
-		DownloadService:  NewHTTPDownloadService(config.BaseURL, config.Token, httpClient),
-		StateService:     NewHTTPStateService(config.BaseURL, config.Token, httpClient),
-		EmbedService:     NewHTTPEmbedService(config.BaseURL, config.Token, httpClient),
-		TaskChainService: NewHTTPTaskChainService(config.BaseURL, config.Token, httpClient),
-		ChatService:      NewHTTPChatService(config.BaseURL, config.Token, httpClient),
+		BackendService:     NewHTTPBackendService(config.BaseURL, config.Token, httpClient),
+		ModelService:       NewHTTPModelService(config.BaseURL, config.Token, httpClient),
+		groupService:       NewHTTPgroupService(config.BaseURL, config.Token, httpClient),
+		HookService:        NewHTTPRemoteHookService(config.BaseURL, config.Token, httpClient),
+		ExecService:        NewHTTPExecService(config.BaseURL, config.Token, httpClient),
+		EnvService:         NewHTTPTasksEnvService(config.BaseURL, config.Token, httpClient),
+		ProviderService:    NewHTTPProviderService(config.BaseURL, config.Token, httpClient),
+		DownloadService:    NewHTTPDownloadService(config.BaseURL, config.Token, httpClient),
+		StateService:       NewHTTPStateService(config.BaseURL, config.Token, httpClient),
+		EmbedService:       NewHTTPEmbedService(config.BaseURL, config.Token, httpClient),
+		TaskChainService:   NewHTTPTaskChainService(config.BaseURL, config.Token, httpClient),
+		ChatService:        NewHTTPChatService(config.BaseURL, config.Token, httpClient),
+		EventSourceService: NewHTTPEvenSourceService(config.BaseURL, config.Token, httpClient),
 	}, nil
 }
 

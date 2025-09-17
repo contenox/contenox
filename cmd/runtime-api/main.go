@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/contenox/runtime/eventstore"
 	"github.com/contenox/runtime/internal/hooks"
 	"github.com/contenox/runtime/internal/llmrepo"
 	"github.com/contenox/runtime/internal/ollamatokenizer"
@@ -190,6 +191,11 @@ func main() {
 		log.Fatalf("%s initializing task engine failed: %v", nodeInstanceID, err)
 	}
 	cleanups = append(cleanups, cleanup)
+
+	err = eventstore.InitSchema(ctx, dbInstance.WithoutTransaction())
+	if err != nil {
+		log.Fatalf("%s initializing event store schema failed: %v", nodeInstanceID, err)
+	}
 
 	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo)
 	cleanups = append(cleanups, cleanup)

@@ -1,0 +1,335 @@
+package runtimesdk
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/contenox/runtime/eventsourceservice"
+	"github.com/contenox/runtime/eventstore"
+	"github.com/contenox/runtime/internal/apiframework"
+)
+
+// HTTPEvenSourceService implements the eventsourceservice.Service interface
+// using HTTP calls to the event source API.
+type HTTPEvenSourceService struct {
+	client  *http.Client
+	baseURL string
+	token   string
+}
+
+// NewHTTPEvenSourceService creates a new HTTP client that implements eventsourceservice.Service.
+func NewHTTPEvenSourceService(baseURL, token string, client *http.Client) eventsourceservice.Service {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	return &HTTPEvenSourceService{
+		client:  client,
+		baseURL: baseURL,
+		token:   token,
+	}
+}
+
+// AppendEvent implements eventsourceservice.Service.AppendEvent.
+func (s *HTTPEvenSourceService) AppendEvent(ctx context.Context, event *eventstore.Event) error {
+	url := s.baseURL + "/events"
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal event: %w", err)
+	}
+	req.Body = io.NopCloser(strings.NewReader(string(body)))
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return apiframework.HandleAPIError(resp)
+	}
+
+	// Update event with any server-assigned fields (ID, CreatedAt, etc.)
+	return json.NewDecoder(resp.Body).Decode(event)
+}
+
+// GetEventsByAggregate implements eventsourceservice.Service.GetEventsByAggregate.
+func (s *HTTPEvenSourceService) GetEventsByAggregate(
+	ctx context.Context,
+	eventType string,
+	from, to time.Time,
+	aggregateType, aggregateID string,
+	limit int,
+) ([]eventstore.Event, error) {
+	if eventType == "" {
+		return nil, fmt.Errorf("eventType is required")
+	}
+	if aggregateType == "" {
+		return nil, fmt.Errorf("aggregateType is required")
+	}
+	if aggregateID == "" {
+		return nil, fmt.Errorf("aggregateID is required")
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+
+	u, err := url.Parse(s.baseURL + "/events/aggregate")
+	if err != nil {
+		return nil, err
+	}
+
+	q := u.Query()
+	q.Set("event_type", eventType)
+	q.Set("aggregate_type", aggregateType)
+	q.Set("aggregate_id", aggregateID)
+	q.Set("from", from.Format(time.RFC3339))
+	q.Set("to", to.Format(time.RFC3339))
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var events []eventstore.Event
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return nil, fmt.Errorf("failed to decode events: %w", err)
+	}
+
+	return events, nil
+}
+
+// GetEventsByType implements eventsourceservice.Service.GetEventsByType.
+func (s *HTTPEvenSourceService) GetEventsByType(
+	ctx context.Context,
+	eventType string,
+	from, to time.Time,
+	limit int,
+) ([]eventstore.Event, error) {
+	if eventType == "" {
+		return nil, fmt.Errorf("eventType is required")
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+
+	u, err := url.Parse(s.baseURL + "/events/type")
+	if err != nil {
+		return nil, err
+	}
+
+	q := u.Query()
+	q.Set("event_type", eventType)
+	q.Set("from", from.Format(time.RFC3339))
+	q.Set("to", to.Format(time.RFC3339))
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var events []eventstore.Event
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return nil, fmt.Errorf("failed to decode events: %w", err)
+	}
+
+	return events, nil
+}
+
+// GetEventsBySource implements eventsourceservice.Service.GetEventsBySource.
+func (s *HTTPEvenSourceService) GetEventsBySource(
+	ctx context.Context,
+	eventType string,
+	from, to time.Time,
+	eventSource string,
+	limit int,
+) ([]eventstore.Event, error) {
+	if eventType == "" {
+		return nil, fmt.Errorf("eventType is required")
+	}
+	if eventSource == "" {
+		return nil, fmt.Errorf("eventSource is required")
+	}
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+
+	u, err := url.Parse(s.baseURL + "/events/source")
+	if err != nil {
+		return nil, err
+	}
+
+	q := u.Query()
+	q.Set("event_type", eventType)
+	q.Set("event_source", eventSource)
+	q.Set("from", from.Format(time.RFC3339))
+	q.Set("to", to.Format(time.RFC3339))
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var events []eventstore.Event
+	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
+		return nil, fmt.Errorf("failed to decode events: %w", err)
+	}
+
+	return events, nil
+}
+
+// GetEventTypesInRange implements eventsourceservice.Service.GetEventTypesInRange.
+func (s *HTTPEvenSourceService) GetEventTypesInRange(
+	ctx context.Context,
+	from, to time.Time,
+	limit int,
+) ([]string, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+
+	u, err := url.Parse(s.baseURL + "/events/types")
+	if err != nil {
+		return nil, err
+	}
+
+	q := u.Query()
+	q.Set("from", from.Format(time.RFC3339))
+	q.Set("to", to.Format(time.RFC3339))
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var eventTypes []string
+	if err := json.NewDecoder(resp.Body).Decode(&eventTypes); err != nil {
+		return nil, fmt.Errorf("failed to decode event types: %w", err)
+	}
+
+	return eventTypes, nil
+}
+
+// DeleteEventsByTypeInRange implements eventsourceservice.Service.DeleteEventsByTypeInRange.
+func (s *HTTPEvenSourceService) DeleteEventsByTypeInRange(
+	ctx context.Context,
+	eventType string,
+	from, to time.Time,
+) error {
+	if eventType == "" {
+		return fmt.Errorf("eventType is required")
+	}
+
+	u, err := url.Parse(s.baseURL + "/events/type")
+	if err != nil {
+		return err
+	}
+
+	q := u.Query()
+	q.Set("event_type", eventType)
+	q.Set("from", from.Format(time.RFC3339))
+	q.Set("to", to.Format(time.RFC3339))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", u.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return apiframework.HandleAPIError(resp)
+	}
+
+	return nil
+}

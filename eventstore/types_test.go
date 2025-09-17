@@ -47,5 +47,5 @@ func SetupStore(t *testing.T) (context.Context, eventstore.EventStore) {
 		cleanup()
 	})
 
-	return ctx, eventstore.NewEventStore(dbManager.WithoutTransaction())
+	return ctx, eventstore.New(dbManager.WithoutTransaction())
 }

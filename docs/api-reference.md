@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-124-gbc51350-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-126-gb0897bf-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-124-gbc51350-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-126-gb0897bf-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -684,6 +684,369 @@ If groups are enabled, models and backends not assigned to any group will be com
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[execapi_EmbedResponse](#schemaexecapi_embedresponse)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Appends a new event to the event store.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/events', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /events`
+
+Appends a new event to the event store.
+The event ID and CreatedAt will be auto-generated if not provided.
+Events must be within ±10 minutes of current server time.
+
+> Body parameter
+
+```json
+{
+  "aggregate_id": "string",
+  "aggregate_type": "string",
+  "created_at": "2019-08-24T14:15:22Z",
+  "data": "string",
+  "event_source": "string",
+  "event_type": "string",
+  "id": "string",
+  "metadata": "string",
+  "version": 0
+}
+```
+
+<h3 id="appends-a-new-event-to-the-event-store.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[eventstore_Event](#schemaeventstore_event)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "aggregate_id": "string",
+  "aggregate_type": "string",
+  "created_at": "2019-08-24T14:15:22Z",
+  "data": "string",
+  "event_source": "string",
+  "event_type": "string",
+  "id": "string",
+  "metadata": "string",
+  "version": 0
+}
+```
+
+<h3 id="appends-a-new-event-to-the-event-store.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[eventstore_Event](#schemaeventstore_event)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves events for a specific aggregate within a time range.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/events/aggregate', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /events/aggregate`
+
+Retrieves events for a specific aggregate within a time range.
+Useful for rebuilding aggregate state or auditing changes.
+
+<h3 id="retrieves-events-for-a-specific-aggregate-within-a-time-range.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|event_type|query|string|false|The type of event to filter by.|
+|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
+|aggregate_id|query|string|false|The unique ID of the aggregate.|
+|limit|query|string|false|Maximum number of events to return.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "aggregate_id": "string",
+    "aggregate_type": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "data": "string",
+    "event_source": "string",
+    "event_type": "string",
+    "id": "string",
+    "metadata": "string",
+    "version": 0
+  }
+]
+```
+
+<h3 id="retrieves-events-for-a-specific-aggregate-within-a-time-range.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_eventstore_Event](#schemaarray_eventstore_event)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves events from a specific source within a time range.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/events/source', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /events/source`
+
+Retrieves events from a specific source within a time range.
+Useful for auditing or monitoring events from specific subsystems.
+
+<h3 id="retrieves-events-from-a-specific-source-within-a-time-range.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|event_type|query|string|false|The type of event to filter by.|
+|event_source|query|string|false|The source system that generated the event.|
+|limit|query|string|false|Maximum number of events to return.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "aggregate_id": "string",
+    "aggregate_type": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "data": "string",
+    "event_source": "string",
+    "event_type": "string",
+    "id": "string",
+    "metadata": "string",
+    "version": 0
+  }
+]
+```
+
+<h3 id="retrieves-events-from-a-specific-source-within-a-time-range.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_eventstore_Event](#schemaarray_eventstore_event)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Deletes all events of a specific type within a time range.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/events/type', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /events/type`
+
+Deletes all events of a specific type within a time range.
+USE WITH CAUTION — this is a destructive operation.
+Typically used for GDPR compliance or cleaning up test data.
+
+<h3 id="deletes-all-events-of-a-specific-type-within-a-time-range.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|event_type|query|string|false|The type of event to delete.|
+|from|query|string|false|Start time in RFC3339 format.|
+|to|query|string|false|End time in RFC3339 format.|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="deletes-all-events-of-a-specific-type-within-a-time-range.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves events of a specific type within a time range.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/events/type', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /events/type`
+
+Retrieves events of a specific type within a time range.
+Useful for cross-aggregate analysis or system-wide event monitoring.
+
+<h3 id="retrieves-events-of-a-specific-type-within-a-time-range.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|event_type|query|string|false|The type of event to filter by.|
+|limit|query|string|false|Maximum number of events to return.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "aggregate_id": "string",
+    "aggregate_type": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "data": "string",
+    "event_source": "string",
+    "event_type": "string",
+    "id": "string",
+    "metadata": "string",
+    "version": 0
+  }
+]
+```
+
+<h3 id="retrieves-events-of-a-specific-type-within-a-time-range.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_eventstore_Event](#schemaarray_eventstore_event)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists distinct event types that occurred within a time range.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/events/types', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /events/types`
+
+Lists distinct event types that occurred within a time range.
+Useful for discovery or building event type filters in UIs.
+
+<h3 id="lists-distinct-event-types-that-occurred-within-a-time-range.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|Maximum number of event types to return.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  "string"
+]
+```
+
+<h3 id="lists-distinct-event-types-that-occurred-within-a-time-range.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_string](#schemaarray_string)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -2108,8 +2471,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -3482,6 +3845,36 @@ X-API-Key
 |---|---|---|---|---|
 |*anonymous*|[[downloadservice_Job](#schemadownloadservice_job)]|false|none|none|
 
+<h2 id="tocS_array_eventstore_Event">array_eventstore_Event</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_eventstore_event"></a>
+<a id="schema_array_eventstore_Event"></a>
+<a id="tocSarray_eventstore_event"></a>
+<a id="tocsarray_eventstore_event"></a>
+
+```json
+[
+  {
+    "aggregate_id": "string",
+    "aggregate_type": "string",
+    "created_at": "2019-08-24T14:15:22Z",
+    "data": "string",
+    "event_source": "string",
+    "event_type": "string",
+    "id": "string",
+    "metadata": "string",
+    "version": 0
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[eventstore_Event](#schemaeventstore_event)]|false|none|none|
+
 <h2 id="tocS_array_runtimestate_ProviderConfig">array_runtimestate_ProviderConfig</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_runtimestate_providerconfig"></a>
@@ -3925,6 +4318,42 @@ X-API-Key
 |scheduledFor|integer|true|none|none|
 |taskType|string|true|none|none|
 |validUntil|integer|true|none|none|
+
+<h2 id="tocS_eventstore_Event">eventstore_Event</h2>
+<!-- backwards compatibility -->
+<a id="schemaeventstore_event"></a>
+<a id="schema_eventstore_Event"></a>
+<a id="tocSeventstore_event"></a>
+<a id="tocseventstore_event"></a>
+
+```json
+{
+  "aggregate_id": "string",
+  "aggregate_type": "string",
+  "created_at": "2019-08-24T14:15:22Z",
+  "data": "string",
+  "event_source": "string",
+  "event_type": "string",
+  "id": "string",
+  "metadata": "string",
+  "version": 0
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|aggregate_id|string|true|none|none|
+|aggregate_type|string|true|none|none|
+|created_at|string(date-time)|true|none|none|
+|data|string(json)|true|none|JSON-encoded string|
+|event_source|string|true|none|none|
+|event_type|string|true|none|none|
+|id|string|true|none|none|
+|metadata|string(json)|true|none|JSON-encoded string|
+|version|integer|true|none|none|
 
 <h2 id="tocS_execapi_DefaultModelResponse">execapi_DefaultModelResponse</h2>
 <!-- backwards compatibility -->

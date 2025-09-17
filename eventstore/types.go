@@ -14,6 +14,7 @@ type Event struct {
 	ID            string          `json:"id"`
 	CreatedAt     time.Time       `json:"created_at"`
 	EventType     string          `json:"event_type"`
+	EventSource   string          `json:"event_source"`
 	AggregateID   string          `json:"aggregate_id"`
 	AggregateType string          `json:"aggregate_type"`
 	Version       int             `json:"version"`
@@ -26,6 +27,7 @@ type EventStore interface {
 	AppendEvent(ctx context.Context, event *Event) error
 	GetEventsByAggregate(ctx context.Context, eventType string, from, to time.Time, aggregateType, aggregateID string, limit int) ([]Event, error)
 	GetEventsByType(ctx context.Context, eventType string, from, to time.Time, limit int) ([]Event, error)
+	GetEventsBySource(ctx context.Context, eventType string, from, to time.Time, eventSource string, limit int) ([]Event, error)
 	GetEventTypesInRange(ctx context.Context, from, to time.Time, limit int) ([]string, error)
 	DeleteEventsByTypeInRange(ctx context.Context, eventType string, from, to time.Time) error
 
@@ -49,7 +51,7 @@ type partitionManager struct {
 	lock         sync.Mutex
 }
 
-// NewEventStore creates a new event store instance
-func NewEventStore(exec libdbexec.Exec) EventStore {
+// New creates a new event store instance
+func New(exec libdbexec.Exec) EventStore {
 	return &store{Exec: exec, pManager: &partitionManager{lock: sync.Mutex{}, lastExecuted: nil}}
 }

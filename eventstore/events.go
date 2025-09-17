@@ -49,10 +49,10 @@ func (s *store) AppendEvent(ctx context.Context, event *Event) error {
 
 	// Insert the event
 	_, err := s.Exec.ExecContext(ctx, `
-		INSERT INTO events (id, partition_key, created_at, event_type, aggregate_id, aggregate_type, version, data, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		INSERT INTO events (id, partition_key, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		internalEvent.ID, internalEvent.PartitionKey, internalEvent.CreatedAt, internalEvent.EventType,
-		internalEvent.AggregateID, internalEvent.AggregateType, internalEvent.Version,
+		internalEvent.EventSource, internalEvent.AggregateID, internalEvent.AggregateType, internalEvent.Version,
 		internalEvent.Data, internalEvent.Metadata)
 
 	return err
@@ -71,12 +71,17 @@ func (s *store) ensurePartitionTable(ctx context.Context, partitionKey string) e
 	// Generate safe table name via hash
 	tableName := getPartitionTableName(partitionKey)
 
+	// Validate table name to prevent SQL injection
+	if !isValidTableName(tableName) {
+		return fmt.Errorf("invalid table name: %s", tableName)
+	}
+
 	// Escape partition key for safe use in SQL literal
 	quotedKey := escapeSQLString(partitionKey)
 
 	// Create the partition table if it doesn't exist
 	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS "%s" PARTITION OF events
+		CREATE TABLE IF NOT EXISTS %s PARTITION OF events
 		FOR VALUES IN (%s)
 	`, tableName, quotedKey)
 
@@ -99,7 +104,7 @@ func (s *store) GetEventsByAggregate(ctx context.Context, eventType string, from
 
 	// Use subquery to force partition filtering first
 	query := fmt.Sprintf(`
-		SELECT id, created_at, event_type, aggregate_id, aggregate_type, version, data, metadata
+		SELECT id, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
 		FROM events
 		WHERE partition_key IN (%s)
 		  AND event_type = $%d
@@ -157,8 +162,9 @@ func (s *store) GetEventsByType(ctx context.Context, eventType string, from, to 
 	placeholderStr := strings.Join(placeholders, ",")
 
 	// Build query — partition_key first for pruning
+	// FIXED: Added event_source to SELECT clause
 	query := fmt.Sprintf(`
-        SELECT id, created_at, event_type, aggregate_id, aggregate_type, version, data, metadata
+        SELECT id, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
         FROM events
         WHERE event_type = $1
           AND created_at BETWEEN $2 AND $3
@@ -184,6 +190,52 @@ func (s *store) GetEventsByType(ctx context.Context, eventType string, from, to 
 	return s.scanEvents(rows)
 }
 
+// GetEventsBySource retrieves events from a specific source within a time range
+// FIXED: Added implementation for GetEventsBySource
+func (s *store) GetEventsBySource(ctx context.Context, eventType string, from, to time.Time, eventSource string, limit int) ([]Event, error) {
+	// Get all partition keys for the date range
+	partitionKeys := getPartitionKeysForRange(from, to)
+
+	if len(partitionKeys) == 0 {
+		return []Event{}, nil
+	}
+
+	// Build $N placeholders for partition keys
+	var placeholders []string
+	for i := 1; i <= len(partitionKeys); i++ {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+4)) // starts after $1,$2,$3,$4
+	}
+	placeholderStr := strings.Join(placeholders, ",")
+
+	// Build query — partition_key first for pruning
+	query := fmt.Sprintf(`
+        SELECT id, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
+        FROM events
+        WHERE event_type = $1
+          AND event_source = $2
+          AND created_at BETWEEN $3 AND $4
+          AND partition_key IN (%s)
+        ORDER BY created_at DESC
+        LIMIT $%d
+    `, placeholderStr, len(partitionKeys)+5)
+
+	// Prepare arguments: eventType, eventSource, from, to, then partition keys, then limit
+	args := make([]interface{}, 0, len(partitionKeys)+5)
+	args = append(args, eventType, eventSource, from, to)
+	for _, key := range partitionKeys {
+		args = append(args, key)
+	}
+	args = append(args, limit)
+
+	rows, err := s.Exec.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return s.scanEvents(rows)
+}
+
 // scanEvents helper function to scan rows into Event objects
 func (s *store) scanEvents(rows *sql.Rows) ([]Event, error) {
 	var events []Event
@@ -191,7 +243,7 @@ func (s *store) scanEvents(rows *sql.Rows) ([]Event, error) {
 	for rows.Next() {
 		var event Event
 		err := rows.Scan(
-			&event.ID, &event.CreatedAt, &event.EventType,
+			&event.ID, &event.CreatedAt, &event.EventType, &event.EventSource,
 			&event.AggregateID, &event.AggregateType, &event.Version,
 			&event.Data, &event.Metadata,
 		)
@@ -203,6 +255,10 @@ func (s *store) scanEvents(rows *sql.Rows) ([]Event, error) {
 
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	if len(events) == 0 {
+		return []Event{}, nil
 	}
 
 	return events, nil
@@ -236,6 +292,10 @@ func (s *store) GetEventTypesInRange(ctx context.Context, from, to time.Time, li
 		return nil, fmt.Errorf("row iteration error: %w", err)
 	}
 
+	if len(eventTypes) == 0 {
+		return []string{}, nil
+	}
+
 	return eventTypes, nil
 }
 
@@ -264,19 +324,21 @@ func (s *store) DeleteEventsByTypeInRange(ctx context.Context, eventType string,
 	query := fmt.Sprintf(`
 		DELETE FROM events
 		WHERE partition_key IN (%s)
+		  AND event_type = $%d
 		  AND created_at BETWEEN $%d AND $%d
 	`,
 		placeholderStr,
-		len(partitionKeys)+1, // from
-		len(partitionKeys)+2, // to
+		len(partitionKeys)+1, // eventType
+		len(partitionKeys)+2, // from
+		len(partitionKeys)+3, // to
 	)
 
-	// Prepare args: partition keys, then from/to
-	args := make([]interface{}, 0, len(partitionKeys)+2)
+	// Prepare args: partition keys, then eventType, from/to
+	args := make([]interface{}, 0, len(partitionKeys)+3)
 	for _, key := range partitionKeys {
 		args = append(args, key)
 	}
-	args = append(args, from, to)
+	args = append(args, eventType, from, to)
 
 	_, err := s.Exec.ExecContext(ctx, query, args...)
 	if err != nil {
@@ -289,6 +351,19 @@ func (s *store) DeleteEventsByTypeInRange(ctx context.Context, eventType string,
 // getPartitionTableName generates the safe SQL table name for a partition key
 func getPartitionTableName(partitionKey string) string {
 	return fmt.Sprintf("events_p_%s", partitionKey)
+}
+
+// isValidTableName validates that a table name contains only safe characters
+func isValidTableName(name string) bool {
+	if len(name) == 0 {
+		return false
+	}
+	for _, c := range name {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '.') {
+			return false
+		}
+	}
+	return true
 }
 
 func escapeSQLString(s string) string {

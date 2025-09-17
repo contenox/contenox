@@ -48,6 +48,12 @@
         },
         "type": "array"
       },
+      "array_eventstore_Event": {
+        "items": {
+          "$ref": "#/components/schemas/eventstore_Event"
+        },
+        "type": "array"
+      },
       "array_runtimestate_ProviderConfig": {
         "items": {
           "$ref": "#/components/schemas/runtimestate_ProviderConfig"
@@ -258,6 +264,54 @@
           "scheduledFor",
           "validUntil",
           "createdAt"
+        ],
+        "type": "object"
+      },
+      "eventstore_Event": {
+        "properties": {
+          "aggregate_id": {
+            "type": "string"
+          },
+          "aggregate_type": {
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "data": {
+            "description": "JSON-encoded string",
+            "format": "json",
+            "type": "string"
+          },
+          "event_source": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "description": "JSON-encoded string",
+            "format": "json",
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "event_type",
+          "event_source",
+          "aggregate_id",
+          "aggregate_type",
+          "version",
+          "data",
+          "metadata"
         ],
         "type": "object"
       },
@@ -1153,7 +1207,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.51-124-gbc51350-dirty"
+    "version": "v0.0.51-126-gb0897bf-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1557,6 +1611,300 @@
           }
         },
         "summary": "Generates vector embeddings for text."
+      }
+    },
+    "/events": {
+      "post": {
+        "description": "Appends a new event to the event store.\nThe event ID and CreatedAt will be auto-generated if not provided.\nEvents must be within ±10 minutes of current server time.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/eventstore_Event"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/eventstore_Event"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Appends a new event to the event store."
+      }
+    },
+    "/events/aggregate": {
+      "get": {
+        "description": "Retrieves events for a specific aggregate within a time range.\nUseful for rebuilding aggregate state or auditing changes.",
+        "parameters": [
+          {
+            "description": "The type of event to filter by.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The aggregate type (e.g., 'user', 'order').",
+            "in": "query",
+            "name": "aggregate_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The unique ID of the aggregate.",
+            "in": "query",
+            "name": "aggregate_id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of events to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_eventstore_Event"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Retrieves events for a specific aggregate within a time range."
+      }
+    },
+    "/events/source": {
+      "get": {
+        "description": "Retrieves events from a specific source within a time range.\nUseful for auditing or monitoring events from specific subsystems.",
+        "parameters": [
+          {
+            "description": "The type of event to filter by.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The source system that generated the event.",
+            "in": "query",
+            "name": "event_source",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of events to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_eventstore_Event"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Retrieves events from a specific source within a time range."
+      }
+    },
+    "/events/type": {
+      "delete": {
+        "description": "Deletes all events of a specific type within a time range.\nUSE WITH CAUTION — this is a destructive operation.\nTypically used for GDPR compliance or cleaning up test data.",
+        "parameters": [
+          {
+            "description": "The type of event to delete.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Start time in RFC3339 format.",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "End time in RFC3339 format.",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Deletes all events of a specific type within a time range."
+      },
+      "get": {
+        "description": "Retrieves events of a specific type within a time range.\nUseful for cross-aggregate analysis or system-wide event monitoring.",
+        "parameters": [
+          {
+            "description": "The type of event to filter by.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of events to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_eventstore_Event"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Retrieves events of a specific type within a time range."
+      }
+    },
+    "/events/types": {
+      "get": {
+        "description": "Lists distinct event types that occurred within a time range.\nUseful for discovery or building event type filters in UIs.",
+        "parameters": [
+          {
+            "description": "Maximum number of event types to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists distinct event types that occurred within a time range."
       }
     },
     "/execute": {
@@ -2547,19 +2895,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }

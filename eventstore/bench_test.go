@@ -34,7 +34,7 @@ func setupEventStoreBenchmark(ctx context.Context, b testing.TB) (eventstore.Eve
 	err = eventstore.InitSchema(ctx, dbManager.WithoutTransaction())
 	require.NoError(b, err)
 
-	store := eventstore.NewEventStore(dbManager.WithoutTransaction())
+	store := eventstore.New(dbManager.WithoutTransaction())
 	err = store.EnsurePartitionExists(ctx, time.Now().UTC())
 	err = store.EnsurePartitionExists(ctx, time.Now().UTC().Add(time.Hour*24))
 
