@@ -12,6 +12,8 @@ import (
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
+	"github.com/contenox/runtime/eventsourceservice"
+	"github.com/contenox/runtime/eventstore"
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/hookproviderservice"
 	"github.com/contenox/runtime/internal/hooks"
@@ -41,6 +43,7 @@ type Playground struct {
 	tokenizer                 ollamatokenizer.Tokenizer
 	llmRepo                   llmrepo.ModelRepo
 	hookrepo                  taskengine.HookRepo
+	eventSourceService        eventsourceservice.Service
 	withgroup                 bool
 	routinesStarted           bool
 	embeddingsModel           string
@@ -474,6 +477,32 @@ func (p *Playground) WithTokenizerService(ctx context.Context, tokenizerURL stri
 	return p
 }
 
+func (p *Playground) WithEventSourceService(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.db == nil {
+		p.Error = errors.New("cannot initialize event source service: database is not configured")
+		return p
+	}
+	if p.bus == nil {
+		p.Error = errors.New("cannot initialize event source service: message bus is not configured")
+		return p
+	}
+	err := eventstore.InitSchema(ctx, p.db.WithoutTransaction())
+	if err != nil {
+		p.Error = fmt.Errorf("failed to initialize event source service: %w", err)
+		return p
+	}
+	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, p.db, p.bus)
+	if err != nil {
+		p.Error = fmt.Errorf("failed to initialize event source service: %w", err)
+		return p
+	}
+	p.eventSourceService = eventSourceService
+	return p
+}
+
 // GetBackendService returns a new backend service instance.
 func (p *Playground) GetBackendService() (backendservice.Service, error) {
 	if p.Error != nil {
@@ -530,6 +559,16 @@ func (p *Playground) GetProviderService() (providerservice.Service, error) {
 		return nil, errors.New("cannot get provider service: database is not initialized")
 	}
 	return providerservice.New(p.db), nil
+}
+
+func (p *Playground) GetEventSourceService() (eventsourceservice.Service, error) {
+	if p.Error != nil {
+		return nil, p.Error
+	}
+	if p.eventSourceService == nil {
+		return nil, errors.New("event source service is not initialized, call WithEventSourceService first")
+	}
+	return p.eventSourceService, nil
 }
 
 // GetEmbedService returns a new embed service instance.
