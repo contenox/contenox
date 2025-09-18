@@ -12,6 +12,7 @@ func InitSchema(ctx context.Context, exec libdbexec.Exec) error {
 	_, err := exec.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS events (
 			id TEXT NOT NULL,
+			nid BIGSERIAL NOT NULL,
 			partition_key TEXT NOT NULL,
 			created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 			event_type TEXT NOT NULL,

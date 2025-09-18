@@ -12,6 +12,7 @@ import (
 // Event represents a stored event without exposing partition details
 type Event struct {
 	ID            string          `json:"id" example:"event-uuid"`
+	NID           int64           `json:"nid" example:"1"`
 	CreatedAt     time.Time       `json:"created_at" example:"2023-01-01T00:00:00Z"`
 	EventType     string          `json:"event_type" example:"github.pull_request"`
 	EventSource   string          `json:"event_source" example:"github.com"`

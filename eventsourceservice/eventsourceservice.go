@@ -200,13 +200,16 @@ func (s *EventSource) AppendEvent(ctx context.Context, event *eventstore.Event) 
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
-
+	err = s.store.AppendEvent(ctx, event)
+	if err != nil {
+		return err
+	}
 	subject := fmt.Sprintf("events.%s", event.EventType)
-	if err := s.messenger.Publish(context.Background(), subject, eventData); err != nil {
+	if err := s.messenger.Publish(ctx, subject, eventData); err != nil {
 		return fmt.Errorf("failed to publish event to NATS: %w", err)
 	}
 
-	return s.store.AppendEvent(ctx, event)
+	return nil
 }
 
 // GetEventsByAggregate implements Service interface
@@ -247,7 +250,7 @@ func (s *EventSource) GetEventsByType(ctx context.Context, eventType string, fro
 	return s.store.GetEventsByType(ctx, eventType, from, to, limit)
 }
 
-// GetEventsBySource implements Service interface - ADDED
+// GetEventsBySource implements Service interface
 func (s *EventSource) GetEventsBySource(ctx context.Context, eventType string, from, to time.Time, eventSource string, limit int) ([]eventstore.Event, error) {
 	// Validate parameters
 	if eventType == "" {

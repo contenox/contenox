@@ -49,8 +49,8 @@ func (s *store) AppendEvent(ctx context.Context, event *Event) error {
 
 	// Insert the event
 	_, err := s.Exec.ExecContext(ctx, `
-		INSERT INTO events (id, partition_key, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		INSERT INTO events (id, nid, partition_key, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata)
+		VALUES ($1, DEFAULT, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		internalEvent.ID, internalEvent.PartitionKey, internalEvent.CreatedAt, internalEvent.EventType,
 		internalEvent.EventSource, internalEvent.AggregateID, internalEvent.AggregateType, internalEvent.Version,
 		internalEvent.Data, internalEvent.Metadata)
@@ -104,7 +104,7 @@ func (s *store) GetEventsByAggregate(ctx context.Context, eventType string, from
 
 	// Use subquery to force partition filtering first
 	query := fmt.Sprintf(`
-		SELECT id, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
+		SELECT id, nid, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
 		FROM events
 		WHERE partition_key IN (%s)
 		  AND event_type = $%d
@@ -162,16 +162,15 @@ func (s *store) GetEventsByType(ctx context.Context, eventType string, from, to 
 	placeholderStr := strings.Join(placeholders, ",")
 
 	// Build query — partition_key first for pruning
-	// FIXED: Added event_source to SELECT clause
 	query := fmt.Sprintf(`
-        SELECT id, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
-        FROM events
-        WHERE event_type = $1
-          AND created_at BETWEEN $2 AND $3
-          AND partition_key IN (%s)
-        ORDER BY created_at DESC
-        LIMIT $%d
-    `, placeholderStr, len(partitionKeys)+4)
+		SELECT id, nid, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
+		FROM events
+		WHERE event_type = $1
+		  AND created_at BETWEEN $2 AND $3
+		  AND partition_key IN (%s)
+		ORDER BY created_at DESC
+		LIMIT $%d
+	`, placeholderStr, len(partitionKeys)+4)
 
 	// Prepare arguments: eventType, from, to, then partition keys, then limit
 	args := make([]interface{}, 0, len(partitionKeys)+4)
@@ -191,7 +190,6 @@ func (s *store) GetEventsByType(ctx context.Context, eventType string, from, to 
 }
 
 // GetEventsBySource retrieves events from a specific source within a time range
-// FIXED: Added implementation for GetEventsBySource
 func (s *store) GetEventsBySource(ctx context.Context, eventType string, from, to time.Time, eventSource string, limit int) ([]Event, error) {
 	// Get all partition keys for the date range
 	partitionKeys := getPartitionKeysForRange(from, to)
@@ -209,15 +207,15 @@ func (s *store) GetEventsBySource(ctx context.Context, eventType string, from, t
 
 	// Build query — partition_key first for pruning
 	query := fmt.Sprintf(`
-        SELECT id, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
-        FROM events
-        WHERE event_type = $1
-          AND event_source = $2
-          AND created_at BETWEEN $3 AND $4
-          AND partition_key IN (%s)
-        ORDER BY created_at DESC
-        LIMIT $%d
-    `, placeholderStr, len(partitionKeys)+5)
+		SELECT id, nid, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata
+		FROM events
+		WHERE event_type = $1
+		  AND event_source = $2
+		  AND created_at BETWEEN $3 AND $4
+		  AND partition_key IN (%s)
+		ORDER BY created_at DESC
+		LIMIT $%d
+	`, placeholderStr, len(partitionKeys)+5)
 
 	// Prepare arguments: eventType, eventSource, from, to, then partition keys, then limit
 	args := make([]interface{}, 0, len(partitionKeys)+5)
@@ -243,7 +241,7 @@ func (s *store) scanEvents(rows *sql.Rows) ([]Event, error) {
 	for rows.Next() {
 		var event Event
 		err := rows.Scan(
-			&event.ID, &event.CreatedAt, &event.EventType, &event.EventSource,
+			&event.ID, &event.NID, &event.CreatedAt, &event.EventType, &event.EventSource,
 			&event.AggregateID, &event.AggregateType, &event.Version,
 			&event.Data, &event.Metadata,
 		)
