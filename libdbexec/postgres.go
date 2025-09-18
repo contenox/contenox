@@ -205,7 +205,7 @@ func translateError(err error) error {
 
 	// Handle no rows error first - this is common after QueryRow().Scan().
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+		return fmt.Errorf("%w: %w", ErrNotFound, err)
 	}
 
 	// Handle context errors explicitly. Although checked elsewhere, they might
