@@ -11,15 +11,15 @@ import (
 
 // Event represents a stored event without exposing partition details
 type Event struct {
-	ID            string          `json:"id"`
-	CreatedAt     time.Time       `json:"created_at"`
-	EventType     string          `json:"event_type"`
-	EventSource   string          `json:"event_source"`
-	AggregateID   string          `json:"aggregate_id"`
-	AggregateType string          `json:"aggregate_type"`
-	Version       int             `json:"version"`
-	Data          json.RawMessage `json:"data"`
-	Metadata      json.RawMessage `json:"metadata"`
+	ID            string          `json:"id" example:"event-uuid"`
+	CreatedAt     time.Time       `json:"created_at" example:"2023-01-01T00:00:00Z"`
+	EventType     string          `json:"event_type" example:"github.pull_request"`
+	EventSource   string          `json:"event_source" example:"github.com"`
+	AggregateID   string          `json:"aggregate_id" example:"aggregate-uuid"`
+	AggregateType string          `json:"aggregate_type" example:"github.webhook"`
+	Version       int             `json:"version" example:"1"`
+	Data          json.RawMessage `json:"data" example:"{}"`
+	Metadata      json.RawMessage `json:"metadata" example:"{}"`
 }
 
 // EventStore provides methods for storing and retrieving events
