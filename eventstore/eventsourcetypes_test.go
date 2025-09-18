@@ -24,7 +24,7 @@ func quiet() func() {
 }
 
 // SetupStore initializes a test Postgres instance with eventstore schema.
-func SetupStore(t *testing.T) (context.Context, eventstore.EventStore) {
+func SetupStore(t *testing.T) (context.Context, eventstore.Store) {
 	t.Helper()
 
 	unquiet := quiet()

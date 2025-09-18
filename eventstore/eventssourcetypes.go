@@ -22,8 +22,8 @@ type Event struct {
 	Metadata      json.RawMessage `json:"metadata" example:"{}"`
 }
 
-// EventStore provides methods for storing and retrieving events
-type EventStore interface {
+// Store provides methods for storing and retrieving events
+type Store interface {
 	AppendEvent(ctx context.Context, event *Event) error
 	GetEventsByAggregate(ctx context.Context, eventType string, from, to time.Time, aggregateType, aggregateID string, limit int) ([]Event, error)
 	GetEventsByType(ctx context.Context, eventType string, from, to time.Time, limit int) ([]Event, error)
@@ -52,6 +52,6 @@ type partitionManager struct {
 }
 
 // New creates a new event store instance
-func New(exec libdbexec.Exec) EventStore {
+func New(exec libdbexec.Exec) Store {
 	return &store{Exec: exec, pManager: &partitionManager{lock: sync.Mutex{}, lastExecuted: nil}}
 }

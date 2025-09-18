@@ -18,7 +18,7 @@ const (
 )
 
 // setupEventStoreBenchmark initializes a fresh event store for benchmarking
-func setupEventStoreBenchmark(ctx context.Context, b testing.TB) (eventstore.EventStore, func()) {
+func setupEventStoreBenchmark(ctx context.Context, b testing.TB) (eventstore.Store, func()) {
 	b.Helper()
 
 	unquiet := quiet()
@@ -77,7 +77,7 @@ func showOpsPerSecond(b *testing.B, ops int64) {
 }
 
 // createEventsForBenchmarkWithID creates N events for a specific aggregate ID
-func createEventsForBenchmarkWithID(ctx context.Context, b *testing.B, store eventstore.EventStore, eventType, aggregateType, aggregateID string, count int) []eventstore.Event {
+func createEventsForBenchmarkWithID(ctx context.Context, b *testing.B, store eventstore.Store, eventType, aggregateType, aggregateID string, count int) []eventstore.Event {
 	b.Helper()
 
 	events := make([]eventstore.Event, 0, count)
@@ -106,7 +106,7 @@ func createEventsForBenchmarkWithID(ctx context.Context, b *testing.B, store eve
 }
 
 // createEventsForBenchmark creates N events for benchmarking queries
-func createEventsForBenchmark(ctx context.Context, b *testing.B, store eventstore.EventStore, eventType, aggregateType string, count int) []eventstore.Event {
+func createEventsForBenchmark(ctx context.Context, b *testing.B, store eventstore.Store, eventType, aggregateType string, count int) []eventstore.Event {
 	b.Helper()
 
 	events := make([]eventstore.Event, 0, count)

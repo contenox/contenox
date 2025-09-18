@@ -33,7 +33,7 @@ var ErrMissingRequiredField = errors.New("missing required field")
 // EventSource implements the event source service with partition management
 type EventSource struct {
 	dbInstance libdbexec.DBManager
-	store      eventstore.EventStore
+	store      eventstore.Store
 	manager    partitionManager
 	messenger  libbus.Messenger
 }
