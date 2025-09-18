@@ -93,4 +93,5 @@ type Store interface {
 	ListEventTriggersByEventType(ctx context.Context, eventType string) ([]*EventTrigger, error)
 	ListEventTriggersByFunction(ctx context.Context, functionName string) ([]*EventTrigger, error)
 	EstimateEventTriggerCount(ctx context.Context) (int64, error)
+	EnforceMaxRowCount(ctx context.Context, count int64) error
 }

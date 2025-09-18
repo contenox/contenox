@@ -22,6 +22,13 @@ func New(exec libdbexec.Exec) Store {
 	return &store{Exec: exec}
 }
 
+func (s *store) EnforceMaxRowCount(ctx context.Context, count int64) error {
+	if count >= MAXLIMIT {
+		return fmt.Errorf("row limit reached (max %d)", MAXLIMIT)
+	}
+	return nil
+}
+
 // Function management methods
 func (s *store) CreateFunction(ctx context.Context, function *Function) error {
 	now := time.Now().UTC()

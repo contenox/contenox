@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/eventstore"
+	"github.com/contenox/runtime/functionstore"
 	"github.com/contenox/runtime/internal/hooks"
 	"github.com/contenox/runtime/internal/llmrepo"
 	"github.com/contenox/runtime/internal/ollamatokenizer"
@@ -195,6 +196,11 @@ func main() {
 	err = eventstore.InitSchema(ctx, dbInstance.WithoutTransaction())
 	if err != nil {
 		log.Fatalf("%s initializing event store schema failed: %v", nodeInstanceID, err)
+	}
+
+	err = functionstore.InitSchema(ctx, dbInstance.WithoutTransaction())
+	if err != nil {
+		log.Fatalf("%s initializing task store schema failed: %v", nodeInstanceID, err)
 	}
 
 	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo)

@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-127-g3d14671-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-135-g52c6b4e-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-127-g3d14671-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-135-g52c6b4e-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -691,6 +691,443 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## Lists all event triggers with pagination
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/event-triggers', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /event-triggers`
+
+Lists all event triggers with pagination
+Returns event triggers in creation order, with the oldest triggers first.
+
+<h3 id="lists-all-event-triggers-with-pagination-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "createdAt": "2023-11-15T14:30:45Z",
+    "description": "Send a welcome email to a new user",
+    "function": "new_user_created_event_handler",
+    "listenFor": {
+      "type": "contenox.user_created"
+    },
+    "name": "new_user_created",
+    "type": "function",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+```
+
+<h3 id="lists-all-event-triggers-with-pagination-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_functionstore_EventTrigger](#schemaarray_functionstore_eventtrigger)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Creates a new event trigger
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/event-triggers', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /event-triggers`
+
+Creates a new event trigger
+Event triggers listen for specific events and execute associated functions.
+
+> Body parameter
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "Send a welcome email to a new user",
+  "function": "new_user_created_event_handler",
+  "listenFor": {
+    "type": "contenox.user_created"
+  },
+  "name": "new_user_created",
+  "type": "function",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="creates-a-new-event-trigger-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[functionstore_EventTrigger](#schemafunctionstore_eventtrigger)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "Send a welcome email to a new user",
+  "function": "new_user_created_event_handler",
+  "listenFor": {
+    "type": "contenox.user_created"
+  },
+  "name": "new_user_created",
+  "type": "function",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="creates-a-new-event-trigger-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[functionstore_EventTrigger](#schemafunctionstore_eventtrigger)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists event triggers filtered by event type
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/event-triggers/event-type/{eventType}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /event-triggers/event-type/{eventType}`
+
+Lists event triggers filtered by event type
+Returns all event triggers that listen for the specified event type.
+
+<h3 id="lists-event-triggers-filtered-by-event-type-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|eventType|path|string|true|The event type to filter by.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "createdAt": "2023-11-15T14:30:45Z",
+    "description": "Send a welcome email to a new user",
+    "function": "new_user_created_event_handler",
+    "listenFor": {
+      "type": "contenox.user_created"
+    },
+    "name": "new_user_created",
+    "type": "function",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+```
+
+<h3 id="lists-event-triggers-filtered-by-event-type-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_functionstore_EventTrigger](#schemaarray_functionstore_eventtrigger)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists event triggers filtered by function name
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/event-triggers/function/{functionName}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /event-triggers/function/{functionName}`
+
+Lists event triggers filtered by function name
+Returns all event triggers that execute the specified function.
+
+<h3 id="lists-event-triggers-filtered-by-function-name-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|functionName|path|string|true|The function name to filter by.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "createdAt": "2023-11-15T14:30:45Z",
+    "description": "Send a welcome email to a new user",
+    "function": "new_user_created_event_handler",
+    "listenFor": {
+      "type": "contenox.user_created"
+    },
+    "name": "new_user_created",
+    "type": "function",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+```
+
+<h3 id="lists-event-triggers-filtered-by-function-name-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_functionstore_EventTrigger](#schemaarray_functionstore_eventtrigger)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Deletes an event trigger from the system
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/event-triggers/{name}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /event-triggers/{name}`
+
+Deletes an event trigger from the system
+Returns a simple confirmation message on success.
+
+<h3 id="deletes-an-event-trigger-from-the-system-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|name|path|string|true|The unique name of the event trigger.|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="deletes-an-event-trigger-from-the-system-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves details for a specific event trigger
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/event-triggers/{name}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /event-triggers/{name}`
+
+Retrieves details for a specific event trigger
+
+<h3 id="retrieves-details-for-a-specific-event-trigger-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|name|path|string|true|The unique name of the event trigger.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "Send a welcome email to a new user",
+  "function": "new_user_created_event_handler",
+  "listenFor": {
+    "type": "contenox.user_created"
+  },
+  "name": "new_user_created",
+  "type": "function",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="retrieves-details-for-a-specific-event-trigger-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[functionstore_EventTrigger](#schemafunctionstore_eventtrigger)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Updates an existing event trigger configuration
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/event-triggers/{name}', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /event-triggers/{name}`
+
+Updates an existing event trigger configuration
+The name from the URL path overrides any name in the request body.
+
+> Body parameter
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "Send a welcome email to a new user",
+  "function": "new_user_created_event_handler",
+  "listenFor": {
+    "type": "contenox.user_created"
+  },
+  "name": "new_user_created",
+  "type": "function",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="updates-an-existing-event-trigger-configuration-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[functionstore_EventTrigger](#schemafunctionstore_eventtrigger)|true|none|
+|name|path|string|true|The unique name of the event trigger.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "Send a welcome email to a new user",
+  "function": "new_user_created_event_handler",
+  "listenFor": {
+    "type": "contenox.user_created"
+  },
+  "name": "new_user_created",
+  "type": "function",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="updates-an-existing-event-trigger-configuration-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[functionstore_EventTrigger](#schemafunctionstore_eventtrigger)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Appends a new event to the event store.
 
 > Code samples
@@ -719,15 +1156,15 @@ Events must be within ±10 minutes of current server time.
 
 ```json
 {
-  "aggregate_id": "string",
-  "aggregate_type": "string",
-  "created_at": "2019-08-24T14:15:22Z",
-  "data": "string",
-  "event_source": "string",
-  "event_type": "string",
-  "id": "string",
-  "metadata": "string",
-  "version": 0
+  "aggregate_id": "aggregate-uuid",
+  "aggregate_type": "github.webhook",
+  "created_at": "2023-01-01T00:00:00Z",
+  "data": {},
+  "event_source": "github.com",
+  "event_type": "github.pull_request",
+  "id": "event-uuid",
+  "metadata": {},
+  "version": 1
 }
 ```
 
@@ -743,15 +1180,15 @@ Events must be within ±10 minutes of current server time.
 
 ```json
 {
-  "aggregate_id": "string",
-  "aggregate_type": "string",
-  "created_at": "2019-08-24T14:15:22Z",
-  "data": "string",
-  "event_source": "string",
-  "event_type": "string",
-  "id": "string",
-  "metadata": "string",
-  "version": 0
+  "aggregate_id": "aggregate-uuid",
+  "aggregate_type": "github.webhook",
+  "created_at": "2023-01-01T00:00:00Z",
+  "data": {},
+  "event_source": "github.com",
+  "event_type": "github.pull_request",
+  "id": "event-uuid",
+  "metadata": {},
+  "version": 1
 }
 ```
 
@@ -805,15 +1242,15 @@ Useful for rebuilding aggregate state or auditing changes.
 ```json
 [
   {
-    "aggregate_id": "string",
-    "aggregate_type": "string",
-    "created_at": "2019-08-24T14:15:22Z",
-    "data": "string",
-    "event_source": "string",
-    "event_type": "string",
-    "id": "string",
-    "metadata": "string",
-    "version": 0
+    "aggregate_id": "aggregate-uuid",
+    "aggregate_type": "github.webhook",
+    "created_at": "2023-01-01T00:00:00Z",
+    "data": {},
+    "event_source": "github.com",
+    "event_type": "github.pull_request",
+    "id": "event-uuid",
+    "metadata": {},
+    "version": 1
   }
 ]
 ```
@@ -856,9 +1293,9 @@ Useful for auditing or monitoring events from specific subsystems.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |event_source|query|string|false|The source system that generated the event.|
-|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -867,15 +1304,15 @@ Useful for auditing or monitoring events from specific subsystems.
 ```json
 [
   {
-    "aggregate_id": "string",
-    "aggregate_type": "string",
-    "created_at": "2019-08-24T14:15:22Z",
-    "data": "string",
-    "event_source": "string",
-    "event_type": "string",
-    "id": "string",
-    "metadata": "string",
-    "version": 0
+    "aggregate_id": "aggregate-uuid",
+    "aggregate_type": "github.webhook",
+    "created_at": "2023-01-01T00:00:00Z",
+    "data": {},
+    "event_source": "github.com",
+    "event_type": "github.pull_request",
+    "id": "event-uuid",
+    "metadata": {},
+    "version": 1
   }
 ]
 ```
@@ -1043,15 +1480,15 @@ Useful for cross-aggregate analysis or system-wide event monitoring.
 ```json
 [
   {
-    "aggregate_id": "string",
-    "aggregate_type": "string",
-    "created_at": "2019-08-24T14:15:22Z",
-    "data": "string",
-    "event_source": "string",
-    "event_type": "string",
-    "id": "string",
-    "metadata": "string",
-    "version": 0
+    "aggregate_id": "aggregate-uuid",
+    "aggregate_type": "github.webhook",
+    "created_at": "2023-01-01T00:00:00Z",
+    "data": {},
+    "event_source": "github.com",
+    "event_type": "github.pull_request",
+    "id": "event-uuid",
+    "metadata": {},
+    "version": 1
   }
 ]
 ```
@@ -1175,6 +1612,318 @@ If groups are enabled, models and backends not assigned to any group will be com
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[execservice_SimpleExecutionResponse](#schemaexecservice_simpleexecutionresponse)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists all registered functions with pagination
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/functions', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /functions`
+
+Lists all registered functions with pagination
+Returns functions in creation order, with the oldest functions first.
+
+<h3 id="lists-all-registered-functions-with-pagination-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "actionTarget": "welcome_email_chain",
+    "actionType": "chain",
+    "createdAt": "2023-11-15T14:30:45Z",
+    "description": "string",
+    "name": "send_welcome_email_event_handler",
+    "script": "string",
+    "scriptType": "goja",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+```
+
+<h3 id="lists-all-registered-functions-with-pagination-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_functionstore_Function](#schemaarray_functionstore_function)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Creates a new serverless function
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/functions', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /functions`
+
+Creates a new serverless function
+Functions contain executable JavaScript code that runs in a secure sandbox.
+After execution, functions can trigger chains for further processing.
+
+> Body parameter
+
+```json
+{
+  "actionTarget": "welcome_email_chain",
+  "actionType": "chain",
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "string",
+  "name": "send_welcome_email_event_handler",
+  "script": "string",
+  "scriptType": "goja",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="creates-a-new-serverless-function-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[functionstore_Function](#schemafunctionstore_function)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "actionTarget": "welcome_email_chain",
+  "actionType": "chain",
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "string",
+  "name": "send_welcome_email_event_handler",
+  "script": "string",
+  "scriptType": "goja",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="creates-a-new-serverless-function-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[functionstore_Function](#schemafunctionstore_function)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Deletes a function from the system
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/functions/{name}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /functions/{name}`
+
+Deletes a function from the system
+Returns a simple confirmation message on success.
+
+<h3 id="deletes-a-function-from-the-system-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|name|path|string|true|The unique name of the function.|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="deletes-a-function-from-the-system-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves details for a specific function
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/functions/{name}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /functions/{name}`
+
+Retrieves details for a specific function
+
+<h3 id="retrieves-details-for-a-specific-function-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|name|path|string|true|The unique name of the function.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "actionTarget": "welcome_email_chain",
+  "actionType": "chain",
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "string",
+  "name": "send_welcome_email_event_handler",
+  "script": "string",
+  "scriptType": "goja",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="retrieves-details-for-a-specific-function-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[functionstore_Function](#schemafunctionstore_function)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Updates an existing function configuration
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/functions/{name}', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /functions/{name}`
+
+Updates an existing function configuration
+The name from the URL path overrides any name in the request body.
+
+> Body parameter
+
+```json
+{
+  "actionTarget": "welcome_email_chain",
+  "actionType": "chain",
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "string",
+  "name": "send_welcome_email_event_handler",
+  "script": "string",
+  "scriptType": "goja",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="updates-an-existing-function-configuration-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[functionstore_Function](#schemafunctionstore_function)|true|none|
+|name|path|string|true|The unique name of the function.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "actionTarget": "welcome_email_chain",
+  "actionType": "chain",
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "string",
+  "name": "send_welcome_email_event_handler",
+  "script": "string",
+  "scriptType": "goja",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+```
+
+<h3 id="updates-an-existing-function-configuration-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[functionstore_Function](#schemafunctionstore_function)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
@@ -2266,8 +3015,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -3919,15 +4668,15 @@ X-API-Key
 ```json
 [
   {
-    "aggregate_id": "string",
-    "aggregate_type": "string",
-    "created_at": "2019-08-24T14:15:22Z",
-    "data": "string",
-    "event_source": "string",
-    "event_type": "string",
-    "id": "string",
-    "metadata": "string",
-    "version": 0
+    "aggregate_id": "aggregate-uuid",
+    "aggregate_type": "github.webhook",
+    "created_at": "2023-01-01T00:00:00Z",
+    "data": {},
+    "event_source": "github.com",
+    "event_type": "github.pull_request",
+    "id": "event-uuid",
+    "metadata": {},
+    "version": 1
   }
 ]
 
@@ -3938,6 +4687,65 @@ X-API-Key
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |*anonymous*|[[eventstore_Event](#schemaeventstore_event)]|false|none|none|
+
+<h2 id="tocS_array_functionstore_EventTrigger">array_functionstore_EventTrigger</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_functionstore_eventtrigger"></a>
+<a id="schema_array_functionstore_EventTrigger"></a>
+<a id="tocSarray_functionstore_eventtrigger"></a>
+<a id="tocsarray_functionstore_eventtrigger"></a>
+
+```json
+[
+  {
+    "createdAt": "2023-11-15T14:30:45Z",
+    "description": "Send a welcome email to a new user",
+    "function": "new_user_created_event_handler",
+    "listenFor": {
+      "type": "contenox.user_created"
+    },
+    "name": "new_user_created",
+    "type": "function",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[functionstore_EventTrigger](#schemafunctionstore_eventtrigger)]|false|none|none|
+
+<h2 id="tocS_array_functionstore_Function">array_functionstore_Function</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_functionstore_function"></a>
+<a id="schema_array_functionstore_Function"></a>
+<a id="tocSarray_functionstore_function"></a>
+<a id="tocsarray_functionstore_function"></a>
+
+```json
+[
+  {
+    "actionTarget": "welcome_email_chain",
+    "actionType": "chain",
+    "createdAt": "2023-11-15T14:30:45Z",
+    "description": "string",
+    "name": "send_welcome_email_event_handler",
+    "script": "string",
+    "scriptType": "goja",
+    "updatedAt": "2023-11-15T14:30:45Z"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[functionstore_Function](#schemafunctionstore_function)]|false|none|none|
 
 <h2 id="tocS_array_runtimestate_ProviderConfig">array_runtimestate_ProviderConfig</h2>
 <!-- backwards compatibility -->
@@ -4392,15 +5200,15 @@ X-API-Key
 
 ```json
 {
-  "aggregate_id": "string",
-  "aggregate_type": "string",
-  "created_at": "2019-08-24T14:15:22Z",
-  "data": "string",
-  "event_source": "string",
-  "event_type": "string",
-  "id": "string",
-  "metadata": "string",
-  "version": 0
+  "aggregate_id": "aggregate-uuid",
+  "aggregate_type": "github.webhook",
+  "created_at": "2023-01-01T00:00:00Z",
+  "data": {},
+  "event_source": "github.com",
+  "event_type": "github.pull_request",
+  "id": "event-uuid",
+  "metadata": {},
+  "version": 1
 }
 
 ```
@@ -4630,6 +5438,94 @@ X-API-Key
 |model_name|string|true|none|none|
 |model_provider|string|true|none|none|
 |prompt|string|true|none|none|
+
+<h2 id="tocS_functionstore_EventTrigger">functionstore_EventTrigger</h2>
+<!-- backwards compatibility -->
+<a id="schemafunctionstore_eventtrigger"></a>
+<a id="schema_functionstore_EventTrigger"></a>
+<a id="tocSfunctionstore_eventtrigger"></a>
+<a id="tocsfunctionstore_eventtrigger"></a>
+
+```json
+{
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "Send a welcome email to a new user",
+  "function": "new_user_created_event_handler",
+  "listenFor": {
+    "type": "contenox.user_created"
+  },
+  "name": "new_user_created",
+  "type": "function",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|createdAt|string(date-time)|true|none|Timestamps for creation and updates|
+|description|string|true|none|A user-friendly description of what the trigger does.|
+|function|string|true|none|The name of the function to execute when the event is received.|
+|listenFor|[functionstore_Listener](#schemafunctionstore_listener)|true|none|none|
+|name|string|true|none|A unique identifier for the trigger.|
+|type|string|true|none|The type of the triggered action.|
+|updatedAt|string(date-time)|true|none|none|
+
+<h2 id="tocS_functionstore_Function">functionstore_Function</h2>
+<!-- backwards compatibility -->
+<a id="schemafunctionstore_function"></a>
+<a id="schema_functionstore_Function"></a>
+<a id="tocSfunctionstore_function"></a>
+<a id="tocsfunctionstore_function"></a>
+
+```json
+{
+  "actionTarget": "welcome_email_chain",
+  "actionType": "chain",
+  "createdAt": "2023-11-15T14:30:45Z",
+  "description": "string",
+  "name": "send_welcome_email_event_handler",
+  "script": "string",
+  "scriptType": "goja",
+  "updatedAt": "2023-11-15T14:30:45Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|actionTarget|string|true|none|The target of the action.|
+|actionType|string|true|none|The type of action to perform after the script.|
+|createdAt|string(date-time)|true|none|Timestamps for creation and updates|
+|description|string|true|none|A user-friendly description of what the function does.|
+|name|string|true|none|A unique identifier for the function.|
+|script|string|true|none|The script code itself.|
+|scriptType|string|true|none|The type of script to execute.|
+|updatedAt|string(date-time)|true|none|none|
+
+<h2 id="tocS_functionstore_Listener">functionstore_Listener</h2>
+<!-- backwards compatibility -->
+<a id="schemafunctionstore_listener"></a>
+<a id="schema_functionstore_Listener"></a>
+<a id="tocSfunctionstore_listener"></a>
+<a id="tocsfunctionstore_listener"></a>
+
+```json
+{
+  "type": "contenox.user_created"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|type|string|true|none|The event type to listen for.|
 
 <h2 id="tocS_runtimestate_ProviderConfig">runtimestate_ProviderConfig</h2>
 <!-- backwards compatibility -->

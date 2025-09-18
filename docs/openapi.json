@@ -54,6 +54,18 @@
         },
         "type": "array"
       },
+      "array_functionstore_EventTrigger": {
+        "items": {
+          "$ref": "#/components/schemas/functionstore_EventTrigger"
+        },
+        "type": "array"
+      },
+      "array_functionstore_Function": {
+        "items": {
+          "$ref": "#/components/schemas/functionstore_Function"
+        },
+        "type": "array"
+      },
       "array_runtimestate_ProviderConfig": {
         "items": {
           "$ref": "#/components/schemas/runtimestate_ProviderConfig"
@@ -270,35 +282,44 @@
       "eventstore_Event": {
         "properties": {
           "aggregate_id": {
+            "example": "aggregate-uuid",
             "type": "string"
           },
           "aggregate_type": {
+            "example": "github.webhook",
             "type": "string"
           },
           "created_at": {
+            "example": "2023-01-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "data": {
             "description": "JSON-encoded string",
+            "example": {},
             "format": "json",
             "type": "string"
           },
           "event_source": {
+            "example": "github.com",
             "type": "string"
           },
           "event_type": {
+            "example": "github.pull_request",
             "type": "string"
           },
           "id": {
+            "example": "event-uuid",
             "type": "string"
           },
           "metadata": {
             "description": "JSON-encoded string",
+            "example": {},
             "format": "json",
             "type": "string"
           },
           "version": {
+            "example": 1,
             "type": "integer"
           }
         },
@@ -430,6 +451,121 @@
           "prompt",
           "model_name",
           "model_provider"
+        ],
+        "type": "object"
+      },
+      "functionstore_EventTrigger": {
+        "properties": {
+          "createdAt": {
+            "description": "Timestamps for creation and updates",
+            "example": "2023-11-15T14:30:45Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "description": "A user-friendly description of what the trigger does.",
+            "example": "Send a welcome email to a new user",
+            "type": "string"
+          },
+          "function": {
+            "description": "The name of the function to execute when the event is received.",
+            "example": "new_user_created_event_handler",
+            "type": "string"
+          },
+          "listenFor": {
+            "$ref": "#/components/schemas/functionstore_Listener"
+          },
+          "name": {
+            "description": "A unique identifier for the trigger.",
+            "example": "new_user_created",
+            "type": "string"
+          },
+          "type": {
+            "description": "The type of the triggered action.",
+            "example": "function",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2023-11-15T14:30:45Z",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "listenFor",
+          "type",
+          "function",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "functionstore_Function": {
+        "properties": {
+          "actionTarget": {
+            "description": "The target of the action.",
+            "example": "welcome_email_chain",
+            "type": "string"
+          },
+          "actionType": {
+            "description": "The type of action to perform after the script.",
+            "example": "chain",
+            "type": "string"
+          },
+          "createdAt": {
+            "description": "Timestamps for creation and updates",
+            "example": "2023-11-15T14:30:45Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "description": "A user-friendly description of what the function does.",
+            "type": "string"
+          },
+          "name": {
+            "description": "A unique identifier for the function.",
+            "example": "send_welcome_email_event_handler",
+            "type": "string"
+          },
+          "script": {
+            "description": "The script code itself.",
+            "type": "string"
+          },
+          "scriptType": {
+            "description": "The type of script to execute.",
+            "example": "goja",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2023-11-15T14:30:45Z",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "scriptType",
+          "script",
+          "actionType",
+          "actionTarget",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "functionstore_Listener": {
+        "properties": {
+          "type": {
+            "description": "The event type to listen for.",
+            "example": "contenox.user_created",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
         ],
         "type": "object"
       },
@@ -1207,7 +1343,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.51-127-g3d14671-dirty"
+    "version": "v0.0.51-135-g52c6b4e-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1613,6 +1749,268 @@
         "summary": "Generates vector embeddings for text."
       }
     },
+    "/event-triggers": {
+      "get": {
+        "description": "Lists all event triggers with pagination\nReturns event triggers in creation order, with the oldest triggers first.",
+        "parameters": [
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_functionstore_EventTrigger"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists all event triggers with pagination"
+      },
+      "post": {
+        "description": "Creates a new event trigger\nEvent triggers listen for specific events and execute associated functions.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/functionstore_EventTrigger"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/functionstore_EventTrigger"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Creates a new event trigger"
+      }
+    },
+    "/event-triggers/event-type/{eventType}": {
+      "get": {
+        "description": "Lists event triggers filtered by event type\nReturns all event triggers that listen for the specified event type.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_functionstore_EventTrigger"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists event triggers filtered by event type"
+      },
+      "parameters": [
+        {
+          "description": "The event type to filter by.",
+          "in": "path",
+          "name": "eventType",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/event-triggers/function/{functionName}": {
+      "get": {
+        "description": "Lists event triggers filtered by function name\nReturns all event triggers that execute the specified function.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_functionstore_EventTrigger"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists event triggers filtered by function name"
+      },
+      "parameters": [
+        {
+          "description": "The function name to filter by.",
+          "in": "path",
+          "name": "functionName",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "/event-triggers/{name}": {
+      "delete": {
+        "description": "Deletes an event trigger from the system\nReturns a simple confirmation message on success.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Deletes an event trigger from the system"
+      },
+      "get": {
+        "description": "Retrieves details for a specific event trigger",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/functionstore_EventTrigger"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Retrieves details for a specific event trigger"
+      },
+      "parameters": [
+        {
+          "description": "The unique name of the event trigger.",
+          "in": "path",
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "description": "Updates an existing event trigger configuration\nThe name from the URL path overrides any name in the request body.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/functionstore_EventTrigger"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/functionstore_EventTrigger"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Updates an existing event trigger configuration"
+      }
+    },
     "/events": {
       "post": {
         "description": "Appends a new event to the event store.\nThe event ID and CreatedAt will be auto-generated if not provided.\nEvents must be within ±10 minutes of current server time.",
@@ -1719,6 +2117,15 @@
         "description": "Retrieves events from a specific source within a time range.\nUseful for auditing or monitoring events from specific subsystems.",
         "parameters": [
           {
+            "description": "Maximum number of events to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
             "description": "The type of event to filter by.",
             "in": "query",
             "name": "event_type",
@@ -1731,15 +2138,6 @@
             "in": "query",
             "name": "event_source",
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Maximum number of events to return.",
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": "100",
               "type": "string"
             }
           }
@@ -1982,6 +2380,190 @@
           }
         },
         "summary": "Runs the prompt through the default LLM."
+      }
+    },
+    "/functions": {
+      "get": {
+        "description": "Lists all registered functions with pagination\nReturns functions in creation order, with the oldest functions first.",
+        "parameters": [
+          {
+            "description": "The maximum number of items to return per page.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/array_functionstore_Function"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Lists all registered functions with pagination"
+      },
+      "post": {
+        "description": "Creates a new serverless function\nFunctions contain executable JavaScript code that runs in a secure sandbox.\nAfter execution, functions can trigger chains for further processing.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/functionstore_Function"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/functionstore_Function"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Creates a new serverless function"
+      }
+    },
+    "/functions/{name}": {
+      "delete": {
+        "description": "Deletes a function from the system\nReturns a simple confirmation message on success.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Deletes a function from the system"
+      },
+      "get": {
+        "description": "Retrieves details for a specific function",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/functionstore_Function"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Retrieves details for a specific function"
+      },
+      "parameters": [
+        {
+          "description": "The unique name of the function.",
+          "in": "path",
+          "name": "name",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "put": {
+        "description": "Updates an existing function configuration\nThe name from the URL path overrides any name in the request body.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/functionstore_Function"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/functionstore_Function"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default error response"
+          }
+        },
+        "summary": "Updates an existing function configuration"
       }
     },
     "/group-by-name/{name}": {
@@ -2653,19 +3235,19 @@
         "description": "Lists all registered models in internal format.\nThis endpoint returns full model details including timestamps and capabilities.\nIntended for administrative and debugging purposes.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -2822,19 +3404,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }

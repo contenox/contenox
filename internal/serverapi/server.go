@@ -18,12 +18,14 @@ import (
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/execservice"
+	"github.com/contenox/runtime/functionservice"
 	"github.com/contenox/runtime/hookproviderservice"
 	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/internal/backendapi"
 	"github.com/contenox/runtime/internal/chatapi"
 	"github.com/contenox/runtime/internal/eventsourceapi"
 	"github.com/contenox/runtime/internal/execapi"
+	"github.com/contenox/runtime/internal/functionapi"
 	"github.com/contenox/runtime/internal/groupapi"
 	"github.com/contenox/runtime/internal/hooksapi"
 	"github.com/contenox/runtime/internal/llmrepo"
@@ -167,7 +169,9 @@ func New(
 	}
 	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
 	eventsourceapi.AddEventSourceRoutes(mux, eventSourceService)
-
+	functionService := functionservice.New(dbInstance)
+	functionService = functionservice.WithActivityTracker(functionService, serveropsChainedTracker)
+	functionapi.AddFunctionRoutes(mux, functionService)
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
 	if config.Token != "" {
