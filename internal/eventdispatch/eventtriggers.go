@@ -39,7 +39,7 @@ func New(
 	repo := &FunctionsHandler{
 		functionCache: make(map[string]*functionstore.Function),
 		triggerCache:  make(map[string][]*functionstore.EventTrigger),
-		lock:          sync.RWMutex{},
+		lock:          sync.Mutex{},
 		functions:     functions,
 		onError:       onError,
 		syncInterval:  syncInterval,
