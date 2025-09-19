@@ -21,7 +21,7 @@ type FunctionsHandler struct {
 	lastSync      time.Time
 	initialSync   bool
 	syncInterval  time.Duration
-	lock          sync.RWMutex
+	lock          sync.Mutex
 	functions     functionservice.Service
 	onError       func(error)
 	tracker       libtracker.ActivityTracker
@@ -66,13 +66,13 @@ func (r *FunctionsHandler) syncFunctions(ctx context.Context) (map[string]*funct
 		for _, f := range functions {
 			functionCache[f.Name] = f
 		}
-		r.lock.RLock()
+		r.lock.Lock()
 		r.functionCache = functionCache
-		r.lock.RUnlock()
+		r.lock.Unlock()
 	}
 	if len(functionCache) == 0 {
-		r.lock.RLock()
-		defer r.lock.RUnlock()
+		r.lock.Lock()
+		defer r.lock.Unlock()
 		return r.functionCache, nil
 	}
 
@@ -94,25 +94,30 @@ func (r *FunctionsHandler) syncTriggers(ctx context.Context) (map[string][]*func
 			tt := t.ListenFor.Type
 			triggerCache[tt] = append(triggerCache[tt], t)
 		}
-		r.lock.RLock()
+		r.lock.Lock()
 		r.triggerCache = triggerCache
-		r.lock.RUnlock()
+		r.lock.Unlock()
 	}
 	if len(triggerCache) == 0 {
-		r.lock.RLock()
-		defer r.lock.RUnlock()
+		r.lock.Lock()
+		defer r.lock.Unlock()
 		return r.triggerCache, nil
 	}
 
 	return triggerCache, nil
 }
 
-func (r *FunctionsHandler) GetFunctions(ctx context.Context, eventTypes ...string) ([]*functionstore.Function, error) {
+type FunctionWithTrigger struct {
+	Function *functionstore.Function
+	Trigger  *functionstore.EventTrigger
+}
+
+func (r *FunctionsHandler) GetFunctions(ctx context.Context, eventTypes ...string) (map[string][]*FunctionWithTrigger, error) {
 	functionsCache, err := r.syncFunctions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	functions := make([]*functionstore.Function, 0, len(functionsCache))
+	functions := make(map[string][]*FunctionWithTrigger)
 	triggerCache, err := r.syncTriggers(ctx)
 	if err != nil {
 		return nil, err
@@ -127,7 +132,10 @@ func (r *FunctionsHandler) GetFunctions(ctx context.Context, eventTypes ...strin
 			if !ok {
 				continue
 			}
-			functions = append(functions, functionsFromCache)
+			functions[eventType] = append(functions[eventType], &FunctionWithTrigger{
+				Function: functionsFromCache,
+				Trigger:  et,
+			})
 		}
 	}
 
@@ -139,11 +147,11 @@ func (r *FunctionsHandler) HandleEvent(ctx context.Context, events ...*eventstor
 	for _, event := range events {
 		eventTypes = append(eventTypes, event.EventType)
 	}
-	functions, err := r.GetFunctions(ctx, eventTypes...)
+	functionsWithTrigger, err := r.GetFunctions(ctx, eventTypes...)
 	if err != nil {
 		r.onError(err)
 	}
-	for _, function := range functions {
+	for _, function := range functionsWithTrigger {
 		_ = function
 		// TODO trigger goja
 	}
