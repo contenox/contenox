@@ -15,7 +15,10 @@ import (
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/eventstore"
 	"github.com/contenox/runtime/execservice"
+	"github.com/contenox/runtime/functionservice"
+	"github.com/contenox/runtime/functionstore"
 	"github.com/contenox/runtime/hookproviderservice"
+	"github.com/contenox/runtime/internal/eventdispatch"
 	"github.com/contenox/runtime/internal/hooks"
 	"github.com/contenox/runtime/internal/llmrepo"
 	"github.com/contenox/runtime/internal/modelrepo"
@@ -44,6 +47,10 @@ type Playground struct {
 	llmRepo                   llmrepo.ModelRepo
 	hookrepo                  taskengine.HookRepo
 	eventSourceService        eventsourceservice.Service
+	eventDispatcher           eventdispatch.Trigger
+	functionsService          functionservice.Service
+	eventSourceInit           bool
+	functionInit              bool
 	withgroup                 bool
 	routinesStarted           bool
 	embeddingsModel           string
@@ -124,6 +131,58 @@ func (p *Playground) StartBackgroundRoutines(ctx context.Context) *Playground {
 	group.ForceUpdate("downloadCycle")
 
 	p.routinesStarted = true
+	return p
+}
+
+func (p *Playground) WithFunctionInit(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.db == nil {
+		p.Error = errors.New("cannot init function service: database is not configured")
+		return p
+	}
+	if !p.functionInit {
+		err := functionstore.InitSchema(ctx, p.db.WithoutTransaction())
+		if err != nil {
+			p.Error = err
+			return p
+		}
+		p.functionInit = true
+	}
+	p.functionsService = functionservice.New(p.db)
+	return p
+}
+
+func (p *Playground) WithFunctionService(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.db == nil {
+		p.Error = errors.New("cannot init function service: database is not configured")
+		return p
+	}
+	if !p.functionInit {
+		err := functionstore.InitSchema(ctx, p.db.WithoutTransaction())
+		if err != nil {
+			p.Error = err
+			return p
+		}
+		p.functionInit = true
+	}
+	p.functionsService = functionservice.New(p.db)
+	return p
+}
+
+func (p *Playground) WithEventDispatcher(ctx context.Context, onError func(error), syncInterval time.Duration) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.functionsService == nil {
+		p.Error = errors.New("cannot init event dispatcher: function service is not configured")
+		return p
+	}
+	p.eventDispatcher, p.Error = eventdispatch.New(ctx, p.functionsService, onError, syncInterval, libtracker.NoopTracker{})
 	return p
 }
 
@@ -477,6 +536,26 @@ func (p *Playground) WithTokenizerService(ctx context.Context, tokenizerURL stri
 	return p
 }
 
+func (p *Playground) WithEventSourceInit(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
+
+	if p.bus == nil {
+		p.Error = errors.New("cannot initialize event source service: message bus is not configured")
+		return p
+	}
+	if p.eventSourceInit == false {
+		err := eventstore.InitSchema(ctx, p.db.WithoutTransaction())
+		if err != nil {
+			p.Error = fmt.Errorf("failed to initialize event source service: %w", err)
+			return p
+		}
+		p.eventSourceInit = true
+	}
+	return p
+}
+
 func (p *Playground) WithEventSourceService(ctx context.Context) *Playground {
 	if p.Error != nil {
 		return p
@@ -485,16 +564,19 @@ func (p *Playground) WithEventSourceService(ctx context.Context) *Playground {
 		p.Error = errors.New("cannot initialize event source service: database is not configured")
 		return p
 	}
-	if p.bus == nil {
-		p.Error = errors.New("cannot initialize event source service: message bus is not configured")
+	if p.eventSourceInit == false {
+		err := eventstore.InitSchema(ctx, p.db.WithoutTransaction())
+		if err != nil {
+			p.Error = fmt.Errorf("failed to initialize event source service: %w", err)
+			return p
+		}
+		p.eventSourceInit = true
+	}
+	if p.eventDispatcher == nil {
+		p.Error = errors.New("cannot initialize event source service: event dispatcher is not configured")
 		return p
 	}
-	err := eventstore.InitSchema(ctx, p.db.WithoutTransaction())
-	if err != nil {
-		p.Error = fmt.Errorf("failed to initialize event source service: %w", err)
-		return p
-	}
-	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, p.db, p.bus)
+	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, p.db, p.bus, p.eventDispatcher)
 	if err != nil {
 		p.Error = fmt.Errorf("failed to initialize event source service: %w", err)
 		return p

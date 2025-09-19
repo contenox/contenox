@@ -1164,6 +1164,7 @@ Events must be within ±10 minutes of current server time.
   "event_type": "github.pull_request",
   "id": "event-uuid",
   "metadata": {},
+  "nid": 1,
   "version": 1
 }
 ```
@@ -1188,6 +1189,7 @@ Events must be within ±10 minutes of current server time.
   "event_type": "github.pull_request",
   "id": "event-uuid",
   "metadata": {},
+  "nid": 1,
   "version": 1
 }
 ```
@@ -1230,10 +1232,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
-|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -1250,6 +1252,7 @@ Useful for rebuilding aggregate state or auditing changes.
     "event_type": "github.pull_request",
     "id": "event-uuid",
     "metadata": {},
+    "nid": 1,
     "version": 1
   }
 ]
@@ -1293,9 +1296,9 @@ Useful for auditing or monitoring events from specific subsystems.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |event_source|query|string|false|The source system that generated the event.|
-|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -1312,6 +1315,7 @@ Useful for auditing or monitoring events from specific subsystems.
     "event_type": "github.pull_request",
     "id": "event-uuid",
     "metadata": {},
+    "nid": 1,
     "version": 1
   }
 ]
@@ -1488,6 +1492,7 @@ Useful for cross-aggregate analysis or system-wide event monitoring.
     "event_type": "github.pull_request",
     "id": "event-uuid",
     "metadata": {},
+    "nid": 1,
     "version": 1
   }
 ]
@@ -3922,8 +3927,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -4676,6 +4681,7 @@ X-API-Key
     "event_type": "github.pull_request",
     "id": "event-uuid",
     "metadata": {},
+    "nid": 1,
     "version": 1
   }
 ]
@@ -5208,6 +5214,7 @@ X-API-Key
   "event_type": "github.pull_request",
   "id": "event-uuid",
   "metadata": {},
+  "nid": 1,
   "version": 1
 }
 
@@ -5225,6 +5232,7 @@ X-API-Key
 |event_type|string|true|none|none|
 |id|string|true|none|none|
 |metadata|string(json)|true|none|JSON-encoded string|
+|nid|integer|true|none|none|
 |version|integer|true|none|none|
 
 <h2 id="tocS_execapi_DefaultModelResponse">execapi_DefaultModelResponse</h2>

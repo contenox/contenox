@@ -232,11 +232,15 @@ components:
                     example: {}
                     format: json
                     type: string
+                nid:
+                    example: 1
+                    type: integer
                 version:
                     example: 1
                     type: integer
             required:
                 - id
+                - nid
                 - created_at
                 - event_type
                 - event_source
@@ -1515,6 +1519,12 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
@@ -1529,12 +1539,6 @@ paths:
                   in: query
                   name: aggregate_id
                   schema:
-                    type: string
-                - description: Maximum number of events to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
                     type: string
             responses:
                 "200":
@@ -1556,6 +1560,12 @@ paths:
                 Retrieves events from a specific source within a time range.
                 Useful for auditing or monitoring events from specific subsystems.
             parameters:
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
@@ -1565,12 +1575,6 @@ paths:
                   in: query
                   name: event_source
                   schema:
-                    type: string
-                - description: Maximum number of events to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
                     type: string
             responses:
                 "200":
@@ -2771,16 +2775,16 @@ paths:
         get:
             description: Lists all task chain definitions with pagination.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":

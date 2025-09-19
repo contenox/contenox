@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/contenox/runtime/eventstore"
+	"github.com/contenox/runtime/internal/eventdispatch"
 	"github.com/contenox/runtime/libbus"
 	"github.com/contenox/runtime/libdbexec"
 )
@@ -36,6 +38,7 @@ type EventSource struct {
 	store      eventstore.Store
 	manager    partitionManager
 	messenger  libbus.Messenger
+	action     eventdispatch.Trigger
 }
 
 type partitionManager struct {
@@ -45,7 +48,12 @@ type partitionManager struct {
 }
 
 // NewEventSourceService creates a new event source service with partition management
-func NewEventSourceService(ctx context.Context, dbInstance libdbexec.DBManager, messenger libbus.Messenger) (Service, error) {
+func NewEventSourceService(
+	ctx context.Context,
+	dbInstance libdbexec.DBManager,
+	messenger libbus.Messenger,
+	action eventdispatch.Trigger,
+) (Service, error) {
 	exec := dbInstance.WithoutTransaction()
 	store := eventstore.New(exec)
 
@@ -57,6 +65,7 @@ func NewEventSourceService(ctx context.Context, dbInstance libdbexec.DBManager, 
 			lock:        sync.Mutex{},
 		},
 		messenger: messenger,
+		action:    action,
 	}
 
 	// Initialize partitions on startup
@@ -205,9 +214,14 @@ func (s *EventSource) AppendEvent(ctx context.Context, event *eventstore.Event) 
 		return err
 	}
 	subject := fmt.Sprintf("events.%s", event.EventType)
-	if err := s.messenger.Publish(ctx, subject, eventData); err != nil {
-		return fmt.Errorf("failed to publish event to NATS: %w", err)
-	}
+	go func() {
+		bgCtx := context.Background()
+		if err := s.messenger.Publish(bgCtx, subject, eventData); err != nil {
+			slog.Error("Failed to publish event to NATS", "event_id", event.ID, "error", err)
+		}
+	}()
+
+	s.action.HandleEvent(ctx, event)
 
 	return nil
 }

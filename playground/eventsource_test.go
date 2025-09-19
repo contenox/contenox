@@ -18,6 +18,13 @@ func TestSystem_EventSourceService_Subscribe(t *testing.T) {
 	p := playground.New()
 	p.WithPostgresTestContainer(ctx).
 		WithNats(ctx).
+		WithEventSourceInit(ctx).
+		WithFunctionService(ctx).
+		WithEventDispatcher(ctx, func(err error) {
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		}, time.Millisecond*5).
 		WithEventSourceService(ctx)
 
 	require.NoError(t, p.GetError())

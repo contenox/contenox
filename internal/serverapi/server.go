@@ -23,6 +23,7 @@ import (
 	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/internal/backendapi"
 	"github.com/contenox/runtime/internal/chatapi"
+	"github.com/contenox/runtime/internal/eventdispatch"
 	"github.com/contenox/runtime/internal/eventsourceapi"
 	"github.com/contenox/runtime/internal/execapi"
 	"github.com/contenox/runtime/internal/functionapi"
@@ -163,14 +164,22 @@ func New(
 	)
 	chatService = chatservice.WithActivityTracker(chatService, serveropsChainedTracker)
 	chatapi.AddChatRoutes(mux, chatService)
-	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance, pubsub)
+	functionService := functionservice.New(dbInstance)
+	functionService = functionservice.WithActivityTracker(functionService, serveropsChainedTracker)
+
+	ed, err := eventdispatch.New(ctx, functionService, func(err error) {
+		//TODO
+	}, time.Second, serveropsChainedTracker)
+	if err != nil {
+		return nil, cleanup, fmt.Errorf("failed to initialize event dispatch service: %w", err)
+	}
+
+	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance, pubsub, ed)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("failed to initialize event source service: %w", err)
 	}
 	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
 	eventsourceapi.AddEventSourceRoutes(mux, eventSourceService)
-	functionService := functionservice.New(dbInstance)
-	functionService = functionservice.WithActivityTracker(functionService, serveropsChainedTracker)
 	functionapi.AddFunctionRoutes(mux, functionService)
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
