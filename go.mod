@@ -4,6 +4,7 @@ go 1.24.5
 
 require (
 	github.com/contenox/authz v0.0.1
+	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
 	github.com/nats-io/nats.go v1.41.1
 	github.com/ollama/ollama v0.11.4
 	github.com/testcontainers/testcontainers-go/modules/nats v0.36.0
@@ -14,9 +15,12 @@ require (
 require (
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
+	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
+	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
+	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
