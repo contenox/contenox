@@ -12,6 +12,9 @@ import (
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/eventstore"
 	"github.com/contenox/runtime/execservice"
+	"github.com/contenox/runtime/functionservice"
+	"github.com/contenox/runtime/functionstore"
+	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskchainservice"
 	"github.com/contenox/runtime/taskengine"
@@ -32,6 +35,11 @@ type GojaExecutor struct {
 	taskService          execservice.ExecService
 	taskchainService     taskchainservice.Service
 	taskchainExecService execservice.TasksEnvService
+	functionService      functionservice.Service
+	syncRoutine          *libroutine.Routine
+	syncTriggerChan      chan struct{}
+	syncCancelFunc       context.CancelFunc
+	syncWG               sync.WaitGroup
 }
 
 // compiledFunction represents a pre-compiled JavaScript function with version tracking
@@ -51,6 +59,7 @@ type actionFunc func() (interface{}, error)
 //   - taskchainService: Service for retrieving task chain definitions
 //   - tracker: Activity tracker for monitoring execution
 //   - taskchainExecService: Service for executing complete task chains
+//   - functionService: Service for synchronizing function-scripts
 //
 // Returns:
 //   - Executor: A new GojaExecutor instance
@@ -60,6 +69,7 @@ func NewGojaExecutor(
 	taskchainService taskchainservice.Service,
 	tracker libtracker.ActivityTracker,
 	taskchainExecService execservice.TasksEnvService,
+	functionService functionservice.Service,
 ) Executor {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
@@ -72,7 +82,15 @@ func NewGojaExecutor(
 		taskchainService:     taskchainService,
 		taskchainExecService: taskchainExecService,
 		functionCache:        &sync.Map{},
+		functionService:      functionService,
+		syncTriggerChan:      make(chan struct{}, 1), // Buffered channel to avoid blocking
 	}
+
+	// Initialize the circuit breaker for sync operations
+	executor.syncRoutine = libroutine.NewRoutine(
+		3,             // 3 failures before opening circuit
+		5*time.Minute, // 5 minutes reset timeout
+	)
 
 	// Initialize VM pool - built-ins will be bound per-execution with correct context
 	executor.vmPool = sync.Pool{
@@ -82,6 +100,76 @@ func NewGojaExecutor(
 	}
 
 	return executor
+}
+
+// StartSync begins background synchronization of the function cache
+// Parameters:
+//   - ctx: Context for managing the sync lifecycle
+//   - syncInterval: How often to perform automatic syncs
+func (e *GojaExecutor) StartSync(ctx context.Context, syncInterval time.Duration) {
+	syncCtx, cancel := context.WithCancel(ctx)
+	e.syncCancelFunc = cancel
+
+	e.syncWG.Add(1)
+	go e.syncLoop(syncCtx, syncInterval)
+}
+
+// StopSync stops the background synchronization
+func (e *GojaExecutor) StopSync() {
+	if e.syncCancelFunc != nil {
+		e.syncCancelFunc()
+	}
+	e.syncWG.Wait()
+}
+
+// TriggerSync manually triggers a synchronization
+func (e *GojaExecutor) TriggerSync() {
+	select {
+	case e.syncTriggerChan <- struct{}{}:
+		// Trigger sent successfully
+	default:
+		// Trigger channel is full, sync already pending
+	}
+}
+
+// syncLoop handles the background synchronization with circuit breaker protection
+func (e *GojaExecutor) syncLoop(ctx context.Context, syncInterval time.Duration) {
+	defer e.syncWG.Done()
+
+	// Initial sync on startup
+	if err := e.syncWithCircuitBreaker(ctx); err != nil {
+		e.tracker.Start(ctx, "sync", "function_cache",
+			"error", "initial_sync_failed", "err", err.Error())
+	}
+
+	ticker := time.NewTicker(syncInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Periodic sync
+			if err := e.syncWithCircuitBreaker(ctx); err != nil {
+				e.tracker.Start(ctx, "sync", "function_cache",
+					"error", "periodic_sync_failed", "err", err.Error())
+			}
+		case <-e.syncTriggerChan:
+			// Manual trigger
+			if err := e.syncWithCircuitBreaker(ctx); err != nil {
+				e.tracker.Start(ctx, "sync", "function_cache",
+					"error", "triggered_sync_failed", "err", err.Error())
+			}
+		}
+	}
+}
+
+// syncWithCircuitBreaker executes sync with circuit breaker protection
+func (e *GojaExecutor) syncWithCircuitBreaker(ctx context.Context) error {
+	return e.syncRoutine.Execute(ctx, func(ctx context.Context) error {
+		return e.syncFunctionCache(ctx)
+	})
 }
 
 // ExecuteFunction executes a JavaScript function with the given event as input.
@@ -240,7 +328,7 @@ func (e *GojaExecutor) withErrorReporting(
 	fn actionFunc,
 ) goja.Value {
 	// Add 30s timeout to prevent hanging
-	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	timeoutCctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	resultChan := make(chan struct {
@@ -284,7 +372,7 @@ func (e *GojaExecutor) withErrorReporting(
 	}()
 
 	select {
-	case <-timeoutCtx.Done():
+	case <-timeoutCctx.Done():
 		// Report timeout to tracker
 		fields := map[string]interface{}{"timeout": true}
 		for k, v := range extra {
@@ -626,12 +714,180 @@ func (e *GojaExecutor) setupContextBoundBuiltins(vm *goja.Runtime, ctx context.C
 	}
 }
 
-// ClearFunctionCache removes a function from the cache with tracking.
+func (e *GojaExecutor) syncFunctionCache(ctx context.Context) error {
+	// Track the sync operation
+	reportErr, _, end := e.tracker.Start(ctx, "sync", "function_cache")
+	defer end()
+
+	// Step 1: Fetch all current functions from store
+	allFunctions, err := e.functionService.ListAllFunctions(ctx)
+	if err != nil {
+		reportErr(fmt.Errorf("failed to list functions: %w", err))
+		return err
+	}
+
+	// Build lookup map from DB
+	dbFunctions := make(map[string]*functionstore.Function, len(allFunctions))
+	for _, function := range allFunctions {
+		dbFunctions[function.Name] = function
+	}
+
+	// Track which functions we've processed
+	processed := make(map[string]bool)
+
+	// Step 2: Validate cache against DB — remove stale/changed entries
+	e.functionCache.Range(func(key, value interface{}) bool {
+		name, ok := key.(string)
+		if !ok {
+			// Invalid key type — delete
+			e.functionCache.Delete(name)
+			_, reportChange, _ := e.tracker.Start(ctx, "sync", "function_cache", "action", "deleted_invalid_key", "function_name", name)
+			reportChange(name, map[string]interface{}{"reason": "invalid_key_type"})
+			return true
+		}
+
+		compiled, ok := value.(*compiledFunction)
+		if !ok {
+			// Invalid value type — delete
+			e.functionCache.Delete(name)
+			_, reportChange, _ := e.tracker.Start(ctx, "sync", "function_cache", "action", "deleted_invalid_value", "function_name", name)
+			reportChange(name, map[string]interface{}{"reason": "invalid_cache_value"})
+			return true
+		}
+
+		processed[name] = true
+
+		dbFunc, exists := dbFunctions[name]
+		if !exists {
+			// Function deleted in DB — remove from cache
+			e.functionCache.Delete(name)
+			_, reportChange, _ := e.tracker.Start(ctx, "sync", "function_cache", "action", "deleted", "function_name", name)
+			reportChange(name, map[string]interface{}{"reason": "not_in_db"})
+			return true
+		}
+
+		// Compute current hash from DB script
+		currentHash := e.computeCodeHash(dbFunc.Script)
+
+		// TRUE DIFF: compare cached hash vs current DB hash
+		if compiled.codeHash != currentHash {
+			// Code changed — invalidate cache entry
+			e.functionCache.Delete(name)
+			_, reportChange, _ := e.tracker.Start(ctx, "sync", "function_cache", "action", "invalidated", "function_name", name)
+			reportChange(name, map[string]interface{}{
+				"old_hash": compiled.codeHash,
+				"new_hash": currentHash,
+				"reason":   "code_changed",
+			})
+		}
+
+		return true
+	})
+
+	// Step 3: Load missing or invalidated functions into cache
+	for name, f := range dbFunctions {
+		if processed[name] {
+			continue // already valid — skip
+		}
+
+		// Compile and cache
+		reportErr, reportChange, end := e.tracker.Start(ctx, "sync", "function_cache", "action", "compile", "function_name", name)
+		defer end()
+
+		program, err := goja.Compile(name, f.Script, false)
+		if err != nil {
+			reportErr(fmt.Errorf("compile failed during sync: %w", err))
+			continue
+		}
+
+		newHash := e.computeCodeHash(f.Script)
+		compiled := &compiledFunction{
+			program:  program,
+			codeHash: newHash,
+		}
+
+		e.functionCache.Store(name, compiled)
+		reportChange(name, map[string]interface{}{
+			"code_hash": newHash,
+			"reason":    "loaded_or_updated",
+		})
+	}
+
+	return nil
+}
+
+func (e *GojaExecutor) syncSingleFunction(ctx context.Context, functionName string) error {
+	storedFunc, err := e.functionService.GetFunction(ctx, functionName)
+	if err != nil {
+		// Function doesn't exist — ensure cache is clean
+		e.functionCache.Delete(functionName)
+		_, reportChange, _ := e.tracker.Start(ctx, "sync", "function_cache", "action", "deleted", "function_name", functionName)
+		reportChange(functionName, map[string]interface{}{"reason": "not_found_in_db"})
+		return err
+	}
+
+	var currentHash = e.computeCodeHash(storedFunc.Script)
+
+	// Check cache
+	if cached, ok := e.functionCache.Load(functionName); ok {
+		if compiled, ok := cached.(*compiledFunction); ok {
+			// TRUE DIFF: compare cached hash with current
+			if compiled.codeHash == currentHash {
+				// No change — no-op
+				return nil
+			}
+			// Changed — invalidate
+			e.functionCache.Delete(functionName)
+			_, reportChange, _ := e.tracker.Start(ctx, "sync", "function_cache", "action", "invalidated", "function_name", functionName)
+			reportChange(functionName, map[string]interface{}{
+				"old_hash": compiled.codeHash,
+				"new_hash": currentHash,
+				"reason":   "code_changed",
+			})
+		} else {
+			// Corrupted cache entry
+			e.functionCache.Delete(functionName)
+			_, reportChange, _ := e.tracker.Start(ctx, "sync", "function_cache", "action", "deleted_invalid_value", "function_name", functionName)
+			reportChange(functionName, map[string]interface{}{"reason": "corrupted_cache_entry"})
+		}
+	}
+
+	// (Re)compile and cache
+	reportErr, reportChange, end := e.tracker.Start(ctx, "sync", "function_cache", "action", "compile", "function_name", functionName)
+	defer end()
+
+	program, err := goja.Compile(functionName, storedFunc.Script, false)
+	if err != nil {
+		reportErr(fmt.Errorf("compile failed: %w", err))
+		return err
+	}
+
+	compiled := &compiledFunction{
+		program:  program,
+		codeHash: currentHash,
+	}
+
+	e.functionCache.Store(functionName, compiled)
+	reportChange(functionName, map[string]interface{}{
+		"code_hash": currentHash,
+		"reason":    "synced_from_db",
+	})
+
+	return nil
+}
+
+// computeCodeHash generates a deterministic hash for code comparison
+func (e *GojaExecutor) computeCodeHash(code string) string {
+	hash := sha1.Sum([]byte(code))
+	return base64.StdEncoding.EncodeToString(hash[:])
+}
+
+// clearFunctionCache removes a function from the cache with tracking.
 //
 // Parameters:
 //   - ctx: Execution context
 //   - functionName: Name of the function to remove from cache
-func (e *GojaExecutor) ClearFunctionCache(ctx context.Context, functionName string) {
+func (e *GojaExecutor) clearFunctionCache(ctx context.Context, functionName string) {
 	// Track cache clearance
 	_, reportChange, end := e.tracker.Start(ctx, "clear", "function_cache",
 		"function_name", functionName)
