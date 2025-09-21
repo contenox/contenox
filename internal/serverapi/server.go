@@ -27,6 +27,7 @@ import (
 	"github.com/contenox/runtime/internal/eventdispatch"
 	"github.com/contenox/runtime/internal/eventsourceapi"
 	"github.com/contenox/runtime/internal/execapi"
+	"github.com/contenox/runtime/internal/execsyncapi"
 	"github.com/contenox/runtime/internal/functionapi"
 	"github.com/contenox/runtime/internal/groupapi"
 	"github.com/contenox/runtime/internal/hooksapi"
@@ -185,6 +186,8 @@ func New(
 
 	executorService := executor.NewGojaExecutor(eventSourceService, execService, taskChainService, serveropsChainedTracker, taskService, functionService)
 	executorService.StartSync(ctx, time.Second*10)
+	execsyncapi.AddExecutorRoutes(mux, executorService)
+
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
 	if config.Token != "" {

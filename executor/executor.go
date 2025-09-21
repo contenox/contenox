@@ -10,9 +10,13 @@ import (
 type ExecutorManager interface {
 	StartSync(ctx context.Context, syncInterval time.Duration)
 	StopSync()
-	TriggerSync()
+	ExecutorSyncTrigger
 
 	Executor
+}
+
+type ExecutorSyncTrigger interface {
+	TriggerSync()
 }
 
 // Executor defines the interface for executing functions with an event as input.
