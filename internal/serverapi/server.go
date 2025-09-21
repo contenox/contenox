@@ -18,6 +18,7 @@ import (
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/execservice"
+	"github.com/contenox/runtime/executor"
 	"github.com/contenox/runtime/functionservice"
 	"github.com/contenox/runtime/hookproviderservice"
 	"github.com/contenox/runtime/internal/apiframework"
@@ -181,6 +182,9 @@ func New(
 	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
 	eventsourceapi.AddEventSourceRoutes(mux, eventSourceService)
 	functionapi.AddFunctionRoutes(mux, functionService)
+
+	executorService := executor.NewGojaExecutor(eventSourceService, execService, taskChainService, serveropsChainedTracker, taskService, functionService)
+	executorService.StartSync(ctx, time.Second*10)
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
 	if config.Token != "" {
