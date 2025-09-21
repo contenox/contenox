@@ -37,10 +37,10 @@ func (s *store) CreateFunction(ctx context.Context, function *Function) error {
 
 	_, err := s.Exec.ExecContext(ctx, `
 		INSERT INTO functions
-		(name, description, script_type, script, action_type, action_target, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		(name, description, script_type, script, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
 		function.Name, function.Description, function.ScriptType, function.Script,
-		function.ActionType, function.ActionTarget, function.CreatedAt, function.UpdatedAt,
+		function.CreatedAt, function.UpdatedAt,
 	)
 	return err
 }
@@ -48,11 +48,11 @@ func (s *store) CreateFunction(ctx context.Context, function *Function) error {
 func (s *store) GetFunction(ctx context.Context, name string) (*Function, error) {
 	var function Function
 	err := s.Exec.QueryRowContext(ctx, `
-		SELECT name, description, script_type, script, action_type, action_target, created_at, updated_at
+		SELECT name, description, script_type, script, created_at, updated_at
 		FROM functions WHERE name = $1`, name,
 	).Scan(
 		&function.Name, &function.Description, &function.ScriptType, &function.Script,
-		&function.ActionType, &function.ActionTarget, &function.CreatedAt, &function.UpdatedAt,
+		&function.CreatedAt, &function.UpdatedAt,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -66,10 +66,10 @@ func (s *store) UpdateFunction(ctx context.Context, function *Function) error {
 
 	result, err := s.Exec.ExecContext(ctx, `
 		UPDATE functions SET
-		description = $2, script_type = $3, script = $4, action_type = $5, action_target = $6, updated_at = $7
+		description = $2, script_type = $3, script = $4, updated_at = $5
 		WHERE name = $1`,
 		function.Name, function.Description, function.ScriptType, function.Script,
-		function.ActionType, function.ActionTarget, function.UpdatedAt,
+		function.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update function: %w", err)
@@ -98,7 +98,7 @@ func (s *store) ListFunctions(ctx context.Context, createdAtCursor *time.Time, l
 	}
 
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT name, description, script_type, script, action_type, action_target, created_at, updated_at
+		SELECT name, description, script_type, script, created_at, updated_at
 		FROM functions WHERE created_at < $1
 		ORDER BY created_at DESC
 		LIMIT $2`,
@@ -113,7 +113,7 @@ func (s *store) ListFunctions(ctx context.Context, createdAtCursor *time.Time, l
 		var f Function
 		if err := rows.Scan(
 			&f.Name, &f.Description, &f.ScriptType, &f.Script,
-			&f.ActionType, &f.ActionTarget, &f.CreatedAt, &f.UpdatedAt,
+			&f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan function: %w", err)
 		}
@@ -131,7 +131,7 @@ func (s *store) ListFunctions(ctx context.Context, createdAtCursor *time.Time, l
 
 func (s *store) ListAllFunctions(ctx context.Context) ([]*Function, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT name, description, script_type, script, action_type, action_target, created_at, updated_at
+		SELECT name, description, script_type, script, created_at, updated_at
 		FROM functions ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query functions: %w", err)
@@ -143,7 +143,7 @@ func (s *store) ListAllFunctions(ctx context.Context) ([]*Function, error) {
 		var f Function
 		if err := rows.Scan(
 			&f.Name, &f.Description, &f.ScriptType, &f.Script,
-			&f.ActionType, &f.ActionTarget, &f.CreatedAt, &f.UpdatedAt,
+			&f.CreatedAt, &f.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan function: %w", err)
 		}

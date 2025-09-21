@@ -70,7 +70,7 @@ func NewGojaExecutor(
 	tracker libtracker.ActivityTracker,
 	taskchainExecService execservice.TasksEnvService,
 	functionService functionservice.Service,
-) Executor {
+) ExecutorManager {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
 	}

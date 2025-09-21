@@ -15,6 +15,7 @@ import (
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/eventstore"
 	"github.com/contenox/runtime/execservice"
+	"github.com/contenox/runtime/executor"
 	"github.com/contenox/runtime/functionservice"
 	"github.com/contenox/runtime/functionstore"
 	"github.com/contenox/runtime/hookproviderservice"
@@ -48,7 +49,9 @@ type Playground struct {
 	hookrepo                  taskengine.HookRepo
 	eventSourceService        eventsourceservice.Service
 	eventDispatcher           eventdispatch.Trigger
-	functionsService          functionservice.Service
+	functionService           functionservice.Service
+	tracker                   libtracker.ActivityTracker
+	gojaExecutor              executor.ExecutorManager
 	eventSourceInit           bool
 	functionInit              bool
 	withgroup                 bool
@@ -150,7 +153,7 @@ func (p *Playground) WithFunctionInit(ctx context.Context) *Playground {
 		}
 		p.functionInit = true
 	}
-	p.functionsService = functionservice.New(p.db)
+	p.functionService = functionservice.New(p.db)
 	return p
 }
 
@@ -170,7 +173,7 @@ func (p *Playground) WithFunctionService(ctx context.Context) *Playground {
 		}
 		p.functionInit = true
 	}
-	p.functionsService = functionservice.New(p.db)
+	p.functionService = functionservice.New(p.db)
 	return p
 }
 
@@ -178,11 +181,14 @@ func (p *Playground) WithEventDispatcher(ctx context.Context, onError func(error
 	if p.Error != nil {
 		return p
 	}
-	if p.functionsService == nil {
+	if p.functionService == nil {
 		p.Error = errors.New("cannot init event dispatcher: function service is not configured")
 		return p
 	}
-	p.eventDispatcher, p.Error = eventdispatch.New(ctx, p.functionsService, onError, syncInterval, libtracker.NoopTracker{})
+	if p.tracker == nil {
+		p.tracker = libtracker.NoopTracker{}
+	}
+	p.eventDispatcher, p.Error = eventdispatch.New(ctx, p.functionService, onError, syncInterval, p.tracker)
 	return p
 }
 
@@ -366,6 +372,95 @@ func (p *Playground) WithRuntimeState(ctx context.Context, withgroups bool) *Pla
 	return p
 }
 
+// WithActivityTracker sets the activity tracker for the playground
+func (p *Playground) WithActivityTracker(tracker libtracker.ActivityTracker) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	p.tracker = tracker
+	return p
+}
+
+// WithGojaExecutor initializes and returns a Goja executor
+func (p *Playground) WithGojaExecutor(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
+
+	// Get required services
+	taskService, err := p.GetExecService(ctx)
+	if err != nil {
+		p.Error = err
+		return p
+	}
+
+	taskchainService, err := p.GetTaskChainService()
+	if err != nil {
+		p.Error = err
+		return p
+	}
+
+	taskchainExecService, err := p.GetTasksEnvService(ctx)
+	if err != nil {
+		p.Error = err
+		return p
+	}
+
+	eventSourceService, err := p.GetEventSourceService()
+	if err != nil {
+		p.Error = err
+		return p
+	}
+
+	// Use NoopTracker if none specified
+	if p.tracker == nil {
+		p.tracker = libtracker.NoopTracker{}
+	}
+
+	// Create the executor
+	p.gojaExecutor = executor.NewGojaExecutor(
+		eventSourceService,
+		taskService,
+		taskchainService,
+		p.tracker,
+		taskchainExecService,
+		p.functionService,
+	)
+
+	return p
+}
+
+// StartGojaExecutorSync starts the background sync for the Goja executor
+func (p *Playground) StartGojaExecutorSync(ctx context.Context, syncInterval time.Duration) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.gojaExecutor == nil {
+		p.Error = errors.New("Goja executor not initialized")
+		return p
+	}
+
+	p.gojaExecutor.StartSync(ctx, syncInterval)
+
+	// Add cleanup to stop sync
+	p.AddCleanUp(func() {
+		p.gojaExecutor.StopSync()
+	})
+
+	return p
+}
+
+// GetGojaExecutor returns the Goja executor instance
+func (p *Playground) GetGojaExecutor() (executor.ExecutorManager, error) {
+	if p.Error != nil {
+		return nil, p.Error
+	}
+	if p.gojaExecutor == nil {
+		return nil, errors.New("Goja executor not initialized")
+	}
+	return p.gojaExecutor, nil
+}
+
 // WithMockHookRegistry sets up a mock hook registry.
 func (p *Playground) WithMockHookRegistry() *Playground {
 	if p.Error != nil {
@@ -426,6 +521,17 @@ func (p *Playground) WithLLMRepo() *Playground {
 		return p
 	}
 	return p
+}
+
+func (p *Playground) GetFunctionService() (functionservice.Service, error) {
+	if p.Error != nil {
+		return nil, p.Error
+	}
+	if p.functionService == nil {
+		err := fmt.Errorf("function service is not initialized")
+		return nil, err
+	}
+	return p.functionService, nil
 }
 
 // WithOllamaBackend sets up an Ollama test instance and registers it as a backend.

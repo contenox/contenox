@@ -14,8 +14,6 @@ func InitSchema(ctx context.Context, exec libdbexec.Exec) error {
 		    description TEXT,
 		    script_type TEXT NOT NULL,
 		    script TEXT NOT NULL,
-		    action_type TEXT NOT NULL,
-		    action_target TEXT NOT NULL,
 		    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 		    updated_at TIMESTAMP WITH TIME ZONE NOT NULL
 		);

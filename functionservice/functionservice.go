@@ -155,12 +155,6 @@ func validateFunction(function *functionstore.Function) error {
 	if function.Script == "" {
 		return fmt.Errorf("%w: script is required", ErrInvalidFunction)
 	}
-	if function.ActionType != string(functionstore.ChainTerm) {
-		return fmt.Errorf("%w: actionType must be 'chain'", ErrInvalidFunction)
-	}
-	if function.ActionTarget == "" {
-		return fmt.Errorf("%w: actionTarget is required", ErrInvalidFunction)
-	}
 	return nil
 }
 

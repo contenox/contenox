@@ -21,7 +21,6 @@ func (d *activityTrackerDecorator) CreateFunction(ctx context.Context, function 
 		"function",
 		"name", function.Name,
 		"scriptType", function.ScriptType,
-		"actionType", function.ActionType,
 	)
 	defer endFn()
 
@@ -30,10 +29,8 @@ func (d *activityTrackerDecorator) CreateFunction(ctx context.Context, function 
 		reportErrFn(err)
 	} else {
 		reportChangeFn(function.Name, map[string]interface{}{
-			"name":         function.Name,
-			"scriptType":   function.ScriptType,
-			"actionType":   function.ActionType,
-			"actionTarget": function.ActionTarget,
+			"name":       function.Name,
+			"scriptType": function.ScriptType,
 		})
 	}
 
@@ -71,10 +68,8 @@ func (d *activityTrackerDecorator) UpdateFunction(ctx context.Context, function 
 		reportErrFn(err)
 	} else {
 		reportChangeFn(function.Name, map[string]interface{}{
-			"name":         function.Name,
-			"scriptType":   function.ScriptType,
-			"actionType":   function.ActionType,
-			"actionTarget": function.ActionTarget,
+			"name":       function.Name,
+			"scriptType": function.ScriptType,
 		})
 	}
 

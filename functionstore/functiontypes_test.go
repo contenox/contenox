@@ -13,12 +13,10 @@ func TestUnit_FunctionStore_CreateAndGetFunction(t *testing.T) {
 	ctx, store := SetupStore(t)
 
 	fn := &functionstore.Function{
-		Name:         "send_welcome_email",
-		Description:  "Sends welcome email to new users",
-		ScriptType:   "goja",
-		Script:       `console.log("Hello from Goja!");`,
-		ActionType:   "chain",
-		ActionTarget: "welcome_email_chain",
+		Name:        "send_welcome_email",
+		Description: "Sends welcome email to new users",
+		ScriptType:  "goja",
+		Script:      `console.log("Hello from Goja!");`,
 	}
 
 	err := store.CreateFunction(ctx, fn)
@@ -35,8 +33,6 @@ func TestUnit_FunctionStore_CreateAndGetFunction(t *testing.T) {
 	require.Equal(t, fn.Description, got.Description)
 	require.Equal(t, fn.ScriptType, got.ScriptType)
 	require.Equal(t, fn.Script, got.Script)
-	require.Equal(t, fn.ActionType, got.ActionType)
-	require.Equal(t, fn.ActionTarget, got.ActionTarget)
 	require.WithinDuration(t, fn.CreatedAt, got.CreatedAt, time.Second)
 	require.WithinDuration(t, fn.UpdatedAt, got.UpdatedAt, time.Second)
 }
@@ -45,12 +41,10 @@ func TestUnit_FunctionStore_UpdateFunction(t *testing.T) {
 	ctx, store := SetupStore(t)
 
 	fn := &functionstore.Function{
-		Name:         "update_me",
-		Description:  "Original description",
-		ScriptType:   "goja",
-		Script:       `console.log("original");`,
-		ActionType:   "chain",
-		ActionTarget: "original_chain",
+		Name:        "update_me",
+		Description: "Original description",
+		ScriptType:  "goja",
+		Script:      `console.log("original");`,
 	}
 
 	err := store.CreateFunction(ctx, fn)
@@ -95,12 +89,10 @@ func TestUnit_FunctionStore_ListFunctions(t *testing.T) {
 	// Create 3 functions
 	for i := 1; i <= 3; i++ {
 		fn := &functionstore.Function{
-			Name:         fmt.Sprintf("func_%d", i),
-			Description:  fmt.Sprintf("Function %d", i),
-			ScriptType:   "goja",
-			Script:       fmt.Sprintf(`console.log("func_%d");`, i),
-			ActionType:   "chain",
-			ActionTarget: "some_chain",
+			Name:        fmt.Sprintf("func_%d", i),
+			Description: fmt.Sprintf("Function %d", i),
+			ScriptType:  "goja",
+			Script:      fmt.Sprintf(`console.log("func_%d");`, i),
 		}
 		err := store.CreateFunction(ctx, fn)
 		require.NoError(t, err)

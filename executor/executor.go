@@ -2,9 +2,18 @@ package executor
 
 import (
 	"context"
+	"time"
 
 	"github.com/contenox/runtime/eventstore"
 )
+
+type ExecutorManager interface {
+	StartSync(ctx context.Context, syncInterval time.Duration)
+	StopSync()
+	TriggerSync()
+
+	Executor
+}
 
 // Executor defines the interface for executing functions with an event as input.
 type Executor interface {

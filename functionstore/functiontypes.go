@@ -45,10 +45,6 @@ type Function struct {
 	ScriptType string `json:"scriptType" yaml:"scriptType" example:"goja"`
 	// The script code itself.
 	Script string `json:"script" yaml:"script"`
-	// The type of action to perform after the script.
-	ActionType string `json:"actionType" yaml:"actionType" example:"chain"`
-	// The target of the action.
-	ActionTarget string `json:"actionTarget" yaml:"actionTarget" example:"welcome_email_chain"`
 	// Timestamps for creation and updates
 	CreatedAt time.Time `json:"createdAt" example:"2023-11-15T14:30:45Z"`
 	UpdatedAt time.Time `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
@@ -58,12 +54,6 @@ type FunctionScriptType string
 
 const (
 	GojaTerm FunctionScriptType = "goja"
-)
-
-type FunctionActionType string
-
-const (
-	ChainTerm FunctionActionType = "chain"
 )
 
 type FunctionType string
