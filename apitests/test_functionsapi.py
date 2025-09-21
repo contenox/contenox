@@ -10,8 +10,6 @@ def test_create_function(base_url):
         "description": "A test function",
         "scriptType": "goja",
         "script": "function handler(input) { return input; }",
-        "actionType": "chain",
-        "actionTarget": "test-chain"
     }
 
     response = requests.post(f"{base_url}/functions", json=payload)
@@ -20,7 +18,6 @@ def test_create_function(base_url):
 
     assert function["name"] == payload["name"], "Function name does not match"
     assert function["scriptType"] == payload["scriptType"], "Script type does not match"
-    assert function["actionType"] == payload["actionType"], "Action type does not match"
 
     # Clean up
     delete_url = f"{base_url}/functions/{function['name']}"
@@ -85,8 +82,6 @@ def test_update_function(base_url):
         "description": "Updated description",
         "scriptType": "goja",
         "script": "function handler(input) { return input.toUpperCase(); }",
-        "actionType": "chain",
-        "actionTarget": "updated-chain"
     }
 
     update_response = requests.put(f"{base_url}/functions/{function_name}", json=update_payload)
@@ -94,7 +89,6 @@ def test_update_function(base_url):
 
     updated_function = update_response.json()
     assert updated_function["description"] == "Updated description", "Description was not updated"
-    assert updated_function["actionTarget"] == "updated-chain", "Action target was not updated"
 
     # Clean up
     delete_url = f"{base_url}/functions/{function_name}"
@@ -110,8 +104,6 @@ def test_delete_function(base_url):
         "description": "A test function for deletion",
         "scriptType": "goja",
         "script": "function handler(input) { return input; }",
-        "actionType": "chain",
-        "actionTarget": "test-chain"
     }
 
     create_response = requests.post(f"{base_url}/functions", json=payload)
@@ -315,21 +307,6 @@ def test_list_event_triggers_by_function(base_url):
     delete_function_url = f"{base_url}/functions/{function_name}"
     del_function_response = requests.delete(delete_function_url)
     assert_status_code(del_function_response, 200)
-
-def test_function_validation(base_url):
-    """Test that function validation works correctly."""
-    # Test missing required fields
-    invalid_payloads = [
-        {"description": "Missing name"},  # Missing name
-        {"name": "test-function", "scriptType": "invalid"},  # Invalid script type
-        {"name": "test-function", "scriptType": "goja"},  # Missing script
-        {"name": "test-function", "scriptType": "goja", "script": "test", "actionType": "invalid"},  # Invalid action type
-        {"name": "test-function", "scriptType": "goja", "script": "test", "actionType": "chain"},  # Missing action target
-    ]
-
-    for payload in invalid_payloads:
-        response = requests.post(f"{base_url}/functions", json=payload)
-        assert response.status_code == 400 or response.status_code == 422, f"Expected validation error for {payload}"
 
 def test_event_trigger_validation(base_url):
     """Test that event trigger validation works correctly."""

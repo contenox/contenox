@@ -372,14 +372,6 @@ components:
             type: object
         functionstore_Function:
             properties:
-                actionTarget:
-                    description: The target of the action.
-                    example: welcome_email_chain
-                    type: string
-                actionType:
-                    description: The type of action to perform after the script.
-                    example: chain
-                    type: string
                 createdAt:
                     description: Timestamps for creation and updates
                     example: "2023-11-15T14:30:45Z"
@@ -408,8 +400,6 @@ components:
                 - description
                 - scriptType
                 - script
-                - actionType
-                - actionTarget
                 - createdAt
                 - updatedAt
             type: object
@@ -1038,7 +1028,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-136-gdd30095-dirty
+    version: v0.0.51-146-g68c140e-dirty
 openapi: 3.1.0
 paths:
     /backend-affinity/{backendID}/groups:
@@ -1519,6 +1509,16 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
+                - description: The aggregate type (e.g., 'user', 'order').
+                  in: query
+                  name: aggregate_type
+                  schema:
+                    type: string
+                - description: The unique ID of the aggregate.
+                  in: query
+                  name: aggregate_id
+                  schema:
+                    type: string
                 - description: Maximum number of events to return.
                   in: query
                   name: limit
@@ -1528,16 +1528,6 @@ paths:
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
-                  schema:
-                    type: string
-                - description: The aggregate type (e.g., 'user', 'order').
-                  in: query
-                  name: aggregate_type
-                  schema:
-                    type: string
-                - description: The unique ID of the aggregate.
-                  in: query
-                  name: aggregate_id
                   schema:
                     type: string
             responses:
@@ -1560,12 +1550,6 @@ paths:
                 Retrieves events from a specific source within a time range.
                 Useful for auditing or monitoring events from specific subsystems.
             parameters:
-                - description: Maximum number of events to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
-                    type: string
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
@@ -1575,6 +1559,12 @@ paths:
                   in: query
                   name: event_source
                   schema:
+                    type: string
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
                     type: string
             responses:
                 "200":
@@ -1664,16 +1654,16 @@ paths:
                 Retrieves events of a specific type within a time range.
                 Useful for cross-aggregate analysis or system-wide event monitoring.
             parameters:
-                - description: The type of event to filter by.
-                  in: query
-                  name: event_type
-                  schema:
-                    type: string
                 - description: Maximum number of events to return.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: The type of event to filter by.
+                  in: query
+                  name: event_type
+                  schema:
                     type: string
             responses:
                 "200":
@@ -2683,14 +2673,14 @@ paths:
                 Example: /queue/cancel?url=http://localhost:11434
                 /queue/cancel?model=mistral:latest
             parameters:
-                - description: The base URL of a specific backend to cancel downloads on.
-                  in: query
-                  name: url
-                  schema:
-                    type: string
                 - description: The model name to cancel downloads for across all backends.
                   in: query
                   name: model
+                  schema:
+                    type: string
+                - description: The base URL of a specific backend to cancel downloads on.
+                  in: query
+                  name: url
                   schema:
                     type: string
             responses:

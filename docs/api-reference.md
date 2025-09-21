@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-136-gdd30095-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-146-g68c140e-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-136-gdd30095-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-146-g68c140e-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1232,10 +1232,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
-|event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
+|limit|query|string|false|Maximum number of events to return.|
+|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -1296,9 +1296,9 @@ Useful for auditing or monitoring events from specific subsystems.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |event_source|query|string|false|The source system that generated the event.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -1474,8 +1474,8 @@ Useful for cross-aggregate analysis or system-wide event monitoring.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|event_type|query|string|false|The type of event to filter by.|
 |limit|query|string|false|Maximum number of events to return.|
+|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -1660,8 +1660,6 @@ Returns functions in creation order, with the oldest functions first.
 ```json
 [
   {
-    "actionTarget": "welcome_email_chain",
-    "actionType": "chain",
     "createdAt": "2023-11-15T14:30:45Z",
     "description": "string",
     "name": "send_welcome_email_event_handler",
@@ -1712,8 +1710,6 @@ After execution, functions can trigger chains for further processing.
 
 ```json
 {
-  "actionTarget": "welcome_email_chain",
-  "actionType": "chain",
   "createdAt": "2023-11-15T14:30:45Z",
   "description": "string",
   "name": "send_welcome_email_event_handler",
@@ -1735,8 +1731,6 @@ After execution, functions can trigger chains for further processing.
 
 ```json
 {
-  "actionTarget": "welcome_email_chain",
-  "actionType": "chain",
   "createdAt": "2023-11-15T14:30:45Z",
   "description": "string",
   "name": "send_welcome_email_event_handler",
@@ -1839,8 +1833,6 @@ Retrieves details for a specific function
 
 ```json
 {
-  "actionTarget": "welcome_email_chain",
-  "actionType": "chain",
   "createdAt": "2023-11-15T14:30:45Z",
   "description": "string",
   "name": "send_welcome_email_event_handler",
@@ -1889,8 +1881,6 @@ The name from the URL path overrides any name in the request body.
 
 ```json
 {
-  "actionTarget": "welcome_email_chain",
-  "actionType": "chain",
   "createdAt": "2023-11-15T14:30:45Z",
   "description": "string",
   "name": "send_welcome_email_event_handler",
@@ -1913,8 +1903,6 @@ The name from the URL path overrides any name in the request body.
 
 ```json
 {
-  "actionTarget": "welcome_email_chain",
-  "actionType": "chain",
   "createdAt": "2023-11-15T14:30:45Z",
   "description": "string",
   "name": "send_welcome_email_event_handler",
@@ -3652,8 +3640,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 |model|query|string|false|The model name to cancel downloads for across all backends.|
+|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 
 > Example responses
 
@@ -4734,8 +4722,6 @@ X-API-Key
 ```json
 [
   {
-    "actionTarget": "welcome_email_chain",
-    "actionType": "chain",
     "createdAt": "2023-11-15T14:30:45Z",
     "description": "string",
     "name": "send_welcome_email_event_handler",
@@ -5490,8 +5476,6 @@ X-API-Key
 
 ```json
 {
-  "actionTarget": "welcome_email_chain",
-  "actionType": "chain",
   "createdAt": "2023-11-15T14:30:45Z",
   "description": "string",
   "name": "send_welcome_email_event_handler",
@@ -5506,8 +5490,6 @@ X-API-Key
 
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
-|actionTarget|string|true|none|The target of the action.|
-|actionType|string|true|none|The type of action to perform after the script.|
 |createdAt|string(date-time)|true|none|Timestamps for creation and updates|
 |description|string|true|none|A user-friendly description of what the function does.|
 |name|string|true|none|A unique identifier for the function.|
