@@ -51,7 +51,7 @@ type Playground struct {
 	eventDispatcher           eventdispatch.Trigger
 	functionService           functionservice.Service
 	tracker                   libtracker.ActivityTracker
-	gojaExecutor              executor.ExecutorManager
+	gojaExecutor              *executor.GojaExecutor
 	eventSourceInit           bool
 	functionInit              bool
 	withgroup                 bool
@@ -177,7 +177,7 @@ func (p *Playground) WithFunctionService(ctx context.Context) *Playground {
 	return p
 }
 
-func (p *Playground) WithEventDispatcher(ctx context.Context, onError func(error), syncInterval time.Duration) *Playground {
+func (p *Playground) WithEventDispatcher(ctx context.Context, onError func(context.Context, error), syncInterval time.Duration) *Playground {
 	if p.Error != nil {
 		return p
 	}
@@ -188,7 +188,13 @@ func (p *Playground) WithEventDispatcher(ctx context.Context, onError func(error
 	if p.tracker == nil {
 		p.tracker = libtracker.NoopTracker{}
 	}
-	p.eventDispatcher, p.Error = eventdispatch.New(ctx, p.functionService, onError, syncInterval, p.tracker)
+
+	if p.gojaExecutor == nil {
+		p.Error = fmt.Errorf("cannot init event dispatcher: goja executor is not configured")
+		return p
+	}
+
+	p.eventDispatcher, p.Error = eventdispatch.New(ctx, p.functionService, onError, syncInterval, p.gojaExecutor, p.tracker)
 	return p
 }
 
@@ -387,6 +393,31 @@ func (p *Playground) WithGojaExecutor(ctx context.Context) *Playground {
 		return p
 	}
 
+	if p.functionService == nil {
+		p.Error = errors.New("function service is not configured")
+		return p
+	}
+
+	// Use NoopTracker if none specified
+	if p.tracker == nil {
+		p.tracker = libtracker.NoopTracker{}
+	}
+
+	// Create the executor
+	p.gojaExecutor = executor.NewGojaExecutor(
+		p.tracker,
+		p.functionService,
+	)
+
+	return p
+}
+
+// WithGojaExecutor initializes and returns a Goja executor
+func (p *Playground) WithGojaExecutorBuildIns(ctx context.Context) *Playground {
+	if p.Error != nil {
+		return p
+	}
+
 	// Get required services
 	taskService, err := p.GetExecService(ctx)
 	if err != nil {
@@ -418,14 +449,7 @@ func (p *Playground) WithGojaExecutor(ctx context.Context) *Playground {
 	}
 
 	// Create the executor
-	p.gojaExecutor = executor.NewGojaExecutor(
-		eventSourceService,
-		taskService,
-		taskchainService,
-		p.tracker,
-		taskchainExecService,
-		p.functionService,
-	)
+	p.gojaExecutor.AddBuildInServices(eventSourceService, taskService, taskchainService, taskchainExecService)
 
 	return p
 }

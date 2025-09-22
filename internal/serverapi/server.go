@@ -168,25 +168,27 @@ func New(
 	chatapi.AddChatRoutes(mux, chatService)
 	functionService := functionservice.New(dbInstance)
 	functionService = functionservice.WithActivityTracker(functionService, serveropsChainedTracker)
-
-	ed, err := eventdispatch.New(ctx, functionService, func(err error) {
-		//TODO
-	}, time.Second, serveropsChainedTracker)
+	executorService := executor.NewGojaExecutor(serveropsChainedTracker, functionService)
+	eventbus, err := eventdispatch.New(ctx, functionService, func(ctx context.Context, err error) {
+		// TODO:
+	}, time.Second, executorService, serveropsChainedTracker)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("failed to initialize event dispatch service: %w", err)
 	}
 
-	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance, pubsub, ed)
+	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance, pubsub, eventbus)
 	if err != nil {
 		return nil, cleanup, fmt.Errorf("failed to initialize event source service: %w", err)
 	}
+
 	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
 	eventsourceapi.AddEventSourceRoutes(mux, eventSourceService)
+
 	functionapi.AddFunctionRoutes(mux, functionService)
 
-	executorService := executor.NewGojaExecutor(eventSourceService, execService, taskChainService, serveropsChainedTracker, taskService, functionService)
-	executorService.StartSync(ctx, time.Second*10)
-	execsyncapi.AddExecutorRoutes(mux, executorService)
+	execsyncapi.AddExecutorRoutes(mux, executorService, eventbus)
+	executorService.AddBuildInServices(eventSourceService, execService, taskChainService, taskService)
+	executorService.StartSync(ctx, time.Second*3)
 
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)

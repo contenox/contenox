@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-146-g68c140e-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-149-g3f40948-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-146-g68c140e-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-149-g3f40948-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1232,10 +1232,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
+|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 
 > Example responses
 
@@ -1474,8 +1474,8 @@ Useful for cross-aggregate analysis or system-wide event monitoring.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -1617,6 +1617,47 @@ If groups are enabled, models and backends not assigned to any group will be com
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[execservice_SimpleExecutionResponse](#schemaexecservice_simpleexecutionresponse)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Implement the handler method
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/executor/sync', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /executor/sync`
+
+Implement the handler method
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="implement-the-handler-method-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">

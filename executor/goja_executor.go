@@ -14,6 +14,7 @@ import (
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/functionservice"
 	"github.com/contenox/runtime/functionstore"
+	"github.com/contenox/runtime/internal/eventdispatch"
 	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskchainservice"
@@ -22,7 +23,7 @@ import (
 )
 
 // Ensure GojaExecutor implements the Executor interface
-var _ Executor = (*GojaExecutor)(nil)
+var _ eventdispatch.Executor = (*GojaExecutor)(nil)
 
 // GojaExecutor handles JavaScript function execution using goja VM with pre-compiled functions.
 // It provides a secure sandboxed environment for executing user-provided JavaScript code
@@ -31,7 +32,7 @@ type GojaExecutor struct {
 	tracker              libtracker.ActivityTracker
 	vmPool               sync.Pool
 	functionCache        *sync.Map // functionName -> *compiledFunction
-	eventSource          eventsourceservice.Service
+	eventsource          eventsourceservice.Service
 	taskService          execservice.ExecService
 	taskchainService     taskchainservice.Service
 	taskchainExecService execservice.TasksEnvService
@@ -54,36 +55,24 @@ type actionFunc func() (interface{}, error)
 // NewGojaExecutor creates a new Goja executor with VM pool and function cache.
 //
 // Parameters:
-//   - eventSource: Service for sending events
-//   - taskService: Service for executing individual tasks
-//   - taskchainService: Service for retrieving task chain definitions
 //   - tracker: Activity tracker for monitoring execution
-//   - taskchainExecService: Service for executing complete task chains
 //   - functionService: Service for synchronizing function-scripts
 //
 // Returns:
 //   - Executor: A new GojaExecutor instance
 func NewGojaExecutor(
-	eventSource eventsourceservice.Service,
-	taskService execservice.ExecService,
-	taskchainService taskchainservice.Service,
 	tracker libtracker.ActivityTracker,
-	taskchainExecService execservice.TasksEnvService,
 	functionService functionservice.Service,
-) ExecutorManager {
+) *GojaExecutor {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
 	}
 
 	executor := &GojaExecutor{
-		tracker:              tracker,
-		eventSource:          eventSource,
-		taskService:          taskService,
-		taskchainService:     taskchainService,
-		taskchainExecService: taskchainExecService,
-		functionCache:        &sync.Map{},
-		functionService:      functionService,
-		syncTriggerChan:      make(chan struct{}, 1), // Buffered channel to avoid blocking
+		tracker:         tracker,
+		functionCache:   &sync.Map{},
+		functionService: functionService,
+		syncTriggerChan: make(chan struct{}, 1),
 	}
 
 	// Initialize the circuit breaker for sync operations
@@ -100,6 +89,18 @@ func NewGojaExecutor(
 	}
 
 	return executor
+}
+
+func (e *GojaExecutor) AddBuildInServices(
+	eventsource eventsourceservice.Service,
+	taskService execservice.ExecService,
+	taskchainService taskchainservice.Service,
+	taskchainExecService execservice.TasksEnvService,
+) {
+	e.eventsource = eventsource
+	e.taskService = taskService
+	e.taskchainService = taskchainService
+	e.taskchainExecService = taskchainExecService
 }
 
 // StartSync begins background synchronization of the function cache
@@ -208,7 +209,7 @@ func (e *GojaExecutor) ExecuteFunction(
 	defer e.vmPool.Put(vm)
 
 	// Bind built-in functions with current request context and error handling
-	e.setupContextBoundBuiltins(vm, ctx)
+	e.setupContextBoundBuiltins(ctx, vm)
 
 	// Reset VM state (clear previous execution results)
 	vm.Set("result", nil)
@@ -512,7 +513,7 @@ func (e *GojaExecutor) prepareEventObject(event *eventstore.Event) (map[string]i
 // Parameters:
 //   - vm: Goja runtime instance
 //   - ctx: Execution context
-func (e *GojaExecutor) setupContextBoundBuiltins(vm *goja.Runtime, ctx context.Context) {
+func (e *GojaExecutor) setupContextBoundBuiltins(ctx context.Context, vm *goja.Runtime) {
 	// Helper: wraps a function to catch panics and report errors
 	withErrorReporting := func(action, subject string, extra map[string]interface{}, fn actionFunc) goja.Value {
 		return e.withErrorReporting(vm, ctx, action, subject, extra, fn)
@@ -563,7 +564,7 @@ func (e *GojaExecutor) setupContextBoundBuiltins(vm *goja.Runtime, ctx context.C
 					Metadata:      json.RawMessage(`{"source": "function_execution"}`),
 				}
 
-				if err := e.eventSource.AppendEvent(ctx, event); err != nil {
+				if err := e.eventsource.AppendEvent(ctx, event); err != nil {
 					return nil, fmt.Errorf("failed to send event: %w", err)
 				}
 

@@ -20,7 +20,8 @@ func TestSystem_EventSourceService_Subscribe(t *testing.T) {
 		WithNats(ctx).
 		WithEventSourceInit(ctx).
 		WithFunctionService(ctx).
-		WithEventDispatcher(ctx, func(err error) {
+		WithGojaExecutor(ctx).
+		WithEventDispatcher(ctx, func(ctx context.Context, err error) {
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}

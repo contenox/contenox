@@ -1,6 +1,5 @@
 import uuid
 import requests
-from urllib.parse import urlparse
 
 def test_remote_hook_echo_without_headers(
     base_url,

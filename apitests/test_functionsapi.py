@@ -1,6 +1,5 @@
 import requests
 import uuid
-import pytest
 from helpers import assert_status_code
 
 def test_create_function(base_url):

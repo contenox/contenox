@@ -26,6 +26,9 @@ func getPartitionKeysForRange(from, to time.Time) []string {
 	return keys
 }
 
+// ErrEventTypeRequired is returned when an event type is required but not provided
+var ErrEventTypeRequired = fmt.Errorf("event type is required")
+
 // AppendEvent stores a new event in the appropriate partition
 func (s *store) AppendEvent(ctx context.Context, event *Event) error {
 	if event.ID == "" {
@@ -33,6 +36,10 @@ func (s *store) AppendEvent(ctx context.Context, event *Event) error {
 	}
 	if event.CreatedAt.IsZero() {
 		event.CreatedAt = time.Now().UTC()
+	}
+
+	if event.EventType == "" {
+		return ErrEventTypeRequired
 	}
 
 	// Create internal event with partition key

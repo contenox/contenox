@@ -2,6 +2,7 @@ package eventdispatch
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -11,10 +12,31 @@ import (
 	"github.com/contenox/runtime/libtracker"
 )
 
+type TriggerManager interface {
+	Trigger
+	Sync
+}
+
 // Trigger defines the interface for handling events and executing associated functions.
 type Trigger interface {
 	// HandleEvent processes one or more events and triggers any associated functions.
 	HandleEvent(ctx context.Context, events ...*eventstore.Event)
+}
+
+type Sync interface {
+	Sync(ctx context.Context) error
+}
+
+// Executor defines the interface for executing functions with an event as input.
+type Executor interface {
+	// ExecuteFunction executes a function with the given code and event.
+	// It returns a result as a JSON-like map and any error encountered.
+	ExecuteFunction(
+		ctx context.Context,
+		code string,
+		functionName string,
+		event *eventstore.Event,
+	) (map[string]interface{}, error)
 }
 
 // FunctionsHandler manages the caching and execution of functions triggered by events.
@@ -27,10 +49,24 @@ type FunctionsHandler struct {
 	callInitialSync   atomic.Bool
 	syncInterval      time.Duration
 	functions         functionservice.Service
-	onError           func(error)
+	onError           func(context.Context, error)
 	tracker           libtracker.ActivityTracker
 	triggersInUpdate  atomic.Bool
 	functionsInUpdate atomic.Bool
+	fnexec            Executor
+}
+
+// Sync implements TriggerManager.
+func (r *FunctionsHandler) Sync(ctx context.Context) error {
+	_, err := r.syncFunctions(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = r.syncTriggers(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // New creates a new FunctionsHandler instance with initial synchronization.
@@ -45,9 +81,10 @@ type FunctionsHandler struct {
 func New(
 	ctx context.Context,
 	functions functionservice.Service,
-	onError func(error),
+	onError func(context.Context, error),
 	syncInterval time.Duration,
-	tracker libtracker.ActivityTracker) (Trigger, error) {
+	fnexec Executor,
+	tracker libtracker.ActivityTracker) (TriggerManager, error) {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
 	}
@@ -60,6 +97,7 @@ func New(
 		callInitialSync:   atomic.Bool{},
 		triggersInUpdate:  atomic.Bool{},
 		functionsInUpdate: atomic.Bool{},
+		fnexec:            fnexec,
 	}
 
 	// Initialize with empty maps
@@ -84,6 +122,10 @@ func New(
 // syncFunctions synchronizes the function cache with the function service.
 // It only performs I/O operations when necessary and uses atomic flags to prevent redundant operations.
 func (r *FunctionsHandler) syncFunctions(ctx context.Context) (map[string]*functionstore.Function, error) {
+	// Track the sync operation
+	reportErr, reportChange, end := r.tracker.Start(ctx, "sync", "functions_cache")
+	defer end()
+
 	// Check if we need to sync
 	lastSync := time.Unix(0, r.lastFunctionsSync.Load())
 	needSync := r.callInitialSync.Load() || time.Since(lastSync) > r.syncInterval
@@ -93,6 +135,7 @@ func (r *FunctionsHandler) syncFunctions(ctx context.Context) (map[string]*funct
 
 		functions, err := r.functions.ListAllFunctions(ctx)
 		if err != nil {
+			reportErr(err)
 			return nil, err
 		}
 
@@ -105,6 +148,11 @@ func (r *FunctionsHandler) syncFunctions(ctx context.Context) (map[string]*funct
 		r.lastFunctionsSync.Store(time.Now().UnixNano())
 		r.callInitialSync.Store(false)
 
+		// Report successful sync with count
+		reportChange("functions_synced", map[string]interface{}{
+			"count": len(functionCache),
+		})
+
 		return functionCache, nil
 	}
 
@@ -115,6 +163,10 @@ func (r *FunctionsHandler) syncFunctions(ctx context.Context) (map[string]*funct
 // syncTriggers synchronizes the trigger cache with the function service.
 // It only performs I/O operations when necessary and uses atomic flags to prevent redundant operations.
 func (r *FunctionsHandler) syncTriggers(ctx context.Context) (map[string][]*functionstore.EventTrigger, error) {
+	// Track the sync operation
+	reportErr, reportChange, end := r.tracker.Start(ctx, "sync", "triggers_cache")
+	defer end()
+
 	// Check if a sync is needed and try to acquire the non-blocking lock
 	lastSync := time.Unix(0, r.lastTriggersSync.Load())
 	needSync := r.callInitialSync.Load() || time.Since(lastSync) > r.syncInterval
@@ -124,6 +176,7 @@ func (r *FunctionsHandler) syncTriggers(ctx context.Context) (map[string][]*func
 
 		triggers, err := r.functions.ListAllEventTriggers(ctx)
 		if err != nil {
+			reportErr(err)
 			return nil, err
 		}
 
@@ -154,6 +207,12 @@ func (r *FunctionsHandler) syncTriggers(ctx context.Context) (map[string][]*func
 		r.triggerCache.Store(&triggerCache)
 		r.lastTriggersSync.Store(time.Now().UnixNano())
 		r.callInitialSync.Store(false)
+
+		// Report successful sync with count
+		reportChange("triggers_synced", map[string]interface{}{
+			"count":              len(triggers),
+			"unique_event_types": len(triggerCache),
+		})
 
 		return triggerCache, nil
 	}
@@ -207,6 +266,11 @@ func (r *FunctionsHandler) GetFunctions(ctx context.Context, eventTypes ...strin
 
 // HandleEvent processes incoming events and triggers any associated functions.
 func (r *FunctionsHandler) HandleEvent(ctx context.Context, events ...*eventstore.Event) {
+	// Track the event handling
+	reportErr, reportChange, end := r.tracker.Start(ctx, "handle", "event",
+		"event_count", len(events))
+	defer end()
+
 	eventTypes := make([]string, 0, len(events))
 	for _, event := range events {
 		eventTypes = append(eventTypes, event.EventType)
@@ -214,16 +278,55 @@ func (r *FunctionsHandler) HandleEvent(ctx context.Context, events ...*eventstor
 
 	functionsWithTrigger, err := r.GetFunctions(ctx, eventTypes...)
 	if err != nil {
-		r.onError(err)
+		r.onError(ctx, err)
+		reportErr(err)
 		return
 	}
 
+	// Report the functions found for these events
+	reportChange("functions_found", map[string]interface{}{
+		"event_types": eventTypes,
+		"functions":   functionsWithTrigger,
+	})
+
 	// Execute the associated functions
-	for eventType, functionList := range functionsWithTrigger {
+	for _, event := range events {
+		functionList, exists := functionsWithTrigger[event.EventType]
+		if !exists {
+			continue
+		}
+
 		for _, functionWithTrigger := range functionList {
-			// TODO: Implement goja execution here
-			_ = eventType
-			_ = functionWithTrigger
+			// Track individual function execution
+			funcReportErr, funcReportChange, funcEnd := r.tracker.Start(ctx, "execute", "function",
+				"function_name", functionWithTrigger.Function.Name,
+				"event_type", event.EventType,
+				"event_id", event.ID)
+
+			// Execute the function using the provided executor
+			result, err := r.fnexec.ExecuteFunction(
+				ctx,
+				functionWithTrigger.Function.Script,
+				functionWithTrigger.Function.Name,
+				event,
+			)
+
+			if err != nil {
+				// Report execution error
+				funcReportErr(err)
+				r.onError(ctx, fmt.Errorf("failed to execute function %s: %w",
+					functionWithTrigger.Function.Name, err))
+			} else {
+				// Report successful execution
+				funcReportChange("function_executed", map[string]interface{}{
+					"function_name": functionWithTrigger.Function.Name,
+					"event_type":    event.EventType,
+					"event_id":      event.ID,
+					"result":        result,
+				})
+			}
+
+			funcEnd()
 		}
 	}
 }

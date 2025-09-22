@@ -83,10 +83,10 @@ wait-for-server:
 	@echo "Server is up!"
 
 test-api: run wait-for-server
-	. apitests/.venv/bin/activate && pytest apitests/
+	. apitests/.venv/bin/activate && pytest apitests/$(TEST_FILE)
 
 test-api-logs: run wait-for-server
-	. apitests/.venv/bin/activate && pytest --log-cli-level=DEBUG --capture=no -v apitests
+	. apitests/.venv/bin/activate && pytest --log-cli-level=DEBUG --capture=no -v apitests/$(TEST_FILE)
 
 test-api-docker:
 	docker build -f Dockerfile.apitests --build-arg EMBED_MODEL=$(EMBED_MODEL) \
