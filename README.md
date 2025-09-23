@@ -13,6 +13,7 @@
 ✅ **Made with Go for intensive load**
 ✅ **Build agentic capabilities via hooks**
 ✅ **Drop-in for OpenAI chatcompletion API**
+✅ **JavaScript function execution with event-driven triggers**
 
 -----
 
@@ -150,6 +151,35 @@ docker logs contenox-runtime-kernel
   * **Multi-Model Support**: Define preferred models for each task chain
   * **Retry and Timeout**: Configure task-level retries and timeouts for robust workflows
 
+### JavaScript Function Execution
+
+Execute custom JavaScript functions in response to events with a secure, sandboxed environment:
+
+```javascript
+function processOrder(event) {
+  // Access event data
+  const orderData = event.data;
+
+  // Send new events
+  const result = sendEvent("order.processed", {
+    orderId: orderData.id,
+    status: "processed",
+    processedAt: new Date().toISOString()
+  });
+
+  return {
+    success: result.success,
+    eventId: result.event_id
+  };
+}
+```
+
+  * **Event-Driven Triggers**: Execute functions automatically when specific events occur
+  * **Built-in Runtime Functions**: Access to `sendEvent`, `executeTask`, `callTaskChain`, and `executeTaskChain` from JavaScript
+  * **Secure Sandbox**: Isolated execution environment with timeout and memory limits
+  * **Pre-compiled Caching**: Functions are compiled and cached for optimal performance
+  * **Error Handling**: Comprehensive error reporting and recovery mechanisms
+
 ### Multi-Provider Support
 
 Define preferred model provider and backend resolution policy directly within task chains. This allows for seamless, dynamic orchestration across various LLM providers.
@@ -166,7 +196,7 @@ graph TD
         API[API Layer]
         OE["Orchestration Engine <br/> Task Execution <br/> & State Management"]
         CONN["Connectors <br/> Model Resolver <br/> & Hook Client"]
-        EV["Event Source <br/> Event Ingest"]
+        JS["JavaScript Executor <br/> Event-Driven Functions"]
     end
 
     subgraph "External Services"
@@ -177,8 +207,6 @@ graph TD
     %% --- Data Flow ---
     U -- API Requests --> API
     API -- Triggers Task Chain --> OE
-    API -- Event Trigger --> EV
-    EV -- JS Script Engine --> OE
     OE -- Executes via --> CONN
     CONN -- Routes to LLMs --> LLM
     CONN -- Calls External Hooks --> HOOK
@@ -188,6 +216,11 @@ graph TD
     CONN -- Results --> OE
     OE -- Returns Final Output --> API
     API -- API Responses --> U
+
+    %% JavaScript Execution Flow
+    OE -- Event Triggers --> JS
+    JS -- Sends Events --> OE
+    JS -- Calls Services --> CONN
 ```
 
   * **Unified Interface**: Consistent API across providers
@@ -217,3 +250,4 @@ The full API surface is thoroughly documented and defined in the OpenAPI format,
   * 🔗 [View OpenAPI Spec (YAML)](./docs/openapi.yaml)
 
 The [API-Tests](./apitests) are available for additional context.
+```
