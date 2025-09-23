@@ -51,9 +51,15 @@ func (t *logActivityTracker) Start(
 	if val, ok := ctx.Value(ContextKeySpanID).(string); ok {
 		spanID = val
 	}
-	attrs = append(attrs, slog.String("request_id", requestID))
-	attrs = append(attrs, slog.String("trace_id", traceID))
-	attrs = append(attrs, slog.String("span_id", spanID))
+	if len(requestID) > 0 {
+		attrs = append(attrs, slog.String("request_id", requestID))
+	}
+	if len(traceID) > 0 {
+		attrs = append(attrs, slog.String("trace_id", traceID))
+	}
+	if len(spanID) > 0 {
+		attrs = append(attrs, slog.String("span_id", spanID))
+	}
 	arrs := append(attrs, toSlogAttrs(kvArgs...)...)
 	// Initial log entry: start of the operation
 	t.logger.LogAttrs(ctx, slog.LevelInfo, "Operation started",
@@ -64,42 +70,63 @@ func (t *logActivityTracker) Start(
 
 	reportErrFunc := func(err error) {
 		if err != nil {
-			t.logger.ErrorContext(ctx, "Operation failed",
+			attr := []any{
 				slog.String("operation", operation),
 				slog.String("subject", subject),
 				slog.String("op_id", opID),
 				slog.Any("error", err),
-				slog.String("request_id", requestID),
-				slog.String("trace_id", traceID),
-				slog.String("span_id", spanID),
-			)
+			}
+			if len(requestID) > 0 {
+				attr = append(attr, slog.String("request_id", requestID))
+			}
+			if len(traceID) > 0 {
+				attr = append(attr, slog.String("trace_id", traceID))
+			}
+			if len(spanID) > 0 {
+				attr = append(attr, slog.String("span_id", spanID))
+			}
+			t.logger.ErrorContext(ctx, "Operation failed", attr...)
 		}
 	}
 
 	reportChangeFunc := func(id string, data any) {
-		t.logger.LogAttrs(ctx, slog.LevelInfo, "State changed",
+		attr := []slog.Attr{
 			slog.String("operation", operation),
 			slog.String("subject", subject),
 			slog.String("op_id", opID),
 			slog.String("change_id", id),
 			slog.Any("change_data", data),
-			slog.String("request_id", requestID),
-			slog.String("trace_id", traceID),
-			slog.String("span_id", spanID),
-		)
+		}
+		if len(spanID) > 0 {
+			attr = append(attr, slog.String("span_id", spanID))
+		}
+		if len(traceID) > 0 {
+			attr = append(attr, slog.String("trace_id", traceID))
+		}
+		if len(requestID) > 0 {
+			attr = append(attr, slog.String("request_id", requestID))
+		}
+		t.logger.LogAttrs(ctx, slog.LevelInfo, "State changed", attr...)
 	}
 
 	endFunc := func() {
 		duration := time.Since(startTime)
-		t.logger.LogAttrs(ctx, slog.LevelInfo, "Operation completed",
+		attr := []slog.Attr{
 			slog.String("operation", operation),
 			slog.String("subject", subject),
 			slog.String("op_id", opID),
 			slog.Duration("duration", duration),
-			slog.String("request_id", requestID),
-			slog.String("trace_id", traceID),
-			slog.String("span_id", spanID),
-		)
+		}
+		if len(spanID) > 0 {
+			attr = append(attr, slog.String("span_id", spanID))
+		}
+		if len(traceID) > 0 {
+			attr = append(attr, slog.String("trace_id", traceID))
+		}
+		if len(requestID) > 0 {
+			attr = append(attr, slog.String("request_id", requestID))
+		}
+		t.logger.LogAttrs(ctx, slog.LevelInfo, "Operation completed", attr...)
 	}
 
 	return reportErrFunc, reportChangeFunc, endFunc

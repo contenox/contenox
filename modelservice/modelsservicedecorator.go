@@ -94,7 +94,7 @@ func (d *activityTrackerDecorator) Delete(ctx context.Context, modelName string)
 	if err != nil {
 		reportErrFn(err)
 	} else {
-		reportChangeFn(modelName, nil)
+		reportChangeFn(modelName, "deleted")
 	}
 
 	return err
