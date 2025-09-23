@@ -3,11 +3,14 @@ package eventstore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/contenox/runtime/libdbexec"
 )
+
+var ErrNotFound = errors.New("not found")
 
 // Event represents a stored event without exposing partition details
 type Event struct {
@@ -23,6 +26,22 @@ type Event struct {
 	Metadata      json.RawMessage `json:"metadata" example:"{}"`
 }
 
+type MappingConfig struct {
+	Path          string `json:"path"`
+	EventType     string `json:"event_type"`
+	EventSource   string `json:"event_source"`
+	AggregateType string `json:"aggregate_type"`
+	// Extract aggregate ID from payload using JSON path or field name
+	AggregateIDField string `json:"aggregate_id_field"`
+	EventTypeField   string `json:"event_type_field"`
+	EventSourceField string `json:"event_source_field"`
+	EventIDField     string `json:"event_id_field"`
+	// Fixed version or field to extract from
+	Version int `json:"version"`
+	// Metadata fields to extract from headers/payload
+	MetadataMapping map[string]string `json:"metadata_mapping"`
+}
+
 // Store provides methods for storing and retrieving events
 type Store interface {
 	AppendEvent(ctx context.Context, event *Event) error
@@ -33,6 +52,17 @@ type Store interface {
 	DeleteEventsByTypeInRange(ctx context.Context, eventType string, from, to time.Time) error
 
 	EnsurePartitionExists(ctx context.Context, ts time.Time) error
+
+	// CreateMapping creates a new mapping config. Returns error if ID already exists.
+	CreateMapping(ctx context.Context, config *MappingConfig) error
+	// GetMapping retrieves a mapping config by its path (unique identifier)
+	GetMapping(ctx context.Context, path string) (*MappingConfig, error)
+	// UpdateMapping updates an existing mapping config. Returns error if not found.
+	UpdateMapping(ctx context.Context, config *MappingConfig) error
+	// DeleteMapping deletes a mapping config by path
+	DeleteMapping(ctx context.Context, path string) error
+	// ListMappings returns all mapping configs
+	ListMappings(ctx context.Context) ([]*MappingConfig, error)
 }
 
 // internalEvent represents the database structure with partition key

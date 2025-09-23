@@ -12,6 +12,7 @@ import (
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
+	"github.com/contenox/runtime/eventmappingservice"
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/executor"
@@ -39,6 +40,7 @@ type Client struct {
 	ChatService         chatservice.Service
 	EventSourceService  eventsourceservice.Service
 	ExecutorSyncTrigger executor.ExecutorSyncTrigger
+	MappingService      eventmappingservice.Service
 }
 
 // Config holds configuration for the SDK client
@@ -64,6 +66,7 @@ func createClient(config Config, httpClient *http.Client) (*Client, error) {
 		ChatService:         NewHTTPChatService(config.BaseURL, config.Token, httpClient),
 		EventSourceService:  NewHTTPEvenSourceService(config.BaseURL, config.Token, httpClient),
 		ExecutorSyncTrigger: NewHTTPExecutorSyncTrigger(config.BaseURL, config.Token, httpClient),
+		MappingService:      NewHTTPMappingService(config.BaseURL, config.Token, httpClient),
 	}, nil
 }
 

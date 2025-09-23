@@ -37,6 +37,10 @@ components:
             items:
                 $ref: '#/components/schemas/eventstore_Event'
             type: array
+        array_eventstore_MappingConfig:
+            items:
+                $ref: '#/components/schemas/eventstore_MappingConfig'
+            type: array
         array_functionstore_EventTrigger:
             items:
                 $ref: '#/components/schemas/functionstore_EventTrigger'
@@ -249,6 +253,44 @@ components:
                 - version
                 - data
                 - metadata
+            type: object
+        eventstore_MappingConfig:
+            properties:
+                aggregate_id_field:
+                    description: Extract aggregate ID from payload using JSON path or field name
+                    type: string
+                aggregate_type:
+                    type: string
+                event_id_field:
+                    type: string
+                event_source:
+                    type: string
+                event_source_field:
+                    type: string
+                event_type:
+                    type: string
+                event_type_field:
+                    type: string
+                metadata_mapping:
+                    additionalProperties: true
+                    description: Metadata fields to extract from headers/payload
+                    type: object
+                path:
+                    type: string
+                version:
+                    description: Fixed version or field to extract from
+                    type: integer
+            required:
+                - path
+                - event_type
+                - event_source
+                - aggregate_type
+                - aggregate_id_field
+                - event_type_field
+                - event_source_field
+                - event_id_field
+                - version
+                - metadata_mapping
             type: object
         execapi_DefaultModelResponse:
             properties:
@@ -1509,16 +1551,6 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
-                - description: The type of event to filter by.
-                  in: query
-                  name: event_type
-                  schema:
-                    type: string
-                - description: The aggregate type (e.g., 'user', 'order').
-                  in: query
-                  name: aggregate_type
-                  schema:
-                    type: string
                 - description: The unique ID of the aggregate.
                   in: query
                   name: aggregate_id
@@ -1529,6 +1561,16 @@ paths:
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: The type of event to filter by.
+                  in: query
+                  name: event_type
+                  schema:
+                    type: string
+                - description: The aggregate type (e.g., 'user', 'order').
+                  in: query
+                  name: aggregate_type
+                  schema:
                     type: string
             responses:
                 "200":
@@ -1654,16 +1696,16 @@ paths:
                 Retrieves events of a specific type within a time range.
                 Useful for cross-aggregate analysis or system-wide event monitoring.
             parameters:
+                - description: The type of event to filter by.
+                  in: query
+                  name: event_type
+                  schema:
+                    type: string
                 - description: Maximum number of events to return.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: The type of event to filter by.
-                  in: query
-                  name: event_type
-                  schema:
                     type: string
             responses:
                 "200":
@@ -1755,16 +1797,16 @@ paths:
                 Lists all registered functions with pagination
                 Returns functions in creation order, with the oldest functions first.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -2220,6 +2262,116 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Retrieves the JSON openAPI schemas for all supported hook types.
+    /mappings:
+        get:
+            description: |-
+                Lists all configured event mappings.
+                Returns mappings sorted by path in ascending order.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/array_eventstore_MappingConfig'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Lists all configured event mappings.
+        post:
+            description: |-
+                Creates a new event mapping configuration.
+                Mappings define how to extract structured events from incoming webhook payloads.
+                They specify how to map JSON fields and headers to event properties like aggregate_id, event_type, etc.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/eventstore_MappingConfig'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/eventstore_MappingConfig'
+                    description: Created
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Creates a new event mapping configuration.
+    /mappings/{path}:
+        delete:
+            description: |-
+                Deletes an event mapping configuration by path.
+                Returns a simple confirmation message on success.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                type: string
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Deletes an event mapping configuration by path.
+        get:
+            description: Retrieves details for a specific event mapping by path.
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/eventstore_MappingConfig'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Retrieves details for a specific event mapping by path.
+        parameters:
+            - description: The unique path identifier for the mapping.
+              in: path
+              name: path
+              required: true
+              schema:
+                type: string
+        put:
+            description: |-
+                Updates an existing event mapping configuration.
+                The path from the URL overrides any path in the request body.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/eventstore_MappingConfig'
+                required: true
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/eventstore_MappingConfig'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Updates an existing event mapping configuration.
     /model-affinity/{groupID}/models:
         get:
             description: |-
@@ -2699,14 +2851,14 @@ paths:
                 Example: /queue/cancel?url=http://localhost:11434
                 /queue/cancel?model=mistral:latest
             parameters:
-                - description: The base URL of a specific backend to cancel downloads on.
-                  in: query
-                  name: url
-                  schema:
-                    type: string
                 - description: The model name to cancel downloads for across all backends.
                   in: query
                   name: model
+                  schema:
+                    type: string
+                - description: The base URL of a specific backend to cancel downloads on.
+                  in: query
+                  name: url
                   schema:
                     type: string
             responses:

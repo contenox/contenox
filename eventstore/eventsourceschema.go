@@ -52,5 +52,23 @@ func InitSchema(ctx context.Context, exec libdbexec.Exec) error {
 		return err
 	}
 
+	_, err = exec.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS event_mappings (
+			path TEXT PRIMARY KEY,
+			event_type TEXT NOT NULL,
+			event_source TEXT NOT NULL,
+			aggregate_type TEXT NOT NULL,
+			aggregate_id_field TEXT,
+			event_type_field TEXT,
+			event_source_field TEXT,
+			event_id_field TEXT,
+			version INTEGER NOT NULL DEFAULT 1,
+			metadata_mapping JSONB NOT NULL DEFAULT '{}'
+		);
+`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
