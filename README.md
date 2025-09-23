@@ -166,6 +166,7 @@ graph TD
         API[API Layer]
         OE["Orchestration Engine <br/> Task Execution <br/> & State Management"]
         CONN["Connectors <br/> Model Resolver <br/> & Hook Client"]
+        EV["Event Source <br/> Event Ingest"]
     end
 
     subgraph "External Services"
@@ -176,6 +177,8 @@ graph TD
     %% --- Data Flow ---
     U -- API Requests --> API
     API -- Triggers Task Chain --> OE
+    API -- Event Trigger --> EV
+    EV -- JS Script Engine -> OE
     OE -- Executes via --> CONN
     CONN -- Routes to LLMs --> LLM
     CONN -- Calls External Hooks --> HOOK
