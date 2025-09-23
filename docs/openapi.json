@@ -2047,22 +2047,6 @@
         "description": "Retrieves events for a specific aggregate within a time range.\nUseful for rebuilding aggregate state or auditing changes.",
         "parameters": [
           {
-            "description": "The type of event to filter by.",
-            "in": "query",
-            "name": "event_type",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The aggregate type (e.g., 'user', 'order').",
-            "in": "query",
-            "name": "aggregate_type",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The unique ID of the aggregate.",
             "in": "query",
             "name": "aggregate_id",
@@ -2076,6 +2060,22 @@
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The type of event to filter by.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The aggregate type (e.g., 'user', 'order').",
+            "in": "query",
+            "name": "aggregate_type",
+            "schema": {
               "type": "string"
             }
           }
@@ -2204,14 +2204,6 @@
         "description": "Deletes all events of a specific type within a time range.\nUSE WITH CAUTION — this is a destructive operation.\nTypically used for GDPR compliance or cleaning up test data.",
         "parameters": [
           {
-            "description": "End time in RFC3339 format.",
-            "in": "query",
-            "name": "to",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The type of event to delete.",
             "in": "query",
             "name": "event_type",
@@ -2223,6 +2215,14 @@
             "description": "Start time in RFC3339 format.",
             "in": "query",
             "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "End time in RFC3339 format.",
+            "in": "query",
+            "name": "to",
             "schema": {
               "type": "string"
             }
@@ -2851,7 +2851,7 @@
     },
     "/hooks/remote": {
       "get": {
-        "description": "Lists remote hooks, optionally filtering by a unique name.",
+        "description": "Lists remote hooks, optionally filtering by a unique name.\nReturns a list of remote hooks.",
         "parameters": [
           {
             "description": "The maximum number of items to return per page.",
@@ -2934,6 +2934,7 @@
     },
     "/hooks/remote/by-name/{name}": {
       "get": {
+        "description": "Retrieves a remote hook configuration by name.\nReturns a simple \"deleted\" confirmation message on success.",
         "responses": {
           "200": {
             "content": {
@@ -2956,7 +2957,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "getByName"
+        "summary": "Retrieves a remote hook configuration by name."
       },
       "parameters": [
         {
@@ -2998,7 +2999,7 @@
         "summary": "Deletes a remote hook configuration by ID."
       },
       "get": {
-        "description": "Retrieves a specific remote hook configuration by ID.",
+        "description": "Retrieves a specific remote hook configuration by ID.\nReturns a simple \"deleted\" confirmation message on success.",
         "responses": {
           "200": {
             "content": {
@@ -3073,7 +3074,7 @@
     },
     "/hooks/schemas": {
       "get": {
-        "description": "Retrieves the JSON openAPI schemas for all supported hook types.",
+        "description": "Retrieves the JSON openAPI schemas for all supported hook types.\nReturns a list of hook openAPI schemas.",
         "responses": {
           "200": {
             "content": {
@@ -3256,19 +3257,19 @@
         "description": "Lists all registered models in internal format.\nThis endpoint returns full model details including timestamps and capabilities.\nIntended for administrative and debugging purposes.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -3425,19 +3426,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -3537,19 +3538,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -3735,17 +3736,17 @@
         "description": "Cancels an in-progress model download.\nAccepts either:\n- 'url' query parameter to cancel a download on a specific backend\n- 'model' query parameter to cancel the model download across all backends\nExample: /queue/cancel?url=http://localhost:11434\n/queue/cancel?model=mistral:latest",
         "parameters": [
           {
-            "description": "The base URL of a specific backend to cancel downloads on.",
+            "description": "The model name to cancel downloads for across all backends.",
             "in": "query",
-            "name": "url",
+            "name": "model",
             "schema": {
               "type": "string"
             }
           },
           {
-            "description": "The model name to cancel downloads for across all backends.",
+            "description": "The base URL of a specific backend to cancel downloads on.",
             "in": "query",
-            "name": "model",
+            "name": "url",
             "schema": {
               "type": "string"
             }

@@ -31,6 +31,8 @@ type remoteHookService struct {
 }
 
 // Retrieves the JSON openAPI schemas for all supported hook types.
+//
+// Returns a list of hook openAPI schemas.
 func (s *remoteHookService) getSchemas(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -63,6 +65,8 @@ func (s *remoteHookService) create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Lists remote hooks, optionally filtering by a unique name.
+//
+// Returns a list of remote hooks.
 func (s *remoteHookService) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -95,6 +99,8 @@ func (s *remoteHookService) list(w http.ResponseWriter, r *http.Request) {
 }
 
 // Retrieves a specific remote hook configuration by ID.
+//
+// Returns a simple "deleted" confirmation message on success.
 func (s *remoteHookService) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := serverops.GetPathParam(r, "id", "The unique identifier for the remote hook.")
@@ -145,6 +151,9 @@ func (s *remoteHookService) delete(w http.ResponseWriter, r *http.Request) {
 	_ = serverops.Encode(w, r, http.StatusOK, "deleted") // @response string
 }
 
+// Retrieves a remote hook configuration by name.
+//
+// Returns a simple "deleted" confirmation message on success.
 func (s *remoteHookService) getByName(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := serverops.GetPathParam(r, "name", "The unique name for the remote hook.")

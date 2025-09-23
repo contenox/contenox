@@ -1232,10 +1232,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|event_type|query|string|false|The type of event to filter by.|
-|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
+|event_type|query|string|false|The type of event to filter by.|
+|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 
 > Example responses
 
@@ -1424,9 +1424,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|to|query|string|false|End time in RFC3339 format.|
 |event_type|query|string|false|The type of event to delete.|
 |from|query|string|false|Start time in RFC3339 format.|
+|to|query|string|false|End time in RFC3339 format.|
 
 > Example responses
 
@@ -2391,6 +2391,7 @@ print(r.json())
 `GET /hooks/remote`
 
 Lists remote hooks, optionally filtering by a unique name.
+Returns a list of remote hooks.
 
 <h3 id="lists-remote-hooks,-optionally-filtering-by-a-unique-name.-parameters">Parameters</h3>
 
@@ -2515,7 +2516,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## getByName
+## Retrieves a remote hook configuration by name.
 
 > Code samples
 
@@ -2534,7 +2535,10 @@ print(r.json())
 
 `GET /hooks/remote/by-name/{name}`
 
-<h3 id="getbyname-parameters">Parameters</h3>
+Retrieves a remote hook configuration by name.
+Returns a simple "deleted" confirmation message on success.
+
+<h3 id="retrieves-a-remote-hook-configuration-by-name.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -2561,7 +2565,7 @@ print(r.json())
 }
 ```
 
-<h3 id="getbyname-responses">Responses</h3>
+<h3 id="retrieves-a-remote-hook-configuration-by-name.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -2641,6 +2645,7 @@ print(r.json())
 `GET /hooks/remote/{id}`
 
 Retrieves a specific remote hook configuration by ID.
+Returns a simple "deleted" confirmation message on success.
 
 <h3 id="retrieves-a-specific-remote-hook-configuration-by-id.-parameters">Parameters</h3>
 
@@ -2783,6 +2788,7 @@ print(r.json())
 `GET /hooks/schemas`
 
 Retrieves the JSON openAPI schemas for all supported hook types.
+Returns a list of hook openAPI schemas.
 
 > Example responses
 
@@ -3049,8 +3055,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -3318,8 +3324,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -3681,8 +3687,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 |model|query|string|false|The model name to cancel downloads for across all backends.|
+|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 
 > Example responses
 
