@@ -178,7 +178,7 @@ graph TD
     U -- API Requests --> API
     API -- Triggers Task Chain --> OE
     API -- Event Trigger --> EV
-    EV -- JS Script Engine -> OE
+    EV -- JS Script Engine --> OE
     OE -- Executes via --> CONN
     CONN -- Routes to LLMs --> LLM
     CONN -- Calls External Hooks --> HOOK
