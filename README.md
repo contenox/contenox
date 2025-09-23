@@ -160,7 +160,7 @@ function processOrder(event) {
   // Access event data
   const orderData = event.data;
 
-  // Send new events
+  // Send new events via internal event bus
   const result = sendEvent("order.processed", {
     orderId: orderData.id,
     status: "processed",
