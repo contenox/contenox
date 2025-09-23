@@ -1028,7 +1028,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-150-ge493108-dirty
+    version: v0.0.74
 openapi: 3.1.0
 paths:
     /backend-affinity/{backendID}/groups:
@@ -1509,6 +1509,16 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
+                - description: The type of event to filter by.
+                  in: query
+                  name: event_type
+                  schema:
+                    type: string
+                - description: The aggregate type (e.g., 'user', 'order').
+                  in: query
+                  name: aggregate_type
+                  schema:
+                    type: string
                 - description: The unique ID of the aggregate.
                   in: query
                   name: aggregate_id
@@ -1519,16 +1529,6 @@ paths:
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: The type of event to filter by.
-                  in: query
-                  name: event_type
-                  schema:
-                    type: string
-                - description: The aggregate type (e.g., 'user', 'order').
-                  in: query
-                  name: aggregate_type
-                  schema:
                     type: string
             responses:
                 "200":
@@ -1654,16 +1654,16 @@ paths:
                 Retrieves events of a specific type within a time range.
                 Useful for cross-aggregate analysis or system-wide event monitoring.
             parameters:
-                - description: The type of event to filter by.
-                  in: query
-                  name: event_type
-                  schema:
-                    type: string
                 - description: Maximum number of events to return.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: The type of event to filter by.
+                  in: query
+                  name: event_type
+                  schema:
                     type: string
             responses:
                 "200":
@@ -1755,16 +1755,16 @@ paths:
                 Lists all registered functions with pagination
                 Returns functions in creation order, with the oldest functions first.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2331,16 +2331,16 @@ paths:
                 This endpoint returns full model details including timestamps and capabilities.
                 Intended for administrative and debugging purposes.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -2545,16 +2545,16 @@ paths:
                 Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
                 the chainID parameter is currently unused.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -2699,14 +2699,14 @@ paths:
                 Example: /queue/cancel?url=http://localhost:11434
                 /queue/cancel?model=mistral:latest
             parameters:
-                - description: The model name to cancel downloads for across all backends.
-                  in: query
-                  name: model
-                  schema:
-                    type: string
                 - description: The base URL of a specific backend to cancel downloads on.
                   in: query
                   name: url
+                  schema:
+                    type: string
+                - description: The model name to cancel downloads for across all backends.
+                  in: query
+                  name: model
                   schema:
                     type: string
             responses:

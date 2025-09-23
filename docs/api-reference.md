@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-150-ge493108-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.74
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-150-ge493108-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.74</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1232,10 +1232,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|aggregate_id|query|string|false|The unique ID of the aggregate.|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
+|aggregate_id|query|string|false|The unique ID of the aggregate.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -1474,8 +1474,8 @@ Useful for cross-aggregate analysis or system-wide event monitoring.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|event_type|query|string|false|The type of event to filter by.|
 |limit|query|string|false|Maximum number of events to return.|
+|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -1691,8 +1691,8 @@ Returns functions in creation order, with the oldest functions first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -3055,8 +3055,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -3687,8 +3687,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|model|query|string|false|The model name to cancel downloads for across all backends.|
 |url|query|string|false|The base URL of a specific backend to cancel downloads on.|
+|model|query|string|false|The model name to cancel downloads for across all backends.|
 
 > Example responses
 
