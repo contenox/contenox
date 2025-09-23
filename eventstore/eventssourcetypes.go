@@ -28,18 +28,18 @@ type Event struct {
 
 type MappingConfig struct {
 	Path          string `json:"path"`
-	EventType     string `json:"event_type"`
-	EventSource   string `json:"event_source"`
-	AggregateType string `json:"aggregate_type"`
+	EventType     string `json:"eventType"`
+	EventSource   string `json:"eventSource"`
+	AggregateType string `json:"aggregateType"`
 	// Extract aggregate ID from payload using JSON path or field name
-	AggregateIDField string `json:"aggregate_id_field"`
-	EventTypeField   string `json:"event_type_field"`
-	EventSourceField string `json:"event_source_field"`
-	EventIDField     string `json:"event_id_field"`
+	AggregateIDField string `json:"aggregateIDField"`
+	EventTypeField   string `json:"eventTypeField"`
+	EventSourceField string `json:"eventSourceField"`
+	EventIDField     string `json:"eventIDField"`
 	// Fixed version or field to extract from
 	Version int `json:"version"`
 	// Metadata fields to extract from headers/payload
-	MetadataMapping map[string]string `json:"metadata_mapping"`
+	MetadataMapping map[string]string `json:"metadataMapping"`
 }
 
 // Store provides methods for storing and retrieving events

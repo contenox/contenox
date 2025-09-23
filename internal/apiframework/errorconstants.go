@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	libauth "github.com/contenox/authz"
+	"github.com/contenox/runtime/eventstore"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
 )
@@ -234,6 +235,10 @@ func mapErrorToStatus(op Operation, err error) int {
 
 	if errors.Is(err, ErrInvalidChain) {
 		return http.StatusBadRequest
+	}
+
+	if errors.Is(err, eventstore.ErrNotFound) {
+		return http.StatusNotFound
 	}
 
 	// fallbacks based on operation

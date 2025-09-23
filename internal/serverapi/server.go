@@ -16,6 +16,7 @@ import (
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
+	"github.com/contenox/runtime/eventmappingservice"
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/executor"
@@ -25,6 +26,7 @@ import (
 	"github.com/contenox/runtime/internal/backendapi"
 	"github.com/contenox/runtime/internal/chatapi"
 	"github.com/contenox/runtime/internal/eventdispatch"
+	"github.com/contenox/runtime/internal/eventmappingapi"
 	"github.com/contenox/runtime/internal/eventsourceapi"
 	"github.com/contenox/runtime/internal/execapi"
 	"github.com/contenox/runtime/internal/execsyncapi"
@@ -189,6 +191,11 @@ func New(
 	execsyncapi.AddExecutorRoutes(mux, executorService, eventbus)
 	executorService.AddBuildInServices(eventSourceService, execService, taskChainService, taskService)
 	executorService.StartSync(ctx, time.Second*3)
+
+	eventMappingService := eventmappingservice.New(dbInstance)
+
+	eventMappingService = eventmappingservice.WithActivityTracker(eventMappingService, serveropsChainedTracker)
+	eventmappingapi.AddMappingRoutes(mux, eventMappingService)
 
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)

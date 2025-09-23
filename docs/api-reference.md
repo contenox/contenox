@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.74
+title: contenox/runtime – LLM Backend Management API v0.0.51-159-g6c230a4-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.74</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-159-g6c230a4-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1474,8 +1474,8 @@ Useful for cross-aggregate analysis or system-wide event monitoring.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -1691,8 +1691,8 @@ Returns functions in creation order, with the oldest functions first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -2812,6 +2812,323 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## Deletes an event mapping configuration by path.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/mapping', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /mapping`
+
+Deletes an event mapping configuration by path.
+Returns a simple confirmation message on success.
+
+<h3 id="deletes-an-event-mapping-configuration-by-path.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|path|query|string|false|The unique path identifier for the mapping.|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="deletes-an-event-mapping-configuration-by-path.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves details for a specific event mapping by path.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/mapping', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /mapping`
+
+Retrieves details for a specific event mapping by path.
+
+<h3 id="retrieves-details-for-a-specific-event-mapping-by-path.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|path|query|string|false|The unique path identifier for the mapping.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "aggregateIDField": "string",
+  "aggregateType": "string",
+  "eventIDField": "string",
+  "eventSource": "string",
+  "eventSourceField": "string",
+  "eventType": "string",
+  "eventTypeField": "string",
+  "metadataMapping": {},
+  "path": "string",
+  "version": 0
+}
+```
+
+<h3 id="retrieves-details-for-a-specific-event-mapping-by-path.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[eventstore_MappingConfig](#schemaeventstore_mappingconfig)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Updates an existing event mapping configuration.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/mapping', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /mapping`
+
+Updates an existing event mapping configuration.
+The path from the query parameter overrides any path in the request body.
+
+> Body parameter
+
+```json
+{
+  "aggregateIDField": "string",
+  "aggregateType": "string",
+  "eventIDField": "string",
+  "eventSource": "string",
+  "eventSourceField": "string",
+  "eventType": "string",
+  "eventTypeField": "string",
+  "metadataMapping": {},
+  "path": "string",
+  "version": 0
+}
+```
+
+<h3 id="updates-an-existing-event-mapping-configuration.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|path|query|string|false|The unique path identifier for the mapping.|
+|body|body|[eventstore_MappingConfig](#schemaeventstore_mappingconfig)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "aggregateIDField": "string",
+  "aggregateType": "string",
+  "eventIDField": "string",
+  "eventSource": "string",
+  "eventSourceField": "string",
+  "eventType": "string",
+  "eventTypeField": "string",
+  "metadataMapping": {},
+  "path": "string",
+  "version": 0
+}
+```
+
+<h3 id="updates-an-existing-event-mapping-configuration.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[eventstore_MappingConfig](#schemaeventstore_mappingconfig)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists all configured event mappings.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/mappings', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /mappings`
+
+Lists all configured event mappings.
+Returns mappings sorted by path in ascending order.
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "aggregateIDField": "string",
+    "aggregateType": "string",
+    "eventIDField": "string",
+    "eventSource": "string",
+    "eventSourceField": "string",
+    "eventType": "string",
+    "eventTypeField": "string",
+    "metadataMapping": {},
+    "path": "string",
+    "version": 0
+  }
+]
+```
+
+<h3 id="lists-all-configured-event-mappings.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_eventstore_MappingConfig](#schemaarray_eventstore_mappingconfig)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Creates a new event mapping configuration.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/mappings', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /mappings`
+
+Creates a new event mapping configuration.
+Mappings define how to extract structured events from incoming webhook payloads.
+They specify how to map JSON fields and headers to event properties like aggregate_id, event_type, etc.
+
+> Body parameter
+
+```json
+{
+  "aggregateIDField": "string",
+  "aggregateType": "string",
+  "eventIDField": "string",
+  "eventSource": "string",
+  "eventSourceField": "string",
+  "eventType": "string",
+  "eventTypeField": "string",
+  "metadataMapping": {},
+  "path": "string",
+  "version": 0
+}
+```
+
+<h3 id="creates-a-new-event-mapping-configuration.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[eventstore_MappingConfig](#schemaeventstore_mappingconfig)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "aggregateIDField": "string",
+  "aggregateType": "string",
+  "eventIDField": "string",
+  "eventSource": "string",
+  "eventSourceField": "string",
+  "eventType": "string",
+  "eventTypeField": "string",
+  "metadataMapping": {},
+  "path": "string",
+  "version": 0
+}
+```
+
+<h3 id="creates-a-new-event-mapping-configuration.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[eventstore_MappingConfig](#schemaeventstore_mappingconfig)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Lists all models associated with a specific affinity group.
 
 > Code samples
@@ -3687,8 +4004,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 |model|query|string|false|The model name to cancel downloads for across all backends.|
+|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 
 > Example responses
 
@@ -3962,8 +4279,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -4729,6 +5046,37 @@ X-API-Key
 |---|---|---|---|---|
 |*anonymous*|[[eventstore_Event](#schemaeventstore_event)]|false|none|none|
 
+<h2 id="tocS_array_eventstore_MappingConfig">array_eventstore_MappingConfig</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_eventstore_mappingconfig"></a>
+<a id="schema_array_eventstore_MappingConfig"></a>
+<a id="tocSarray_eventstore_mappingconfig"></a>
+<a id="tocsarray_eventstore_mappingconfig"></a>
+
+```json
+[
+  {
+    "aggregateIDField": "string",
+    "aggregateType": "string",
+    "eventIDField": "string",
+    "eventSource": "string",
+    "eventSourceField": "string",
+    "eventType": "string",
+    "eventTypeField": "string",
+    "metadataMapping": {},
+    "path": "string",
+    "version": 0
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[eventstore_MappingConfig](#schemaeventstore_mappingconfig)]|false|none|none|
+
 <h2 id="tocS_array_functionstore_EventTrigger">array_functionstore_EventTrigger</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_functionstore_eventtrigger"></a>
@@ -5267,6 +5615,44 @@ X-API-Key
 |metadata|string(json)|true|none|JSON-encoded string|
 |nid|integer|true|none|none|
 |version|integer|true|none|none|
+
+<h2 id="tocS_eventstore_MappingConfig">eventstore_MappingConfig</h2>
+<!-- backwards compatibility -->
+<a id="schemaeventstore_mappingconfig"></a>
+<a id="schema_eventstore_MappingConfig"></a>
+<a id="tocSeventstore_mappingconfig"></a>
+<a id="tocseventstore_mappingconfig"></a>
+
+```json
+{
+  "aggregateIDField": "string",
+  "aggregateType": "string",
+  "eventIDField": "string",
+  "eventSource": "string",
+  "eventSourceField": "string",
+  "eventType": "string",
+  "eventTypeField": "string",
+  "metadataMapping": {},
+  "path": "string",
+  "version": 0
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|aggregateIDField|string|true|none|Extract aggregate ID from payload using JSON path or field name|
+|aggregateType|string|true|none|none|
+|eventIDField|string|true|none|none|
+|eventSource|string|true|none|none|
+|eventSourceField|string|true|none|none|
+|eventType|string|true|none|none|
+|eventTypeField|string|true|none|none|
+|metadataMapping|object|true|none|Metadata fields to extract from headers/payload|
+|path|string|true|none|none|
+|version|integer|true|none|Fixed version or field to extract from|
 
 <h2 id="tocS_execapi_DefaultModelResponse">execapi_DefaultModelResponse</h2>
 <!-- backwards compatibility -->

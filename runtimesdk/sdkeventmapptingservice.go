@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/contenox/runtime/eventmappingservice"
@@ -74,7 +75,7 @@ func (s *HTTPMappingService) GetMapping(ctx context.Context, path string) (*even
 		return nil, fmt.Errorf("path is required")
 	}
 
-	url := fmt.Sprintf("%s/mappings/%s", s.baseURL, path)
+	url := fmt.Sprintf("%s/mapping?path=%s", s.baseURL, url.QueryEscape(path))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -109,7 +110,7 @@ func (s *HTTPMappingService) UpdateMapping(ctx context.Context, config *eventsto
 		return fmt.Errorf("config and path are required")
 	}
 
-	url := fmt.Sprintf("%s/mappings/%s", s.baseURL, config.Path)
+	url := fmt.Sprintf("%s/mapping?path=%s", s.baseURL, url.QueryEscape(config.Path))
 
 	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
 	if err != nil {
@@ -147,7 +148,7 @@ func (s *HTTPMappingService) DeleteMapping(ctx context.Context, path string) err
 		return fmt.Errorf("path is required")
 	}
 
-	url := fmt.Sprintf("%s/mappings/%s", s.baseURL, path)
+	url := fmt.Sprintf("%s/mapping?path=%s", s.baseURL, url.QueryEscape(path))
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {

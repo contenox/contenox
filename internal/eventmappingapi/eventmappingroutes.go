@@ -16,9 +16,10 @@ func AddMappingRoutes(mux *http.ServeMux, mappingService eventmappingservice.Ser
 	// Mapping CRUD endpoints
 	mux.HandleFunc("POST /mappings", h.createMapping)
 	mux.HandleFunc("GET /mappings", h.listMappings)
-	mux.HandleFunc("GET /mappings/{path}", h.getMapping)
-	mux.HandleFunc("PUT /mappings/{path}", h.updateMapping)
-	mux.HandleFunc("DELETE /mappings/{path}", h.deleteMapping)
+	// Use query parameter instead of path parameter for paths that may contain slashes
+	mux.HandleFunc("GET /mapping", h.getMapping)
+	mux.HandleFunc("PUT /mapping", h.updateMapping)
+	mux.HandleFunc("DELETE /mapping", h.deleteMapping)
 }
 
 type mappingHandler struct {
@@ -64,9 +65,11 @@ func (h *mappingHandler) listMappings(w http.ResponseWriter, r *http.Request) {
 // Retrieves details for a specific event mapping by path.
 func (h *mappingHandler) getMapping(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	path := serverops.GetPathParam(r, "path", "The unique path identifier for the mapping.")
+
+	// Use query parameter instead of path parameter
+	path := serverops.GetQueryParam(r, "path", "", "The unique path identifier for the mapping.")
 	if path == "" {
-		_ = serverops.Error(w, r, fmt.Errorf("missing path parameter %w", serverops.ErrBadPathValue), serverops.GetOperation)
+		_ = serverops.Error(w, r, fmt.Errorf("missing path query parameter %w", serverops.ErrBadPathValue), serverops.GetOperation)
 		return
 	}
 
@@ -81,12 +84,14 @@ func (h *mappingHandler) getMapping(w http.ResponseWriter, r *http.Request) {
 
 // Updates an existing event mapping configuration.
 //
-// The path from the URL overrides any path in the request body.
+// The path from the query parameter overrides any path in the request body.
 func (h *mappingHandler) updateMapping(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	path := serverops.GetPathParam(r, "path", "The unique path identifier for the mapping.")
+
+	// Use query parameter instead of path parameter
+	path := serverops.GetQueryParam(r, "path", "", "The unique path identifier for the mapping.")
 	if path == "" {
-		_ = serverops.Error(w, r, fmt.Errorf("missing path parameter %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		_ = serverops.Error(w, r, fmt.Errorf("missing path query parameter %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
 		return
 	}
 
@@ -110,9 +115,11 @@ func (h *mappingHandler) updateMapping(w http.ResponseWriter, r *http.Request) {
 // Returns a simple confirmation message on success.
 func (h *mappingHandler) deleteMapping(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	path := serverops.GetPathParam(r, "path", "The unique path identifier for the mapping.")
+
+	// Use query parameter instead of path parameter
+	path := serverops.GetQueryParam(r, "path", "", "The unique path identifier for the mapping.")
 	if path == "" {
-		_ = serverops.Error(w, r, fmt.Errorf("missing path parameter %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
+		_ = serverops.Error(w, r, fmt.Errorf("missing path query parameter %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
 		return
 	}
 
