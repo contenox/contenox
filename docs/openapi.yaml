@@ -1073,7 +1073,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-160-g3e0ff93-dirty
+    version: v0.0.75
 openapi: 3.1.0
 paths:
     /backend-affinity/{backendID}/groups:
@@ -1355,16 +1355,16 @@ paths:
                 Lists all event triggers with pagination
                 Returns event triggers in creation order, with the oldest triggers first.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -1665,6 +1665,11 @@ paths:
                 USE WITH CAUTION — this is a destructive operation.
                 Typically used for GDPR compliance or cleaning up test data.
             parameters:
+                - description: End time in RFC3339 format.
+                  in: query
+                  name: to
+                  schema:
+                    type: string
                 - description: The type of event to delete.
                   in: query
                   name: event_type
@@ -1673,11 +1678,6 @@ paths:
                 - description: Start time in RFC3339 format.
                   in: query
                   name: from
-                  schema:
-                    type: string
-                - description: End time in RFC3339 format.
-                  in: query
-                  name: to
                   schema:
                     type: string
             responses:
@@ -1949,16 +1949,16 @@ paths:
                 Purpose types categorize groups (e.g., "Internal Embeddings", "Internal Tasks").
                 Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -2743,16 +2743,16 @@ paths:
                 Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
                 the chainID parameter is currently unused.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -3006,16 +3006,16 @@ paths:
         get:
             description: Lists all task chain definitions with pagination.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":

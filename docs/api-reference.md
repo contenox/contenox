@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-160-g3e0ff93-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.75
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-160-g3e0ff93-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.75</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -717,8 +717,8 @@ Returns event triggers in creation order, with the oldest triggers first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1424,9 +1424,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|to|query|string|false|End time in RFC3339 format.|
 |event_type|query|string|false|The type of event to delete.|
 |from|query|string|false|Start time in RFC3339 format.|
-|to|query|string|false|End time in RFC3339 format.|
 
 > Example responses
 
@@ -2046,8 +2046,8 @@ Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |purpose|path|string|true|The purpose category to filter groups by (e.g., 'embeddings').|
 
 > Example responses
@@ -4392,8 +4392,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
