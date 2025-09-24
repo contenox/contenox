@@ -1232,10 +1232,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
-|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -1296,9 +1296,9 @@ Useful for auditing or monitoring events from specific subsystems.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |event_source|query|string|false|The source system that generated the event.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -1691,8 +1691,8 @@ Returns functions in creation order, with the oldest functions first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -2046,8 +2046,8 @@ Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |purpose|path|string|true|The purpose category to filter groups by (e.g., 'embeddings').|
 
 > Example responses
@@ -3713,8 +3713,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses

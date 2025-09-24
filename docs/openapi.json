@@ -2108,6 +2108,14 @@
         "description": "Retrieves events for a specific aggregate within a time range.\nUseful for rebuilding aggregate state or auditing changes.",
         "parameters": [
           {
+            "description": "The type of event to filter by.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The aggregate type (e.g., 'user', 'order').",
             "in": "query",
             "name": "aggregate_type",
@@ -2129,14 +2137,6 @@
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "The type of event to filter by.",
-            "in": "query",
-            "name": "event_type",
-            "schema": {
               "type": "string"
             }
           }
@@ -2171,15 +2171,6 @@
         "description": "Retrieves events from a specific source within a time range.\nUseful for auditing or monitoring events from specific subsystems.",
         "parameters": [
           {
-            "description": "Maximum number of events to return.",
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": "100",
-              "type": "string"
-            }
-          },
-          {
             "description": "The type of event to filter by.",
             "in": "query",
             "name": "event_type",
@@ -2192,6 +2183,15 @@
             "in": "query",
             "name": "event_source",
             "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum number of events to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
               "type": "string"
             }
           }
@@ -2469,19 +2469,19 @@
         "description": "Lists all registered functions with pagination\nReturns functions in creation order, with the oldest functions first.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -2692,19 +2692,19 @@
         "description": "Lists groups filtered by purpose type with pagination support.\nPurpose types categorize groups (e.g., \"Internal Embeddings\", \"Internal Tasks\").\nAccepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -3821,19 +3821,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
