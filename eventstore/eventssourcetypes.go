@@ -32,10 +32,11 @@ type MappingConfig struct {
 	EventSource   string `json:"eventSource"`
 	AggregateType string `json:"aggregateType"`
 	// Extract aggregate ID from payload using JSON path or field name
-	AggregateIDField string `json:"aggregateIDField"`
-	EventTypeField   string `json:"eventTypeField"`
-	EventSourceField string `json:"eventSourceField"`
-	EventIDField     string `json:"eventIDField"`
+	AggregateIDField   string `json:"aggregateIDField"`
+	AggregateTypeField string `json:"aggregateTypeField"`
+	EventTypeField     string `json:"eventTypeField"`
+	EventSourceField   string `json:"eventSourceField"`
+	EventIDField       string `json:"eventIDField"`
 	// Fixed version or field to extract from
 	Version int `json:"version"`
 	// Metadata fields to extract from headers/payload

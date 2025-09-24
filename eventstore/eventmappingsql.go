@@ -20,16 +20,17 @@ func checkRowsAffected(result sql.Result) error {
 }
 
 type mappingConfigInternal struct {
-	Path             string
-	EventType        string
-	EventSource      string
-	AggregateType    string
-	AggregateIDField string
-	EventTypeField   string
-	EventSourceField string
-	EventIDField     string
-	Version          int
-	MetadataMapping  json.RawMessage
+	Path               string
+	EventType          string
+	EventSource        string
+	AggregateType      string
+	AggregateIDField   string
+	AggregateTypeField string
+	EventTypeField     string
+	EventSourceField   string
+	EventIDField       string
+	Version            int
+	MetadataMapping    json.RawMessage
 }
 
 func newMappingConfigInternal(config *MappingConfig) (*mappingConfigInternal, error) {
@@ -46,16 +47,17 @@ func newMappingConfigInternal(config *MappingConfig) (*mappingConfigInternal, er
 	}
 
 	return &mappingConfigInternal{
-		Path:             config.Path,
-		EventType:        config.EventType,
-		EventSource:      config.EventSource,
-		AggregateType:    config.AggregateType,
-		AggregateIDField: config.AggregateIDField,
-		EventTypeField:   config.EventTypeField,
-		EventSourceField: config.EventSourceField,
-		EventIDField:     config.EventIDField,
-		Version:          config.Version,
-		MetadataMapping:  jsonMetadataMapping,
+		Path:               config.Path,
+		EventType:          config.EventType,
+		EventSource:        config.EventSource,
+		AggregateType:      config.AggregateType,
+		AggregateIDField:   config.AggregateIDField,
+		AggregateTypeField: config.AggregateTypeField,
+		EventTypeField:     config.EventTypeField,
+		EventSourceField:   config.EventSourceField,
+		EventIDField:       config.EventIDField,
+		Version:            config.Version,
+		MetadataMapping:    jsonMetadataMapping,
 	}, nil
 }
 
@@ -74,16 +76,17 @@ func fromMappingConfigInternal(config *mappingConfigInternal) (*MappingConfig, e
 	}
 
 	return &MappingConfig{
-		Path:             config.Path,
-		EventType:        config.EventType,
-		EventSource:      config.EventSource,
-		AggregateType:    config.AggregateType,
-		AggregateIDField: config.AggregateIDField,
-		EventTypeField:   config.EventTypeField,
-		EventSourceField: config.EventSourceField,
-		EventIDField:     config.EventIDField,
-		Version:          config.Version,
-		MetadataMapping:  metadataMapping,
+		Path:               config.Path,
+		EventType:          config.EventType,
+		EventSource:        config.EventSource,
+		AggregateType:      config.AggregateType,
+		AggregateIDField:   config.AggregateIDField,
+		AggregateTypeField: config.AggregateTypeField,
+		EventTypeField:     config.EventTypeField,
+		EventSourceField:   config.EventSourceField,
+		EventIDField:       config.EventIDField,
+		Version:            config.Version,
+		MetadataMapping:    metadataMapping,
 	}, nil
 }
 
@@ -97,11 +100,11 @@ func (s *store) CreateMapping(ctx context.Context, config *MappingConfig) error 
 	_, err = s.Exec.ExecContext(ctx, `
 		INSERT INTO event_mappings (
 			path, event_type, event_source, aggregate_type,
-			aggregate_id_field, event_type_field, event_source_field, event_id_field,
+			aggregate_id_field, aggregate_type_field, event_type_field, event_source_field, event_id_field,
 			version, metadata_mapping
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, internal.Path, internal.EventType, internal.EventSource, internal.AggregateType,
-		internal.AggregateIDField, internal.EventTypeField, internal.EventSourceField, internal.EventIDField,
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+`, internal.Path, internal.EventType, internal.EventSource, internal.AggregateType,
+		internal.AggregateIDField, internal.AggregateTypeField, internal.EventTypeField, internal.EventSourceField, internal.EventIDField,
 		internal.Version, internal.MetadataMapping)
 
 	return err
@@ -115,7 +118,7 @@ func (s *store) GetMapping(ctx context.Context, path string) (*MappingConfig, er
 
 	row := s.Exec.QueryRowContext(ctx, `
 		SELECT path, event_type, event_source, aggregate_type,
-		       aggregate_id_field, event_type_field, event_source_field, event_id_field,
+		       aggregate_id_field, aggregate_type_field, event_type_field, event_source_field, event_id_field,
 		       version, metadata_mapping
 		FROM event_mappings
 		WHERE path = $1
@@ -128,6 +131,7 @@ func (s *store) GetMapping(ctx context.Context, path string) (*MappingConfig, er
 		&internal.EventSource,
 		&internal.AggregateType,
 		&internal.AggregateIDField,
+		&internal.AggregateTypeField,
 		&internal.EventTypeField,
 		&internal.EventSourceField,
 		&internal.EventIDField,
@@ -157,14 +161,16 @@ func (s *store) UpdateMapping(ctx context.Context, config *MappingConfig) error 
 		    event_source = $2,
 		    aggregate_type = $3,
 		    aggregate_id_field = $4,
-		    event_type_field = $5,
-		    event_source_field = $6,
-		    event_id_field = $7,
-		    version = $8,
-		    metadata_mapping = $9
-		WHERE path = $10
-	`, internal.EventType, internal.EventSource, internal.AggregateType,
-		internal.AggregateIDField, internal.EventTypeField, internal.EventSourceField, internal.EventIDField,
+		    aggregate_type_field = $5,
+		    event_type_field = $6,
+		    event_source_field = $7,
+		    event_id_field = $8,
+		    version = $9,
+		    metadata_mapping = $10
+		WHERE path = $11
+		`, internal.EventType, internal.EventSource, internal.AggregateType,
+		internal.AggregateIDField, internal.AggregateTypeField,
+		internal.EventTypeField, internal.EventSourceField, internal.EventIDField,
 		internal.Version, internal.MetadataMapping, internal.Path)
 
 	if err != nil {
@@ -195,7 +201,7 @@ func (s *store) DeleteMapping(ctx context.Context, path string) error {
 func (s *store) ListMappings(ctx context.Context) ([]*MappingConfig, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
 		SELECT path, event_type, event_source, aggregate_type,
-		       aggregate_id_field, event_type_field, event_source_field, event_id_field,
+		       aggregate_id_field, aggregate_type_field, event_type_field, event_source_field, event_id_field,
 		       version, metadata_mapping
 		FROM event_mappings
 		ORDER BY path
@@ -214,6 +220,7 @@ func (s *store) ListMappings(ctx context.Context) ([]*MappingConfig, error) {
 			&internal.EventSource,
 			&internal.AggregateType,
 			&internal.AggregateIDField,
+			&internal.AggregateTypeField,
 			&internal.EventTypeField,
 			&internal.EventSourceField,
 			&internal.EventIDField,

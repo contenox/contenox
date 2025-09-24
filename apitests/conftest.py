@@ -379,3 +379,36 @@ def check_ollama_request(request):
         return True
     except Exception as e:
         pytest.fail(f"Request body is not a valid Ollama format: {e}")
+
+@pytest.fixture(scope="function")
+def create_test_mapping(base_url, path_suffix=None):
+    """Helper to create a test mapping and sync it"""
+    if path_suffix is None:
+        path_suffix = str(uuid.uuid4())[:8]
+
+    mapping_path = f"/test/mapping/{path_suffix}"
+    mapping_config = {
+        "path": mapping_path,
+        "version": 1,
+        "eventType": "user.created",
+        "eventSource": "auth-service",
+        "eventTypeField": "type",
+        "eventSourceField": "source",
+        "aggregateType": "user",
+        "aggregateTypeField": "",
+        "aggregateIDField": "data.user_id",
+        "metadataMapping": {
+            "ip_address": "metadata.ip",
+            "user_agent": "metadata.user_agent"
+        }
+    }
+
+    # Create the mapping
+    response = requests.post(f"{base_url}/mappings", json=mapping_config)
+    assert response.status_code == 201
+
+    # Sync to ensure it's available in cache
+    sync_response = requests.post(f"{base_url}/sync")
+    assert sync_response.status_code == 200
+
+    return mapping_path, mapping_config

@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-159-g6c230a4-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-160-g3e0ff93-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-159-g6c230a4-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-160-g3e0ff93-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1232,10 +1232,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
+|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -1296,9 +1296,9 @@ Useful for auditing or monitoring events from specific subsystems.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |event_source|query|string|false|The source system that generated the event.|
-|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -1691,8 +1691,8 @@ Returns functions in creation order, with the oldest functions first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -2812,6 +2812,72 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## IngestEvent processes incoming events by applying mapping configuration
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/ingest', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /ingest`
+
+IngestEvent processes incoming events by applying mapping configuration
+This endpoint transforms raw payloads into structured events using the mapping
+configuration specified by the path query parameter. The mapping defines how to extract
+event properties like aggregate_id, event_type, etc. from the incoming data.
+The path query parameter corresponds to a pre-configured mapping that specifies:
+- How to extract the event type from the payload
+- How to extract the aggregate ID and type
+- How to handle metadata mapping
+- Field extraction rules for event properties
+
+<h3 id="ingestevent-processes-incoming-events-by-applying-mapping-configuration-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|path|query|string|false|The mapping configuration path to apply|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "aggregate_id": "aggregate-uuid",
+  "aggregate_type": "github.webhook",
+  "created_at": "2023-01-01T00:00:00Z",
+  "data": {},
+  "event_source": "github.com",
+  "event_type": "github.pull_request",
+  "id": "event-uuid",
+  "metadata": {},
+  "nid": 1,
+  "version": 1
+}
+```
+
+<h3 id="ingestevent-processes-incoming-events-by-applying-mapping-configuration-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[eventstore_Event](#schemaeventstore_event)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Deletes an event mapping configuration by path.
 
 > Code samples
@@ -2895,6 +2961,7 @@ Retrieves details for a specific event mapping by path.
 {
   "aggregateIDField": "string",
   "aggregateType": "string",
+  "aggregateTypeField": "string",
   "eventIDField": "string",
   "eventSource": "string",
   "eventSourceField": "string",
@@ -2947,6 +3014,7 @@ The path from the query parameter overrides any path in the request body.
 {
   "aggregateIDField": "string",
   "aggregateType": "string",
+  "aggregateTypeField": "string",
   "eventIDField": "string",
   "eventSource": "string",
   "eventSourceField": "string",
@@ -2973,6 +3041,7 @@ The path from the query parameter overrides any path in the request body.
 {
   "aggregateIDField": "string",
   "aggregateType": "string",
+  "aggregateTypeField": "string",
   "eventIDField": "string",
   "eventSource": "string",
   "eventSourceField": "string",
@@ -3027,6 +3096,7 @@ Returns mappings sorted by path in ascending order.
   {
     "aggregateIDField": "string",
     "aggregateType": "string",
+    "aggregateTypeField": "string",
     "eventIDField": "string",
     "eventSource": "string",
     "eventSourceField": "string",
@@ -3081,6 +3151,7 @@ They specify how to map JSON fields and headers to event properties like aggrega
 {
   "aggregateIDField": "string",
   "aggregateType": "string",
+  "aggregateTypeField": "string",
   "eventIDField": "string",
   "eventSource": "string",
   "eventSourceField": "string",
@@ -3106,6 +3177,7 @@ They specify how to map JSON fields and headers to event properties like aggrega
 {
   "aggregateIDField": "string",
   "aggregateType": "string",
+  "aggregateTypeField": "string",
   "eventIDField": "string",
   "eventSource": "string",
   "eventSourceField": "string",
@@ -3641,8 +3713,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -4004,8 +4076,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|model|query|string|false|The model name to cancel downloads for across all backends.|
 |url|query|string|false|The base URL of a specific backend to cancel downloads on.|
+|model|query|string|false|The model name to cancel downloads for across all backends.|
 
 > Example responses
 
@@ -4254,6 +4326,47 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## SyncMappings refreshes the mapping cache from the underlying storage
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/sync', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /sync`
+
+SyncMappings refreshes the mapping cache from the underlying storage
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="syncmappings-refreshes-the-mapping-cache-from-the-underlying-storage-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Lists all task chain definitions with pagination.
 
 > Code samples
@@ -4279,8 +4392,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -5058,6 +5171,7 @@ X-API-Key
   {
     "aggregateIDField": "string",
     "aggregateType": "string",
+    "aggregateTypeField": "string",
     "eventIDField": "string",
     "eventSource": "string",
     "eventSourceField": "string",
@@ -5627,6 +5741,7 @@ X-API-Key
 {
   "aggregateIDField": "string",
   "aggregateType": "string",
+  "aggregateTypeField": "string",
   "eventIDField": "string",
   "eventSource": "string",
   "eventSourceField": "string",
@@ -5645,6 +5760,7 @@ X-API-Key
 |---|---|---|---|---|
 |aggregateIDField|string|true|none|Extract aggregate ID from payload using JSON path or field name|
 |aggregateType|string|true|none|none|
+|aggregateTypeField|string|true|none|none|
 |eventIDField|string|true|none|none|
 |eventSource|string|true|none|none|
 |eventSourceField|string|true|none|none|

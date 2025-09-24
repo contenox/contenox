@@ -59,6 +59,7 @@ func InitSchema(ctx context.Context, exec libdbexec.Exec) error {
 			event_source TEXT NOT NULL,
 			aggregate_type TEXT NOT NULL,
 			aggregate_id_field TEXT,
+			aggregate_type_field TEXT,
 			event_type_field TEXT,
 			event_source_field TEXT,
 			event_id_field TEXT,

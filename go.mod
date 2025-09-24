@@ -3,6 +3,7 @@ module github.com/contenox/runtime
 go 1.24.5
 
 require (
+	github.com/PaesslerAG/jsonpath v0.1.1
 	github.com/contenox/authz v0.0.1
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
 	github.com/nats-io/nats.go v1.41.1
@@ -13,6 +14,7 @@ require (
 )
 
 require (
+	github.com/PaesslerAG/gval v1.0.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect

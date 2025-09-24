@@ -18,15 +18,16 @@ func TestUnit_MappingCRUD(t *testing.T) {
 	t.Run("CreateMapping", func(t *testing.T) {
 		path := uniquePath("/webhooks/github/pr-")
 		config := &eventstore.MappingConfig{
-			Path:             path,
-			EventType:        "github.pull_request",
-			EventSource:      "github.com",
-			AggregateType:    "github.webhook",
-			AggregateIDField: "pull_request.id",
-			EventTypeField:   "action",
-			EventSourceField: "repository.full_name",
-			EventIDField:     "delivery",
-			Version:          1,
+			Path:               path,
+			EventType:          "github.pull_request",
+			EventSource:        "github.com",
+			AggregateType:      "github.webhook",
+			AggregateIDField:   "pull_request.id",
+			AggregateTypeField: "repository.type",
+			EventTypeField:     "action",
+			EventSourceField:   "repository.full_name",
+			EventIDField:       "delivery",
+			Version:            1,
 			MetadataMapping: map[string]string{
 				"signature": "headers.X-Hub-Signature",
 				"received":  "metadata.received_at",
@@ -50,6 +51,7 @@ func TestUnit_MappingCRUD(t *testing.T) {
 		require.Equal(t, config.EventIDField, retrieved.EventIDField)
 		require.Equal(t, config.Version, retrieved.Version)
 		require.Equal(t, config.MetadataMapping, retrieved.MetadataMapping)
+		require.Equal(t, config.AggregateTypeField, retrieved.AggregateTypeField)
 	})
 
 	t.Run("CreateMapping_Duplicate", func(t *testing.T) {
@@ -66,7 +68,7 @@ func TestUnit_MappingCRUD(t *testing.T) {
 		require.NoError(t, err)
 
 		err = store.CreateMapping(ctx, config)
-		require.Error(t, err) // raw constraint violation — no string matching
+		require.Error(t, err)
 	})
 
 	t.Run("GetMapping_NotFound", func(t *testing.T) {
@@ -143,7 +145,6 @@ func TestUnit_MappingCRUD(t *testing.T) {
 		err = store.DeleteMapping(ctx, config.Path)
 		require.NoError(t, err)
 
-		// Verify it's gone
 		_, err = store.GetMapping(ctx, config.Path)
 		require.ErrorIs(t, err, eventstore.ErrNotFound)
 	})
@@ -154,7 +155,6 @@ func TestUnit_MappingCRUD(t *testing.T) {
 	})
 
 	t.Run("ListMappings", func(t *testing.T) {
-		// Use unique paths — no need to clean or truncate
 		path1 := uniquePath("/list/1-")
 		path2 := uniquePath("/list/2-")
 
@@ -183,7 +183,6 @@ func TestUnit_MappingCRUD(t *testing.T) {
 		listed, err := store.ListMappings(ctx)
 		require.NoError(t, err)
 
-		// Filter for just the ones we created (in case other tests ran)
 		var filtered []*eventstore.MappingConfig
 		for _, m := range listed {
 			if m.Path == path1 || m.Path == path2 {
@@ -193,7 +192,6 @@ func TestUnit_MappingCRUD(t *testing.T) {
 
 		require.Len(t, filtered, 2)
 
-		// Sort by path for stable comparison
 		if filtered[0].Path > filtered[1].Path {
 			filtered[0], filtered[1] = filtered[1], filtered[0]
 		}

@@ -16,6 +16,7 @@ import (
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
+	"github.com/contenox/runtime/eventbridgeservice"
 	"github.com/contenox/runtime/eventmappingservice"
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/execservice"
@@ -25,6 +26,7 @@ import (
 	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/internal/backendapi"
 	"github.com/contenox/runtime/internal/chatapi"
+	eventbridgeapi "github.com/contenox/runtime/internal/eventbusapi"
 	"github.com/contenox/runtime/internal/eventdispatch"
 	"github.com/contenox/runtime/internal/eventmappingapi"
 	"github.com/contenox/runtime/internal/eventsourceapi"
@@ -196,7 +198,8 @@ func New(
 
 	eventMappingService = eventmappingservice.WithActivityTracker(eventMappingService, serveropsChainedTracker)
 	eventmappingapi.AddMappingRoutes(mux, eventMappingService)
-
+	eventbridgeService := eventbridgeservice.New(eventMappingService, eventSourceService, time.Second*3)
+	eventbridgeapi.AddEventBridgeRoutes(mux, eventbridgeService)
 	handler = apiframework.RequestIDMiddleware(handler)
 	handler = apiframework.TracingMiddleware(handler)
 	if config.Token != "" {
