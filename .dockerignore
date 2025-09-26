@@ -1,0 +1,17 @@
+# Ignore enterprise code
+enterprise/
+
+# Ignore test files
+**/*_test.go
+**/test_*.py
+**/__pycache__
+
+# Ignore local dev files
+compose.local.yaml
+pyrightconfig.json
+api_spec_generation.md
+
+# Ignore binaries and build artifacts
+cmd/runtime-api
+tools/openapi-gen
+tools/version

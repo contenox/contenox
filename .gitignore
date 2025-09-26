@@ -1,65 +1,171 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# ==============================
+# Go
+# ==============================
+
+# Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Test binary, built with `go test -c`
+# Test binaries (built with `go test -c`)
 *.test
 
-# Code coverage profiles and other test artifacts
+# Coverage and profiling
 *.out
 coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
+# Go workspace
 go.work
 go.work.sum
 
-# env file
-.env
+vendor/
 
-# Editor/IDE
-# .idea/
-# .vscode/
-.DS_Store
+# ==============================
+# Python
+# ==============================
 
-*.exe
-*.dll
-*.so
-*.dylib
-*.test
-*.out
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.python-version
 
-/bin/
-/vendor/
+# Byte-compiled / optimized
+__pycache__/
+*.py[codz]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django / Flask
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/
+.webassets-cache
+
+# Scrapy
+.scrapy
+
+# Sphinx
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter / IPython
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# pyenv / pipenv / poetry / pdm / pixi
+.pipenv/
+Pipfile
+# Pipfile.lock  ← DO NOT IGNORE
+# poetry.lock   ← DO NOT IGNORE
+.pdm-python
+.pdm-build/
+.pixi/
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+*.sage.py
+
+# mypy / pyre / pytype
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Cython
+cython_debug/
+
+# Ruff
+.ruff_cache/
+
+# PyPI config
+.pypirc
+
+# Abstra
+.abstra/
+
+# Marimo
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+
+# ==============================
+# Node.js / Frontend
+# ==============================
+
 node_modules/
 .yarn/*
-.pnp/
-.pnp.*
-
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+.pnp.*
+.pnp.js
 
-go.work
-go.work.sum
-
-.env
-.env.*
-!.env.example
-
-*.log
-logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -73,34 +179,75 @@ frontend/dist/
 .next/
 .out/
 .build/
-
-.vscode/
-.idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-docker-compose.override.yml
-
-.ollama/
-
-/coverage
-
-*.local
+.vercel
 
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# ==============================
+# General / OS / IDE
+# ==============================
 
+# Secrets & config
+.env
+.envrc
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Certificates / keys
 *.pem
+*.key
+*.crt
 
-.venv/
-__pycache__
-**/__pycache__
-*.pyc
+# Local overrides
+compose.local.yaml
+docker-compose.override.yml
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary / local
+*.local
+tmp/
+temp/
+
+# ==============================
+# Project-specific
+# ==============================
+
+# Built binaries (from your project)
+cmd/runtime-api
+tools/openapi-gen
+tools/version/version
+
+# Local AI context control (Cursor)
+.cursorignore
+.cursorindexingignore
+
+# Ollama local data
+.ollama/
 
 vald/
-tools/version/version
+
+# Docs
+# docs/  ← currently tracked
+
+# ==============================
+# Enterprise Code
+# ==============================
+enterprise/
