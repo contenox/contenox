@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.76
+title: contenox/runtime – LLM Backend Management API v0.0.51-166-gd7ecf9d-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.76</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-166-gd7ecf9d-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -24,6 +24,619 @@ headingLevel: 2
     - Parameter Name: **X-API-Key**, in: header. 
 
 <h1 id="contenox-runtime-llm-backend-management-api-default">Default</h1>
+
+## list
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/users', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /users`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="list-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="list-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## create
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/users', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /users`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="create-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="create-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## delete
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/users/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /users/{id}`
+
+<h3 id="delete-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="delete-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="delete-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## getByID
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/access-control/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /access-control/{id}`
+
+<h3 id="getbyid-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="getbyid-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="getbyid-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## update
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/users/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /users/{id}`
+
+<h3 id="update-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="update-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="update-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## alerts
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/activity/alerts', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /activity/alerts`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="alerts-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="alerts-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## operations
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/activity/operations', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /activity/operations`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="operations-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="operations-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## requestsByOperation
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/activity/operations/{op}/{subject}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /activity/operations/{op}/{subject}`
+
+<h3 id="requestsbyoperation-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|op|path|string|true|none|
+|subject|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="requestsbyoperation-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="requestsbyoperation-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## requests
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/activity/requests', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /activity/requests`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="requests-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="requests-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## requestByID
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/activity/requests/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /activity/requests/{id}`
+
+<h3 id="requestbyid-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="requestbyid-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="requestbyid-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## getExecutionState
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/activity/requests/{id}/state', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /activity/requests/{id}/state`
+
+<h3 id="getexecutionstate-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="getexecutionstate-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="getexecutionstate-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## getStatefulRequests
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/activity/stateful-requests', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /activity/stateful-requests`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="getstatefulrequests-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="getstatefulrequests-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
 
 ## Lists all affinity groups that a specific backend belongs to.
 
@@ -265,8 +878,8 @@ Backends not assigned to any group exist in the configuration but are completely
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -587,6 +1200,387 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## get
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/users/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /users/{id}`
+
+<h3 id="get-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="get-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="get-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## set
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/chains', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /chains`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="set-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="set-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## listChats
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/chats', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /chats`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="listchats-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="listchats-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## createChat
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/chats', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /chats`
+
+> Body parameter
+
+```json
+false
+```
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="createchat-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="createchat-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## history
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/chats/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /chats/{id}`
+
+<h3 id="history-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="history-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="history-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## chat
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/chats/{id}/chat', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /chats/{id}/chat`
+
+> Body parameter
+
+```json
+false
+```
+
+<h3 id="chat-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="chat-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="chat-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## addInstruction
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/chats/{id}/instruction', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /chats/{id}/instruction`
+
+> Body parameter
+
+```json
+false
+```
+
+<h3 id="addinstruction-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="addinstruction-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="addinstruction-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Returns the default model configured during system initialization.
 
 > Code samples
@@ -717,8 +1711,8 @@ Returns event triggers in creation order, with the oldest triggers first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1232,10 +2226,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
-|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -1424,9 +2418,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|to|query|string|false|End time in RFC3339 format.|
 |event_type|query|string|false|The type of event to delete.|
 |from|query|string|false|Start time in RFC3339 format.|
+|to|query|string|false|End time in RFC3339 format.|
 
 > Example responses
 
@@ -1659,6 +2653,642 @@ Implement the handler method
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## listFiles
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/files', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /files`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="listfiles-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="listfiles-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## create handles the creation of a new file using multipart/form-data.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/files', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /files`
+
+create handles the creation of a new file using multipart/form-data.
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="create-handles-the-creation-of-a-new-file-using-multipart/form-data.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="create-handles-the-creation-of-a-new-file-using-multipart/form-data.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## delete - No change needed
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/files/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /files/{id}`
+
+delete - No change needed
+
+<h3 id="delete---no-change-needed-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="delete---no-change-needed-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="delete---no-change-needed-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## getMetadata - No change needed
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/files/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /files/{id}`
+
+getMetadata - No change needed
+
+<h3 id="getmetadata---no-change-needed-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="getmetadata---no-change-needed-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="getmetadata---no-change-needed-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## update handles updating an existing file using multipart/form-data.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/files/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /files/{id}`
+
+update handles updating an existing file using multipart/form-data.
+
+<h3 id="update-handles-updating-an-existing-file-using-multipart/form-data.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="update-handles-updating-an-existing-file-using-multipart/form-data.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="update-handles-updating-an-existing-file-using-multipart/form-data.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## download
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/files/{id}/download', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /files/{id}/download`
+
+<h3 id="download-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="download-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## moveFile
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/files/{id}/move', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /files/{id}/move`
+
+<h3 id="movefile-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="movefile-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="movefile-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## renameFile
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/files/{id}/name', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /files/{id}/name`
+
+<h3 id="renamefile-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="renamefile-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="renamefile-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## createFolder
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/folders', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /folders`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="createfolder-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="createfolder-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## deleteFolder
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/folders/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /folders/{id}`
+
+<h3 id="deletefolder-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="deletefolder-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="deletefolder-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## moveFolder
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/folders/{id}/move', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /folders/{id}/move`
+
+<h3 id="movefolder-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="movefolder-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="movefolder-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## renameFolder
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/folders/{id}/name', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /folders/{id}/name`
+
+<h3 id="renamefolder-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="renamefolder-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="renamefolder-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -2812,6 +4442,54 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## index
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/index', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /index`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="index-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="index-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## IngestEvent processes incoming events by applying mapping configuration
 
 > Code samples
@@ -2872,6 +4550,321 @@ The path query parameter corresponds to a pre-configured mapping that specifies:
 |---|---|---|---|
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[eventstore_Event](#schemaeventstore_event)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## listInProgress
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/jobs/in-progress', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /jobs/in-progress`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="listinprogress-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="listinprogress-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## listPending
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/jobs/pending', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /jobs/pending`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="listpending-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="listpending-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## markFailed
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.patch('/jobs/{id}/failed', headers = headers)
+
+print(r.json())
+
+```
+
+`PATCH /jobs/{id}/failed`
+
+> Body parameter
+
+```json
+false
+```
+
+<h3 id="markfailed-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="markfailed-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="markfailed-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## listKeywords
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/keywords', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /keywords`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="listkeywords-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="listkeywords-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## assignJob
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/leases', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /leases`
+
+> Body parameter
+
+```json
+false
+```
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="assignjob-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="assignjob-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## login
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/login', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /login`
+
+> Body parameter
+
+```json
+false
+```
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="login-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="login-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -3838,6 +5831,54 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## permissions
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/permissions', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /permissions`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="permissions-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="permissions-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Lists all configured external providers with pagination support.
 
 > Code samples
@@ -4202,6 +6243,102 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## register
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/register', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /register`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="register-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="register-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## search
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/search', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /search`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="search-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="search-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Retrieves the current runtime state of all LLM backends.
 
 > Code samples
@@ -4367,6 +6504,102 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## resources
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/system/resources', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /system/resources`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="resources-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="resources-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## info
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/system/services', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /system/services`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="info-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="info-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Lists all task chain definitions with pagination.
 
 > Code samples
@@ -4392,8 +6625,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -5010,6 +7243,416 @@ If groups are enabled, models and backends not assigned to any group will be com
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[execapi_taskExecutionResponse](#schemaexecapi_taskexecutionresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## listByUser
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/telegram-frontends/users/{userId}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /telegram-frontends/users/{userId}`
+
+<h3 id="listbyuser-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|userId|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="listbyuser-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="listbyuser-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## tokenRefresh
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/token_refresh', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /token_refresh`
+
+> Body parameter
+
+```json
+false
+```
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="tokenrefresh-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="tokenrefresh-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## uiLogin handles a login request by authenticating the user and setting an HTTP-only cookie with the token.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/ui/login', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /ui/login`
+
+uiLogin handles a login request by authenticating the user and setting an HTTP-only cookie with the token.
+
+> Body parameter
+
+```json
+false
+```
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="uilogin-handles-a-login-request-by-authenticating-the-user-and-setting-an-http-only-cookie-with-the-token.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="uilogin-handles-a-login-request-by-authenticating-the-user-and-setting-an-http-only-cookie-with-the-token.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## uiLogout clears the authentication cookie.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/ui/logout', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /ui/logout`
+
+uiLogout clears the authentication cookie.
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="uilogout-clears-the-authentication-cookie.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="uilogout-clears-the-authentication-cookie.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## uiMe
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/ui/me', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /ui/me`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="uime-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="uime-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## uiRegister
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/ui/register', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /ui/register`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="uiregister-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="uiregister-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## uiTokenRefresh reads the existing token from the cookie, refreshes it, and updates the cookie.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/ui/token_refresh', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /ui/token_refresh`
+
+uiTokenRefresh reads the existing token from the cookie, refreshes it, and updates the cookie.
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="uitokenrefresh-reads-the-existing-token-from-the-cookie,-refreshes-it,-and-updates-the-cookie.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="uitokenrefresh-reads-the-existing-token-from-the-cookie,-refreshes-it,-and-updates-the-cookie.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## openAIChatCompletions
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/v1/chat/completions', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /v1/chat/completions`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="openaichatcompletions-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="openaichatcompletions-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:

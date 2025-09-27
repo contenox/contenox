@@ -1,5 +1,6 @@
-# Ignore enterprise code
-enterprise/
+# Don't ignore enterprise code
+# enterprise/
+# This requires building public images in CI and not locally
 
 # Ignore test files
 **/*_test.go
