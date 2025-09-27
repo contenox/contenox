@@ -35,7 +35,7 @@ jobs:
           TAG="${{ steps.vars.outputs.TAG }}"
 
           # Read the version file that was committed with the tag
-          VERSION_IN_FILE=$(cat internal/apiframework/version.txt | tr -d '\n' | tr -d '\r')
+          VERSION_IN_FILE=$(cat apiframework/version.txt | tr -d '\n' | tr -d '\r')
 
           # Compare with tag
           if [ "$VERSION_IN_FILE" != "$TAG" ]; then
@@ -49,8 +49,8 @@ jobs:
             echo ""
             echo "To fix this:"
             echo "  git checkout $TAG"
-            echo "  echo -n '$TAG' > internal/apiframework/version.txt"
-            echo "  git commit -m 'Update version to $TAG' internal/apiframework/version.txt"
+            echo "  echo -n '$TAG' > apiframework/version.txt"
+            echo "  git commit -m 'Update version to $TAG' apiframework/version.txt"
             echo "  git tag -d $TAG"
             echo "  git tag $TAG"
             echo "  git push -f origin $TAG"

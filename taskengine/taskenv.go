@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/getkin/kin-openapi/openapi3"
 )

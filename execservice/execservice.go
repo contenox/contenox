@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/internal/llmrepo"
 	"github.com/google/uuid"
 )

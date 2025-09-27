@@ -7,8 +7,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/affinitygroupservice"
-	"github.com/contenox/runtime/internal/apiframework"
-	serverops "github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtimetypes"
 )
 
@@ -53,55 +52,55 @@ type groupHandler struct {
 func (h *groupHandler) createAffinityGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	group, err := serverops.Decode[runtimetypes.AffinityGroup](r) // @request runtimetypes.AffinityGroup
+	group, err := apiframework.Decode[runtimetypes.AffinityGroup](r) // @request runtimetypes.AffinityGroup
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.CreateOperation)
+		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 		return
 	}
 
 	if err := h.service.Create(ctx, &group); err != nil {
-		_ = serverops.Error(w, r, err, serverops.CreateOperation)
+		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusCreated, group) // @response runtimetypes.AffinityGroup
+	_ = apiframework.Encode(w, r, http.StatusCreated, group) // @response runtimetypes.AffinityGroup
 }
 
 // Retrieves an specific affinity group by its unique ID.
 func (h *groupHandler) getAffinityGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := serverops.GetPathParam(r, "id", "The unique identifier of the affinity group.")
+	id := apiframework.GetPathParam(r, "id", "The unique identifier of the affinity group.")
 	if id == "" {
-		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.GetOperation)
+		apiframework.Error(w, r, fmt.Errorf("id required: %w", apiframework.ErrBadPathValue), apiframework.GetOperation)
 		return
 	}
 
 	group, err := h.service.GetByID(ctx, id)
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.GetOperation)
+		_ = apiframework.Error(w, r, err, apiframework.GetOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, group) // @response runtimetypes.AffinityGroup
+	_ = apiframework.Encode(w, r, http.StatusOK, group) // @response runtimetypes.AffinityGroup
 }
 
 // Retrieves an affinity group by its human-readable name.
 // Useful for configuration where ID might not be known but name is consistent.
 func (h *groupHandler) getAffinityGroupByName(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	name := serverops.GetPathParam(r, "name", "The unique, human-readable name of the affinity group.")
+	name := apiframework.GetPathParam(r, "name", "The unique, human-readable name of the affinity group.")
 	if name == "" {
-		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.GetOperation)
+		apiframework.Error(w, r, fmt.Errorf("id required: %w", apiframework.ErrBadPathValue), apiframework.GetOperation)
 		return
 	}
 
 	group, err := h.service.GetByName(ctx, name)
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.GetOperation)
+		_ = apiframework.Error(w, r, err, apiframework.GetOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, group) // @response runtimetypes.AffinityGroup
+	_ = apiframework.Encode(w, r, http.StatusOK, group) // @response runtimetypes.AffinityGroup
 }
 
 // Updates an existing affinity group configuration.
@@ -109,25 +108,25 @@ func (h *groupHandler) getAffinityGroupByName(w http.ResponseWriter, r *http.Req
 // The ID from the URL path overrides any ID in the request body.
 func (h *groupHandler) updateAffinityGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := serverops.GetPathParam(r, "id", "The unique identifier of the group to be updated.")
+	id := apiframework.GetPathParam(r, "id", "The unique identifier of the group to be updated.")
 	if id == "" {
-		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		apiframework.Error(w, r, fmt.Errorf("id required: %w", apiframework.ErrBadPathValue), apiframework.UpdateOperation)
 		return
 	}
 
-	group, err := serverops.Decode[runtimetypes.AffinityGroup](r) // @request runtimetypes.AffinityGroup
+	group, err := apiframework.Decode[runtimetypes.AffinityGroup](r) // @request runtimetypes.AffinityGroup
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
 	}
 	group.ID = id
 
 	if err := h.service.Update(ctx, &group); err != nil {
-		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, group) // @response runtimetypes.AffinityGroup
+	_ = apiframework.Encode(w, r, http.StatusOK, group) // @response runtimetypes.AffinityGroup
 }
 
 // Removes an affinity group from the system.
@@ -136,18 +135,18 @@ func (h *groupHandler) updateAffinityGroup(w http.ResponseWriter, r *http.Reques
 // Returns a simple "deleted" confirmation message on success.
 func (h *groupHandler) deleteAffinityGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := serverops.GetPathParam(r, "id", "The unique identifier of the group to be deleted.")
+	id := apiframework.GetPathParam(r, "id", "The unique identifier of the group to be deleted.")
 	if id == "" {
-		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
+		apiframework.Error(w, r, fmt.Errorf("id required: %w", apiframework.ErrBadPathValue), apiframework.DeleteOperation)
 		return
 	}
 
 	if err := h.service.Delete(ctx, id); err != nil {
-		_ = serverops.Error(w, r, err, serverops.DeleteOperation)
+		_ = apiframework.Error(w, r, err, apiframework.DeleteOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "deleted") // @response string
+	_ = apiframework.Encode(w, r, http.StatusOK, "deleted") // @response string
 }
 
 // Lists all affinity groups in the system.
@@ -158,11 +157,11 @@ func (h *groupHandler) listAffinityGroups(w http.ResponseWriter, r *http.Request
 
 	groups, err := h.service.ListAll(ctx)
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
+	_ = apiframework.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
 }
 
 // Lists groups filtered by purpose type with pagination support.
@@ -171,18 +170,18 @@ func (h *groupHandler) listAffinityGroups(w http.ResponseWriter, r *http.Request
 // Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 func (h *groupHandler) listAffinityGroupsByPurpose(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	purpose := serverops.GetPathParam(r, "purpose", "The purpose category to filter groups by (e.g., 'embeddings').")
+	purpose := apiframework.GetPathParam(r, "purpose", "The purpose category to filter groups by (e.g., 'embeddings').")
 	if purpose == "" {
-		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
+		apiframework.Error(w, r, fmt.Errorf("id required: %w", apiframework.ErrBadPathValue), apiframework.ListOperation)
 		return
 	}
 
 	// Parse pagination parameters using the helper
-	limitStr := serverops.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
-	cursorStr := serverops.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
+	limitStr := apiframework.GetQueryParam(r, "limit", "100", "The maximum number of items to return per page.")
+	cursorStr := apiframework.GetQueryParam(r, "cursor", "", "An optional RFC3339Nano timestamp to fetch the next page of results.")
 
 	if purpose == "" {
-		serverops.Error(w, r, fmt.Errorf("id required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
+		apiframework.Error(w, r, fmt.Errorf("id required: %w", apiframework.ErrBadPathValue), apiframework.ListOperation)
 		return
 	}
 
@@ -191,8 +190,8 @@ func (h *groupHandler) listAffinityGroupsByPurpose(w http.ResponseWriter, r *htt
 	if cursorStr != "" {
 		t, err := time.Parse(time.RFC3339Nano, cursorStr)
 		if err != nil {
-			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", serverops.ErrUnprocessableEntity)
-			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			err = fmt.Errorf("%w: invalid cursor format, expected RFC3339Nano", apiframework.ErrUnprocessableEntity)
+			_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 			return
 		}
 		cursor = &t
@@ -202,8 +201,8 @@ func (h *groupHandler) listAffinityGroupsByPurpose(w http.ResponseWriter, r *htt
 	if limitStr != "" {
 		i, err := strconv.Atoi(limitStr)
 		if err != nil {
-			err = fmt.Errorf("%w: invalid limit format, expected integer", serverops.ErrUnprocessableEntity)
-			_ = serverops.Error(w, r, err, serverops.ListOperation)
+			err = fmt.Errorf("%w: invalid limit format, expected integer", apiframework.ErrUnprocessableEntity)
+			_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 			return
 		}
 		limit = i
@@ -211,11 +210,11 @@ func (h *groupHandler) listAffinityGroupsByPurpose(w http.ResponseWriter, r *htt
 
 	groups, err := h.service.ListByPurpose(ctx, purpose, cursor, limit)
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
+	_ = apiframework.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
 }
 
 // Associates a backend with an affinity group.
@@ -224,19 +223,19 @@ func (h *groupHandler) listAffinityGroupsByPurpose(w http.ResponseWriter, r *htt
 // This enables request routing between the backend and models that share this affinity group.
 func (h *groupHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	groupID := serverops.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
-	backendID := serverops.GetPathParam(r, "backendID", "The unique identifier of the backend to be assigned.")
+	groupID := apiframework.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
+	backendID := apiframework.GetPathParam(r, "backendID", "The unique identifier of the backend to be assigned.")
 
 	if groupID == "" || backendID == "" {
-		serverops.Error(w, r, fmt.Errorf("groupID and backendID are required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		apiframework.Error(w, r, fmt.Errorf("groupID and backendID are required: %w", apiframework.ErrBadPathValue), apiframework.UpdateOperation)
 		return
 	}
 
 	if err := h.service.AssignBackend(ctx, groupID, backendID); err != nil {
-		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
 	}
-	_ = serverops.Encode(w, r, http.StatusCreated, "backend assigned") // @response string
+	_ = apiframework.Encode(w, r, http.StatusCreated, "backend assigned") // @response string
 }
 
 // Removes a backend from an affinity group.
@@ -245,20 +244,20 @@ func (h *groupHandler) assignBackend(w http.ResponseWriter, r *http.Request) {
 // Requests requiring models from this affinity group will no longer be routed to this backend.
 func (h *groupHandler) removeBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	groupID := serverops.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
-	backendID := serverops.GetPathParam(r, "backendID", "The unique identifier of the backend to be removed.")
+	groupID := apiframework.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
+	backendID := apiframework.GetPathParam(r, "backendID", "The unique identifier of the backend to be removed.")
 
 	if groupID == "" || backendID == "" {
-		serverops.Error(w, r, fmt.Errorf("groupID and backendID required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		apiframework.Error(w, r, fmt.Errorf("groupID and backendID required: %w", apiframework.ErrBadPathValue), apiframework.UpdateOperation)
 		return
 	}
 
 	if err := h.service.RemoveBackend(ctx, groupID, backendID); err != nil {
-		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "backend removed") // @response string
+	_ = apiframework.Encode(w, r, http.StatusOK, "backend removed") // @response string
 }
 
 // Lists all backends associated with a specific affinity group.
@@ -268,36 +267,36 @@ func (h *groupHandler) listBackendsByGroup(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 	groupID := apiframework.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
 	if groupID == "" {
-		serverops.Error(w, r, fmt.Errorf("groupID required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
+		apiframework.Error(w, r, fmt.Errorf("groupID required: %w", apiframework.ErrBadPathValue), apiframework.ListOperation)
 		return
 	}
 
 	backends, err := h.service.ListBackends(ctx, groupID)
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, backends) // @response []runtimetypes.Backend
+	_ = apiframework.Encode(w, r, http.StatusOK, backends) // @response []runtimetypes.Backend
 }
 
 // Lists all affinity groups that a specific backend belongs to.
 // Useful for understanding which model sets a backend has access to.
 func (h *groupHandler) listAffinityGroupsForBackend(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	backendID := serverops.GetPathParam(r, "backendID", "The unique identifier of the backend.")
+	backendID := apiframework.GetPathParam(r, "backendID", "The unique identifier of the backend.")
 	if backendID == "" {
-		serverops.Error(w, r, fmt.Errorf("backendID required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
+		apiframework.Error(w, r, fmt.Errorf("backendID required: %w", apiframework.ErrBadPathValue), apiframework.ListOperation)
 		return
 	}
 
 	groups, err := h.service.ListAffinityGroupsForBackend(ctx, backendID)
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
+	_ = apiframework.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
 }
 
 // Associates a model with an affinity group.
@@ -306,20 +305,20 @@ func (h *groupHandler) listAffinityGroupsForBackend(w http.ResponseWriter, r *ht
 // This enables request routing between the model and backends that share this affinity group.
 func (h *groupHandler) assignModelToAffinityGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	groupID := serverops.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
-	modelID := serverops.GetPathParam(r, "modelID", "The unique identifier of the model to be assigned.")
+	groupID := apiframework.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
+	modelID := apiframework.GetPathParam(r, "modelID", "The unique identifier of the model to be assigned.")
 
 	if groupID == "" || modelID == "" {
-		serverops.Error(w, r, fmt.Errorf("groupID and modelID required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		apiframework.Error(w, r, fmt.Errorf("groupID and modelID required: %w", apiframework.ErrBadPathValue), apiframework.UpdateOperation)
 		return
 	}
 
 	if err := h.service.AssignModel(ctx, groupID, modelID); err != nil {
-		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "model assigned") // @response string
+	_ = apiframework.Encode(w, r, http.StatusOK, "model assigned") // @response string
 }
 
 // Removes a model from an affinity group.
@@ -328,20 +327,20 @@ func (h *groupHandler) assignModelToAffinityGroup(w http.ResponseWriter, r *http
 // This model can still be used with backends in other groups where it remains assigned.
 func (h *groupHandler) removeModelFromAffinityGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	groupID := serverops.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
-	modelID := serverops.GetPathParam(r, "modelID", "The unique identifier of the model to be removed.")
+	groupID := apiframework.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
+	modelID := apiframework.GetPathParam(r, "modelID", "The unique identifier of the model to be removed.")
 
 	if groupID == "" || modelID == "" {
-		serverops.Error(w, r, fmt.Errorf("groupID and modelID required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		apiframework.Error(w, r, fmt.Errorf("groupID and modelID required: %w", apiframework.ErrBadPathValue), apiframework.UpdateOperation)
 		return
 	}
 
 	if err := h.service.RemoveModel(ctx, groupID, modelID); err != nil {
-		_ = serverops.Error(w, r, err, serverops.UpdateOperation)
+		_ = apiframework.Error(w, r, err, apiframework.UpdateOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, "model removed") // @response string
+	_ = apiframework.Encode(w, r, http.StatusOK, "model removed") // @response string
 }
 
 // Lists all models associated with a specific affinity group.
@@ -349,19 +348,19 @@ func (h *groupHandler) removeModelFromAffinityGroup(w http.ResponseWriter, r *ht
 // Returns basic model information without backend-specific details.
 func (h *groupHandler) listModelsByAffinityGroup(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	groupID := serverops.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
+	groupID := apiframework.GetPathParam(r, "groupID", "The unique identifier of the affinity group.")
 	if groupID == "" {
-		serverops.Error(w, r, fmt.Errorf("groupID required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
+		apiframework.Error(w, r, fmt.Errorf("groupID required: %w", apiframework.ErrBadPathValue), apiframework.ListOperation)
 		return
 	}
 
 	models, err := h.service.ListModels(ctx, groupID)
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, models) // @response []runtimetypes.Model
+	_ = apiframework.Encode(w, r, http.StatusOK, models) // @response []runtimetypes.Model
 }
 
 // Lists all affinity groups that a specific model belongs to.
@@ -369,17 +368,17 @@ func (h *groupHandler) listModelsByAffinityGroup(w http.ResponseWriter, r *http.
 // Useful for understanding where a model is deployed across the system.
 func (h *groupHandler) listAffinityGroupsForModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	modelID := serverops.GetPathParam(r, "modelID", "The unique identifier of the model.")
+	modelID := apiframework.GetPathParam(r, "modelID", "The unique identifier of the model.")
 	if modelID == "" {
-		serverops.Error(w, r, fmt.Errorf("modelID required: %w", serverops.ErrBadPathValue), serverops.ListOperation)
+		apiframework.Error(w, r, fmt.Errorf("modelID required: %w", apiframework.ErrBadPathValue), apiframework.ListOperation)
 		return
 	}
 
 	groups, err := h.service.ListAffinityGroupsForModel(ctx, modelID)
 	if err != nil {
-		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
+	_ = apiframework.Encode(w, r, http.StatusOK, groups) // @response []runtimetypes.AffinityGroup
 }

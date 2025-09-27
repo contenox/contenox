@@ -3,8 +3,8 @@ package execsyncapi
 import (
 	"net/http"
 
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/executor"
-	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/internal/eventdispatch"
 )
 

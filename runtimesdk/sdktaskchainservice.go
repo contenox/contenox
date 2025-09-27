@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/taskchainservice"
 	"github.com/contenox/runtime/taskengine"
 )

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/affinitygroupservice"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
 	"github.com/contenox/runtime/chatservice"
 	"github.com/contenox/runtime/downloadservice"
@@ -17,7 +18,6 @@ import (
 	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/executor"
 	"github.com/contenox/runtime/hookproviderservice"
-	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/modelservice"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/stateservice"

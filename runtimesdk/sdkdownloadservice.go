@@ -10,8 +10,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/downloadservice"
-	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/runtimetypes"
 )
 

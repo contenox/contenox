@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/internal/runtimestate"
 	"github.com/contenox/runtime/providerservice"
 )

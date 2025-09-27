@@ -10,7 +10,7 @@ import (
 	"github.com/contenox/runtime/eventbridgeservice"
 	"github.com/contenox/runtime/eventstore"
 
-	serverops "github.com/contenox/runtime/internal/apiframework"
+	serverops "github.com/contenox/runtime/apiframework"
 )
 
 // AddEventBridgeRoutes registers HTTP routes for event bridge operations

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/chatservice"
-	"github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/taskengine"
 )
 

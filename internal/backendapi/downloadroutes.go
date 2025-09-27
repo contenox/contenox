@@ -6,8 +6,8 @@ import (
 	"log"
 	"net/http"
 
+	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/downloadservice"
-	serverops "github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/runtimetypes"
 )
 

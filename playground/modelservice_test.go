@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/playground"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/stretchr/testify/assert"

@@ -3,7 +3,7 @@ package backendapi
 import (
 	"net/http"
 
-	serverops "github.com/contenox/runtime/internal/apiframework"
+	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/stateservice"
 )
 

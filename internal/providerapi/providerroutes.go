@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	serverops "github.com/contenox/runtime/internal/apiframework"
+	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/internal/runtimestate"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/providerservice"

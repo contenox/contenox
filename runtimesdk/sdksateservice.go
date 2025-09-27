@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/stateservice"
 	"github.com/contenox/runtime/statetype"
 )

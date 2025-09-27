@@ -1,7 +1,7 @@
 .PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown clean set-version bump-major bump-minor bump-patch commit-docs
 
 PROJECT_ROOT := $(shell pwd)
-VERSION_FILE := internal/apiframework/version.txt
+VERSION_FILE := apiframework/version.txt
 
 # Default model configuration - can be overridden when calling make
 EMBED_MODEL ?= nomic-embed-text:latest

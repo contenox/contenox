@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	serverops "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
-	serverops "github.com/contenox/runtime/internal/apiframework"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/stateservice"
 	"github.com/contenox/runtime/statetype"

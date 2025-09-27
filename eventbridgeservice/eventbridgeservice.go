@@ -6,10 +6,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/eventmappingservice"
 	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/eventstore"
-	"github.com/contenox/runtime/internal/apiframework"
 )
 
 var (

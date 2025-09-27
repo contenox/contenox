@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/execservice"
-	"github.com/contenox/runtime/internal/apiframework"
 )
 
 // HTTPExecService implements the execservice.ExecService interface
