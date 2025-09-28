@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/contenox/runtime/internal/apiframework"
+	"github.com/contenox/runtime/apiframework"
 	"github.com/getkin/kin-openapi/openapi3"
 	"gopkg.in/yaml.v3"
 )
