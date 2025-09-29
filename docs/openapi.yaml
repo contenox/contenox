@@ -1243,7 +1243,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-169-g44bbbae-dirty
+    version: v0.0.51-170-g4005a6d-dirty
 openapi: 3.1.0
 paths:
     /access-control:
@@ -1638,16 +1638,16 @@ paths:
                 NOTE: Only backends assigned to at least one group will be used for request processing.
                 Backends not assigned to any group exist in the configuration but are completely ignored by the routing system.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -2087,16 +2087,16 @@ paths:
                 Lists all event triggers with pagination
                 Returns event triggers in creation order, with the oldest triggers first.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2397,11 +2397,6 @@ paths:
                 USE WITH CAUTION — this is a destructive operation.
                 Typically used for GDPR compliance or cleaning up test data.
             parameters:
-                - description: End time in RFC3339 format.
-                  in: query
-                  name: to
-                  schema:
-                    type: string
                 - description: The type of event to delete.
                   in: query
                   name: event_type
@@ -2410,6 +2405,11 @@ paths:
                 - description: Start time in RFC3339 format.
                   in: query
                   name: from
+                  schema:
+                    type: string
+                - description: End time in RFC3339 format.
+                  in: query
+                  name: to
                   schema:
                     type: string
             responses:
@@ -3715,16 +3715,16 @@ paths:
                 This endpoint returns full model details including timestamps and capabilities.
                 Intended for administrative and debugging purposes.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
