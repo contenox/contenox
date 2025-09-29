@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-168-g94a9a57-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-169-g44bbbae-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-168-g94a9a57-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-169-g44bbbae-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -25,7 +25,7 @@ headingLevel: 2
 
 <h1 id="contenox-runtime-llm-backend-management-api-default">Default</h1>
 
-## list
+## Lists access control entries with optional filtering and pagination.
 
 > Code samples
 
@@ -36,13 +36,25 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.get('/users', headers = headers)
+r = requests.get('/access-control', headers = headers)
 
 print(r.json())
 
 ```
 
-`GET /users`
+`GET /access-control`
+
+Lists access control entries with optional filtering and pagination.
+Use 'identity' to filter by user/service.
+Use 'expand=user' to include full user details.
+Use 'from' (RFC3339) for pagination cursor.
+
+<h3 id="lists-access-control-entries-with-optional-filtering-and-pagination.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|identity|query|string|false|Filter by identity (user or service ID).|
+|expand|query|string|false|Expand related resources (e.g., 'user').|
 
 > Example responses
 
@@ -59,38 +71,65 @@ print(r.json())
 }
 ```
 
-<h3 id="list-responses">Responses</h3>
+<h3 id="lists-access-control-entries-with-optional-filtering-and-pagination.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="list-responseschema">Response Schema</h3>
+<h3 id="lists-access-control-entries-with-optional-filtering-and-pagination.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## create
+## Creates a new access control entry.
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.post('/users', headers = headers)
+r = requests.post('/access-control', headers = headers)
 
 print(r.json())
 
 ```
 
-`POST /users`
+`POST /access-control`
+
+Creates a new access control entry.
+Grants a permission level to an identity (user or service) on a specific resource.
+
+> Body parameter
+
+```json
+{
+  "createdAt": "2019-08-24T14:15:22Z",
+  "fileDetails": {},
+  "id": "string",
+  "identity": "string",
+  "identityDetails": {},
+  "permission": "string",
+  "resource": "string",
+  "resourceType": "string",
+  "updatedAt": "2019-08-24T14:15:22Z",
+  "withUserDetails": true
+}
+```
+
+<h3 id="creates-a-new-access-control-entry.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[accessservice_AccessEntryRequest](#schemaaccessservice_accessentryrequest)|true|none|
 
 > Example responses
 
@@ -107,21 +146,21 @@ print(r.json())
 }
 ```
 
-<h3 id="create-responses">Responses</h3>
+<h3 id="creates-a-new-access-control-entry.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="create-responseschema">Response Schema</h3>
+<h3 id="creates-a-new-access-control-entry.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## delete
+## Deletes an access control entry.
 
 > Code samples
 
@@ -132,50 +171,44 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.delete('/users/{id}', headers = headers)
+r = requests.delete('/access-control/{id}', headers = headers)
 
 print(r.json())
 
 ```
 
-`DELETE /users/{id}`
+`DELETE /access-control/{id}`
 
-<h3 id="delete-parameters">Parameters</h3>
+Deletes an access control entry.
+Revokes the specified permission immediately.
+
+<h3 id="deletes-an-access-control-entry.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the access control entry.|
 
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
+"string"
 ```
 
-<h3 id="delete-responses">Responses</h3>
+<h3 id="deletes-an-access-control-entry.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="delete-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## getByID
+## Retrieves an access control entry by its unique ID.
 
 > Code samples
 
@@ -194,11 +227,15 @@ print(r.json())
 
 `GET /access-control/{id}`
 
-<h3 id="getbyid-parameters">Parameters</h3>
+Retrieves an access control entry by its unique ID.
+Use 'expand=user' to include full user details.
+
+<h3 id="retrieves-an-access-control-entry-by-its-unique-id.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|expand|query|string|false|Expand related resources (e.g., 'user').|
+|id|path|string|true|The unique identifier of the access control entry.|
 
 > Example responses
 
@@ -215,44 +252,66 @@ print(r.json())
 }
 ```
 
-<h3 id="getbyid-responses">Responses</h3>
+<h3 id="retrieves-an-access-control-entry-by-its-unique-id.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="getbyid-responseschema">Response Schema</h3>
+<h3 id="retrieves-an-access-control-entry-by-its-unique-id.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## update
+## Updates an existing access control entry.
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.put('/users/{id}', headers = headers)
+r = requests.put('/access-control/{id}', headers = headers)
 
 print(r.json())
 
 ```
 
-`PUT /users/{id}`
+`PUT /access-control/{id}`
 
-<h3 id="update-parameters">Parameters</h3>
+Updates an existing access control entry.
+The ID from the URL path overrides any ID in the request body.
+
+> Body parameter
+
+```json
+{
+  "createdAt": "2019-08-24T14:15:22Z",
+  "fileDetails": {},
+  "id": "string",
+  "identity": "string",
+  "identityDetails": {},
+  "permission": "string",
+  "resource": "string",
+  "resourceType": "string",
+  "updatedAt": "2019-08-24T14:15:22Z",
+  "withUserDetails": true
+}
+```
+
+<h3 id="updates-an-existing-access-control-entry.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|body|body|[accessservice_AccessEntryRequest](#schemaaccessservice_accessentryrequest)|true|none|
+|id|path|string|true|The unique identifier of the access control entry.|
 
 > Example responses
 
@@ -269,14 +328,14 @@ print(r.json())
 }
 ```
 
-<h3 id="update-responses">Responses</h3>
+<h3 id="updates-an-existing-access-control-entry.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="update-responseschema">Response Schema</h3>
+<h3 id="updates-an-existing-access-control-entry.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -325,6 +384,54 @@ print(r.json())
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <h3 id="alerts-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## list
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/telegram-frontends', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /telegram-frontends`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="list-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="list-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -878,8 +985,8 @@ Backends not assigned to any group exist in the configuration but are completely
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1200,6 +1307,115 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## create
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/telegram-frontends', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /telegram-frontends`
+
+> Body parameter
+
+```json
+false
+```
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="create-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="create-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## delete
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/telegram-frontends/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /telegram-frontends/{id}`
+
+<h3 id="delete-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="delete-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="delete-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## get
 
 > Code samples
@@ -1211,13 +1427,13 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.get('/users/{id}', headers = headers)
+r = requests.get('/telegram-frontends/{id}', headers = headers)
 
 print(r.json())
 
 ```
 
-`GET /users/{id}`
+`GET /telegram-frontends/{id}`
 
 <h3 id="get-parameters">Parameters</h3>
 
@@ -1248,6 +1464,60 @@ print(r.json())
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <h3 id="get-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## update
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/telegram-frontends/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /telegram-frontends/{id}`
+
+<h3 id="update-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="update-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="update-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -2226,10 +2496,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -2418,9 +2688,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|to|query|string|false|End time in RFC3339 format.|
 |event_type|query|string|false|The type of event to delete.|
 |from|query|string|false|Start time in RFC3339 format.|
-|to|query|string|false|End time in RFC3339 format.|
 
 > Example responses
 
@@ -2659,7 +2929,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## listFiles
+## Lists files and folders, optionally filtered by path.
 
 > Code samples
 
@@ -2678,36 +2948,46 @@ print(r.json())
 
 `GET /files`
 
+Lists files and folders, optionally filtered by path.
+Use the 'path' query parameter to list contents of a specific directory.
+
+<h3 id="lists-files-and-folders,-optionally-filtered-by-path.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|path|query|string|false|Filter results by file path prefix.|
+
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
+[
+  {
+    "contentType": "application/pdf",
+    "createdAt": "2024-06-01T12:00:00Z",
+    "id": "file_abc123",
+    "name": "report.pdf",
+    "path": "/documents/report.pdf",
+    "size": 102400,
+    "updatedAt": "2024-06-01T12:00:00Z"
   }
-}
+]
 ```
 
-<h3 id="listfiles-responses">Responses</h3>
+<h3 id="lists-files-and-folders,-optionally-filtered-by-path.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_filesapi_FileResponse](#schemaarray_filesapi_fileresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="listfiles-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## create handles the creation of a new file using multipart/form-data.
+## Creates a new file by uploading binary content via multipart/form-data.
 
 > Code samples
 
@@ -2726,38 +3006,39 @@ print(r.json())
 
 `POST /files`
 
-create handles the creation of a new file using multipart/form-data.
+Creates a new file by uploading binary content via multipart/form-data.
+The 'file' field is required. Optional 'name' and 'parentid' fields control naming and placement.
+Files are limited to 100 MiB (configurable via fileservice.MaxUploadSize).
 
 > Example responses
 
-> default Response
+> 201 Response
 
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "contentType": "application/pdf",
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "file_abc123",
+  "name": "report.pdf",
+  "path": "/documents/report.pdf",
+  "size": 102400,
+  "updatedAt": "2024-06-01T12:00:00Z"
 }
 ```
 
-<h3 id="create-handles-the-creation-of-a-new-file-using-multipart/form-data.-responses">Responses</h3>
+<h3 id="creates-a-new-file-by-uploading-binary-content-via-multipart/form-data.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[filesapi_FileResponse](#schemafilesapi_fileresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="create-handles-the-creation-of-a-new-file-using-multipart/form-data.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## delete - No change needed
+## Deletes a file from the system.
 
 > Code samples
 
@@ -2776,13 +3057,14 @@ print(r.json())
 
 `DELETE /files/{id}`
 
-delete - No change needed
+Deletes a file from the system.
+Returns a confirmation message on success.
 
-<h3 id="delete---no-change-needed-parameters">Parameters</h3>
+<h3 id="deletes-a-file-from-the-system.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the file.|
 
 > Example responses
 
@@ -2799,21 +3081,21 @@ delete - No change needed
 }
 ```
 
-<h3 id="delete---no-change-needed-responses">Responses</h3>
+<h3 id="deletes-a-file-from-the-system.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="delete---no-change-needed-responseschema">Response Schema</h3>
+<h3 id="deletes-a-file-from-the-system.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## getMetadata - No change needed
+## Retrieves metadata for a specific file.
 
 > Code samples
 
@@ -2832,44 +3114,44 @@ print(r.json())
 
 `GET /files/{id}`
 
-getMetadata - No change needed
+Retrieves metadata for a specific file.
+Returns 404 if the file does not exist.
 
-<h3 id="getmetadata---no-change-needed-parameters">Parameters</h3>
+<h3 id="retrieves-metadata-for-a-specific-file.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the file.|
 
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "contentType": "application/pdf",
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "file_abc123",
+  "name": "report.pdf",
+  "path": "/documents/report.pdf",
+  "size": 102400,
+  "updatedAt": "2024-06-01T12:00:00Z"
 }
 ```
 
-<h3 id="getmetadata---no-change-needed-responses">Responses</h3>
+<h3 id="retrieves-metadata-for-a-specific-file.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[filesapi_FileResponse](#schemafilesapi_fileresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="getmetadata---no-change-needed-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## update handles updating an existing file using multipart/form-data.
+## Updates an existing file's content via multipart/form-data.
 
 > Code samples
 
@@ -2888,44 +3170,44 @@ print(r.json())
 
 `PUT /files/{id}`
 
-update handles updating an existing file using multipart/form-data.
+Updates an existing file's content via multipart/form-data.
+Replaces the entire file content. The file ID is taken from the URL path.
 
-<h3 id="update-handles-updating-an-existing-file-using-multipart/form-data.-parameters">Parameters</h3>
+<h3 id="updates-an-existing-file's-content-via-multipart/form-data.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the file.|
 
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "contentType": "application/pdf",
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "file_abc123",
+  "name": "report.pdf",
+  "path": "/documents/report.pdf",
+  "size": 102400,
+  "updatedAt": "2024-06-01T12:00:00Z"
 }
 ```
 
-<h3 id="update-handles-updating-an-existing-file-using-multipart/form-data.-responses">Responses</h3>
+<h3 id="updates-an-existing-file's-content-via-multipart/form-data.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[filesapi_FileResponse](#schemafilesapi_fileresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="update-handles-updating-an-existing-file-using-multipart/form-data.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## download
+## Downloads the raw content of a file.
 
 > Code samples
 
@@ -2944,11 +3226,15 @@ print(r.json())
 
 `GET /files/{id}/download`
 
-<h3 id="download-parameters">Parameters</h3>
+Downloads the raw content of a file.
+The 'skip' query parameter (if "true") omits the Content-Disposition header.
+
+<h3 id="downloads-the-raw-content-of-a-file.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|skip|query|string|false|If 'true', skips Content-Disposition header.|
+|id|path|string|true|The unique identifier of the file.|
 
 > Example responses
 
@@ -2965,7 +3251,7 @@ print(r.json())
 }
 ```
 
-<h3 id="download-responses">Responses</h3>
+<h3 id="downloads-the-raw-content-of-a-file.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
@@ -2977,13 +3263,14 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## moveFile
+## Moves a file to a new parent folder.
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
@@ -2996,48 +3283,60 @@ print(r.json())
 
 `PUT /files/{id}/move`
 
-<h3 id="movefile-parameters">Parameters</h3>
+Moves a file to a new parent folder.
+Accepts a JSON body with 'newParentId'.
 
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|id|path|string|true|none|
-
-> Example responses
-
-> default Response
+> Body parameter
 
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "newParentId": "folder_abc123"
 }
 ```
 
-<h3 id="movefile-responses">Responses</h3>
+<h3 id="moves-a-file-to-a-new-parent-folder.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[filesapi_moveRequest](#schemafilesapi_moverequest)|true|none|
+|id|path|string|true|The unique identifier of the file.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "contentType": "application/pdf",
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "file_abc123",
+  "name": "report.pdf",
+  "path": "/documents/report.pdf",
+  "size": 102400,
+  "updatedAt": "2024-06-01T12:00:00Z"
+}
+```
+
+<h3 id="moves-a-file-to-a-new-parent-folder.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[filesapi_FileResponse](#schemafilesapi_fileresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="movefile-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## renameFile
+## Renames a file.
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
@@ -3050,48 +3349,60 @@ print(r.json())
 
 `PUT /files/{id}/name`
 
-<h3 id="renamefile-parameters">Parameters</h3>
+Renames a file.
+Accepts a JSON body with the new 'name'.
 
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|id|path|string|true|none|
-
-> Example responses
-
-> default Response
+> Body parameter
 
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "name": "new-name.txt"
 }
 ```
 
-<h3 id="renamefile-responses">Responses</h3>
+<h3 id="renames-a-file.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[filesapi_nameUpdateRequest](#schemafilesapi_nameupdaterequest)|true|none|
+|id|path|string|true|The unique identifier of the file.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "contentType": "application/pdf",
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "file_abc123",
+  "name": "report.pdf",
+  "path": "/documents/report.pdf",
+  "size": 102400,
+  "updatedAt": "2024-06-01T12:00:00Z"
+}
+```
+
+<h3 id="renames-a-file.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[filesapi_FileResponse](#schemafilesapi_fileresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="renamefile-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## createFolder
+## Creates a new folder.
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
@@ -3104,36 +3415,52 @@ print(r.json())
 
 `POST /folders`
 
-> Example responses
+Creates a new folder.
+Requires a 'name'. Optionally accepts 'parentId' to place it inside another folder.
 
-> default Response
+> Body parameter
 
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "name": "New Folder",
+  "parentId": "folder_root"
 }
 ```
 
-<h3 id="createfolder-responses">Responses</h3>
+<h3 id="creates-a-new-folder.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[filesapi_folderCreateRequest](#schemafilesapi_foldercreaterequest)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "folder_xyz789",
+  "name": "projects",
+  "parentId": "folder_root",
+  "path": "/documents/projects",
+  "updatedAt": "2024-06-01T12:00:00Z"
+}
+```
+
+<h3 id="creates-a-new-folder.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[filesapi_FolderResponse](#schemafilesapi_folderresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="createfolder-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## deleteFolder
+## Deletes a folder and all its contents.
 
 > Code samples
 
@@ -3152,11 +3479,14 @@ print(r.json())
 
 `DELETE /folders/{id}`
 
-<h3 id="deletefolder-parameters">Parameters</h3>
+Deletes a folder and all its contents.
+Returns a confirmation message on success.
+
+<h3 id="deletes-a-folder-and-all-its-contents.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the folder.|
 
 > Example responses
 
@@ -3173,27 +3503,28 @@ print(r.json())
 }
 ```
 
-<h3 id="deletefolder-responses">Responses</h3>
+<h3 id="deletes-a-folder-and-all-its-contents.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="deletefolder-responseschema">Response Schema</h3>
+<h3 id="deletes-a-folder-and-all-its-contents.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## moveFolder
+## Moves a folder to a new parent folder.
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
@@ -3206,48 +3537,59 @@ print(r.json())
 
 `PUT /folders/{id}/move`
 
-<h3 id="movefolder-parameters">Parameters</h3>
+Moves a folder to a new parent folder.
+Accepts a JSON body with 'newParentId'.
 
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|id|path|string|true|none|
-
-> Example responses
-
-> default Response
+> Body parameter
 
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "newParentId": "folder_abc123"
 }
 ```
 
-<h3 id="movefolder-responses">Responses</h3>
+<h3 id="moves-a-folder-to-a-new-parent-folder.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[filesapi_moveRequest](#schemafilesapi_moverequest)|true|none|
+|id|path|string|true|The unique identifier of the folder.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "folder_xyz789",
+  "name": "projects",
+  "parentId": "folder_root",
+  "path": "/documents/projects",
+  "updatedAt": "2024-06-01T12:00:00Z"
+}
+```
+
+<h3 id="moves-a-folder-to-a-new-parent-folder.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[filesapi_FolderResponse](#schemafilesapi_folderresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="movefolder-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## renameFolder
+## Renames a folder.
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
@@ -3260,35 +3602,45 @@ print(r.json())
 
 `PUT /folders/{id}/name`
 
-<h3 id="renamefolder-parameters">Parameters</h3>
+Renames a folder.
+Accepts a JSON body with the new 'name'.
 
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|id|path|string|true|none|
-
-> Example responses
-
-> default Response
+> Body parameter
 
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "name": "new-name.txt"
 }
 ```
 
-<h3 id="renamefolder-responses">Responses</h3>
+<h3 id="renames-a-folder.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[filesapi_nameUpdateRequest](#schemafilesapi_nameupdaterequest)|true|none|
+|id|path|string|true|The unique identifier of the folder.|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "folder_xyz789",
+  "name": "projects",
+  "parentId": "folder_root",
+  "path": "/documents/projects",
+  "updatedAt": "2024-06-01T12:00:00Z"
+}
+```
+
+<h3 id="renames-a-folder.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[filesapi_FolderResponse](#schemafilesapi_folderresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="renamefolder-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -4816,7 +5168,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## login
+## Authenticates a user using email and password (for machine-to-machine or backend-for-frontend flows).
 
 > Code samples
 
@@ -4835,6 +5187,10 @@ print(r.json())
 ```
 
 `POST /login`
+
+Authenticates a user using email and password (for machine-to-machine or backend-for-frontend flows).
+Returns a JWT token and user details on success.
+WARNING: Do not use this endpoint directly from browser-based clients.
 
 > Body parameter
 
@@ -4857,14 +5213,14 @@ false
 }
 ```
 
-<h3 id="login-responses">Responses</h3>
+<h3 id="authenticates-a-user-using-email-and-password-(for-machine-to-machine-or-backend-for-frontend-flows).-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="login-responseschema">Response Schema</h3>
+<h3 id="authenticates-a-user-using-email-and-password-(for-machine-to-machine-or-backend-for-frontend-flows).-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -5831,7 +6187,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## permissions
+## Returns the list of supported permission levels.
 
 > Code samples
 
@@ -5850,29 +6206,25 @@ print(r.json())
 
 `GET /permissions`
 
+Returns the list of supported permission levels.
+Permissions: none, view, edit, manage (in increasing order of privilege).
+
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
+[
+  "string"
+]
 ```
 
-<h3 id="permissions-responses">Responses</h3>
+<h3 id="returns-the-list-of-supported-permission-levels.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_string](#schemaarray_string)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="permissions-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -5904,8 +6256,8 @@ Lists all configured external providers with pagination support.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -6117,8 +6469,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|model|query|string|false|The model name to cancel downloads for across all backends.|
 |url|query|string|false|The base URL of a specific backend to cancel downloads on.|
+|model|query|string|false|The model name to cancel downloads for across all backends.|
 
 > Example responses
 
@@ -6243,13 +6595,14 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## register
+## Registers a new user and returns authentication credentials.
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
@@ -6261,6 +6614,29 @@ print(r.json())
 ```
 
 `POST /register`
+
+Registers a new user and returns authentication credentials.
+For machine-to-machine or backend-for-frontend flows only.
+WARNING: Do not expose this endpoint to public browser clients without additional safeguards.
+
+> Body parameter
+
+```json
+{
+  "allowedResources": [
+    {}
+  ],
+  "email": "string",
+  "friendlyName": "string",
+  "password": "string"
+}
+```
+
+<h3 id="registers-a-new-user-and-returns-authentication-credentials.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[userservice_CreateUserRequest](#schemauserservice_createuserrequest)|true|none|
 
 > Example responses
 
@@ -6277,14 +6653,14 @@ print(r.json())
 }
 ```
 
-<h3 id="register-responses">Responses</h3>
+<h3 id="registers-a-new-user-and-returns-authentication-credentials.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="register-responseschema">Response Schema</h3>
+<h3 id="registers-a-new-user-and-returns-authentication-credentials.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -7303,7 +7679,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## tokenRefresh
+## Refreshes an expired or expiring JWT token.
 
 > Code samples
 
@@ -7323,42 +7699,46 @@ print(r.json())
 
 `POST /token_refresh`
 
+Refreshes an expired or expiring JWT token.
+Accepts a valid token and returns a new one with extended expiration.
+
 > Body parameter
 
 ```json
-false
-```
-
-> Example responses
-
-> default Response
-
-```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
-<h3 id="tokenrefresh-responses">Responses</h3>
+<h3 id="refreshes-an-expired-or-expiring-jwt-token.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[usersapi_tokenRefreshRequest](#schemausersapi_tokenrefreshrequest)|true|none|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+<h3 id="refreshes-an-expired-or-expiring-jwt-token.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[usersapi_tokenRefreshResponse](#schemausersapi_tokenrefreshresponse)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="tokenrefresh-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## uiLogin handles a login request by authenticating the user and setting an HTTP-only cookie with the token.
+## Authenticates a user and sets an HTTP-only authentication cookie (for UI clients).
 
 > Code samples
 
@@ -7378,7 +7758,8 @@ print(r.json())
 
 `POST /ui/login`
 
-uiLogin handles a login request by authenticating the user and setting an HTTP-only cookie with the token.
+Authenticates a user and sets an HTTP-only authentication cookie (for UI clients).
+The cookie is secure, HTTP-only, and has a strict SameSite policy.
 
 > Body parameter
 
@@ -7401,21 +7782,21 @@ false
 }
 ```
 
-<h3 id="uilogin-handles-a-login-request-by-authenticating-the-user-and-setting-an-http-only-cookie-with-the-token.-responses">Responses</h3>
+<h3 id="authenticates-a-user-and-sets-an-http-only-authentication-cookie-(for-ui-clients).-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="uilogin-handles-a-login-request-by-authenticating-the-user-and-setting-an-http-only-cookie-with-the-token.-responseschema">Response Schema</h3>
+<h3 id="authenticates-a-user-and-sets-an-http-only-authentication-cookie-(for-ui-clients).-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## uiLogout clears the authentication cookie.
+## Clears the authentication cookie and logs the user out.
 
 > Code samples
 
@@ -7434,38 +7815,29 @@ print(r.json())
 
 `POST /ui/logout`
 
-uiLogout clears the authentication cookie.
+Clears the authentication cookie and logs the user out.
 
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
+"string"
 ```
 
-<h3 id="uilogout-clears-the-authentication-cookie.-responses">Responses</h3>
+<h3 id="clears-the-authentication-cookie-and-logs-the-user-out.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="uilogout-clears-the-authentication-cookie.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## uiMe
+## Returns the currently authenticated user (for UI clients).
 
 > Code samples
 
@@ -7484,6 +7856,9 @@ print(r.json())
 
 `GET /ui/me`
 
+Returns the currently authenticated user (for UI clients).
+Requires a valid authentication cookie.
+
 > Example responses
 
 > default Response
@@ -7499,27 +7874,28 @@ print(r.json())
 }
 ```
 
-<h3 id="uime-responses">Responses</h3>
+<h3 id="returns-the-currently-authenticated-user-(for-ui-clients).-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="uime-responseschema">Response Schema</h3>
+<h3 id="returns-the-currently-authenticated-user-(for-ui-clients).-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## uiRegister
+## Registers a new user and sets an authentication cookie (for UI clients).
 
 > Code samples
 
 ```python
 import requests
 headers = {
+  'Content-Type': 'application/json',
   'Accept': 'application/json',
   'X-API-Key': 'API_KEY'
 }
@@ -7532,6 +7908,27 @@ print(r.json())
 
 `POST /ui/register`
 
+Registers a new user and sets an authentication cookie (for UI clients).
+
+> Body parameter
+
+```json
+{
+  "allowedResources": [
+    {}
+  ],
+  "email": "string",
+  "friendlyName": "string",
+  "password": "string"
+}
+```
+
+<h3 id="registers-a-new-user-and-sets-an-authentication-cookie-(for-ui-clients).-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[userservice_CreateUserRequest](#schemauserservice_createuserrequest)|true|none|
+
 > Example responses
 
 > default Response
@@ -7547,21 +7944,21 @@ print(r.json())
 }
 ```
 
-<h3 id="uiregister-responses">Responses</h3>
+<h3 id="registers-a-new-user-and-sets-an-authentication-cookie-(for-ui-clients).-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="uiregister-responseschema">Response Schema</h3>
+<h3 id="registers-a-new-user-and-sets-an-authentication-cookie-(for-ui-clients).-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## uiTokenRefresh reads the existing token from the cookie, refreshes it, and updates the cookie.
+## Refreshes the authentication token stored in the cookie (for UI clients).
 
 > Code samples
 
@@ -7580,7 +7977,58 @@ print(r.json())
 
 `POST /ui/token_refresh`
 
-uiTokenRefresh reads the existing token from the cookie, refreshes it, and updates the cookie.
+Refreshes the authentication token stored in the cookie (for UI clients).
+Reads the current token from the cookie, refreshes it, and updates the cookie.
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="refreshes-the-authentication-token-stored-in-the-cookie-(for-ui-clients).-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Lists users with pagination support.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/users', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /users`
+
+Lists users with pagination support.
+Results are returned in reverse chronological order (newest first).
+Use the 'cursor' parameter to fetch the next page of results.
+
+<h3 id="lists-users-with-pagination-support.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|The maximum number of users to return per page.|
+|cursor|query|string|false|An optional RFC3339 timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -7597,14 +8045,262 @@ uiTokenRefresh reads the existing token from the cookie, refreshes it, and updat
 }
 ```
 
-<h3 id="uitokenrefresh-reads-the-existing-token-from-the-cookie,-refreshes-it,-and-updates-the-cookie.-responses">Responses</h3>
+<h3 id="lists-users-with-pagination-support.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="uitokenrefresh-reads-the-existing-token-from-the-cookie,-refreshes-it,-and-updates-the-cookie.-responseschema">Response Schema</h3>
+<h3 id="lists-users-with-pagination-support.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Creates a new user in the system.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/users', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /users`
+
+Creates a new user in the system.
+The user will be assigned a unique ID and subject identifier.
+Passwords are hashed using a secure algorithm before storage.
+
+> Body parameter
+
+```json
+{
+  "allowedResources": [
+    {}
+  ],
+  "email": "string",
+  "friendlyName": "string",
+  "password": "string"
+}
+```
+
+<h3 id="creates-a-new-user-in-the-system.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[userservice_CreateUserRequest](#schemauserservice_createuserrequest)|true|none|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="creates-a-new-user-in-the-system.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="creates-a-new-user-in-the-system.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Deletes a user from the system.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.delete('/users/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`DELETE /users/{id}`
+
+Deletes a user from the system.
+Also removes all associated access control entries and invalidates active sessions.
+Returns a simple confirmation message on success.
+
+<h3 id="deletes-a-user-from-the-system.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|The unique identifier of the user.|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="deletes-a-user-from-the-system.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves a user by their unique ID.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/users/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /users/{id}`
+
+Retrieves a user by their unique ID.
+Returns 404 if the user does not exist.
+
+<h3 id="retrieves-a-user-by-their-unique-id.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|id|path|string|true|The unique identifier of the user.|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="retrieves-a-user-by-their-unique-id.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="retrieves-a-user-by-their-unique-id.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Updates an existing user's mutable fields.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.put('/users/{id}', headers = headers)
+
+print(r.json())
+
+```
+
+`PUT /users/{id}`
+
+Updates an existing user's mutable fields.
+Only friendlyName and email can be updated.
+The user ID from the path overrides any ID in the request body.
+
+> Body parameter
+
+```json
+{
+  "email": "string",
+  "friendlyName": "string",
+  "password": "string"
+}
+```
+
+<h3 id="updates-an-existing-user's-mutable-fields.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[userservice_UpdateUserRequest](#schemauserservice_updateuserrequest)|true|none|
+|id|path|string|true|The unique identifier of the user.|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="updates-an-existing-user's-mutable-fields.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="updates-an-existing-user's-mutable-fields.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -7689,6 +8385,44 @@ X-API-Key
 |» message|string|true|none|A human-readable error message|
 |» param|string¦null|false|none|The parameter that caused the error, if applicable|
 |» type|string|true|none|The error type category (e.g., 'invalid_request_error', 'authentication_error')|
+
+<h2 id="tocS_accessservice_AccessEntryRequest">accessservice_AccessEntryRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemaaccessservice_accessentryrequest"></a>
+<a id="schema_accessservice_AccessEntryRequest"></a>
+<a id="tocSaccessservice_accessentryrequest"></a>
+<a id="tocsaccessservice_accessentryrequest"></a>
+
+```json
+{
+  "createdAt": "2019-08-24T14:15:22Z",
+  "fileDetails": {},
+  "id": "string",
+  "identity": "string",
+  "identityDetails": {},
+  "permission": "string",
+  "resource": "string",
+  "resourceType": "string",
+  "updatedAt": "2019-08-24T14:15:22Z",
+  "withUserDetails": true
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|createdAt|string(date-time)|true|none|none|
+|fileDetails|object|false|none|none|
+|id|string|true|none|none|
+|identity|string|true|none|none|
+|identityDetails|object|false|none|none|
+|permission|string|true|none|none|
+|resource|string|true|none|none|
+|resourceType|string|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
+|withUserDetails|boolean|false|none|none|
 
 <h2 id="tocS_array_backendapi_backendSummary">array_backendapi_backendSummary</h2>
 <!-- backwards compatibility -->
@@ -7833,6 +8567,34 @@ X-API-Key
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |*anonymous*|[[eventstore_MappingConfig](#schemaeventstore_mappingconfig)]|false|none|none|
+
+<h2 id="tocS_array_filesapi_FileResponse">array_filesapi_FileResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_filesapi_fileresponse"></a>
+<a id="schema_array_filesapi_FileResponse"></a>
+<a id="tocSarray_filesapi_fileresponse"></a>
+<a id="tocsarray_filesapi_fileresponse"></a>
+
+```json
+[
+  {
+    "contentType": "application/pdf",
+    "createdAt": "2024-06-01T12:00:00Z",
+    "id": "file_abc123",
+    "name": "report.pdf",
+    "path": "/documents/report.pdf",
+    "size": 102400,
+    "updatedAt": "2024-06-01T12:00:00Z"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[filesapi_FileResponse](#schemafilesapi_fileresponse)]|false|none|none|
 
 <h2 id="tocS_array_functionstore_EventTrigger">array_functionstore_EventTrigger</h2>
 <!-- backwards compatibility -->
@@ -8624,6 +9386,130 @@ X-API-Key
 |model_name|string|true|none|none|
 |model_provider|string|true|none|none|
 |prompt|string|true|none|none|
+
+<h2 id="tocS_filesapi_FileResponse">filesapi_FileResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemafilesapi_fileresponse"></a>
+<a id="schema_filesapi_FileResponse"></a>
+<a id="tocSfilesapi_fileresponse"></a>
+<a id="tocsfilesapi_fileresponse"></a>
+
+```json
+{
+  "contentType": "application/pdf",
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "file_abc123",
+  "name": "report.pdf",
+  "path": "/documents/report.pdf",
+  "size": 102400,
+  "updatedAt": "2024-06-01T12:00:00Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|contentType|string|false|none|none|
+|createdAt|string(date-time)|true|none|none|
+|id|string|true|none|none|
+|name|string|true|none|none|
+|path|string|true|none|none|
+|size|integer|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
+
+<h2 id="tocS_filesapi_FolderResponse">filesapi_FolderResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemafilesapi_folderresponse"></a>
+<a id="schema_filesapi_FolderResponse"></a>
+<a id="tocSfilesapi_folderresponse"></a>
+<a id="tocsfilesapi_folderresponse"></a>
+
+```json
+{
+  "createdAt": "2024-06-01T12:00:00Z",
+  "id": "folder_xyz789",
+  "name": "projects",
+  "parentId": "folder_root",
+  "path": "/documents/projects",
+  "updatedAt": "2024-06-01T12:00:00Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|createdAt|string(date-time)|true|none|none|
+|id|string|true|none|none|
+|name|string|true|none|none|
+|parentId|string|false|none|none|
+|path|string|true|none|none|
+|updatedAt|string(date-time)|true|none|none|
+
+<h2 id="tocS_filesapi_folderCreateRequest">filesapi_folderCreateRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemafilesapi_foldercreaterequest"></a>
+<a id="schema_filesapi_folderCreateRequest"></a>
+<a id="tocSfilesapi_foldercreaterequest"></a>
+<a id="tocsfilesapi_foldercreaterequest"></a>
+
+```json
+{
+  "name": "New Folder",
+  "parentId": "folder_root"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|name|string|true|none|none|
+|parentId|string|false|none|none|
+
+<h2 id="tocS_filesapi_moveRequest">filesapi_moveRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemafilesapi_moverequest"></a>
+<a id="schema_filesapi_moveRequest"></a>
+<a id="tocSfilesapi_moverequest"></a>
+<a id="tocsfilesapi_moverequest"></a>
+
+```json
+{
+  "newParentId": "folder_abc123"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|newParentId|string|true|none|none|
+
+<h2 id="tocS_filesapi_nameUpdateRequest">filesapi_nameUpdateRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemafilesapi_nameupdaterequest"></a>
+<a id="schema_filesapi_nameUpdateRequest"></a>
+<a id="tocSfilesapi_nameupdaterequest"></a>
+<a id="tocsfilesapi_nameupdaterequest"></a>
+
+```json
+{
+  "name": "new-name.txt"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|name|string|true|none|none|
 
 <h2 id="tocS_functionstore_EventTrigger">functionstore_EventTrigger</h2>
 <!-- backwards compatibility -->
@@ -9440,4 +10326,96 @@ X-API-Key
 |goto|string|true|none|Goto specifies the target task ID if this branch is taken.<br>Leave empty or use taskengine.TermEnd to end the chain.|
 |operator|string|false|none|Operator defines how to compare the task's output to When.|
 |when|string|true|none|When specifies the condition that must be met to follow this branch.<br>Format depends on the task type:<br>- For condition_key: exact string match<br>- For parse_number: numeric comparison (using Operator)|
+
+<h2 id="tocS_usersapi_tokenRefreshRequest">usersapi_tokenRefreshRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemausersapi_tokenrefreshrequest"></a>
+<a id="schema_usersapi_tokenRefreshRequest"></a>
+<a id="tocSusersapi_tokenrefreshrequest"></a>
+<a id="tocsusersapi_tokenrefreshrequest"></a>
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|token|string|true|none|none|
+
+<h2 id="tocS_usersapi_tokenRefreshResponse">usersapi_tokenRefreshResponse</h2>
+<!-- backwards compatibility -->
+<a id="schemausersapi_tokenrefreshresponse"></a>
+<a id="schema_usersapi_tokenRefreshResponse"></a>
+<a id="tocSusersapi_tokenrefreshresponse"></a>
+<a id="tocsusersapi_tokenrefreshresponse"></a>
+
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|token|string|true|none|none|
+
+<h2 id="tocS_userservice_CreateUserRequest">userservice_CreateUserRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemauserservice_createuserrequest"></a>
+<a id="schema_userservice_CreateUserRequest"></a>
+<a id="tocSuserservice_createuserrequest"></a>
+<a id="tocsuserservice_createuserrequest"></a>
+
+```json
+{
+  "allowedResources": [
+    {}
+  ],
+  "email": "string",
+  "friendlyName": "string",
+  "password": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|allowedResources|[object]|true|none|none|
+|email|string|true|none|none|
+|friendlyName|string|false|none|none|
+|password|string|true|none|none|
+
+<h2 id="tocS_userservice_UpdateUserRequest">userservice_UpdateUserRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemauserservice_updateuserrequest"></a>
+<a id="schema_userservice_UpdateUserRequest"></a>
+<a id="tocSuserservice_updateuserrequest"></a>
+<a id="tocsuserservice_updateuserrequest"></a>
+
+```json
+{
+  "email": "string",
+  "friendlyName": "string",
+  "password": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|email|string|false|none|none|
+|friendlyName|string|false|none|none|
+|password|string|true|none|none|
 

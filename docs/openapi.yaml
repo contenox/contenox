@@ -25,6 +25,39 @@ components:
             required:
                 - error
             type: object
+        accessservice_AccessEntryRequest:
+            properties:
+                createdAt:
+                    format: date-time
+                    type: string
+                fileDetails:
+                    type: object
+                id:
+                    type: string
+                identity:
+                    type: string
+                identityDetails:
+                    type: object
+                permission:
+                    type: string
+                resource:
+                    type: string
+                resourceType:
+                    type: string
+                updatedAt:
+                    format: date-time
+                    type: string
+                withUserDetails:
+                    type: boolean
+            required:
+                - id
+                - identity
+                - resource
+                - resourceType
+                - permission
+                - createdAt
+                - updatedAt
+            type: object
         array_backendapi_backendSummary:
             items:
                 $ref: '#/components/schemas/backendapi_backendSummary'
@@ -40,6 +73,10 @@ components:
         array_eventstore_MappingConfig:
             items:
                 $ref: '#/components/schemas/eventstore_MappingConfig'
+            type: array
+        array_filesapi_FileResponse:
+            items:
+                $ref: '#/components/schemas/filesapi_FileResponse'
             type: array
         array_functionstore_EventTrigger:
             items:
@@ -376,6 +413,95 @@ components:
                 - prompt
                 - model_name
                 - model_provider
+            type: object
+        filesapi_FileResponse:
+            properties:
+                contentType:
+                    example: application/pdf
+                    type: string
+                createdAt:
+                    example: "2024-06-01T12:00:00Z"
+                    format: date-time
+                    type: string
+                id:
+                    example: file_abc123
+                    type: string
+                name:
+                    example: report.pdf
+                    type: string
+                path:
+                    example: /documents/report.pdf
+                    type: string
+                size:
+                    example: 102400
+                    type: integer
+                updatedAt:
+                    example: "2024-06-01T12:00:00Z"
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - path
+                - name
+                - size
+                - createdAt
+                - updatedAt
+            type: object
+        filesapi_FolderResponse:
+            properties:
+                createdAt:
+                    example: "2024-06-01T12:00:00Z"
+                    format: date-time
+                    type: string
+                id:
+                    example: folder_xyz789
+                    type: string
+                name:
+                    example: projects
+                    type: string
+                parentId:
+                    example: folder_root
+                    type: string
+                path:
+                    example: /documents/projects
+                    type: string
+                updatedAt:
+                    example: "2024-06-01T12:00:00Z"
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - path
+                - name
+                - createdAt
+                - updatedAt
+            type: object
+        filesapi_folderCreateRequest:
+            properties:
+                name:
+                    example: New Folder
+                    type: string
+                parentId:
+                    example: folder_root
+                    type: string
+            required:
+                - name
+            type: object
+        filesapi_moveRequest:
+            properties:
+                newParentId:
+                    example: folder_abc123
+                    type: string
+            required:
+                - newParentId
+            type: object
+        filesapi_nameUpdateRequest:
+            properties:
+                name:
+                    example: new-name.txt
+                    type: string
+            required:
+                - name
             type: object
         functionstore_EventTrigger:
             properties:
@@ -1066,6 +1192,50 @@ components:
                 - when
                 - goto
             type: object
+        usersapi_tokenRefreshRequest:
+            properties:
+                token:
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    type: string
+            required:
+                - token
+            type: object
+        usersapi_tokenRefreshResponse:
+            properties:
+                token:
+                    example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    type: string
+            required:
+                - token
+            type: object
+        userservice_CreateUserRequest:
+            properties:
+                allowedResources:
+                    items:
+                        type: object
+                    type: array
+                email:
+                    type: string
+                friendlyName:
+                    type: string
+                password:
+                    type: string
+            required:
+                - email
+                - password
+                - allowedResources
+            type: object
+        userservice_UpdateUserRequest:
+            properties:
+                email:
+                    type: string
+                friendlyName:
+                    type: string
+                password:
+                    type: string
+            required:
+                - password
+            type: object
     securitySchemes:
         X-API-Key:
             in: header
@@ -1073,17 +1243,33 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-168-g94a9a57-dirty
+    version: v0.0.51-169-g44bbbae-dirty
 openapi: 3.1.0
 paths:
     /access-control:
         get:
+            description: |-
+                Lists access control entries with optional filtering and pagination.
+                Use 'identity' to filter by user/service.
+                Use 'expand=user' to include full user details.
+                Use 'from' (RFC3339) for pagination cursor.
+            parameters:
+                - description: Filter by identity (user or service ID).
+                  in: query
+                  name: identity
+                  schema:
+                    type: string
+                - description: Expand related resources (e.g., 'user').
+                  in: query
+                  name: expand
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/entries'
+                                $ref: '#/components/schemas/array_usersapi_accessEntryResponse'
                     description: OK
                 default:
                     content:
@@ -1091,14 +1277,23 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: list
+            summary: Lists access control entries with optional filtering and pagination.
         post:
+            description: |-
+                Creates a new access control entry.
+                Grants a permission level to an identity (user or service) on a specific resource.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/accessservice_AccessEntryRequest'
+                required: true
             responses:
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/resp'
+                                $ref: '#/components/schemas/usersapi_accessEntryResponse'
                     description: Created
                 default:
                     content:
@@ -1106,15 +1301,18 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: create
+            summary: Creates a new access control entry.
     /access-control/{id}:
         delete:
+            description: |-
+                Deletes an access control entry.
+                Revokes the specified permission immediately.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                type: string
                     description: OK
                 default:
                     content:
@@ -1122,14 +1320,23 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: delete
+            summary: Deletes an access control entry.
         get:
+            description: |-
+                Retrieves an access control entry by its unique ID.
+                Use 'expand=user' to include full user details.
+            parameters:
+                - description: Expand related resources (e.g., 'user').
+                  in: query
+                  name: expand
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/entry'
+                                $ref: '#/components/schemas/usersapi_accessEntryResponse'
                     description: OK
                 default:
                     content:
@@ -1137,20 +1344,30 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: getByID
+            summary: Retrieves an access control entry by its unique ID.
         parameters:
-            - in: path
+            - description: The unique identifier of the access control entry.
+              in: path
               name: id
               required: true
               schema:
                 type: string
         put:
+            description: |-
+                Updates an existing access control entry.
+                The ID from the URL path overrides any ID in the request body.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/accessservice_AccessEntryRequest'
+                required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/resp'
+                                $ref: '#/components/schemas/usersapi_accessEntryResponse'
                     description: OK
                 default:
                     content:
@@ -1158,7 +1375,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: update
+            summary: Updates an existing access control entry.
     /activity/alerts:
         get:
             responses:
@@ -1421,16 +1638,16 @@ paths:
                 NOTE: Only backends assigned to at least one group will be used for request processing.
                 Backends not assigned to any group exist in the configuration but are completely ignored by the routing system.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2069,12 +2286,6 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
-                - description: Maximum number of events to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
-                    type: string
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
@@ -2089,6 +2300,12 @@ paths:
                   in: query
                   name: aggregate_id
                   schema:
+                    type: string
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
                     type: string
             responses:
                 "200":
@@ -2180,6 +2397,11 @@ paths:
                 USE WITH CAUTION — this is a destructive operation.
                 Typically used for GDPR compliance or cleaning up test data.
             parameters:
+                - description: End time in RFC3339 format.
+                  in: query
+                  name: to
+                  schema:
+                    type: string
                 - description: The type of event to delete.
                   in: query
                   name: event_type
@@ -2188,11 +2410,6 @@ paths:
                 - description: Start time in RFC3339 format.
                   in: query
                   name: from
-                  schema:
-                    type: string
-                - description: End time in RFC3339 format.
-                  in: query
-                  name: to
                   schema:
                     type: string
             responses:
@@ -2311,12 +2528,21 @@ paths:
             summary: Implement the handler method
     /files:
         get:
+            description: |-
+                Lists files and folders, optionally filtered by path.
+                Use the 'path' query parameter to list contents of a specific directory.
+            parameters:
+                - description: Filter results by file path prefix.
+                  in: query
+                  name: path
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/files'
+                                $ref: '#/components/schemas/array_filesapi_FileResponse'
                     description: OK
                 default:
                     content:
@@ -2324,15 +2550,18 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listFiles
+            summary: Lists files and folders, optionally filtered by path.
         post:
-            description: create handles the creation of a new file using multipart/form-data.
+            description: |-
+                Creates a new file by uploading binary content via multipart/form-data.
+                The 'file' field is required. Optional 'name' and 'parentid' fields control naming and placement.
+                Files are limited to 100 MiB (configurable via fileservice.MaxUploadSize).
             responses:
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/file'
+                                $ref: '#/components/schemas/filesapi_FileResponse'
                     description: Created
                 default:
                     content:
@@ -2340,16 +2569,18 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: create handles the creation of a new file using multipart/form-data.
+            summary: Creates a new file by uploading binary content via multipart/form-data.
     /files/{id}:
         delete:
-            description: delete - No change needed
+            description: |-
+                Deletes a file from the system.
+                Returns a confirmation message on success.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/map[string]string'
                     description: OK
                 default:
                     content:
@@ -2357,15 +2588,17 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: delete - No change needed
+            summary: Deletes a file from the system.
         get:
-            description: getMetadata - No change needed
+            description: |-
+                Retrieves metadata for a specific file.
+                Returns 404 if the file does not exist.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/filesapi_FileResponse'
                     description: OK
                 default:
                     content:
@@ -2373,21 +2606,24 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: getMetadata - No change needed
+            summary: Retrieves metadata for a specific file.
         parameters:
-            - in: path
+            - description: The unique identifier of the file.
+              in: path
               name: id
               required: true
               schema:
                 type: string
         put:
-            description: update handles updating an existing file using multipart/form-data.
+            description: |-
+                Updates an existing file's content via multipart/form-data.
+                Replaces the entire file content. The file ID is taken from the URL path.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/file'
+                                $ref: '#/components/schemas/filesapi_FileResponse'
                     description: OK
                 default:
                     content:
@@ -2395,9 +2631,19 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: update handles updating an existing file using multipart/form-data.
+            summary: Updates an existing file's content via multipart/form-data.
     /files/{id}/download:
         get:
+            description: |-
+                Downloads the raw content of a file.
+                The 'skip' query parameter (if "true") omits the Content-Disposition header.
+            parameters:
+                - description: If 'true', skips Content-Disposition header.
+                  in: query
+                  name: skip
+                  schema:
+                    default: "false"
+                    type: string
             responses:
                 "200":
                     description: OK
@@ -2407,27 +2653,38 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: download
+            summary: Downloads the raw content of a file.
         parameters:
-            - in: path
+            - description: The unique identifier of the file.
+              in: path
               name: id
               required: true
               schema:
                 type: string
     /files/{id}/move:
         parameters:
-            - in: path
+            - description: The unique identifier of the file.
+              in: path
               name: id
               required: true
               schema:
                 type: string
         put:
+            description: |-
+                Moves a file to a new parent folder.
+                Accepts a JSON body with 'newParentId'.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/filesapi_moveRequest'
+                required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/filesapi_FileResponse'
                     description: OK
                 default:
                     content:
@@ -2435,21 +2692,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: moveFile
+            summary: Moves a file to a new parent folder.
     /files/{id}/name:
         parameters:
-            - in: path
+            - description: The unique identifier of the file.
+              in: path
               name: id
               required: true
               schema:
                 type: string
         put:
+            description: |-
+                Renames a file.
+                Accepts a JSON body with the new 'name'.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/filesapi_nameUpdateRequest'
+                required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/filesapi_FileResponse'
                     description: OK
                 default:
                     content:
@@ -2457,15 +2724,24 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: renameFile
+            summary: Renames a file.
     /folders:
         post:
+            description: |-
+                Creates a new folder.
+                Requires a 'name'. Optionally accepts 'parentId' to place it inside another folder.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/filesapi_folderCreateRequest'
+                required: true
             responses:
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/filesapi_FolderResponse'
                     description: Created
                 default:
                     content:
@@ -2473,15 +2749,18 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: createFolder
+            summary: Creates a new folder.
     /folders/{id}:
         delete:
+            description: |-
+                Deletes a folder and all its contents.
+                Returns a confirmation message on success.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/map[string]string'
                     description: OK
                 default:
                     content:
@@ -2489,27 +2768,38 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: deleteFolder
+            summary: Deletes a folder and all its contents.
         parameters:
-            - in: path
+            - description: The unique identifier of the folder.
+              in: path
               name: id
               required: true
               schema:
                 type: string
     /folders/{id}/move:
         parameters:
-            - in: path
+            - description: The unique identifier of the folder.
+              in: path
               name: id
               required: true
               schema:
                 type: string
         put:
+            description: |-
+                Moves a folder to a new parent folder.
+                Accepts a JSON body with 'newParentId'.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/filesapi_moveRequest'
+                required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/filesapi_FolderResponse'
                     description: OK
                 default:
                     content:
@@ -2517,21 +2807,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: moveFolder
+            summary: Moves a folder to a new parent folder.
     /folders/{id}/name:
         parameters:
-            - in: path
+            - description: The unique identifier of the folder.
+              in: path
               name: id
               required: true
               schema:
                 type: string
         put:
+            description: |-
+                Renames a folder.
+                Accepts a JSON body with the new 'name'.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/filesapi_nameUpdateRequest'
+                required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/filesapi_FolderResponse'
                     description: OK
                 default:
                     content:
@@ -2539,7 +2839,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: renameFolder
+            summary: Renames a folder.
     /functions:
         get:
             description: |-
@@ -3159,18 +3459,22 @@ paths:
             summary: assignJob
     /login:
         post:
+            description: |-
+                Authenticates a user using email and password (for machine-to-machine or backend-for-frontend flows).
+                Returns a JWT token and user details on success.
+                WARNING: Do not use this endpoint directly from browser-based clients.
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/loginRequest'
+                            $ref: '#/components/schemas/usersapi_loginRequest'
                 required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/result'
+                                $ref: '#/components/schemas/usersapi_loginResponse'
                     description: OK
                 default:
                     content:
@@ -3178,7 +3482,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: login
+            summary: Authenticates a user using email and password (for machine-to-machine or backend-for-frontend flows).
     /mapping:
         delete:
             description: |-
@@ -3625,16 +3929,16 @@ paths:
                 Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
                 the chainID parameter is currently unused.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -3652,12 +3956,15 @@ paths:
             summary: Lists all registered models in OpenAI-compatible format.
     /permissions:
         get:
+            description: |-
+                Returns the list of supported permission levels.
+                Permissions: none, view, edit, manage (in increasing order of privilege).
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/permissions'
+                                $ref: '#/components/schemas/array_string'
                     description: OK
                 default:
                     content:
@@ -3665,7 +3972,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: permissions
+            summary: Returns the list of supported permission levels.
     /providers/{providerType}/config:
         delete:
             description: |-
@@ -3712,16 +4019,16 @@ paths:
         get:
             description: Lists all configured external providers with pagination support.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -3795,14 +4102,14 @@ paths:
                 Example: /queue/cancel?url=http://localhost:11434
                 /queue/cancel?model=mistral:latest
             parameters:
-                - description: The model name to cancel downloads for across all backends.
-                  in: query
-                  name: model
-                  schema:
-                    type: string
                 - description: The base URL of a specific backend to cancel downloads on.
                   in: query
                   name: url
+                  schema:
+                    type: string
+                - description: The model name to cancel downloads for across all backends.
+                  in: query
+                  name: model
                   schema:
                     type: string
             responses:
@@ -3844,12 +4151,22 @@ paths:
             summary: Streams real-time download progress via Server-Sent Events (SSE).
     /register:
         post:
+            description: |-
+                Registers a new user and returns authentication credentials.
+                For machine-to-machine or backend-for-frontend flows only.
+                WARNING: Do not expose this endpoint to public browser clients without additional safeguards.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/userservice_CreateUserRequest'
+                required: true
             responses:
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/result'
+                                $ref: '#/components/schemas/usersapi_loginResponse'
                     description: Created
                 default:
                     content:
@@ -3857,7 +4174,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: register
+            summary: Registers a new user and returns authentication credentials.
     /search:
         get:
             responses:
@@ -4221,18 +4538,21 @@ paths:
                 type: string
     /token_refresh:
         post:
+            description: |-
+                Refreshes an expired or expiring JWT token.
+                Accepts a valid token and returns a new one with extended expiration.
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/tokenRefreshRequest'
+                            $ref: '#/components/schemas/usersapi_tokenRefreshRequest'
                 required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/response'
+                                $ref: '#/components/schemas/usersapi_tokenRefreshResponse'
                     description: OK
                 default:
                     content:
@@ -4240,22 +4560,24 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: tokenRefresh
+            summary: Refreshes an expired or expiring JWT token.
     /ui/login:
         post:
-            description: uiLogin handles a login request by authenticating the user and setting an HTTP-only cookie with the token.
+            description: |-
+                Authenticates a user and sets an HTTP-only authentication cookie (for UI clients).
+                The cookie is secure, HTTP-only, and has a strict SameSite policy.
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/loginRequest'
+                            $ref: '#/components/schemas/usersapi_loginRequest'
                 required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/User'
+                                $ref: '#/components/schemas/usersapi_userResponse'
                     description: OK
                 default:
                     content:
@@ -4263,16 +4585,16 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: uiLogin handles a login request by authenticating the user and setting an HTTP-only cookie with the token.
+            summary: Authenticates a user and sets an HTTP-only authentication cookie (for UI clients).
     /ui/logout:
         post:
-            description: uiLogout clears the authentication cookie.
+            description: Clears the authentication cookie and logs the user out.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                type: string
                     description: OK
                 default:
                     content:
@@ -4280,15 +4602,18 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: uiLogout clears the authentication cookie.
+            summary: Clears the authentication cookie and logs the user out.
     /ui/me:
         get:
+            description: |-
+                Returns the currently authenticated user (for UI clients).
+                Requires a valid authentication cookie.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/result'
+                                $ref: '#/components/schemas/usersapi_userResponse'
                     description: OK
                 default:
                     content:
@@ -4296,15 +4621,22 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: uiMe
+            summary: Returns the currently authenticated user (for UI clients).
     /ui/register:
         post:
+            description: Registers a new user and sets an authentication cookie (for UI clients).
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/userservice_CreateUserRequest'
+                required: true
             responses:
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/User'
+                                $ref: '#/components/schemas/usersapi_userResponse'
                     description: Created
                 default:
                     content:
@@ -4312,16 +4644,18 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: uiRegister
+            summary: Registers a new user and sets an authentication cookie (for UI clients).
     /ui/token_refresh:
         post:
-            description: uiTokenRefresh reads the existing token from the cookie, refreshes it, and updates the cookie.
+            description: |-
+                Refreshes the authentication token stored in the cookie (for UI clients).
+                Reads the current token from the cookie, refreshes it, and updates the cookie.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                type: string
                     description: OK
                 default:
                     content:
@@ -4329,15 +4663,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: uiTokenRefresh reads the existing token from the cookie, refreshes it, and updates the cookie.
+            summary: Refreshes the authentication token stored in the cookie (for UI clients).
     /users:
         get:
+            description: |-
+                Lists users with pagination support.
+                Results are returned in reverse chronological order (newest first).
+                Use the 'cursor' parameter to fetch the next page of results.
+            parameters:
+                - description: The maximum number of users to return per page.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "10"
+                    type: string
+                - description: An optional RFC3339 timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/response'
+                                $ref: '#/components/schemas/array_usersapi_userResponse'
                     description: OK
                 default:
                     content:
@@ -4345,14 +4695,24 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: list
+            summary: Lists users with pagination support.
         post:
+            description: |-
+                Creates a new user in the system.
+                The user will be assigned a unique ID and subject identifier.
+                Passwords are hashed using a secure algorithm before storage.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/userservice_CreateUserRequest'
+                required: true
             responses:
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/usersapi_userResponse'
                     description: Created
                 default:
                     content:
@@ -4360,15 +4720,19 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: create
+            summary: Creates a new user in the system.
     /users/{id}:
         delete:
+            description: |-
+                Deletes a user from the system.
+                Also removes all associated access control entries and invalidates active sessions.
+                Returns a simple confirmation message on success.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                type: string
                     description: OK
                 default:
                     content:
@@ -4376,14 +4740,17 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: delete
+            summary: Deletes a user from the system.
         get:
+            description: |-
+                Retrieves a user by their unique ID.
+                Returns 404 if the user does not exist.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/usersapi_userResponse'
                     description: OK
                 default:
                     content:
@@ -4391,20 +4758,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: get
+            summary: Retrieves a user by their unique ID.
         parameters:
-            - in: path
+            - description: The unique identifier of the user.
+              in: path
               name: id
               required: true
               schema:
                 type: string
         put:
+            description: |-
+                Updates an existing user's mutable fields.
+                Only friendlyName and email can be updated.
+                The user ID from the path overrides any ID in the request body.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/userservice_UpdateUserRequest'
+                required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                $ref: '#/components/schemas/usersapi_userResponse'
                     description: OK
                 default:
                     content:
@@ -4412,7 +4790,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: update
+            summary: Updates an existing user's mutable fields.
     /v1/chat/completions:
         post:
             responses:

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/eventstore"
 	"github.com/contenox/runtime/functionstore"
 	"github.com/contenox/runtime/internal/hooks"
@@ -202,11 +203,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s initializing task store schema failed: %v", nodeInstanceID, err)
 	}
+	internalMux := http.NewServeMux()
+	var apiHandler http.Handler = internalMux
 
-	apiHandler, cleanup, err := serverapi.New(ctx, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo)
+	cleanup, err = serverapi.New(ctx, internalMux, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("%s initializing API handler failed: %v", nodeInstanceID, err)
+	}
+	apiHandler = apiframework.RequestIDMiddleware(apiHandler)
+	apiHandler = apiframework.TracingMiddleware(apiHandler)
+	if config.Token != "" {
+		apiHandler = apiframework.TokenMiddleware(apiHandler)
+		apiHandler = apiframework.EnforceToken(config.Token, apiHandler)
 	}
 
 	mux := http.NewServeMux()

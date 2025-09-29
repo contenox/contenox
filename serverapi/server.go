@@ -52,6 +52,7 @@ import (
 
 func New(
 	ctx context.Context,
+	mux *http.ServeMux,
 	nodeInstanceID string,
 	tenancy string,
 	config *Config,
@@ -62,10 +63,8 @@ func New(
 	state *runtimestate.State,
 	hookRegistry taskengine.HookProvider,
 	// kvManager libkv.KVManager,
-) (http.Handler, func() error, error) {
+) (func() error, error) {
 	cleanup := func() error { return nil }
-	mux := http.NewServeMux()
-	var handler http.Handler = mux
 	// tracker := taskengine.NewKVActivityTracker(kvManager)
 	stdOuttracker := libtracker.NewLogActivityTracker(slog.Default())
 	serveropsChainedTracker := libtracker.ChainedTracker{
@@ -177,12 +176,12 @@ func New(
 		// TODO:
 	}, time.Second, executorService, serveropsChainedTracker)
 	if err != nil {
-		return nil, cleanup, fmt.Errorf("failed to initialize event dispatch service: %w", err)
+		return cleanup, fmt.Errorf("failed to initialize event dispatch service: %w", err)
 	}
 
 	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance, pubsub, eventbus)
 	if err != nil {
-		return nil, cleanup, fmt.Errorf("failed to initialize event source service: %w", err)
+		return cleanup, fmt.Errorf("failed to initialize event source service: %w", err)
 	}
 
 	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
@@ -200,14 +199,8 @@ func New(
 	eventmappingapi.AddMappingRoutes(mux, eventMappingService)
 	eventbridgeService := eventbridgeservice.New(eventMappingService, eventSourceService, time.Second*3)
 	eventbridgeapi.AddEventBridgeRoutes(mux, eventbridgeService)
-	handler = apiframework.RequestIDMiddleware(handler)
-	handler = apiframework.TracingMiddleware(handler)
-	if config.Token != "" {
-		handler = apiframework.TokenMiddleware(handler)
-		handler = apiframework.EnforceToken(config.Token, handler)
-	}
 
-	return handler, cleanup, nil
+	return cleanup, nil
 }
 
 type Config struct {
@@ -229,9 +222,13 @@ type Config struct {
 	ChatModelContextLength  string `json:"chat_model_context_length"`
 	VectorStoreURL          string `json:"vector_store_url"`
 	Token                   string `json:"token"`
+	UIBaseURL               string `json:"ui_base_url"`
 }
 
 func LoadConfig[T any](cfg *T) error {
+	if cfg == nil {
+		return fmt.Errorf("config pointer is nil")
+	}
 	config := map[string]string{}
 	for _, kvPair := range os.Environ() {
 		ar := strings.SplitN(kvPair, "=", 2)

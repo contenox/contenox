@@ -13,6 +13,5 @@ pyrightconfig.json
 api_spec_generation.md
 
 # Ignore binaries and build artifacts
-cmd/runtime-api
 tools/openapi-gen
 tools/version
