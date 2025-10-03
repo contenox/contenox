@@ -23,6 +23,8 @@ func AddEventSourceRoutes(mux *http.ServeMux, service eventsourceservice.Service
 	mux.HandleFunc("GET /events/type", e.getEventsByType)
 	mux.HandleFunc("GET /events/source", e.getEventsBySource)
 	mux.HandleFunc("GET /events/types", e.getEventTypesInRange)
+	mux.HandleFunc("GET /raw-events/{nid}", e.getRawEvent)
+	mux.HandleFunc("GET /raw-events", e.listRawEvents)
 
 	// Delete operations
 	mux.HandleFunc("DELETE /events/type", e.deleteEventsByTypeInRange)
@@ -342,4 +344,109 @@ func (e *eventSourceManager) streamEvents(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+}
+
+// Retrieves a raw event by numeric ID (NID) within a time range.
+//
+// This is useful for inspecting original payloads before mapping,
+// or for preparing replay operations.
+func (e *eventSourceManager) getRawEvent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	nidStr := serverops.GetPathParam(r, "nid", "Numeric ID of the raw event")
+	if nidStr == "" {
+		_ = serverops.Error(w, r, fmt.Errorf("nid query parameter is required %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	var nid int64
+	if _, err := fmt.Sscan(nidStr, &nid); err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid nid format, must be integer %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	fromStr := serverops.GetQueryParam(r, "from", "", "Start time in RFC3339 format")
+	if fromStr == "" {
+		_ = serverops.Error(w, r, fmt.Errorf("'from' query parameter is required %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	toStr := serverops.GetQueryParam(r, "to", "", "End time in RFC3339 format")
+	if toStr == "" {
+		_ = serverops.Error(w, r, fmt.Errorf("'to' query parameter is required %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	from, err := time.Parse(time.RFC3339, fromStr)
+	if err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid 'from' time format, expected RFC3339 %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	to, err := time.Parse(time.RFC3339, toStr)
+	if err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid 'to' time format, expected RFC3339 %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	if from.After(to) {
+		_ = serverops.Error(w, r, fmt.Errorf("'from' cannot be after 'to' %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	rawEvent, err := e.service.GetRawEvent(ctx, from, to, nid)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, rawEvent) // @response eventstore.RawEvent
+}
+
+// Lists raw events within a time range.
+//
+// Useful for debugging, auditing, or preparing replay operations.
+// Returns events in descending order of received_at.
+func (e *eventSourceManager) listRawEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	fromStr := serverops.GetQueryParam(r, "from", time.Now().UTC().Add(-24*time.Hour).Format(time.RFC3339), "Start time in RFC3339 format.")
+	toStr := serverops.GetQueryParam(r, "to", time.Now().UTC().Format(time.RFC3339), "End time in RFC3339 format.")
+	limitStr := serverops.GetQueryParam(r, "limit", "100", "Maximum number of raw events to return.")
+
+	from, err := time.Parse(time.RFC3339, fromStr)
+	if err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid 'from' time format, expected RFC3339 %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	to, err := time.Parse(time.RFC3339, toStr)
+	if err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid 'to' time format, expected RFC3339 %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid limit, must be positive integer %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	if limit > 1000 {
+		_ = serverops.Error(w, r, fmt.Errorf("limit cannot exceed 1000 %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	if from.After(to) {
+		_ = serverops.Error(w, r, fmt.Errorf("'from' cannot be after 'to' %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	rawEvents, err := e.service.ListRawEvents(ctx, from, to, limit)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, rawEvents) // @response []*eventstore.RawEvent
 }

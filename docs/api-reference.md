@@ -1981,8 +1981,8 @@ Returns event triggers in creation order, with the oldest triggers first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -2738,8 +2738,8 @@ Useful for cross-aggregate analysis or system-wide event monitoring.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -4028,8 +4028,8 @@ Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |purpose|path|string|true|The purpose category to filter groups by (e.g., 'embeddings').|
 
 > Example responses
@@ -5793,8 +5793,8 @@ Intended for administrative and debugging purposes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -6595,6 +6595,122 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## Lists raw events within a time range.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/raw-events', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /raw-events`
+
+Lists raw events within a time range.
+Useful for debugging, auditing, or preparing replay operations.
+Returns events in descending order of received_at.
+
+<h3 id="lists-raw-events-within-a-time-range.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|Maximum number of raw events to return.|
+
+> Example responses
+
+> 200 Response
+
+```json
+[
+  {
+    "headers": {},
+    "id": "string",
+    "nid": 0,
+    "path": "string",
+    "payload": {},
+    "received_at": "2019-08-24T14:15:22Z"
+  }
+]
+```
+
+<h3 id="lists-raw-events-within-a-time-range.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_eventstore_RawEvent](#schemaarray_eventstore_rawevent)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Retrieves a raw event by numeric ID (NID) within a time range.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/raw-events/{nid}', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /raw-events/{nid}`
+
+Retrieves a raw event by numeric ID (NID) within a time range.
+This is useful for inspecting original payloads before mapping,
+or for preparing replay operations.
+
+<h3 id="retrieves-a-raw-event-by-numeric-id-(nid)-within-a-time-range.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|from|query|string|false|Start time in RFC3339 format|
+|to|query|string|false|End time in RFC3339 format|
+|nid|path|string|true|Numeric ID of the raw event|
+
+> Example responses
+
+> 200 Response
+
+```json
+{
+  "headers": {},
+  "id": "string",
+  "nid": 0,
+  "path": "string",
+  "payload": {},
+  "received_at": "2019-08-24T14:15:22Z"
+}
+```
+
+<h3 id="retrieves-a-raw-event-by-numeric-id-(nid)-within-a-time-range.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[eventstore_RawEvent](#schemaeventstore_rawevent)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Registers a new user and returns authentication credentials.
 
 > Code samples
@@ -6661,6 +6777,57 @@ WARNING: Do not expose this endpoint to public browser clients without additiona
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <h3 id="registers-a-new-user-and-returns-authentication-credentials.-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## replayEvent replays a raw event by NID to re-emit its corresponding domain event
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/replay', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /replay`
+
+replayEvent replays a raw event by NID to re-emit its corresponding domain event
+This endpoint fetches a raw event by its numeric ID (NID) and time range,
+applies the current mapping configuration, and appends the resulting domain event.
+
+<h3 id="replayevent-replays-a-raw-event-by-nid-to-re-emit-its-corresponding-domain-event-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|nid|query|string|false|Numeric ID of the raw event|
+|from|query|string|false|Start time (RFC3339)|
+|to|query|string|false|End time (RFC3339)|
+
+> Example responses
+
+> 500 Response
+
+```json
+"string"
+```
+
+<h3 id="replayevent-replays-a-raw-event-by-nid-to-re-emit-its-corresponding-domain-event-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|500|[Internal Server Error](https://tools.ietf.org/html/rfc7231#section-6.6.1)|Internal Server Error|string|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -8568,6 +8735,33 @@ X-API-Key
 |---|---|---|---|---|
 |*anonymous*|[[eventstore_MappingConfig](#schemaeventstore_mappingconfig)]|false|none|none|
 
+<h2 id="tocS_array_eventstore_RawEvent">array_eventstore_RawEvent</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_eventstore_rawevent"></a>
+<a id="schema_array_eventstore_RawEvent"></a>
+<a id="tocSarray_eventstore_rawevent"></a>
+<a id="tocsarray_eventstore_rawevent"></a>
+
+```json
+[
+  {
+    "headers": {},
+    "id": "string",
+    "nid": 0,
+    "path": "string",
+    "payload": {},
+    "received_at": "2019-08-24T14:15:22Z"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[eventstore_RawEvent](#schemaeventstore_rawevent)]|false|none|none|
+
 <h2 id="tocS_array_filesapi_FileResponse">array_filesapi_FileResponse</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_filesapi_fileresponse"></a>
@@ -9174,6 +9368,36 @@ X-API-Key
 |metadataMapping|object|true|none|Metadata fields to extract from headers/payload|
 |path|string|true|none|none|
 |version|integer|true|none|Fixed version or field to extract from|
+
+<h2 id="tocS_eventstore_RawEvent">eventstore_RawEvent</h2>
+<!-- backwards compatibility -->
+<a id="schemaeventstore_rawevent"></a>
+<a id="schema_eventstore_RawEvent"></a>
+<a id="tocSeventstore_rawevent"></a>
+<a id="tocseventstore_rawevent"></a>
+
+```json
+{
+  "headers": {},
+  "id": "string",
+  "nid": 0,
+  "path": "string",
+  "payload": {},
+  "received_at": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|headers|object|false|none|none|
+|id|string|true|none|none|
+|nid|integer|true|none|none|
+|path|string|true|none|none|
+|payload|object|true|none|none|
+|received_at|string(date-time)|true|none|none|
 
 <h2 id="tocS_execapi_DefaultModelResponse">execapi_DefaultModelResponse</h2>
 <!-- backwards compatibility -->

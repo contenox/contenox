@@ -22,6 +22,10 @@ type Service interface {
 	GetEventsByType(ctx context.Context, eventType string, from, to time.Time, limit int) ([]eventstore.Event, error)
 	GetEventsBySource(ctx context.Context, eventType string, from, to time.Time, eventSource string, limit int) ([]eventstore.Event, error)
 	SubscribeToEvents(ctx context.Context, eventType string, ch chan<- []byte) (Subscription, error)
+	AppendRawEvent(ctx context.Context, event *eventstore.RawEvent) error
+	GetRawEvent(ctx context.Context, from, to time.Time, nid int64) (*eventstore.RawEvent, error)
+
+	ListRawEvents(ctx context.Context, from, to time.Time, limit int) ([]*eventstore.RawEvent, error)
 
 	GetEventTypesInRange(ctx context.Context, from, to time.Time, limit int) ([]string, error)
 	DeleteEventsByTypeInRange(ctx context.Context, eventType string, from, to time.Time) error
@@ -36,6 +40,7 @@ var ErrMissingRequiredField = errors.New("missing required field")
 type EventSource struct {
 	dbInstance libdbexec.DBManager
 	manager    partitionManager
+	rawManager partitionManager
 	messenger  libbus.Messenger
 	action     eventdispatch.Trigger
 }
@@ -60,16 +65,118 @@ func NewEventSourceService(
 			initialized: false,
 			lock:        sync.Mutex{},
 		},
+		rawManager: partitionManager{
+			initialized: false,
+			lock:        sync.Mutex{},
+		},
 		messenger: messenger,
 		action:    action,
 	}
 
-	// Initialize partitions on startup
+	// Initialize partitions for domain events
 	if err := service.ensurePartitions(ctx); err != nil {
-		return nil, fmt.Errorf("failed to initialize partitions: %w", err)
+		return nil, fmt.Errorf("failed to initialize domain event partitions: %w", err)
+	}
+
+	// Initialize partitions for raw events
+	if err := service.ensureRawPartitions(ctx); err != nil {
+		return nil, fmt.Errorf("failed to initialize raw event partitions: %w", err)
 	}
 
 	return service, nil
+}
+
+func (s *EventSource) ensureRawPartitions(ctx context.Context) error {
+	s.rawManager.lock.Lock()
+	defer s.rawManager.lock.Unlock()
+
+	if !s.rawManager.initialized {
+		now := time.Now().UTC()
+		dates := make([]time.Time, 14) // current + next 13 days
+		for i := 0; i < 14; i++ {
+			dates[i] = now.AddDate(0, 0, i)
+		}
+
+		exec := s.dbInstance.WithoutTransaction()
+		store := eventstore.New(exec)
+
+		for _, date := range dates {
+			if err := store.EnsureRawEventPartitionExists(ctx, date); err != nil {
+				return fmt.Errorf("failed to create raw event partition for %v: %w", date, err)
+			}
+		}
+
+		s.rawManager.lastExistingPartition = now.AddDate(0, 0, 13)
+		s.rawManager.initialized = true
+	}
+
+	return nil
+}
+
+func (s *EventSource) ensureRawEventPartitionsForEvent(ctx context.Context, eventTime time.Time) error {
+	s.rawManager.lock.Lock()
+	defer s.rawManager.lock.Unlock()
+
+	if !eventTime.After(s.rawManager.lastExistingPartition) {
+		return nil // Partition coverage already sufficient
+	}
+
+	dates := make([]time.Time, 7)
+	for i := 0; i < 7; i++ {
+		dates[i] = eventTime.AddDate(0, 0, i)
+	}
+
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
+
+	for _, date := range dates {
+		if err := store.EnsureRawEventPartitionExists(ctx, date); err != nil {
+			return fmt.Errorf("failed to create raw event partition for %v: %w", date, err)
+		}
+	}
+
+	s.rawManager.lastExistingPartition = eventTime.AddDate(0, 0, 6)
+	return nil
+}
+
+func (s *EventSource) AppendRawEvent(ctx context.Context, event *eventstore.RawEvent) error {
+	if event == nil {
+		return fmt.Errorf("%w: raw event cannot be nil", ErrInvalidParameter)
+	}
+
+	if event.ReceivedAt.IsZero() {
+		event.ReceivedAt = time.Now().UTC()
+	}
+
+	if event.Path == "" {
+		return fmt.Errorf("%w: path is required", ErrMissingRequiredField)
+	}
+
+	// Use dedicated raw partition manager
+	if err := s.ensureRawEventPartitionsForEvent(ctx, event.ReceivedAt); err != nil {
+		return fmt.Errorf("failed to ensure raw event partitions: %w", err)
+	}
+
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
+
+	if err := store.AppendRawEvent(ctx, event); err != nil {
+		return fmt.Errorf("failed to append raw event: %w", err)
+	}
+
+	// Optional: async processing or publishing can go here
+
+	return nil
+}
+
+func (s *EventSource) GetRawEvent(ctx context.Context, from, to time.Time, nid int64) (*eventstore.RawEvent, error) {
+	tx := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(tx)
+	ev, err := store.GetRawEvent(ctx, from, to, nid)
+	if err != nil {
+		return nil, err
+	}
+	return ev, nil
 }
 
 type Subscription interface {
@@ -325,4 +432,20 @@ func (s *EventSource) DeleteEventsByTypeInRange(ctx context.Context, eventType s
 	store := eventstore.New(exec)
 
 	return store.DeleteEventsByTypeInRange(ctx, eventType, from, to)
+}
+
+// ListRawEvents implements Service interface
+func (s *EventSource) ListRawEvents(ctx context.Context, from, to time.Time, limit int) ([]*eventstore.RawEvent, error) {
+	// Validate parameters
+	if err := s.validateTimeRange(from, to); err != nil {
+		return nil, err
+	}
+	if err := s.validateLimit(limit); err != nil {
+		return nil, err
+	}
+
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
+
+	return store.ListRawEvents(ctx, from, to, limit)
 }

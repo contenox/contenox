@@ -31,6 +31,7 @@ type Renderer interface {
 
 type Bus interface {
 	Ingest(ctx context.Context, event ...*eventstore.RawEvent) error
+	ReplayEvent(ctx context.Context, from, to time.Time, nid int64) error
 }
 
 type eventBridge struct {
@@ -82,6 +83,34 @@ func (e *eventBridge) GetMapping(ctx context.Context, path string) (*eventstore.
 	}
 
 	return nil, ErrMappingNotFound
+}
+
+// ReplayEvent implements Bus
+func (e *eventBridge) ReplayEvent(ctx context.Context, from, to time.Time, nid int64) error {
+	// 1. Retrieve the raw event
+	rawEvent, err := e.eventsource.GetRawEvent(ctx, from, to, nid)
+	if err != nil {
+		return fmt.Errorf("failed to get raw event (nid=%d): %w", nid, err)
+	}
+
+	// 2. Get mapping for the raw event's path
+	mapping, err := e.GetMapping(ctx, rawEvent.Path)
+	if err != nil {
+		return fmt.Errorf("failed to get mapping for path %s: %w", rawEvent.Path, err)
+	}
+
+	// 3. Apply mapping to produce domain event
+	domainEvent, err := e.applyMapping(mapping, rawEvent.Payload, rawEvent.Headers)
+	if err != nil {
+		return fmt.Errorf("failed to apply mapping to raw event (nid=%d, path=%s): %w", nid, rawEvent.Path, err)
+	}
+
+	// 4. Append the domain event (do NOT re-append raw event)
+	if err := e.eventsource.AppendEvent(ctx, domainEvent); err != nil {
+		return fmt.Errorf("failed to append replayed domain event: %w", err)
+	}
+
+	return nil
 }
 
 // ListMappings implements Service
@@ -146,6 +175,9 @@ func (e *eventBridge) Sync(ctx context.Context) error {
 // Ingest implements Bus interface
 func (e *eventBridge) Ingest(ctx context.Context, events ...*eventstore.RawEvent) error {
 	for i := range events {
+		if err := e.eventsource.AppendRawEvent(ctx, events[i]); err != nil {
+			return fmt.Errorf("failed to append raw event: %w", err)
+		}
 		mapping, err := e.GetMapping(ctx, events[i].Path)
 		if err != nil {
 			return fmt.Errorf("failed to get mapping for path %s: %w", events[i].Path, err)

@@ -21,6 +21,9 @@ func AddEventBridgeRoutes(mux *http.ServeMux, bridgeService eventbridgeservice.S
 
 	// Sync endpoint to refresh mapping cache
 	mux.HandleFunc("POST /sync", h.syncMappings)
+
+	// Replay a raw event by NID to re-emit its domain event
+	mux.HandleFunc("POST /replay", h.replayEvent)
 }
 
 type eventBridgeHandler struct {
@@ -74,6 +77,62 @@ func (h *eventBridgeHandler) ingestEvent(w http.ResponseWriter, r *http.Request)
 	}
 
 	_ = serverops.Encode(w, r, http.StatusCreated, event) // @response eventstore.Event
+}
+
+// replayEvent replays a raw event by NID to re-emit its corresponding domain event
+//
+// This endpoint fetches a raw event by its numeric ID (NID) and time range,
+// applies the current mapping configuration, and appends the resulting domain event.
+func (h *eventBridgeHandler) replayEvent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	nidStr := serverops.GetQueryParam(r, "nid", "", "Numeric ID of the raw event")
+	if nidStr == "" {
+		_ = serverops.Error(w, r, fmt.Errorf("nid query parameter is required: %w", serverops.ErrBadPathValue), serverops.CreateOperation)
+		return
+	}
+
+	var nid int64
+	if _, err := fmt.Sscan(nidStr, &nid); err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid nid format: %w", err), serverops.CreateOperation)
+		return
+	}
+
+	fromStr := serverops.GetQueryParam(r, "from", "", "Start time (RFC3339)")
+	if fromStr == "" {
+		_ = serverops.Error(w, r, fmt.Errorf("from query parameter is required: %w", serverops.ErrBadPathValue), serverops.CreateOperation)
+		return
+	}
+
+	from, err := time.Parse(time.RFC3339, fromStr)
+	if err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid from time format: %w", err), serverops.CreateOperation)
+		return
+	}
+
+	toStr := serverops.GetQueryParam(r, "to", "", "End time (RFC3339)")
+	if toStr == "" {
+		_ = serverops.Error(w, r, fmt.Errorf("to query parameter is required: %w", serverops.ErrBadPathValue), serverops.CreateOperation)
+		return
+	}
+
+	to, err := time.Parse(time.RFC3339, toStr)
+	if err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("invalid to time format: %w", err), serverops.CreateOperation)
+		return
+	}
+
+	if from.After(to) {
+		_ = serverops.Error(w, r, fmt.Errorf("'from' cannot be after 'to': %w", serverops.ErrBadPathValue), serverops.CreateOperation)
+		return
+	}
+
+	if err := h.service.ReplayEvent(ctx, from, to, nid); err != nil {
+		_ = serverops.Error(w, r, fmt.Errorf("failed to replay event: %w", err), serverops.CreateOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusAccepted, "event replayed") // @response string
 }
 
 // generateEventID creates a unique event identifier

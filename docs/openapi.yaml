@@ -74,6 +74,10 @@ components:
             items:
                 $ref: '#/components/schemas/eventstore_MappingConfig'
             type: array
+        array_eventstore_RawEvent:
+            items:
+                $ref: '#/components/schemas/eventstore_RawEvent'
+            type: array
         array_filesapi_FileResponse:
             items:
                 $ref: '#/components/schemas/filesapi_FileResponse'
@@ -331,6 +335,30 @@ components:
                 - eventIDField
                 - version
                 - metadataMapping
+            type: object
+        eventstore_RawEvent:
+            properties:
+                headers:
+                    additionalProperties: true
+                    type: object
+                id:
+                    type: string
+                nid:
+                    type: integer
+                path:
+                    type: string
+                payload:
+                    additionalProperties: true
+                    type: object
+                received_at:
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - nid
+                - received_at
+                - path
+                - payload
             type: object
         execapi_DefaultModelResponse:
             properties:
@@ -2087,16 +2115,16 @@ paths:
                 Lists all event triggers with pagination
                 Returns event triggers in creation order, with the oldest triggers first.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2431,16 +2459,16 @@ paths:
                 Retrieves events of a specific type within a time range.
                 Useful for cross-aggregate analysis or system-wide event monitoring.
             parameters:
+                - description: The type of event to filter by.
+                  in: query
+                  name: event_type
+                  schema:
+                    type: string
                 - description: Maximum number of events to return.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: The type of event to filter by.
-                  in: query
-                  name: event_type
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2995,16 +3023,16 @@ paths:
                 Purpose types categorize groups (e.g., "Internal Embeddings", "Internal Tasks").
                 Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -3715,16 +3743,16 @@ paths:
                 This endpoint returns full model details including timestamps and capabilities.
                 Intended for administrative and debugging purposes.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -4149,6 +4177,71 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Streams real-time download progress via Server-Sent Events (SSE).
+    /raw-events:
+        get:
+            description: |-
+                Lists raw events within a time range.
+                Useful for debugging, auditing, or preparing replay operations.
+                Returns events in descending order of received_at.
+            parameters:
+                - description: Maximum number of raw events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/array_eventstore_RawEvent'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Lists raw events within a time range.
+    /raw-events/{nid}:
+        get:
+            description: |-
+                Retrieves a raw event by numeric ID (NID) within a time range.
+                This is useful for inspecting original payloads before mapping,
+                or for preparing replay operations.
+            parameters:
+                - description: Start time in RFC3339 format
+                  in: query
+                  name: from
+                  schema:
+                    type: string
+                - description: End time in RFC3339 format
+                  in: query
+                  name: to
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/eventstore_RawEvent'
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Retrieves a raw event by numeric ID (NID) within a time range.
+        parameters:
+            - description: Numeric ID of the raw event
+              in: path
+              name: nid
+              required: true
+              schema:
+                type: string
     /register:
         post:
             description: |-
@@ -4175,6 +4268,42 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: Registers a new user and returns authentication credentials.
+    /replay:
+        post:
+            description: |-
+                replayEvent replays a raw event by NID to re-emit its corresponding domain event
+                This endpoint fetches a raw event by its numeric ID (NID) and time range,
+                applies the current mapping configuration, and appends the resulting domain event.
+            parameters:
+                - description: Numeric ID of the raw event
+                  in: query
+                  name: nid
+                  schema:
+                    type: string
+                - description: Start time (RFC3339)
+                  in: query
+                  name: from
+                  schema:
+                    type: string
+                - description: End time (RFC3339)
+                  in: query
+                  name: to
+                  schema:
+                    type: string
+            responses:
+                "500":
+                    content:
+                        application/json:
+                            schema:
+                                type: string
+                    description: Internal Server Error
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: replayEvent replays a raw event by NID to re-emit its corresponding domain event
     /search:
         get:
             responses:

@@ -149,6 +149,65 @@ func (d *activityTrackerDecorator) DeleteEventsByTypeInRange(ctx context.Context
 	return err
 }
 
+// AppendRawEvent implements Service interface with activity tracking
+func (d *activityTrackerDecorator) AppendRawEvent(ctx context.Context, event *eventstore.RawEvent) error {
+	reportErrFn, reportChangeFn, endFn := d.tracker.Start(
+		ctx,
+		"append",
+		"raw_event",
+		"path", event.Path,
+		"event_id", event.ID,
+	)
+	defer endFn()
+
+	err := d.service.AppendRawEvent(ctx, event)
+	if err != nil {
+		reportErrFn(err)
+	} else {
+		reportChangeFn(event.ID, map[string]interface{}{
+			"path":        event.Path,
+			"received_at": event.ReceivedAt.Format(time.RFC3339Nano),
+			"headers_count": func() int {
+				if event.Headers == nil {
+					return 0
+				}
+				return len(event.Headers)
+			}(),
+			"payload_keys": func() []string {
+				if event.Payload == nil {
+					return []string{}
+				}
+				keys := make([]string, 0, len(event.Payload))
+				for k := range event.Payload {
+					keys = append(keys, k)
+				}
+				return keys
+			}(),
+		})
+	}
+
+	return err
+}
+
+// GetRawEvent implements Service interface with activity tracking
+func (d *activityTrackerDecorator) GetRawEvent(ctx context.Context, from, to time.Time, nid int64) (*eventstore.RawEvent, error) {
+	reportErrFn, _, endFn := d.tracker.Start(
+		ctx,
+		"query",
+		"raw_event_by_nid",
+		"nid", nid,
+		"from", from.Format(time.RFC3339),
+		"to", to.Format(time.RFC3339),
+	)
+	defer endFn()
+
+	event, err := d.service.GetRawEvent(ctx, from, to, nid)
+	if err != nil {
+		reportErrFn(err)
+	}
+	return event, err
+}
+
 // SubscribeToEvents implements Service.
 func (d *activityTrackerDecorator) SubscribeToEvents(ctx context.Context, eventType string, ch chan<- []byte) (Subscription, error) {
 	return d.service.SubscribeToEvents(ctx, eventType, ch)
@@ -166,4 +225,23 @@ func WithActivityTracker(service Service, tracker libtracker.ActivityTracker) Se
 		service: service,
 		tracker: tracker,
 	}
+}
+
+// ListRawEvents implements Service interface with activity tracking
+func (d *activityTrackerDecorator) ListRawEvents(ctx context.Context, from, to time.Time, limit int) ([]*eventstore.RawEvent, error) {
+	reportErrFn, _, endFn := d.tracker.Start(
+		ctx,
+		"query",
+		"raw_events_list",
+		"from", from.Format(time.RFC3339),
+		"to", to.Format(time.RFC3339),
+		"limit", limit,
+	)
+	defer endFn()
+
+	events, err := d.service.ListRawEvents(ctx, from, to, limit)
+	if err != nil {
+		reportErrFn(err)
+	}
+	return events, err
 }

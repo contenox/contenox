@@ -153,6 +153,24 @@ docker logs contenox-runtime-kernel
 
 ### JavaScript Function Execution
 
+```mermaid
+sequenceDiagram
+    participant Webhook
+    participant EventBridge
+    participant EventSource
+    participant FunctionHandler
+    participant GojaVM
+
+    Webhook->>EventBridge: POST /ingest?path=github.webhook
+    EventBridge->>EventSource: AppendRawEvent()
+    EventBridge->>EventBridge: Apply mapping → domain event
+    EventBridge->>EventSource: AppendEvent(user.created)
+    EventSource->>FunctionHandler: HandleEvent(user.created)
+    FunctionHandler->>GojaVM: Execute JS function "send_welcome_email"
+    GojaVM->>EventSource: sendEvent(email.sent, {to: "alice@..."})
+    GojaVM-->>FunctionHandler: Success
+```
+
 Execute custom JavaScript functions in response to events with a secure, sandboxed environment:
 
 ```javascript
