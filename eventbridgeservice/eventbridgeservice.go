@@ -2,10 +2,12 @@ package eventbridgeservice
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync/atomic"
 	"time"
 
+	"github.com/PaesslerAG/jsonpath"
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/eventmappingservice"
 	"github.com/contenox/runtime/eventsourceservice"
@@ -28,7 +30,7 @@ type Renderer interface {
 }
 
 type Bus interface {
-	Ingest(ctx context.Context, event ...eventstore.Event) error
+	Ingest(ctx context.Context, event ...*eventstore.RawEvent) error
 }
 
 type eventBridge struct {
@@ -142,12 +144,116 @@ func (e *eventBridge) Sync(ctx context.Context) error {
 }
 
 // Ingest implements Bus interface
-func (e *eventBridge) Ingest(ctx context.Context, events ...eventstore.Event) error {
+func (e *eventBridge) Ingest(ctx context.Context, events ...*eventstore.RawEvent) error {
 	for i := range events {
+		mapping, err := e.GetMapping(ctx, events[i].Path)
+		if err != nil {
+			return fmt.Errorf("failed to get mapping for path %s: %w", events[i].Path, err)
+		}
+		ev, err := e.applyMapping(mapping, events[i].Payload, events[i].Headers)
+		if err != nil {
+			return fmt.Errorf("failed to apply mapping for path %s: %w", events[i].Path, err)
+		}
 		// Pass by pointer as AppendEvent expects *Event
-		if err := e.eventsource.AppendEvent(ctx, &events[i]); err != nil {
+		if err := e.eventsource.AppendEvent(ctx, ev); err != nil {
 			return fmt.Errorf("failed to append event: %w", err)
 		}
 	}
 	return nil
+}
+
+// applyMapping transforms a raw payload into a structured event using the mapping configuration
+func (e *eventBridge) applyMapping(mapping *eventstore.MappingConfig, payload map[string]interface{}, headers map[string]string) (*eventstore.Event, error) {
+	event := &eventstore.Event{
+		ID:        generateEventID(),
+		CreatedAt: time.Now().UTC(),
+		Version:   mapping.Version,
+	}
+
+	// Extract event type - either from field or use fixed value
+	event.EventType = mapping.EventType
+	if mapping.EventTypeField != "" {
+		if eventType, ok := getFieldValue(payload, mapping.EventTypeField); ok {
+			event.EventType = fmt.Sprintf("%v", eventType)
+		}
+	}
+
+	// Extract event source - either from field or use fixed value
+	event.EventSource = mapping.EventSource
+	if mapping.EventSourceField != "" {
+		if eventSource, ok := getFieldValue(payload, mapping.EventSourceField); ok {
+			event.EventSource = fmt.Sprintf("%v", eventSource)
+		}
+	}
+
+	// Extract aggregate ID - required field
+	if mapping.AggregateIDField != "" {
+		if aggregateID, ok := getFieldValue(payload, mapping.AggregateIDField); ok {
+			event.AggregateID = fmt.Sprintf("%v", aggregateID)
+		} else {
+			return nil, fmt.Errorf("aggregate ID field '%s' not found in payload", mapping.AggregateIDField)
+		}
+	} else {
+		return nil, fmt.Errorf("aggregate ID field mapping is required")
+	}
+
+	// Extract or use fixed aggregate type
+	if mapping.AggregateTypeField != "" {
+		if aggregateType, ok := getFieldValue(payload, mapping.AggregateTypeField); ok {
+			event.AggregateType = fmt.Sprintf("%v", aggregateType)
+		} else {
+			return nil, fmt.Errorf("aggregate type field '%s' not found in payload", mapping.AggregateTypeField)
+		}
+	} else if mapping.AggregateType != "" {
+		event.AggregateType = mapping.AggregateType
+	} else {
+		return nil, fmt.Errorf("aggregate type field mapping is required")
+	}
+
+	// Set the payload data
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal event data: %w", err)
+	}
+	event.Data = data
+
+	// Extract metadata if mapping specified
+	if len(mapping.MetadataMapping) > 0 {
+		metadata := make(map[string]interface{})
+		for metaKey, fieldPath := range mapping.MetadataMapping {
+			if value, ok := getFieldValue(payload, fieldPath); ok {
+				metadata[metaKey] = value
+			}
+		}
+		if len(metadata) > 0 {
+			metaData, err := json.Marshal(metadata)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+			}
+			event.Metadata = metaData
+		}
+	}
+
+	return event, nil
+}
+
+// getFieldValue extracts a value from a nested map using dot notation
+func getFieldValue(payload map[string]interface{}, fieldPath string) (interface{}, bool) {
+	// JSONPath expects a root object, so wrap in "$."
+	expr := "$." + fieldPath
+	result, err := jsonpath.Get(expr, payload)
+	if err != nil || result == nil {
+		return nil, false
+	}
+
+	// jsonpath.Get may return []interface{} if multiple matches
+	if slice, ok := result.([]interface{}); ok && len(slice) > 0 {
+		return slice[0], true
+	}
+	return result, true
+}
+
+// generateEventID creates a unique event identifier
+func generateEventID() string {
+	return fmt.Sprintf("evt_%d", time.Now().UnixNano())
 }

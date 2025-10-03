@@ -35,7 +35,6 @@ var ErrMissingRequiredField = errors.New("missing required field")
 // EventSource implements the event source service with partition management
 type EventSource struct {
 	dbInstance libdbexec.DBManager
-	store      eventstore.Store
 	manager    partitionManager
 	messenger  libbus.Messenger
 	action     eventdispatch.Trigger
@@ -54,12 +53,9 @@ func NewEventSourceService(
 	messenger libbus.Messenger,
 	action eventdispatch.Trigger,
 ) (Service, error) {
-	exec := dbInstance.WithoutTransaction()
-	store := eventstore.New(exec)
 
 	service := &EventSource{
 		dbInstance: dbInstance,
-		store:      store,
 		manager: partitionManager{
 			initialized: false,
 			lock:        sync.Mutex{},
@@ -96,9 +92,11 @@ func (s *EventSource) ensurePartitions(ctx context.Context) error {
 		for i := 0; i < 14; i++ {
 			dates[i] = now.AddDate(0, 0, i)
 		}
+		exec := s.dbInstance.WithoutTransaction()
+		store := eventstore.New(exec)
 
 		for _, date := range dates {
-			if err := s.store.EnsurePartitionExists(ctx, date); err != nil {
+			if err := store.EnsurePartitionExists(ctx, date); err != nil {
 				return fmt.Errorf("failed to create partition for %v: %w", date, err)
 			}
 		}
@@ -124,9 +122,11 @@ func (s *EventSource) ensurePartitionsForEvent(ctx context.Context, eventTime ti
 	for i := 0; i < 7; i++ {
 		dates[i] = eventTime.AddDate(0, 0, i)
 	}
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
 
 	for _, date := range dates {
-		if err := s.store.EnsurePartitionExists(ctx, date); err != nil {
+		if err := store.EnsurePartitionExists(ctx, date); err != nil {
 			return fmt.Errorf("failed to create partition for %v: %w", date, err)
 		}
 	}
@@ -209,7 +209,10 @@ func (s *EventSource) AppendEvent(ctx context.Context, event *eventstore.Event) 
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
 	}
-	err = s.store.AppendEvent(ctx, event)
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
+
+	err = store.AppendEvent(ctx, event)
 	if err != nil {
 		return err
 	}
@@ -244,8 +247,10 @@ func (s *EventSource) GetEventsByAggregate(ctx context.Context, eventType string
 	if err := s.validateLimit(limit); err != nil {
 		return nil, err
 	}
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
 
-	return s.store.GetEventsByAggregate(ctx, eventType, from, to, aggregateType, aggregateID, limit)
+	return store.GetEventsByAggregate(ctx, eventType, from, to, aggregateType, aggregateID, limit)
 }
 
 // GetEventsByType implements Service interface
@@ -261,7 +266,13 @@ func (s *EventSource) GetEventsByType(ctx context.Context, eventType string, fro
 		return nil, err
 	}
 
-	return s.store.GetEventsByType(ctx, eventType, from, to, limit)
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
+	events, err := store.GetEventsByType(ctx, eventType, from, to, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get events by type: %w", err)
+	}
+	return events, nil
 }
 
 // GetEventsBySource implements Service interface
@@ -279,8 +290,10 @@ func (s *EventSource) GetEventsBySource(ctx context.Context, eventType string, f
 	if err := s.validateLimit(limit); err != nil {
 		return nil, err
 	}
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
 
-	return s.store.GetEventsBySource(ctx, eventType, from, to, eventSource, limit)
+	return store.GetEventsBySource(ctx, eventType, from, to, eventSource, limit)
 }
 
 // GetEventTypesInRange implements Service interface
@@ -292,8 +305,10 @@ func (s *EventSource) GetEventTypesInRange(ctx context.Context, from, to time.Ti
 	if err := s.validateLimit(limit); err != nil {
 		return nil, err
 	}
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
 
-	return s.store.GetEventTypesInRange(ctx, from, to, limit)
+	return store.GetEventTypesInRange(ctx, from, to, limit)
 }
 
 // DeleteEventsByTypeInRange implements Service interface
@@ -306,5 +321,8 @@ func (s *EventSource) DeleteEventsByTypeInRange(ctx context.Context, eventType s
 		return err
 	}
 
-	return s.store.DeleteEventsByTypeInRange(ctx, eventType, from, to)
+	exec := s.dbInstance.WithoutTransaction()
+	store := eventstore.New(exec)
+
+	return store.DeleteEventsByTypeInRange(ctx, eventType, from, to)
 }

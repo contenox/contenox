@@ -43,6 +43,16 @@ type MappingConfig struct {
 	MetadataMapping map[string]string `json:"metadataMapping"`
 }
 
+// RawEvent represents an unprocessed incoming event payload
+type RawEvent struct {
+	ID         string                 `json:"id"`
+	NID        int64                  `json:"nid"`
+	ReceivedAt time.Time              `json:"received_at"`
+	Path       string                 `json:"path"`
+	Headers    map[string]string      `json:"headers,omitempty"`
+	Payload    map[string]interface{} `json:"payload"`
+}
+
 // Store provides methods for storing and retrieving events
 type Store interface {
 	AppendEvent(ctx context.Context, event *Event) error
@@ -64,12 +74,27 @@ type Store interface {
 	DeleteMapping(ctx context.Context, path string) error
 	// ListMappings returns all mapping configs
 	ListMappings(ctx context.Context) ([]*MappingConfig, error)
+
+	AppendRawEvent(ctx context.Context, event *RawEvent) error
+	GetRawEvent(ctx context.Context, from, to time.Time, nid int64) (*RawEvent, error)
+	ListRawEvents(ctx context.Context, from, to time.Time, limit int) ([]*RawEvent, error)
+	EnsureRawEventPartitionExists(ctx context.Context, ts time.Time) error
 }
 
 // internalEvent represents the database structure with partition key
 type internalEvent struct {
 	*Event
 	PartitionKey string `json:"-"`
+}
+
+type internalRawEvent struct {
+	ID           string    `json:"id"`
+	NID          int64     `json:"nid"`
+	ReceivedAt   time.Time `json:"received_at"`
+	Path         string    `json:"path"`
+	Headers      []byte    `json:"headers,omitempty"` //binary encoded
+	Payload      []byte    `json:"payload"`           //binary encoded
+	PartitionKey string    `json:"-"`
 }
 
 // store implements EventStore using libdbexec

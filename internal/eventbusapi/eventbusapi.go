@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/PaesslerAG/jsonpath"
 	"github.com/contenox/runtime/eventbridgeservice"
 	"github.com/contenox/runtime/eventstore"
 
@@ -48,13 +47,6 @@ func (h *eventBridgeHandler) ingestEvent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Get the mapping configuration
-	mapping, err := h.service.GetMapping(ctx, path)
-	if err != nil {
-		_ = serverops.Error(w, r, fmt.Errorf("failed to get mapping for path %s: %w", path, err), serverops.CreateOperation)
-		return
-	}
-
 	// Decode the incoming payload
 	var payload map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -62,111 +54,26 @@ func (h *eventBridgeHandler) ingestEvent(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Apply mapping to transform payload into structured event
-	event, err := h.applyMapping(mapping, payload, r.Header)
-	if err != nil {
-		_ = serverops.Error(w, r, fmt.Errorf("failed to apply mapping: %w", err), serverops.CreateOperation)
-		return
+	headers := make(map[string]string)
+	for k, v := range headers {
+		headers[k] = fmt.Sprint(v[0])
+	}
+
+	event := &eventstore.RawEvent{
+		ID:         generateEventID(),
+		ReceivedAt: time.Now().UTC(),
+		Path:       path,
+		Payload:    payload,
+		Headers:    headers,
 	}
 
 	// Ingest the transformed event
-	if err := h.service.Ingest(ctx, *event); err != nil {
+	if err := h.service.Ingest(ctx, event); err != nil {
 		_ = serverops.Error(w, r, fmt.Errorf("failed to ingest event: %w", err), serverops.CreateOperation)
 		return
 	}
 
 	_ = serverops.Encode(w, r, http.StatusCreated, event) // @response eventstore.Event
-}
-
-// applyMapping transforms a raw payload into a structured event using the mapping configuration
-func (h *eventBridgeHandler) applyMapping(mapping *eventstore.MappingConfig, payload map[string]interface{}, headers http.Header) (*eventstore.Event, error) {
-	event := &eventstore.Event{
-		ID:        generateEventID(),
-		CreatedAt: time.Now().UTC(),
-		Version:   mapping.Version,
-	}
-
-	// Extract event type - either from field or use fixed value
-	event.EventType = mapping.EventType
-	if mapping.EventTypeField != "" {
-		if eventType, ok := getFieldValue(payload, mapping.EventTypeField); ok {
-			event.EventType = fmt.Sprintf("%v", eventType)
-		}
-	}
-
-	// Extract event source - either from field or use fixed value
-	event.EventSource = mapping.EventSource
-	if mapping.EventSourceField != "" {
-		if eventSource, ok := getFieldValue(payload, mapping.EventSourceField); ok {
-			event.EventSource = fmt.Sprintf("%v", eventSource)
-		}
-	}
-
-	// Extract aggregate ID - required field
-	if mapping.AggregateIDField != "" {
-		if aggregateID, ok := getFieldValue(payload, mapping.AggregateIDField); ok {
-			event.AggregateID = fmt.Sprintf("%v", aggregateID)
-		} else {
-			return nil, fmt.Errorf("aggregate ID field '%s' not found in payload", mapping.AggregateIDField)
-		}
-	} else {
-		return nil, fmt.Errorf("aggregate ID field mapping is required")
-	}
-
-	// Extract or use fixed aggregate type
-	if mapping.AggregateTypeField != "" {
-		if aggregateType, ok := getFieldValue(payload, mapping.AggregateTypeField); ok {
-			event.AggregateType = fmt.Sprintf("%v", aggregateType)
-		} else {
-			return nil, fmt.Errorf("aggregate type field '%s' not found in payload", mapping.AggregateTypeField)
-		}
-	} else if mapping.AggregateType != "" {
-		event.AggregateType = mapping.AggregateType
-	} else {
-		return nil, fmt.Errorf("aggregate type field mapping is required")
-	}
-
-	// Set the payload data
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal event data: %w", err)
-	}
-	event.Data = data
-
-	// Extract metadata if mapping specified
-	if len(mapping.MetadataMapping) > 0 {
-		metadata := make(map[string]interface{})
-		for metaKey, fieldPath := range mapping.MetadataMapping {
-			if value, ok := getFieldValue(payload, fieldPath); ok {
-				metadata[metaKey] = value
-			}
-		}
-		if len(metadata) > 0 {
-			metaData, err := json.Marshal(metadata)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal metadata: %w", err)
-			}
-			event.Metadata = metaData
-		}
-	}
-
-	return event, nil
-}
-
-// getFieldValue extracts a value from a nested map using dot notation
-func getFieldValue(payload map[string]interface{}, fieldPath string) (interface{}, bool) {
-	// JSONPath expects a root object, so wrap in "$."
-	expr := "$." + fieldPath
-	result, err := jsonpath.Get(expr, payload)
-	if err != nil || result == nil {
-		return nil, false
-	}
-
-	// jsonpath.Get may return []interface{} if multiple matches
-	if slice, ok := result.([]interface{}); ok && len(slice) > 0 {
-		return slice[0], true
-	}
-	return result, true
 }
 
 // generateEventID creates a unique event identifier

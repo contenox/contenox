@@ -6,9 +6,8 @@ import (
 	"github.com/contenox/runtime/libdbexec"
 )
 
-// InitSchema creates the main events table and initial partitions
+// InitSchema creates the main events table, raw_events table, and initial partitions
 func InitSchema(ctx context.Context, exec libdbexec.Exec) error {
-	// Create main events table (partitioned)
 	_, err := exec.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS events (
 			id TEXT NOT NULL,
@@ -29,26 +28,59 @@ func InitSchema(ctx context.Context, exec libdbexec.Exec) error {
 		return err
 	}
 
-	// Create index on partition key for efficient querying
 	_, err = exec.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS raw_events (
+			id TEXT NOT NULL,
+			nid BIGSERIAL NOT NULL,
+			partition_key TEXT NOT NULL,
+			received_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			path TEXT NOT NULL,
+			headers BYTEA,
+			payload BYTEA NOT NULL,
+			processed BOOLEAN NOT NULL DEFAULT FALSE,
+			error_message TEXT,
+			PRIMARY KEY (nid, partition_key)
+		) PARTITION BY LIST (partition_key);
+	`)
+	if err != nil {
+		return err
+	}
+
+	if _, err := exec.ExecContext(ctx, `
 		CREATE INDEX IF NOT EXISTS idx_events_partition_key ON events (partition_key);
-	`)
-	if err != nil {
+	`); err != nil {
 		return err
 	}
-
-	_, err = exec.ExecContext(ctx, `
-		CREATE INDEX IF NOT EXISTS idx_events_created_at_brin
-		ON events USING BRIN (created_at);
-	`)
-	if err != nil {
+	if _, err := exec.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_events_created_at_brin ON events USING BRIN (created_at);
+	`); err != nil {
 		return err
 	}
-
-	_, err = exec.ExecContext(ctx, `
+	if _, err := exec.ExecContext(ctx, `
 		CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
-	`)
-	if err != nil {
+	`); err != nil {
+		return err
+	}
+
+	if _, err := exec.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_raw_events_partition_key ON raw_events (partition_key);
+	`); err != nil {
+		return err
+	}
+	if _, err := exec.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_raw_events_received_at_brin ON raw_events USING BRIN (received_at);
+	`); err != nil {
+		return err
+	}
+	if _, err := exec.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_raw_events_path ON raw_events (path);
+	`); err != nil {
+		return err
+	}
+	if _, err := exec.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_raw_events_unprocessed
+		ON raw_events (received_at) WHERE processed = FALSE;
+	`); err != nil {
 		return err
 	}
 
@@ -66,7 +98,7 @@ func InitSchema(ctx context.Context, exec libdbexec.Exec) error {
 			version INTEGER NOT NULL DEFAULT 1,
 			metadata_mapping JSONB NOT NULL DEFAULT '{}'
 		);
-`)
+	`)
 	if err != nil {
 		return err
 	}

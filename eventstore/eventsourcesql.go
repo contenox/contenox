@@ -54,13 +54,16 @@ func (s *store) AppendEvent(ctx context.Context, event *Event) error {
 		internalEvent.Data = []byte(`{}`)
 	}
 
-	// Insert the event
-	_, err := s.Exec.ExecContext(ctx, `
+	// Insert the event and return the generated NID
+	err := s.Exec.QueryRowContext(ctx, `
 		INSERT INTO events (id, nid, partition_key, created_at, event_type, event_source, aggregate_id, aggregate_type, version, data, metadata)
-		VALUES ($1, DEFAULT, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		VALUES ($1, DEFAULT, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING nid
+		`,
 		internalEvent.ID, internalEvent.PartitionKey, internalEvent.CreatedAt, internalEvent.EventType,
 		internalEvent.EventSource, internalEvent.AggregateID, internalEvent.AggregateType, internalEvent.Version,
-		internalEvent.Data, internalEvent.Metadata)
+		internalEvent.Data, internalEvent.Metadata,
+	).Scan(&internalEvent.NID)
 
 	return err
 }
