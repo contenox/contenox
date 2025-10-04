@@ -25,6 +25,7 @@ func AddEventSourceRoutes(mux *http.ServeMux, service eventsourceservice.Service
 	mux.HandleFunc("GET /events/types", e.getEventTypesInRange)
 	mux.HandleFunc("GET /raw-events/{nid}", e.getRawEvent)
 	mux.HandleFunc("GET /raw-events", e.listRawEvents)
+	mux.HandleFunc("POST /raw-events", e.appendRawEvent)
 
 	// Delete operations
 	mux.HandleFunc("DELETE /events/type", e.deleteEventsByTypeInRange)
@@ -449,4 +450,24 @@ func (e *eventSourceManager) listRawEvents(w http.ResponseWriter, r *http.Reques
 	}
 
 	_ = serverops.Encode(w, r, http.StatusOK, rawEvents) // @response []*eventstore.RawEvent
+}
+
+// Ingests a raw event into the event source.
+//
+// This handler should not be used directly.
+func (e *eventSourceManager) appendRawEvent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	rawEvent, err := serverops.Decode[eventstore.RawEvent](r) // @request eventstore.RawEvent
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.CreateOperation)
+		return
+	}
+
+	if err := e.service.AppendRawEvent(ctx, &rawEvent); err != nil {
+		_ = serverops.Error(w, r, err, serverops.CreateOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusCreated, rawEvent) // @response eventstore.RawEvent
 }

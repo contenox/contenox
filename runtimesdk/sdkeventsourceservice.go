@@ -37,6 +37,97 @@ func NewHTTPEvenSourceService(baseURL, token string, client *http.Client) events
 	}
 }
 
+// GetRawEvent implements eventsourceservice.Service.GetRawEvent.
+func (s *HTTPEvenSourceService) GetRawEvent(
+	ctx context.Context,
+	from, to time.Time,
+	nid int64,
+) (*eventstore.RawEvent, error) {
+	u, err := url.Parse(fmt.Sprintf("%s/raw-events/%d", s.baseURL, nid))
+	if err != nil {
+		return nil, err
+	}
+
+	q := u.Query()
+	q.Set("from", from.Format(time.RFC3339))
+	q.Set("to", to.Format(time.RFC3339))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var rawEvent eventstore.RawEvent
+	if err := json.NewDecoder(resp.Body).Decode(&rawEvent); err != nil {
+		return nil, fmt.Errorf("failed to decode raw event: %w", err)
+	}
+
+	return &rawEvent, nil
+}
+
+// ListRawEvents implements eventsourceservice.Service.ListRawEvents.
+func (s *HTTPEvenSourceService) ListRawEvents(
+	ctx context.Context,
+	from, to time.Time,
+	limit int,
+) ([]*eventstore.RawEvent, error) {
+	if limit <= 0 {
+		return nil, fmt.Errorf("limit must be positive")
+	}
+
+	u, err := url.Parse(s.baseURL + "/raw-events")
+	if err != nil {
+		return nil, err
+	}
+
+	q := u.Query()
+	q.Set("from", from.Format(time.RFC3339))
+	q.Set("to", to.Format(time.RFC3339))
+	q.Set("limit", fmt.Sprintf("%d", limit))
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var rawEvents []*eventstore.RawEvent
+	if err := json.NewDecoder(resp.Body).Decode(&rawEvents); err != nil {
+		return nil, fmt.Errorf("failed to decode raw events: %w", err)
+	}
+
+	return rawEvents, nil
+}
+
 // AppendEvent implements eventsourceservice.Service.AppendEvent.
 func (s *HTTPEvenSourceService) AppendEvent(ctx context.Context, event *eventstore.Event) error {
 	url := s.baseURL + "/events"
@@ -418,4 +509,37 @@ func (s *httpEventSubscription) readStream() {
 func (s *httpEventSubscription) Unsubscribe() error {
 	close(s.done)
 	return s.resp.Body.Close()
+}
+
+// AppendRawEvent implements eventsourceservice.Service.AppendRawEvent.
+func (s *HTTPEvenSourceService) AppendRawEvent(ctx context.Context, event *eventstore.RawEvent) error {
+	url := s.baseURL + "/raw-events"
+
+	body, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal raw event: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if s.token != "" {
+		req.Header.Set("Authorization", "Bearer "+s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return apiframework.HandleAPIError(resp)
+	}
+
+	// Update raw event with any server-assigned fields (ID, NID, etc.)
+	return json.NewDecoder(resp.Body).Decode(event)
 }
