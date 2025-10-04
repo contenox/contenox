@@ -2,29 +2,14 @@ import requests
 import uuid
 from helpers import assert_status_code
 from datetime import datetime, timezone
+from helpers import generate_test_event_payload
 
 
-def generate_test_payload():
-    return {
-        "id": str(uuid.uuid4()),
-        "type": "user.created",
-        "source": "auth-service",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "data": {
-            "user_id": str(uuid.uuid4()),
-            "email": "test@example.com",
-            "name": "Test User"
-        },
-        "metadata": {
-            "ip": "192.168.1.1",
-            "user_agent": "test-client/1.0"
-        }
-    }
 
 
 def test_ingest_event_success(base_url, create_test_mapping):
     mapping_path, mapping_config = create_test_mapping
-    payload = generate_test_payload()
+    payload = generate_test_event_payload()
 
     response = requests.post(
         f"{base_url}/ingest?path={mapping_path}",
@@ -40,7 +25,7 @@ def test_ingest_event_success(base_url, create_test_mapping):
 
 
 def test_ingest_event_missing_mapping_path(base_url):
-    payload = generate_test_payload()
+    payload = generate_test_event_payload()
     response = requests.post(f"{base_url}/ingest", json=payload)
     assert_status_code(response, 400)
 
@@ -50,7 +35,7 @@ def test_ingest_event_missing_mapping_path(base_url):
 
 def test_ingest_event_different_event_type(base_url, create_test_mapping):
     mapping_path, mapping_config = create_test_mapping
-    payload = generate_test_payload()
+    payload = generate_test_event_payload()
     payload["type"] = "user.updated"
 
     response = requests.post(
