@@ -278,6 +278,53 @@ func (p *Playground) WithInternalPromptExecutor(ctx context.Context, modelName s
 	return p
 }
 
+// WithProviderService initializes the provider service.
+func (p *Playground) WithProviderService() *Playground {
+	if p.Error != nil {
+		return p
+	}
+	if p.db == nil {
+		p.Error = errors.New("cannot initialize provider service: database is not configured")
+		return p
+	}
+
+	return p
+}
+
+// WithOpenAIProvider configures an OpenAI provider with the given API key.
+func (p *Playground) WithOpenAIProvider(ctx context.Context, apiKey string, replace bool) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	providerSvc, err := p.GetProviderService()
+	if err != nil {
+		p.Error = fmt.Errorf("failed to get provider service: %w", err)
+		return p
+	}
+	config := &runtimestate.ProviderConfig{
+		APIKey: apiKey,
+	}
+	p.Error = providerSvc.SetProviderConfig(ctx, providerservice.ProviderTypeOpenAI, replace, config)
+	return p
+}
+
+// WithGeminiProvider configures a Gemini provider with the given API key.
+func (p *Playground) WithGeminiProvider(ctx context.Context, apiKey string, replace bool) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	providerSvc, err := p.GetProviderService()
+	if err != nil {
+		p.Error = fmt.Errorf("failed to get provider service: %w", err)
+		return p
+	}
+	config := &runtimestate.ProviderConfig{
+		APIKey: apiKey,
+	}
+	p.Error = providerSvc.SetProviderConfig(ctx, providerservice.ProviderTypeGemini, replace, config)
+	return p
+}
+
 // WithPostgresTestContainer sets up a test PostgreSQL container and initializes the DB manager.
 func (p *Playground) WithPostgresTestContainer(ctx context.Context) *Playground {
 	if p.Error != nil {
