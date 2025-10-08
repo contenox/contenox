@@ -15,14 +15,14 @@ type VKManager struct {
 }
 
 type Config struct {
-	Addr     string
-	Password string
+	KVAddr     string `json:"kv_addr"`
+	KVPassword string `json:"kv_password,omitempty"`
 }
 
 func NewManager(cfg Config, ttl time.Duration) (*VKManager, error) {
 	client, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress: []string{cfg.Addr},
-		Password:    cfg.Password,
+		InitAddress: []string{cfg.KVAddr},
+		Password:    cfg.KVPassword,
 	})
 	if err != nil {
 		return nil, err

@@ -50,8 +50,8 @@ func TestUnit_ValkeyCRUD(t *testing.T) {
 	addr := u.Host
 
 	cfg := libkv.Config{
-		Addr:     addr,
-		Password: "",
+		KVAddr:     addr,
+		KVPassword: "",
 	}
 	manager, err := libkv.NewManager(cfg, 10*time.Second)
 	require.NoError(t, err)
@@ -103,8 +103,8 @@ func TestUnit_ValkeyTTL(t *testing.T) {
 	addr := u.Host
 
 	cfg := libkv.Config{
-		Addr:     addr,
-		Password: "",
+		KVAddr:     addr,
+		KVPassword: "",
 	}
 	manager, err := libkv.NewManager(cfg, 10*time.Second)
 	require.NoError(t, err)
@@ -140,8 +140,8 @@ func TestUnit_ValkeyList(t *testing.T) {
 	addr := u.Host
 
 	cfg := libkv.Config{
-		Addr:     addr,
-		Password: "",
+		KVAddr:     addr,
+		KVPassword: "",
 	}
 	manager, err := libkv.NewManager(cfg, 10*time.Second)
 	require.NoError(t, err)
@@ -185,8 +185,8 @@ func TestUnit_ValkeyListOperations(t *testing.T) {
 	addr := u.Host
 
 	cfg := libkv.Config{
-		Addr:     addr,
-		Password: "",
+		KVAddr:     addr,
+		KVPassword: "",
 	}
 	manager, err := libkv.NewManager(cfg, 10*time.Second)
 	require.NoError(t, err)
@@ -249,8 +249,8 @@ func TestUnit_ValkeySetOperations(t *testing.T) {
 	addr := u.Host
 
 	cfg := libkv.Config{
-		Addr:     addr,
-		Password: "",
+		KVAddr:     addr,
+		KVPassword: "",
 	}
 	manager, err := libkv.NewManager(cfg, 10*time.Second)
 	require.NoError(t, err)

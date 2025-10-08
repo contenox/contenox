@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-173-gc9bdf53-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-176-gf084897-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-173-gc9bdf53-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-176-gf084897-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -509,8 +509,8 @@ print(r.json())
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|op|path|string|true|none|
-|subject|path|string|true|none|
+|op|path|string|true|The operation type.|
+|subject|path|string|true|The operation subject.|
 
 > Example responses
 
@@ -612,7 +612,7 @@ print(r.json())
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the activity request.|
 
 > Example responses
 
@@ -666,7 +666,7 @@ print(r.json())
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the activity request.|
 
 > Example responses
 
@@ -985,8 +985,8 @@ Backends not assigned to any group exist in the configuration but are completely
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -2496,10 +2496,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|event_type|query|string|false|The type of event to filter by.|
-|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
+|event_type|query|string|false|The type of event to filter by.|
+|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 
 > Example responses
 
@@ -2688,9 +2688,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|to|query|string|false|End time in RFC3339 format.|
 |event_type|query|string|false|The type of event to delete.|
 |from|query|string|false|Start time in RFC3339 format.|
+|to|query|string|false|End time in RFC3339 format.|
 
 > Example responses
 
@@ -4028,8 +4028,8 @@ Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |purpose|path|string|true|The purpose category to filter groups by (e.g., 'embeddings').|
 
 > Example responses
@@ -4379,8 +4379,8 @@ Returns a list of remote hooks.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -6653,6 +6653,75 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## Ingests a raw event into the event source.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.post('/raw-events', headers = headers)
+
+print(r.json())
+
+```
+
+`POST /raw-events`
+
+Ingests a raw event into the event source.
+This handler should not be used directly.
+
+> Body parameter
+
+```json
+{
+  "headers": {},
+  "id": "string",
+  "nid": 0,
+  "path": "string",
+  "payload": {},
+  "received_at": "2019-08-24T14:15:22Z"
+}
+```
+
+<h3 id="ingests-a-raw-event-into-the-event-source.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[eventstore_RawEvent](#schemaeventstore_rawevent)|true|none|
+
+> Example responses
+
+> 201 Response
+
+```json
+{
+  "headers": {},
+  "id": "string",
+  "nid": 0,
+  "path": "string",
+  "payload": {},
+  "received_at": "2019-08-24T14:15:22Z"
+}
+```
+
+<h3 id="ingests-a-raw-event-into-the-event-source.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|[eventstore_RawEvent](#schemaeventstore_rawevent)|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## Retrieves a raw event by numeric ID (NID) within a time range.
 
 > Code samples
@@ -7168,8 +7237,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
