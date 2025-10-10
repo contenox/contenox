@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-176-gf084897-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-177-gd0fc985-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-176-gf084897-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-177-gd0fc985-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -53,8 +53,8 @@ Use 'from' (RFC3339) for pagination cursor.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|identity|query|string|false|Filter by identity (user or service ID).|
 |expand|query|string|false|Expand related resources (e.g., 'user').|
+|identity|query|string|false|Filter by identity (user or service ID).|
 
 > Example responses
 
@@ -2496,10 +2496,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
-|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 
 > Example responses
 

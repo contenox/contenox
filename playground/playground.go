@@ -278,19 +278,6 @@ func (p *Playground) WithInternalPromptExecutor(ctx context.Context, modelName s
 	return p
 }
 
-// WithProviderService initializes the provider service.
-func (p *Playground) WithProviderService() *Playground {
-	if p.Error != nil {
-		return p
-	}
-	if p.db == nil {
-		p.Error = errors.New("cannot initialize provider service: database is not configured")
-		return p
-	}
-
-	return p
-}
-
 // WithOpenAIProvider configures an OpenAI provider with the given API key.
 func (p *Playground) WithOpenAIProvider(ctx context.Context, apiKey string, replace bool) *Playground {
 	if p.Error != nil {
@@ -303,6 +290,7 @@ func (p *Playground) WithOpenAIProvider(ctx context.Context, apiKey string, repl
 	}
 	config := &runtimestate.ProviderConfig{
 		APIKey: apiKey,
+		Type:   providerservice.ProviderTypeOpenAI,
 	}
 	p.Error = providerSvc.SetProviderConfig(ctx, providerservice.ProviderTypeOpenAI, replace, config)
 	return p
@@ -320,6 +308,7 @@ func (p *Playground) WithGeminiProvider(ctx context.Context, apiKey string, repl
 	}
 	config := &runtimestate.ProviderConfig{
 		APIKey: apiKey,
+		Type:   providerservice.ProviderTypeGemini,
 	}
 	p.Error = providerSvc.SetProviderConfig(ctx, providerservice.ProviderTypeGemini, replace, config)
 	return p
@@ -637,7 +626,7 @@ func (p *Playground) WithOllamaBackend(ctx context.Context, name, tag string, as
 		return p
 	}
 
-	group, err := p.GetgroupService()
+	group, err := p.GetGroupService()
 	if err != nil {
 		p.Error = fmt.Errorf("failed to get group service for ollama setup: %w", err)
 		return p
@@ -798,8 +787,8 @@ func (p *Playground) GetModelService() (modelservice.Service, error) {
 	return modelservice.New(p.db, p.embeddingsModel), nil
 }
 
-// GetgroupService returns a new group service instance.
-func (p *Playground) GetgroupService() (affinitygroupservice.Service, error) {
+// GetGroupService returns a new group service instance.
+func (p *Playground) GetGroupService() (affinitygroupservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
@@ -970,7 +959,7 @@ func (p *Playground) WithOllamaBackendReal(ctx context.Context, name, uri string
 		return p
 	}
 
-	group, err := p.GetgroupService()
+	group, err := p.GetGroupService()
 	if err != nil {
 		p.Error = fmt.Errorf("group service error: %w", err)
 		return p
