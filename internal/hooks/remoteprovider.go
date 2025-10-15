@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"time"
 
@@ -168,8 +169,12 @@ func (p *PersistentRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[s
 	schemas := make(map[string]*openapi3.T)
 
 	// Local hooks have no schema (for now)
-	for name := range p.localHooks {
-		schemas[name] = nil // or omit entirely if preferred
+	for name, repo := range p.localHooks {
+		repoSchemas, err := repo.GetSchemasForSupportedHooks(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get schemas for local hook '%s': %w", name, err)
+		}
+		maps.Copy(schemas, repoSchemas)
 	}
 
 	// Fetch and process remote hooks page by page
