@@ -53,8 +53,8 @@ Use 'from' (RFC3339) for pagination cursor.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|expand|query|string|false|Expand related resources (e.g., 'user').|
 |identity|query|string|false|Filter by identity (user or service ID).|
+|expand|query|string|false|Expand related resources (e.g., 'user').|
 
 > Example responses
 
@@ -2496,10 +2496,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
-|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -2688,9 +2688,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|event_type|query|string|false|The type of event to delete.|
 |from|query|string|false|Start time in RFC3339 format.|
 |to|query|string|false|End time in RFC3339 format.|
+|event_type|query|string|false|The type of event to delete.|
 
 > Example responses
 
@@ -6062,8 +6062,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -6879,9 +6879,9 @@ applies the current mapping configuration, and appends the resulting domain even
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|to|query|string|false|End time (RFC3339)|
 |nid|query|string|false|Numeric ID of the raw event|
 |from|query|string|false|Start time (RFC3339)|
-|to|query|string|false|End time (RFC3339)|
 
 > Example responses
 

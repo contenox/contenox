@@ -1684,17 +1684,17 @@
         "description": "Lists access control entries with optional filtering and pagination.\nUse 'identity' to filter by user/service.\nUse 'expand=user' to include full user details.\nUse 'from' (RFC3339) for pagination cursor.",
         "parameters": [
           {
-            "description": "Expand related resources (e.g., 'user').",
+            "description": "Filter by identity (user or service ID).",
             "in": "query",
-            "name": "expand",
+            "name": "identity",
             "schema": {
               "type": "string"
             }
           },
           {
-            "description": "Filter by identity (user or service ID).",
+            "description": "Expand related resources (e.g., 'user').",
             "in": "query",
-            "name": "identity",
+            "name": "expand",
             "schema": {
               "type": "string"
             }
@@ -3308,6 +3308,14 @@
         "description": "Retrieves events for a specific aggregate within a time range.\nUseful for rebuilding aggregate state or auditing changes.",
         "parameters": [
           {
+            "description": "The type of event to filter by.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The aggregate type (e.g., 'user', 'order').",
             "in": "query",
             "name": "aggregate_type",
@@ -3329,14 +3337,6 @@
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "The type of event to filter by.",
-            "in": "query",
-            "name": "event_type",
-            "schema": {
               "type": "string"
             }
           }
@@ -3465,14 +3465,6 @@
         "description": "Deletes all events of a specific type within a time range.\nUSE WITH CAUTION — this is a destructive operation.\nTypically used for GDPR compliance or cleaning up test data.",
         "parameters": [
           {
-            "description": "The type of event to delete.",
-            "in": "query",
-            "name": "event_type",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "Start time in RFC3339 format.",
             "in": "query",
             "name": "from",
@@ -3484,6 +3476,14 @@
             "description": "End time in RFC3339 format.",
             "in": "query",
             "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The type of event to delete.",
+            "in": "query",
+            "name": "event_type",
             "schema": {
               "type": "string"
             }
@@ -5722,19 +5722,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -6231,6 +6231,14 @@
         "description": "replayEvent replays a raw event by NID to re-emit its corresponding domain event\nThis endpoint fetches a raw event by its numeric ID (NID) and time range,\napplies the current mapping configuration, and appends the resulting domain event.",
         "parameters": [
           {
+            "description": "End time (RFC3339)",
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Numeric ID of the raw event",
             "in": "query",
             "name": "nid",
@@ -6242,14 +6250,6 @@
             "description": "Start time (RFC3339)",
             "in": "query",
             "name": "from",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "End time (RFC3339)",
-            "in": "query",
-            "name": "to",
             "schema": {
               "type": "string"
             }
