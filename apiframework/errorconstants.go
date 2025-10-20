@@ -14,6 +14,7 @@ import (
 var (
 	ErrInvalidParameterValue = errors.New("serverops: invalid parameter value type")
 	ErrBadPathValue          = errors.New("serverops: bad path value")
+	ErrBadQueryValue         = errors.New("serverops: bad query value")
 	ErrImmutableModel        = errors.New("serverops: immutable model")
 	ErrImmutableGroup        = errors.New("serverops: immutable group")
 	ErrMissingParameter      = errors.New("serverops: missing parameter")

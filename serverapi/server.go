@@ -62,6 +62,9 @@ func New(
 	environmentExec taskengine.EnvExecutor,
 	state *runtimestate.State,
 	hookRegistry taskengine.HookProvider,
+	taskService execservice.TasksEnvService,
+	embedService embedservice.Service,
+	execService execservice.ExecService,
 	// kvManager libkv.KVManager,
 ) (func() error, error) {
 	cleanup := func() error { return nil }
@@ -148,10 +151,7 @@ func New(
 	modelService := modelservice.New(dbInstance, config.EmbedModel)
 	modelService = modelservice.WithActivityTracker(modelService, serveropsChainedTracker)
 	backendapi.AddModelRoutes(mux, modelService, downloadService)
-	execService := execservice.NewExec(ctx, repo)
 	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
-	taskService := execservice.NewTasksEnv(ctx, environmentExec, hookRegistry)
-	embedService := embedservice.New(repo, config.EmbedModel, config.EmbedProvider)
 	embedService = embedservice.WithActivityTracker(embedService, serveropsChainedTracker)
 	taskChainService := taskchainservice.New(dbInstance)
 	taskChainService = taskchainservice.WithActivityTracker(taskChainService, serveropsChainedTracker)

@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/apiframework"
+	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/eventstore"
+	"github.com/contenox/runtime/execservice"
 	"github.com/contenox/runtime/functionstore"
 	"github.com/contenox/runtime/internal/hooks"
 	"github.com/contenox/runtime/internal/llmrepo"
@@ -205,8 +207,10 @@ func main() {
 	}
 	internalMux := http.NewServeMux()
 	var apiHandler http.Handler = internalMux
-
-	cleanup, err = serverapi.New(ctx, internalMux, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo)
+	taskService := execservice.NewTasksEnv(ctx, environmentExec, hookRepo)
+	embedService := embedservice.New(repo, config.EmbedModel, config.EmbedProvider)
+	execService := execservice.NewExec(ctx, repo)
+	cleanup, err = serverapi.New(ctx, internalMux, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo, taskService, embedService, execService)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("%s initializing API handler failed: %v", nodeInstanceID, err)
