@@ -306,25 +306,9 @@ func (s *State) syncBackends(ctx context.Context) error {
 		return fmt.Errorf("fetching backends: %v", err)
 	}
 
-	// Paginate through all models
-	var allModels []*runtimetypes.Model
-	var cursor *time.Time
-	limit := 100 // Use a reasonable page size
-	for {
-		models, err := storeInstance.ListModels(ctx, cursor, limit)
-		if err != nil {
-			return fmt.Errorf("fetching paginated models: %v", err)
-		}
-		allModels = append(allModels, models...)
-
-		// Break the loop if this is the last page
-		if len(models) < limit {
-			break
-		}
-
-		// Update the cursor for the next page
-		lastModel := models[len(models)-1]
-		cursor = &lastModel.CreatedAt
+	allModels, err := storeInstance.ListAllModels(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching paginated models: %v", err)
 	}
 
 	currentIDs := make(map[string]struct{})
@@ -783,45 +767,55 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 		return
 	}
 
+	// Create lookup map for declared models
+	declaredModels := make(map[string]*runtimetypes.Model)
+	for _, model := range models {
+		model.Model, _ = strings.CutSuffix(model.Model, ":latest")
+		declaredModels[model.Model] = model
+	}
+
 	// Check cache first: use if recent and API key is unchanged
 	if cached, ok := s.providerCache.Load(backend.ID); ok {
 		if entry, ok := cached.(providerCacheEntry); ok {
 			if time.Since(entry.timestamp) < providerCacheDuration && entry.apiKey == cfg.APIKey {
-				// Re-validate cached models against current declared models
-				declaredModels := make(map[string]*runtimetypes.Model)
-				for _, model := range models {
-					declaredModels[model.Model] = model
+				// Use all models from cache for stateInstance.Models
+				allModelNames := make([]string, 0, len(entry.models))
+				for _, m := range entry.models {
+					allModelNames = append(allModelNames, m.Model)
 				}
 
-				modelNames := make([]string, 0, len(entry.models))
-				pulledModels := make([]statetype.ModelPullStatus, len(entry.models))
-				copy(pulledModels, entry.models) // Work on a copy
-				var undeclaredModels []string
+				// Filter pulledModels to only include declared ones
+				pulledModels := make([]statetype.ModelPullStatus, 0, len(entry.models))
+				for _, m := range entry.models {
+					if declaredModel, exists := declaredModels[m.Name]; exists {
+						// Enhance with current declared model data
+						enhancedModel := m
+						enhancedModel.Name = declaredModel.ID
+						enhancedModel.Model = declaredModel.Model
+						enhancedModel.ContextLength = declaredModel.ContextLength
+						enhancedModel.CanChat = declaredModel.CanChat
+						enhancedModel.CanEmbed = declaredModel.CanEmbed
+						enhancedModel.CanPrompt = declaredModel.CanPrompt
+						enhancedModel.CanStream = declaredModel.CanStream
 
-				for i, m := range pulledModels {
-					modelID := m.Model
-					modelNames = append(modelNames, modelID)
-					if declaredModel, exists := declaredModels[modelID]; exists {
-						pulledModels[i].Name = declaredModel.ID
-						pulledModels[i].ContextLength = declaredModel.ContextLength
-						pulledModels[i].CanChat = declaredModel.CanChat
-						pulledModels[i].CanEmbed = declaredModel.CanEmbed
-						pulledModels[i].CanPrompt = declaredModel.CanPrompt
-						pulledModels[i].CanStream = declaredModel.CanStream
-					} else {
-						undeclaredModels = append(undeclaredModels, modelID)
+						pulledModels = append(pulledModels, enhancedModel)
 					}
 				}
 
-				if len(undeclaredModels) > 0 {
-					stateInstance.Error = fmt.Sprintf(
-						"backend has undeclared models: %s",
-						strings.Join(undeclaredModels, ", "),
-					)
-				}
-				stateInstance.Models = modelNames
+				stateInstance.Models = allModelNames
 				stateInstance.PulledModels = pulledModels
 				stateInstance.SetAPIKey(entry.apiKey)
+				if len(declaredModels) > 0 && len(pulledModels) == 0 {
+					declaredMap := []string{}
+					for k, n := range declaredModels {
+						p := "model-data==nil"
+						if n != nil {
+							p = n.ID + " " + n.Model
+						}
+						declaredMap = append(declaredMap, k+":"+p)
+					}
+					stateInstance.Error = fmt.Sprintf("None of the declared models are available in the OpenAI API: declared models: %v \navailable models %s", strings.Join(declaredMap, ", "), allModelNames)
+				}
 				s.state.Store(backend.ID, stateInstance)
 				return // Return early using cached data
 			}
@@ -830,7 +824,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 
 	// Prepare HTTP request
 	client := &http.Client{Timeout: 10 * time.Second}
-	reqURL := strings.TrimSuffix(backend.BaseURL, "/") + "/v1/models"
+	reqURL := strings.TrimSuffix(backend.BaseURL, "/") + "/models"
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
 		stateInstance.Error = fmt.Sprintf("Request creation failed: %v", err)
@@ -874,60 +868,59 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 		return
 	}
 
-	// Create lookup map for declared models
-	declaredModels := make(map[string]*runtimetypes.Model)
-	for _, model := range models {
-		declaredModels[model.Model] = model
-	}
+	// Process all models for stateInstance.Models
+	allModelNames := make([]string, 0, len(openAIResponse.Data))
+	allModels := make([]statetype.ModelPullStatus, 0, len(openAIResponse.Data))
 
-	// Process each model from the backend response
-	modelNames := make([]string, 0, len(openAIResponse.Data))
+	// Process only declared models for PulledModels
 	pulledModels := make([]statetype.ModelPullStatus, 0, len(openAIResponse.Data))
-	var undeclaredModels []string
 
 	for _, m := range openAIResponse.Data {
-		modelID := m.ID
-		modelNames = append(modelNames, modelID)
+		allModelNames = append(allModelNames, m.ID)
 
-		// Initialize with minimal data
-		modelResp := statetype.ModelPullStatus{
-			Model: modelID,
-			Name:  modelID,
+		// Store minimal info for all models
+		allModels = append(allModels, statetype.ModelPullStatus{
+			Model: m.ID,
+			Name:  m.ID,
+		})
+
+		// Only include declared models in pulledModels with enhanced info
+		if declaredModel, exists := declaredModels[m.ID]; exists {
+			modelResp := statetype.ModelPullStatus{
+				Name:          declaredModel.ID,
+				Model:         declaredModel.Model,
+				ContextLength: declaredModel.ContextLength,
+				CanChat:       declaredModel.CanChat,
+				CanEmbed:      declaredModel.CanEmbed,
+				CanPrompt:     declaredModel.CanPrompt,
+				CanStream:     declaredModel.CanStream,
+			}
+
+			pulledModels = append(pulledModels, modelResp)
 		}
-
-		// Enhance with declared capabilities if found
-		if declaredModel, exists := declaredModels[modelID]; exists {
-			modelResp.Name = declaredModel.ID
-			modelResp.ContextLength = declaredModel.ContextLength
-			modelResp.CanChat = declaredModel.CanChat
-			modelResp.CanEmbed = declaredModel.CanEmbed
-			modelResp.CanPrompt = declaredModel.CanPrompt
-			modelResp.CanStream = declaredModel.CanStream
-		} else {
-			undeclaredModels = append(undeclaredModels, modelID)
-		}
-
-		pulledModels = append(pulledModels, modelResp)
-	}
-
-	// Set error if undeclared models found
-	if len(undeclaredModels) > 0 {
-		stateInstance.Error = fmt.Sprintf(
-			"backend has undeclared models: %s",
-			strings.Join(undeclaredModels, ", "),
-		)
 	}
 
 	// Update state
-	stateInstance.Models = modelNames
+	stateInstance.Models = allModelNames
 	stateInstance.PulledModels = pulledModels
 	stateInstance.SetAPIKey(cfg.APIKey)
-	s.state.Store(backend.ID, stateInstance)
+	if len(declaredModels) > 0 && len(pulledModels) == 0 {
+		declaredMap := []string{}
+		for k, n := range declaredModels {
+			p := "model-data==nil"
+			if n != nil {
+				p = n.ID + " " + n.Model
+			}
+			declaredMap = append(declaredMap, k+":"+p)
+		}
+		stateInstance.Error = fmt.Sprintf("None of the declared models are available in the OpenAI API: declared models: %v \navailable models %s", strings.Join(declaredMap, ", "), allModelNames)
+	}
 
-	// Store successful result in cache
+	s.state.Store(backend.ID, stateInstance)
+	// Store successful result in cache (all models + pulled models)
 	s.providerCache.Store(backend.ID, providerCacheEntry{
-		models:    pulledModels,
-		timestamp: time.Now(),
+		models:    allModels, // All models from API
+		timestamp: time.Now().UTC(),
 		apiKey:    cfg.APIKey,
 	})
 }

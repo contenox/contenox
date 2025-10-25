@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-180-g22d4f71-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-181-g90fd3ef-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-180-g22d4f71-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-181-g90fd3ef-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -342,7 +342,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Lists recent alerts with optional limit.
+## alerts
 
 > Code samples
 
@@ -361,44 +361,36 @@ print(r.json())
 
 `GET /activity/alerts`
 
-Lists recent alerts with optional limit.
-Use 'limit' to control the number of alerts returned (default: 99).
-
-<h3 id="lists-recent-alerts-with-optional-limit.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|limit|query|string|false|Maximum number of alerts to return.|
-
 > Example responses
 
-> 200 Response
+> default Response
 
 ```json
-[
-  {
-    "Timestamp": "2019-08-24T14:15:22Z",
-    "id": "string",
+{
+  "error": {
+    "code": "string",
     "message": "string",
-    "metadata": {},
-    "requestID": "string"
+    "param": "string",
+    "type": "string"
   }
-]
+}
 ```
 
-<h3 id="lists-recent-alerts-with-optional-limit.-responses">Responses</h3>
+<h3 id="alerts-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_activityservice_Alert](#schemaarray_activityservice_alert)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="alerts-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Lists recent activity logs with optional limit.
+## list
 
 > Code samples
 
@@ -409,22 +401,13 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.get('/activity/logs', headers = headers)
+r = requests.get('/telegram-frontends', headers = headers)
 
 print(r.json())
 
 ```
 
-`GET /activity/logs`
-
-Lists recent activity logs with optional limit.
-Use 'limit' to control the number of logs returned (default: 100).
-
-<h3 id="lists-recent-activity-logs-with-optional-limit.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|limit|query|string|false|Maximum number of logs to return.|
+`GET /telegram-frontends`
 
 > Example responses
 
@@ -441,21 +424,21 @@ Use 'limit' to control the number of logs returned (default: 100).
 }
 ```
 
-<h3 id="lists-recent-activity-logs-with-optional-limit.-responses">Responses</h3>
+<h3 id="list-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="lists-recent-activity-logs-with-optional-limit.-responseschema">Response Schema</h3>
+<h3 id="list-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Lists all known operation types in the system.
+## operations
 
 > Code samples
 
@@ -474,35 +457,36 @@ print(r.json())
 
 `GET /activity/operations`
 
-Lists all known operation types in the system.
-Useful for filtering and discovery of available operations.
-
 > Example responses
 
-> 200 Response
+> default Response
 
 ```json
-[
-  {
-    "operation": "string",
-    "subject": "string"
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
   }
-]
+}
 ```
 
-<h3 id="lists-all-known-operation-types-in-the-system.-responses">Responses</h3>
+<h3 id="operations-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_taskengine_Operation](#schemaarray_taskengine_operation)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="operations-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Lists requests by operation type and subject.
+## requestsByOperation
 
 > Code samples
 
@@ -521,39 +505,43 @@ print(r.json())
 
 `GET /activity/operations/{op}/{subject}`
 
-Lists requests by operation type and subject.
-Useful for finding all requests of a specific operation type.
-
-<h3 id="lists-requests-by-operation-type-and-subject.-parameters">Parameters</h3>
+<h3 id="requestsbyoperation-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|op|path|string|true|none|
-|subject|path|string|true|none|
+|op|path|string|true|The operation type.|
+|subject|path|string|true|The operation subject.|
 
 > Example responses
 
-> 200 Response
+> default Response
 
 ```json
-[
-  "string"
-]
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
 ```
 
-<h3 id="lists-requests-by-operation-type-and-subject.-responses">Responses</h3>
+<h3 id="requestsbyoperation-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_string](#schemaarray_string)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="requestsbyoperation-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Lists recent activity requests with optional limit.
+## requests
 
 > Code samples
 
@@ -572,15 +560,6 @@ print(r.json())
 
 `GET /activity/requests`
 
-Lists recent activity requests with optional limit.
-Use 'limit' to control the number of requests returned (default: 100).
-
-<h3 id="lists-recent-activity-requests-with-optional-limit.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|limit|query|string|false|Maximum number of requests to return.|
-
 > Example responses
 
 > default Response
@@ -596,21 +575,21 @@ Use 'limit' to control the number of requests returned (default: 100).
 }
 ```
 
-<h3 id="lists-recent-activity-requests-with-optional-limit.-responses">Responses</h3>
+<h3 id="requests-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="lists-recent-activity-requests-with-optional-limit.-responseschema">Response Schema</h3>
+<h3 id="requests-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Retrieves a specific activity request by its ID.
+## requestByID
 
 > Code samples
 
@@ -629,14 +608,11 @@ print(r.json())
 
 `GET /activity/requests/{id}`
 
-Retrieves a specific activity request by its ID.
-Returns all events associated with the request.
-
-<h3 id="retrieves-a-specific-activity-request-by-its-id.-parameters">Parameters</h3>
+<h3 id="requestbyid-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the activity request.|
 
 > Example responses
 
@@ -653,21 +629,21 @@ Returns all events associated with the request.
 }
 ```
 
-<h3 id="retrieves-a-specific-activity-request-by-its-id.-responses">Responses</h3>
+<h3 id="requestbyid-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="retrieves-a-specific-activity-request-by-its-id.-responseschema">Response Schema</h3>
+<h3 id="requestbyid-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Retrieves the execution state of a specific request.
+## getExecutionState
 
 > Code samples
 
@@ -686,14 +662,11 @@ print(r.json())
 
 `GET /activity/requests/{id}/state`
 
-Retrieves the execution state of a specific request.
-Returns the current state and progress information for long-running operations.
-
-<h3 id="retrieves-the-execution-state-of-a-specific-request.-parameters">Parameters</h3>
+<h3 id="getexecutionstate-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the activity request.|
 
 > Example responses
 
@@ -710,21 +683,21 @@ Returns the current state and progress information for long-running operations.
 }
 ```
 
-<h3 id="retrieves-the-execution-state-of-a-specific-request.-responses">Responses</h3>
+<h3 id="getexecutionstate-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="retrieves-the-execution-state-of-a-specific-request.-responseschema">Response Schema</h3>
+<h3 id="getexecutionstate-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Lists all stateful requests currently being tracked.
+## getStatefulRequests
 
 > Code samples
 
@@ -743,25 +716,29 @@ print(r.json())
 
 `GET /activity/stateful-requests`
 
-Lists all stateful requests currently being tracked.
-Stateful requests are long-running operations that maintain execution state.
-
 > Example responses
 
-> 200 Response
+> default Response
 
 ```json
-[
-  "string"
-]
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
 ```
 
-<h3 id="lists-all-stateful-requests-currently-being-tracked.-responses">Responses</h3>
+<h3 id="getstatefulrequests-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_string](#schemaarray_string)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="getstatefulrequests-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -1324,54 +1301,6 @@ Note: Updating a backend will be provisioned on the next synchronization cycle.
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[runtimetypes_Backend](#schemaruntimetypes_backend)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## list
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.get('/telegram-frontends', headers = headers)
-
-print(r.json())
-
-```
-
-`GET /telegram-frontends`
-
-> Example responses
-
-> default Response
-
-```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
-```
-
-<h3 id="list-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="list-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -2084,8 +2013,8 @@ Returns event triggers in creation order, with the oldest triggers first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -2599,10 +2528,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|aggregate_id|query|string|false|The unique ID of the aggregate.|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
+|aggregate_id|query|string|false|The unique ID of the aggregate.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -2663,9 +2592,9 @@ Useful for auditing or monitoring events from specific subsystems.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|event_type|query|string|false|The type of event to filter by.|
 |event_source|query|string|false|The source system that generated the event.|
 |limit|query|string|false|Maximum number of events to return.|
-|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -2791,9 +2720,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|to|query|string|false|End time in RFC3339 format.|
 |event_type|query|string|false|The type of event to delete.|
 |from|query|string|false|Start time in RFC3339 format.|
-|to|query|string|false|End time in RFC3339 format.|
 
 > Example responses
 
@@ -3776,8 +3705,8 @@ Returns functions in creation order, with the oldest functions first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -4131,8 +4060,8 @@ Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |purpose|path|string|true|The purpose category to filter groups by (e.g., 'embeddings').|
 
 > Example responses
@@ -5035,7 +4964,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## listInProgress
+## Lists all jobs currently in progress.
 
 > Code samples
 
@@ -5054,6 +4983,16 @@ print(r.json())
 
 `GET /jobs/in-progress`
 
+Lists all jobs currently in progress.
+Returns jobs in paginated format using cursor-based pagination.
+
+<h3 id="lists-all-jobs-currently-in-progress.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|cursor|query|string|false|RFC3339 timestamp for pagination cursor.|
+|limit|query|string|false|Maximum number of jobs to return.|
+
 > Example responses
 
 > default Response
@@ -5069,21 +5008,21 @@ print(r.json())
 }
 ```
 
-<h3 id="listinprogress-responses">Responses</h3>
+<h3 id="lists-all-jobs-currently-in-progress.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="listinprogress-responseschema">Response Schema</h3>
+<h3 id="lists-all-jobs-currently-in-progress.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## listPending
+## Lists all pending jobs available for leasing.
 
 > Code samples
 
@@ -5102,6 +5041,16 @@ print(r.json())
 
 `GET /jobs/pending`
 
+Lists all pending jobs available for leasing.
+Returns jobs in paginated format using cursor-based pagination.
+
+<h3 id="lists-all-pending-jobs-available-for-leasing.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|cursor|query|string|false|RFC3339 timestamp for pagination cursor.|
+|limit|query|string|false|Maximum number of jobs to return.|
+
 > Example responses
 
 > default Response
@@ -5117,21 +5066,87 @@ print(r.json())
 }
 ```
 
-<h3 id="listpending-responses">Responses</h3>
+<h3 id="lists-all-pending-jobs-available-for-leasing.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="listpending-responseschema">Response Schema</h3>
+<h3 id="lists-all-pending-jobs-available-for-leasing.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## markFailed
+## Marks a job as successfully completed.
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Content-Type': 'application/json',
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.patch('/jobs/{id}/done', headers = headers)
+
+print(r.json())
+
+```
+
+`PATCH /jobs/{id}/done`
+
+Marks a job as successfully completed.
+The leaser must match the current job lease holder.
+Returns no content on success.
+
+> Body parameter
+
+```json
+{
+  "leaserId": "string"
+}
+```
+
+<h3 id="marks-a-job-as-successfully-completed.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[dispatchapi_JobUpdateRequest](#schemadispatchapi_jobupdaterequest)|true|none|
+|id|path|string|true|The unique identifier of the job.|
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="marks-a-job-as-successfully-completed.-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
+## Marks a job as failed.
 
 > Code samples
 
@@ -5151,41 +5166,39 @@ print(r.json())
 
 `PATCH /jobs/{id}/failed`
 
+Marks a job as failed.
+The leaser must match the current job lease holder.
+Returns a confirmation message on success.
+
 > Body parameter
 
 ```json
-false
-```
-
-<h3 id="markfailed-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|id|path|string|true|none|
-
-> Example responses
-
-> default Response
-
-```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
+  "leaserId": "string"
 }
 ```
 
-<h3 id="markfailed-responses">Responses</h3>
+<h3 id="marks-a-job-as-failed.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[dispatchapi_JobUpdateRequest](#schemadispatchapi_jobupdaterequest)|true|none|
+|id|path|string|true|The unique identifier of the job.|
+
+> Example responses
+
+> 200 Response
+
+```json
+"string"
+```
+
+<h3 id="marks-a-job-as-failed.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|string|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="markfailed-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -5243,7 +5256,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## assignJob
+## Assigns a pending job to a leaser for processing.
 
 > Code samples
 
@@ -5263,11 +5276,27 @@ print(r.json())
 
 `POST /leases`
 
+Assigns a pending job to a leaser for processing.
+Leases a job for the specified duration, making it unavailable to other leasers.
+Returns the leased job details for processing.
+
 > Body parameter
 
 ```json
-false
+{
+  "jobTypes": [
+    "string"
+  ],
+  "leaseDuration": "string",
+  "leaserId": "string"
+}
 ```
+
+<h3 id="assigns-a-pending-job-to-a-leaser-for-processing.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|body|body|[dispatchapi_AssignRequest](#schemadispatchapi_assignrequest)|true|none|
 
 > Example responses
 
@@ -5284,14 +5313,14 @@ false
 }
 ```
 
-<h3 id="assignjob-responses">Responses</h3>
+<h3 id="assigns-a-pending-job-to-a-leaser-for-processing.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="assignjob-responseschema">Response Schema</h3>
+<h3 id="assigns-a-pending-job-to-a-leaser-for-processing.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -6599,8 +6628,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 |model|query|string|false|The model name to cancel downloads for across all backends.|
+|url|query|string|false|The base URL of a specific backend to cancel downloads on.|
 
 > Example responses
 
@@ -7060,11 +7089,11 @@ Can expand file metadata in results when requested.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|epsilon|query|string|false|Epsilon parameter for search precision.|
+|expand|query|string|false|Set to 'files' to expand file metadata in results.|
 |q|query|string|false|The search query string.|
 |topk|query|string|false|Maximum number of results to return (default: 10).|
 |radius|query|string|false|Search radius for vector similarity.|
-|epsilon|query|string|false|Epsilon parameter for search precision.|
-|expand|query|string|false|Set to 'files' to expand file metadata in results.|
 
 > Example responses
 
@@ -7379,8 +7408,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -8802,60 +8831,6 @@ X-API-Key
 |updatedAt|string(date-time)|true|none|none|
 |withUserDetails|boolean|false|none|none|
 
-<h2 id="tocS_activityservice_Alert">activityservice_Alert</h2>
-<!-- backwards compatibility -->
-<a id="schemaactivityservice_alert"></a>
-<a id="schema_activityservice_Alert"></a>
-<a id="tocSactivityservice_alert"></a>
-<a id="tocsactivityservice_alert"></a>
-
-```json
-{
-  "Timestamp": "2019-08-24T14:15:22Z",
-  "id": "string",
-  "message": "string",
-  "metadata": {},
-  "requestID": "string"
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|Timestamp|string(date-time)|true|none|none|
-|id|string|true|none|none|
-|message|string|true|none|none|
-|metadata|object|true|none|none|
-|requestID|string|true|none|none|
-
-<h2 id="tocS_array_activityservice_Alert">array_activityservice_Alert</h2>
-<!-- backwards compatibility -->
-<a id="schemaarray_activityservice_alert"></a>
-<a id="schema_array_activityservice_Alert"></a>
-<a id="tocSarray_activityservice_alert"></a>
-<a id="tocsarray_activityservice_alert"></a>
-
-```json
-[
-  {
-    "Timestamp": "2019-08-24T14:15:22Z",
-    "id": "string",
-    "message": "string",
-    "metadata": {},
-    "requestID": "string"
-  }
-]
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|*anonymous*|[[activityservice_Alert](#schemaactivityservice_alert)]|false|none|none|
-
 <h2 id="tocS_array_backendapi_backendSummary">array_backendapi_backendSummary</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_backendapi_backendsummary"></a>
@@ -9374,29 +9349,6 @@ X-API-Key
 
 *None*
 
-<h2 id="tocS_array_taskengine_Operation">array_taskengine_Operation</h2>
-<!-- backwards compatibility -->
-<a id="schemaarray_taskengine_operation"></a>
-<a id="schema_array_taskengine_Operation"></a>
-<a id="tocSarray_taskengine_operation"></a>
-<a id="tocsarray_taskengine_operation"></a>
-
-```json
-[
-  {
-    "operation": "string",
-    "subject": "string"
-  }
-]
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|*anonymous*|[[taskengine_Operation](#schemataskengine_operation)]|false|none|none|
-
 <h2 id="tocS_array_taskengine_TaskChainDefinition">array_taskengine_TaskChainDefinition</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_taskengine_taskchaindefinition"></a>
@@ -9719,6 +9671,52 @@ X-API-Key
 |id|string|true|none|none|
 |lastMessage|object|false|none|none|
 |startedAt|string(date-time)|true|none|none|
+
+<h2 id="tocS_dispatchapi_AssignRequest">dispatchapi_AssignRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemadispatchapi_assignrequest"></a>
+<a id="schema_dispatchapi_AssignRequest"></a>
+<a id="tocSdispatchapi_assignrequest"></a>
+<a id="tocsdispatchapi_assignrequest"></a>
+
+```json
+{
+  "jobTypes": [
+    "string"
+  ],
+  "leaseDuration": "string",
+  "leaserId": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|jobTypes|[string]|true|none|none|
+|leaseDuration|string|true|none|none|
+|leaserId|string|true|none|none|
+
+<h2 id="tocS_dispatchapi_JobUpdateRequest">dispatchapi_JobUpdateRequest</h2>
+<!-- backwards compatibility -->
+<a id="schemadispatchapi_jobupdaterequest"></a>
+<a id="schema_dispatchapi_JobUpdateRequest"></a>
+<a id="tocSdispatchapi_jobupdaterequest"></a>
+<a id="tocsdispatchapi_jobupdaterequest"></a>
+
+```json
+{
+  "leaserId": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|leaserId|string|true|none|none|
 
 <h2 id="tocS_downloadservice_Job">downloadservice_Job</h2>
 <!-- backwards compatibility -->
@@ -10908,28 +10906,6 @@ X-API-Key
 |---|---|---|---|---|
 |content|string|true|none|none|
 |role|string|true|none|none|
-
-<h2 id="tocS_taskengine_Operation">taskengine_Operation</h2>
-<!-- backwards compatibility -->
-<a id="schemataskengine_operation"></a>
-<a id="schema_taskengine_Operation"></a>
-<a id="tocStaskengine_operation"></a>
-<a id="tocstaskengine_operation"></a>
-
-```json
-{
-  "operation": "string",
-  "subject": "string"
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|operation|string|true|none|none|
-|subject|string|true|none|none|
 
 <h2 id="tocS_taskengine_TaskChainDefinition">taskengine_TaskChainDefinition</h2>
 <!-- backwards compatibility -->

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/contenox/runtime/internal/modelrepo"
 )
@@ -33,7 +34,7 @@ func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap m
 
 	apiBaseURL := baseURLs[0]
 	id := fmt.Sprintf("gemini-%s", modelName)
-
+	modelName, _ = strings.CutPrefix(modelName, "models/")
 	return &GeminiProvider{
 		id:            id,
 		apiKey:        apiKey,

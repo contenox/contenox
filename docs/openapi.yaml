@@ -58,31 +58,6 @@ components:
                 - createdAt
                 - updatedAt
             type: object
-        activityservice_Alert:
-            properties:
-                Timestamp:
-                    format: date-time
-                    type: string
-                id:
-                    type: string
-                message:
-                    type: string
-                metadata:
-                    additionalProperties: true
-                    type: object
-                requestID:
-                    type: string
-            required:
-                - id
-                - message
-                - requestID
-                - metadata
-                - Timestamp
-            type: object
-        array_activityservice_Alert:
-            items:
-                $ref: '#/components/schemas/activityservice_Alert'
-            type: array
         array_backendapi_backendSummary:
             items:
                 $ref: '#/components/schemas/backendapi_backendSummary'
@@ -150,10 +125,6 @@ components:
         array_string:
             items:
                 type: string
-            type: array
-        array_taskengine_Operation:
-            items:
-                $ref: '#/components/schemas/taskengine_Operation'
             type: array
         array_taskengine_TaskChainDefinition:
             items:
@@ -328,6 +299,28 @@ components:
                 - id
                 - startedAt
                 - backendId
+            type: object
+        dispatchapi_AssignRequest:
+            properties:
+                jobTypes:
+                    items:
+                        type: string
+                    type: array
+                leaseDuration:
+                    type: string
+                leaserId:
+                    type: string
+            required:
+                - leaserId
+                - leaseDuration
+                - jobTypes
+            type: object
+        dispatchapi_JobUpdateRequest:
+            properties:
+                leaserId:
+                    type: string
+            required:
+                - leaserId
             type: object
         downloadservice_Job:
             properties:
@@ -1238,16 +1231,6 @@ components:
                 - role
                 - content
             type: object
-        taskengine_Operation:
-            properties:
-                operation:
-                    type: string
-                subject:
-                    type: string
-            required:
-                - operation
-                - subject
-            type: object
         taskengine_TaskChainDefinition:
             properties:
                 debug:
@@ -1444,7 +1427,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-180-g22d4f71-dirty
+    version: v0.0.51-181-g90fd3ef-dirty
 openapi: 3.1.0
 paths:
     /access-control:
@@ -1579,22 +1562,12 @@ paths:
             summary: Updates an existing access control entry.
     /activity/alerts:
         get:
-            description: |-
-                Lists recent alerts with optional limit.
-                Use 'limit' to control the number of alerts returned (default: 99).
-            parameters:
-                - description: Maximum number of alerts to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "99"
-                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_activityservice_Alert'
+                                $ref: '#/components/schemas/alerts'
                     description: OK
                 default:
                     content:
@@ -1602,25 +1575,15 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists recent alerts with optional limit.
+            summary: alerts
     /activity/logs:
         get:
-            description: |-
-                Lists recent activity logs with optional limit.
-                Use 'limit' to control the number of logs returned (default: 100).
-            parameters:
-                - description: Maximum number of logs to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
-                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_activityservice_ActivityLog'
+                                $ref: '#/components/schemas/logs'
                     description: OK
                 default:
                     content:
@@ -1628,18 +1591,15 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists recent activity logs with optional limit.
+            summary: list
     /activity/operations:
         get:
-            description: |-
-                Lists all known operation types in the system.
-                Useful for filtering and discovery of available operations.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_taskengine_Operation'
+                                $ref: '#/components/schemas/ops'
                     description: OK
                 default:
                     content:
@@ -1647,18 +1607,15 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists all known operation types in the system.
+            summary: operations
     /activity/operations/{op}/{subject}:
         get:
-            description: |-
-                Lists requests by operation type and subject.
-                Useful for finding all requests of a specific operation type.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_string'
+                                $ref: '#/components/schemas/reqs'
                     description: OK
                 default:
                     content:
@@ -1666,36 +1623,28 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists requests by operation type and subject.
+            summary: requestsByOperation
         parameters:
-            - in: path
+            - description: The operation type.
+              in: path
               name: op
               required: true
               schema:
                 type: string
-            - in: path
+            - description: The operation subject.
+              in: path
               name: subject
               required: true
               schema:
                 type: string
     /activity/requests:
         get:
-            description: |-
-                Lists recent activity requests with optional limit.
-                Use 'limit' to control the number of requests returned (default: 100).
-            parameters:
-                - description: Maximum number of requests to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
-                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_activityservice_ActivityRequest'
+                                $ref: '#/components/schemas/requests'
                     description: OK
                 default:
                     content:
@@ -1703,18 +1652,15 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists recent activity requests with optional limit.
+            summary: requests
     /activity/requests/{id}:
         get:
-            description: |-
-                Retrieves a specific activity request by its ID.
-                Returns all events associated with the request.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_activityservice_RequestEvent'
+                                $ref: '#/components/schemas/events'
                     description: OK
                 default:
                     content:
@@ -1722,24 +1668,22 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Retrieves a specific activity request by its ID.
+            summary: requestByID
         parameters:
-            - in: path
+            - description: The unique identifier of the activity request.
+              in: path
               name: id
               required: true
               schema:
                 type: string
     /activity/requests/{id}/state:
         get:
-            description: |-
-                Retrieves the execution state of a specific request.
-                Returns the current state and progress information for long-running operations.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/activityservice_ExecutionState'
+                                $ref: '#/components/schemas/state'
                     description: OK
                 default:
                     content:
@@ -1747,24 +1691,22 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Retrieves the execution state of a specific request.
+            summary: getExecutionState
         parameters:
-            - in: path
+            - description: The unique identifier of the activity request.
+              in: path
               name: id
               required: true
               schema:
                 type: string
     /activity/stateful-requests:
         get:
-            description: |-
-                Lists all stateful requests currently being tracked.
-                Stateful requests are long-running operations that maintain execution state.
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/array_string'
+                                $ref: '#/components/schemas/reqIDs'
                     description: OK
                 default:
                     content:
@@ -1772,7 +1714,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: Lists all stateful requests currently being tracked.
+            summary: getStatefulRequests
     /backend-affinity/{backendID}/groups:
         get:
             description: |-
@@ -2354,16 +2296,16 @@ paths:
                 Lists all event triggers with pagination
                 Returns event triggers in creation order, with the oldest triggers first.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2553,6 +2495,16 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
+                - description: The type of event to filter by.
+                  in: query
+                  name: event_type
+                  schema:
+                    type: string
+                - description: The aggregate type (e.g., 'user', 'order').
+                  in: query
+                  name: aggregate_type
+                  schema:
+                    type: string
                 - description: The unique ID of the aggregate.
                   in: query
                   name: aggregate_id
@@ -2563,16 +2515,6 @@ paths:
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: The type of event to filter by.
-                  in: query
-                  name: event_type
-                  schema:
-                    type: string
-                - description: The aggregate type (e.g., 'user', 'order').
-                  in: query
-                  name: aggregate_type
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2594,6 +2536,11 @@ paths:
                 Retrieves events from a specific source within a time range.
                 Useful for auditing or monitoring events from specific subsystems.
             parameters:
+                - description: The type of event to filter by.
+                  in: query
+                  name: event_type
+                  schema:
+                    type: string
                 - description: The source system that generated the event.
                   in: query
                   name: event_source
@@ -2604,11 +2551,6 @@ paths:
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: The type of event to filter by.
-                  in: query
-                  name: event_type
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2664,6 +2606,11 @@ paths:
                 USE WITH CAUTION — this is a destructive operation.
                 Typically used for GDPR compliance or cleaning up test data.
             parameters:
+                - description: End time in RFC3339 format.
+                  in: query
+                  name: to
+                  schema:
+                    type: string
                 - description: The type of event to delete.
                   in: query
                   name: event_type
@@ -2672,11 +2619,6 @@ paths:
                 - description: Start time in RFC3339 format.
                   in: query
                   name: from
-                  schema:
-                    type: string
-                - description: End time in RFC3339 format.
-                  in: query
-                  name: to
                   schema:
                     type: string
             responses:
@@ -3113,16 +3055,16 @@ paths:
                 Lists all registered functions with pagination
                 Returns functions in creation order, with the oldest functions first.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -3262,16 +3204,16 @@ paths:
                 Purpose types categorize groups (e.g., "Internal Embeddings", "Internal Tasks").
                 Accepts 'cursor' (RFC3339Nano timestamp) and 'limit' parameters for pagination.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -3636,26 +3578,60 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
             summary: IngestEvent processes incoming events by applying mapping configuration
-    /jobs/{id}/failed:
+    /jobs/{id}/done:
         parameters:
-            - in: path
+            - description: The unique identifier of the job.
+              in: path
               name: id
               required: true
               schema:
                 type: string
         patch:
+            description: |-
+                Marks a job as successfully completed.
+                The leaser must match the current job lease holder.
+                Returns no content on success.
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/JobUpdateRequest'
+                            $ref: '#/components/schemas/dispatchapi_JobUpdateRequest'
+                required: true
+            responses:
+                "200":
+                    description: OK
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Default error response
+            summary: Marks a job as successfully completed.
+    /jobs/{id}/failed:
+        parameters:
+            - description: The unique identifier of the job.
+              in: path
+              name: id
+              required: true
+              schema:
+                type: string
+        patch:
+            description: |-
+                Marks a job as failed.
+                The leaser must match the current job lease holder.
+                Returns a confirmation message on success.
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/dispatchapi_JobUpdateRequest'
                 required: true
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/object'
+                                type: string
                     description: OK
                 default:
                     content:
@@ -3663,15 +3639,30 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: markFailed
+            summary: Marks a job as failed.
     /jobs/in-progress:
         get:
+            description: |-
+                Lists all jobs currently in progress.
+                Returns jobs in paginated format using cursor-based pagination.
+            parameters:
+                - description: RFC3339 timestamp for pagination cursor.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
+                - description: Maximum number of jobs to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/jobs'
+                                $ref: '#/components/schemas/array_dispatchservice_Job'
                     description: OK
                 default:
                     content:
@@ -3679,15 +3670,30 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listInProgress
+            summary: Lists all jobs currently in progress.
     /jobs/pending:
         get:
+            description: |-
+                Lists all pending jobs available for leasing.
+                Returns jobs in paginated format using cursor-based pagination.
+            parameters:
+                - description: RFC3339 timestamp for pagination cursor.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
+                - description: Maximum number of jobs to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
             responses:
                 "200":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/jobs'
+                                $ref: '#/components/schemas/array_dispatchservice_Job'
                     description: OK
                 default:
                     content:
@@ -3695,7 +3701,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: listPending
+            summary: Lists all pending jobs available for leasing.
     /keywords:
         get:
             description: |-
@@ -3729,18 +3735,22 @@ paths:
             summary: Lists all extracted keywords from indexed content.
     /leases:
         post:
+            description: |-
+                Assigns a pending job to a leaser for processing.
+                Leases a job for the specified duration, making it unavailable to other leasers.
+                Returns the leased job details for processing.
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/AssignRequest'
+                            $ref: '#/components/schemas/dispatchapi_AssignRequest'
                 required: true
             responses:
                 "201":
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/leasedJob'
+                                $ref: '#/components/schemas/dispatchservice_LeasedJob'
                     description: Created
                 default:
                     content:
@@ -3748,7 +3758,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Default error response
-            summary: assignJob
+            summary: Assigns a pending job to a leaser for processing.
     /login:
         post:
             description: |-
@@ -4394,14 +4404,14 @@ paths:
                 Example: /queue/cancel?url=http://localhost:11434
                 /queue/cancel?model=mistral:latest
             parameters:
-                - description: The base URL of a specific backend to cancel downloads on.
-                  in: query
-                  name: url
-                  schema:
-                    type: string
                 - description: The model name to cancel downloads for across all backends.
                   in: query
                   name: model
+                  schema:
+                    type: string
+                - description: The base URL of a specific backend to cancel downloads on.
+                  in: query
+                  name: url
                   schema:
                     type: string
             responses:
@@ -4599,6 +4609,16 @@ paths:
                 Supports keyword queries with optional parameters for result tuning.
                 Can expand file metadata in results when requested.
             parameters:
+                - description: Epsilon parameter for search precision.
+                  in: query
+                  name: epsilon
+                  schema:
+                    type: string
+                - description: Set to 'files' to expand file metadata in results.
+                  in: query
+                  name: expand
+                  schema:
+                    type: string
                 - description: The search query string.
                   in: query
                   name: q
@@ -4613,16 +4633,6 @@ paths:
                 - description: Search radius for vector similarity.
                   in: query
                   name: radius
-                  schema:
-                    type: string
-                - description: Epsilon parameter for search precision.
-                  in: query
-                  name: epsilon
-                  schema:
-                    type: string
-                - description: Set to 'files' to expand file metadata in results.
-                  in: query
-                  name: expand
                   schema:
                     type: string
             responses:
@@ -4733,16 +4743,16 @@ paths:
         get:
             description: Lists all task chain definitions with pagination.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":

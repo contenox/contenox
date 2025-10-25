@@ -72,11 +72,11 @@ func (c *geminiClient) sendRequest(ctx context.Context, endpoint string, request
 		bodyBytes, readErr := io.ReadAll(resp.Body)
 		if readErr == nil {
 			if jsonErr := json.Unmarshal(bodyBytes, &errorResponse); jsonErr == nil && errorResponse.Error.Message != "" {
-				return fmt.Errorf("gemini API returned non-200 status: %d, Status: %s, Message: %s for model %s", resp.StatusCode, errorResponse.Error.Status, errorResponse.Error.Message, c.modelName)
+				return fmt.Errorf("gemini API returned non-200 status: %d, Status: %s, Message: %s for model %s on url: %s", resp.StatusCode, errorResponse.Error.Status, errorResponse.Error.Message, c.modelName, fullURL)
 			}
-			return fmt.Errorf("gemini API returned non-200 status: %d, body: %s for model %s", resp.StatusCode, string(bodyBytes), c.modelName)
+			return fmt.Errorf("gemini API returned non-200 status: %d, body: %s for model %s for url: %s", resp.StatusCode, string(bodyBytes), c.modelName, fullURL)
 		}
-		return fmt.Errorf("gemini API returned non-200 status: %d for model %s", resp.StatusCode, c.modelName)
+		return fmt.Errorf("gemini API returned non-200 status: %d for model %s for url %s", resp.StatusCode, c.modelName, fullURL)
 	}
 
 	if response != nil {
