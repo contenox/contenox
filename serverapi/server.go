@@ -93,7 +93,7 @@ func New(
 	backendapi.AddStateRoutes(mux, stateService)
 	groupapi.AddgroupRoutes(mux, groupservice)
 	// Get circuit breaker group instance
-	group := libroutine.Getgroup()
+	group := libroutine.GetGroup()
 
 	// Start managed loops using the group
 	group.StartLoop(

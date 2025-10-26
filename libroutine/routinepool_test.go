@@ -14,8 +14,8 @@ import (
 func TestUnit_GroupAffinitySingleton(t *testing.T) {
 	defer quiet()
 	t.Run("should return singleton instance", func(t *testing.T) {
-		group1 := libroutine.Getgroup()
-		group2 := libroutine.Getgroup()
+		group1 := libroutine.GetGroup()
+		group2 := libroutine.GetGroup()
 		if group1 != group2 {
 			t.Error("Expected group to be singleton, got different instances")
 		}
@@ -23,7 +23,7 @@ func TestUnit_GroupAffinitySingleton(t *testing.T) {
 }
 
 func TestUnit_GroupAffinityStartLoop(t *testing.T) {
-	group := libroutine.Getgroup()
+	group := libroutine.GetGroup()
 	ctx := t.Context()
 
 	t.Run("should create new manager and start loop", func(t *testing.T) {
@@ -171,7 +171,7 @@ func TestUnit_GroupAffinityStartLoop(t *testing.T) {
 
 func TestUnit_GroupAffinityCircuitBreaking(t *testing.T) {
 	defer quiet()
-	group := libroutine.Getgroup()
+	group := libroutine.GetGroup()
 	ctx := context.Background()
 
 	t.Run("should enforce circuit breaker parameters", func(t *testing.T) {
@@ -235,7 +235,7 @@ func TestUnit_GroupAffinityCircuitBreaking(t *testing.T) {
 
 func TestUnit_GroupAffinityParameterPersistence(t *testing.T) {
 	defer quiet()
-	group := libroutine.Getgroup()
+	group := libroutine.GetGroup()
 	ctx := context.Background() // Using Background instead of t.Context() for compatibility
 
 	t.Run("should persist initial parameters", func(t *testing.T) {
@@ -282,7 +282,7 @@ func TestUnit_GroupAffinityParameterPersistence(t *testing.T) {
 // TestUnit_GroupAffinityResetRoutine verifies we can reset the circuit breaker state
 func TestUnit_GroupAffinityResetRoutine(t *testing.T) {
 	defer quiet()
-	group := libroutine.Getgroup()
+	group := libroutine.GetGroup()
 	ctx := context.Background()
 
 	t.Run("should reset routine state", func(t *testing.T) {

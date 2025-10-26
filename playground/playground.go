@@ -105,7 +105,7 @@ func (p *Playground) StartBackgroundRoutines(ctx context.Context) *Playground {
 		return p
 	}
 
-	group := libroutine.Getgroup()
+	group := libroutine.GetGroup()
 
 	group.StartLoop(
 		ctx,

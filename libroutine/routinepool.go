@@ -23,8 +23,8 @@ var (
 	groupOnce     sync.Once
 )
 
-// Getgroup returns the singleton instance of the group.
-func Getgroup() *group {
+// GetGroup returns the singleton instance of the group.
+func GetGroup() *group {
 	groupOnce.Do(func() {
 		log.Println("Initializing routine group")
 		groupInstance = &group{

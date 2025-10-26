@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-181-g90fd3ef-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-182-g0e79310-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-181-g90fd3ef-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-182-g0e79310-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -53,8 +53,8 @@ Use 'from' (RFC3339) for pagination cursor.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|identity|query|string|false|Filter by identity (user or service ID).|
 |expand|query|string|false|Expand related resources (e.g., 'user').|
+|identity|query|string|false|Filter by identity (user or service ID).|
 
 > Example responses
 
@@ -1572,7 +1572,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## Lists all available chat sessions.
+## listChats
 
 > Code samples
 
@@ -1591,37 +1591,36 @@ print(r.json())
 
 `GET /chats`
 
-Lists all available chat sessions.
-Returns basic information about each chat session in the system.
-
 > Example responses
 
-> 200 Response
+> default Response
 
 ```json
-[
-  {
-    "backendId": "string",
-    "id": "string",
-    "lastMessage": {},
-    "startedAt": "2019-08-24T14:15:22Z"
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
   }
-]
+}
 ```
 
-<h3 id="lists-all-available-chat-sessions.-responses">Responses</h3>
+<h3 id="listchats-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_chatservice_ChatSession](#schemaarray_chatservice_chatsession)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="listchats-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Creates a new chat instance for the specified subject.
+## createChat
 
 > Code samples
 
@@ -1641,22 +1640,11 @@ print(r.json())
 
 `POST /chats`
 
-Creates a new chat instance for the specified subject.
-Returns the unique identifier for the new chat session.
-
 > Body parameter
 
 ```json
-{
-  "subject": "string"
-}
+false
 ```
-
-<h3 id="creates-a-new-chat-instance-for-the-specified-subject.-parameters">Parameters</h3>
-
-|Name|In|Type|Required|Description|
-|---|---|---|---|---|
-|body|body|[chatapi_newChatInstanceRequest](#schemachatapi_newchatinstancerequest)|true|none|
 
 > Example responses
 
@@ -1673,21 +1661,21 @@ Returns the unique identifier for the new chat session.
 }
 ```
 
-<h3 id="creates-a-new-chat-instance-for-the-specified-subject.-responses">Responses</h3>
+<h3 id="createchat-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="creates-a-new-chat-instance-for-the-specified-subject.-responseschema">Response Schema</h3>
+<h3 id="createchat-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Retrieves the complete chat history for a session.
+## history
 
 > Code samples
 
@@ -1706,45 +1694,42 @@ print(r.json())
 
 `GET /chats/{id}`
 
-Retrieves the complete chat history for a session.
-Returns all messages and interactions in chronological order.
-
-<h3 id="retrieves-the-complete-chat-history-for-a-session.-parameters">Parameters</h3>
+<h3 id="history-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the chat session.|
 
 > Example responses
 
-> 200 Response
+> default Response
 
 ```json
-[
-  {
-    "content": "string",
-    "id": "string",
-    "isLatest": true,
-    "isUser": true,
-    "role": "string",
-    "sentAt": "2019-08-24T14:15:22Z"
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
   }
-]
+}
 ```
 
-<h3 id="retrieves-the-complete-chat-history-for-a-session.-responses">Responses</h3>
+<h3 id="history-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_chatservice_ChatMessage](#schemaarray_chatservice_chatmessage)|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="history-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Sends a message to a chat session and gets AI response.
+## chat
 
 > Code samples
 
@@ -1764,28 +1749,17 @@ print(r.json())
 
 `POST /chats/{id}/chat`
 
-Sends a message to a chat session and gets AI response.
-Supports multiple AI models and providers with token counting and state capture.
-
 > Body parameter
 
 ```json
-{
-  "message": "string",
-  "models": [
-    "string"
-  ],
-  "provider": "string"
-}
+false
 ```
 
-<h3 id="sends-a-message-to-a-chat-session-and-gets-ai-response.-parameters">Parameters</h3>
+<h3 id="chat-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|chainId|query|string|false|The ID of the taskchain to be used to compute the response.|
-|body|body|[chatapi_chatRequest](#schemachatapi_chatrequest)|true|none|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the chat session.|
 
 > Example responses
 
@@ -1802,21 +1776,21 @@ Supports multiple AI models and providers with token counting and state capture.
 }
 ```
 
-<h3 id="sends-a-message-to-a-chat-session-and-gets-ai-response.-responses">Responses</h3>
+<h3 id="chat-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="sends-a-message-to-a-chat-session-and-gets-ai-response.-responseschema">Response Schema</h3>
+<h3 id="chat-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## Adds an instruction to an existing chat session.
+## addInstruction
 
 > Code samples
 
@@ -1836,23 +1810,17 @@ print(r.json())
 
 `POST /chats/{id}/instruction`
 
-Adds an instruction to an existing chat session.
-Instructions guide the AI behavior for subsequent interactions.
-
 > Body parameter
 
 ```json
-{
-  "instruction": "string"
-}
+false
 ```
 
-<h3 id="adds-an-instruction-to-an-existing-chat-session.-parameters">Parameters</h3>
+<h3 id="addinstruction-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|body|body|[chatapi_instructionRequest](#schemachatapi_instructionrequest)|true|none|
-|id|path|string|true|none|
+|id|path|string|true|The unique identifier of the chat session.|
 
 > Example responses
 
@@ -1869,14 +1837,14 @@ Instructions guide the AI behavior for subsequent interactions.
 }
 ```
 
-<h3 id="adds-an-instruction-to-an-existing-chat-session.-responses">Responses</h3>
+<h3 id="addinstruction-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="adds-an-instruction-to-an-existing-chat-session.-responseschema">Response Schema</h3>
+<h3 id="addinstruction-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -2013,8 +1981,8 @@ Returns event triggers in creation order, with the oldest triggers first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -2720,9 +2688,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|from|query|string|false|Start time in RFC3339 format.|
 |to|query|string|false|End time in RFC3339 format.|
 |event_type|query|string|false|The type of event to delete.|
-|from|query|string|false|Start time in RFC3339 format.|
 
 > Example responses
 
@@ -3705,8 +3673,8 @@ Returns functions in creation order, with the oldest functions first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -7038,9 +7006,9 @@ applies the current mapping configuration, and appends the resulting domain even
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|nid|query|string|false|Numeric ID of the raw event|
 |from|query|string|false|Start time (RFC3339)|
 |to|query|string|false|End time (RFC3339)|
-|nid|query|string|false|Numeric ID of the raw event|
 
 > Example responses
 
@@ -7408,8 +7376,8 @@ Lists all task chain definitions with pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -8882,58 +8850,6 @@ X-API-Key
 |---|---|---|---|---|
 |*anonymous*|[[backendapi_backendSummary](#schemabackendapi_backendsummary)]|false|none|none|
 
-<h2 id="tocS_array_chatservice_ChatMessage">array_chatservice_ChatMessage</h2>
-<!-- backwards compatibility -->
-<a id="schemaarray_chatservice_chatmessage"></a>
-<a id="schema_array_chatservice_ChatMessage"></a>
-<a id="tocSarray_chatservice_chatmessage"></a>
-<a id="tocsarray_chatservice_chatmessage"></a>
-
-```json
-[
-  {
-    "content": "string",
-    "id": "string",
-    "isLatest": true,
-    "isUser": true,
-    "role": "string",
-    "sentAt": "2019-08-24T14:15:22Z"
-  }
-]
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|*anonymous*|[[chatservice_ChatMessage](#schemachatservice_chatmessage)]|false|none|none|
-
-<h2 id="tocS_array_chatservice_ChatSession">array_chatservice_ChatSession</h2>
-<!-- backwards compatibility -->
-<a id="schemaarray_chatservice_chatsession"></a>
-<a id="schema_array_chatservice_ChatSession"></a>
-<a id="tocSarray_chatservice_chatsession"></a>
-<a id="tocsarray_chatservice_chatsession"></a>
-
-```json
-[
-  {
-    "backendId": "string",
-    "id": "string",
-    "lastMessage": {},
-    "startedAt": "2019-08-24T14:15:22Z"
-  }
-]
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|*anonymous*|[[chatservice_ChatSession](#schemachatservice_chatsession)]|false|none|none|
-
 <h2 id="tocS_array_downloadservice_Job">array_downloadservice_Job</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_downloadservice_job"></a>
@@ -9549,128 +9465,6 @@ X-API-Key
 |pulledModels|[statetype_ModelPullStatus](#schemastatetype_modelpullstatus)|true|none|none|
 |type|string|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
-
-<h2 id="tocS_chatapi_chatRequest">chatapi_chatRequest</h2>
-<!-- backwards compatibility -->
-<a id="schemachatapi_chatrequest"></a>
-<a id="schema_chatapi_chatRequest"></a>
-<a id="tocSchatapi_chatrequest"></a>
-<a id="tocschatapi_chatrequest"></a>
-
-```json
-{
-  "message": "string",
-  "models": [
-    "string"
-  ],
-  "provider": "string"
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|message|string|true|none|none|
-|models|[string]|true|none|none|
-|provider|string|true|none|none|
-
-<h2 id="tocS_chatapi_instructionRequest">chatapi_instructionRequest</h2>
-<!-- backwards compatibility -->
-<a id="schemachatapi_instructionrequest"></a>
-<a id="schema_chatapi_instructionRequest"></a>
-<a id="tocSchatapi_instructionrequest"></a>
-<a id="tocschatapi_instructionrequest"></a>
-
-```json
-{
-  "instruction": "string"
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|instruction|string|true|none|none|
-
-<h2 id="tocS_chatapi_newChatInstanceRequest">chatapi_newChatInstanceRequest</h2>
-<!-- backwards compatibility -->
-<a id="schemachatapi_newchatinstancerequest"></a>
-<a id="schema_chatapi_newChatInstanceRequest"></a>
-<a id="tocSchatapi_newchatinstancerequest"></a>
-<a id="tocschatapi_newchatinstancerequest"></a>
-
-```json
-{
-  "subject": "string"
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|subject|string|true|none|none|
-
-<h2 id="tocS_chatservice_ChatMessage">chatservice_ChatMessage</h2>
-<!-- backwards compatibility -->
-<a id="schemachatservice_chatmessage"></a>
-<a id="schema_chatservice_ChatMessage"></a>
-<a id="tocSchatservice_chatmessage"></a>
-<a id="tocschatservice_chatmessage"></a>
-
-```json
-{
-  "content": "string",
-  "id": "string",
-  "isLatest": true,
-  "isUser": true,
-  "role": "string",
-  "sentAt": "2019-08-24T14:15:22Z"
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|content|string|true|none|message text|
-|id|string|true|none|unique identifier|
-|isLatest|boolean|true|none|mark if last message|
-|isUser|boolean|true|none|derived from role|
-|role|string|true|none|user/assistant/system|
-|sentAt|string(date-time)|true|none|timestamp|
-
-<h2 id="tocS_chatservice_ChatSession">chatservice_ChatSession</h2>
-<!-- backwards compatibility -->
-<a id="schemachatservice_chatsession"></a>
-<a id="schema_chatservice_ChatSession"></a>
-<a id="tocSchatservice_chatsession"></a>
-<a id="tocschatservice_chatsession"></a>
-
-```json
-{
-  "backendId": "string",
-  "id": "string",
-  "lastMessage": {},
-  "startedAt": "2019-08-24T14:15:22Z"
-}
-
-```
-
-### Properties
-
-|Name|Type|Required|Restrictions|Description|
-|---|---|---|---|---|
-|backendId|string|true|none|none|
-|id|string|true|none|none|
-|lastMessage|object|false|none|none|
-|startedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_dispatchapi_AssignRequest">dispatchapi_AssignRequest</h2>
 <!-- backwards compatibility -->

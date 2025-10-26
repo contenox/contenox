@@ -88,18 +88,6 @@
         },
         "type": "array"
       },
-      "array_chatservice_ChatMessage": {
-        "items": {
-          "$ref": "#/components/schemas/chatservice_ChatMessage"
-        },
-        "type": "array"
-      },
-      "array_chatservice_ChatSession": {
-        "items": {
-          "$ref": "#/components/schemas/chatservice_ChatSession"
-        },
-        "type": "array"
-      },
       "array_downloadservice_Job": {
         "items": {
           "$ref": "#/components/schemas/downloadservice_Job"
@@ -315,111 +303,6 @@
           "pulledModels",
           "createdAt",
           "updatedAt"
-        ],
-        "type": "object"
-      },
-      "chatapi_chatRequest": {
-        "properties": {
-          "message": {
-            "type": "string"
-          },
-          "models": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "provider": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "message",
-          "models",
-          "provider"
-        ],
-        "type": "object"
-      },
-      "chatapi_instructionRequest": {
-        "properties": {
-          "instruction": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "instruction"
-        ],
-        "type": "object"
-      },
-      "chatapi_newChatInstanceRequest": {
-        "properties": {
-          "subject": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subject"
-        ],
-        "type": "object"
-      },
-      "chatservice_ChatMessage": {
-        "properties": {
-          "content": {
-            "description": "message text",
-            "type": "string"
-          },
-          "id": {
-            "description": "unique identifier",
-            "type": "string"
-          },
-          "isLatest": {
-            "description": "mark if last message",
-            "type": "boolean"
-          },
-          "isUser": {
-            "description": "derived from role",
-            "type": "boolean"
-          },
-          "role": {
-            "description": "user/assistant/system",
-            "type": "string"
-          },
-          "sentAt": {
-            "description": "timestamp",
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "role",
-          "content",
-          "sentAt",
-          "isUser",
-          "isLatest"
-        ],
-        "type": "object"
-      },
-      "chatservice_ChatSession": {
-        "properties": {
-          "backendId": {
-            "type": "string"
-          },
-          "id": {
-            "type": "string"
-          },
-          "lastMessage": {
-            "type": "object"
-          },
-          "startedAt": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "startedAt",
-          "backendId"
         ],
         "type": "object"
       },
@@ -1901,7 +1784,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.51-181-g90fd3ef-dirty"
+    "version": "v0.0.51-182-g0e79310-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1910,17 +1793,17 @@
         "description": "Lists access control entries with optional filtering and pagination.\nUse 'identity' to filter by user/service.\nUse 'expand=user' to include full user details.\nUse 'from' (RFC3339) for pagination cursor.",
         "parameters": [
           {
-            "description": "Filter by identity (user or service ID).",
+            "description": "Expand related resources (e.g., 'user').",
             "in": "query",
-            "name": "identity",
+            "name": "expand",
             "schema": {
               "type": "string"
             }
           },
           {
-            "description": "Expand related resources (e.g., 'user').",
+            "description": "Filter by identity (user or service ID).",
             "in": "query",
-            "name": "expand",
+            "name": "identity",
             "schema": {
               "type": "string"
             }
@@ -2972,13 +2855,12 @@
     },
     "/chats": {
       "get": {
-        "description": "Lists all available chat sessions.\nReturns basic information about each chat session in the system.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/array_chatservice_ChatSession"
+                  "$ref": "#/components/schemas/chats"
                 }
               }
             },
@@ -2995,15 +2877,14 @@
             "description": "Default error response"
           }
         },
-        "summary": "Lists all available chat sessions."
+        "summary": "listChats"
       },
       "post": {
-        "description": "Creates a new chat instance for the specified subject.\nReturns the unique identifier for the new chat session.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/chatapi_newChatInstanceRequest"
+                "$ref": "#/components/schemas/newChatInstanceRequest"
               }
             }
           },
@@ -3014,7 +2895,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/map[string]string"
+                  "$ref": "#/components/schemas/resp"
                 }
               }
             },
@@ -3031,18 +2912,17 @@
             "description": "Default error response"
           }
         },
-        "summary": "Creates a new chat instance for the specified subject."
+        "summary": "createChat"
       }
     },
     "/chats/{id}": {
       "get": {
-        "description": "Retrieves the complete chat history for a session.\nReturns all messages and interactions in chronological order.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/array_chatservice_ChatMessage"
+                  "$ref": "#/components/schemas/history"
                 }
               }
             },
@@ -3059,10 +2939,11 @@
             "description": "Default error response"
           }
         },
-        "summary": "Retrieves the complete chat history for a session."
+        "summary": "history"
       },
       "parameters": [
         {
+          "description": "The unique identifier of the chat session.",
           "in": "path",
           "name": "id",
           "required": true,
@@ -3075,6 +2956,7 @@
     "/chats/{id}/chat": {
       "parameters": [
         {
+          "description": "The unique identifier of the chat session.",
           "in": "path",
           "name": "id",
           "required": true,
@@ -3084,22 +2966,11 @@
         }
       ],
       "post": {
-        "description": "Sends a message to a chat session and gets AI response.\nSupports multiple AI models and providers with token counting and state capture.",
-        "parameters": [
-          {
-            "description": "The ID of the taskchain to be used to compute the response.",
-            "in": "query",
-            "name": "chainId",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/chatapi_chatRequest"
+                "$ref": "#/components/schemas/chatRequest"
               }
             }
           },
@@ -3110,7 +2981,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/map[string]any"
+                  "$ref": "#/components/schemas/resp"
                 }
               }
             },
@@ -3127,12 +2998,13 @@
             "description": "Default error response"
           }
         },
-        "summary": "Sends a message to a chat session and gets AI response."
+        "summary": "chat"
       }
     },
     "/chats/{id}/instruction": {
       "parameters": [
         {
+          "description": "The unique identifier of the chat session.",
           "in": "path",
           "name": "id",
           "required": true,
@@ -3142,12 +3014,11 @@
         }
       ],
       "post": {
-        "description": "Adds an instruction to an existing chat session.\nInstructions guide the AI behavior for subsequent interactions.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/chatapi_instructionRequest"
+                "$ref": "#/components/schemas/instructionRequest"
               }
             }
           },
@@ -3158,7 +3029,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/map[string]string"
+                  "$ref": "#/components/schemas/resp"
                 }
               }
             },
@@ -3175,7 +3046,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "Adds an instruction to an existing chat session."
+        "summary": "addInstruction"
       }
     },
     "/defaultmodel": {
@@ -3249,19 +3120,19 @@
         "description": "Lists all event triggers with pagination\nReturns event triggers in creation order, with the oldest triggers first.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -3706,6 +3577,14 @@
         "description": "Deletes all events of a specific type within a time range.\nUSE WITH CAUTION — this is a destructive operation.\nTypically used for GDPR compliance or cleaning up test data.",
         "parameters": [
           {
+            "description": "Start time in RFC3339 format.",
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "End time in RFC3339 format.",
             "in": "query",
             "name": "to",
@@ -3717,14 +3596,6 @@
             "description": "The type of event to delete.",
             "in": "query",
             "name": "event_type",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Start time in RFC3339 format.",
-            "in": "query",
-            "name": "from",
             "schema": {
               "type": "string"
             }
@@ -4381,19 +4252,19 @@
         "description": "Lists all registered functions with pagination\nReturns functions in creation order, with the oldest functions first.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -5967,19 +5838,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
               "type": "string"
             }
           }
@@ -6588,6 +6459,14 @@
         "description": "replayEvent replays a raw event by NID to re-emit its corresponding domain event\nThis endpoint fetches a raw event by its numeric ID (NID) and time range,\napplies the current mapping configuration, and appends the resulting domain event.",
         "parameters": [
           {
+            "description": "Numeric ID of the raw event",
+            "in": "query",
+            "name": "nid",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Start time (RFC3339)",
             "in": "query",
             "name": "from",
@@ -6599,14 +6478,6 @@
             "description": "End time (RFC3339)",
             "in": "query",
             "name": "to",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Numeric ID of the raw event",
-            "in": "query",
-            "name": "nid",
             "schema": {
               "type": "string"
             }
@@ -6851,19 +6722,19 @@
         "description": "Lists all task chain definitions with pagination.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
