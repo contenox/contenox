@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-182-g0e79310-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-183-gb43e9a7-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-182-g0e79310-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-183-gb43e9a7-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -53,8 +53,8 @@ Use 'from' (RFC3339) for pagination cursor.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|expand|query|string|false|Expand related resources (e.g., 'user').|
 |identity|query|string|false|Filter by identity (user or service ID).|
+|expand|query|string|false|Expand related resources (e.g., 'user').|
 
 > Example responses
 
@@ -342,7 +342,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## alerts
+## Lists recent alerts with optional limit.
 
 > Code samples
 
@@ -361,36 +361,44 @@ print(r.json())
 
 `GET /activity/alerts`
 
+Lists recent alerts with optional limit.
+Use 'limit' to control the number of alerts returned (default: 99).
+
+<h3 id="lists-recent-alerts-with-optional-limit.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|Maximum number of alerts to return.|
+
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
+[
+  {
+    "Timestamp": "2019-08-24T14:15:22Z",
+    "id": "string",
     "message": "string",
-    "param": "string",
-    "type": "string"
+    "metadata": {},
+    "requestID": "string"
   }
-}
+]
 ```
 
-<h3 id="alerts-responses">Responses</h3>
+<h3 id="lists-recent-alerts-with-optional-limit.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_activityservice_Alert](#schemaarray_activityservice_alert)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="alerts-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## list
+## Lists recent activity logs with optional limit.
 
 > Code samples
 
@@ -401,13 +409,22 @@ headers = {
   'X-API-Key': 'API_KEY'
 }
 
-r = requests.get('/telegram-frontends', headers = headers)
+r = requests.get('/activity/logs', headers = headers)
 
 print(r.json())
 
 ```
 
-`GET /telegram-frontends`
+`GET /activity/logs`
+
+Lists recent activity logs with optional limit.
+Use 'limit' to control the number of logs returned (default: 100).
+
+<h3 id="lists-recent-activity-logs-with-optional-limit.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|Maximum number of logs to return.|
 
 > Example responses
 
@@ -424,21 +441,21 @@ print(r.json())
 }
 ```
 
-<h3 id="list-responses">Responses</h3>
+<h3 id="lists-recent-activity-logs-with-optional-limit.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="list-responseschema">Response Schema</h3>
+<h3 id="lists-recent-activity-logs-with-optional-limit.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## operations
+## Lists all known operation types in the system.
 
 > Code samples
 
@@ -457,36 +474,35 @@ print(r.json())
 
 `GET /activity/operations`
 
+Lists all known operation types in the system.
+Useful for filtering and discovery of available operations.
+
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
+[
+  {
+    "operation": "string",
+    "subject": "string"
   }
-}
+]
 ```
 
-<h3 id="operations-responses">Responses</h3>
+<h3 id="lists-all-known-operation-types-in-the-system.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_taskengine_Operation](#schemaarray_taskengine_operation)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="operations-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## requestsByOperation
+## Lists requests by operation type and subject.
 
 > Code samples
 
@@ -505,7 +521,10 @@ print(r.json())
 
 `GET /activity/operations/{op}/{subject}`
 
-<h3 id="requestsbyoperation-parameters">Parameters</h3>
+Lists requests by operation type and subject.
+Useful for finding all requests of a specific operation type.
+
+<h3 id="lists-requests-by-operation-type-and-subject.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -514,34 +533,27 @@ print(r.json())
 
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
+[
+  "string"
+]
 ```
 
-<h3 id="requestsbyoperation-responses">Responses</h3>
+<h3 id="lists-requests-by-operation-type-and-subject.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_string](#schemaarray_string)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="requestsbyoperation-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## requests
+## Lists recent activity requests with optional limit.
 
 > Code samples
 
@@ -560,6 +572,15 @@ print(r.json())
 
 `GET /activity/requests`
 
+Lists recent activity requests with optional limit.
+Use 'limit' to control the number of requests returned (default: 100).
+
+<h3 id="lists-recent-activity-requests-with-optional-limit.-parameters">Parameters</h3>
+
+|Name|In|Type|Required|Description|
+|---|---|---|---|---|
+|limit|query|string|false|Maximum number of requests to return.|
+
 > Example responses
 
 > default Response
@@ -575,21 +596,21 @@ print(r.json())
 }
 ```
 
-<h3 id="requests-responses">Responses</h3>
+<h3 id="lists-recent-activity-requests-with-optional-limit.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="requests-responseschema">Response Schema</h3>
+<h3 id="lists-recent-activity-requests-with-optional-limit.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## requestByID
+## Retrieves a specific activity request by its ID.
 
 > Code samples
 
@@ -608,7 +629,10 @@ print(r.json())
 
 `GET /activity/requests/{id}`
 
-<h3 id="requestbyid-parameters">Parameters</h3>
+Retrieves a specific activity request by its ID.
+Returns all events associated with the request.
+
+<h3 id="retrieves-a-specific-activity-request-by-its-id.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -629,21 +653,21 @@ print(r.json())
 }
 ```
 
-<h3 id="requestbyid-responses">Responses</h3>
+<h3 id="retrieves-a-specific-activity-request-by-its-id.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="requestbyid-responseschema">Response Schema</h3>
+<h3 id="retrieves-a-specific-activity-request-by-its-id.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## getExecutionState
+## Retrieves the execution state of a specific request.
 
 > Code samples
 
@@ -662,7 +686,10 @@ print(r.json())
 
 `GET /activity/requests/{id}/state`
 
-<h3 id="getexecutionstate-parameters">Parameters</h3>
+Retrieves the execution state of a specific request.
+Returns the current state and progress information for long-running operations.
+
+<h3 id="retrieves-the-execution-state-of-a-specific-request.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -683,21 +710,21 @@ print(r.json())
 }
 ```
 
-<h3 id="getexecutionstate-responses">Responses</h3>
+<h3 id="retrieves-the-execution-state-of-a-specific-request.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="getexecutionstate-responseschema">Response Schema</h3>
+<h3 id="retrieves-the-execution-state-of-a-specific-request.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## getStatefulRequests
+## Lists all stateful requests currently being tracked.
 
 > Code samples
 
@@ -716,29 +743,25 @@ print(r.json())
 
 `GET /activity/stateful-requests`
 
+Lists all stateful requests currently being tracked.
+Stateful requests are long-running operations that maintain execution state.
+
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
+[
+  "string"
+]
 ```
 
-<h3 id="getstatefulrequests-responses">Responses</h3>
+<h3 id="lists-all-stateful-requests-currently-being-tracked.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_string](#schemaarray_string)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="getstatefulrequests-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -985,8 +1008,8 @@ Backends not assigned to any group exist in the configuration but are completely
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -1307,6 +1330,54 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
+## list
+
+> Code samples
+
+```python
+import requests
+headers = {
+  'Accept': 'application/json',
+  'X-API-Key': 'API_KEY'
+}
+
+r = requests.get('/telegram-frontends', headers = headers)
+
+print(r.json())
+
+```
+
+`GET /telegram-frontends`
+
+> Example responses
+
+> default Response
+
+```json
+{
+  "error": {
+    "code": "string",
+    "message": "string",
+    "param": "string",
+    "type": "string"
+  }
+}
+```
+
+<h3 id="list-responses">Responses</h3>
+
+|Status|Meaning|Description|Schema|
+|---|---|---|---|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
+
+<h3 id="list-responseschema">Response Schema</h3>
+
+<aside class="warning">
+To perform this operation, you must be authenticated by means of one of the following methods:
+X-API-Key
+</aside>
+
 ## create
 
 > Code samples
@@ -1524,55 +1595,7 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## set
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.post('/chains', headers = headers)
-
-print(r.json())
-
-```
-
-`POST /chains`
-
-> Example responses
-
-> default Response
-
-```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
-```
-
-<h3 id="set-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="set-responseschema">Response Schema</h3>
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
-## listChats
+## Lists all available chat sessions.
 
 > Code samples
 
@@ -1591,36 +1614,37 @@ print(r.json())
 
 `GET /chats`
 
+Lists all available chat sessions.
+Returns basic information about each chat session in the system.
+
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
+[
+  {
+    "backendId": "string",
+    "id": "string",
+    "lastMessage": {},
+    "startedAt": "2019-08-24T14:15:22Z"
   }
-}
+]
 ```
 
-<h3 id="listchats-responses">Responses</h3>
+<h3 id="lists-all-available-chat-sessions.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_chatservice_ChatSession](#schemaarray_chatservice_chatsession)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="listchats-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## createChat
+## Creates a new chat instance for the specified subject.
 
 > Code samples
 
@@ -1640,6 +1664,9 @@ print(r.json())
 
 `POST /chats`
 
+Creates a new chat instance for the specified subject.
+Returns the unique identifier for the new chat session.
+
 > Body parameter
 
 ```json
@@ -1661,21 +1688,21 @@ false
 }
 ```
 
-<h3 id="createchat-responses">Responses</h3>
+<h3 id="creates-a-new-chat-instance-for-the-specified-subject.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |201|[Created](https://tools.ietf.org/html/rfc7231#section-6.3.2)|Created|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="createchat-responseschema">Response Schema</h3>
+<h3 id="creates-a-new-chat-instance-for-the-specified-subject.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## history
+## Retrieves the complete chat history for a session.
 
 > Code samples
 
@@ -1694,7 +1721,10 @@ print(r.json())
 
 `GET /chats/{id}`
 
-<h3 id="history-parameters">Parameters</h3>
+Retrieves the complete chat history for a session.
+Returns all messages and interactions in chronological order.
+
+<h3 id="retrieves-the-complete-chat-history-for-a-session.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -1702,34 +1732,34 @@ print(r.json())
 
 > Example responses
 
-> default Response
+> 200 Response
 
 ```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
+[
+  {
+    "content": "string",
+    "id": "string",
+    "isLatest": true,
+    "isUser": true,
+    "role": "string",
+    "sentAt": "2019-08-24T14:15:22Z"
   }
-}
+]
 ```
 
-<h3 id="history-responses">Responses</h3>
+<h3 id="retrieves-the-complete-chat-history-for-a-session.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
+|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|[array_chatservice_ChatMessage](#schemaarray_chatservice_chatmessage)|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="history-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## chat
+## Sends a message to a chat session and gets AI response.
 
 > Code samples
 
@@ -1749,16 +1779,20 @@ print(r.json())
 
 `POST /chats/{id}/chat`
 
+Sends a message to a chat session and gets AI response.
+Supports multiple AI models and providers with token counting and state capture.
+
 > Body parameter
 
 ```json
 false
 ```
 
-<h3 id="chat-parameters">Parameters</h3>
+<h3 id="sends-a-message-to-a-chat-session-and-gets-ai-response.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|chainId|query|string|false|The ID of the taskchain to be used to compute the response.|
 |id|path|string|true|The unique identifier of the chat session.|
 
 > Example responses
@@ -1776,21 +1810,21 @@ false
 }
 ```
 
-<h3 id="chat-responses">Responses</h3>
+<h3 id="sends-a-message-to-a-chat-session-and-gets-ai-response.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="chat-responseschema">Response Schema</h3>
+<h3 id="sends-a-message-to-a-chat-session-and-gets-ai-response.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
 X-API-Key
 </aside>
 
-## addInstruction
+## Adds an instruction to an existing chat session.
 
 > Code samples
 
@@ -1810,13 +1844,16 @@ print(r.json())
 
 `POST /chats/{id}/instruction`
 
+Adds an instruction to an existing chat session.
+Instructions guide the AI behavior for subsequent interactions.
+
 > Body parameter
 
 ```json
 false
 ```
 
-<h3 id="addinstruction-parameters">Parameters</h3>
+<h3 id="adds-an-instruction-to-an-existing-chat-session.-parameters">Parameters</h3>
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
@@ -1837,14 +1874,14 @@ false
 }
 ```
 
-<h3 id="addinstruction-responses">Responses</h3>
+<h3 id="adds-an-instruction-to-an-existing-chat-session.-responses">Responses</h3>
 
 |Status|Meaning|Description|Schema|
 |---|---|---|---|
 |200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
 |default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
 
-<h3 id="addinstruction-responseschema">Response Schema</h3>
+<h3 id="adds-an-instruction-to-an-existing-chat-session.-responseschema">Response Schema</h3>
 
 <aside class="warning">
 To perform this operation, you must be authenticated by means of one of the following methods:
@@ -2496,10 +2533,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
-|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -2688,9 +2725,9 @@ Typically used for GDPR compliance or cleaning up test data.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|event_type|query|string|false|The type of event to delete.|
 |from|query|string|false|Start time in RFC3339 format.|
 |to|query|string|false|End time in RFC3339 format.|
-|event_type|query|string|false|The type of event to delete.|
 
 > Example responses
 
@@ -3673,8 +3710,8 @@ Returns functions in creation order, with the oldest functions first.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -5199,8 +5236,8 @@ Returns keywords in paginated format for browsing and discovery.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of keywords to return.|
 |cursor|query|string|false|RFC3339 timestamp for pagination cursor.|
+|limit|query|string|false|Maximum number of keywords to return.|
 
 > Example responses
 
@@ -6596,8 +6633,8 @@ Example: /queue/cancel?url=http://localhost:11434
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|model|query|string|false|The model name to cancel downloads for across all backends.|
 |url|query|string|false|The base URL of a specific backend to cancel downloads on.|
+|model|query|string|false|The model name to cancel downloads for across all backends.|
 
 > Example responses
 
@@ -7057,11 +7094,11 @@ Can expand file metadata in results when requested.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|epsilon|query|string|false|Epsilon parameter for search precision.|
 |expand|query|string|false|Set to 'files' to expand file metadata in results.|
 |q|query|string|false|The search query string.|
 |topk|query|string|false|Maximum number of results to return (default: 10).|
 |radius|query|string|false|Search radius for vector similarity.|
+|epsilon|query|string|false|Epsilon parameter for search precision.|
 
 > Example responses
 
@@ -8402,8 +8439,8 @@ Use the 'cursor' parameter to fetch the next page of results.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of users to return per page.|
 |cursor|query|string|false|An optional RFC3339 timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of users to return per page.|
 
 > Example responses
 
@@ -8682,54 +8719,6 @@ To perform this operation, you must be authenticated by means of one of the foll
 X-API-Key
 </aside>
 
-## openAIChatCompletions
-
-> Code samples
-
-```python
-import requests
-headers = {
-  'Accept': 'application/json',
-  'X-API-Key': 'API_KEY'
-}
-
-r = requests.post('/v1/chat/completions', headers = headers)
-
-print(r.json())
-
-```
-
-`POST /v1/chat/completions`
-
-> Example responses
-
-> default Response
-
-```json
-{
-  "error": {
-    "code": "string",
-    "message": "string",
-    "param": "string",
-    "type": "string"
-  }
-}
-```
-
-<h3 id="openaichatcompletions-responses">Responses</h3>
-
-|Status|Meaning|Description|Schema|
-|---|---|---|---|
-|200|[OK](https://tools.ietf.org/html/rfc7231#section-6.3.1)|OK|None|
-|default|Default|Default error response|[ErrorResponse](#schemaerrorresponse)|
-
-<h3 id="openaichatcompletions-responseschema">Response Schema</h3>
-
-<aside class="warning">
-To perform this operation, you must be authenticated by means of one of the following methods:
-X-API-Key
-</aside>
-
 # Schemas
 
 <h2 id="tocS_ErrorResponse">ErrorResponse</h2>
@@ -8799,6 +8788,60 @@ X-API-Key
 |updatedAt|string(date-time)|true|none|none|
 |withUserDetails|boolean|false|none|none|
 
+<h2 id="tocS_activityservice_Alert">activityservice_Alert</h2>
+<!-- backwards compatibility -->
+<a id="schemaactivityservice_alert"></a>
+<a id="schema_activityservice_Alert"></a>
+<a id="tocSactivityservice_alert"></a>
+<a id="tocsactivityservice_alert"></a>
+
+```json
+{
+  "Timestamp": "2019-08-24T14:15:22Z",
+  "id": "string",
+  "message": "string",
+  "metadata": {},
+  "requestID": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|Timestamp|string(date-time)|true|none|none|
+|id|string|true|none|none|
+|message|string|true|none|none|
+|metadata|object|true|none|none|
+|requestID|string|true|none|none|
+
+<h2 id="tocS_array_activityservice_Alert">array_activityservice_Alert</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_activityservice_alert"></a>
+<a id="schema_array_activityservice_Alert"></a>
+<a id="tocSarray_activityservice_alert"></a>
+<a id="tocsarray_activityservice_alert"></a>
+
+```json
+[
+  {
+    "Timestamp": "2019-08-24T14:15:22Z",
+    "id": "string",
+    "message": "string",
+    "metadata": {},
+    "requestID": "string"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[activityservice_Alert](#schemaactivityservice_alert)]|false|none|none|
+
 <h2 id="tocS_array_backendapi_backendSummary">array_backendapi_backendSummary</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_backendapi_backendsummary"></a>
@@ -8849,6 +8892,58 @@ X-API-Key
 |Name|Type|Required|Restrictions|Description|
 |---|---|---|---|---|
 |*anonymous*|[[backendapi_backendSummary](#schemabackendapi_backendsummary)]|false|none|none|
+
+<h2 id="tocS_array_chatservice_ChatMessage">array_chatservice_ChatMessage</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_chatservice_chatmessage"></a>
+<a id="schema_array_chatservice_ChatMessage"></a>
+<a id="tocSarray_chatservice_chatmessage"></a>
+<a id="tocsarray_chatservice_chatmessage"></a>
+
+```json
+[
+  {
+    "content": "string",
+    "id": "string",
+    "isLatest": true,
+    "isUser": true,
+    "role": "string",
+    "sentAt": "2019-08-24T14:15:22Z"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[chatservice_ChatMessage](#schemachatservice_chatmessage)]|false|none|none|
+
+<h2 id="tocS_array_chatservice_ChatSession">array_chatservice_ChatSession</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_chatservice_chatsession"></a>
+<a id="schema_array_chatservice_ChatSession"></a>
+<a id="tocSarray_chatservice_chatsession"></a>
+<a id="tocsarray_chatservice_chatsession"></a>
+
+```json
+[
+  {
+    "backendId": "string",
+    "id": "string",
+    "lastMessage": {},
+    "startedAt": "2019-08-24T14:15:22Z"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[chatservice_ChatSession](#schemachatservice_chatsession)]|false|none|none|
 
 <h2 id="tocS_array_downloadservice_Job">array_downloadservice_Job</h2>
 <!-- backwards compatibility -->
@@ -9265,6 +9360,29 @@ X-API-Key
 
 *None*
 
+<h2 id="tocS_array_taskengine_Operation">array_taskengine_Operation</h2>
+<!-- backwards compatibility -->
+<a id="schemaarray_taskengine_operation"></a>
+<a id="schema_array_taskengine_Operation"></a>
+<a id="tocSarray_taskengine_operation"></a>
+<a id="tocsarray_taskengine_operation"></a>
+
+```json
+[
+  {
+    "operation": "string",
+    "subject": "string"
+  }
+]
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|*anonymous*|[[taskengine_Operation](#schemataskengine_operation)]|false|none|none|
+
 <h2 id="tocS_array_taskengine_TaskChainDefinition">array_taskengine_TaskChainDefinition</h2>
 <!-- backwards compatibility -->
 <a id="schemaarray_taskengine_taskchaindefinition"></a>
@@ -9465,6 +9583,62 @@ X-API-Key
 |pulledModels|[statetype_ModelPullStatus](#schemastatetype_modelpullstatus)|true|none|none|
 |type|string|true|none|none|
 |updatedAt|string(date-time)|true|none|none|
+
+<h2 id="tocS_chatservice_ChatMessage">chatservice_ChatMessage</h2>
+<!-- backwards compatibility -->
+<a id="schemachatservice_chatmessage"></a>
+<a id="schema_chatservice_ChatMessage"></a>
+<a id="tocSchatservice_chatmessage"></a>
+<a id="tocschatservice_chatmessage"></a>
+
+```json
+{
+  "content": "string",
+  "id": "string",
+  "isLatest": true,
+  "isUser": true,
+  "role": "string",
+  "sentAt": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|content|string|true|none|message text|
+|id|string|true|none|unique identifier|
+|isLatest|boolean|true|none|mark if last message|
+|isUser|boolean|true|none|derived from role|
+|role|string|true|none|user/assistant/system|
+|sentAt|string(date-time)|true|none|timestamp|
+
+<h2 id="tocS_chatservice_ChatSession">chatservice_ChatSession</h2>
+<!-- backwards compatibility -->
+<a id="schemachatservice_chatsession"></a>
+<a id="schema_chatservice_ChatSession"></a>
+<a id="tocSchatservice_chatsession"></a>
+<a id="tocschatservice_chatsession"></a>
+
+```json
+{
+  "backendId": "string",
+  "id": "string",
+  "lastMessage": {},
+  "startedAt": "2019-08-24T14:15:22Z"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|backendId|string|true|none|none|
+|id|string|true|none|none|
+|lastMessage|object|false|none|none|
+|startedAt|string(date-time)|true|none|none|
 
 <h2 id="tocS_dispatchapi_AssignRequest">dispatchapi_AssignRequest</h2>
 <!-- backwards compatibility -->
@@ -10700,6 +10874,28 @@ X-API-Key
 |---|---|---|---|---|
 |content|string|true|none|none|
 |role|string|true|none|none|
+
+<h2 id="tocS_taskengine_Operation">taskengine_Operation</h2>
+<!-- backwards compatibility -->
+<a id="schemataskengine_operation"></a>
+<a id="schema_taskengine_Operation"></a>
+<a id="tocStaskengine_operation"></a>
+<a id="tocstaskengine_operation"></a>
+
+```json
+{
+  "operation": "string",
+  "subject": "string"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|operation|string|true|none|none|
+|subject|string|true|none|none|
 
 <h2 id="tocS_taskengine_TaskChainDefinition">taskengine_TaskChainDefinition</h2>
 <!-- backwards compatibility -->
