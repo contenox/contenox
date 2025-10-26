@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-183-gb43e9a7-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-184-gc4b57fb-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-183-gb43e9a7-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-184-gc4b57fb-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -1008,8 +1008,8 @@ Backends not assigned to any group exist in the configuration but are completely
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of items to return per page.|
+|cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
 
 > Example responses
 
@@ -2533,10 +2533,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
-|event_type|query|string|false|The type of event to filter by.|
 |aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
 |aggregate_id|query|string|false|The unique ID of the aggregate.|
+|limit|query|string|false|Maximum number of events to return.|
+|event_type|query|string|false|The type of event to filter by.|
 
 > Example responses
 
@@ -2597,9 +2597,9 @@ Useful for auditing or monitoring events from specific subsystems.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |event_source|query|string|false|The source system that generated the event.|
-|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -5236,8 +5236,8 @@ Returns keywords in paginated format for browsing and discovery.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|RFC3339 timestamp for pagination cursor.|
 |limit|query|string|false|Maximum number of keywords to return.|
+|cursor|query|string|false|RFC3339 timestamp for pagination cursor.|
 
 > Example responses
 
@@ -7094,11 +7094,11 @@ Can expand file metadata in results when requested.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|epsilon|query|string|false|Epsilon parameter for search precision.|
 |expand|query|string|false|Set to 'files' to expand file metadata in results.|
 |q|query|string|false|The search query string.|
 |topk|query|string|false|Maximum number of results to return (default: 10).|
 |radius|query|string|false|Search radius for vector similarity.|
-|epsilon|query|string|false|Epsilon parameter for search precision.|
 
 > Example responses
 
@@ -8439,8 +8439,8 @@ Use the 'cursor' parameter to fetch the next page of results.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|An optional RFC3339 timestamp to fetch the next page of results.|
 |limit|query|string|false|The maximum number of users to return per page.|
+|cursor|query|string|false|An optional RFC3339 timestamp to fetch the next page of results.|
 
 > Example responses
 

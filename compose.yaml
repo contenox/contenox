@@ -38,7 +38,7 @@ services:
     image: ghcr.io/contenox/ollamatokenizer-api:v0.0.7
     container_name: contenox-ollama-tokenizer
     environment:
-      - PRELOAD_MODELS=granite-embedding-30m,tiny
+      - PRELOAD_MODELS=phi-3,granite-embedding-30m,tiny
       - TOKENIZER_TIMEOUT=30s
       - FALLBACK_MODEL=granite-embedding-30m
       - USE_DEFAULT_URLS=true

@@ -1437,7 +1437,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-183-gb43e9a7-dirty
+    version: v0.0.51-184-gc4b57fb-dirty
 openapi: 3.1.0
 paths:
     /access-control:
@@ -1881,16 +1881,16 @@ paths:
                 NOTE: Only backends assigned to at least one group will be used for request processing.
                 Backends not assigned to any group exist in the configuration but are completely ignored by the routing system.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -2470,6 +2470,16 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
+                - description: The aggregate type (e.g., 'user', 'order').
+                  in: query
+                  name: aggregate_type
+                  schema:
+                    type: string
+                - description: The unique ID of the aggregate.
+                  in: query
+                  name: aggregate_id
+                  schema:
+                    type: string
                 - description: Maximum number of events to return.
                   in: query
                   name: limit
@@ -2479,16 +2489,6 @@ paths:
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
-                  schema:
-                    type: string
-                - description: The aggregate type (e.g., 'user', 'order').
-                  in: query
-                  name: aggregate_type
-                  schema:
-                    type: string
-                - description: The unique ID of the aggregate.
-                  in: query
-                  name: aggregate_id
                   schema:
                     type: string
             responses:
@@ -2511,6 +2511,12 @@ paths:
                 Retrieves events from a specific source within a time range.
                 Useful for auditing or monitoring events from specific subsystems.
             parameters:
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
@@ -2520,12 +2526,6 @@ paths:
                   in: query
                   name: event_source
                   schema:
-                    type: string
-                - description: Maximum number of events to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
                     type: string
             responses:
                 "200":
@@ -3683,16 +3683,16 @@ paths:
                 Lists all extracted keywords from indexed content.
                 Returns keywords in paginated format for browsing and discovery.
             parameters:
-                - description: RFC3339 timestamp for pagination cursor.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: Maximum number of keywords to return.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: RFC3339 timestamp for pagination cursor.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -4584,6 +4584,11 @@ paths:
                 Supports keyword queries with optional parameters for result tuning.
                 Can expand file metadata in results when requested.
             parameters:
+                - description: Epsilon parameter for search precision.
+                  in: query
+                  name: epsilon
+                  schema:
+                    type: string
                 - description: Set to 'files' to expand file metadata in results.
                   in: query
                   name: expand
@@ -4603,11 +4608,6 @@ paths:
                 - description: Search radius for vector similarity.
                   in: query
                   name: radius
-                  schema:
-                    type: string
-                - description: Epsilon parameter for search precision.
-                  in: query
-                  name: epsilon
                   schema:
                     type: string
             responses:
@@ -5104,16 +5104,16 @@ paths:
                 Results are returned in reverse chronological order (newest first).
                 Use the 'cursor' parameter to fetch the next page of results.
             parameters:
-                - description: An optional RFC3339 timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of users to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "10"
+                    type: string
+                - description: An optional RFC3339 timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
