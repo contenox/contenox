@@ -82,9 +82,56 @@
         ],
         "type": "object"
       },
+      "activityservice_Alert": {
+        "properties": {
+          "Timestamp": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "requestID": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "message",
+          "requestID",
+          "metadata",
+          "Timestamp"
+        ],
+        "type": "object"
+      },
+      "array_activityservice_Alert": {
+        "items": {
+          "$ref": "#/components/schemas/activityservice_Alert"
+        },
+        "type": "array"
+      },
       "array_backendapi_backendSummary": {
         "items": {
           "$ref": "#/components/schemas/backendapi_backendSummary"
+        },
+        "type": "array"
+      },
+      "array_chatservice_ChatMessage": {
+        "items": {
+          "$ref": "#/components/schemas/chatservice_ChatMessage"
+        },
+        "type": "array"
+      },
+      "array_chatservice_ChatSession": {
+        "items": {
+          "$ref": "#/components/schemas/chatservice_ChatSession"
         },
         "type": "array"
       },
@@ -169,6 +216,12 @@
       "array_string": {
         "items": {
           "type": "string"
+        },
+        "type": "array"
+      },
+      "array_taskengine_Operation": {
+        "items": {
+          "$ref": "#/components/schemas/taskengine_Operation"
         },
         "type": "array"
       },
@@ -303,6 +356,67 @@
           "pulledModels",
           "createdAt",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "chatservice_ChatMessage": {
+        "properties": {
+          "content": {
+            "description": "message text",
+            "type": "string"
+          },
+          "id": {
+            "description": "unique identifier",
+            "type": "string"
+          },
+          "isLatest": {
+            "description": "mark if last message",
+            "type": "boolean"
+          },
+          "isUser": {
+            "description": "derived from role",
+            "type": "boolean"
+          },
+          "role": {
+            "description": "user/assistant/system",
+            "type": "string"
+          },
+          "sentAt": {
+            "description": "timestamp",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "sentAt",
+          "isUser",
+          "isLatest"
+        ],
+        "type": "object"
+      },
+      "chatservice_ChatSession": {
+        "properties": {
+          "backendId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastMessage": {
+            "type": "object"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "startedAt",
+          "backendId"
         ],
         "type": "object"
       },
@@ -1555,6 +1669,21 @@
         ],
         "type": "object"
       },
+      "taskengine_Operation": {
+        "properties": {
+          "operation": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "subject"
+        ],
+        "type": "object"
+      },
       "taskengine_TaskChainDefinition": {
         "properties": {
           "debug": {
@@ -1784,7 +1913,7 @@
   },
   "info": {
     "title": "contenox/runtime – LLM Backend Management API",
-    "version": "v0.0.51-182-g0e79310-dirty"
+    "version": "v0.0.51-184-gc4b57fb-dirty"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1793,17 +1922,17 @@
         "description": "Lists access control entries with optional filtering and pagination.\nUse 'identity' to filter by user/service.\nUse 'expand=user' to include full user details.\nUse 'from' (RFC3339) for pagination cursor.",
         "parameters": [
           {
-            "description": "Expand related resources (e.g., 'user').",
+            "description": "Filter by identity (user or service ID).",
             "in": "query",
-            "name": "expand",
+            "name": "identity",
             "schema": {
               "type": "string"
             }
           },
           {
-            "description": "Filter by identity (user or service ID).",
+            "description": "Expand related resources (e.g., 'user').",
             "in": "query",
-            "name": "identity",
+            "name": "expand",
             "schema": {
               "type": "string"
             }
@@ -1983,12 +2112,24 @@
     },
     "/activity/alerts": {
       "get": {
+        "description": "Lists recent alerts with optional limit.\nUse 'limit' to control the number of alerts returned (default: 99).",
+        "parameters": [
+          {
+            "description": "Maximum number of alerts to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "99",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/alerts"
+                  "$ref": "#/components/schemas/array_activityservice_Alert"
                 }
               }
             },
@@ -2005,17 +2146,29 @@
             "description": "Default error response"
           }
         },
-        "summary": "alerts"
+        "summary": "Lists recent alerts with optional limit."
       }
     },
     "/activity/logs": {
       "get": {
+        "description": "Lists recent activity logs with optional limit.\nUse 'limit' to control the number of logs returned (default: 100).",
+        "parameters": [
+          {
+            "description": "Maximum number of logs to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/logs"
+                  "$ref": "#/components/schemas/array_activityservice_ActivityLog"
                 }
               }
             },
@@ -2032,17 +2185,18 @@
             "description": "Default error response"
           }
         },
-        "summary": "list"
+        "summary": "Lists recent activity logs with optional limit."
       }
     },
     "/activity/operations": {
       "get": {
+        "description": "Lists all known operation types in the system.\nUseful for filtering and discovery of available operations.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ops"
+                  "$ref": "#/components/schemas/array_taskengine_Operation"
                 }
               }
             },
@@ -2059,17 +2213,18 @@
             "description": "Default error response"
           }
         },
-        "summary": "operations"
+        "summary": "Lists all known operation types in the system."
       }
     },
     "/activity/operations/{op}/{subject}": {
       "get": {
+        "description": "Lists requests by operation type and subject.\nUseful for finding all requests of a specific operation type.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/reqs"
+                  "$ref": "#/components/schemas/array_string"
                 }
               }
             },
@@ -2086,7 +2241,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "requestsByOperation"
+        "summary": "Lists requests by operation type and subject."
       },
       "parameters": [
         {
@@ -2111,12 +2266,24 @@
     },
     "/activity/requests": {
       "get": {
+        "description": "Lists recent activity requests with optional limit.\nUse 'limit' to control the number of requests returned (default: 100).",
+        "parameters": [
+          {
+            "description": "Maximum number of requests to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/requests"
+                  "$ref": "#/components/schemas/array_activityservice_ActivityRequest"
                 }
               }
             },
@@ -2133,17 +2300,18 @@
             "description": "Default error response"
           }
         },
-        "summary": "requests"
+        "summary": "Lists recent activity requests with optional limit."
       }
     },
     "/activity/requests/{id}": {
       "get": {
+        "description": "Retrieves a specific activity request by its ID.\nReturns all events associated with the request.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/events"
+                  "$ref": "#/components/schemas/array_activityservice_RequestEvent"
                 }
               }
             },
@@ -2160,7 +2328,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "requestByID"
+        "summary": "Retrieves a specific activity request by its ID."
       },
       "parameters": [
         {
@@ -2176,12 +2344,13 @@
     },
     "/activity/requests/{id}/state": {
       "get": {
+        "description": "Retrieves the execution state of a specific request.\nReturns the current state and progress information for long-running operations.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/state"
+                  "$ref": "#/components/schemas/activityservice_ExecutionState"
                 }
               }
             },
@@ -2198,7 +2367,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "getExecutionState"
+        "summary": "Retrieves the execution state of a specific request."
       },
       "parameters": [
         {
@@ -2214,12 +2383,13 @@
     },
     "/activity/stateful-requests": {
       "get": {
+        "description": "Lists all stateful requests currently being tracked.\nStateful requests are long-running operations that maintain execution state.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/reqIDs"
+                  "$ref": "#/components/schemas/array_string"
                 }
               }
             },
@@ -2236,7 +2406,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "getStatefulRequests"
+        "summary": "Lists all stateful requests currently being tracked."
       }
     },
     "/backend-affinity/{backendID}/groups": {
@@ -2714,153 +2884,15 @@
         "summary": "update"
       }
     },
-    "/chains": {
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/chains"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "list"
-      },
-      "post": {
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/chain"
-                }
-              }
-            },
-            "description": "Created"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "set"
-      }
-    },
-    "/chains/{id}": {
-      "delete": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/object"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "delete"
-      },
-      "get": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/chain"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "get"
-      },
-      "parameters": [
-        {
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "put": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/chain"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "update"
-      }
-    },
     "/chats": {
       "get": {
+        "description": "Lists all available chat sessions.\nReturns basic information about each chat session in the system.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/chats"
+                  "$ref": "#/components/schemas/array_chatservice_ChatSession"
                 }
               }
             },
@@ -2877,14 +2909,15 @@
             "description": "Default error response"
           }
         },
-        "summary": "listChats"
+        "summary": "Lists all available chat sessions."
       },
       "post": {
+        "description": "Creates a new chat instance for the specified subject.\nReturns the unique identifier for the new chat session.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/newChatInstanceRequest"
+                "$ref": "#/components/schemas/chatapi_newChatInstanceRequest"
               }
             }
           },
@@ -2895,7 +2928,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/resp"
+                  "$ref": "#/components/schemas/map[string]string"
                 }
               }
             },
@@ -2912,17 +2945,18 @@
             "description": "Default error response"
           }
         },
-        "summary": "createChat"
+        "summary": "Creates a new chat instance for the specified subject."
       }
     },
     "/chats/{id}": {
       "get": {
+        "description": "Retrieves the complete chat history for a session.\nReturns all messages and interactions in chronological order.",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/history"
+                  "$ref": "#/components/schemas/array_chatservice_ChatMessage"
                 }
               }
             },
@@ -2939,7 +2973,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "history"
+        "summary": "Retrieves the complete chat history for a session."
       },
       "parameters": [
         {
@@ -2966,11 +3000,22 @@
         }
       ],
       "post": {
+        "description": "Sends a message to a chat session and gets AI response.\nSupports multiple AI models and providers with token counting and state capture.",
+        "parameters": [
+          {
+            "description": "The ID of the taskchain to be used to compute the response.",
+            "in": "query",
+            "name": "chainId",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/chatRequest"
+                "$ref": "#/components/schemas/chatapi_chatRequest"
               }
             }
           },
@@ -2981,7 +3026,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/resp"
+                  "$ref": "#/components/schemas/map[string]any"
                 }
               }
             },
@@ -2998,7 +3043,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "chat"
+        "summary": "Sends a message to a chat session and gets AI response."
       }
     },
     "/chats/{id}/instruction": {
@@ -3014,11 +3059,12 @@
         }
       ],
       "post": {
+        "description": "Adds an instruction to an existing chat session.\nInstructions guide the AI behavior for subsequent interactions.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/instructionRequest"
+                "$ref": "#/components/schemas/chatapi_instructionRequest"
               }
             }
           },
@@ -3029,7 +3075,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/resp"
+                  "$ref": "#/components/schemas/map[string]string"
                 }
               }
             },
@@ -3046,7 +3092,7 @@
             "description": "Default error response"
           }
         },
-        "summary": "addInstruction"
+        "summary": "Adds an instruction to an existing chat session."
       }
     },
     "/defaultmodel": {
@@ -3420,14 +3466,6 @@
         "description": "Retrieves events for a specific aggregate within a time range.\nUseful for rebuilding aggregate state or auditing changes.",
         "parameters": [
           {
-            "description": "The type of event to filter by.",
-            "in": "query",
-            "name": "event_type",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The aggregate type (e.g., 'user', 'order').",
             "in": "query",
             "name": "aggregate_type",
@@ -3449,6 +3487,14 @@
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The type of event to filter by.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
               "type": "string"
             }
           }
@@ -3483,6 +3529,15 @@
         "description": "Retrieves events from a specific source within a time range.\nUseful for auditing or monitoring events from specific subsystems.",
         "parameters": [
           {
+            "description": "Maximum number of events to return.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": "100",
+              "type": "string"
+            }
+          },
+          {
             "description": "The type of event to filter by.",
             "in": "query",
             "name": "event_type",
@@ -3495,15 +3550,6 @@
             "in": "query",
             "name": "event_source",
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Maximum number of events to return.",
-            "in": "query",
-            "name": "limit",
-            "schema": {
-              "default": "100",
               "type": "string"
             }
           }
@@ -3577,6 +3623,14 @@
         "description": "Deletes all events of a specific type within a time range.\nUSE WITH CAUTION — this is a destructive operation.\nTypically used for GDPR compliance or cleaning up test data.",
         "parameters": [
           {
+            "description": "The type of event to delete.",
+            "in": "query",
+            "name": "event_type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "description": "Start time in RFC3339 format.",
             "in": "query",
             "name": "from",
@@ -3588,14 +3642,6 @@
             "description": "End time in RFC3339 format.",
             "in": "query",
             "name": "to",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "The type of event to delete.",
-            "in": "query",
-            "name": "event_type",
             "schema": {
               "type": "string"
             }
@@ -4252,19 +4298,19 @@
         "description": "Lists all registered functions with pagination\nReturns functions in creation order, with the oldest functions first.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -5838,19 +5884,19 @@
         "description": "Lists all registered models in OpenAI-compatible format.\nReturns models as they would appear in OpenAI's /v1/models endpoint.\nNOTE: Only models assigned to at least one group will be available for request processing.\nModels not assigned to any group exist in the configuration but are completely ignored by the routing system.\nthe chainID parameter is currently unused.",
         "parameters": [
           {
-            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
-            "in": "query",
-            "name": "cursor",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "description": "The maximum number of items to return per page.",
             "in": "query",
             "name": "limit",
             "schema": {
               "default": "100",
+              "type": "string"
+            }
+          },
+          {
+            "description": "An optional RFC3339Nano timestamp to fetch the next page of results.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
               "type": "string"
             }
           }
@@ -6176,17 +6222,17 @@
         "description": "Cancels an in-progress model download.\nAccepts either:\n- 'url' query parameter to cancel a download on a specific backend\n- 'model' query parameter to cancel the model download across all backends\nExample: /queue/cancel?url=http://localhost:11434\n/queue/cancel?model=mistral:latest",
         "parameters": [
           {
-            "description": "The model name to cancel downloads for across all backends.",
+            "description": "The base URL of a specific backend to cancel downloads on.",
             "in": "query",
-            "name": "model",
+            "name": "url",
             "schema": {
               "type": "string"
             }
           },
           {
-            "description": "The base URL of a specific backend to cancel downloads on.",
+            "description": "The model name to cancel downloads for across all backends.",
             "in": "query",
-            "name": "url",
+            "name": "model",
             "schema": {
               "type": "string"
             }
@@ -6670,7 +6716,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResourceTypes"
+                  "$ref": "#/components/schemas/object"
                 }
               }
             },
@@ -6697,7 +6743,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/serviceNames"
+                  "$ref": "#/components/schemas/object"
                 }
               }
             },
@@ -7505,33 +7551,6 @@
           }
         },
         "summary": "Updates an existing user's mutable fields."
-      }
-    },
-    "/v1/chat/completions": {
-      "post": {
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/resp"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Default error response"
-          }
-        },
-        "summary": "openAIChatCompletions"
       }
     }
   },
