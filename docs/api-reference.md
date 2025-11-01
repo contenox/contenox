@@ -1,5 +1,5 @@
 ---
-title: contenox/runtime – LLM Backend Management API v0.0.51-184-gc4b57fb-dirty
+title: contenox/runtime – LLM Backend Management API v0.0.51-186-gf456219-dirty
 language_tabs:
   - python: Python
 language_clients:
@@ -14,7 +14,7 @@ headingLevel: 2
 
 <!-- Generator: Widdershins v4.0.1 -->
 
-<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-184-gc4b57fb-dirty</h1>
+<h1 id="contenox-runtime-llm-backend-management-api">contenox/runtime – LLM Backend Management API v0.0.51-186-gf456219-dirty</h1>
 
 > Scroll down for code samples, example requests and responses. Select a language for code samples from the tabs above or the mobile navigation menu.
 
@@ -2533,10 +2533,10 @@ Useful for rebuilding aggregate state or auditing changes.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
-|aggregate_id|query|string|false|The unique ID of the aggregate.|
 |limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
+|aggregate_type|query|string|false|The aggregate type (e.g., 'user', 'order').|
+|aggregate_id|query|string|false|The unique ID of the aggregate.|
 
 > Example responses
 
@@ -2597,9 +2597,9 @@ Useful for auditing or monitoring events from specific subsystems.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|Maximum number of events to return.|
 |event_type|query|string|false|The type of event to filter by.|
 |event_source|query|string|false|The source system that generated the event.|
+|limit|query|string|false|Maximum number of events to return.|
 
 > Example responses
 
@@ -4416,8 +4416,8 @@ Returns a list of remote hooks.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 
 > Example responses
 
@@ -4995,8 +4995,8 @@ Returns jobs in paginated format using cursor-based pagination.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|cursor|query|string|false|RFC3339 timestamp for pagination cursor.|
 |limit|query|string|false|Maximum number of jobs to return.|
+|cursor|query|string|false|RFC3339 timestamp for pagination cursor.|
 
 > Example responses
 
@@ -6226,8 +6226,8 @@ the chainID parameter is currently unused.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|limit|query|string|false|The maximum number of items to return per page.|
 |cursor|query|string|false|An optional RFC3339Nano timestamp to fetch the next page of results.|
+|limit|query|string|false|The maximum number of items to return per page.|
 |chainID|path|string|true|The ID of the chain that links to the openAI completion API. Currently unused.|
 
 > Example responses
@@ -7043,9 +7043,9 @@ applies the current mapping configuration, and appends the resulting domain even
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
+|to|query|string|false|End time (RFC3339)|
 |nid|query|string|false|Numeric ID of the raw event|
 |from|query|string|false|Start time (RFC3339)|
-|to|query|string|false|End time (RFC3339)|
 
 > Example responses
 
@@ -7094,11 +7094,11 @@ Can expand file metadata in results when requested.
 
 |Name|In|Type|Required|Description|
 |---|---|---|---|---|
-|epsilon|query|string|false|Epsilon parameter for search precision.|
-|expand|query|string|false|Set to 'files' to expand file metadata in results.|
 |q|query|string|false|The search query string.|
 |topk|query|string|false|Maximum number of results to return (default: 10).|
 |radius|query|string|false|Search radius for vector similarity.|
+|epsilon|query|string|false|Epsilon parameter for search precision.|
+|expand|query|string|false|Set to 'files' to expand file metadata in results.|
 
 > Example responses
 

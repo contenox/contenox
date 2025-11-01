@@ -214,7 +214,10 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		clientTools = req.Tools
 	}
 
-	chainContext := &ChainContext{}
+	chainContext := &ChainContext{
+		Tools:       map[string]ToolWithResolution{},
+		ClientTools: clientTools,
+	}
 	filter := map[string]ToolWithResolution{}
 	for _, task := range chain.Tasks {
 		if task.ExecuteConfig != nil && len(task.ExecuteConfig.Hooks) > 0 {
@@ -692,9 +695,9 @@ func compare(operator OperatorTerm, response, when string) (bool, error) {
 
 // findTaskByID returns the task with the given ID from the task list.
 func findTaskByID(tasks []TaskDefinition, id string) (*TaskDefinition, error) {
-	for _, task := range tasks {
-		if task.ID == id {
-			return &task, nil
+	for i := range tasks {
+		if tasks[i].ID == id {
+			return &tasks[i], nil
 		}
 	}
 	return nil, fmt.Errorf("task not found: %s", id)
