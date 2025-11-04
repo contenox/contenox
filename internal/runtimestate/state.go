@@ -116,7 +116,7 @@ func (s *State) RunBackendCycle(ctx context.Context) error {
 func (s *State) RunDownloadCycle(ctx context.Context) error {
 	item, err := s.dwQueue.pop(ctx)
 	if err != nil {
-		if err == libdb.ErrNotFound {
+		if errors.Is(err, libdb.ErrNotFound) {
 			return nil
 		}
 		return err

@@ -1437,7 +1437,7 @@ components:
             type: apiKey
 info:
     title: contenox/runtime – LLM Backend Management API
-    version: v0.0.51-186-gf456219-dirty
+    version: v0.0.51-187-ge864da3-dirty
 openapi: 3.1.0
 paths:
     /access-control:
@@ -2271,16 +2271,16 @@ paths:
                 Lists all event triggers with pagination
                 Returns event triggers in creation order, with the oldest triggers first.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -2470,12 +2470,6 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
-                - description: Maximum number of events to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
-                    type: string
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
@@ -2490,6 +2484,12 @@ paths:
                   in: query
                   name: aggregate_id
                   schema:
+                    type: string
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
                     type: string
             responses:
                 "200":
@@ -3333,16 +3333,16 @@ paths:
                 Lists remote hooks, optionally filtering by a unique name.
                 Returns a list of remote hooks.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -3621,16 +3621,16 @@ paths:
                 Lists all jobs currently in progress.
                 Returns jobs in paginated format using cursor-based pagination.
             parameters:
+                - description: RFC3339 timestamp for pagination cursor.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: Maximum number of jobs to return.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: RFC3339 timestamp for pagination cursor.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -4296,16 +4296,16 @@ paths:
         get:
             description: Lists all configured external providers with pagination support.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -4548,11 +4548,6 @@ paths:
                 This endpoint fetches a raw event by its numeric ID (NID) and time range,
                 applies the current mapping configuration, and appends the resulting domain event.
             parameters:
-                - description: End time (RFC3339)
-                  in: query
-                  name: to
-                  schema:
-                    type: string
                 - description: Numeric ID of the raw event
                   in: query
                   name: nid
@@ -4561,6 +4556,11 @@ paths:
                 - description: Start time (RFC3339)
                   in: query
                   name: from
+                  schema:
+                    type: string
+                - description: End time (RFC3339)
+                  in: query
+                  name: to
                   schema:
                     type: string
             responses:
@@ -4718,16 +4718,16 @@ paths:
         get:
             description: Lists all task chain definitions with pagination.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
