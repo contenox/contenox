@@ -245,14 +245,13 @@ tools/version/version
 vald/
 
 # Docs
-# docs/  ← currently tracked
+docs/
 
 # ==============================
 # Enterprise Code
 # ==============================
 enterprise/
 .apikey.txt
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
 /node_modules
@@ -284,7 +283,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
 
 # vercel
@@ -293,3 +292,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ---- Generated version & API docs ----
+apiframework/version.txt
+docs/api-reference.md
+docs/openapi.json
+docs/openapi.yaml
+openapi.json
+
+# ---- Internal tooling ----
+/tools/openapi-gen/
+/tools/version/
+
+# Bootstrap scripts
+scripts/bootstrap.sh
+scripts/openai-demo.sh
