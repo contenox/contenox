@@ -307,3 +307,4 @@ openapi.json
 # Bootstrap scripts
 scripts/bootstrap.sh
 scripts/openai-demo.sh
+scripts/mvp-smoke.sh

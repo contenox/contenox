@@ -1,63 +1,70 @@
-.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown clean set-version bump-major bump-minor bump-patch commit-docs
+.PHONY: build up run down restart logs ps clean test test-unit test-system compose-wipe \
+        test-api-init wait-for-server test-api test-api-logs test-api-docker
 
-PROJECT_ROOT := $(shell pwd)
-VERSION_FILE := apiframework/version.txt
+# --------------------------------------
+# Docker Compose
+# --------------------------------------
+COMPOSE_FILES := -f compose.yaml
+ifneq ("$(wildcard compose.local.yaml)","")
+  COMPOSE_FILES += -f compose.local.yaml
+endif
+COMPOSE_CMD := docker compose $(COMPOSE_FILES)
 
-# Default model configuration - can be overridden when calling make
+# --------------------------------------
+# Default model configuration (override at call-time)
+# --------------------------------------
 EMBED_MODEL ?= nomic-embed-text:latest
 EMBED_PROVIDER ?= ollama
 EMBED_MODEL_CONTEXT_LENGTH ?= 2048
+
 TASK_MODEL ?= phi3:3.8b
 TASK_MODEL_CONTEXT_LENGTH ?= 2048
 TASK_PROVIDER ?= ollama
+
 CHAT_MODEL ?= phi3:3.8b
-CHAT_PROVIDER ?= ollama
 CHAT_MODEL_CONTEXT_LENGTH ?= 2048
+CHAT_PROVIDER ?= ollama
+
 TENANCY ?= 54882f1d-3788-44f9-aed6-19a793c4568f
 
-export EMBED_MODEL
-export EMBED_PROVIDER
-export EMBED_MODEL_CONTEXT_LENGTH
-export TASK_MODEL
-export TASK_MODEL_CONTEXT_LENGTH
-export TASK_PROVIDER
-export CHAT_MODEL
-export CHAT_PROVIDER
-export CHAT_MODEL_CONTEXT_LENGTH
+export EMBED_MODEL EMBED_PROVIDER EMBED_MODEL_CONTEXT_LENGTH
+export TASK_MODEL TASK_MODEL_CONTEXT_LENGTH TASK_PROVIDER
+export CHAT_MODEL CHAT_MODEL_CONTEXT_LENGTH CHAT_PROVIDER
 export TENANCY
 
-COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml
+# --------------------------------------
+# Lifecycle
+# --------------------------------------
+build:
+	$(COMPOSE_CMD) build --build-arg TENANCY=$(TENANCY)
 
-validate-version:
-	@if [ ! -f "$(VERSION_FILE)" ]; then \
-		echo "ERROR: Version file $(VERSION_FILE) does not exist. Run 'make set-version' first."; \
-		exit 1; \
-	fi
-	@VERSION_CONTENT=$$(cat $(VERSION_FILE) | tr -d '\n' | tr -d '\r'); \
-	if [ -z "$$VERSION_CONTENT" ]; then \
-		echo "ERROR: Version file $(VERSION_FILE) is empty. Run 'make set-version' first."; \
-		exit 1; \
-	fi
+up:
+	$(COMPOSE_CMD) up -d
 
-echo-version:
-	@echo "Current version: $$(cat $(VERSION_FILE) 2>/dev/null || echo 'not set')"
-
-clean:
-	@rm -f $(VERSION_FILE) 2>/dev/null || true
-
-build: set-version validate-version
-	$(COMPOSE_CMD) build \
-		--build-arg TENANCY=$(TENANCY)
+run: build up
 
 down:
 	$(COMPOSE_CMD) down --volumes --remove-orphans
 
-run: down build
-	$(COMPOSE_CMD) up -d
+restart:
+	$(MAKE) down
+	$(MAKE) run
 
-logs: run
-	$(COMPOSE_CMD) logs -f runtime
+logs:
+	$(COMPOSE_CMD) logs -f
 
+ps:
+	$(COMPOSE_CMD) ps
+
+clean:
+	@rm -rf apitests/.venv || true
+
+compose-wipe:
+	$(COMPOSE_CMD) down --volumes --rmi all --remove-orphans
+
+# --------------------------------------
+# Go tests
+# --------------------------------------
 test-unit:
 	GOMAXPROCS=4 go test -C ./ -run '^TestUnit_' ./...
 
@@ -67,9 +74,9 @@ test-system:
 test:
 	GOMAXPROCS=4 go test -C ./ ./...
 
-compose-wipe:
-	$(COMPOSE_CMD) down --volumes --rmi all
-
+# --------------------------------------
+# API tests (python)
+# --------------------------------------
 test-api-init:
 	python3 -m venv apitests/.venv
 	. apitests/.venv/bin/activate && pip install -r apitests/requirements.txt
@@ -82,50 +89,8 @@ wait-for-server:
 	done
 	@echo "Server is up!"
 
-test-api: run wait-for-server
+test-api: down up wait-for-server
 	. apitests/.venv/bin/activate && pytest apitests/$(TEST_FILE)
 
-test-api-logs: run wait-for-server
+test-api-logs: down up wait-for-server
 	. apitests/.venv/bin/activate && pytest --log-cli-level=DEBUG --capture=no -v apitests/$(TEST_FILE)
-
-test-api-docker:
-	docker build -f Dockerfile.apitests --build-arg EMBED_MODEL=$(EMBED_MODEL) \
-		--build-arg TASK_MODEL=$(TASK_MODEL) \
-		--build-arg CHAT_MODEL=$(CHAT_MODEL) \
-		-t contenox-apitests .
-	docker run --rm --network=host contenox-apitests
-
-docs-gen:
-	@echo "📝 Generating OpenAPI spec..."
-	@go run $(PROJECT_ROOT)/tools/openapi-gen --project="$(PROJECT_ROOT)" --output="$(PROJECT_ROOT)/docs"
-	@echo "✅ OpenAPI spec generated at $(PROJECT_ROOT)/docs/openapi.json"
-
-docs-markdown: docs-gen
-	@echo "📝 Converting OpenAPI spec to Markdown..."
-	@echo "🐳 Using Node.js Docker image to generate documentation..."
-	@docker run --rm \
-		-v $(PROJECT_ROOT)/docs:/local \
-		node:18-alpine sh -c "\
-			npm install -g widdershins@4 && \
-			widdershins /local/openapi.json -o /local/api-reference.md \
-				--language_tabs 'python:Python' \
-				--summary \
-				--resolve \
-				--verbose"
-	@echo "✅ Markdown documentation generated at $(PROJECT_ROOT)/docs/api-reference.md"
-
-set-version: docs-markdown
-	go run ./tools/version/main.go set
-
-commit-docs: set-version
-	@git add $(PROJECT_ROOT)/docs/
-	@git commit -m "Update API reference"
-
-bump-major:
-	go run ./tools/version/main.go bump major
-
-bump-minor:
-	go run ./tools/version/main.go bump minor
-
-bump-patch:
-	go run ./tools/version/main.go bump patch

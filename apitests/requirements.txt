@@ -6,4 +6,3 @@ testcontainers[postgresql]
 testcontainers[nats]
 openai
 pytest_httpserver
-urlparse

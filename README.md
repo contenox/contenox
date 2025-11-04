@@ -15,5 +15,4 @@
 ✅ **Drop-in for OpenAI chatcompletion API**
 ✅ **JavaScript function execution with event-driven triggers**
 
-> **Note on scope (MVP repo):**
 > for further information contact: **hello@contenox.com**
