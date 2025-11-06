@@ -26,6 +26,14 @@ type Service interface {
 	Delete(ctx context.Context, id string) error
 	List(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*runtimetypes.RemoteHook, error)
 	GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error)
+	ListLocalHooks(ctx context.Context) ([]LocalHook, error)
+}
+
+type LocalHook struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Type        string            `json:"type"`
+	Tools       []taskengine.Tool `json:"tools,omitempty"`
 }
 
 type service struct {
@@ -47,6 +55,40 @@ func (s *service) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*
 		return nil, errors.New("hook registry is not configured for this service")
 	}
 	return s.hookRegistry.GetSchemasForSupportedHooks(ctx)
+}
+
+// ListLocalHooks returns all locally registered hooks
+func (s *service) ListLocalHooks(ctx context.Context) ([]LocalHook, error) {
+	if s.hookRegistry == nil {
+		return nil, errors.New("hook registry is not configured for this service")
+	}
+
+	supported, err := s.hookRegistry.Supports(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get supported hooks: %w", err)
+	}
+
+	localHooks := make([]LocalHook, 0, len(supported))
+	for _, name := range supported {
+		tools, err := s.hookRegistry.GetToolsForHookByName(ctx, name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get tool for hook %s %w", name, err)
+		}
+
+		description := ""
+		if len(tools) > 0 && tools[0].Function.Description != "" {
+			description = tools[0].Function.Description
+		}
+
+		localHooks = append(localHooks, LocalHook{
+			Name:        name,
+			Description: description,
+			Type:        "local",
+			Tools:       tools,
+		})
+	}
+
+	return localHooks, nil
 }
 
 func (s *service) Create(ctx context.Context, hook *runtimetypes.RemoteHook) error {

@@ -40,7 +40,37 @@ func NewHTTPRemoteHookService(baseURL, token string, client *http.Client) hookpr
 	}
 }
 
-// GetSchemasForSupportedHooks implements hookproviderservice.Service.GetSchemasForSupportedHooks.
+// NEW: ListLocalHooks implements hookproviderservice.Service.ListLocalHooks.
+func (s *HTTPRemoteHookService) ListLocalHooks(ctx context.Context) ([]hookproviderservice.LocalHook, error) {
+	reqUrl := s.baseURL + "/hooks/local"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqUrl, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.token != "" {
+		req.Header.Set("X-API-Key", s.token)
+	}
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, apiframework.HandleAPIError(resp)
+	}
+
+	var localHooks []hookproviderservice.LocalHook
+	if err := json.NewDecoder(resp.Body).Decode(&localHooks); err != nil {
+		return nil, err
+	}
+
+	return localHooks, nil
+}
+
 // GetSchemasForSupportedHooks implements hookproviderservice.Service.GetSchemasForSupportedHooks.
 func (s *HTTPRemoteHookService) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error) {
 	reqUrl := s.baseURL + "/hooks/schemas"

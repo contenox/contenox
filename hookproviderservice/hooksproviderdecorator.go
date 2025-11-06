@@ -16,6 +16,18 @@ type activityTrackerDecorator struct {
 	tracker libtracker.ActivityTracker
 }
 
+// NEW: Add tracking for ListLocalHooks
+func (d *activityTrackerDecorator) ListLocalHooks(ctx context.Context) ([]LocalHook, error) {
+	_, _, endFn := d.tracker.Start(
+		ctx,
+		"list_local",
+		"local_hooks",
+	)
+	defer endFn()
+
+	return d.service.ListLocalHooks(ctx)
+}
+
 // GetSchemasForSupportedHooks wraps the underlying service call with activity tracking.
 func (d *activityTrackerDecorator) GetSchemasForSupportedHooks(ctx context.Context) (map[string]*openapi3.T, error) {
 	reportErrFn, _, endFn := d.tracker.Start(

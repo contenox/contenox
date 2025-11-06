@@ -131,10 +131,12 @@ func (p *PersistentRepo) execRemoteHook(
 
 // GetToolsForHookByName returns the list of tools exposed by the remote hook.
 func (p *PersistentRepo) GetToolsForHookByName(ctx context.Context, name string) ([]taskengine.Tool, error) {
-	if _, ok := p.localHooks[name]; ok {
-		return nil, fmt.Errorf("tool retrieval for local hook '%s' is not yet implemented", name)
+	// Check local hooks first
+	if hook, ok := p.localHooks[name]; ok {
+		return hook.GetToolsForHookByName(ctx, name)
 	}
 
+	// Fetch remote hook
 	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
 	remoteHook, err := store.GetRemoteHookByName(ctx, name)
 	if err != nil {

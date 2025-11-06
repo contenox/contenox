@@ -22,12 +22,28 @@ func AddRemoteHookRoutes(mux *http.ServeMux, service hookproviderservice.Service
 	mux.HandleFunc("PUT /hooks/remote/{id}", s.update)
 	mux.HandleFunc("DELETE /hooks/remote/{id}", s.delete)
 
+	// NEW: Local hooks endpoint
+	mux.HandleFunc("GET /hooks/local", s.listLocal)
+
 	// Endpoint to get all hook schemas
 	mux.HandleFunc("GET /hooks/schemas", s.getSchemas)
 }
 
 type remoteHookService struct {
 	service hookproviderservice.Service
+}
+
+// NEW: List local hooks
+func (s *remoteHookService) listLocal(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	localHooks, err := s.service.ListLocalHooks(ctx)
+	if err != nil {
+		_ = serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
+	_ = serverops.Encode(w, r, http.StatusOK, localHooks)
 }
 
 // Retrieves the JSON openAPI schemas for all supported hook types.
