@@ -383,7 +383,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 
 	case HandleConvertToOpenAIChatResponse:
 		if dataType != DataTypeChatHistory {
-			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'chat_history', but got '%s'", currentTask.Handler, dataType.String())
+			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'chat_history', used var %s, but got '%s'", currentTask.InputVar, currentTask.Handler, dataType.String())
 		}
 		chatHistory, ok := input.(ChatHistory)
 		if !ok {
@@ -428,7 +428,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 
 		default:
-			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'openai_chat' or 'chat_history', but got '%s'", currentTask.Handler, dataType.String())
+			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'openai_chat' or 'chat_history', used var: %s but got '%s'", currentTask.InputVar, currentTask.Handler, dataType.String())
 		}
 		if currentTask.SystemInstruction != "" {
 			alreadyPresent := false

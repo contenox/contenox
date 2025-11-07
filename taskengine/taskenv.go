@@ -358,12 +358,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s failed after %d retries: %v", currentTask.ID, maxRetries, taskErr)
 		}
 
-		// Update execution variables with raw task output
-		vars["previous_output"] = output
-		vars[currentTask.ID] = output
-		varTypes["previous_output"] = outputType
-		varTypes[currentTask.ID] = outputType
-
 		// Handle print statement
 		if currentTask.Print != "" {
 			printMsg, err := renderTemplate(currentTask.Print, vars)
@@ -414,6 +408,12 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			vars[branchVarName] = output
 			varTypes[branchVarName] = outputType
 		}
+		// Update execution variables with raw task output
+		vars["previous_output"] = output
+		vars[currentTask.ID] = output
+		varTypes["previous_output"] = outputType
+		varTypes[currentTask.ID] = outputType
+
 		if nextTaskID == "" || nextTaskID == TermEnd {
 			finalOutput = output
 			// Track final output
@@ -518,7 +518,7 @@ func (env SimpleEnv) composeAppendStringToChatHistory(leftVal any, leftType Data
 		Messages: append([]Message{
 			{
 				Content:   strVal,
-				Role:      "system",
+				Role:      "assistant",
 				Timestamp: time.Now().UTC(),
 			},
 		}, chatHist.Messages...),

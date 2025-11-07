@@ -66,7 +66,6 @@ def test_parse_number_handler(
     )
     assert_status_code(response, 200)
     data = response.json()
-
     # Verify the correct path was taken (should be in success_path)
     task_ids = [step["taskID"] for step in data["state"]]
     assert "success_path" in task_ids, "Should have taken success path"
@@ -293,7 +292,7 @@ def test_compose_strategies(
             {
                 # IMPORTANT: compose is applied on the chosen branch now
                 "id": "compose_task",
-                "handler": "raw_string",
+                "handler": "noop",
                 "prompt_template": "You MUST ONLY respond in all uppercase letters",
                 "transition": {
                     "branches": [
@@ -329,6 +328,8 @@ def test_compose_strategies(
     )
     assert_status_code(response, 200)
     data = response.json()
+    print(data["state"])
+
     output = data["output"]
     assert "messages" in output
     assert len(output["messages"]) > 2, "Chat history should be longer after composition"
