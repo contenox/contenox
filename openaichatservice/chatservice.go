@@ -1,4 +1,4 @@
-package chatservice
+package openaichatservice
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/taskchainservice"
 	"github.com/contenox/runtime/taskengine"
+	"github.com/contenox/runtime/workflowvalidator"
 	"github.com/google/uuid"
 )
 
@@ -38,6 +39,11 @@ func (s *service) OpenAIChatCompletions(ctx context.Context, taskChainID string,
 	chain, err := s.chainService.Get(ctx, taskChainID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load task chain '%s': %w", taskChainID, err)
+	}
+
+	validator := workflowvalidator.New()
+	if err := validator.ValidateWorkflow(chain, workflowvalidator.OpenAIChatServiceProfile); err != nil {
+		return nil, nil, fmt.Errorf("workflow validation failed: %w", err)
 	}
 
 	result, _, stackTrace, err := s.env.Execute(ctx, chain, req, taskengine.DataTypeOpenAIChat)

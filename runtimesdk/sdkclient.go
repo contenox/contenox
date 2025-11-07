@@ -10,7 +10,7 @@ import (
 	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/chatservice"
+	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/eventmappingservice"
@@ -37,7 +37,7 @@ type Client struct {
 	StateService        stateservice.Service
 	EmbedService        embedservice.Service
 	TaskChainService    taskchainservice.Service
-	ChatService         chatservice.Service
+	ChatService         openaichatservice.Service
 	EventSourceService  eventsourceservice.Service
 	ExecutorSyncTrigger executor.ExecutorSyncTrigger
 	MappingService      eventmappingservice.Service

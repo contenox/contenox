@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/chatservice"
+	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/taskengine"
 )
 
@@ -24,7 +24,7 @@ type HTTPChatService struct {
 }
 
 // NewHTTPChatService creates a new HTTP client that implements chatservice.Service
-func NewHTTPChatService(baseURL, token string, client *http.Client) chatservice.Service {
+func NewHTTPChatService(baseURL, token string, client *http.Client) openaichatservice.Service {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -104,7 +104,7 @@ func (s *HTTPChatService) OpenAIChatCompletions(ctx context.Context, chainID str
 }
 
 // OpenAIChatCompletionsStream implements chatservice.Service.OpenAIChatCompletionsStream
-func (s *HTTPChatService) OpenAIChatCompletionsStream(ctx context.Context, chainID string, req taskengine.OpenAIChatRequest, speed time.Duration) (<-chan chatservice.OpenAIChatStreamChunk, error) {
+func (s *HTTPChatService) OpenAIChatCompletionsStream(ctx context.Context, chainID string, req taskengine.OpenAIChatRequest, speed time.Duration) (<-chan openaichatservice.OpenAIChatStreamChunk, error) {
 	// Ensure the request is marked for streaming
 	req.Stream = true
 	url := s.baseURL + "/" + chainID + "/v1/chat/completions"
@@ -135,7 +135,7 @@ func (s *HTTPChatService) OpenAIChatCompletionsStream(ctx context.Context, chain
 		return nil, apiframework.HandleAPIError(resp)
 	}
 
-	ch := make(chan chatservice.OpenAIChatStreamChunk)
+	ch := make(chan openaichatservice.OpenAIChatStreamChunk)
 
 	go func() {
 		defer resp.Body.Close()
@@ -157,7 +157,7 @@ func (s *HTTPChatService) OpenAIChatCompletionsStream(ctx context.Context, chain
 				return
 			}
 
-			var chunk chatservice.OpenAIChatStreamChunk
+			var chunk openaichatservice.OpenAIChatStreamChunk
 			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 				// TODO: error handling
 				return

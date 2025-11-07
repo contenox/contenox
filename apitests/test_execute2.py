@@ -269,7 +269,7 @@ def test_compose_strategies(
     create_backend_and_assign_to_group,
     wait_for_model_in_backend
 ):
-    """Test different compose strategies with chat history"""
+    """Test different compose strategies with chat history (branch-level compose)"""
     _ = with_ollama_backend
     _ = wait_for_declared_models
     model_info = create_model_and_assign_to_group
@@ -291,15 +291,21 @@ def test_compose_strategies(
         "description": "Test compose strategies",
         "tasks": [
             {
+                # IMPORTANT: compose is applied on the chosen branch now
                 "id": "compose_task",
-                "handler": "noop",
-                "compose": {
-                    "with_var": "input",
-                    "strategy": "append_string_to_chat_history"
-                },
+                "handler": "raw_string",
                 "prompt_template": "You MUST ONLY respond in all uppercase letters",
                 "transition": {
-                    "branches": [{"operator": "default", "goto": "chat_task1"}]
+                    "branches": [
+                        {
+                            "operator": "default",
+                            "goto": "chat_task1",
+                            "compose": {
+                                "with_var": "input",
+                                "strategy": "append_string_to_chat_history"
+                            }
+                        }
+                    ]
                 }
             },
             {
@@ -330,9 +336,10 @@ def test_compose_strategies(
     assert sent_messages[0]["role"] == "system"
     assert sent_messages[0]["content"] == "You MUST ONLY respond in all uppercase letters"
 
-    # Assert that the original user message is still present
+    # Original user message should still be present next
     assert sent_messages[1]["role"] == "user"
     assert sent_messages[1]["content"] == "What is the capital of France?"
+
 
 def test_print_statements_with_templates(
     base_url,

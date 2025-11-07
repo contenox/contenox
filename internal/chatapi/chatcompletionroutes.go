@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/apiframework"
-	"github.com/contenox/runtime/chatservice"
+	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/taskengine"
 )
 
@@ -19,7 +19,7 @@ type SetTaskChainRequest struct {
 	TaskChainID string `json:"taskChainID" example:"openai-compatible-chain"`
 }
 
-func AddChatRoutes(mux *http.ServeMux, chatService chatservice.Service) {
+func AddChatRoutes(mux *http.ServeMux, chatService openaichatservice.Service) {
 	h := &handler{service: chatService}
 
 	// OpenAI-compatible endpoints
@@ -27,7 +27,7 @@ func AddChatRoutes(mux *http.ServeMux, chatService chatservice.Service) {
 }
 
 type handler struct {
-	service chatservice.Service
+	service openaichatservice.Service
 }
 
 type openAIChatResponse struct {

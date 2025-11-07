@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnit_ComposeOverride(t *testing.T) {
+func TestUnit_BranchComposeOverride(t *testing.T) {
 	// Setup environment with proper mock sequence
 	mockExec := &taskengine.MockTaskExecutor{
 		MockOutputSequence: []any{
@@ -21,7 +21,7 @@ func TestUnit_ComposeOverride(t *testing.T) {
 	}
 	env := setupTestEnv(mockExec)
 
-	// Define chain with compose task
+	// Define chain with branch-specific compose
 	chain := &taskengine.TaskChainDefinition{
 		Tasks: []taskengine.TaskDefinition{
 			{
@@ -36,13 +36,16 @@ func TestUnit_ComposeOverride(t *testing.T) {
 			{
 				ID:      "task2",
 				Handler: taskengine.HandleRawString,
-				Compose: &taskengine.ComposeTask{
-					WithVar:  "task1",
-					Strategy: "override",
-				},
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
-						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+						{
+							Operator: taskengine.OpDefault,
+							Goto:     taskengine.TermEnd,
+							Compose: &taskengine.BranchCompose{
+								WithVar:  "task1",
+								Strategy: "override",
+							},
+						},
 					},
 				},
 			},
@@ -54,11 +57,11 @@ func TestUnit_ComposeOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify composition
-	expected := map[string]any{"a": 1, "b": 2, "c": 4}
-	assert.Equal(t, expected, output)
+	expected := map[string]any{"a": 1, "b": 3, "c": 4}
+	assert.EqualValues(t, expected, output)
 }
 
-func TestUnit_ComposeAppendStringToChatHistory(t *testing.T) {
+func TestUnit_BranchComposeAppendStringToChatHistory(t *testing.T) {
 	// Setup environment
 	mockExec := &taskengine.MockTaskExecutor{
 		MockOutputSequence: []any{
@@ -87,13 +90,16 @@ func TestUnit_ComposeAppendStringToChatHistory(t *testing.T) {
 			{
 				ID:      "task2",
 				Handler: taskengine.HandleRawString,
-				Compose: &taskengine.ComposeTask{
-					WithVar:  "task1",
-					Strategy: "append_string_to_chat_history",
-				},
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
-						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+						{
+							Operator: taskengine.OpDefault,
+							Goto:     taskengine.TermEnd,
+							Compose: &taskengine.BranchCompose{
+								WithVar:  "task1",
+								Strategy: "append_string_to_chat_history",
+							},
+						},
 					},
 				},
 			},
@@ -114,7 +120,7 @@ func TestUnit_ComposeAppendStringToChatHistory(t *testing.T) {
 	assert.Equal(t, "Hello", ch.Messages[1].Content)
 }
 
-func TestUnit_ComposeMergeChatHistories(t *testing.T) {
+func TestUnit_BranchComposeMergeChatHistories(t *testing.T) {
 	// Setup environment
 	mockExec := &taskengine.MockTaskExecutor{
 		MockOutputSequence: []any{
@@ -154,13 +160,16 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 			{
 				ID:      "task2",
 				Handler: taskengine.HandleNoop,
-				Compose: &taskengine.ComposeTask{
-					WithVar:  "task1",
-					Strategy: "merge_chat_histories",
-				},
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
-						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+						{
+							Operator: taskengine.OpDefault,
+							Goto:     taskengine.TermEnd,
+							Compose: &taskengine.BranchCompose{
+								WithVar:  "task1",
+								Strategy: "merge_chat_histories",
+							},
+						},
 					},
 				},
 			},
@@ -183,7 +192,7 @@ func TestUnit_ComposeMergeChatHistories(t *testing.T) {
 	assert.Empty(t, ch.Model) // Models differ so should be empty
 }
 
-func TestUnit_ComposeAutoStrategy(t *testing.T) {
+func TestUnit_BranchComposeAutoStrategy(t *testing.T) {
 	t.Run("NonChatHistoryOverride", func(t *testing.T) {
 		// Setup environment
 		mockExec := &taskengine.MockTaskExecutor{
@@ -209,12 +218,15 @@ func TestUnit_ComposeAutoStrategy(t *testing.T) {
 				{
 					ID:      "task2",
 					Handler: taskengine.HandleRawString,
-					Compose: &taskengine.ComposeTask{
-						WithVar: "task1", // Strategy omitted for auto
-					},
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
-							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+							{
+								Operator: taskengine.OpDefault,
+								Goto:     taskengine.TermEnd,
+								Compose: &taskengine.BranchCompose{
+									WithVar: "task1", // Strategy omitted for auto
+								},
+							},
 						},
 					},
 				},
@@ -233,7 +245,7 @@ func TestUnit_ComposeAutoStrategy(t *testing.T) {
 	})
 }
 
-func TestUnit_ComposeMergeChatHistories_MessageOrder(t *testing.T) {
+func TestUnit_BranchComposeMergeChatHistories_MessageOrder(t *testing.T) {
 	// Setup environment
 	mockExec := &taskengine.MockTaskExecutor{
 		MockOutputSequence: []any{
@@ -270,13 +282,16 @@ func TestUnit_ComposeMergeChatHistories_MessageOrder(t *testing.T) {
 			{
 				ID:      "task2",
 				Handler: taskengine.HandleNoop,
-				Compose: &taskengine.ComposeTask{
-					WithVar:  "task1", // Compose with task1 output
-					Strategy: "merge_chat_histories",
-				},
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
-						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+						{
+							Operator: taskengine.OpDefault,
+							Goto:     taskengine.TermEnd,
+							Compose: &taskengine.BranchCompose{
+								WithVar:  "task1", // Compose with task1 output
+								Strategy: "merge_chat_histories",
+							},
+						},
 					},
 				},
 			},
@@ -302,7 +317,7 @@ func TestUnit_ComposeMergeChatHistories_MessageOrder(t *testing.T) {
 	assert.Equal(t, "System message", ch.Messages[1].Content)
 }
 
-func TestUnit_ComposeErrors(t *testing.T) {
+func TestUnit_BranchComposeErrors(t *testing.T) {
 	t.Run("UnsupportedStrategy", func(t *testing.T) {
 		// Setup environment
 		mockExec := &taskengine.MockTaskExecutor{MockOutput: "test"}
@@ -323,13 +338,16 @@ func TestUnit_ComposeErrors(t *testing.T) {
 				{
 					ID:      "task2",
 					Handler: taskengine.HandleRawString,
-					Compose: &taskengine.ComposeTask{
-						WithVar:  "task1",
-						Strategy: "invalid_strategy",
-					},
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
-							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+							{
+								Operator: taskengine.OpDefault,
+								Goto:     taskengine.TermEnd,
+								Compose: &taskengine.BranchCompose{
+									WithVar:  "task1",
+									Strategy: "invalid_strategy",
+								},
+							},
 						},
 					},
 				},
@@ -354,8 +372,16 @@ func TestUnit_ComposeErrors(t *testing.T) {
 				{
 					ID:      "task1",
 					Handler: taskengine.HandleRawString,
-					Compose: &taskengine.ComposeTask{
-						WithVar: "nonexistent",
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{
+								Operator: taskengine.OpDefault,
+								Goto:     taskengine.TermEnd,
+								Compose: &taskengine.BranchCompose{
+									WithVar: "nonexistent",
+								},
+							},
+						},
 					},
 				},
 			},
@@ -393,13 +419,16 @@ func TestUnit_ComposeErrors(t *testing.T) {
 				{
 					ID:      "task2",
 					Handler: taskengine.HandleRawString,
-					Compose: &taskengine.ComposeTask{
-						WithVar:  "task1",
-						Strategy: "append_string_to_chat_history",
-					},
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
-							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+							{
+								Operator: taskengine.OpDefault,
+								Goto:     taskengine.TermEnd,
+								Compose: &taskengine.BranchCompose{
+									WithVar:  "task1",
+									Strategy: "append_string_to_chat_history",
+								},
+							},
 						},
 					},
 				},
@@ -410,7 +439,7 @@ func TestUnit_ComposeErrors(t *testing.T) {
 		_, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
 
 		// Verify error
-		assert.Error(t, err, "invalid types for append_string_to_chat_history")
+		assert.ErrorContains(t, err, "invalid types for append_string_to_chat_history")
 	})
 
 	t.Run("InvalidMergeChatHistoryTypes", func(t *testing.T) {
@@ -438,9 +467,17 @@ func TestUnit_ComposeErrors(t *testing.T) {
 				{
 					ID:      "task2",
 					Handler: taskengine.HandleRawString,
-					Compose: &taskengine.ComposeTask{
-						WithVar:  "task1",
-						Strategy: "merge_chat_histories",
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{
+								Operator: taskengine.OpDefault,
+								Goto:     taskengine.TermEnd,
+								Compose: &taskengine.BranchCompose{
+									WithVar:  "task1",
+									Strategy: "merge_chat_histories",
+								},
+							},
+						},
 					},
 				},
 			},
@@ -448,7 +485,205 @@ func TestUnit_ComposeErrors(t *testing.T) {
 
 		// Execute chain
 		_, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
-		assert.Error(t, err, "compose strategy 'merge_chat_histories' requires both left")
+		assert.ErrorContains(t, err, "both values must be ChatHistory for merge")
+	})
+}
+
+func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
+	t.Run("DifferentComposePerBranch", func(t *testing.T) {
+		// Setup environment
+		mockExec := &taskengine.MockTaskExecutor{
+			MockOutputSequence: []any{
+				map[string]any{"status": "success", "data": "result1"},
+				"approve", // Condition result
+				map[string]any{"status": "success", "data": "result2"},
+			},
+		}
+		env := setupTestEnv(mockExec)
+
+		// Define chain with conditional branches and different compose operations
+		chain := &taskengine.TaskChainDefinition{
+			Tasks: []taskengine.TaskDefinition{
+				{
+					ID:      "process_data",
+					Handler: taskengine.HandleRawString,
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{Operator: taskengine.OpDefault, Goto: "check_condition"},
+						},
+					},
+				},
+				{
+					ID:      "check_condition",
+					Handler: taskengine.HandleConditionKey,
+					ValidConditions: map[string]bool{
+						"approve": true,
+						"reject":  true,
+					},
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{
+								Operator: taskengine.OpEquals,
+								When:     "approve",
+								Goto:     "handle_approve",
+								Compose: &taskengine.BranchCompose{
+									WithVar:  "process_data",
+									Strategy: "override",
+								},
+							},
+							{
+								Operator: taskengine.OpEquals,
+								When:     "reject",
+								Goto:     "handle_reject",
+								Compose: &taskengine.BranchCompose{
+									WithVar:  "input",
+									Strategy: "override",
+								},
+							},
+						},
+					},
+				},
+				{
+					ID:      "handle_approve",
+					Handler: taskengine.HandleRawString,
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+						},
+					},
+				},
+				{
+					ID:      "handle_reject",
+					Handler: taskengine.HandleRawString,
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+						},
+					},
+				},
+			},
+		}
+
+		// Execute chain with initial input
+		initialInput := map[string]any{"original": "data"}
+		output, _, _, err := env.ExecEnv(context.Background(), chain, initialInput, taskengine.DataTypeJSON)
+		require.NoError(t, err)
+
+		// Verify that the approve branch was taken and composed with process_data
+		result, ok := output.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, "success", result["status"])
+		assert.Equal(t, "result2", result["data"])
+	})
+
+	t.Run("NoComposeOnSomeBranches", func(t *testing.T) {
+		// Setup environment
+		mockExec := &taskengine.MockTaskExecutor{
+			MockOutputSequence: []any{
+				"continue", // Condition result
+			},
+		}
+		env := setupTestEnv(mockExec)
+
+		chain := &taskengine.TaskChainDefinition{
+			Tasks: []taskengine.TaskDefinition{
+				{
+					ID:      "router",
+					Handler: taskengine.HandleConditionKey,
+					ValidConditions: map[string]bool{
+						"continue": true,
+						"stop":     true,
+					},
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{
+								Operator: taskengine.OpEquals,
+								When:     "continue",
+								Goto:     "next_task",
+								// No compose - should pass through original output
+							},
+							{
+								Operator: taskengine.OpEquals,
+								When:     "stop",
+								Goto:     taskengine.TermEnd,
+								Compose: &taskengine.BranchCompose{
+									WithVar:  "input",
+									Strategy: "override",
+								},
+							},
+						},
+					},
+				},
+				{
+					ID:      "next_task",
+					Handler: taskengine.HandleRawString,
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+						},
+					},
+				},
+			},
+		}
+
+		initialInput := "original input"
+		output, _, _, err := env.ExecEnv(context.Background(), chain, initialInput, taskengine.DataTypeString)
+		require.NoError(t, err)
+
+		// Should pass through the original input since no compose was applied
+		assert.Equal(t, "continue", output)
+	})
+}
+
+func TestUnit_BranchComposeVariableTracking(t *testing.T) {
+	t.Run("BranchSpecificVariables", func(t *testing.T) {
+		// Setup environment
+		mockExec := &taskengine.MockTaskExecutor{
+			MockOutputSequence: []any{
+				map[string]any{"task1": "data"},
+				map[string]any{"task2": "data"},
+			},
+		}
+		env := setupTestEnv(mockExec)
+
+		chain := &taskengine.TaskChainDefinition{
+			Tasks: []taskengine.TaskDefinition{
+				{
+					ID:      "task1",
+					Handler: taskengine.HandleRawString,
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{Operator: taskengine.OpDefault, Goto: "task2"},
+						},
+					},
+				},
+				{
+					ID:      "task2",
+					Handler: taskengine.HandleRawString,
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{
+								Operator: taskengine.OpDefault,
+								Goto:     taskengine.TermEnd,
+								Compose: &taskengine.BranchCompose{
+									WithVar:  "task1",
+									Strategy: "override",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		_, _, capturedState, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+		require.NoError(t, err)
+
+		// Verify that the execution completed successfully
+		assert.NotEmpty(t, capturedState)
+		// The last state should be for task2
+		lastState := capturedState[len(capturedState)-1]
+		assert.Equal(t, "task2", lastState.TaskID)
 	})
 }
 

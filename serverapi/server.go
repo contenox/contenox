@@ -14,7 +14,7 @@ import (
 	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/chatservice"
+	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/eventbridgeservice"
@@ -163,11 +163,11 @@ func New(
 	hookproviderService := hookproviderservice.New(dbInstance, hookRegistry)
 	hookproviderService = hookproviderservice.WithActivityTracker(hookproviderService, serveropsChainedTracker)
 	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
-	chatService := chatservice.New(
+	chatService := openaichatservice.New(
 		taskService,
 		taskChainService,
 	)
-	chatService = chatservice.WithActivityTracker(chatService, serveropsChainedTracker)
+	chatService = openaichatservice.WithActivityTracker(chatService, serveropsChainedTracker)
 	chatapi.AddChatRoutes(mux, chatService)
 	functionService := functionservice.New(dbInstance)
 	functionService = functionservice.WithActivityTracker(functionService, serveropsChainedTracker)

@@ -81,14 +81,15 @@ func (m *MockTaskExecutor) TaskExec(ctx context.Context, startingTime time.Time,
 			outputDataType = DataTypeJSON
 		default:
 			if v == nil {
-				outputDataType = dataType // If output is nil, preserve input type
+				// If output is nil, preserve input type
+				outputDataType = dataType
 			} else {
 				outputDataType = DataTypeAny
 			}
 		}
 	}
 
-	// Get raw response from sequence or single value
+	// Get raw transition response from sequence or single value
 	var transitionResponse string
 	if len(m.MockTransitionValueSequence) > 0 {
 		transitionResponse = m.MockTransitionValueSequence[0]
@@ -97,6 +98,23 @@ func (m *MockTaskExecutor) TaskExec(ctx context.Context, startingTime time.Time,
 		}
 	} else {
 		transitionResponse = m.MockTransitionValue
+	}
+
+	// If no explicit transition response was provided, infer it.
+	// This is crucial for conditional handlers used in tests.
+	if transitionResponse == "" {
+		switch currentTask.Handler {
+		case HandleConditionKey:
+			// For condition key handler, use the string output as the transition eval.
+			if s, ok := output.(string); ok {
+				transitionResponse = s
+			}
+		default:
+			// Generic fallback: if the output is a string, use it.
+			if s, ok := output.(string); ok {
+				transitionResponse = s
+			}
+		}
 	}
 
 	return output, outputDataType, transitionResponse, err

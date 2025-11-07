@@ -9,7 +9,7 @@ import (
 
 	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/chatservice"
+	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/eventsourceservice"
@@ -895,7 +895,7 @@ func (p *Playground) GetTasksEnvService(ctx context.Context) (execservice.TasksE
 }
 
 // GetChatService returns a new chat service instance.
-func (p *Playground) GetChatService(ctx context.Context) (chatservice.Service, error) {
+func (p *Playground) GetChatService(ctx context.Context) (openaichatservice.Service, error) {
 	if p.Error != nil {
 		return nil, p.Error
 	}
@@ -910,7 +910,7 @@ func (p *Playground) GetChatService(ctx context.Context) (chatservice.Service, e
 		return nil, fmt.Errorf("failed to get task chain service for chat service: %w", err)
 	}
 
-	return chatservice.New(envExec, taskChainService), nil
+	return openaichatservice.New(envExec, taskChainService), nil
 }
 
 // GetHookProviderService returns a new hook provider service instance.

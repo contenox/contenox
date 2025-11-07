@@ -12,29 +12,27 @@ import (
 	"text/template"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // DataType represents the type of data passed between tasks.
-// All types support JSON/YAML marshaling and unmarshaling.
 type DataType int
 
 const (
-	DataTypeAny                DataType = iota // Any type (use sparingly, loses type safety)
-	DataTypeString                             // String data
-	DataTypeBool                               // Boolean value
-	DataTypeInt                                // Integer number
-	DataTypeFloat                              // Floating-point number
-	DataTypeVector                             // Embedding vector ([]float64)
-	DataTypeSearchResults                      // Search results array
-	DataTypeJSON                               // Generic JSON data
-	DataTypeChatHistory                        // Chat conversation history
-	DataTypeOpenAIChat                         // OpenAI chat request format
-	DataTypeOpenAIChatResponse                 // OpenAI chat response format
-	DataTypeNil                                // Nil value
+	DataTypeAny DataType = iota
+	DataTypeString
+	DataTypeBool
+	DataTypeInt
+	DataTypeFloat
+	DataTypeVector
+	DataTypeSearchResults
+	DataTypeJSON
+	DataTypeChatHistory
+	DataTypeOpenAIChat
+	DataTypeOpenAIChatResponse
+	DataTypeNil
 )
 
 // String returns the string representation of the data type.
@@ -69,7 +67,7 @@ func (d *DataType) String() string {
 	}
 }
 
-// DataTypeFromString converts a string to DataType, returns error for unknown types.
+// DataTypeFromString converts a string to DataType.
 func DataTypeFromString(s string) (DataType, error) {
 	switch strings.ToLower(s) {
 	case "any":
@@ -103,8 +101,6 @@ func DataTypeFromString(s string) (DataType, error) {
 
 // EnvExecutor executes complete task chains with input and environment management.
 type EnvExecutor interface {
-	// ExecEnv executes a task chain with the given input and data type.
-	// Returns final output, output type, execution history, and error.
 	ExecEnv(ctx context.Context, chain *TaskChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error)
 }
 
@@ -113,10 +109,7 @@ var ErrUnsupportedTaskType = errors.New("executor does not support the task type
 
 // HookRepo defines interface for external system integrations and side effects.
 type HookRepo interface {
-	// Exec executes a hook with the given input and arguments.
-	// Returns the hook's output or an error.
 	Exec(ctx context.Context, startingTime time.Time, input any, args *HookCall) (any, DataType, error)
-	// HookRegistry provides hook discovery functionality.
 	HookRegistry
 	HooksWithSchema
 }
@@ -136,9 +129,6 @@ type HooksWithSchema interface {
 }
 
 // SimpleEnv is the default implementation of EnvExecutor.
-// this is the default EnvExecutor implementation
-// It executes tasks in order, using retry and timeout policies, and tracks execution
-// progress using an ActivityTracker.
 type SimpleEnv struct {
 	exec         TaskExecutor
 	tracker      libtracker.ActivityTracker
@@ -176,9 +166,6 @@ type ToolWithResolution struct {
 }
 
 // ExecEnv executes the given chain with the provided input.
-//
-// It manages the full lifecycle of task execution: rendering prompts, calling the
-// TaskExecutor, handling timeouts, retries, transitions, and collecting final output.
 func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, input any, dataType DataType) (any, DataType, []CapturedStateUnit, error) {
 	stack := env.inspector.Start(ctx)
 
@@ -275,7 +262,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 	retryLoop:
 		for retry := 0; retry <= maxRetries; retry++ {
-			// Note: Return on breakpoint for now
 			if stack.HasBreakpoint(currentTask.ID) {
 				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: breakpoint set", currentTask.ID)
 			}
@@ -335,7 +321,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				if err == nil {
 					step.Output = string(outputBytes)
 				} else {
-					// Fallback for types that can't be marshaled
 					step.Output = fmt.Sprintf("%v", output)
 				}
 			}
@@ -344,139 +329,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			if taskErr != nil {
 				reportErrAttempt(taskErr)
 				continue retryLoop
-			}
-
-			// Handle compose statement
-			if currentTask.Compose != nil {
-				compose := currentTask.Compose
-
-				// Fetch right value
-				rightVal, ok := vars[compose.WithVar]
-				if !ok {
-					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose right_var %q not found", compose.WithVar)
-				}
-
-				// Determine strategy
-				strategy := compose.Strategy
-				if strategy == "" {
-					// Automatic strategy selection based on types
-					if dataType == DataTypeChatHistory && varTypes[compose.WithVar] == DataTypeChatHistory {
-						strategy = "merge_chat_histories"
-					} else {
-						strategy = "override"
-					}
-				}
-
-				// Clone current output to avoid mutation during merge
-				merged := output
-
-				// Merge based on strategy
-				switch strategy {
-				case "override":
-					baseMap, isBaseMap := output.(map[string]any)
-					overridesMap, isOverridesMap := rightVal.(map[string]any)
-					if !isBaseMap || !isOverridesMap {
-						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("invalid types for override")
-					}
-					if err := mergo.Merge(&baseMap, overridesMap, mergo.WithOverride); err != nil {
-						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("merge failed (override): %w", err)
-					}
-					merged = baseMap
-				case "append_string_to_chat_history":
-					leftCH, leftIsCH := output.(string)
-					rightCH, rightIsCH := rightVal.(ChatHistory)
-					if !leftIsCH || !rightIsCH {
-						leftCH, leftIsCH = rightVal.(string)
-						rightCH, rightIsCH = output.(ChatHistory)
-					}
-					if !leftIsCH || !rightIsCH {
-						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose strategy 'append_string_to_chat_history' requires both left and right values to be either string or ChatHistory")
-					}
-					merged = ChatHistory{
-						Messages: append([]Message{
-							{
-								Content:   leftCH,
-								Role:      "system",
-								Timestamp: time.Now().UTC(),
-							},
-						}, rightCH.Messages...),
-						Model:        rightCH.Model,
-						OutputTokens: 0,
-						InputTokens:  0, // should be recalculated.
-					}
-				case "merge_chat_histories":
-					var leftReq OpenAIChatRequest
-					var rightReq OpenAIChatRequest
-					inputTokenCountLeft := 0
-					outputTokenCountLeft := 0
-					inputTokenCountRight := 0
-					outputTokenCountRight := 0
-					leftWasHistory := false
-					leftModel := ""
-					rightModel := ""
-					if outputType == DataTypeChatHistory {
-						leftWasHistory = true
-						chatHistory, ok := output.(ChatHistory)
-						if !ok {
-							err := fmt.Errorf("unexpected output type")
-							return nil, DataTypeAny, stack.GetExecutionHistory(), err
-						}
-						inputTokenCountLeft = chatHistory.InputTokens
-						outputTokenCountLeft = chatHistory.OutputTokens
-						leftModel = chatHistory.Model
-						leftReq, _, _ = ConvertChatHistoryToOpenAIRequest(chatHistory)
-					}
-					rightType := varTypes[compose.WithVar]
-					rightWasHistory := false
-					if rightType == DataTypeChatHistory {
-						rightWasHistory = true
-						chatHistory, ok := rightVal.(ChatHistory)
-						if !ok {
-							err := fmt.Errorf("unexpected compose.WithVar type")
-							return nil, DataTypeAny, stack.GetExecutionHistory(), err
-						}
-						rightModel = rightReq.Model
-						inputTokenCountRight = chatHistory.InputTokens
-						outputTokenCountRight = chatHistory.OutputTokens
-						rightReq, _, _ = ConvertChatHistoryToOpenAIRequest(chatHistory)
-					}
-
-					mergedReq := leftReq
-					if err := mergo.Merge(&mergedReq, rightReq, mergo.WithOverride); err != nil {
-						return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("failed to merge request parameters: %w", err)
-					}
-					mergedReq.Messages = append(rightReq.Messages, leftReq.Messages...)
-					if rightModel != leftModel {
-						mergedReq.Model = ""
-					}
-					merged = mergedReq
-
-					outputType = DataTypeOpenAIChat
-					if leftWasHistory && rightWasHistory {
-						history, _, _, _ := ConvertOpenAIToChatHistory(mergedReq)
-						history.InputTokens = inputTokenCountLeft + inputTokenCountRight
-						history.OutputTokens = outputTokenCountLeft + outputTokenCountRight
-						merged = history
-						outputType = DataTypeChatHistory
-					}
-				default:
-					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("unsupported compose strategy: %q", strategy)
-				}
-
-				// Update task output to composed value
-				output = merged
-				var composedVarType DataType
-				if dataType == varTypes[compose.WithVar] {
-					composedVarType = dataType
-				} else {
-					// Types differ (e.g., ChatHistory + String), result type is ambiguous.
-					composedVarType = DataTypeAny
-				}
-				// Store in new variable
-				outputVarName := currentTask.ID + "_composed"
-				vars[outputVarName] = output
-				varTypes[outputVarName] = composedVarType
-				outputType = composedVarType
 			}
 
 			// Report successful attempt
@@ -506,7 +358,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s failed after %d retries: %v", currentTask.ID, maxRetries, taskErr)
 		}
 
-		// Update execution variables
+		// Update execution variables with raw task output
 		vars["previous_output"] = output
 		vars[currentTask.ID] = output
 		varTypes["previous_output"] = outputType
@@ -521,12 +373,47 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			fmt.Println(printMsg)
 		}
 
-		// Evaluate transitions
-		nextTaskID, err := env.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval)
+		// Evaluate transitions and get chosen branch
+		nextTaskID, chosenBranch, err := env.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval)
 		if err != nil {
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: transition error: %v", currentTask.ID, err)
 		}
 
+		// Handle branch-specific compose
+		if chosenBranch.Compose != nil {
+			compose := chosenBranch.Compose
+
+			// Validate compose variables exist
+			rightVal, exists := vars[compose.WithVar]
+			if !exists {
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose right_var %q not found", compose.WithVar)
+			}
+			rightType, exists := varTypes[compose.WithVar]
+			if !exists {
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose right_var %q missing type info", compose.WithVar)
+			}
+
+			// Determine strategy with fallback
+			strategy := compose.Strategy
+			if strategy == "" {
+				strategy = env.determineDefaultComposeStrategy(outputType, rightType)
+			}
+
+			// Execute compose operation
+			composedOutput, composedType, err := env.executeCompose(strategy, output, outputType, rightVal, rightType)
+			if err != nil {
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose failed: %w", err)
+			}
+
+			// Update output for next task
+			output = composedOutput
+			outputType = composedType
+
+			// Store composed result in a branch-specific variable
+			branchVarName := fmt.Sprintf("%s_%s_composed", currentTask.ID, sanitizeBranchName(chosenBranch.When))
+			vars[branchVarName] = output
+			varTypes[branchVarName] = outputType
+		}
 		if nextTaskID == "" || nextTaskID == TermEnd {
 			finalOutput = output
 			// Track final output
@@ -559,6 +446,122 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	return finalOutput, outputType, stack.GetExecutionHistory(), nil
 }
 
+// Helper methods for compose operations
+func (env SimpleEnv) determineDefaultComposeStrategy(leftType, rightType DataType) string {
+	if leftType == DataTypeChatHistory && rightType == DataTypeChatHistory {
+		return "merge_chat_histories"
+	}
+	if (leftType == DataTypeString && rightType == DataTypeChatHistory) ||
+		(leftType == DataTypeChatHistory && rightType == DataTypeString) {
+		return "append_string_to_chat_history"
+	}
+	return "override"
+}
+
+func (env SimpleEnv) executeCompose(strategy string, leftVal any, leftType DataType, rightVal any, rightType DataType) (any, DataType, error) {
+	switch strategy {
+	case "override":
+		return env.composeOverride(leftVal, leftType, rightVal, rightType)
+	case "append_string_to_chat_history":
+		return env.composeAppendStringToChatHistory(leftVal, leftType, rightVal, rightType)
+	case "merge_chat_histories":
+		return env.composeMergeChatHistories(leftVal, leftType, rightVal, rightType)
+	default:
+		return nil, DataTypeAny, fmt.Errorf("unsupported compose strategy: %q", strategy)
+	}
+}
+
+func (env SimpleEnv) composeOverride(leftVal any, leftType DataType, rightVal any, rightType DataType) (any, DataType, error) {
+	// If both are maps, merge them with left overriding right
+	leftMap, okLeft := leftVal.(map[string]any)
+	rightMap, okRight := rightVal.(map[string]any)
+
+	if okLeft && okRight {
+		// Start with the "right" (older) and override with "left" (newer)
+		result := make(map[string]any, len(rightMap)+len(leftMap))
+		for k, v := range rightMap {
+			result[k] = v
+		}
+		for k, v := range leftMap {
+			result[k] = v
+		}
+		return result, DataTypeJSON, nil
+	}
+
+	// If only one is a map, prefer the map over non-map
+	if okLeft {
+		return leftVal, leftType, nil
+	}
+	if okRight {
+		return rightVal, rightType, nil
+	}
+
+	// Neither is a map, return the left value (current output)
+	return leftVal, leftType, nil
+}
+
+func (env SimpleEnv) composeAppendStringToChatHistory(leftVal any, leftType DataType, rightVal any, rightType DataType) (any, DataType, error) {
+	var strVal string
+	var chatHist ChatHistory
+
+	if leftType == DataTypeString && rightType == DataTypeChatHistory {
+		strVal = leftVal.(string)
+		chatHist = rightVal.(ChatHistory)
+	} else if leftType == DataTypeChatHistory && rightType == DataTypeString {
+		strVal = rightVal.(string)
+		chatHist = leftVal.(ChatHistory)
+	} else {
+		return nil, DataTypeAny, fmt.Errorf("invalid types for append_string_to_chat_history")
+	}
+
+	result := ChatHistory{
+		Messages: append([]Message{
+			{
+				Content:   strVal,
+				Role:      "system",
+				Timestamp: time.Now().UTC(),
+			},
+		}, chatHist.Messages...),
+		Model:        chatHist.Model,
+		OutputTokens: chatHist.OutputTokens,
+		InputTokens:  chatHist.InputTokens,
+	}
+
+	return result, DataTypeChatHistory, nil
+}
+
+func (env SimpleEnv) composeMergeChatHistories(leftVal any, leftType DataType, rightVal any, rightType DataType) (any, DataType, error) {
+	if leftType != DataTypeChatHistory || rightType != DataTypeChatHistory {
+		return nil, DataTypeAny, fmt.Errorf("both values must be ChatHistory for merge")
+	}
+
+	leftHist := leftVal.(ChatHistory)   // current task output (task2)
+	rightHist := rightVal.(ChatHistory) // WithVar (task1)
+
+	// Right-first, then left (as tests expect)
+	merged := ChatHistory{
+		Messages:     append(append([]Message{}, rightHist.Messages...), leftHist.Messages...),
+		InputTokens:  rightHist.InputTokens + leftHist.InputTokens,
+		OutputTokens: rightHist.OutputTokens + leftHist.OutputTokens,
+	}
+
+	// Only keep model if identical; otherwise empty
+	if rightHist.Model == leftHist.Model {
+		merged.Model = leftHist.Model
+	} else {
+		merged.Model = ""
+	}
+
+	return merged, DataTypeChatHistory, nil
+}
+
+func sanitizeBranchName(branchName string) string {
+	safe := strings.ReplaceAll(branchName, " ", "_")
+	safe = strings.ReplaceAll(safe, "-", "_")
+	safe = strings.ToLower(safe)
+	return safe
+}
+
 func renderTemplate(tmplStr string, vars any) (string, error) {
 	tmpl, err := template.New("prompt").Parse(tmplStr)
 	if err != nil {
@@ -571,30 +574,30 @@ func renderTemplate(tmplStr string, vars any) (string, error) {
 	return buf.String(), nil
 }
 
-func (exe SimpleEnv) evaluateTransitions(ctx context.Context, taskID string, transition TaskTransition, eval string) (string, error) {
+func (exe SimpleEnv) evaluateTransitions(ctx context.Context, taskID string, transition TaskTransition, eval string) (string, *TransitionBranch, error) {
 	// First check explicit matches
-	for _, ct := range transition.Branches {
-		if ct.Operator == OpDefault {
+	for _, branch := range transition.Branches {
+		if branch.Operator == OpDefault {
 			continue
 		}
 
-		match, err := compare(ct.Operator, eval, ct.When)
+		match, err := compare(branch.Operator, eval, branch.When)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		if match {
-			return ct.Goto, nil
+			return branch.Goto, &branch, nil
 		}
 	}
 
 	// Then check for default
-	for _, ct := range transition.Branches {
-		if ct.Operator == "default" {
-			return ct.Goto, nil
+	for _, branch := range transition.Branches {
+		if branch.Operator == OpDefault {
+			return branch.Goto, &branch, nil
 		}
 	}
 
-	return "", fmt.Errorf("no matching transition found for eval: %s", eval)
+	return "", nil, fmt.Errorf("no matching transition found for eval: %s", eval)
 }
 
 // parseNumber attempts to parse a string as either an integer or float.
@@ -604,17 +607,14 @@ func parseNumber(s string) (float64, error) {
 	s = strings.ReplaceAll(s, "'", "")
 	s = strings.ReplaceAll(s, " ", "")
 
-	// Handle empty string
 	if s == "" {
 		return 0, fmt.Errorf("cannot parse number from empty string")
 	}
 
-	// If it looks like a float or int, parse it
 	if num, err := strconv.ParseFloat(s, 64); err == nil {
 		return num, nil
 	}
 
-	// Try to extract first number from the string (in case of garbage prefix/suffix)
 	re := regexp.MustCompile(`[-+]?\d*\.?\d+`)
 	match := re.FindString(s)
 	if match == "" {
@@ -629,9 +629,6 @@ func parseNumber(s string) (float64, error) {
 }
 
 // compare applies a logical operator to a model response and a target value.
-//
-// Supported operators include equality, string containment, numeric comparisons,
-// and range checks using "parse_range".
 func compare(operator OperatorTerm, response, when string) (bool, error) {
 	switch operator {
 	case OpEquals:
@@ -718,4 +715,11 @@ func validateChain(tasks []TaskDefinition) error {
 		}
 	}
 	return nil
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

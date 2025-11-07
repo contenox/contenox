@@ -168,6 +168,10 @@ type TransitionBranch struct {
 	// Goto specifies the target task ID if this branch is taken.
 	// Leave empty or use taskengine.TermEnd to end the chain.
 	Goto string `yaml:"goto" json:"goto" example:"positive_response"`
+
+	// Compose defines how to transform data when taking this branch.
+	// Optional - if not specified, the current task output is passed as-is.
+	Compose *BranchCompose `yaml:"compose,omitempty" json:"compose,omitempty" openapi_include_type:"taskengine.BranchCompose"`
 }
 
 // OperatorTerm represents logical operators used for task transition evaluation
@@ -271,7 +275,6 @@ type HookCall struct {
 // | ExecuteConfig       | Optional     | Optional    | Optional   | Optional   | Optional  | -     | -     |
 // | InputVar            | Optional     | Optional    | Optional   | Optional   | Optional  | Opt   | Opt   |
 // | SystemInstruction   | Optional     | Optional    | Optional   | Optional   | Optional  | Opt   | Opt   |
-// | Compose             | Optional     | Optional    | Optional   | Optional   | Optional  | Opt   | Opt   |
 // | Transition          | Required     | Required    | Required   | Required   | Required  | Req   | Req   |
 type TaskDefinition struct {
 	// ID uniquely identifies the task within the chain.
@@ -322,10 +325,6 @@ type TaskDefinition struct {
 	// Each task stores its output in a variable named with it's task id.
 	InputVar string `yaml:"input_var,omitempty" json:"input_var,omitempty" example:"input"`
 
-	// Compose merges the specified the output with the withVar side.
-	// Optional. compose is applied before the input reaches the task execution,
-	Compose *ComposeTask `yaml:"compose,omitempty" json:"compose,omitempty" openapi_include_type:"taskengine.ComposeTask"`
-
 	// Transition defines what to do after this task completes.
 	Transition TaskTransition `yaml:"transition" json:"transition" openapi_include_type:"taskengine.TaskTransition"`
 
@@ -340,7 +339,7 @@ type TaskDefinition struct {
 	RetryOnFailure int `yaml:"retry_on_failure,omitempty" json:"retry_on_failure,omitempty" example:"2"`
 }
 
-// ComposeTask is a task that composes multiple variables into a single output.
+// BranchCompose is a task that composes multiple variables into a single output.
 // the composed output is stored in a variable named after the task ID with "_composed" suffix.
 // and is also directly mutating the task's output.
 // example:
@@ -349,7 +348,7 @@ type TaskDefinition struct {
 //
 //	with_var: "chat2"
 //	strategy: "override"
-type ComposeTask struct {
+type BranchCompose struct {
 	// Selects the variable to compose the current input with.
 	WithVar string `yaml:"with_var,omitempty" json:"with_var,omitempty"`
 	// Strategy defines how values should be merged ("override", "merge_chat_histories", "append_string_to_chat_history").
