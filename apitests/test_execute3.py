@@ -1,7 +1,7 @@
 import requests
 from helpers import assert_status_code
 
-def test_model_execution_with_openai_chat_input(
+def test_chat_completion_with_openai_chat_input(
     base_url,
     with_ollama_backend,
     create_model_and_assign_to_group,
@@ -9,7 +9,7 @@ def test_model_execution_with_openai_chat_input(
     wait_for_model_in_backend
 ):
     """
-    Tests that the model_execution handler can directly accept and process
+    Tests that the chat_completion handler can directly accept and process
     an input of type 'openai_chat'.
     """
     model_info = create_model_and_assign_to_group
@@ -18,7 +18,7 @@ def test_model_execution_with_openai_chat_input(
 
     task_chain = {
         "id": "openai-direct-exec-chain", "debug": True,
-        "tasks": [{"id": "chat_task", "handler": "model_execution", "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.", "transition": {"branches": [{"operator": "default", "goto": "end"}]}}],
+        "tasks": [{"id": "chat_task", "handler": "chat_completion", "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.", "transition": {"branches": [{"operator": "default", "goto": "end"}]}}],
     }
 
     openai_request_payload = {
@@ -57,7 +57,7 @@ def test_embedding_handler_with_openai_chat_input(
 
     task_chain = {
         "id": "embedding-with-chat", "debug": True,
-        "tasks": [{"id": "embed_task", "handler": "embedding", "transition": {"branches": [{"operator": "default", "goto": "end"}]}}],
+        "tasks": [{"id": "embed_task", "handler": "text_to_embedding", "transition": {"branches": [{"operator": "default", "goto": "end"}]}}],
     }
 
     openai_request_payload = {
@@ -99,7 +99,7 @@ def test_convert_to_openai_response_handler(
         "tasks": [
             {
                 "id": "chat_task",
-                "handler": "model_execution",
+                "handler": "chat_completion",
                 "execute_config": {
                     "model": model_info["model_name"],
                     "provider": "ollama"

@@ -301,7 +301,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		return output, dataType, transitionEval, fmt.Errorf("%w: task-type is empty", ErrUnsupportedTaskType)
 	}
 	switch currentTask.Handler {
-	case HandleRawString, HandleConditionKey, HandleParseNumber, HandleParseScore, HandleParseRange, HandleParseTransition, HandleEmbedding, HandleRaiseError, HandleParseKeyValue:
+	case HandlePromptToString, HandlePromptToCondition, HandlePromptToInt, HandlePromptToFloat, HandlePromptToRange, HandleParseTransition, HandleTextToEmbedding, HandleRaiseError, HandleParseKeyValue:
 		prompt, err := getPrompt()
 		if err != nil {
 			return nil, DataTypeAny, "", err
@@ -312,29 +312,29 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		}
 
 		switch currentTask.Handler {
-		case HandleRawString:
+		case HandlePromptToString:
 			transitionEval, taskErr = exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
 			output = transitionEval
 			outputType = DataTypeString
-		case HandleConditionKey:
+		case HandlePromptToCondition:
 			var hit bool
 			hit, taskErr = exe.condition(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, currentTask.ValidConditions, prompt)
 			output = hit
 			outputType = DataTypeBool
 			transitionEval = strconv.FormatBool(hit)
-		case HandleParseNumber:
+		case HandlePromptToInt:
 			var number int
 			number, taskErr = exe.number(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
 			output = number
 			outputType = DataTypeInt
 			transitionEval = strconv.FormatInt(int64(number), 10)
-		case HandleParseScore:
+		case HandlePromptToFloat:
 			var score float64
 			score, taskErr = exe.score(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
 			output = score
 			outputType = DataTypeFloat
 			transitionEval = strconv.FormatFloat(score, 'f', 2, 64)
-		case HandleParseRange:
+		case HandlePromptToRange:
 			transitionEval, taskErr = exe.rang(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
 			outputType = DataTypeString
 			output = transitionEval
@@ -342,7 +342,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			transitionEval, taskErr = exe.parseTransition(prompt)
 			// output = output // pass as is to the next task
 			// outputType = outputType
-		case HandleEmbedding:
+		case HandleTextToEmbedding:
 			message, err := getPrompt()
 			if err != nil {
 				return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
@@ -397,7 +397,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		transitionEval = "converted"
 		taskErr = nil
 
-	case HandleModelExecution:
+	case HandleChatCompletion:
 		if currentTask.ExecuteConfig == nil {
 			currentTask.ExecuteConfig = &LLMExecutionConfig{}
 		}

@@ -42,7 +42,7 @@ func TestSystem_TasksEnvService(t *testing.T) {
 				{
 					ID:             "get_answer",
 					Description:    "Get answer from LLM",
-					Handler:        taskengine.HandleRawString,
+					Handler:        taskengine.HandlePromptToString,
 					PromptTemplate: "Answer in one word: What is the color of the sky?",
 					ExecuteConfig: &taskengine.LLMExecutionConfig{
 						Model:    "smollm2:135m",
@@ -85,7 +85,7 @@ func TestSystem_TasksEnvService(t *testing.T) {
 				{
 					ID:             "check_condition",
 					Description:    "Check if input is positive",
-					Handler:        taskengine.HandleConditionKey,
+					Handler:        taskengine.HandlePromptToCondition,
 					PromptTemplate: "Is this a positive statement? Answer only 'yes' or 'no': {{.input}}",
 					ValidConditions: map[string]bool{
 						"yes":  true,
@@ -141,7 +141,7 @@ func TestSystem_TasksEnvService(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "check_boiling_point",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					SystemInstruction: "You are a precise science assistant. Water boils at exactly 100°C or 212°F. " +
 						"If the temperature is >= boiling point, respond with exactly 'yes'. " +
 						"If the temperature is < boiling point, respond with exactly 'no'. " +

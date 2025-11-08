@@ -26,7 +26,7 @@ func TestUnit_BranchComposeOverride(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:      "task1",
-				Handler: taskengine.HandleRawString,
+				Handler: taskengine.HandlePromptToString,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
 						{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -35,7 +35,7 @@ func TestUnit_BranchComposeOverride(t *testing.T) {
 			},
 			{
 				ID:      "task2",
-				Handler: taskengine.HandleRawString,
+				Handler: taskengine.HandlePromptToString,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
 						{
@@ -80,7 +80,7 @@ func TestUnit_BranchComposeAppendStringToChatHistory(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:      "task1",
-				Handler: taskengine.HandleRawString,
+				Handler: taskengine.HandlePromptToString,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
 						{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -89,7 +89,7 @@ func TestUnit_BranchComposeAppendStringToChatHistory(t *testing.T) {
 			},
 			{
 				ID:      "task2",
-				Handler: taskengine.HandleRawString,
+				Handler: taskengine.HandlePromptToString,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
 						{
@@ -114,7 +114,7 @@ func TestUnit_BranchComposeAppendStringToChatHistory(t *testing.T) {
 	ch, ok := output.(taskengine.ChatHistory)
 	require.True(t, ok, "output should be ChatHistory")
 	require.Len(t, ch.Messages, 2)
-	assert.Equal(t, "system", ch.Messages[0].Role)
+	assert.Equal(t, "assistant", ch.Messages[0].Role)
 	assert.Equal(t, "New system message", ch.Messages[0].Content)
 	assert.Equal(t, "user", ch.Messages[1].Role)
 	assert.Equal(t, "Hello", ch.Messages[1].Content)
@@ -208,7 +208,7 @@ func TestUnit_BranchComposeAutoStrategy(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -217,7 +217,7 @@ func TestUnit_BranchComposeAutoStrategy(t *testing.T) {
 				},
 				{
 					ID:      "task2",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{
@@ -328,7 +328,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -337,7 +337,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 				},
 				{
 					ID:      "task2",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{
@@ -371,7 +371,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{
@@ -409,7 +409,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -418,7 +418,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 				},
 				{
 					ID:      "task2",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{
@@ -457,7 +457,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -466,7 +466,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 				},
 				{
 					ID:      "task2",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{
@@ -506,7 +506,7 @@ func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "process_data",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "check_condition"},
@@ -515,7 +515,7 @@ func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
 				},
 				{
 					ID:      "check_condition",
-					Handler: taskengine.HandleConditionKey,
+					Handler: taskengine.HandlePromptToCondition,
 					ValidConditions: map[string]bool{
 						"approve": true,
 						"reject":  true,
@@ -545,7 +545,7 @@ func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
 				},
 				{
 					ID:      "handle_approve",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
@@ -554,7 +554,7 @@ func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
 				},
 				{
 					ID:      "handle_reject",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
@@ -589,7 +589,7 @@ func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "router",
-					Handler: taskengine.HandleConditionKey,
+					Handler: taskengine.HandlePromptToCondition,
 					ValidConditions: map[string]bool{
 						"continue": true,
 						"stop":     true,
@@ -616,7 +616,7 @@ func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
 				},
 				{
 					ID:      "next_task",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
@@ -650,7 +650,7 @@ func TestUnit_BranchComposeVariableTracking(t *testing.T) {
 			Tasks: []taskengine.TaskDefinition{
 				{
 					ID:      "task1",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{Operator: taskengine.OpDefault, Goto: "task2"},
@@ -659,7 +659,7 @@ func TestUnit_BranchComposeVariableTracking(t *testing.T) {
 				},
 				{
 					ID:      "task2",
-					Handler: taskengine.HandleRawString,
+					Handler: taskengine.HandlePromptToString,
 					Transition: taskengine.TaskTransition{
 						Branches: []taskengine.TransitionBranch{
 							{

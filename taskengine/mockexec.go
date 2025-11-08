@@ -104,7 +104,7 @@ func (m *MockTaskExecutor) TaskExec(ctx context.Context, startingTime time.Time,
 	// This is crucial for conditional handlers used in tests.
 	if transitionResponse == "" {
 		switch currentTask.Handler {
-		case HandleConditionKey:
+		case HandlePromptToCondition:
 			// For condition key handler, use the string output as the transition eval.
 			if s, ok := output.(string); ok {
 				transitionResponse = s

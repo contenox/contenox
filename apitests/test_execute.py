@@ -80,7 +80,7 @@ def test_execute_taskchain(
         "tasks": [
             {
                 "id": "capital_task",
-                "handler": "raw_string",
+                "handler": "prompt_to_string",
                 "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "prompt_template": "What is the capital of France? Respond ONLY with the city name.",
                 "transition": {
@@ -118,7 +118,7 @@ def test_execute_taskchain(
     first_task = data["state"][0]
 
     assert first_task["taskID"] == "capital_task", "First task should be capital_task"
-    assert first_task["taskHandler"] == "raw_string", "Task type should be raw_string"
+    assert first_task["taskHandler"] == "prompt_to_string", "Task type should be prompt_to_string"
     assert first_task["inputType"] == "string", "Input type should be string"
     assert first_task["outputType"] == "string", "Output type should be string"
 
@@ -149,7 +149,7 @@ def test_multi_step_taskchain(
         "tasks": [
             {
                 "id": "get_country",
-                "handler": "raw_string",
+                "handler": "prompt_to_string",
                 "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "prompt_template": "What country is Paris the capital of?",
                 "transition": {
@@ -158,7 +158,7 @@ def test_multi_step_taskchain(
             },
             {
                 "id": "capital_task",
-                "handler": "raw_string",
+                "handler": "prompt_to_string",
                 "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "prompt_template": "What is the capital of {{.get_country}}?",
                 "transition": {
@@ -167,7 +167,7 @@ def test_multi_step_taskchain(
             },
             {
                 "id": "format_response",
-                "handler": "raw_string",
+                "handler": "prompt_to_string",
                 "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "prompt_template": "Format this nicely: The capital of {{.get_country}} is {{.capital_task}}",
                 "transition": {
@@ -208,7 +208,7 @@ def test_conditional_branching(
         "tasks": [
             {
                 "id": "check_france",
-                "handler": "condition_key",
+                "handler": "prompt_to_condition",
                 "valid_conditions": {"yes": True, "no": False, "Yes.": True, "No.": False, "Yes": True, "No": False},
                 "prompt_template": "Is Paris the capital of France? Answer only 'yes' or 'no'.",
                 "transition": {
@@ -273,7 +273,7 @@ def test_invalid_chain_definition(
     assert_status_code(response, 400)
     assert "error" in response.json()
 
-def test_model_execution_task(
+def test_chat_completion_task(
     base_url,
     with_ollama_backend,
     wait_for_declared_models,
@@ -296,7 +296,7 @@ def test_model_execution_task(
         "tasks": [
             {
                 "id": "chat_task",
-                "handler": "model_execution",
+                "handler": "chat_completion",
                 "system_instruction": "You are a helpful assistant",
                 "execute_config": {
                                     "model": model_name,
@@ -366,7 +366,7 @@ def test_embedding_handler(
         "tasks": [
             {
                 "id": "embed_task",
-                "handler": "embedding",
+                "handler": "text_to_embedding",
                 "prompt_template": "{{.input}}",
                 "execute_config": {
                 },
@@ -411,6 +411,6 @@ def test_embedding_handler(
     task_state = data["state"][0]
 
     assert task_state["taskID"] == "embed_task", "Task ID mismatch"
-    assert task_state["taskHandler"] == "embedding", "Handler type mismatch"
+    assert task_state["taskHandler"] == "text_to_embedding", "Handler type mismatch"
     assert task_state["inputType"] == "string", "Input type should be string"
     assert task_state["outputType"] == "vector", "Output type should be vector"

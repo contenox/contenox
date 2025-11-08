@@ -48,7 +48,7 @@ func TestChatService_OpenAIChatCompletions(t *testing.T) {
 					{
 						ID:                "chat_task",
 						Description:       "Process OpenAI chat request",
-						Handler:           taskengine.HandleModelExecution,
+						Handler:           taskengine.HandleChatCompletion,
 						SystemInstruction: "You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
 						ExecuteConfig: &taskengine.LLMExecutionConfig{
 							Model:    "smollm2:135m",
@@ -74,7 +74,7 @@ func TestChatService_OpenAIChatCompletions(t *testing.T) {
 					{
 						ID:                "chat_task",
 						Description:       "Process OpenAI chat request",
-						Handler:           taskengine.HandleModelExecution,
+						Handler:           taskengine.HandleChatCompletion,
 						SystemInstruction: "You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
 						ExecuteConfig: &taskengine.LLMExecutionConfig{
 							Model:    "smollm2:135m",

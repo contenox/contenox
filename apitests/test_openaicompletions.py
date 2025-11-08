@@ -34,7 +34,7 @@ def test_openai_sdk_compatibility(
         "tasks": [
             {
                 "id": "main_task",
-                "handler": "model_execution",
+                "handler": "chat_completion",
                 "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "execute_config": {
                     "model": model_name,
@@ -102,7 +102,7 @@ def test_openai_sdk_streaming_compatibility(
     task_chain = {
         "id": chain_id, "debug": True,
         "tasks": [
-            {"id": "main_task", "handler": "model_execution", "transition": {"branches": [{"operator": "default", "goto": "format_response"}]}},
+            {"id": "main_task", "handler": "chat_completion", "transition": {"branches": [{"operator": "default", "goto": "format_response"}]}},
             {"id": "format_response", "handler": "convert_to_openai_chat_response", "transition": {"branches": [{"operator": "default", "goto": "end"}]}}
         ]
     }

@@ -1,7 +1,7 @@
 import requests
 from helpers import assert_status_code
 
-def test_parse_number_handler(
+def test_prompt_to_int_handler(
     base_url,
     with_ollama_backend,
     wait_for_declared_models,
@@ -9,7 +9,7 @@ def test_parse_number_handler(
     create_backend_and_assign_to_group,
     wait_for_model_in_backend
 ):
-    """Test parse_number handler with predictable numeric response"""
+    """Test prompt_to_int handler with predictable numeric response"""
     _ = with_ollama_backend
     _ = wait_for_declared_models
     model_info = create_model_and_assign_to_group
@@ -22,11 +22,11 @@ def test_parse_number_handler(
     task_chain = {
         "id": "number-parsing-chain",
         "debug": True,
-        "description": "Test parse_number handler",
+        "description": "Test prompt_to_int handler",
         "tasks": [
             {
                 "id": "number_task",
-                "handler": "parse_number",
+                "handler": "prompt_to_int",
                 "prompt_template": "What is 2+2? Respond ONLY with the number.",
                 "transition": {
                     "branches": [
@@ -75,7 +75,7 @@ def test_parse_number_handler(
     number_task = next(t for t in data["state"] if t["taskID"] == "number_task")
     assert number_task["output"] == '4', "Output should be 4"
 
-def test_parse_range_handler(
+def test_prompt_to_range_handler(
     base_url,
     with_ollama_backend,
     wait_for_declared_models,
@@ -83,7 +83,7 @@ def test_parse_range_handler(
     create_backend_and_assign_to_group,
     wait_for_model_in_backend
 ):
-    """Test parse_range handler with numeric range validation"""
+    """Test prompt_to_range handler with numeric range validation"""
     _ = with_ollama_backend
     _ = wait_for_declared_models
     model_info = create_model_and_assign_to_group
@@ -95,11 +95,11 @@ def test_parse_range_handler(
     task_chain = {
         "id": "range-parsing-chain",
         "debug": True,
-        "description": "Test parse_range handler",
+        "description": "Test prompt_to_range handler",
         "tasks": [
             {
                 "id": "range_task",
-                "handler": "parse_range",
+                "handler": "prompt_to_range",
                 "prompt_template": "What is the range of years for the Renaissance period? Format as 1300-1700.",
                 "transition": {
                     "branches": [
@@ -172,7 +172,7 @@ def test_transition_operators(
         "tasks": [
             {
                 "id": "condition_task",
-                "handler": "condition_key",
+                "handler": "prompt_to_condition",
                 "system_instruction":"You are a task processing engine talking to other machines. Return the direct answer without explanation to the given task.",
                 "valid_conditions": {
                     "very_long_string": True,
@@ -309,7 +309,7 @@ def test_compose_strategies(
             },
             {
                 "id": "chat_task1",
-                "handler": "model_execution",
+                "handler": "chat_completion",
                 "execute_config": {
                     "model": model_name,
                     "provider": "ollama"
@@ -334,7 +334,7 @@ def test_compose_strategies(
     assert "messages" in output
     assert len(output["messages"]) > 2, "Chat history should be longer after composition"
     sent_messages = output["messages"]
-    assert sent_messages[0]["role"] == "system"
+    assert sent_messages[0]["role"] == "assistant"
     assert sent_messages[0]["content"] == "You MUST ONLY respond in all uppercase letters"
 
     # Original user message should still be present next
@@ -365,7 +365,7 @@ def test_print_statements_with_templates(
         "tasks": [
             {
                 "id": "first_task",
-                "handler": "raw_string",
+                "handler": "prompt_to_string",
                 "prompt_template": "Hello world",
                 "print": "First task output: {{.first_task}}",
                 "transition": {
@@ -374,7 +374,7 @@ def test_print_statements_with_templates(
             },
             {
                 "id": "second_task",
-                "handler": "raw_string",
+                "handler": "prompt_to_string",
                 "prompt_template": "The answer is 42",
                 "print": "Second task output: {{.second_task}}. Previous: {{.first_task}}",
                 "transition": {

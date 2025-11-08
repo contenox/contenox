@@ -1,4 +1,3 @@
-// Package workflowvalidator provides validation for task engine workflows
 package workflowvalidator
 
 import (
@@ -60,11 +59,6 @@ func (v *Validator) ValidateWorkflow(chain *taskengine.TaskChainDefinition, prof
 		return fmt.Errorf("invalid return type: %w", err)
 	}
 
-	// Check that all end paths are properly handled
-	if err := v.validateEndPaths(chain, profile); err != nil {
-		return fmt.Errorf("invalid end paths: %w", err)
-	}
-
 	return nil
 }
 
@@ -82,22 +76,6 @@ func (v *Validator) validateReturnType(chain *taskengine.TaskChainDefinition, pr
 		if !v.taskReturnsCompatibleType(task, profile) &&
 			!v.pathLeadsToCompatibleType(task, chain.Tasks, graph, profile) {
 			return fmt.Errorf("task %q does not guarantee %s return type", task.ID, profile.RequiredReturnType)
-		}
-	}
-
-	return nil
-}
-
-func (v *Validator) validateEndPaths(chain *taskengine.TaskChainDefinition, profile ValidationProfile) error {
-	graph := v.buildTaskGraph(chain.Tasks)
-	terminalTasks := v.findTerminalTasks(chain.Tasks, graph)
-
-	for _, task := range terminalTasks {
-		// Ensure terminal tasks have proper response handling
-		if task.Handler == taskengine.HandleHook {
-			if !v.hasResponseTransition(task, chain.Tasks, graph, profile) {
-				return fmt.Errorf("hook task %q should transition to a response task", task.ID)
-			}
 		}
 	}
 
@@ -157,11 +135,21 @@ func (v *Validator) canTransitionToEnd(task taskengine.TaskDefinition) bool {
 
 func (v *Validator) taskReturnsCompatibleType(task taskengine.TaskDefinition, profile ValidationProfile) bool {
 	switch task.Handler {
-	case taskengine.HandleModelExecution, taskengine.HandleExecuteToolCalls:
+	case taskengine.HandleChatCompletion, taskengine.HandleExecuteToolCalls:
 		return profile.RequiredReturnType == "chat_history" ||
 			(profile.AllowConvertibleTypes && profile.RequiredReturnType == "openai_chat_response")
 	case taskengine.HandleConvertToOpenAIChatResponse:
 		return profile.RequiredReturnType == "openai_chat_response"
+	case taskengine.HandlePromptToString:
+		// Check if this task composes with chat_history
+		for _, branch := range task.Transition.Branches {
+			if branch.Compose != nil &&
+				(branch.Compose.Strategy == "append_string_to_chat_history" ||
+					branch.Compose.Strategy == "merge_chat_histories") {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}
@@ -195,16 +183,6 @@ func (v *Validator) pathLeadsToCompatibleType(task taskengine.TaskDefinition, al
 		}
 	}
 
-	return false
-}
-
-func (v *Validator) hasResponseTransition(task taskengine.TaskDefinition, allTasks []taskengine.TaskDefinition, graph map[string][]string, profile ValidationProfile) bool {
-	for _, nextID := range graph[task.ID] {
-		nextTask := v.findTaskByID(allTasks, nextID)
-		if nextTask != nil && v.taskReturnsCompatibleType(*nextTask, profile) {
-			return true
-		}
-	}
 	return false
 }
 

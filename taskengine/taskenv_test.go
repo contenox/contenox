@@ -26,7 +26,7 @@ func TestUnit_SimpleEnv_ExecEnv_SingleTask(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				PromptTemplate: `What is {{.input}}?`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -59,7 +59,7 @@ func TestUnit_SimpleEnv_ExecEnv_FailsAfterRetries(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				PromptTemplate: `Broken task`,
 				RetryOnFailure: 1,
 				Transition:     taskengine.TaskTransition{},
@@ -126,7 +126,7 @@ func TestUnit_SimpleEnv_ExecEnv_ErrorTransition(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				PromptTemplate: `fail`,
 				Transition: taskengine.TaskTransition{
 					OnFailure: "task2",
@@ -134,7 +134,7 @@ func TestUnit_SimpleEnv_ExecEnv_ErrorTransition(t *testing.T) {
 			},
 			{
 				ID:             "task2",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				PromptTemplate: `recover`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -164,7 +164,7 @@ func TestUnit_SimpleEnv_ExecEnv_PrintTemplate(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				PromptTemplate: `hi {{.input}}`,
 				Print:          `Output: {{.task1}}`,
 				Transition: taskengine.TaskTransition{
@@ -196,7 +196,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_OriginalInput(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				InputVar:       "input", // Explicitly use original input
 				PromptTemplate: `Process this: {{.input}}`,
 				Transition: taskengine.TaskTransition{
@@ -227,7 +227,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "transform",
-				Handler:        taskengine.HandleParseNumber,
+				Handler:        taskengine.HandlePromptToInt,
 				PromptTemplate: `Convert to number: {{.input}}`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -237,7 +237,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 			},
 			{
 				ID:             "process",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				InputVar:       "transform", // Use output from previous task
 				PromptTemplate: `Process the number: {{.transform}}`,
 				Transition: taskengine.TaskTransition{
@@ -268,7 +268,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "moderate",
-				Handler:        taskengine.HandleParseNumber,
+				Handler:        taskengine.HandlePromptToInt,
 				PromptTemplate: `Rate safety of: {{.input}}`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -292,7 +292,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
 			},
 			{
 				ID:             "reject",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				PromptTemplate: `Rejected: {{.input}}`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -319,7 +319,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_InvalidVariable(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				InputVar:       "nonexistent",
 				PromptTemplate: `Should fail`,
 				Transition: taskengine.TaskTransition{
@@ -350,7 +350,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_DefaultBehavior(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandleRawString,
+				Handler:        taskengine.HandlePromptToString,
 				PromptTemplate: `First: {{.input}}`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -360,7 +360,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_DefaultBehavior(t *testing.T) {
 			},
 			{
 				ID:      "task2",
-				Handler: taskengine.HandleRawString,
+				Handler: taskengine.HandlePromptToString,
 				// No InputVar specified - should use previous output
 				PromptTemplate: `Second: {{.task1}}`,
 				Transition: taskengine.TaskTransition{

@@ -32,7 +32,7 @@ def test_openai_sdk_with_tools(
         "tasks": [
             {
                 "id": "main_task",
-                "handler": "model_execution",
+                "handler": "chat_completion",
                 "execute_config": {
                     "model": model_name,
                     "provider": "ollama",

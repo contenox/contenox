@@ -13,36 +13,36 @@ import (
 type TaskHandler string
 
 const (
-	// HandleConditionKey interprets response as a condition key for transition branching.
+	// HandlePromptToCondition interprets response as a condition key for transition branching.
 	// Requires ValidConditions to be set with allowed values.
-	HandleConditionKey TaskHandler = "condition_key"
+	HandlePromptToCondition TaskHandler = "prompt_to_condition"
 
-	// HandleParseNumber expects a numeric response and parses it into an integer.
+	// HandlePromptToInt expects a numeric response and parses it into an integer.
 	// Returns error if response cannot be parsed as integer.
-	HandleParseNumber TaskHandler = "parse_number"
+	HandlePromptToInt TaskHandler = "prompt_to_int"
 
 	// HandleParseScore expects a floating-point score (e.g., quality rating).
 	// Returns error if response cannot be parsed as float.
-	HandleParseScore TaskHandler = "parse_score"
+	HandlePromptToFloat TaskHandler = "prompt_to_float"
 
-	// HandleParseRange expects a numeric range like "5-7" or single number "5" (converted to "5-5").
+	// HandlePromptToRange expects a numeric range like "5-7" or single number "5" (converted to "5-5").
 	// Returns error if response cannot be parsed as valid range.
-	HandleParseRange TaskHandler = "parse_range"
+	HandlePromptToRange TaskHandler = "prompt_to_range"
 
-	// HandleRawString returns the raw string result from the LLM without parsing.
-	HandleRawString TaskHandler = "raw_string"
+	// HandlePromptToString returns the raw string result from the LLM without parsing.
+	HandlePromptToString TaskHandler = "prompt_to_string"
 
-	// HandleEmbedding expects string input and returns an embedding vector ([]float64).
+	// HandleTextToEmbedding expects string input and returns an embedding vector ([]float64).
 	// This is useful as last step in a text enrichment pipeline to enrich the data before embedding.
-	HandleEmbedding TaskHandler = "embedding"
+	HandleTextToEmbedding TaskHandler = "text_to_embedding"
 
 	// HandleRaiseError raises an error with the provided message from task input.
 	// Useful for explicit error conditions in workflows.
 	HandleRaiseError TaskHandler = "raise_error"
 
-	// HandleModelExecution executes specified model on chat history input.
+	// HandleChatCompletion executes specified model on chat history input.
 	// Requires DataTypeChatHistory input and ExecuteConfig configuration.
-	HandleModelExecution TaskHandler = "model_execution"
+	HandleChatCompletion TaskHandler = "chat_completion"
 
 	// HandleExecuteToolCalls executes specified tool calls on chat history input.
 	HandleExecuteToolCalls TaskHandler = "execute_tool_calls"
@@ -162,7 +162,7 @@ type TransitionBranch struct {
 	// When specifies the condition that must be met to follow this branch.
 	// Format depends on the task type:
 	// - For condition_key: exact string match
-	// - For parse_number: numeric comparison (using Operator)
+	// - For prompt_to_int: numeric comparison (using Operator)
 	When string `yaml:"when" json:"when" example:"yes"`
 
 	// Goto specifies the target task ID if this branch is taken.
@@ -309,7 +309,7 @@ type TaskDefinition struct {
 	Print string `yaml:"print,omitempty" json:"print,omitempty" example:"Validation result: {{.validate_input}}"`
 
 	// PromptTemplate is the text prompt sent to the LLM.
-	// It's Required and only applicable for the raw_string type.
+	// It's Required and only applicable for the prompt_to_string type.
 	// Supports template variables from previous task outputs.
 	// Example: "Rate the quality from 1-10: {{.input}}"
 	PromptTemplate string `yaml:"prompt_template" json:"prompt_template" example:"Is this input valid? {{.input}}"`
