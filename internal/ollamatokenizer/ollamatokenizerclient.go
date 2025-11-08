@@ -1,6 +1,7 @@
 package ollamatokenizer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -24,15 +25,11 @@ type ConfigHTTP struct {
 
 // NewHTTPClient creates a new HTTP-based tokenizer client.
 func NewHTTPClient(ctx context.Context, cfg ConfigHTTP) (Tokenizer, func() error, error) {
-	// Create a cleanup function (no resources to clean up for HTTP client)
 	cleanup := func() error { return nil }
-
-	// Create the client
 	client := &HTTPClient{
 		baseURL: cfg.BaseURL,
 		client:  http.DefaultClient,
 	}
-
 	return client, cleanup, nil
 }
 
@@ -53,20 +50,30 @@ func (c *HTTPClient) ping(ctx context.Context) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("health check failed with status %d", resp.StatusCode)
 	}
-
 	return nil
 }
 
-// tokenizeRequest represents the request body for the /tokenize endpoint.
+// -------- /tokenize types --------
+
 type tokenizeRequest struct {
 	Model  string `json:"model"`
 	Prompt string `json:"prompt"`
 }
 
-// tokenizeResponse represents the response from the /tokenize endpoint.
 type tokenizeResponse struct {
 	Tokens []int `json:"tokens"`
 	Count  int   `json:"count"`
+}
+
+// -------- /count types --------
+
+type countRequest struct {
+	Model  string `json:"model"`
+	Prompt string `json:"prompt"`
+}
+
+type countResponse struct {
+	Count int `json:"count"`
 }
 
 // Tokenize sends a tokenization request to the HTTP service.
@@ -75,14 +82,13 @@ func (c *HTTPClient) Tokenize(ctx context.Context, modelName string, prompt stri
 		Model:  modelName,
 		Prompt: prompt,
 	}
-
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	tokenizeURL := fmt.Sprintf("%s/tokenize", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, "POST", tokenizeURL, strings.NewReader(string(reqJSON)))
+	req, err := http.NewRequestWithContext(ctx, "POST", tokenizeURL, bytes.NewReader(reqJSON))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -97,7 +103,6 @@ func (c *HTTPClient) Tokenize(ctx context.Context, modelName string, prompt stri
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("model '%s' not found", modelName)
 	}
-
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, fmt.Errorf("tokenize failed with status %d: %s", resp.StatusCode, string(body))
@@ -111,13 +116,41 @@ func (c *HTTPClient) Tokenize(ctx context.Context, modelName string, prompt stri
 	return response.Tokens, nil
 }
 
-// CountTokens implements the Tokenizer interface using the Tokenize method.
+// CountTokens uses the dedicated /count endpoint, with a backward-compatible fallback to /tokenize.
 func (c *HTTPClient) CountTokens(ctx context.Context, modelName string, prompt string) (int, error) {
-	tokens, err := c.Tokenize(ctx, modelName, prompt)
-	if err != nil {
-		return 0, err
+	reqBody := countRequest{
+		Model:  modelName,
+		Prompt: prompt,
 	}
-	return len(tokens), nil
+	reqJSON, err := json.Marshal(reqBody)
+	if err != nil {
+		return 0, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	countURL := fmt.Sprintf("%s/count", c.baseURL)
+	req, err := http.NewRequestWithContext(ctx, "POST", countURL, bytes.NewReader(reqJSON))
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return 0, fmt.Errorf("count failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var response countResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return 0, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return response.Count, nil
 }
 
 // OptimalModel returns the optimal model for tokenization based on the given model.

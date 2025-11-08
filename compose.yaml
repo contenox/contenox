@@ -35,7 +35,7 @@ services:
       retries: 20
 
   tokenizer:
-    image: ghcr.io/contenox/ollamatokenizer-api:v0.0.7
+    image: ghcr.io/contenox/ollamatokenizer-api:v0.0.9
     container_name: contenox-ollama-tokenizer
     environment:
       - PRELOAD_MODELS=phi-3,granite-embedding-30m,tiny
