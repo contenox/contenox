@@ -49,7 +49,7 @@ const (
 
 	// HandleParseTransition attempts to parse transition commands (e.g., "/command").
 	// Strips transition prefix if present in input.
-	HandleParseTransition TaskHandler = "parse_transition"
+	HandleParseTransition TaskHandler = "parse_command"
 
 	// HandleParseKeyValue expects a string of key=value pairs and parses it into a JSON object.
 	// Example input: "name=John, age=30, city=New York"
