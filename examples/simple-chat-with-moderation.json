@@ -1,0 +1,97 @@
+{
+  "id": "simple-chat",
+  "debug": true,
+  "description": "",
+  "tasks": [
+    {
+      "id": "extract_last_message",
+      "description": "Extract the last user message for moderation",
+      "handler": "noop",
+      "prompt_template": "{{.input}}",
+      "input_var": "input",
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "moderate"
+          }
+        ]
+      }
+    },
+    {
+      "id": "moderate",
+      "description": "Moderate the extracted message",
+      "handler": "prompt_to_int",
+      "system_instruction": "Classify the input as safe (0) or unsafe (10) respond with a numeric value between 0 for safe and 10 for unsafe.",
+      "execute_config": {
+        "model": "gemini-2.5-flash",
+        "provider": "gemini",
+        "pass_clients_tools": false
+      },
+      "prompt_template": "",
+      "input_var": "extract_last_message",
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "simple-chat"
+          },
+          {
+            "operator": ">",
+            "when": "6",
+            "goto": "reject_request"
+          }
+        ]
+      }
+    },
+    {
+      "id": "simple-chat",
+      "description": "",
+      "handler": "chat_completion",
+      "system_instruction": "You're a helpful assistant in the Contenox system talking to an expert.",
+      "execute_config": {
+        "model": "gemini-2.5-flash",
+        "provider": "gemini",
+        "pass_clients_tools": false
+      },
+      "prompt_template": "",
+      "input_var": "input",
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject_request",
+      "description": "",
+      "handler": "prompt_to_string",
+      "system_instruction": "You're a helpful assistant in the Contenox system talking to an expert.",
+      "prompt_template": "Inform the user that his message was rejected because the was flagged as unsafe.",
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end",
+            "compose": {
+              "with_var": "input",
+              "strategy": "append_string_to_chat_history"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "token_limit": 24096
+}
