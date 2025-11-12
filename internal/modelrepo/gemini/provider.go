@@ -49,45 +49,16 @@ func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap m
 	}
 }
 
-func (p *GeminiProvider) GetBackendIDs() []string {
-	return []string{p.baseURL}
-}
-
-func (p *GeminiProvider) ModelName() string {
-	return p.modelName
-}
-
-func (p *GeminiProvider) GetID() string {
-	return p.id
-}
-
-func (p *GeminiProvider) GetType() string {
-	return "gemini"
-}
-
-func (p *GeminiProvider) GetContextLength() int {
-	return p.contextLength
-}
-
-func (p *GeminiProvider) CanChat() bool {
-	return p.canChat
-}
-
-func (p *GeminiProvider) CanEmbed() bool {
-	return p.canEmbed
-}
-
-func (p *GeminiProvider) CanStream() bool {
-	return p.canStream
-}
-
-func (p *GeminiProvider) CanPrompt() bool {
-	return p.canPrompt
-}
-
-func (p *GeminiProvider) CanThink() bool {
-	return false
-}
+func (p *GeminiProvider) GetBackendIDs() []string { return []string{p.baseURL} }
+func (p *GeminiProvider) ModelName() string       { return p.modelName }
+func (p *GeminiProvider) GetID() string           { return p.id }
+func (p *GeminiProvider) GetType() string         { return "gemini" }
+func (p *GeminiProvider) GetContextLength() int   { return p.contextLength }
+func (p *GeminiProvider) CanChat() bool           { return p.canChat }
+func (p *GeminiProvider) CanEmbed() bool          { return p.canEmbed }
+func (p *GeminiProvider) CanStream() bool         { return p.canStream }
+func (p *GeminiProvider) CanPrompt() bool         { return p.canPrompt }
+func (p *GeminiProvider) CanThink() bool          { return false }
 
 func (p *GeminiProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {
 	if !p.CanChat() {
@@ -148,7 +119,16 @@ func (p *GeminiProvider) GetStreamConnection(ctx context.Context, backendID stri
 	}, nil
 }
 
-// Helper function to fetch model info (if needed)
+// --- optional helper for capability discovery (unused by provider init) ---
+
+type modelInfo struct {
+	contextLength int
+	canChat       bool
+	canPrompt     bool
+	canEmbed      bool
+	canStream     bool
+}
+
 func fetchGeminiModelInfo(ctx context.Context, baseURL, apiKey, modelName string, httpClient *http.Client) (*modelInfo, error) {
 	url := fmt.Sprintf("%s/v1beta/models/%s", baseURL, modelName)
 
@@ -156,7 +136,6 @@ func fetchGeminiModelInfo(ctx context.Context, baseURL, apiKey, modelName string
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
 	req.Header.Set("X-Goog-Api-Key", apiKey)
 
 	resp, err := httpClient.Do(req)
@@ -170,47 +149,24 @@ func fetchGeminiModelInfo(ctx context.Context, baseURL, apiKey, modelName string
 		return nil, fmt.Errorf("API returned error (%d): %s", resp.StatusCode, string(body))
 	}
 
-	var modelResponse struct {
+	var m struct {
 		Name                       string   `json:"name"`
 		InputTokenLimit            int      `json:"inputTokenLimit"`
 		OutputTokenLimit           int      `json:"outputTokenLimit"`
 		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
 	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&modelResponse); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	// Determine capabilities from API response
-	canChat := false
-	canPrompt := false
-	canEmbed := false
-	canStream := false
-
-	for _, method := range modelResponse.SupportedGenerationMethods {
+	info := &modelInfo{contextLength: m.InputTokenLimit}
+	for _, method := range m.SupportedGenerationMethods {
 		switch method {
 		case "generateContent":
-			canChat = true
-			canPrompt = true
-			canStream = true
+			info.canChat, info.canPrompt, info.canStream = true, true, true
 		case "embedContent":
-			canEmbed = true
+			info.canEmbed = true
 		}
 	}
-
-	return &modelInfo{
-		contextLength: modelResponse.InputTokenLimit,
-		canChat:       canChat,
-		canPrompt:     canPrompt,
-		canEmbed:      canEmbed,
-		canStream:     canStream,
-	}, nil
-}
-
-type modelInfo struct {
-	contextLength int
-	canChat       bool
-	canPrompt     bool
-	canEmbed      bool
-	canStream     bool
+	return info, nil
 }

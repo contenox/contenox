@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/contenox/runtime/internal/modelrepo"
 )
@@ -19,6 +20,7 @@ type openAIClient struct {
 	maxTokens  int
 }
 
+// OpenAI wire types
 type openAIChatRequest struct {
 	Model       string              `json:"model"`
 	Messages    []modelrepo.Message `json:"messages"`
@@ -27,7 +29,18 @@ type openAIChatRequest struct {
 	TopP        *float64            `json:"top_p,omitempty"`
 	Seed        *int                `json:"seed,omitempty"`
 	Stream      bool                `json:"stream,omitempty"`
-	Tools       []modelrepo.Tool    `json:"tools,omitempty"`
+	Tools       []openAITool        `json:"tools,omitempty"`
+}
+
+type openAITool struct {
+	Type     string         `json:"type"` // must be "function"
+	Function openAIFunction `json:"function"`
+}
+
+type openAIFunction struct {
+	Name        string      `json:"name"`                  // ^[a-zA-Z0-9_-]+$
+	Description string      `json:"description,omitempty"` // optional
+	Parameters  interface{} `json:"parameters,omitempty"`  // JSON Schema
 }
 
 func (c *openAIClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
@@ -66,9 +79,11 @@ func (c *openAIClient) sendRequest(ctx context.Context, endpoint string, request
 		bodyBytes, readErr := io.ReadAll(resp.Body)
 		if readErr == nil {
 			if jsonErr := json.Unmarshal(bodyBytes, &errorResponse); jsonErr == nil && errorResponse.Error.Message != "" {
-				return fmt.Errorf("OpenAI API returned non-200 status: %d, Type: %s, Code: %v, Message: %s for model %s", resp.StatusCode, errorResponse.Error.Type, errorResponse.Error.Code, errorResponse.Error.Message, c.modelName)
+				return fmt.Errorf("OpenAI API returned non-200 status: %d, Type: %s, Code: %v, Message: %s for model %s",
+					resp.StatusCode, errorResponse.Error.Type, errorResponse.Error.Code, errorResponse.Error.Message, c.modelName)
 			}
-			return fmt.Errorf("OpenAI API returned non-200 status: %d, body: %s for model %s", resp.StatusCode, string(bodyBytes), c.modelName)
+			return fmt.Errorf("OpenAI API returned non-200 status: %d, body: %s for model %s",
+				resp.StatusCode, string(bodyBytes), c.modelName)
 		}
 		return fmt.Errorf("OpenAI API returned non-200 status: %d for model %s", resp.StatusCode, c.modelName)
 	}
@@ -82,23 +97,100 @@ func (c *openAIClient) sendRequest(ctx context.Context, endpoint string, request
 	return nil
 }
 
-func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) openAIChatRequest {
-	request := openAIChatRequest{
+// buildOpenAIRequest builds a compliant request and sanitizes tool names per
+// OpenAI's pattern. It ALSO returns a map from sanitized -> original so callers
+// can translate tool-call names back.
+func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) (openAIChatRequest, map[string]string) {
+	req := openAIChatRequest{
 		Model:    modelName,
 		Messages: messages,
 	}
 
-	// Apply all arguments to configure the request
-	config := &modelrepo.ChatConfig{}
-	for _, arg := range args {
-		arg.Apply(config)
+	// Apply chat args
+	cfg := &modelrepo.ChatConfig{}
+	for _, a := range args {
+		a.Apply(cfg)
+	}
+	req.Temperature = cfg.Temperature
+	req.MaxTokens = cfg.MaxTokens
+	req.TopP = cfg.TopP
+	req.Seed = cfg.Seed
+
+	// Convert tools -> OpenAI tools with sanitized/unique function names
+	nameMap := make(map[string]string) // sanitized -> original
+	if len(cfg.Tools) > 0 {
+		seen := map[string]int{}
+		tools := make([]openAITool, 0, len(cfg.Tools))
+		for i, t := range cfg.Tools {
+			if strings.ToLower(t.Type) != "function" || t.Function == nil {
+				// OpenAI only accepts function tools
+				continue
+			}
+			orig := t.Function.Name
+			name := sanitizeToolName(orig)
+			if name == "" {
+				name = fmt.Sprintf("tool_%d", i)
+			}
+			name = uniquifyToolName(seen, name)
+
+			// record mapping (sanitized -> original)
+			nameMap[name] = orig
+
+			tools = append(tools, openAITool{
+				Type: "function",
+				Function: openAIFunction{
+					Name:        name,
+					Description: t.Function.Description,
+					Parameters:  t.Function.Parameters,
+				},
+			})
+		}
+		if len(tools) > 0 {
+			req.Tools = tools
+		}
 	}
 
-	request.Temperature = config.Temperature
-	request.MaxTokens = config.MaxTokens
-	request.TopP = config.TopP
-	request.Seed = config.Seed
-	request.Tools = config.Tools
+	return req, nameMap
+}
 
-	return request
+// sanitizeToolName replaces invalid characters with '_' and trims leading/trailing separators.
+// Allowed: letters, digits, underscore, hyphen.
+func sanitizeToolName(in string) string {
+	if in == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range in {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	s := b.String()
+	// avoid leading/trailing separators
+	s = strings.Trim(s, "_-")
+	return s
+}
+
+// uniquifyToolName ensures we don't send duplicate names (OpenAI recommends unique names)
+func uniquifyToolName(seen map[string]int, name string) string {
+	if _, ok := seen[name]; !ok {
+		seen[name] = 1
+		return name
+	}
+	// append an incrementing suffix until unique
+	i := seen[name]
+	for {
+		candidate := fmt.Sprintf("%s_%d", name, i)
+		if _, ok := seen[candidate]; !ok {
+			seen[name] = i + 1
+			seen[candidate] = 1
+			return candidate
+		}
+		i++
+	}
 }

@@ -490,7 +490,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				Args:     args,
 			}
 
-			result, dataType, err := exe.hookProvider.Exec(taskCtx, startingTime, chainContext, hookCall)
+			result, dataType, err := exe.hookProvider.Exec(taskCtx, startingTime, input, hookCall)
 			if err != nil {
 				taskErr = err
 				break

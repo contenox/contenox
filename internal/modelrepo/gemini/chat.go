@@ -2,7 +2,9 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math/rand"
 
 	"github.com/contenox/runtime/internal/modelrepo"
 )
@@ -11,44 +13,75 @@ type GeminiChatClient struct {
 	geminiClient
 }
 
+// Chat implements modelrepo.LLMChatClient
 func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
-	// Extract system instruction from messages
+	// Pull out an optional system instruction
 	var systemInstruction *geminiSystemInstruction
-	for _, msg := range messages {
-		if msg.Role == "system" {
-			systemInstruction = &geminiSystemInstruction{
-				Parts: []geminiPart{{Text: msg.Content}},
+	filtered := make([]modelrepo.Message, 0, len(messages))
+	for _, m := range messages {
+		if m.Role == "system" {
+			if m.Content != "" {
+				systemInstruction = &geminiSystemInstruction{
+					Parts: []geminiPart{{Text: m.Content}},
+				}
 			}
-			break
+			continue
 		}
+		filtered = append(filtered, m)
 	}
 
-	request := buildGeminiRequest(c.modelName, messages, systemInstruction, args)
+	req := buildGeminiRequest(c.modelName, filtered, systemInstruction, args)
 
 	endpoint := fmt.Sprintf("/v1beta/models/%s:generateContent", c.modelName)
-	var response geminiGenerateContentResponse
-	if err := c.sendRequest(ctx, endpoint, request, &response); err != nil {
+	var resp geminiGenerateContentResponse
+	if err := c.sendRequest(ctx, endpoint, req, &resp); err != nil {
 		return modelrepo.ChatResult{}, err
 	}
 
-	if len(response.Candidates) == 0 {
+	if len(resp.Candidates) == 0 {
 		return modelrepo.ChatResult{}, fmt.Errorf("no candidates returned from Gemini for model %s", c.modelName)
 	}
 
-	candidate := response.Candidates[0]
-	if len(candidate.Content.Parts) == 0 || candidate.Content.Parts[0].Text == "" {
-		if len(candidate.FinishReason) > 0 {
-			return modelrepo.ChatResult{}, fmt.Errorf(
-				"empty content from model %s despite normal completion. Finish reason: %v",
-				c.modelName, candidate.FinishReason,
-			)
+	cand := resp.Candidates[0]
+
+	var (
+		outText   string
+		toolCalls []modelrepo.ToolCall
+	)
+
+	for _, p := range cand.Content.Parts {
+		switch {
+		case p.Text != "":
+			outText += p.Text
+		case p.FunctionCall != nil:
+			// Convert args (map[string]any) -> JSON string
+			argsJSON, err := json.Marshal(p.FunctionCall.Args)
+			if err != nil {
+				// Skip this call but still try to return text/tool calls we did parse
+				continue
+			}
+			id := fmt.Sprintf("%x", rand.Int63())
+			toolCalls = append(toolCalls, modelrepo.ToolCall{
+				ID:   id,
+				Type: "function",
+				Function: struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				}{
+					Name:      p.FunctionCall.Name,
+					Arguments: string(argsJSON),
+				},
+			})
 		}
+	}
+
+	if outText == "" && len(toolCalls) == 0 {
 		return modelrepo.ChatResult{}, fmt.Errorf("empty content from model %s", c.modelName)
 	}
 
 	return modelrepo.ChatResult{
-		Message:   modelrepo.Message{Role: "assistant", Content: candidate.Content.Parts[0].Text},
-		ToolCalls: []modelrepo.ToolCall{},
+		Message:   modelrepo.Message{Role: "assistant", Content: outText},
+		ToolCalls: toolCalls,
 	}, nil
 }
 

@@ -511,7 +511,7 @@ func (env SimpleEnv) composeAppendStringToChatHistory(leftVal any, leftType Data
 		strVal = rightVal.(string)
 		chatHist = leftVal.(ChatHistory)
 	} else {
-		return nil, DataTypeAny, fmt.Errorf("invalid types for append_string_to_chat_history")
+		return nil, DataTypeAny, fmt.Errorf("invalid types for append_string_to_chat_history %s - %s", leftType.String(), rightType.String())
 	}
 
 	result := ChatHistory{

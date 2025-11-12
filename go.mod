@@ -6,6 +6,7 @@ require (
 	github.com/PaesslerAG/jsonpath v0.1.1
 	github.com/contenox/authz v0.0.1
 	github.com/dop251/goja v0.0.0-20251103141225-af2ceb9156d7
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/nats-io/nats.go v1.47.0
 	github.com/ollama/ollama v0.12.9
 	github.com/testcontainers/testcontainers-go/modules/nats v0.39.0
@@ -21,7 +22,6 @@ require (
 	github.com/go-openapi/jsonpointer v0.22.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.1 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/google/pprof v0.0.0-20251007162407-5df77e3f7d1d // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect
 	github.com/josharian/intern v1.0.0 // indirect

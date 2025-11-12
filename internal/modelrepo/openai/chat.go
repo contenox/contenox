@@ -12,7 +12,7 @@ type OpenAIChatClient struct {
 }
 
 func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
-	request := buildOpenAIRequest(c.modelName, messages, args)
+	req, nameMap := buildOpenAIRequest(c.modelName, messages, args)
 
 	var response struct {
 		Choices []struct {
@@ -33,7 +33,7 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		} `json:"choices"`
 	}
 
-	if err := c.sendRequest(ctx, "/chat/completions", request, &response); err != nil {
+	if err := c.sendRequest(ctx, "/chat/completions", req, &response); err != nil {
 		return modelrepo.ChatResult{}, err
 	}
 
@@ -52,9 +52,13 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		Content: choice.Message.Content,
 	}
 
-	// Convert tool calls
+	// Convert tool calls and translate sanitized names back to the original the caller provided
 	var toolCalls []modelrepo.ToolCall
 	for _, tc := range choice.Message.ToolCalls {
+		name := tc.Function.Name
+		if orig, ok := nameMap[name]; ok && orig != "" {
+			name = orig
+		}
 		toolCalls = append(toolCalls, modelrepo.ToolCall{
 			ID:   tc.ID,
 			Type: tc.Type,
@@ -62,7 +66,7 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 				Name      string `json:"name"`
 				Arguments string `json:"arguments"`
 			}{
-				Name:      tc.Function.Name,
+				Name:      name,
 				Arguments: tc.Function.Arguments,
 			},
 		})

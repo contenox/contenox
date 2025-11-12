@@ -23,7 +23,7 @@ type geminiGenerateContentRequest struct {
 	SystemInstruction *geminiSystemInstruction `json:"system_instruction,omitempty"`
 	Contents          []geminiContent          `json:"contents"`
 	GenerationConfig  *geminiGenerationConfig  `json:"generationConfig,omitempty"`
-	Tools             []modelrepo.Tool         `json:"tools,omitempty"`
+	Tools             []geminiToolRequest      `json:"tools,omitempty"`
 }
 
 type geminiGenerationConfig struct {
@@ -36,23 +36,25 @@ type geminiGenerationConfig struct {
 	Seed            *int     `json:"seed,omitempty"`
 }
 
+// sendRequest: shared HTTP helper for Gemini clients
 func (c *geminiClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
 	fullURL := fmt.Sprintf("%s%s", c.baseURL, endpoint)
 
 	var reqBody io.Reader
 	if request != nil {
-		marshaledReqBody, err := json.Marshal(request)
+		b, err := json.Marshal(request)
 		if err != nil {
 			return fmt.Errorf("failed to marshal request: %w", err)
 		}
-		reqBody = bytes.NewBuffer(marshaledReqBody)
+		reqBody = bytes.NewBuffer(b)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", fullURL, reqBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Either header or ?key= works; stick with header for consistency.
 	req.Header.Set("X-Goog-Api-Key", c.apiKey)
 
 	resp, err := c.httpClient.Do(req)
@@ -62,21 +64,19 @@ func (c *geminiClient) sendRequest(ctx context.Context, endpoint string, request
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errorResponse struct {
+		var eresp struct {
 			Error struct {
 				Code    int    `json:"code"`
 				Message string `json:"message"`
 				Status  string `json:"status"`
 			} `json:"error"`
 		}
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		if readErr == nil {
-			if jsonErr := json.Unmarshal(bodyBytes, &errorResponse); jsonErr == nil && errorResponse.Error.Message != "" {
-				return fmt.Errorf("gemini API returned non-200 status: %d, Status: %s, Message: %s for model %s on url: %s", resp.StatusCode, errorResponse.Error.Status, errorResponse.Error.Message, c.modelName, fullURL)
-			}
-			return fmt.Errorf("gemini API returned non-200 status: %d, body: %s for model %s for url: %s", resp.StatusCode, string(bodyBytes), c.modelName, fullURL)
+		body, _ := io.ReadAll(resp.Body)
+		if jsonErr := json.Unmarshal(body, &eresp); jsonErr == nil && eresp.Error.Message != "" {
+			return fmt.Errorf("gemini API error: %d %s - %s (model=%s url=%s)",
+				resp.StatusCode, eresp.Error.Status, eresp.Error.Message, c.modelName, fullURL)
 		}
-		return fmt.Errorf("gemini API returned non-200 status: %d for model %s for url %s", resp.StatusCode, c.modelName, fullURL)
+		return fmt.Errorf("gemini API error: %d - %s (model=%s url=%s)", resp.StatusCode, string(body), c.modelName, fullURL)
 	}
 
 	if response != nil {
@@ -84,50 +84,76 @@ func (c *geminiClient) sendRequest(ctx context.Context, endpoint string, request
 			return fmt.Errorf("failed to decode response for model %s: %w", c.modelName, err)
 		}
 	}
-
 	return nil
 }
 
-func buildGeminiRequest(modelName string, messages []modelrepo.Message, systemInstruction *geminiSystemInstruction, args []modelrepo.ChatArgument) geminiGenerateContentRequest {
-	request := geminiGenerateContentRequest{
+// buildGeminiRequest builds a proper Gemini generateContent request using modelrepo args & tools
+func buildGeminiRequest(_ string, messages []modelrepo.Message, systemInstruction *geminiSystemInstruction, args []modelrepo.ChatArgument) geminiGenerateContentRequest {
+	// Collect chat args
+	cfg := &modelrepo.ChatConfig{}
+	for _, a := range args {
+		a.Apply(cfg)
+	}
+
+	// Convert tools -> Gemini tool declarations
+	var tools []geminiToolRequest
+	if len(cfg.Tools) > 0 {
+		decls := make([]geminiFunctionDeclaration, 0, len(cfg.Tools))
+		for _, t := range cfg.Tools {
+			if t.Type == "function" && t.Function != nil {
+				decls = append(decls, geminiFunctionDeclaration{
+					Name:        t.Function.Name,
+					Description: t.Function.Description,
+					Parameters:  t.Function.Parameters,
+				})
+			}
+		}
+		if len(decls) > 0 {
+			tools = append(tools, geminiToolRequest{
+				FunctionDeclarations: decls,
+			})
+		}
+	}
+
+	req := geminiGenerateContentRequest{
 		SystemInstruction: systemInstruction,
 		Contents:          convertToGeminiMessages(messages),
 		GenerationConfig:  &geminiGenerationConfig{},
+		Tools:             tools,
 	}
-
-	// Apply all arguments to configure the request
-	config := &modelrepo.ChatConfig{}
-	for _, arg := range args {
-		arg.Apply(config)
+	req.GenerationConfig.Temperature = cfg.Temperature
+	req.GenerationConfig.TopP = cfg.TopP
+	if cfg.MaxTokens != nil {
+		req.GenerationConfig.MaxOutputTokens = cfg.MaxTokens
 	}
+	req.GenerationConfig.Seed = cfg.Seed
 
-	request.GenerationConfig.Temperature = config.Temperature
-	request.GenerationConfig.TopP = config.TopP
-	if config.MaxTokens != nil {
-		request.GenerationConfig.MaxOutputTokens = config.MaxTokens
-	}
-	request.GenerationConfig.Seed = config.Seed
-	request.Tools = config.Tools
-
-	return request
+	return req
 }
 
+// convert modelrepo messages to Gemini "contents"
 func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
-	geminiMsgs := make([]geminiContent, 0)
-	for _, msg := range messages {
-		// Skip system messages as they're handled separately
-		if msg.Role == "system" {
+	out := make([]geminiContent, 0, len(messages))
+	for _, m := range messages {
+		if m.Role == "system" {
+			// handled via SystemInstruction
 			continue
 		}
-
-		role := msg.Role
+		role := m.Role
 		if role == "assistant" {
 			role = "model"
 		}
-		geminiMsgs = append(geminiMsgs, geminiContent{
+		parts := []geminiPart{}
+		if m.Content != "" {
+			parts = append(parts, geminiPart{Text: m.Content})
+		}
+		if len(parts) == 0 {
+			continue
+		}
+		out = append(out, geminiContent{
 			Role:  role,
-			Parts: []geminiPart{{Text: msg.Content}},
+			Parts: parts,
 		})
 	}
-	return geminiMsgs
+	return out
 }

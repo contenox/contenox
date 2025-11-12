@@ -23,15 +23,28 @@ type openAIChatStreamResponseChunk struct {
 	Created int    `json:"created"`
 	Model   string `json:"model"`
 	Choices []struct {
-		Index        int               `json:"index"`
-		Delta        modelrepo.Message `json:"delta"`
-		FinishReason string            `json:"finish_reason"`
+		Index int `json:"index"`
+		Delta struct {
+			Role      string `json:"role,omitempty"`
+			Content   string `json:"content,omitempty"`
+			ToolCalls []struct {
+				ID       string `json:"id,omitempty"`
+				Type     string `json:"type,omitempty"`
+				Function struct {
+					Name      string `json:"name,omitempty"`
+					Arguments string `json:"arguments,omitempty"`
+				} `json:"function,omitempty"`
+			} `json:"tool_calls,omitempty"`
+		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 }
 
 func (c *OpenAIStreamClient) Stream(ctx context.Context, prompt string, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	messages := []modelrepo.Message{{Role: "user", Content: prompt}}
-	request := buildOpenAIRequest(c.modelName, messages, args)
+
+	// buildOpenAIRequest now returns (request, nameMap); we only need the request here.
+	request, _ := buildOpenAIRequest(c.modelName, messages, args)
 	request.Stream = true
 
 	url := c.baseURL + "/chat/completions"
@@ -68,38 +81,37 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, prompt string, args ...
 		scanner := bufio.NewScanner(resp.Body)
 		for scanner.Scan() {
 			line := scanner.Text()
-
 			if line == "" {
 				continue
 			}
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
 
-			if strings.HasPrefix(line, "data: ") {
-				jsonData := strings.TrimPrefix(line, "data: ")
+			jsonData := strings.TrimPrefix(line, "data: ")
+			if jsonData == "[DONE]" {
+				continue
+			}
 
-				if jsonData == "[DONE]" {
-					continue
+			var chunk openAIChatStreamResponseChunk
+			if err := json.Unmarshal([]byte(jsonData), &chunk); err != nil {
+				select {
+				case streamCh <- &modelrepo.StreamParcel{
+					Error: fmt.Errorf("failed to decode SSE data: %w, raw: %s", err, jsonData),
+				}:
+				case <-ctx.Done():
+					return
 				}
+				continue
+			}
 
-				var chunk openAIChatStreamResponseChunk
-				if err := json.Unmarshal([]byte(jsonData), &chunk); err != nil {
+			if len(chunk.Choices) > 0 {
+				delta := chunk.Choices[0].Delta
+				if delta.Content != "" {
 					select {
-					case streamCh <- &modelrepo.StreamParcel{
-						Error: fmt.Errorf("failed to decode SSE data: %w, raw: %s", err, jsonData),
-					}:
+					case streamCh <- &modelrepo.StreamParcel{Data: delta.Content}:
 					case <-ctx.Done():
 						return
-					}
-					continue
-				}
-
-				if len(chunk.Choices) > 0 {
-					delta := chunk.Choices[0].Delta
-					if delta.Content != "" {
-						select {
-						case streamCh <- &modelrepo.StreamParcel{Data: delta.Content}:
-						case <-ctx.Done():
-							return
-						}
 					}
 				}
 			}

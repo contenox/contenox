@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	libauth "github.com/contenox/authz"
 	"github.com/contenox/runtime/eventstore"
+	"github.com/contenox/runtime/libauth"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtimetypes"
 )

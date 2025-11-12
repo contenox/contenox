@@ -28,7 +28,7 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, prompt string, args ...
 	go func() {
 		defer close(parcels)
 
-		marshaledReqBody, err := json.Marshal(request)
+		body, err := json.Marshal(request)
 		if err != nil {
 			parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("failed to marshal stream request: %w", err)}
 			return
@@ -37,12 +37,11 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, prompt string, args ...
 		endpoint := fmt.Sprintf("/v1beta/models/%s:streamGenerateContent?alt=sse", c.modelName)
 		fullURL := fmt.Sprintf("%s%s", c.baseURL, endpoint)
 
-		req, err := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewBuffer(marshaledReqBody))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewBuffer(body))
 		if err != nil {
 			parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("failed to create stream request: %w", err)}
 			return
 		}
-
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Goog-Api-Key", c.apiKey)
 		req.Header.Set("Accept", "text/event-stream")
@@ -57,39 +56,45 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, prompt string, args ...
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("gemini API returned non-200 status for stream: %d, body: %s", resp.StatusCode, string(bodyBytes))}
+			b, _ := io.ReadAll(resp.Body)
+			parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("gemini API returned non-200 status for stream: %d, body: %s", resp.StatusCode, string(b))}
 			return
 		}
 
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "data: ") {
-				jsonData := strings.TrimPrefix(line, "data: ")
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			line := sc.Text()
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			jsonData := strings.TrimPrefix(line, "data: ")
+			if jsonData == "" || jsonData == "[DONE]" {
+				continue
+			}
 
-				var response geminiGenerateContentResponse
-				if err := json.Unmarshal([]byte(jsonData), &response); err != nil {
-					continue
-				}
+			var chunk geminiGenerateContentResponse
+			if err := json.Unmarshal([]byte(jsonData), &chunk); err != nil {
+				// ignore malformed frame; continue
+				continue
+			}
 
-				if response.PromptFeedback.BlockReason != "" {
-					parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("stream blocked by API for reason: %s", response.PromptFeedback.BlockReason)}
-					return
-				}
-				if len(response.Candidates) > 0 && len(response.Candidates[0].Content.Parts) > 0 {
-					text := response.Candidates[0].Content.Parts[0].Text
+			if chunk.PromptFeedback.BlockReason != "" {
+				parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("stream blocked by API for reason: %s", chunk.PromptFeedback.BlockReason)}
+				return
+			}
+			if len(chunk.Candidates) > 0 && len(chunk.Candidates[0].Content.Parts) > 0 {
+				text := chunk.Candidates[0].Content.Parts[0].Text
+				if text != "" {
 					select {
 					case parcels <- &modelrepo.StreamParcel{Data: text}:
 					case <-ctx.Done():
-						// If the context is cancelled, stop sending.
 						return
 					}
 				}
 			}
 		}
 
-		if err := scanner.Err(); err != nil {
+		if err := sc.Err(); err != nil {
 			select {
 			case parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("error reading from stream: %w", err)}:
 			case <-ctx.Done():
