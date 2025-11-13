@@ -72,6 +72,7 @@ type modelManager struct {
 	tokenizer ollamatokenizer.Tokenizer
 	config    ModelManagerConfig
 	mu        sync.RWMutex
+	tracker   libtracker.ActivityTracker
 }
 
 type ModelConfig struct {
@@ -85,18 +86,21 @@ type ModelManagerConfig struct {
 	DefaultChatModel      ModelConfig
 }
 
-func NewModelManager(runtime *runtimestate.State, tokenizer ollamatokenizer.Tokenizer, config ModelManagerConfig) (*modelManager, error) {
+func NewModelManager(runtime *runtimestate.State, tokenizer ollamatokenizer.Tokenizer, config ModelManagerConfig, tracker libtracker.ActivityTracker) (*modelManager, error) {
 	if runtime == nil {
 		return nil, errors.New("runtime cannot be nil")
 	}
 	if tokenizer == nil {
 		return nil, errors.New("tokenizer cannot be nil")
 	}
-
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
 	return &modelManager{
 		runtime:   runtime,
 		tokenizer: tokenizer,
 		config:    config,
+		tracker:   tracker,
 	}, nil
 }
 
@@ -332,7 +336,7 @@ func (e *modelManager) Stream(
 
 func (e *modelManager) GetRuntime(ctx context.Context) runtimestate.ProviderFromRuntimeState {
 	state := e.runtime.Get(ctx)
-	return runtimestate.LocalProviderAdapter(ctx, state)
+	return runtimestate.LocalProviderAdapter(ctx, e.tracker, state)
 }
 
 func (e *modelManager) GetTokenizer(ctx context.Context, modelName string) (Tokenizer, error) {

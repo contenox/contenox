@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/libtracker"
 )
 
 // vLLMPromptClient handles prompt execution
@@ -27,6 +28,7 @@ type vLLMClient struct {
 	modelName  string
 	maxTokens  int
 	apiKey     string
+	tracker    libtracker.ActivityTracker
 }
 
 type chatRequest struct {
@@ -47,9 +49,22 @@ func (c *vLLMClient) sendRequest(ctx context.Context, endpoint string, request i
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	tracker := c.tracker
+	reportErr, reportChange, end := tracker.Start(
+		ctx,
+		"http_request",
+		"vllm",
+		"model", c.modelName,
+		"endpoint", endpoint,
+		"base_url", c.baseURL,
+	)
+	defer end()
+
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		err = fmt.Errorf("failed to create request: %w", err)
+		reportErr(err)
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
@@ -58,16 +73,33 @@ func (c *vLLMClient) sendRequest(ctx context.Context, endpoint string, request i
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
+		err = fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
+		reportErr(err)
+		return err
 	}
 	defer resp.Body.Close()
 
+	// Log headers
+	reportChange("http_response", map[string]any{
+		"status_code": resp.StatusCode,
+		"headers":     resp.Header,
+	})
+
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("vLLM API returned non-200 status: %d, body: %s for model %s", resp.StatusCode, string(bodyBytes), c.modelName)
+		err = fmt.Errorf("vLLM API returned non-200 status: %d, body: %s for model %s", resp.StatusCode, string(bodyBytes), c.modelName)
+		reportErr(err)
+		return err
 	}
 
-	return json.NewDecoder(resp.Body).Decode(response)
+	if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
+		err = fmt.Errorf("failed to decode response for model %s: %w", c.modelName, err)
+		reportErr(err)
+		return err
+	}
+
+	reportChange("request_completed", nil)
+	return nil
 }
 
 func buildChatRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) chatRequest {

@@ -53,7 +53,7 @@ func TestUnit_ModelProviderAdapter_SetsCorrectModelCapabilities(t *testing.T) {
 	}
 
 	// 2. Get the adapter function
-	adapterFunc := runtimestate.LocalProviderAdapter(ctx, runtime)
+	adapterFunc := runtimestate.LocalProviderAdapter(ctx, nil, runtime)
 
 	// 3. Get the providers
 	providers, err := adapterFunc(ctx, "ollama")
@@ -132,7 +132,7 @@ func TestUnit_ModelProviderAdapter_PropagatesCapabilitiesCorrectly(t *testing.T)
 		},
 	}
 
-	adapterFunc := runtimestate.LocalProviderAdapter(ctx, runtime)
+	adapterFunc := runtimestate.LocalProviderAdapter(ctx, nil, runtime)
 
 	providers, err := adapterFunc(ctx, "ollama")
 	require.NoError(t, err, "should not return error")
@@ -188,7 +188,7 @@ func TestUnit_ModelProviderAdapter_HandlesMissingCapabilities(t *testing.T) {
 		},
 	}
 
-	adapterFunc := runtimestate.LocalProviderAdapter(ctx, runtime)
+	adapterFunc := runtimestate.LocalProviderAdapter(ctx, nil, runtime)
 
 	providers, err := adapterFunc(ctx, "ollama")
 	require.NoError(t, err, "should not return error")

@@ -9,7 +9,6 @@ import (
 
 	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/eventsourceservice"
@@ -30,6 +29,7 @@ import (
 	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/modelservice"
+	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/stateservice"
@@ -560,7 +560,9 @@ func (p *Playground) WithLLMRepo() *Playground {
 		p.Error = errors.New("cannot initialize llm repo: tokenizer is not configured")
 		return p
 	}
-
+	if p.tracker == nil {
+		p.tracker = libtracker.NoopTracker{}
+	}
 	var err error
 	p.llmRepo, err = llmrepo.NewModelManager(p.state, p.tokenizer, llmrepo.ModelManagerConfig{
 		DefaultEmbeddingModel: llmrepo.ModelConfig{
@@ -575,7 +577,7 @@ func (p *Playground) WithLLMRepo() *Playground {
 			Name:     p.llmChatModel,
 			Provider: p.llmChatModelProvider,
 		},
-	})
+	}, p.tracker)
 	if err != nil {
 		p.Error = fmt.Errorf("failed to create llm repo model manager: %w", err)
 		return p

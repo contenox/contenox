@@ -259,6 +259,9 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 	if currentTask.Handler == HandleNoop {
 		return output, outputType, "noop", nil
 	}
+	if currentTask.Hook == nil {
+		currentTask.Hook = &HookCall{}
+	}
 	// Unified prompt extraction function
 	getPrompt := func() (string, error) {
 		switch outputType {
@@ -456,10 +459,17 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 
 	case HandleExecuteToolCalls:
 		if dataType != DataTypeChatHistory {
-			taskErr = fmt.Errorf("handler '%s' requires 'chat_history' input, but got '%s'", currentTask.Handler, dataType.String())
+			taskErr = fmt.Errorf("handler '%s' requires 'chat_history' input, but got '%s'",
+				currentTask.Handler, dataType.String())
 			break
 		}
-		chatHistory, _ := input.(ChatHistory)
+
+		chatHistory, ok := input.(ChatHistory)
+		if !ok {
+			taskErr = fmt.Errorf("input data is not of type ChatHistory")
+			break
+		}
+
 		if len(chatHistory.Messages) == 0 {
 			transitionEval = "no_op"
 			break
@@ -471,41 +481,53 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			break
 		}
 
+		executedAny := false
+
 		for _, toolCall := range lastMessage.CallTools {
-			resolutionInfo, found := chainContext.Tools[toolCall.Function.Name]
+			// robust resolution: try direct key, then scan by Function.Name / HookName
+			resolutionInfo, found := resolveToolWithResolution(chainContext, toolCall.Function.Name)
 			if !found {
+				// No matching tool wiring for this call; skip it
 				continue
 			}
 
-			var args map[string]string
-			err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args)
-			if err != nil {
-				taskErr = err
+			var args map[string]any
+			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+				taskErr = fmt.Errorf("failed to unmarshal tool arguments for %s: %w",
+					toolCall.Function.Name, err)
 				break
 			}
 
 			hookCall := &HookCall{
 				Name:     resolutionInfo.HookName,
 				ToolName: toolCall.Function.Name,
-				Args:     args,
+				// NOTE: dynamic args are passed as `input` to Exec; Hook.Args stays static/template-level
+				Args: currentTask.Hook.Args,
 			}
 
-			result, dataType, err := exe.hookProvider.Exec(taskCtx, startingTime, input, hookCall)
+			// `args` are the per-call dynamic tool arguments
+			result, resultType, err := exe.hookProvider.Exec(taskCtx, startingTime, args, chainContext.Debug, hookCall)
 			if err != nil {
-				taskErr = err
-				break
+				result = fmt.Sprintf("tool %s execution failed: %s", toolCall.Function.Name, err)
+				err = nil
+				// Soft error instead! taskErr = fmt.Errorf("tool %s execution failed: %w", toolCall.Function.Name, err)
+				// break
 			}
-			content := ""
-			switch dataType {
+
+			executedAny = true
+
+			// Normalize result to a string for the tool message content
+			var content string
+			switch resultType {
 			case DataTypeNil:
-				content = "nil"
+				content = "null"
 			case DataTypeAny, DataTypeJSON:
-				resultBytes, err := json.Marshal(result)
+				b, err := json.Marshal(result)
 				if err != nil {
-					taskErr = err
+					taskErr = fmt.Errorf("failed to marshal tool %s result: %w", toolCall.Function.Name, err)
 					break
 				}
-				content = string(resultBytes)
+				content = string(b)
 			default:
 				content = fmt.Sprintf("%v", result)
 			}
@@ -521,7 +543,17 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 
 		output = chatHistory
 		outputType = DataTypeChatHistory
-		transitionEval = "tools_executed"
+
+		switch {
+		case taskErr != nil:
+			transitionEval = "failed"
+		case executedAny:
+			transitionEval = "tools_executed"
+		default:
+			// We *had* tool calls, but none resolved to hooks
+			transitionEval = "no_calls_found"
+		}
+
 	case HandleHook:
 		if currentTask.Hook == nil {
 			taskErr = fmt.Errorf("hook task missing hook definition")
@@ -534,6 +566,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				startingTime,
 				output,
 				currentTask.Hook,
+				chainContext.Debug,
 				currentTask.OutputTemplate,
 			)
 		}
@@ -707,6 +740,7 @@ func (exe *SimpleExec) hookengine(
 	startingTime time.Time,
 	input any,
 	hook *HookCall,
+	debug bool,
 	outputTemplate string,
 ) (any, DataType, string, error) {
 	if hook.Args == nil {
@@ -714,7 +748,7 @@ func (exe *SimpleExec) hookengine(
 	}
 
 	// Call the provider with the new, simple signature.
-	hookOutput, dataType, err := exe.hookProvider.Exec(ctx, startingTime, input, hook)
+	hookOutput, dataType, err := exe.hookProvider.Exec(ctx, startingTime, input, debug, hook)
 	if err != nil {
 		return nil, dataType, "failed", err
 	}
@@ -828,4 +862,27 @@ func parseKeyValueString(input string) (map[string]any, error) {
 	}
 
 	return result, nil
+}
+
+// resolveToolWithResolution tries to find a ToolWithResolution for a given tool name.
+// It first looks up by key, then falls back to scanning by Function.Name / HookName.
+// This makes us robust to how chainContext.Tools was keyed.
+func resolveToolWithResolution(chainContext *ChainContext, toolName string) (ToolWithResolution, bool) {
+	if chainContext == nil {
+		return ToolWithResolution{}, false
+	}
+
+	// 1) Direct lookup by key
+	if twr, ok := chainContext.Tools[toolName]; ok {
+		return twr, true
+	}
+
+	// 2) Fallback: scan for matching Function.Name or HookName
+	for _, twr := range chainContext.Tools {
+		if twr.Function.Name == toolName || twr.HookName == toolName {
+			return twr, true
+		}
+	}
+
+	return ToolWithResolution{}, false
 }

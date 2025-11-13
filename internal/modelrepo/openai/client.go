@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type openAIClient struct {
@@ -18,9 +19,9 @@ type openAIClient struct {
 	httpClient *http.Client
 	modelName  string
 	maxTokens  int
+	tracker    libtracker.ActivityTracker
 }
 
-// OpenAI wire types
 type openAIChatRequest struct {
 	Model       string              `json:"model"`
 	Messages    []modelrepo.Message `json:"messages"`
@@ -46,27 +47,55 @@ type openAIFunction struct {
 func (c *openAIClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
 	url := c.baseURL + endpoint
 
+	tracker := c.tracker
+	auth := "***"
+	if len(c.apiKey) > 24 {
+		auth = c.apiKey[:24]
+	}
+	reportErr, reportChange, end := tracker.Start(
+		ctx,
+		"http_request",
+		"openai",
+		"model", c.modelName,
+		"endpoint", endpoint,
+		"base_url", c.baseURL,
+		"auth", auth,
+	)
+	defer end()
+
 	var reqBody io.Reader
 	if request != nil {
 		marshaledReqBody, err := json.Marshal(request)
 		if err != nil {
-			return fmt.Errorf("failed to marshal request: %w", err)
+			err = fmt.Errorf("failed to marshal request: %w", err)
+			reportErr(err)
+			return err
 		}
 		reqBody = bytes.NewBuffer(marshaledReqBody)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, reqBody)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		err = fmt.Errorf("failed to create request: %w", err)
+		reportErr(err)
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
+		err = fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
+		reportErr(err)
+		return err
 	}
 	defer resp.Body.Close()
+
+	// Log response headers (including rate-limit headers) via tracker
+	reportChange("http_response", map[string]any{
+		"status_code": resp.StatusCode,
+		"headers":     resp.Header,
+	})
 
 	if resp.StatusCode != http.StatusOK {
 		var errorResponse struct {
@@ -79,21 +108,30 @@ func (c *openAIClient) sendRequest(ctx context.Context, endpoint string, request
 		bodyBytes, readErr := io.ReadAll(resp.Body)
 		if readErr == nil {
 			if jsonErr := json.Unmarshal(bodyBytes, &errorResponse); jsonErr == nil && errorResponse.Error.Message != "" {
-				return fmt.Errorf("OpenAI API returned non-200 status: %d, Type: %s, Code: %v, Message: %s for model %s",
+				err = fmt.Errorf("OpenAI API returned non-200 status: %d, Type: %s, Code: %v, Message: %s for model %s",
 					resp.StatusCode, errorResponse.Error.Type, errorResponse.Error.Code, errorResponse.Error.Message, c.modelName)
+				reportErr(err)
+				return err
 			}
-			return fmt.Errorf("OpenAI API returned non-200 status: %d, body: %s for model %s",
+			err = fmt.Errorf("OpenAI API returned non-200 status: %d, body: %s for model %s",
 				resp.StatusCode, string(bodyBytes), c.modelName)
+			reportErr(err)
+			return err
 		}
-		return fmt.Errorf("OpenAI API returned non-200 status: %d for model %s", resp.StatusCode, c.modelName)
+		err = fmt.Errorf("OpenAI API returned non-200 status: %d for model %s", resp.StatusCode, c.modelName)
+		reportErr(err)
+		return err
 	}
 
 	if response != nil {
 		if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
-			return fmt.Errorf("failed to decode response for model %s: %w", c.modelName, err)
+			err = fmt.Errorf("failed to decode response for model %s: %w", c.modelName, err)
+			reportErr(err)
+			return err
 		}
 	}
 
+	reportChange("request_completed", nil)
 	return nil
 }
 

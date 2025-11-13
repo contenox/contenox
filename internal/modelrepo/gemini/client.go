@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type geminiClient struct {
@@ -17,6 +18,7 @@ type geminiClient struct {
 	baseURL    string
 	httpClient *http.Client
 	maxTokens  int
+	tracker    libtracker.ActivityTracker
 }
 
 type geminiGenerateContentRequest struct {
@@ -40,28 +42,50 @@ type geminiGenerationConfig struct {
 func (c *geminiClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
 	fullURL := fmt.Sprintf("%s%s", c.baseURL, endpoint)
 
+	tracker := c.tracker
+	reportErr, reportChange, end := tracker.Start(
+		ctx,
+		"http_request",
+		"gemini",
+		"model", c.modelName,
+		"endpoint", endpoint,
+		"base_url", c.baseURL,
+	)
+	defer end()
+
 	var reqBody io.Reader
 	if request != nil {
 		b, err := json.Marshal(request)
 		if err != nil {
-			return fmt.Errorf("failed to marshal request: %w", err)
+			err = fmt.Errorf("failed to marshal request: %w", err)
+			reportErr(err)
+			return err
 		}
 		reqBody = bytes.NewBuffer(b)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, reqBody)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		err = fmt.Errorf("failed to create request: %w", err)
+		reportErr(err)
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	// Either header or ?key= works; stick with header for consistency.
 	req.Header.Set("X-Goog-Api-Key", c.apiKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
+		err = fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
+		reportErr(err)
+		return err
 	}
 	defer resp.Body.Close()
+
+	// Log headers via tracker
+	reportChange("http_response", map[string]any{
+		"status_code": resp.StatusCode,
+		"headers":     resp.Header,
+	})
 
 	if resp.StatusCode != http.StatusOK {
 		var eresp struct {
@@ -73,17 +97,25 @@ func (c *geminiClient) sendRequest(ctx context.Context, endpoint string, request
 		}
 		body, _ := io.ReadAll(resp.Body)
 		if jsonErr := json.Unmarshal(body, &eresp); jsonErr == nil && eresp.Error.Message != "" {
-			return fmt.Errorf("gemini API error: %d %s - %s (model=%s url=%s)",
+			err = fmt.Errorf("gemini API error: %d %s - %s (model=%s url=%s)",
 				resp.StatusCode, eresp.Error.Status, eresp.Error.Message, c.modelName, fullURL)
+			reportErr(err)
+			return err
 		}
-		return fmt.Errorf("gemini API error: %d - %s (model=%s url=%s)", resp.StatusCode, string(body), c.modelName, fullURL)
+		err = fmt.Errorf("gemini API error: %d - %s (model=%s url=%s)", resp.StatusCode, string(body), c.modelName, fullURL)
+		reportErr(err)
+		return err
 	}
 
 	if response != nil {
 		if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
-			return fmt.Errorf("failed to decode response for model %s: %w", c.modelName, err)
+			err = fmt.Errorf("failed to decode response for model %s: %w", c.modelName, err)
+			reportErr(err)
+			return err
 		}
 	}
+
+	reportChange("request_completed", nil)
 	return nil
 }
 

@@ -12,6 +12,10 @@ type OpenAIPromptClient struct {
 }
 
 func (c *OpenAIPromptClient) Prompt(ctx context.Context, systemInstruction string, temperature float32, prompt string) (string, error) {
+	// Start tracking the operation
+	reportErr, reportChange, end := c.tracker.Start(ctx, "prompt", "openai", "model", c.modelName)
+	defer end()
+
 	// Convert to chat format for consistency
 	messages := []modelrepo.Message{
 		{Role: "system", Content: systemInstruction},
@@ -23,9 +27,13 @@ func (c *OpenAIPromptClient) Prompt(ctx context.Context, systemInstruction strin
 
 	response, err := c.Chat(ctx, messages, tempArg)
 	if err != nil {
+		reportErr(err)
 		return "", fmt.Errorf("OpenAI prompt execution failed: %w", err)
 	}
 
+	reportChange("prompt_completed", map[string]any{
+		"response_length": len(response.Content),
+	})
 	return response.Content, nil
 }
 

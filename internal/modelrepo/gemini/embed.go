@@ -23,6 +23,10 @@ type geminiEmbedContentResponse struct {
 }
 
 func (c *GeminiEmbedClient) Embed(ctx context.Context, prompt string) ([]float64, error) {
+	// Start tracking the operation
+	reportErr, reportChange, end := c.tracker.Start(ctx, "embed", "gemini", "model", c.modelName)
+	defer end()
+
 	request := geminiEmbedContentRequest{
 		Model: "models/" + c.modelName,
 		Content: geminiContent{
@@ -33,12 +37,19 @@ func (c *GeminiEmbedClient) Embed(ctx context.Context, prompt string) ([]float64
 	endpoint := fmt.Sprintf("/v1beta/models/%s:embedContent", c.modelName)
 	var response geminiEmbedContentResponse
 	if err := c.sendRequest(ctx, endpoint, request, &response); err != nil {
+		reportErr(err)
 		return nil, err
 	}
 
 	if len(response.Embedding.Values) == 0 {
-		return nil, fmt.Errorf("no embedding values returned from Gemini for model %s", c.modelName)
+		err := fmt.Errorf("no embedding values returned from Gemini for model %s", c.modelName)
+		reportErr(err)
+		return nil, err
 	}
+
+	reportChange("embedding_completed", map[string]any{
+		"embedding_length": len(response.Embedding.Values),
+	})
 	return response.Embedding.Values, nil
 }
 

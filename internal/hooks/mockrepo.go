@@ -46,6 +46,7 @@ func (m *MockHookRepo) Exec(
 	ctx context.Context,
 	startingTime time.Time,
 	input any,
+	debug bool,
 	args *taskengine.HookCall,
 ) (any, taskengine.DataType, error) {
 	m.callCount++

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type OpenAIProvider struct {
@@ -19,14 +20,19 @@ type OpenAIProvider struct {
 	canPrompt     bool
 	canEmbed      bool
 	canStream     bool
+	tracker       libtracker.ActivityTracker
 }
 
-func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capability modelrepo.CapabilityConfig, httpClient *http.Client) modelrepo.Provider {
+func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capability modelrepo.CapabilityConfig, httpClient *http.Client, tracker libtracker.ActivityTracker) modelrepo.Provider {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 	if len(backendURLs) == 0 {
 		backendURLs = []string{"https://api.openai.com/v1"}
+	}
+
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
 	}
 
 	apiBaseURL := backendURLs[0]
@@ -43,6 +49,7 @@ func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capabilit
 		canPrompt:     capability.CanPrompt,
 		canEmbed:      capability.CanEmbed,
 		canStream:     capability.CanStream,
+		tracker:       tracker,
 	}
 }
 
@@ -97,6 +104,7 @@ func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string
 			httpClient: p.httpClient,
 			modelName:  p.modelName,
 			maxTokens:  p.contextLength,
+			tracker:    p.tracker,
 		},
 	}, nil
 }
@@ -112,6 +120,7 @@ func (p *OpenAIProvider) GetPromptConnection(ctx context.Context, backendID stri
 			httpClient: p.httpClient,
 			modelName:  p.modelName,
 			maxTokens:  p.contextLength,
+			tracker:    p.tracker,
 		},
 	}, nil
 }
@@ -126,6 +135,7 @@ func (p *OpenAIProvider) GetEmbedConnection(ctx context.Context, backendID strin
 			apiKey:     p.apiKey,
 			httpClient: p.httpClient,
 			modelName:  p.modelName,
+			tracker:    p.tracker,
 		},
 	}, nil
 }
@@ -141,6 +151,7 @@ func (p *OpenAIProvider) GetStreamConnection(ctx context.Context, backendID stri
 			httpClient: p.httpClient,
 			modelName:  p.modelName,
 			maxTokens:  p.contextLength,
+			tracker:    p.tracker,
 		},
 	}, nil
 }

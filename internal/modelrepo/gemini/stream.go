@@ -37,9 +37,22 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, prompt string, args ...
 		endpoint := fmt.Sprintf("/v1beta/models/%s:streamGenerateContent?alt=sse", c.modelName)
 		fullURL := fmt.Sprintf("%s%s", c.baseURL, endpoint)
 
+		tracker := c.tracker
+		reportErr, reportChange, end := tracker.Start(
+			ctx,
+			"http_stream",
+			"gemini",
+			"model", c.modelName,
+			"endpoint", endpoint,
+			"base_url", c.baseURL,
+		)
+		defer end()
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewBuffer(body))
 		if err != nil {
-			parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("failed to create stream request: %w", err)}
+			err = fmt.Errorf("failed to create stream request: %w", err)
+			reportErr(err)
+			parcels <- &modelrepo.StreamParcel{Error: err}
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -50,14 +63,24 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, prompt string, args ...
 
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("HTTP stream request failed for model %s: %w", c.modelName, err)}
+			err = fmt.Errorf("HTTP stream request failed for model %s: %w", c.modelName, err)
+			reportErr(err)
+			parcels <- &modelrepo.StreamParcel{Error: err}
 			return
 		}
 		defer resp.Body.Close()
 
+		// Log headers
+		reportChange("gemini_stream_response", map[string]any{
+			"status":  resp.StatusCode,
+			"headers": resp.Header,
+		})
+
 		if resp.StatusCode != http.StatusOK {
 			b, _ := io.ReadAll(resp.Body)
-			parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("gemini API returned non-200 status for stream: %d, body: %s", resp.StatusCode, string(b))}
+			err = fmt.Errorf("gemini API returned non-200 status for stream: %d, body: %s", resp.StatusCode, string(b))
+			reportErr(err)
+			parcels <- &modelrepo.StreamParcel{Error: err}
 			return
 		}
 
@@ -79,7 +102,9 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, prompt string, args ...
 			}
 
 			if chunk.PromptFeedback.BlockReason != "" {
-				parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("stream blocked by API for reason: %s", chunk.PromptFeedback.BlockReason)}
+				err = fmt.Errorf("stream blocked by API for reason: %s", chunk.PromptFeedback.BlockReason)
+				reportErr(err)
+				parcels <- &modelrepo.StreamParcel{Error: err}
 				return
 			}
 			if len(chunk.Candidates) > 0 && len(chunk.Candidates[0].Content.Parts) > 0 {
@@ -94,9 +119,11 @@ func (c *GeminiStreamClient) Stream(ctx context.Context, prompt string, args ...
 			}
 		}
 
-		if err := sc.Err(); err != nil {
+		if err := sc.Err(); err != nil && err != io.EOF {
+			err = fmt.Errorf("error reading from stream: %w", err)
+			reportErr(err)
 			select {
-			case parcels <- &modelrepo.StreamParcel{Error: fmt.Errorf("error reading from stream: %w", err)}:
+			case parcels <- &modelrepo.StreamParcel{Error: err}:
 			case <-ctx.Done():
 			}
 		}

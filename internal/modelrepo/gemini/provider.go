@@ -2,13 +2,12 @@ package gemini
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type GeminiProvider struct {
@@ -22,16 +21,19 @@ type GeminiProvider struct {
 	canPrompt     bool
 	canEmbed      bool
 	canStream     bool
+	tracker       libtracker.ActivityTracker
 }
 
-func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap modelrepo.CapabilityConfig, httpClient *http.Client) modelrepo.Provider {
+func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap modelrepo.CapabilityConfig, httpClient *http.Client, tracker libtracker.ActivityTracker) modelrepo.Provider {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 	if len(baseURLs) == 0 {
 		baseURLs = []string{"https://generativelanguage.googleapis.com"}
 	}
-
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
 	apiBaseURL := baseURLs[0]
 	id := fmt.Sprintf("gemini-%s", modelName)
 	modelName, _ = strings.CutPrefix(modelName, "models/")
@@ -46,6 +48,7 @@ func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap m
 		canPrompt:     cap.CanPrompt,
 		canEmbed:      cap.CanEmbed,
 		canStream:     cap.CanStream,
+		tracker:       tracker,
 	}
 }
 
@@ -71,6 +74,7 @@ func (p *GeminiProvider) GetChatConnection(ctx context.Context, backendID string
 			httpClient: p.httpClient,
 			maxTokens:  p.contextLength,
 			apiKey:     p.apiKey,
+			tracker:    p.tracker,
 		},
 	}, nil
 }
@@ -86,6 +90,7 @@ func (p *GeminiProvider) GetPromptConnection(ctx context.Context, backendID stri
 			httpClient: p.httpClient,
 			maxTokens:  p.contextLength,
 			apiKey:     p.apiKey,
+			tracker:    p.tracker,
 		},
 	}, nil
 }
@@ -100,6 +105,7 @@ func (p *GeminiProvider) GetEmbedConnection(ctx context.Context, backendID strin
 			baseURL:    p.baseURL,
 			httpClient: p.httpClient,
 			apiKey:     p.apiKey,
+			tracker:    p.tracker,
 		},
 	}, nil
 }
@@ -115,58 +121,7 @@ func (p *GeminiProvider) GetStreamConnection(ctx context.Context, backendID stri
 			httpClient: p.httpClient,
 			maxTokens:  p.contextLength,
 			apiKey:     p.apiKey,
+			tracker:    p.tracker,
 		},
 	}, nil
-}
-
-// --- optional helper for capability discovery (unused by provider init) ---
-
-type modelInfo struct {
-	contextLength int
-	canChat       bool
-	canPrompt     bool
-	canEmbed      bool
-	canStream     bool
-}
-
-func fetchGeminiModelInfo(ctx context.Context, baseURL, apiKey, modelName string, httpClient *http.Client) (*modelInfo, error) {
-	url := fmt.Sprintf("%s/v1beta/models/%s", baseURL, modelName)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("X-Goog-Api-Key", apiKey)
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("API request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API returned error (%d): %s", resp.StatusCode, string(body))
-	}
-
-	var m struct {
-		Name                       string   `json:"name"`
-		InputTokenLimit            int      `json:"inputTokenLimit"`
-		OutputTokenLimit           int      `json:"outputTokenLimit"`
-		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	info := &modelInfo{contextLength: m.InputTokenLimit}
-	for _, method := range m.SupportedGenerationMethods {
-		switch method {
-		case "generateContent":
-			info.canChat, info.canPrompt, info.canStream = true, true, true
-		case "embedContent":
-			info.canEmbed = true
-		}
-	}
-	return info, nil
 }

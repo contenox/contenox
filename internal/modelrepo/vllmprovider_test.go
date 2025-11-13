@@ -293,6 +293,7 @@ func TestSystem_VLLM_Smoke(t *testing.T) {
 				http.DefaultClient,
 				tt.caps,
 				"", // No auth token for local testing
+				nil,
 			)
 			tt.testFunc(t, provider, apiBase)
 		})

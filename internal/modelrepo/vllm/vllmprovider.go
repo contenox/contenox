@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/libtracker"
 )
 
 type vLLMProvider struct {
@@ -20,9 +21,13 @@ type vLLMProvider struct {
 	Backends       []string
 	authToken      string
 	client         *http.Client
+	tracker        libtracker.ActivityTracker
 }
 
-func NewVLLMProvider(modelName string, backends []string, client *http.Client, caps modelrepo.CapabilityConfig, authToken string) modelrepo.Provider {
+func NewVLLMProvider(modelName string, backends []string, client *http.Client, caps modelrepo.CapabilityConfig, authToken string, tracker libtracker.ActivityTracker) modelrepo.Provider {
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
 	return &vLLMProvider{
 		Name:           modelName,
 		ID:             "vllm:" + modelName,
@@ -34,6 +39,7 @@ func NewVLLMProvider(modelName string, backends []string, client *http.Client, c
 		Backends:       backends,
 		authToken:      authToken,
 		client:         client,
+		tracker:        tracker,
 	}
 }
 
@@ -99,7 +105,7 @@ func (p *vLLMProvider) GetChatConnection(ctx context.Context, backendID string) 
 		return nil, err
 	}
 
-	return NewVLLMChatClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken)
+	return NewVLLMChatClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.tracker)
 }
 
 func (p *vLLMProvider) GetPromptConnection(ctx context.Context, backendID string) (modelrepo.LLMPromptExecClient, error) {
@@ -111,7 +117,7 @@ func (p *vLLMProvider) GetPromptConnection(ctx context.Context, backendID string
 		return nil, err
 	}
 
-	return NewVLLMPromptClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken)
+	return NewVLLMPromptClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.tracker)
 }
 
 func (p *vLLMProvider) GetEmbedConnection(ctx context.Context, backendID string) (modelrepo.LLMEmbedClient, error) {
@@ -127,5 +133,5 @@ func (p *vLLMProvider) GetStreamConnection(ctx context.Context, backendID string
 		return nil, err
 	}
 
-	return NewVLLMStreamClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken)
+	return NewVLLMStreamClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.tracker)
 }

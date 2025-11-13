@@ -9,11 +9,12 @@ import (
 	"github.com/contenox/runtime/internal/modelrepo/ollama"
 	"github.com/contenox/runtime/internal/modelrepo/openai"
 	"github.com/contenox/runtime/internal/modelrepo/vllm"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/statetype"
 )
 
 // LocalProviderAdapter creates providers for self-hosted backends (Ollama, vLLM)
-func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.BackendRuntimeState) ProviderFromRuntimeState {
+func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracker, runtime map[string]statetype.BackendRuntimeState) ProviderFromRuntimeState {
 	// Create a flat list of providers (one per model per backend)
 	providersByType := make(map[string][]modelrepo.Provider)
 
@@ -45,6 +46,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.Back
 						[]string{state.Backend.BaseURL},
 						http.DefaultClient,
 						capability,
+						tracker,
 					),
 				)
 			case "vllm":
@@ -56,6 +58,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.Back
 						http.DefaultClient,
 						capability,
 						state.GetAPIKey(),
+						tracker,
 					),
 				)
 			case "openai":
@@ -67,6 +70,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.Back
 						[]string{state.Backend.BaseURL},
 						capability,
 						http.DefaultClient,
+						tracker,
 					),
 				)
 			case "gemini":
@@ -78,6 +82,7 @@ func LocalProviderAdapter(ctx context.Context, runtime map[string]statetype.Back
 						[]string{state.Backend.BaseURL},
 						capability,
 						http.DefaultClient,
+						tracker,
 					),
 				)
 			}

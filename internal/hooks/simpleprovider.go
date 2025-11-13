@@ -25,10 +25,11 @@ func (m *SimpleRepo) Exec(
 	ctx context.Context,
 	startingTime time.Time,
 	input any,
+	debug bool,
 	args *taskengine.HookCall,
 ) (any, taskengine.DataType, error) {
 	if hook, ok := m.hooks[args.Name]; ok {
-		return hook.Exec(ctx, startingTime, input, args)
+		return hook.Exec(ctx, startingTime, input, debug, args)
 	}
 	return nil, taskengine.DataTypeAny, fmt.Errorf("unknown hook type: %s", args.Name)
 }

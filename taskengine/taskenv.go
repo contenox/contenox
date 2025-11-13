@@ -109,7 +109,7 @@ var ErrUnsupportedTaskType = errors.New("executor does not support the task type
 
 // HookRepo defines interface for external system integrations and side effects.
 type HookRepo interface {
-	Exec(ctx context.Context, startingTime time.Time, input any, args *HookCall) (any, DataType, error)
+	Exec(ctx context.Context, startingTime time.Time, input any, debug bool, args *HookCall) (any, DataType, error)
 	HookRegistry
 	HooksWithSchema
 }
@@ -158,6 +158,7 @@ func NewEnv(
 type ChainContext struct {
 	Tools       map[string]ToolWithResolution
 	ClientTools []Tool
+	Debug       bool
 }
 
 type ToolWithResolution struct {
@@ -204,6 +205,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	chainContext := &ChainContext{
 		Tools:       map[string]ToolWithResolution{},
 		ClientTools: clientTools,
+		Debug:       chain.Debug,
 	}
 	filter := map[string]ToolWithResolution{}
 	for _, task := range chain.Tasks {

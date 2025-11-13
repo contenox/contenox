@@ -44,11 +44,12 @@ func (p *PersistentRepo) Exec(
 	ctx context.Context,
 	startingTime time.Time,
 	input any,
+	debug bool,
 	args *taskengine.HookCall,
 ) (any, taskengine.DataType, error) {
 	// Check local hooks first
 	if hook, ok := p.localHooks[args.Name]; ok {
-		return hook.Exec(ctx, startingTime, input, args)
+		return hook.Exec(ctx, startingTime, input, debug, args)
 	}
 
 	// Fetch remote hook

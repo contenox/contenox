@@ -15,6 +15,10 @@ type GeminiChatClient struct {
 
 // Chat implements modelrepo.LLMChatClient
 func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
+	// Start tracking the operation
+	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "gemini", "model", c.modelName)
+	defer end()
+
 	// Pull out an optional system instruction
 	var systemInstruction *geminiSystemInstruction
 	filtered := make([]modelrepo.Message, 0, len(messages))
@@ -35,11 +39,14 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	endpoint := fmt.Sprintf("/v1beta/models/%s:generateContent", c.modelName)
 	var resp geminiGenerateContentResponse
 	if err := c.sendRequest(ctx, endpoint, req, &resp); err != nil {
+		reportErr(err)
 		return modelrepo.ChatResult{}, err
 	}
 
 	if len(resp.Candidates) == 0 {
-		return modelrepo.ChatResult{}, fmt.Errorf("no candidates returned from Gemini for model %s", c.modelName)
+		err := fmt.Errorf("no candidates returned from Gemini for model %s", c.modelName)
+		reportErr(err)
+		return modelrepo.ChatResult{}, err
 	}
 
 	cand := resp.Candidates[0]
@@ -76,13 +83,18 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	if outText == "" && len(toolCalls) == 0 {
-		return modelrepo.ChatResult{}, fmt.Errorf("empty content from model %s", c.modelName)
+		err := fmt.Errorf("empty content from model %s", c.modelName)
+		reportErr(err)
+		return modelrepo.ChatResult{}, err
 	}
 
-	return modelrepo.ChatResult{
+	result := modelrepo.ChatResult{
 		Message:   modelrepo.Message{Role: "assistant", Content: outText},
 		ToolCalls: toolCalls,
-	}, nil
+	}
+
+	reportChange("chat_completed", result)
+	return result, nil
 }
 
 var _ modelrepo.LLMChatClient = (*GeminiChatClient)(nil)

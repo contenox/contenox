@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/ollama/ollama/api"
 )
 
@@ -21,9 +22,17 @@ type OllamaProvider struct {
 	SupportsThink  bool
 	httpClient     *http.Client
 	Backends       []string
+	tracker        libtracker.ActivityTracker
 }
 
-func NewOllamaProvider(name string, backends []string, httpClient *http.Client, caps modelrepo.CapabilityConfig) modelrepo.Provider {
+func NewOllamaProvider(name string, backends []string, httpClient *http.Client, caps modelrepo.CapabilityConfig, tracker libtracker.ActivityTracker) modelrepo.Provider {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
+
 	return &OllamaProvider{
 		Name:           name,
 		ID:             "ollama:" + name,
@@ -35,6 +44,7 @@ func NewOllamaProvider(name string, backends []string, httpClient *http.Client, 
 		SupportsThink:  caps.CanThink,
 		Backends:       backends,
 		httpClient:     httpClient,
+		tracker:        tracker,
 	}
 }
 
@@ -88,17 +98,13 @@ func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
 
-	httpClient := p.httpClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-
-	ollamaAPIClient := api.NewClient(u, httpClient)
+	ollamaAPIClient := api.NewClient(u, p.httpClient)
 
 	return &OllamaChatClient{
 		ollamaClient: ollamaAPIClient,
 		modelName:    p.ModelName(),
 		backendURL:   backendID,
+		tracker:      p.tracker,
 	}, nil
 }
 
@@ -112,17 +118,13 @@ func (p *OllamaProvider) GetEmbedConnection(ctx context.Context, backendID strin
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
 
-	httpClient := p.httpClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-
-	ollamaAPIClient := api.NewClient(u, httpClient)
+	ollamaAPIClient := api.NewClient(u, p.httpClient)
 
 	return &OllamaEmbedClient{
 		ollamaClient: ollamaAPIClient,
 		modelName:    p.ModelName(),
 		backendURL:   backendID,
+		tracker:      p.tracker,
 	}, nil
 }
 
@@ -136,20 +138,19 @@ func (p *OllamaProvider) GetPromptConnection(ctx context.Context, backendID stri
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
 
-	httpClient := p.httpClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-
-	ollamaAPIClient := api.NewClient(u, httpClient)
+	ollamaAPIClient := api.NewClient(u, p.httpClient)
 
 	return &OllamaPromptClient{
 		ollamaClient: ollamaAPIClient,
 		modelName:    p.ModelName(),
 		backendURL:   backendID,
+		tracker:      p.tracker,
 	}, nil
 }
 
 func (p *OllamaProvider) GetStreamConnection(ctx context.Context, backendID string) (modelrepo.LLMStreamClient, error) {
+	if !p.CanStream() {
+		return nil, fmt.Errorf("provider %s (model %s) does not support streaming", p.GetID(), p.ModelName())
+	}
 	return nil, fmt.Errorf("streaming not implemented for Ollama provider")
 }

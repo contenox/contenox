@@ -43,6 +43,7 @@ func TestSystem_VLLM_Tools(t *testing.T) {
 			http.DefaultClient,
 			caps,
 			"", // No auth token for local testing
+			nil,
 		)
 
 		chatClient, err := provider.GetChatConnection(ctx, apiBase)
@@ -121,6 +122,7 @@ func TestSystem_VLLM_Tools(t *testing.T) {
 			http.DefaultClient,
 			caps,
 			"", // No auth token for local testing
+			nil,
 		)
 
 		chatClient, err := provider.GetChatConnection(ctx, apiBase)

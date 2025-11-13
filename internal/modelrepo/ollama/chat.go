@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/runtime/libtracker"
 	"github.com/ollama/ollama/api"
 )
 
@@ -13,9 +14,14 @@ type OllamaChatClient struct {
 	ollamaClient *api.Client
 	modelName    string
 	backendURL   string
+	tracker      libtracker.ActivityTracker
 }
 
 func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
+	// Start tracking the operation
+	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "ollama", "model", c.modelName)
+	defer end()
+
 	// Convert messages to Ollama API format
 	apiMessages := make([]api.Message, 0, len(messages))
 	for _, msg := range messages {
@@ -71,10 +77,12 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 			if tool.Function.Parameters != nil {
 				paramsData, err := json.Marshal(tool.Function.Parameters)
 				if err != nil {
+					reportErr(err)
 					return modelrepo.ChatResult{}, fmt.Errorf("failed to marshal tool parameters: %w", err)
 				}
 
 				if err := json.Unmarshal(paramsData, &params); err != nil {
+					reportErr(err)
 					return modelrepo.ChatResult{}, fmt.Errorf("failed to unmarshal tool parameters: %w", err)
 				}
 			}
@@ -112,41 +120,37 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	})
 
 	if err != nil {
+		reportErr(err)
 		return modelrepo.ChatResult{}, fmt.Errorf("ollama API chat request failed for model %s: %w", c.modelName, err)
 	}
 
 	// Check if we received any response
 	if finalResponse.Message.Role == "" {
-		return modelrepo.ChatResult{}, fmt.Errorf("no response received from ollama for model %s", c.modelName)
+		err := fmt.Errorf("no response received from ollama for model %s", c.modelName)
+		reportErr(err)
+		return modelrepo.ChatResult{}, err
 	}
 
 	// Handle completion reasons
 	switch finalResponse.DoneReason {
 	case "error":
-		return modelrepo.ChatResult{}, fmt.Errorf(
-			"ollama generation error for model %s: %s",
-			c.modelName,
-			finalResponse.Message.Content,
-		)
+		err := fmt.Errorf("ollama generation error for model %s: %s", c.modelName, finalResponse.Message.Content)
+		reportErr(err)
+		return modelrepo.ChatResult{}, err
 	case "length":
-		return modelrepo.ChatResult{}, fmt.Errorf(
-			"token limit reached for model %s (partial response: %q)",
-			c.modelName,
-			finalResponse.Message.Content,
-		)
+		err := fmt.Errorf("token limit reached for model %s (partial response: %q)", c.modelName, finalResponse.Message.Content)
+		reportErr(err)
+		return modelrepo.ChatResult{}, err
 	case "stop":
 		if finalResponse.Message.Content == "" && len(finalResponse.Message.ToolCalls) == 0 {
-			return modelrepo.ChatResult{}, fmt.Errorf(
-				"empty content from model %s despite normal completion",
-				c.modelName,
-			)
+			err := fmt.Errorf("empty content from model %s despite normal completion", c.modelName)
+			reportErr(err)
+			return modelrepo.ChatResult{}, err
 		}
 	default:
-		return modelrepo.ChatResult{}, fmt.Errorf(
-			"unexpected completion reason %q for model %s",
-			finalResponse.DoneReason,
-			c.modelName,
-		)
+		err := fmt.Errorf("unexpected completion reason %q for model %s", finalResponse.DoneReason, c.modelName)
+		reportErr(err)
+		return modelrepo.ChatResult{}, err
 	}
 
 	// Convert the response to our format
@@ -161,6 +165,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		// Convert arguments from map to JSON string
 		argsBytes, err := json.Marshal(tc.Function.Arguments)
 		if err != nil {
+			reportErr(err)
 			return modelrepo.ChatResult{}, fmt.Errorf("failed to marshal tool call arguments: %w", err)
 		}
 
@@ -177,10 +182,17 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		})
 	}
 
-	return modelrepo.ChatResult{
+	result := modelrepo.ChatResult{
 		Message:   message,
 		ToolCalls: toolCalls,
-	}, nil
+	}
+
+	reportChange("chat_completed", map[string]any{
+		"content_length":   len(message.Content),
+		"tool_calls_count": len(toolCalls),
+		"done_reason":      finalResponse.DoneReason,
+	})
+	return result, nil
 }
 
 var _ modelrepo.LLMChatClient = (*OllamaChatClient)(nil)
