@@ -16,9 +16,18 @@ type ToolCall struct {
 	} `json:"function"`
 }
 
+// Message now supports OpenAI-style tool calling:
+// - assistant messages can carry tool_calls
+// - tool messages can carry tool_call_id
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+
+	// For tool calling (OpenAI / vLLM compatible). These are optional and
+	// simply serialized into the JSON payload. Providers that don't care
+	// can ignore them, but OpenAI will now see valid tool call history.
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
 type ChatArgument interface {

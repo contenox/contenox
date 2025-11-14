@@ -641,11 +641,24 @@ func (exe *SimpleExec) executeLLM(
 		modelNames = append(modelNames, llmCall.Models...)
 	}
 
-	messagesC := []libmodelprovider.Message{}
+	messagesC := make([]libmodelprovider.Message, 0, len(input.Messages))
 	for _, m := range input.Messages {
+		var toolCalls []libmodelprovider.ToolCall
+		if len(m.CallTools) > 0 {
+			toolCalls = make([]libmodelprovider.ToolCall, len(m.CallTools))
+			for i, tc := range m.CallTools {
+				toolCalls[i].ID = tc.ID
+				toolCalls[i].Type = tc.Type
+				toolCalls[i].Function.Name = tc.Function.Name
+				toolCalls[i].Function.Arguments = tc.Function.Arguments
+			}
+		}
+
 		messagesC = append(messagesC, libmodelprovider.Message{
-			Role:    m.Role,
-			Content: m.Content,
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  toolCalls,
+			ToolCallID: m.ToolCallID,
 		})
 	}
 

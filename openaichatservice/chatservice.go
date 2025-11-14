@@ -45,7 +45,7 @@ func (s *service) OpenAIChatCompletions(ctx context.Context, taskChainID string,
 	// 	return nil, nil, fmt.Errorf("workflow validation failed: %w", err)
 	// }
 
-	result, _, stackTrace, err := s.env.Execute(ctx, chain, req, taskengine.DataTypeOpenAIChat)
+	result, dt, stackTrace, err := s.env.Execute(ctx, chain, req, taskengine.DataTypeOpenAIChat)
 	if err != nil {
 		return nil, stackTrace, fmt.Errorf("chain execution failed: %w", err)
 	}
@@ -54,17 +54,23 @@ func (s *service) OpenAIChatCompletions(ctx context.Context, taskChainID string,
 		return nil, stackTrace, fmt.Errorf("empty result from chain execution")
 	}
 
-	if res, ok := result.(taskengine.ChatHistory); ok {
-		id := fmt.Sprintf("%d-%s", time.Now().Unix(), uuid.NewString()[:4])
-		result = taskengine.ConvertChatHistoryToOpenAI(id, res)
+	switch dt {
+	case taskengine.DataTypeChatHistory, taskengine.DataTypeOpenAIChatResponse:
+		if res, ok := result.(taskengine.ChatHistory); ok {
+			id := fmt.Sprintf("%d-%s", time.Now().Unix(), uuid.NewString()[:4])
+			result = taskengine.ConvertChatHistoryToOpenAI(id, res)
+		}
+
+		res, ok := result.(taskengine.OpenAIChatResponse)
+		if !ok {
+			return nil, stackTrace, fmt.Errorf("invalid result type from chain: %T", result)
+		}
+
+		return &res, stackTrace, nil
+	default:
+		return nil, stackTrace, fmt.Errorf("invalid result type from chain: dt: %s-%T", dt.String(), result)
 	}
 
-	res, ok := result.(taskengine.OpenAIChatResponse)
-	if !ok {
-		return nil, stackTrace, fmt.Errorf("invalid result type from chain: %T", result)
-	}
-
-	return &res, stackTrace, nil
 }
 
 // OpenAIChatCompletionsStream gets the full response and streams it back word-by-word.

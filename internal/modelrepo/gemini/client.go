@@ -166,26 +166,129 @@ func buildGeminiRequest(_ string, messages []modelrepo.Message, systemInstructio
 // convert modelrepo messages to Gemini "contents"
 func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 	out := make([]geminiContent, 0, len(messages))
+
+	// Map OpenAI-style tool_call_id -> function name so we can
+	// populate FunctionResponse.Name for tool responses.
+	toolCallNameByID := make(map[string]string)
+
 	for _, m := range messages {
+		// System messages are handled via SystemInstruction
 		if m.Role == "system" {
-			// handled via SystemInstruction
 			continue
 		}
-		role := m.Role
-		if role == "assistant" {
+
+		// Map internal roles to Gemini roles ("user" | "model").
+		// Gemini does NOT accept "tool", so we treat tool responses
+		// as coming from the "user" side.
+		var role string
+		switch m.Role {
+		case "assistant", "model":
+			// provider-agnostic "assistant" -> Gemini "model"
 			role = "model"
+		default:
+			// "user", "tool", or anything else -> "user"
+			role = "user"
 		}
-		parts := []geminiPart{}
-		if m.Content != "" {
+
+		parts := make([]geminiPart, 0)
+
+		// --- FIX 1: Add text part FIRST if it's not a tool role ---
+		// Handle text content for user/assistant messages.
+		// This ensures text is included even if tool calls/responses follow.
+		if m.Content != "" && m.Role != "tool" {
 			parts = append(parts, geminiPart{Text: m.Content})
 		}
+		// --- END FIX 1 ---
+
+		// 1) Assistant tool calls: encode as functionCall parts
+		if len(m.ToolCalls) > 0 {
+			for _, tc := range m.ToolCalls {
+				// Remember mapping from tool_call_id -> function name
+				if tc.ID != "" && tc.Function.Name != "" {
+					toolCallNameByID[tc.ID] = tc.Function.Name
+				}
+
+				if tc.Function.Name == "" {
+					continue
+				}
+
+				var args map[string]any
+				if tc.Function.Arguments != "" {
+					if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+						// If args aren't valid JSON, fall back to empty map
+						args = map[string]any{}
+					}
+				} else {
+					args = map[string]any{}
+				}
+
+				parts = append(parts, geminiPart{
+					FunctionCall: &geminiFunctionCall{
+						Name: tc.Function.Name,
+						Args: args,
+					},
+				})
+			}
+		}
+
+		// --- FIX 2: Properly handle tool responses ---
+		// 2) Tool responses: encode as functionResponse parts if we can
+		if m.Role == "tool" {
+			// Try to find the function name associated with this tool_call_id
+			fnName := ""
+			if m.ToolCallID != "" {
+				if n, ok := toolCallNameByID[m.ToolCallID]; ok {
+					fnName = n
+				}
+			}
+
+			var respData any
+			if m.Content != "" {
+				// Try to unmarshal as *any* valid JSON
+				if err := json.Unmarshal([]byte(m.Content), &respData); err != nil {
+					// If it's not JSON (e.g., "it's sunny"),
+					// treat the raw string as the content.
+					respData = m.Content
+				}
+			} else {
+				// Empty content
+				respData = ""
+			}
+
+			// Gemini's FunctionResponse.Response *must* be a JSON object.
+			// If our data isn't one, wrap it.
+			respMap, ok := respData.(map[string]any)
+			if !ok {
+				// It wasn't a JSON object (e.g., string, number, array, or null).
+				// Wrap it in a standard object.
+				respMap = map[string]any{"content": respData}
+			}
+
+			parts = append(parts, geminiPart{
+				FunctionResponse: &geminiFunctionResponse{
+					Name:     fnName,
+					Response: respMap,
+				},
+			})
+		}
+		// --- END FIX 2 ---
+
+		// 3) Normal text content (user/assistant/system-like)
+		// -- THIS BLOCK IS NOW REMOVED and handled by FIX 1 --
+		// if m.Content != "" && len(parts) == 0 {
+		// 	parts = append(parts, geminiPart{Text: m.Content})
+		// }
+
+		// If we somehow ended up with no parts at all, skip this message
 		if len(parts) == 0 {
 			continue
 		}
+
 		out = append(out, geminiContent{
 			Role:  role,
 			Parts: parts,
 		})
 	}
+
 	return out
 }
