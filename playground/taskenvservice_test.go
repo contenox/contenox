@@ -197,3 +197,90 @@ Unit: {{.input.unit}}`,
 			"Should indicate that 100°C is boiling point of water. Actual output: %s", output)
 	})
 }
+
+func TestSystem_PromptToJS_Smoke(t *testing.T) {
+	ctx := t.Context()
+
+	// --- playground wiring (same pattern as TestSystem_TasksEnvService) ---
+	p := playground.New()
+	p.WithPostgresTestContainer(ctx)
+	p.WithNats(ctx)
+	p.WithRuntimeState(ctx, true)
+	p.WithMockTokenizer()
+	p.WithMockHookRegistry()
+	p.WithInternalPromptExecutor(ctx, "smollm2:135m", 2048)
+	p.WithOllamaBackend(ctx, "prompt-backend", "latest", false, true)
+	p.StartBackgroundRoutines(ctx)
+	p.WithLLMRepo()
+
+	require.NoError(t, p.GetError(), "Playground setup failed")
+	defer p.CleanUp()
+
+	// Wait for the tiny model to be pulled
+	err := p.WaitUntilModelIsReady(ctx, "prompt-backend", "smollm2:135m")
+	require.NoError(t, err, "Model not ready in time")
+
+	tasksEnvService, err := p.GetTasksEnvService(ctx)
+	require.NoError(t, err, "Failed to get TasksEnvService")
+
+	// --- actual smoke test for prompt_to_js ---
+	t.Run("ExecutePromptToJS", func(t *testing.T) {
+		chain := &taskengine.TaskChainDefinition{
+			ID:          "prompt-to-js-chain",
+			Description: "Generate JS code via prompt_to_js handler",
+			TokenLimit:  2048,
+			Debug:       true,
+			Tasks: []taskengine.TaskDefinition{
+				{
+					ID:      "gen_js",
+					Handler: taskengine.HandlePromptToJS,
+					// Keep the prompt dead simple to give the tiny model a chance.
+					SystemInstruction: "You generate small JavaScript snippets.",
+					PromptTemplate: `Write a small JavaScript snippet that sets a global variable
+result = { "value": 1 }.
+Return ONLY valid JavaScript code, no explanations.`,
+					ExecuteConfig: &taskengine.LLMExecutionConfig{
+						Model:       "smollm2:135m",
+						Provider:    "ollama",
+						Temperature: 0.0,
+					},
+					Transition: taskengine.TaskTransition{
+						Branches: []taskengine.TransitionBranch{
+							{
+								Operator: taskengine.OpDefault,
+								Goto:     taskengine.TermEnd,
+							},
+						},
+					},
+				},
+			},
+		}
+
+		input := "ignored input"
+		output, outputType, capturedStates, err := tasksEnvService.Execute(
+			ctx,
+			chain,
+			input,
+			taskengine.DataTypeString,
+		)
+
+		require.NoError(t, err, "chain execution failed")
+		require.Equal(t, taskengine.DataTypeJSON, outputType, "prompt_to_js should return JSON")
+
+		// Basic shape assertion: we expect a map with a "code" field
+		outMap, ok := output.(map[string]any)
+		if !ok {
+			t.Fatalf("expected output to be map[string]any, got %T", output)
+		}
+
+		codeVal, ok := outMap["code"]
+		require.True(t, ok, "output JSON should contain 'code' field")
+		codeStr, ok := codeVal.(string)
+		require.True(t, ok, "output.code should be a string")
+		require.NotEmpty(t, strings.TrimSpace(codeStr), "output.code should not be empty")
+
+		// Optional: sanity check the captured state
+		require.Len(t, capturedStates, 1)
+		assert.Equal(t, "gen_js", capturedStates[0].TaskID)
+	})
+}

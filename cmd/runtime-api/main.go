@@ -11,9 +11,13 @@ import (
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/embedservice"
+	"github.com/contenox/runtime/eventsourceservice"
 	"github.com/contenox/runtime/eventstore"
 	"github.com/contenox/runtime/execservice"
+	"github.com/contenox/runtime/executor"
+	"github.com/contenox/runtime/functionservice"
 	"github.com/contenox/runtime/functionstore"
+	"github.com/contenox/runtime/internal/eventdispatch"
 	"github.com/contenox/runtime/internal/hooks"
 	"github.com/contenox/runtime/internal/llmrepo"
 	"github.com/contenox/runtime/internal/ollamatokenizer"
@@ -24,6 +28,7 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/serverapi"
+	"github.com/contenox/runtime/taskchainservice"
 	"github.com/contenox/runtime/taskengine"
 	"github.com/google/uuid"
 )
@@ -180,7 +185,7 @@ func main() {
 			Name:     config.ChatModel,
 			Provider: config.ChatProvider,
 		},
-	})
+	}, serveropsChainedTracker)
 	if err != nil {
 		log.Fatalf("%s initializing llm repo failed: %v", nodeInstanceID, err)
 	}
@@ -210,7 +215,26 @@ func main() {
 	taskService := execservice.NewTasksEnv(ctx, environmentExec, hookRepo)
 	embedService := embedservice.New(repo, config.EmbedModel, config.EmbedProvider)
 	execService := execservice.NewExec(ctx, repo)
-	cleanup, err = serverapi.New(ctx, internalMux, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo, taskService, embedService, execService)
+	functionService := functionservice.New(dbInstance)
+	functionService = functionservice.WithActivityTracker(functionService, serveropsChainedTracker)
+	executorService := executor.NewGojaExecutor(serveropsChainedTracker, functionService)
+	eventbus, err := eventdispatch.New(ctx, functionService, func(ctx context.Context, err error) {
+		// TODO:
+	}, time.Second, executorService, serveropsChainedTracker)
+	if err != nil {
+		log.Fatalf("failed to initialize event dispatch service: %v", err)
+	}
+
+	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance, ps, eventbus)
+	if err != nil {
+		log.Fatalf("failed to initialize event source service: %v", err)
+	}
+
+	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
+	taskChainService := taskchainservice.New(dbInstance)
+	taskChainService = taskchainservice.WithActivityTracker(taskChainService, serveropsChainedTracker)
+
+	cleanup, err = serverapi.New(ctx, internalMux, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo, taskService, embedService, execService, taskChainService, functionService, eventSourceService, executorService, eventbus)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("%s initializing API handler failed: %v", nodeInstanceID, err)

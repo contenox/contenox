@@ -32,6 +32,11 @@ const (
 	// HandlePromptToString returns the raw string result from the LLM without parsing.
 	HandlePromptToString TaskHandler = "prompt_to_string"
 
+	// HandlePromptToJS asks the LLM to produce JavaScript source code.
+	// The output is a JSON object { "code": string }, so later steps
+	// (e.g. goja/jseval execution) can consume it.
+	HandlePromptToJS TaskHandler = "prompt_to_js"
+
 	// HandleTextToEmbedding expects string input and returns an embedding vector ([]float64).
 	// This is useful as last step in a text enrichment pipeline to enrich the data before embedding.
 	HandleTextToEmbedding TaskHandler = "text_to_embedding"

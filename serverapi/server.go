@@ -14,7 +14,6 @@ import (
 	"github.com/contenox/runtime/affinitygroupservice"
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/backendservice"
-	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/downloadservice"
 	"github.com/contenox/runtime/embedservice"
 	"github.com/contenox/runtime/eventbridgeservice"
@@ -44,6 +43,7 @@ import (
 	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/modelservice"
+	"github.com/contenox/runtime/openaichatservice"
 	"github.com/contenox/runtime/providerservice"
 	"github.com/contenox/runtime/stateservice"
 	"github.com/contenox/runtime/taskchainservice"
@@ -65,6 +65,11 @@ func New(
 	taskService execservice.TasksEnvService,
 	embedService embedservice.Service,
 	execService execservice.ExecService,
+	taskChainService taskchainservice.Service,
+	functionService functionservice.Service,
+	eventSourceService eventsourceservice.Service,
+	executorService *executor.GojaExecutor,
+	eventbus eventdispatch.TriggerManager,
 	// kvManager libkv.KVManager,
 ) (func() error, error) {
 	cleanup := func() error { return nil }
@@ -153,8 +158,6 @@ func New(
 	backendapi.AddModelRoutes(mux, modelService, downloadService)
 	execService = execservice.WithActivityTracker(execService, serveropsChainedTracker)
 	embedService = embedservice.WithActivityTracker(embedService, serveropsChainedTracker)
-	taskChainService := taskchainservice.New(dbInstance)
-	taskChainService = taskchainservice.WithActivityTracker(taskChainService, serveropsChainedTracker)
 	taskchainapi.AddTaskChainRoutes(mux, taskChainService)
 	execapi.AddExecRoutes(mux, execService, taskService, embedService)
 	providerService := providerservice.New(dbInstance)
@@ -169,22 +172,6 @@ func New(
 	)
 	chatService = openaichatservice.WithActivityTracker(chatService, serveropsChainedTracker)
 	chatapi.AddChatRoutes(mux, chatService)
-	functionService := functionservice.New(dbInstance)
-	functionService = functionservice.WithActivityTracker(functionService, serveropsChainedTracker)
-	executorService := executor.NewGojaExecutor(serveropsChainedTracker, functionService)
-	eventbus, err := eventdispatch.New(ctx, functionService, func(ctx context.Context, err error) {
-		// TODO:
-	}, time.Second, executorService, serveropsChainedTracker)
-	if err != nil {
-		return cleanup, fmt.Errorf("failed to initialize event dispatch service: %w", err)
-	}
-
-	eventSourceService, err := eventsourceservice.NewEventSourceService(ctx, dbInstance, pubsub, eventbus)
-	if err != nil {
-		return cleanup, fmt.Errorf("failed to initialize event source service: %w", err)
-	}
-
-	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
 	eventsourceapi.AddEventSourceRoutes(mux, eventSourceService)
 
 	functionapi.AddFunctionRoutes(mux, functionService)

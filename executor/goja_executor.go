@@ -15,10 +15,10 @@ import (
 	"github.com/contenox/runtime/functionservice"
 	"github.com/contenox/runtime/functionstore"
 	"github.com/contenox/runtime/internal/eventdispatch"
+	"github.com/contenox/runtime/jseval"
 	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskchainservice"
-	"github.com/contenox/runtime/taskengine"
 	"github.com/dop251/goja"
 )
 
@@ -41,6 +41,8 @@ type GojaExecutor struct {
 	syncTriggerChan      chan struct{}
 	syncCancelFunc       context.CancelFunc
 	syncWG               sync.WaitGroup
+
+	jsEnv *jseval.Env
 }
 
 // compiledFunction represents a pre-compiled JavaScript function with version tracking
@@ -48,9 +50,6 @@ type compiledFunction struct {
 	program  *goja.Program
 	codeHash string
 }
-
-// actionFunc defines the signature for functions that can be wrapped with error reporting
-type actionFunc func() (interface{}, error)
 
 // NewGojaExecutor creates a new Goja executor with VM pool and function cache.
 //
@@ -101,6 +100,18 @@ func (e *GojaExecutor) AddBuildInServices(
 	e.taskService = taskService
 	e.taskchainService = taskchainService
 	e.taskchainExecService = taskchainExecService
+
+	// Create a shared JS eval environment with REAL service deps.
+	e.jsEnv = jseval.NewEnv(
+		e.tracker,
+		jseval.BuiltinHandlers{
+			Eventsource:          eventsource,
+			TaskService:          taskService,
+			TaskchainService:     taskchainService,
+			TaskchainExecService: taskchainExecService,
+			FunctionService:      e.functionService,
+		},
+	)
 }
 
 // StartSync begins background synchronization of the function cache
@@ -139,8 +150,10 @@ func (e *GojaExecutor) syncLoop(ctx context.Context, syncInterval time.Duration)
 
 	// Initial sync on startup
 	if err := e.syncWithCircuitBreaker(ctx); err != nil {
-		e.tracker.Start(ctx, "sync", "function_cache",
+		reportErr, _, end := e.tracker.Start(ctx, "sync", "function_cache",
 			"error", "initial_sync_failed", "err", err.Error())
+		defer end()
+		reportErr(err)
 	}
 
 	ticker := time.NewTicker(syncInterval)
@@ -153,14 +166,18 @@ func (e *GojaExecutor) syncLoop(ctx context.Context, syncInterval time.Duration)
 		case <-ticker.C:
 			// Periodic sync
 			if err := e.syncWithCircuitBreaker(ctx); err != nil {
-				e.tracker.Start(ctx, "sync", "function_cache",
+				reportErr, _, end := e.tracker.Start(ctx, "sync", "function_cache",
 					"error", "periodic_sync_failed", "err", err.Error())
+				defer end()
+				reportErr(err)
 			}
 		case <-e.syncTriggerChan:
 			// Manual trigger
 			if err := e.syncWithCircuitBreaker(ctx); err != nil {
-				e.tracker.Start(ctx, "sync", "function_cache",
+				reportErr, _, end := e.tracker.Start(ctx, "sync", "function_cache",
 					"error", "triggered_sync_failed", "err", err.Error())
+				defer end()
+				reportErr(err)
 			}
 		}
 	}
@@ -212,7 +229,7 @@ func (e *GojaExecutor) ExecuteFunction(
 	e.setupContextBoundBuiltins(ctx, vm)
 
 	// Reset VM state (clear previous execution results)
-	vm.Set("result", nil)
+	_ = vm.Set("result", nil)
 
 	// Prepare event data for JavaScript
 	eventObj, err := e.prepareEventObject(event)
@@ -309,108 +326,6 @@ func (e *GojaExecutor) ExecuteFunction(
 	return result, nil
 }
 
-// withErrorReporting wraps a function to catch panics, enforce timeout, and report errors.
-//
-// Parameters:
-//   - vm: Goja runtime instance
-//   - ctx: Execution context
-//   - action: Action being performed (for tracking)
-//   - subject: Subject of the action (for tracking)
-//   - extra: Additional tracking metadata
-//   - fn: Function to execute with error handling
-//
-// Returns:
-//   - goja.Value: JavaScript value representing the result or error
-func (e *GojaExecutor) withErrorReporting(
-	vm *goja.Runtime,
-	ctx context.Context,
-	action, subject string,
-	extra map[string]interface{},
-	fn actionFunc,
-) goja.Value {
-	// Add 30s timeout to prevent hanging
-	timeoutCctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	resultChan := make(chan struct {
-		result interface{}
-		err    error
-	}, 1)
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				var err error
-				switch x := r.(type) {
-				case string:
-					err = fmt.Errorf("panic: %s", x)
-				case error:
-					err = x
-				default:
-					err = fmt.Errorf("panic: %v", x)
-				}
-
-				// Report panic to tracker
-				fields := map[string]interface{}{"recovered_panic": true}
-				for k, v := range extra {
-					fields[k] = v
-				}
-				_, reportErr, _ := e.tracker.Start(ctx, action, subject, fields)
-				reportErr("recovered_panic", fmt.Errorf("recovered panic in %s %s: %w", action, subject, err))
-
-				resultChan <- struct {
-					result interface{}
-					err    error
-				}{nil, err}
-			}
-		}()
-
-		result, err := fn()
-		resultChan <- struct {
-			result interface{}
-			err    error
-		}{result, err}
-	}()
-
-	select {
-	case <-timeoutCctx.Done():
-		// Report timeout to tracker
-		fields := map[string]interface{}{"timeout": true}
-		for k, v := range extra {
-			fields[k] = v
-		}
-		_, reportErr, _ := e.tracker.Start(ctx, action, subject, fields)
-		reportErr("timeout", fmt.Errorf("operation timed out after 30s in %s %s", action, subject))
-
-		return vm.ToValue(map[string]interface{}{
-			"error":   "operation timed out",
-			"success": false,
-		})
-
-	case res := <-resultChan:
-		if res.err != nil {
-			// Report error to tracker
-			fields := map[string]interface{}{"error_occurred": true}
-			for k, v := range extra {
-				fields[k] = v
-			}
-			_, reportErr, _ := e.tracker.Start(ctx, action, subject, fields)
-			reportErr("error_occurred", res.err)
-
-			return vm.ToValue(map[string]interface{}{
-				"error":   res.err.Error(),
-				"success": false,
-			})
-		}
-
-		// Success
-		if res.result == nil {
-			return goja.Undefined()
-		}
-		return vm.ToValue(res.result)
-	}
-}
-
 // getCompiledFunction retrieves or compiles a function, using caching for performance.
 //
 // Parameters:
@@ -433,13 +348,14 @@ func (e *GojaExecutor) getCompiledFunction(ctx context.Context, functionName, co
 			return compiled, nil
 		}
 		// Track function recompilation due to code change
-		_, _, end := e.tracker.Start(ctx, "recompile", "function",
+		reportErr, _, end := e.tracker.Start(ctx, "recompile", "function",
 			"function_name", functionName,
 			"reason", "code_changed")
 
 		// Remove old version from cache
 		e.functionCache.Delete(functionName)
 		end()
+		reportErr(nil)
 	}
 
 	// Track function compilation
@@ -514,204 +430,15 @@ func (e *GojaExecutor) prepareEventObject(event *eventstore.Event) (map[string]i
 //   - vm: Goja runtime instance
 //   - ctx: Execution context
 func (e *GojaExecutor) setupContextBoundBuiltins(ctx context.Context, vm *goja.Runtime) {
-	// Helper: wraps a function to catch panics and report errors
-	withErrorReporting := func(action, subject string, extra map[string]interface{}, fn actionFunc) goja.Value {
-		return e.withErrorReporting(vm, ctx, action, subject, extra, fn)
+	// If we don't have services yet, skip builtins
+	if e.jsEnv == nil {
+		return
 	}
 
-	// console.log with error reporting
-	consoleObj := vm.NewObject()
-	consoleObj.Set("log", func(call goja.FunctionCall) goja.Value {
-		return withErrorReporting("log", "console", nil, func() (interface{}, error) {
-			args := make([]interface{}, len(call.Arguments))
-			for i, arg := range call.Arguments {
-				args[i] = arg.Export()
-			}
-
-			_, _, end := e.tracker.Start(ctx, "log", "console", "args", args)
-			defer end()
-			return nil, nil
-		})
-	})
-	vm.Set("console", consoleObj)
-
-	// Built-ins with full error + panic + timeout handling
-	builtins := map[string]interface{}{
-		"sendEvent": func(eventType string, data map[string]interface{}) goja.Value {
-			extra := map[string]interface{}{
-				"event_type": eventType,
-				"data":       data,
-			}
-			return withErrorReporting("send", "event", extra, func() (interface{}, error) {
-				_, reportChange, end := e.tracker.Start(ctx, "send", "event",
-					"event_type", eventType, "data", data)
-				defer end()
-
-				dataBytes, err := json.Marshal(data)
-				if err != nil {
-					return nil, fmt.Errorf("failed to marshal event data: %w", err)
-				}
-
-				event := &eventstore.Event{
-					ID:            fmt.Sprintf("func-gen-%d", time.Now().UnixNano()),
-					CreatedAt:     time.Now().UTC(),
-					EventType:     eventType,
-					EventSource:   "function_execution",
-					AggregateID:   "function",
-					AggregateType: "function",
-					Version:       1,
-					Data:          dataBytes,
-					Metadata:      json.RawMessage(`{"source": "function_execution"}`),
-				}
-
-				if err := e.eventsource.AppendEvent(ctx, event); err != nil {
-					return nil, fmt.Errorf("failed to send event: %w", err)
-				}
-
-				reportChange("event_sent", map[string]interface{}{
-					"event_type": eventType,
-					"event_id":   event.ID,
-				})
-
-				return map[string]interface{}{
-					"success":  true,
-					"event_id": event.ID,
-				}, nil
-			})
-		},
-
-		"callTaskChain": func(chainID string, input map[string]interface{}) goja.Value {
-			extra := map[string]interface{}{
-				"chain_id": chainID,
-				"input":    input,
-			}
-			return withErrorReporting("call", "task_chain", extra, func() (interface{}, error) {
-				_, reportChange, end := e.tracker.Start(ctx, "call", "task_chain",
-					"chain_id", chainID, "input", input)
-				defer end()
-
-				chain, err := e.taskchainService.Get(ctx, chainID)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get task chain %s: %w", chainID, err)
-				}
-
-				reportChange("task_chain_called", map[string]interface{}{
-					"chain_id": chainID,
-					"chain":    chain,
-					"input":    input,
-				})
-
-				return map[string]interface{}{
-					"success":  true,
-					"chain_id": chainID,
-				}, nil
-			})
-		},
-
-		"executeTask": func(prompt string, modelName, modelProvider string) goja.Value {
-			extra := map[string]interface{}{
-				"prompt":         prompt,
-				"model_name":     modelName,
-				"model_provider": modelProvider,
-			}
-			return withErrorReporting("execute", "task", extra, func() (interface{}, error) {
-				_, reportChange, end := e.tracker.Start(ctx, "execute", "task",
-					"prompt", prompt, "model_name", modelName, "model_provider", modelProvider)
-				defer end()
-
-				request := &execservice.TaskRequest{
-					Prompt:        prompt,
-					ModelName:     modelName,
-					ModelProvider: modelProvider,
-				}
-
-				response, err := e.taskService.Execute(ctx, request)
-				if err != nil {
-					return nil, fmt.Errorf("failed to execute task: %w", err)
-				}
-
-				reportChange("task_executed", map[string]interface{}{
-					"task_id":  response.ID,
-					"response": response.Response,
-				})
-
-				return map[string]interface{}{
-					"success":  true,
-					"task_id":  response.ID,
-					"response": response.Response,
-				}, nil
-			})
-		},
-
-		"executeTaskChain": func(chainID string, input map[string]interface{}) goja.Value {
-			extra := map[string]interface{}{
-				"chain_id": chainID,
-				"input":    input,
-			}
-			return withErrorReporting("execute", "task_chain", extra, func() (interface{}, error) {
-				_, reportChange, end := e.tracker.Start(ctx, "execute", "task_chain",
-					"chain_id", chainID, "input", input)
-				defer end()
-
-				chain, err := e.taskchainService.Get(ctx, chainID)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get task chain %s: %w", chainID, err)
-				}
-
-				result, resultType, executionHistory, err := e.taskchainExecService.Execute(
-					ctx,
-					chain,
-					input,
-					taskengine.DataTypeJSON,
-				)
-				if err != nil {
-					return nil, fmt.Errorf("failed to execute task chain %s: %w", chainID, err)
-				}
-
-				var jsResult interface{}
-				switch resultType {
-				case taskengine.DataTypeString:
-					jsResult = result.(string)
-				case taskengine.DataTypeJSON:
-					if jsonBytes, ok := result.([]byte); ok {
-						var jsonData map[string]interface{}
-						if err := json.Unmarshal(jsonBytes, &jsonData); err == nil {
-							jsResult = jsonData
-						} else {
-							jsResult = string(jsonBytes)
-						}
-					} else if str, ok := result.(string); ok {
-						var jsonData map[string]interface{}
-						if err := json.Unmarshal([]byte(str), &jsonData); err == nil {
-							jsResult = jsonData
-						} else {
-							jsResult = str
-						}
-					} else {
-						jsResult = result
-					}
-				default:
-					jsResult = result
-				}
-
-				reportChange("task_chain_executed", map[string]interface{}{
-					"chain_id": chainID,
-					"result":   jsResult,
-					"history":  executionHistory,
-				})
-
-				return map[string]interface{}{
-					"success":  true,
-					"chain_id": chainID,
-					"result":   jsResult,
-					"history":  executionHistory,
-				}, nil
-			})
-		},
-	}
-
-	for name, fn := range builtins {
-		vm.Set(name, fn)
+	if err := e.jsEnv.SetupVM(ctx, vm, nil); err != nil {
+		reportErr, _, end := e.tracker.Start(ctx, "setup", "jseval_builtins", "err", err.Error())
+		defer end()
+		reportErr(err)
 	}
 }
 
@@ -817,7 +544,7 @@ func (e *GojaExecutor) syncFunctionCache(ctx context.Context) error {
 	return nil
 }
 
-func (e *GojaExecutor) syncSingleFunction(ctx context.Context, functionName string) error {
+func (e *GojaExecutor) SyncSingleFunction(ctx context.Context, functionName string) error {
 	storedFunc, err := e.functionService.GetFunction(ctx, functionName)
 	if err != nil {
 		// Function doesn't exist — ensure cache is clean
@@ -888,7 +615,7 @@ func (e *GojaExecutor) computeCodeHash(code string) string {
 // Parameters:
 //   - ctx: Execution context
 //   - functionName: Name of the function to remove from cache
-func (e *GojaExecutor) clearFunctionCache(ctx context.Context, functionName string) {
+func (e *GojaExecutor) ClearFunctionCache(ctx context.Context, functionName string) {
 	// Track cache clearance
 	_, reportChange, end := e.tracker.Start(ctx, "clear", "function_cache",
 		"function_name", functionName)

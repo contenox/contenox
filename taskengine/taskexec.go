@@ -304,7 +304,16 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		return output, dataType, transitionEval, fmt.Errorf("%w: task-type is empty", ErrUnsupportedTaskType)
 	}
 	switch currentTask.Handler {
-	case HandlePromptToString, HandlePromptToCondition, HandlePromptToInt, HandlePromptToFloat, HandlePromptToRange, HandleParseTransition, HandleTextToEmbedding, HandleRaiseError, HandleParseKeyValue:
+	case HandlePromptToString,
+		HandlePromptToCondition,
+		HandlePromptToInt,
+		HandlePromptToFloat,
+		HandlePromptToRange,
+		HandleParseTransition,
+		HandleTextToEmbedding,
+		HandleRaiseError,
+		HandleParseKeyValue,
+		HandlePromptToJS: // <-- added here
 		prompt, err := getPrompt()
 		if err != nil {
 			return nil, DataTypeAny, "", err
@@ -319,32 +328,37 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			transitionEval, taskErr = exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
 			output = transitionEval
 			outputType = DataTypeString
+
 		case HandlePromptToCondition:
 			var hit bool
 			hit, taskErr = exe.condition(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, currentTask.ValidConditions, prompt)
 			output = hit
 			outputType = DataTypeBool
 			transitionEval = strconv.FormatBool(hit)
+
 		case HandlePromptToInt:
 			var number int
 			number, taskErr = exe.number(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
 			output = number
 			outputType = DataTypeInt
 			transitionEval = strconv.FormatInt(int64(number), 10)
+
 		case HandlePromptToFloat:
 			var score float64
 			score, taskErr = exe.score(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
 			output = score
 			outputType = DataTypeFloat
 			transitionEval = strconv.FormatFloat(score, 'f', 2, 64)
+
 		case HandlePromptToRange:
 			transitionEval, taskErr = exe.rang(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
 			outputType = DataTypeString
 			output = transitionEval
+
 		case HandleParseTransition:
 			transitionEval, taskErr = exe.parseTransition(prompt)
-			// output = output // pass as is to the next task
-			// outputType = outputType
+			// output / outputType pass-through
+
 		case HandleTextToEmbedding:
 			message, err := getPrompt()
 			if err != nil {
@@ -353,12 +367,14 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			output, taskErr = exe.Embed(taskCtx, *currentTask.ExecuteConfig, message)
 			outputType = DataTypeVector
 			transitionEval = "ok"
+
 		case HandleRaiseError:
 			message, err := getPrompt()
 			if err != nil {
 				return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
 			}
 			return nil, DataTypeAny, "", errors.New(message)
+
 		case HandleParseKeyValue:
 			var message string
 			switch outputType {
@@ -381,6 +397,30 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				output = result
 				outputType = DataTypeJSON
 				transitionEval = "parsed"
+			}
+
+		case HandlePromptToJS:
+			// 1) Ask the model for JS source code.
+			jsCode, err := exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
+			if err != nil {
+				taskErr = fmt.Errorf("prompt_to_js: prompt execution failed: %w", err)
+				break
+			}
+
+			// 2) Wrap it into a JSON object so the next task
+			//    (e.g. a JS executor using goja/jseval) has structure.
+			output = map[string]any{
+				"code": jsCode,
+			}
+			outputType = DataTypeJSON
+
+			// 3) Simple status for transitions. You can define branches like:
+			//    - when: "empty_js", operator: equals   -> go to repair / retry
+			//    - when: "ok",        operator: equals   -> go to execution
+			if strings.TrimSpace(jsCode) == "" {
+				transitionEval = "empty_js"
+			} else {
+				transitionEval = "ok"
 			}
 		}
 
