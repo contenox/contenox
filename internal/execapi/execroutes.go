@@ -52,13 +52,13 @@ func (tm *taskManager) executeSimpleTask(w http.ResponseWriter, r *http.Request)
 }
 
 type taskExecutionRequest struct {
-	Input     any                             `json:"input" example:"What is the capital of France" openapi_include_type:"object"`
+	Input     any                             `json:"input" example:"What is the capital of France"`
 	InputType string                          `json:"inputType" example:"string"`
 	Chain     *taskengine.TaskChainDefinition `json:"chain" openapi_include_type:"taskengine.TaskChainDefinition"`
 }
 
 type taskExecutionResponse struct {
-	Output     any                            `json:"output" example:"Paris" openapi_include_type:"object"`
+	Output     any                            `json:"output" example:"Paris"`
 	OutputType string                         `json:"outputType" example:"string"`
 	State      []taskengine.CapturedStateUnit `json:"state" openapi_include_type:"taskengine.CapturedStateUnit"`
 }

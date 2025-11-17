@@ -30,7 +30,7 @@ type handler struct {
 	service openaichatservice.Service
 }
 
-type openAIChatResponse struct {
+type OpenAIChatResponse struct {
 	ID                string                                `json:"id" example:"chat_123"`
 	Object            string                                `json:"object" example:"chat.completion"`
 	Created           int64                                 `json:"created" example:"1690000000"`
@@ -82,7 +82,7 @@ func (h *handler) openAIChatCompletions(w http.ResponseWriter, r *http.Request) 
 		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
 		return
 	}
-	resp := openAIChatResponse{
+	resp := OpenAIChatResponse{
 		ID:                chatResp.ID,
 		Object:            chatResp.Object,
 		Created:           chatResp.Created,

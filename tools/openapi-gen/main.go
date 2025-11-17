@@ -898,7 +898,12 @@ func addStructSchema(swagger *openapi3.T, pkgName string, typeName string, struc
 // (not a custom struct that needs a reference)
 func isPrimitiveType(typeName string) bool {
 	switch typeName {
-	case "string", "int", "int32", "int64", "float32", "float64", "bool", "Time", "Duration", "time.Time", "time.Duration":
+	case "string",
+		"int", "int32", "int64",
+		"float32", "float64",
+		"bool",
+		"Time", "Duration", "time.Time", "time.Duration",
+		"any", "interface{}":
 		return true
 	default:
 		return false

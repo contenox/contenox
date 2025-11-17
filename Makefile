@@ -1,4 +1,7 @@
-.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs test-api test-api-logs test-api-docker test-api-init wait-for-server docs-gen docs-markdown clean set-version bump-major bump-minor bump-patch commit-docs
+.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs \
+        test-api test-api-logs test-api-docker test-api-init wait-for-server \
+        docs-gen docs-markdown docs-html clean set-version bump-major bump-minor \
+        bump-patch commit-docs
 
 PROJECT_ROOT := $(shell pwd)
 VERSION_FILE := apiframework/version.txt
@@ -129,3 +132,16 @@ bump-minor:
 
 bump-patch:
 	go run ./tools/version/main.go bump patch
+
+docs-html: docs-gen
+	@echo "📝 Generating HTML API docs (Redoc)..."
+	@docker run --rm \
+		-v $(PROJECT_ROOT)/docs:/local \
+		node:18-alpine sh -c "\
+			npm install -g @redocly/cli && \
+			redocly build-docs /local/openapi.json \
+				--output=/local/api.html \
+				--title='Contenox Runtime API' \
+				--disableGoogleFont \
+			"
+	@echo "✅ HTML API docs generated at $(PROJECT_ROOT)/docs/openapi.html"

@@ -58,6 +58,10 @@ jobs:
           fi
           echo "✓ Version verification passed: $VERSION_IN_FILE matches tag"
 
+      - name: Generate OpenAPI spec
+        run: |
+          make docs-html
+
       - name: Build and push to GHCR
         uses: docker/build-push-action@v5
         with:
@@ -66,3 +70,9 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/runtime:${{ steps.vars.outputs.TAG }}
             ghcr.io/${{ github.repository_owner }}/runtime:latest
+
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs

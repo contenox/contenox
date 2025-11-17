@@ -33,7 +33,9 @@ type remoteHookService struct {
 	service hookproviderservice.Service
 }
 
-// NEW: List local hooks
+// Lists local hooks supported by the runtime.
+//
+// Returns a list of locally registered hooks and their tools.
 func (s *remoteHookService) listLocal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -43,7 +45,7 @@ func (s *remoteHookService) listLocal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = serverops.Encode(w, r, http.StatusOK, localHooks)
+	_ = serverops.Encode(w, r, http.StatusOK, localHooks) // @response []hookproviderservice.LocalHook
 }
 
 // Retrieves the JSON openAPI schemas for all supported hook types.
