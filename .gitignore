@@ -294,17 +294,17 @@ yarn-error.log*
 next-env.d.ts
 
 # ---- Generated version & API docs ----
-apiframework/version.txt
-docs/api-reference.md
+#apiframework/version.txt
+#docs/api-reference.md
 docs/openapi.json
 docs/openapi.yaml
 openapi.json
 
-# ---- Internal tooling ----
-/tools/openapi-gen/
-/tools/version/
+## ---- Internal tooling ----
+#/tools/openapi-gen/
+#/tools/version/
 
 # Bootstrap scripts
-scripts/bootstrap.sh
-scripts/openai-demo.sh
-scripts/mvp-smoke.sh
+#scripts/bootstrap.sh
+#scripts/openai-demo.sh
+#scripts/mvp-smoke.sh
