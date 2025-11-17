@@ -133,16 +133,7 @@ bump-minor:
 bump-patch:
 	go run ./tools/version/main.go bump patch
 
-docs-html: docs-markdown
-	@echo "📝 Generating HTML API docs from Markdown..."
-	@docker run --rm \
-		-v $(PROJECT_ROOT):/work \
-		node:18-alpine sh -lc "\
-		  npm install -g marked@12 >/dev/null 2>&1 && \
-		  awk -f /work/scripts/clean-openapi-markdown.awk /work/docs/api-reference.md | \
-		  marked > /work/docs/body.html \
-		"
-	@echo "🧩 Injecting body into HTML template..."
-	@awk '/__BODY__/ { while ((getline line < "docs/body.html") > 0) print line; close("docs/body.html"); next } { print }' scripts/api-docs-template.html > docs/openapi.html
-	@rm docs/body.html
+docs-html: docs-gen
+	@echo "📝 Generating HTML API docs (RapiDoc)..."
+	@cp scripts/openapi-rapidoc.html docs/openapi.html
 	@echo "✅ HTML API docs generated at $(PROJECT_ROOT)/docs/openapi.html"
