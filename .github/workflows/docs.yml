@@ -18,8 +18,13 @@ jobs:
         run: |
           make docs-html
 
-      - name: Publish to GitHub Pages
+      - name: Deploy to contenox.github.io/docs
         uses: peaceiris/actions-gh-pages@v4
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          deploy_key: ${{ secrets.DEPLOY_KEY }}
+          user_name: "github-actions[bot]"
+          user_email: "github-actions[bot]@users.noreply.github.com"
+          external_repository: contenox/contenox.github.io
           publish_dir: ./docs
+          destination_dir: docs
+          publish_branch: main
