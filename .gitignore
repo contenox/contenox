@@ -230,10 +230,6 @@ temp/
 # Project-specific
 # ==============================
 
-# Built binaries (from your project)
-cmd/runtime-api
-tools/openapi-gen
-tools/version/version
 
 # Local AI context control (Cursor)
 .cursorignore
