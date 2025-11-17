@@ -136,43 +136,13 @@ bump-patch:
 docs-html: docs-markdown
 	@echo "📝 Generating HTML API docs from Markdown..."
 	@docker run --rm \
-		-v $(PROJECT_ROOT)/docs:/local \
+		-v $(PROJECT_ROOT):/work \
 		node:18-alpine sh -lc "\
-		  npm install -g marked@12 && \
-		  marked /local/api-reference.md > /local/body.html \
+		  npm install -g marked@12 >/dev/null 2>&1 && \
+		  awk -f /work/scripts/clean-openapi-markdown.awk /work/docs/api-reference.md | \
+		  marked > /work/docs/body.html \
 		"
-	@echo "🧩 Wrapping Markdown HTML with site layout..."
-	@{ \
-	  echo '<!doctype html>'; \
-	  echo '<html lang="en">'; \
-	  echo '  <head>'; \
-	  echo '    <meta charset="utf-8" />'; \
-	  echo '    <meta name="viewport" content="width=device-width, initial-scale=1" />'; \
-	  echo '    <title>Contenox Runtime API</title>'; \
-	  echo ''; \
-	  echo '    <meta name="description" content="API reference for the Contenox runtime." />'; \
-	  echo ''; \
-	  echo '    <!-- Reuse contenox.com CSS -->'; \
-	  echo '    <link rel="stylesheet" href="/css/style-vars.css" />'; \
-	  echo '    <link rel="stylesheet" href="/css/global.css" />'; \
-	  echo '    <link rel="stylesheet" href="/css/components.css" />'; \
-	  echo '  </head>'; \
-	  echo '  <body class="document">'; \
-	  echo '    <main class="section" id="main-content">'; \
-	  echo '      <div class="container">'; \
-	  echo '        <h1>Contenox Runtime API</h1>'; \
-	  echo '        <p class="smallprint">'; \
-	  echo '          Generated from the current OpenAPI specification. This is a static reference; there is no public hosted API yet.'; \
-	  echo '        </p>'; \
-	  echo '        <div class="card" style="margin-top: 1.5rem; padding: 1.5rem;">'; \
-	} > docs/openapi.html
-	@cat docs/body.html >> docs/openapi.html
-	@{ \
-	  echo '        </div>'; \
-	  echo '      </div>'; \
-	  echo '    </main>'; \
-	  echo '  </body>'; \
-	  echo '</html>'; \
-	} >> docs/openapi.html
+	@echo "🧩 Injecting body into HTML template..."
+	@awk '/__BODY__/ { while ((getline line < "docs/body.html") > 0) print line; close("docs/body.html"); next } { print }' scripts/api-docs-template.html > docs/openapi.html
 	@rm docs/body.html
 	@echo "✅ HTML API docs generated at $(PROJECT_ROOT)/docs/openapi.html"
