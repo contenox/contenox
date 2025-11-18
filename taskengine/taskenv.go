@@ -507,23 +507,26 @@ func (env SimpleEnv) composeAppendStringToChatHistory(leftVal any, leftType Data
 	var chatHist ChatHistory
 
 	if leftType == DataTypeString && rightType == DataTypeChatHistory {
+		// left = new assistant text, right = existing history
 		strVal = leftVal.(string)
 		chatHist = rightVal.(ChatHistory)
 	} else if leftType == DataTypeChatHistory && rightType == DataTypeString {
+		// left = existing history, right = new assistant text
 		strVal = rightVal.(string)
 		chatHist = leftVal.(ChatHistory)
 	} else {
 		return nil, DataTypeAny, fmt.Errorf("invalid types for append_string_to_chat_history %s - %s", leftType.String(), rightType.String())
 	}
 
+	// Append assistant message to the END of the history
+	newMsg := Message{
+		Content:   strVal,
+		Role:      "assistant",
+		Timestamp: time.Now().UTC(),
+	}
+
 	result := ChatHistory{
-		Messages: append([]Message{
-			{
-				Content:   strVal,
-				Role:      "assistant",
-				Timestamp: time.Now().UTC(),
-			},
-		}, chatHist.Messages...),
+		Messages:     append(chatHist.Messages, newMsg),
 		Model:        chatHist.Model,
 		OutputTokens: chatHist.OutputTokens,
 		InputTokens:  chatHist.InputTokens,

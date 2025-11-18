@@ -389,7 +389,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		HandleTextToEmbedding,
 		HandleRaiseError,
 		HandleParseKeyValue,
-		HandlePromptToJS: // <-- added here
+		HandlePromptToJS:
 		prompt, err := getPrompt()
 		if err != nil {
 			return nil, DataTypeAny, "", err
@@ -476,28 +476,28 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 
 		case HandlePromptToJS:
-			// 1) Ask the model for JS source code.
-			jsCode, err := exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
+			// 1) Ask the model for JS source (or JSON containing JS).
+			rawResponse, err := exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
 			if err != nil {
 				taskErr = fmt.Errorf("prompt_to_js: prompt execution failed: %w", err)
 				break
 			}
 
-			// 2) Wrap it into a JSON object so the next task
-			//    (e.g. a JS executor using goja/jseval) has structure.
+			// 2) Normalize: strip code fences and, if it's JSON, extract the `code` field.
+			jsCode := normalizeJSResponse(rawResponse)
+
 			output = map[string]any{
 				"code": jsCode,
 			}
 			outputType = DataTypeJSON
 
-			// 3) Simple status for transitions. You can define branches like:
-			//    - when: "empty_js", operator: equals   -> go to repair / retry
-			//    - when: "ok",        operator: equals   -> go to execution
+			// 3) Simple transition key for branching.
 			if strings.TrimSpace(jsCode) == "" {
 				transitionEval = "empty_js"
 			} else {
 				transitionEval = "ok"
 			}
+
 		}
 
 	case HandleConvertToOpenAIChatResponse:
@@ -1025,4 +1025,67 @@ func resolveToolWithResolution(chainContext *ChainContext, toolName string) (Too
 	}
 
 	return ToolWithResolution{}, false
+}
+
+// stripCodeFences removes leading/trailing Markdown code fences like:
+//
+// ```
+// ```json
+// ```javascript
+//
+// and their trailing ``` at the end of the string.
+func stripCodeFences(s string) string {
+	trimmed := strings.TrimSpace(s)
+	if !strings.HasPrefix(trimmed, "```") {
+		return trimmed
+	}
+
+	// Drop leading ```
+	trimmed = trimmed[3:]
+
+	// Optional language tag up to the first newline
+	if idx := strings.IndexByte(trimmed, '\n'); idx >= 0 {
+		trimmed = trimmed[idx+1:]
+	} else {
+		// No newline, nothing useful left
+		return strings.TrimSpace(trimmed)
+	}
+
+	// Remove trailing ``` (last occurrence)
+	if idx := strings.LastIndex(trimmed, "```"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+
+	return strings.TrimSpace(trimmed)
+}
+
+// normalizeJSResponse tries to turn the raw LLM response into pure JS source:
+//
+// 1. Strip Markdown fences.
+// 2. If the result looks like JSON and has a "code" field, return that.
+// 3. Otherwise, return the stripped text as-is.
+func normalizeJSResponse(raw string) string {
+	if raw == "" {
+		return ""
+	}
+
+	// Step 1: strip ``` fences if present
+	trimmed := stripCodeFences(raw)
+	trimmed = strings.TrimSpace(trimmed)
+	if trimmed == "" {
+		return ""
+	}
+
+	// Step 2: if it's JSON, try to extract { "code": "..." }
+	if strings.HasPrefix(trimmed, "{") {
+		var obj struct {
+			Code string `json:"code"`
+		}
+		if err := json.Unmarshal([]byte(trimmed), &obj); err == nil && obj.Code != "" {
+			return obj.Code
+		}
+	}
+
+	// Step 3: fall back to treating the stripped text as JS
+	return trimmed
 }
