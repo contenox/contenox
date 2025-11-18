@@ -66,9 +66,70 @@ func NewExec(
 	}, nil
 }
 
+// countTokensAndCheckLimit counts tokens for text and checks against context limit
+func (exe *SimpleExec) countTokensAndCheckLimit(ctx context.Context, modelName string, text string, ctxLength int) error {
+	if ctxLength <= 0 {
+		return nil // No limit enforced
+	}
+
+	tokenCount, err := exe.repo.CountTokens(ctx, modelName, text)
+	if err != nil {
+		return fmt.Errorf("token count failed: %w", err)
+	}
+
+	if tokenCount > ctxLength {
+		return fmt.Errorf("input token count %d exceeds context length %d", tokenCount, ctxLength)
+	}
+
+	return nil
+}
+
+// countChatHistoryTokens counts total tokens in chat history
+func (exe *SimpleExec) countChatHistoryTokens(ctx context.Context, modelName string, history ChatHistory, ctxLength int) (int, error) {
+	if ctxLength <= 0 {
+		return 0, nil // No limit to enforce
+	}
+
+	// If tokens are already calculated and valid, use them
+	if history.InputTokens > 0 && history.OutputTokens > 0 {
+		totalTokens := history.InputTokens + history.OutputTokens
+		if totalTokens > ctxLength {
+			return totalTokens, fmt.Errorf("chat history token count %d exceeds context length %d", totalTokens, ctxLength)
+		}
+		return totalTokens, nil
+	}
+
+	// Count tokens for each message
+	totalTokens := 0
+	for _, msg := range history.Messages {
+		tokenCount, err := exe.repo.CountTokens(ctx, modelName, msg.Content)
+		if err != nil {
+			return 0, fmt.Errorf("token count failed for message: %w", err)
+		}
+		totalTokens += tokenCount
+	}
+
+	if totalTokens > ctxLength {
+		return totalTokens, fmt.Errorf("chat history token count %d exceeds context length %d", totalTokens, ctxLength)
+	}
+
+	return totalTokens, nil
+}
+
+// getPrimaryModel extracts the primary model name from execution config
+func getPrimaryModel(llmCall *LLMExecutionConfig) string {
+	if llmCall.Model != "" {
+		return llmCall.Model
+	}
+	if len(llmCall.Models) > 0 {
+		return llmCall.Models[0]
+	}
+	return "default" // Fallback model name for token counting
+}
+
 // Prompt resolves a model client using the resolver policy and sends the prompt
 // to be executed. Returns the trimmed response string or an error.
-func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string) (string, error) {
+func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string, ctxLength int) (string, error) {
 	reportErr, _, end := exe.tracker.Start(ctx, "SimpleExec", "prompt_model",
 		"model_name", llmCall.Model,
 		"model_names", llmCall.Models,
@@ -82,6 +143,15 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 		reportErr(err)
 		return "", err
 	}
+
+	// Count tokens and check limits
+	modelName := getPrimaryModel(&llmCall)
+	combinedText := systemInstruction + "\n" + prompt
+	if err := exe.countTokensAndCheckLimit(ctx, modelName, combinedText, ctxLength); err != nil {
+		reportErr(err)
+		return "", err
+	}
+
 	providerNames := []string{}
 	if llmCall.Provider != "" {
 		providerNames = append(providerNames, llmCall.Provider)
@@ -112,7 +182,7 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 
 // Prompt resolves a model client and sends the prompt
 // to be executed. Returns the trimmed response string or an error.
-func (exe *SimpleExec) Embed(ctx context.Context, llmCall LLMExecutionConfig, prompt string) ([]float64, error) {
+func (exe *SimpleExec) Embed(ctx context.Context, llmCall LLMExecutionConfig, prompt string, ctxLength int) ([]float64, error) {
 	reportErr, _, end := exe.tracker.Start(ctx, "SimpleExec", "Embed",
 		"model_name", llmCall.Model,
 		"model_names", llmCall.Models,
@@ -126,6 +196,14 @@ func (exe *SimpleExec) Embed(ctx context.Context, llmCall LLMExecutionConfig, pr
 		reportErr(err)
 		return nil, err
 	}
+
+	// Count tokens and check limits
+	modelName := getPrimaryModel(&llmCall)
+	if err := exe.countTokensAndCheckLimit(ctx, modelName, prompt, ctxLength); err != nil {
+		reportErr(err)
+		return nil, err
+	}
+
 	providerNames := []string{}
 	if llmCall.Provider != "" {
 		providerNames = append(providerNames, llmCall.Provider)
@@ -147,9 +225,9 @@ func (exe *SimpleExec) Embed(ctx context.Context, llmCall LLMExecutionConfig, pr
 		return nil, fmt.Errorf("multiple models specified")
 	}
 	privider := ""
-	modelName := ""
+	modelNameOut := ""
 	if len(modelNames) > 0 {
-		modelName = modelNames[0]
+		modelNameOut = modelNames[0]
 	}
 	if len(providerNames) > 0 {
 		privider = providerNames[0]
@@ -157,7 +235,7 @@ func (exe *SimpleExec) Embed(ctx context.Context, llmCall LLMExecutionConfig, pr
 
 	response, _, err := exe.repo.Embed(ctx, llmrepo.EmbedRequest{
 		ProviderType: privider,
-		ModelName:    modelName,
+		ModelName:    modelNameOut,
 		// Tracker:      exe.tracker,
 	}, prompt)
 	if err != nil {
@@ -171,8 +249,8 @@ func (exe *SimpleExec) Embed(ctx context.Context, llmCall LLMExecutionConfig, pr
 
 // rang executes the prompt and attempts to parse the response as a range string (e.g. "6-8").
 // If the response is a single number, it returns a degenerate range like "6-6".
-func (exe *SimpleExec) rang(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string) (string, error) {
-	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt)
+func (exe *SimpleExec) rang(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string, ctxLength int) (string, error) {
+	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt, ctxLength)
 	if err != nil {
 		return "", fmt.Errorf("rang: prompt execution failed: %w", err)
 	}
@@ -180,8 +258,6 @@ func (exe *SimpleExec) rang(ctx context.Context, systemInstruction string, llmCa
 	return parseRangeString(response, prompt, response)
 }
 
-// parseRangeString parses and validates a string as either a range ("6-8") or a single number.
-// Returns the normalized range string (e.g., "6-8" or "6-6") or an error.
 // parseRangeString parses and validates a string as either a range ("6-8") or a single number.
 // Returns the normalized range string (e.g., "6-8" or "6-6") or an error.
 func parseRangeString(input, prompt, response string) (string, error) {
@@ -215,8 +291,8 @@ func parseRangeString(input, prompt, response string) (string, error) {
 }
 
 // number executes the prompt and parses the response as an integer.
-func (exe *SimpleExec) number(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string) (int, error) {
-	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt)
+func (exe *SimpleExec) number(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string, ctxLength int) (int, error) {
+	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt, ctxLength)
 	if err != nil {
 		return 0, fmt.Errorf("number: prompt execution failed: %w", err)
 	}
@@ -235,8 +311,8 @@ func (exe *SimpleExec) number(ctx context.Context, systemInstruction string, llm
 }
 
 // score executes the prompt and parses the response as a floating-point score.
-func (exe *SimpleExec) score(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string) (float64, error) {
-	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt)
+func (exe *SimpleExec) score(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string, ctxLength int) (float64, error) {
+	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt, ctxLength)
 	if err != nil {
 		return 0, fmt.Errorf("score: prompt execution failed: %w", err)
 	}
@@ -325,33 +401,33 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 
 		switch currentTask.Handler {
 		case HandlePromptToString:
-			transitionEval, taskErr = exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
+			transitionEval, taskErr = exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
 			output = transitionEval
 			outputType = DataTypeString
 
 		case HandlePromptToCondition:
 			var hit bool
-			hit, taskErr = exe.condition(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, currentTask.ValidConditions, prompt)
+			hit, taskErr = exe.condition(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, currentTask.ValidConditions, prompt, ctxLength)
 			output = hit
 			outputType = DataTypeBool
 			transitionEval = strconv.FormatBool(hit)
 
 		case HandlePromptToInt:
 			var number int
-			number, taskErr = exe.number(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
+			number, taskErr = exe.number(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
 			output = number
 			outputType = DataTypeInt
 			transitionEval = strconv.FormatInt(int64(number), 10)
 
 		case HandlePromptToFloat:
 			var score float64
-			score, taskErr = exe.score(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
+			score, taskErr = exe.score(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
 			output = score
 			outputType = DataTypeFloat
 			transitionEval = strconv.FormatFloat(score, 'f', 2, 64)
 
 		case HandlePromptToRange:
-			transitionEval, taskErr = exe.rang(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
+			transitionEval, taskErr = exe.rang(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
 			outputType = DataTypeString
 			output = transitionEval
 
@@ -364,7 +440,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			if err != nil {
 				return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
 			}
-			output, taskErr = exe.Embed(taskCtx, *currentTask.ExecuteConfig, message)
+			output, taskErr = exe.Embed(taskCtx, *currentTask.ExecuteConfig, message, ctxLength)
 			outputType = DataTypeVector
 			transitionEval = "ok"
 
@@ -401,7 +477,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 
 		case HandlePromptToJS:
 			// 1) Ask the model for JS source code.
-			jsCode, err := exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt)
+			jsCode, err := exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
 			if err != nil {
 				taskErr = fmt.Errorf("prompt_to_js: prompt execution failed: %w", err)
 				break
@@ -473,6 +549,13 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		default:
 			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'openai_chat' or 'chat_history', used var: %s but got '%s'", currentTask.InputVar, currentTask.Handler, dataType.String())
 		}
+
+		// Count tokens and check limits for chat completion
+		modelName := getPrimaryModel(finalExecConfig)
+		if _, err := exe.countChatHistoryTokens(taskCtx, modelName, chatHistory, ctxLength); err != nil {
+			return nil, DataTypeAny, "", err
+		}
+
 		if currentTask.SystemInstruction != "" {
 			alreadyPresent := false
 			for _, msg := range chatHistory.Messages {
@@ -658,9 +741,12 @@ func (exe *SimpleExec) executeLLM(
 	if llmCall.Providers != nil {
 		providerNames = append(providerNames, llmCall.Providers...)
 	}
+
+	// Count tokens if not already counted
 	if input.InputTokens <= 0 {
+		modelName := getPrimaryModel(llmCall)
 		for _, m := range input.Messages {
-			InputCount, err := exe.repo.CountTokens(ctx, llmCall.Model, m.Content)
+			InputCount, err := exe.repo.CountTokens(ctx, modelName, m.Content)
 			if err != nil {
 				reportErr(fmt.Errorf("token count failed: %w", err))
 				return nil, DataTypeAny, "", fmt.Errorf("token count failed: %w", err)
@@ -668,6 +754,7 @@ func (exe *SimpleExec) executeLLM(
 			input.InputTokens += InputCount
 		}
 	}
+
 	if ctxLength > 0 && input.InputTokens > ctxLength {
 		reportErr(fmt.Errorf("input token count %d exceeds context length %d", input.InputTokens, ctxLength))
 		err := fmt.Errorf("input token count %d exceeds context length %d", input.InputTokens, ctxLength)
@@ -829,8 +916,8 @@ func (exe *SimpleExec) hookengine(
 
 // condition executes a prompt and evaluates its result against a provided condition mapping.
 // It returns true/false based on the resolved condition value or fallback heuristics.
-func (exe *SimpleExec) condition(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, validConditions map[string]bool, prompt string) (bool, error) {
-	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt)
+func (exe *SimpleExec) condition(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, validConditions map[string]bool, prompt string, ctxLength int) (bool, error) {
+	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt, ctxLength)
 	if err != nil {
 		return false, fmt.Errorf("condition: prompt execution failed: %w", err)
 	}
