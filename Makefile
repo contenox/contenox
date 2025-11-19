@@ -1,12 +1,6 @@
-.PHONY: echo-version test-unit test-system test compose-wipe benchmark build down logs \
-        test-api test-api-logs test-api-docker test-api-init wait-for-server \
-        docs-gen docs-markdown docs-html clean set-version bump-major bump-minor \
-        bump-patch commit-docs
+PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+VERSION_FILE := $(PROJECT_ROOT)/apiframework/version.txt
 
-PROJECT_ROOT := $(shell pwd)
-VERSION_FILE := apiframework/version.txt
-
-# Default model configuration - can be overridden when calling make
 EMBED_MODEL ?= nomic-embed-text:latest
 EMBED_PROVIDER ?= ollama
 EMBED_MODEL_CONTEXT_LENGTH ?= 2048
@@ -18,122 +12,108 @@ CHAT_PROVIDER ?= ollama
 CHAT_MODEL_CONTEXT_LENGTH ?= 2048
 TENANCY ?= 54882f1d-3788-44f9-aed6-19a793c4568f
 
-export EMBED_MODEL
-export EMBED_PROVIDER
-export EMBED_MODEL_CONTEXT_LENGTH
-export TASK_MODEL
-export TASK_MODEL_CONTEXT_LENGTH
-export TASK_PROVIDER
-export CHAT_MODEL
-export CHAT_PROVIDER
-export CHAT_MODEL_CONTEXT_LENGTH
+export EMBED_MODEL EMBED_PROVIDER EMBED_MODEL_CONTEXT_LENGTH
+export TASK_MODEL TASK_MODEL_CONTEXT_LENGTH TASK_PROVIDER
+export CHAT_MODEL CHAT_MODEL_CONTEXT_LENGTH CHAT_PROVIDER
 export TENANCY
 
-COMPOSE_CMD := docker compose -f compose.yaml -f compose.local.yaml
+# Allow user override of COMPOSE_CMD
+COMPOSE_CMD ?= docker compose -f compose.yaml -f compose.local.yaml
 
-validate-version:
-	@if [ ! -f "$(VERSION_FILE)" ]; then \
-		echo "ERROR: Version file $(VERSION_FILE) does not exist. Run 'make set-version' first."; \
-		exit 1; \
-	fi
-	@VERSION_CONTENT=$$(cat $(VERSION_FILE) | tr -d '\n' | tr -d '\r'); \
-	if [ -z "$$VERSION_CONTENT" ]; then \
-		echo "ERROR: Version file $(VERSION_FILE) is empty. Run 'make set-version' first."; \
-		exit 1; \
-	fi
+.PHONY: run up down build clear logs \
+        test test-unit test-system \
+        test-api test-api-full test-api-init wait-for-server \
+        docs-gen docs-markdown docs-html \
+        set-version bump-major bump-minor bump-patch \
+        commit-docs release
 
-echo-version:
-	@echo "Current version: $$(cat $(VERSION_FILE) 2>/dev/null || echo 'not set')"
 
-clean:
-	@rm -f $(VERSION_FILE) 2>/dev/null || true
+# --------------------------------------------------------------------
+# Runtime lifecycle
+# --------------------------------------------------------------------
 
-build: set-version validate-version
-	$(COMPOSE_CMD) build \
-		--build-arg TENANCY=$(TENANCY)
+build:
+	$(COMPOSE_CMD) build --build-arg TENANCY=$(TENANCY)
 
-down:
-	$(COMPOSE_CMD) down --volumes --remove-orphans
-
-run: down build
+up:
 	$(COMPOSE_CMD) up -d
 
-logs: run
+run: down build up
+
+down:
+	$(COMPOSE_CMD) down
+
+clear:
+	$(COMPOSE_CMD) down --volumes --remove-orphans
+
+logs:
 	$(COMPOSE_CMD) logs -f runtime
 
-test-unit:
-	GOMAXPROCS=4 go test -C ./ -run '^TestUnit_' ./...
 
-test-system:
-	GOMAXPROCS=4 go test -C ./ -run '^TestSystem_' ./...
+# --------------------------------------------------------------------
+# Tests
+# --------------------------------------------------------------------
 
 test:
-	GOMAXPROCS=4 go test -C ./ ./...
+	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) ./...
 
-compose-wipe:
-	$(COMPOSE_CMD) down --volumes --rmi all
+test-unit:
+	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -run '^TestUnit_' ./...
+
+test-system:
+	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -run '^TestSystem_' ./...
+
+
+# --------------------------------------------------------------------
+# API tests
+# --------------------------------------------------------------------
+
+APITEST_VENV := $(PROJECT_ROOT)/apitests/.venv
+APITEST_ACTIVATE := $(APITEST_VENV)/bin/activate
 
 test-api-init:
-	python3 -m venv apitests/.venv
-	. apitests/.venv/bin/activate && pip install -r apitests/requirements.txt
+	test -d $(APITEST_VENV) || python3 -m venv $(APITEST_VENV)
+	. $(APITEST_ACTIVATE) && pip install -r $(PROJECT_ROOT)/apitests/requirements.txt
 
 wait-for-server:
-	@echo "Waiting for server to be ready..."
+	@echo "Waiting for server..."
 	@until wget --spider -q http://localhost:8081/health; do \
-		echo "Server not yet available, waiting..."; \
-		sleep 2; \
+		echo "Still waiting..."; sleep 2; \
 	done
-	@echo "Server is up!"
 
-test-api: run wait-for-server
-	. apitests/.venv/bin/activate && pytest apitests/$(TEST_FILE)
+test-api: test-api-init wait-for-server
+	. $(APITEST_ACTIVATE) && pytest $(PROJECT_ROOT)/apitests/$(TEST_FILE)
 
-test-api-logs: run wait-for-server
-	. apitests/.venv/bin/activate && pytest --log-cli-level=DEBUG --capture=no -v apitests/$(TEST_FILE)
+test-api-full: run test-api
 
-test-api-docker:
-	docker build -f Dockerfile.apitests --build-arg EMBED_MODEL=$(EMBED_MODEL) \
-		--build-arg TASK_MODEL=$(TASK_MODEL) \
-		--build-arg CHAT_MODEL=$(CHAT_MODEL) \
-		-t contenox-apitests .
-	docker run --rm --network=host contenox-apitests
+
+# --------------------------------------------------------------------
+# Documentation & Versioning
+# --------------------------------------------------------------------
 
 docs-gen:
-	@echo "📝 Generating OpenAPI spec..."
-	@go run $(PROJECT_ROOT)/tools/openapi-gen --project="$(PROJECT_ROOT)" --output="$(PROJECT_ROOT)/docs"
-	@echo "✅ OpenAPI spec generated at $(PROJECT_ROOT)/docs/openapi.json"
+	go run $(PROJECT_ROOT)/tools/openapi-gen \
+		--project="$(PROJECT_ROOT)" \
+		--output="$(PROJECT_ROOT)/docs"
 
 docs-markdown: docs-gen
-	@echo "📝 Converting OpenAPI spec to Markdown..."
-	@echo "🐳 Using Node.js Docker image to generate documentation..."
-	@docker run --rm \
+	docker run --rm \
 		-v $(PROJECT_ROOT)/docs:/local \
 		node:18-alpine sh -c "\
 			npm install -g widdershins@4 && \
 			widdershins /local/openapi.json -o /local/api-reference.md \
-				--language_tabs 'python:Python' \
-				--summary \
-				--resolve \
-				--verbose"
-	@echo "✅ Markdown documentation generated at $(PROJECT_ROOT)/docs/api-reference.md"
-
-set-version: docs-markdown
-	go run ./tools/version/main.go set
-
-commit-docs: set-version
-	@git add $(PROJECT_ROOT)/docs/
-	@git commit -m "Update API reference"
-
-bump-major:
-	go run ./tools/version/main.go bump major
-
-bump-minor:
-	go run ./tools/version/main.go bump minor
-
-bump-patch:
-	go run ./tools/version/main.go bump patch
+			--summary --resolve --verbose \
+		"
 
 docs-html: docs-gen
-	@echo "📝 Generating HTML API docs (RapiDoc)..."
-	@cp scripts/openapi-rapidoc.html docs/openapi.html
-	@echo "✅ HTML API docs generated at $(PROJECT_ROOT)/docs/openapi.html"
+	cp $(PROJECT_ROOT)/scripts/openapi-rapidoc.html $(PROJECT_ROOT)/docs/openapi.html
+
+set-version:
+	go run $(PROJECT_ROOT)/tools/version/main.go set
+
+commit-docs: docs-markdown docs-html
+	git add $(PROJECT_ROOT)/docs
+	git commit -m "Update API reference"
+
+release: docs-markdown docs-html set-version
+	@echo "Release assets prepared."
