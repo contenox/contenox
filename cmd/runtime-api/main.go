@@ -22,10 +22,12 @@ import (
 	"github.com/contenox/runtime/internal/llmrepo"
 	"github.com/contenox/runtime/internal/ollamatokenizer"
 	"github.com/contenox/runtime/internal/runtimestate"
+	"github.com/contenox/runtime/jseval"
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	libroutine "github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/localhooks"
 	"github.com/contenox/runtime/runtimetypes"
 	"github.com/contenox/runtime/serverapi"
 	"github.com/contenox/runtime/taskchainservice"
@@ -189,8 +191,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s initializing llm repo failed: %v", nodeInstanceID, err)
 	}
-	// Create persistent hook repo
-	hookRepo := hooks.NewPersistentRepo(map[string]taskengine.HookRepo{}, dbInstance, http.DefaultClient)
+	jsEnv := jseval.NewEnv(serveropsChainedTracker, jseval.BuiltinHandlers{})
+	jsHookRepo := localhooks.NewJSSandboxHook(jsEnv, serveropsChainedTracker)
+	localHookrepoInstance := map[string]taskengine.HookRepo{}
+	localHookrepoInstance["js_sandbox"] = jsHookRepo
+	localHookrepoInstance["echo"] = localhooks.NewEchoHook()
+	localHookrepoInstance["print"] = localhooks.NewPrint(serveropsChainedTracker)
+	localHookrepoInstance["webhook"] = localhooks.NewWebCaller()
+	hookRepo := hooks.NewPersistentRepo(localHookrepoInstance, dbInstance, http.DefaultClient)
 	exec, err := taskengine.NewExec(ctx, repo, hookRepo, serveropsChainedTracker)
 	if err != nil {
 		log.Fatalf("%s initializing task engine engine failed: %v", nodeInstanceID, err)
@@ -233,7 +241,14 @@ func main() {
 	eventSourceService = eventsourceservice.WithActivityTracker(eventSourceService, serveropsChainedTracker)
 	taskChainService := taskchainservice.New(dbInstance)
 	taskChainService = taskchainservice.WithActivityTracker(taskChainService, serveropsChainedTracker)
-
+	jsEnv.SetBuiltinHandlers(jseval.BuiltinHandlers{
+		Eventsource:          eventSourceService,
+		TaskService:          execService,
+		TaskchainService:     taskChainService,
+		TaskchainExecService: taskService,
+		FunctionService:      functionService,
+		HookRepo:             hookRepo,
+	})
 	cleanup, err = serverapi.New(ctx, internalMux, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo, hookRepo, taskService, embedService, execService, taskChainService, functionService, eventSourceService, executorService, eventbus)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
