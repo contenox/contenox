@@ -234,7 +234,7 @@ func main() {
 	taskChainService := taskchainservice.New(dbInstance)
 	taskChainService = taskchainservice.WithActivityTracker(taskChainService, serveropsChainedTracker)
 
-	cleanup, err = serverapi.New(ctx, internalMux, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo, taskService, embedService, execService, taskChainService, functionService, eventSourceService, executorService, eventbus)
+	cleanup, err = serverapi.New(ctx, internalMux, nodeInstanceID, Tenancy, config, dbInstance, ps, repo, environmentExec, state, hookRepo, hookRepo, taskService, embedService, execService, taskChainService, functionService, eventSourceService, executorService, eventbus)
 	cleanups = append(cleanups, cleanup)
 	if err != nil {
 		log.Fatalf("%s initializing API handler failed: %v", nodeInstanceID, err)

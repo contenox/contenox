@@ -19,6 +19,7 @@ import (
 	"github.com/contenox/runtime/libroutine"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/taskchainservice"
+	"github.com/contenox/runtime/taskengine"
 	"github.com/dop251/goja"
 )
 
@@ -41,6 +42,7 @@ type GojaExecutor struct {
 	syncTriggerChan      chan struct{}
 	syncCancelFunc       context.CancelFunc
 	syncWG               sync.WaitGroup
+	hookRepo             taskengine.HookRepo
 
 	jsEnv *jseval.Env
 }
@@ -95,6 +97,7 @@ func (e *GojaExecutor) AddBuildInServices(
 	taskService execservice.ExecService,
 	taskchainService taskchainservice.Service,
 	taskchainExecService execservice.TasksEnvService,
+	hookRepo taskengine.HookRepo,
 ) {
 	e.eventsource = eventsource
 	e.taskService = taskService
@@ -110,6 +113,7 @@ func (e *GojaExecutor) AddBuildInServices(
 			TaskchainService:     taskchainService,
 			TaskchainExecService: taskchainExecService,
 			FunctionService:      e.functionService,
+			HookRepo:             e.hookRepo,
 		},
 	)
 }

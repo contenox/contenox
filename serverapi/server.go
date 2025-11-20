@@ -62,6 +62,7 @@ func New(
 	environmentExec taskengine.EnvExecutor,
 	state *runtimestate.State,
 	hookRegistry taskengine.HookProvider,
+	hookRepo taskengine.HookRepo,
 	taskService execservice.TasksEnvService,
 	embedService embedservice.Service,
 	execService execservice.ExecService,
@@ -177,7 +178,7 @@ func New(
 	functionapi.AddFunctionRoutes(mux, functionService)
 
 	execsyncapi.AddExecutorRoutes(mux, executorService, eventbus)
-	executorService.AddBuildInServices(eventSourceService, execService, taskChainService, taskService)
+	executorService.AddBuildInServices(eventSourceService, execService, taskChainService, taskService, hookRepo)
 	executorService.StartSync(ctx, time.Second*3)
 
 	eventMappingService := eventmappingservice.New(dbInstance)

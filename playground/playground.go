@@ -483,9 +483,12 @@ func (p *Playground) WithGojaExecutorBuildIns(ctx context.Context) *Playground {
 	if p.tracker == nil {
 		p.tracker = libtracker.NoopTracker{}
 	}
-
+	if p.hookrepo == nil {
+		p.Error = fmt.Errorf("p.hookrepo == nil")
+		return p
+	}
 	// Create the executor
-	p.gojaExecutor.AddBuildInServices(eventSourceService, taskService, taskchainService, taskchainExecService)
+	p.gojaExecutor.AddBuildInServices(eventSourceService, taskService, taskchainService, taskchainExecService, p.hookrepo)
 
 	return p
 }

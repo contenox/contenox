@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/contenox/runtime/eventsourceservice"
@@ -80,7 +81,7 @@ func withErrorReporting(
 		reportErr(fmt.Errorf("operation timed out after 30s in %s %s", operation, subject))
 
 		return vm.ToValue(map[string]any{
-			"error":   "operation timed out",
+			"error":   fmt.Sprintf("%s %s timed out after 30s", operation, subject),
 			"success": false,
 		})
 
@@ -154,6 +155,8 @@ type BuiltinHandlers struct {
 	TaskchainService     taskchainservice.Service
 	TaskchainExecService execservice.TasksEnvService
 	FunctionService      functionservice.Service // not used yet, but available
+
+	HookRepo taskengine.HookRepo
 }
 
 // Env = configured JS environment with tracker + services.
@@ -499,7 +502,195 @@ func (e *Env) SetupVM(ctx context.Context, vm *goja.Runtime, col *Collector) err
 		}
 	}
 
-	// NEW: httpFetch builtin (synchronous, uses net/http)
+	// executeHook
+	if e.deps.HookRepo != nil {
+		if err := vm.Set("executeHook", func(hookName, toolName string, args map[string]any) goja.Value {
+			extra := map[string]any{
+				"hook_name": hookName,
+				"tool_name": toolName,
+				"args":      args,
+			}
+
+			return withErrorReporting(vm, ctx, e.tracker, "execute", "hook", extra, func() (interface{}, error) {
+				if col != nil {
+					col.Add(ExecLogEntry{
+						Timestamp: time.Now().UTC(),
+						Kind:      "executeHook",
+						Name:      "executeHook",
+						Args:      []any{hookName, toolName, args},
+						Meta: map[string]any{
+							"hook_name": hookName,
+							"tool_name": toolName,
+						},
+					})
+				}
+
+				// 1) Validate hookName against supported hooks (if we can).
+				if e.deps.HookRepo != nil {
+					if supportedHooks, err := e.deps.HookRepo.Supports(ctx); err == nil && len(supportedHooks) > 0 {
+						found := false
+						for _, h := range supportedHooks {
+							if h == hookName {
+								found = true
+								break
+							}
+						}
+						if !found {
+							msg := fmt.Sprintf(
+								"INVALID_HOOK_NAME: %q is not registered; available hooks: %s",
+								hookName,
+								strings.Join(supportedHooks, ", "),
+							)
+
+							if col != nil {
+								col.Add(ExecLogEntry{
+									Timestamp: time.Now().UTC(),
+									Kind:      "executeHook",
+									Name:      "executeHook",
+									Error:     msg,
+									Meta: map[string]any{
+										"hook_name": hookName,
+										"tool_name": toolName,
+									},
+								})
+							}
+
+							return nil, fmt.Errorf("%s", msg)
+						}
+					}
+				}
+
+				// 2) Validate toolName against tools for this hook (if we can).
+				if e.deps.HookRepo != nil {
+					if tools, err := e.deps.HookRepo.GetToolsForHookByName(ctx, hookName); err == nil && len(tools) > 0 {
+						validTool := false
+						availableToolNames := make([]string, 0, len(tools))
+						for _, t := range tools {
+							availableToolNames = append(availableToolNames, t.Function.Name)
+							if t.Function.Name == toolName {
+								validTool = true
+							}
+						}
+						if !validTool {
+							msg := fmt.Sprintf(
+								"INVALID_HOOK_TOOL: %q is not a valid tool for hook %q; available tools: %s",
+								toolName,
+								hookName,
+								strings.Join(availableToolNames, ", "),
+							)
+
+							if col != nil {
+								col.Add(ExecLogEntry{
+									Timestamp: time.Now().UTC(),
+									Kind:      "executeHook",
+									Name:      "executeHook",
+									Error:     msg,
+									Meta: map[string]any{
+										"hook_name": hookName,
+										"tool_name": toolName,
+									},
+								})
+							}
+
+							return nil, fmt.Errorf("%s", msg)
+						}
+					}
+				}
+
+				_, reportChange, end := e.tracker.Start(
+					ctx,
+					"execute",
+					"hook",
+					"hook_name", hookName,
+					"tool_name", toolName,
+					"args", args,
+				)
+				defer end()
+
+				argsStr := map[string]string{}
+				for k, v := range args {
+					argsStr[k] = fmt.Sprintf("%v", v)
+				}
+				call := &taskengine.HookCall{
+					Name:     hookName,
+					ToolName: toolName,
+					Args:     argsStr,
+				}
+
+				// `input` is nil here, but you can extend the JS signature later if needed.
+				result, dataType, err := e.deps.HookRepo.Exec(
+					ctx,
+					time.Now().UTC(),
+					nil,   // input
+					false, // debug
+					call,
+				)
+				if err != nil {
+					if col != nil {
+						col.Add(ExecLogEntry{
+							Timestamp: time.Now().UTC(),
+							Kind:      "executeHook",
+							Name:      "executeHook",
+							Error:     err.Error(),
+							Meta: map[string]any{
+								"hook_name": hookName,
+								"tool_name": toolName,
+							},
+						})
+					}
+					return nil, fmt.Errorf("failed to execute hook %s/%s: %w", hookName, toolName, err)
+				}
+
+				// Normalize result for JS (similar to executeTaskChain)
+				var jsResult any = result
+				switch dataType {
+				case taskengine.DataTypeJSON:
+					switch r := result.(type) {
+					case []byte:
+						var v any
+						if err := json.Unmarshal(r, &v); err == nil {
+							jsResult = v
+						}
+					case string:
+						var v any
+						if err := json.Unmarshal([]byte(r), &v); err == nil {
+							jsResult = v
+						}
+					}
+				}
+
+				reportChange("hook_executed", map[string]any{
+					"hook_name": hookName,
+					"tool_name": toolName,
+					"type":      dataType,
+					"result":    jsResult,
+				})
+
+				if col != nil {
+					col.Add(ExecLogEntry{
+						Timestamp: time.Now().UTC(),
+						Kind:      "executeHook",
+						Name:      "executeHook",
+						Meta: map[string]any{
+							"hook_name": hookName,
+							"tool_name": toolName,
+						},
+					})
+				}
+
+				return map[string]any{
+					"success":   true,
+					"hook_name": hookName,
+					"tool_name": toolName,
+					"type":      dataType,
+					"result":    jsResult,
+				}, nil
+			})
+		}); err != nil {
+			return fmt.Errorf("failed to set executeHook builtin: %w", err)
+		}
+	}
+
 	if err := setupHTTPFetch(vm, ctx, e.tracker, col, nil); err != nil {
 		return err
 	}
