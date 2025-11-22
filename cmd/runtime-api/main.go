@@ -207,6 +207,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s initializing task engine failed: %v", nodeInstanceID, err)
 	}
+	environmentExec, err = taskengine.NewMacroEnv(environmentExec, hookRepo)
+	if err != nil {
+		log.Fatalf("%s initializing task engine NewMacroEnv failed: %v", nodeInstanceID, err)
+	}
+
 	cleanups = append(cleanups, cleanup)
 
 	err = eventstore.InitSchema(ctx, dbInstance.WithoutTransaction())

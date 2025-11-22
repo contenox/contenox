@@ -17,14 +17,14 @@ type MacroEnv struct {
 }
 
 // NewMacroEnv wraps an existing EnvExecutor with macro expansion.
-func NewMacroEnv(inner EnvExecutor, hookProvider HookRepo) EnvExecutor {
+func NewMacroEnv(inner EnvExecutor, hookProvider HookRepo) (EnvExecutor, error) {
 	if inner == nil {
-		panic("NewMacroEnv: inner EnvExecutor is nil")
+		return nil, fmt.Errorf("NewMacroEnv: inner EnvExecutor is nil")
 	}
 	return &MacroEnv{
 		inner:        inner,
 		hookProvider: hookProvider,
-	}
+	}, nil
 }
 
 func (m *MacroEnv) ExecEnv(
