@@ -198,6 +198,10 @@ func main() {
 	localHookrepoInstance["echo"] = localhooks.NewEchoHook()
 	localHookrepoInstance["print"] = localhooks.NewPrint(serveropsChainedTracker)
 	localHookrepoInstance["webhook"] = localhooks.NewWebCaller()
+	localHookrepoInstance["ssh"], err = localhooks.NewSSHHook()
+	if err != nil {
+		log.Fatalf("%s initializing ssh-hook failed: %v", nodeInstanceID, err)
+	}
 	hookRepo := hooks.NewPersistentRepo(localHookrepoInstance, dbInstance, http.DefaultClient)
 	exec, err := taskengine.NewExec(ctx, repo, hookRepo, serveropsChainedTracker)
 	if err != nil {
