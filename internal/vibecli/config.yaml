@@ -15,6 +15,6 @@ local_shell_allowed_commands: "ls,pwd,cat,head,tail,date"
 #   - dd
 #   - mkfs
 # Register extra models so chains can use them (e.g. vibes chain uses qwen2.5:7b).
-# extra_models:
-#   - name: qwen2.5:7b
-#     context: 32768
+extra_models:
+  - name: qwen2.5:7b
+    context: 32768
