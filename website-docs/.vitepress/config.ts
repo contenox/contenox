@@ -83,7 +83,7 @@ export default defineConfig({
         },
 
         socialLinks: [
-            { icon: 'github', link: 'https://github.com/contenox/vibe' },
+            { icon: 'github', link: 'https://github.com/contenox/contenox' },
         ],
 
         footer: {
