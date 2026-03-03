@@ -49,7 +49,7 @@ Contenox is different:
 
 **Ubuntu / Linux**
 ```bash
-TAG=$(curl -sL https://api.github.com/repos/contenox/contenox/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+TAG=v0.2.0
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -sL "https://github.com/contenox/contenox/releases/download/${TAG}/contenox-${TAG}-linux-${ARCH}" -o contenox
 chmod +x contenox && sudo mv contenox /usr/local/bin/contenox
@@ -58,7 +58,7 @@ contenox --version
 
 **macOS**
 ```bash
-TAG=$(curl -sL https://api.github.com/repos/contenox/contenox/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+TAG=v0.2.0
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/arm64/arm64/')
 curl -sL "https://github.com/contenox/contenox/releases/download/${TAG}/contenox-${TAG}-darwin-${ARCH}" -o contenox
 chmod +x contenox && sudo mv contenox /usr/local/bin/contenox
