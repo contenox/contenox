@@ -58,17 +58,32 @@ The plan is persisted to SQLite. You can pause, inspect, retry individual steps,
 
 ## Install
 
+### Latest release (auto-detects version, OS, and arch)
+
+```bash
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+TAG=$(curl -sL https://api.github.com/repos/contenox/vibe/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+curl -sL "https://github.com/contenox/vibe/releases/download/${TAG}/vibe-${TAG}-${OS}-${ARCH}" -o vibe
+chmod +x vibe
+```
+
+### Smoke test — verify the binary works
+
+```bash
+./vibe --version    # e.g. "vibe version v0.2.0" — confirms the right binary downloaded
+./vibe init         # creates .contenox/ with config + default chain
+./vibe "what is 2 + 2"   # quick sanity check (requires a configured LLM backend)
+```
+
+### Pin a specific version
+
 ```bash
 TAG=v0.2.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH=$(uname -m)
-case "$ARCH" in
-  x86_64) ARCH=amd64 ;;
-  aarch64|arm64) ARCH=arm64 ;;
-esac
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -sL "https://github.com/contenox/vibe/releases/download/${TAG}/vibe-${TAG}-${OS}-${ARCH}" -o vibe
 chmod +x vibe
-./vibe init
 ```
 
 Or pick a binary from [Releases](https://github.com/contenox/vibe/releases).

@@ -15,6 +15,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version is set at build time via -ldflags "-X github.com/contenox/vibe/internal/vibecli.Version=vX.Y.Z".
+// Falls back to "dev" when building without the flag (e.g. go run).
+var Version = "dev"
+
 const localTenantID = "00000000-0000-0000-0000-000000000001"
 
 const (
@@ -35,14 +39,14 @@ func Main() {
 	// Also skip injection when args contains only --help/-h so the root command shows its own help.
 	onlyHelp := len(args) == 0
 	if !onlyHelp {
-		allHelp := true
+		allRootFlags := true
 		for _, a := range args {
-			if a != "--help" && a != "-h" {
-				allHelp = false
+			if a != "--help" && a != "-h" && a != "--version" && a != "-v" {
+				allRootFlags = false
 				break
 			}
 		}
-		onlyHelp = allHelp
+		onlyHelp = allRootFlags
 	}
 	if !onlyHelp && !firstNonFlagIsReserved(args) {
 		rootCmd.SetArgs(append([]string{"run"}, args...))
@@ -123,6 +127,10 @@ var initCmd = &cobra.Command{
 }
 
 func init() {
+	// Wire the ldflags-injected version into cobra's built-in --version/-v flag.
+	// Must be done here (not in the struct literal) so the ldflags value is used.
+	rootCmd.Version = Version
+
 	// Run flags on root so "vibe --input x" and "vibe hi" both work.
 	f := rootCmd.PersistentFlags()
 	f.String("db", "", "SQLite database path (default: .contenox/local.db)")
