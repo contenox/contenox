@@ -66,6 +66,7 @@ ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 TAG=$(curl -sL https://api.github.com/repos/contenox/vibe/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
 curl -sL "https://github.com/contenox/vibe/releases/download/${TAG}/vibe-${TAG}-${OS}-${ARCH}" -o vibe
 chmod +x vibe
+sudo mv vibe /usr/local/bin/vibe
 ```
 
 ### Smoke test — verify the binary works
