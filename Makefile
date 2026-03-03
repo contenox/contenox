@@ -58,7 +58,9 @@ docker-logs-runtime:
 # --------------------------------------------------------------------
 # Vibe CLI --------------------------------------------------------------------
 build-vibe:
-	go build -o $(PROJECT_ROOT)/bin/vibe $(PROJECT_ROOT)/cmd/vibe
+	go build \
+		-ldflags="-X github.com/contenox/vibe/internal/vibecli.Version=$(shell cat $(VERSION_FILE))" \
+		-o $(PROJECT_ROOT)/bin/vibe $(PROJECT_ROOT)/cmd/vibe
 
 # Run the Vibe binary (builds if needed). Example: make run-vibe ARGS="-input 'hello'"
 run-vibe: build-vibe

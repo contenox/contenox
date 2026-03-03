@@ -129,9 +129,10 @@ jobs:
       - name: Build Vibe binaries
         run: |
           TAG="${{ steps.vars.outputs.TAG }}"
+          LDFLAGS="-X github.com/contenox/vibe/internal/vibecli.Version=${TAG}"
           for goos in linux darwin; do
             for goarch in amd64 arm64; do
-              GOOS=$goos GOARCH=$goarch go build -o "vibe-${TAG}-${goos}-${goarch}" ./cmd/vibe
+              GOOS=$goos GOARCH=$goarch go build -ldflags="${LDFLAGS}" -o "vibe-${TAG}-${goos}-${goarch}" ./cmd/vibe
             done
           done
 
