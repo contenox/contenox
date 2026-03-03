@@ -13,8 +13,8 @@ func Test_resolveEffectiveBackends(t *testing.T) {
 	tests := []struct {
 		name             string
 		cfg              localConfig
-		effectiveOllama   string
-		effectiveModel    string
+		effectiveOllama  string
+		effectiveModel   string
 		wantDefaultProv  string
 		wantDefaultModel string
 		checkBackends    func(t *testing.T, got []resolvedBackend)
@@ -117,6 +117,12 @@ func Test_resolveEffectiveBackends_apiKeyFromEnv(t *testing.T) {
 
 func Test_loadLocalConfig_noFile(t *testing.T) {
 	dir := t.TempDir()
+
+	// Mock HOME to prevent picking up actual user config from ~/.contenox
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", dir)
+	t.Cleanup(func() { os.Setenv("HOME", origHome) })
+
 	orig, _ := os.Getwd()
 	require.NoError(t, os.Chdir(dir))
 	t.Cleanup(func() { _ = os.Chdir(orig) })

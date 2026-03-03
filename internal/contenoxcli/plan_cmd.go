@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ var planCmd = &cobra.Command{
 var planNewCmd = &cobra.Command{
 	Use:   "new <goal>",
 	Short: "Create a new execution plan.",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runPlanNew,
 }
 
@@ -197,7 +198,23 @@ func buildPlanOpts(cmd *cobra.Command, input string) runOpts {
 }
 
 func runPlanNew(cmd *cobra.Command, args []string) error {
-	goal := args[0]
+	var goal string
+	if len(args) > 0 {
+		goal = args[0]
+	} else {
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			bytes, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("failed to read from stdin: %w", err)
+			}
+			goal = strings.TrimSpace(string(bytes))
+		}
+	}
+
+	if goal == "" {
+		return fmt.Errorf("goal cannot be empty; provide an argument or pipe via stdin")
+	}
 	ctx, db, cDir, cleanup, err := openPlanDB(cmd)
 	if err != nil {
 		return err
