@@ -163,11 +163,14 @@ func runInitCmd(cmd *cobra.Command, _ []string) error {
 }
 
 func runRun(cmd *cobra.Command, args []string) error {
-	// No subcommand and no input: show help and exit 0 (same as "contenox" alone).
+	// No subcommand, no input, and no piped stdin: show help and exit 0.
 	flags := cmd.Root().Flags()
 	if len(args) == 0 && !flags.Changed("input") {
-		_ = cmd.Root().Usage()
-		return nil
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) != 0 {
+			_ = cmd.Root().Usage()
+			return nil
+		}
 	}
 
 	cfg, configPath, err := loadLocalConfig()
