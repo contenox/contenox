@@ -3,7 +3,7 @@
     "description": "Breaks down a goal into a step-by-step plan returning a JSON object",
     "tasks": [
         {
-            "id": "vibe_planner",
+            "id": "contenox_planner",
             "description": "Chat completion to generate JSON plan",
             "handler": "chat_completion",
             "system_instruction": "You are an expert software engineering planner. Break down the user's goal into a sequential, logical plan. Output ONLY valid JSON in the exact format:\n```json\n{\n  \"steps\": [\n    { \"description\": \"Clear, actionable task description\" }\n  ]\n}\n```\nDo NOT surround the JSON with markdown formatting if possible, but if you do, ONLY use ```json.",
