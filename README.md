@@ -59,7 +59,7 @@ The plan is persisted to SQLite. You can pause, inspect, retry individual steps,
 ## Install
 
 ```bash
-TAG=v0.0.76
+TAG=v0.2.0
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
 case "$ARCH" in
