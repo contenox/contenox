@@ -2,7 +2,7 @@
 
 The Contenox runtime is configured via `.contenox/config.yaml`.
 
-When you run `vibe init`, a default configuration is generated. `vibe` looks for this directory in your current working directory, then walks up to the root, and finally checks your home directory (`~/.contenox/`).
+When you run `contenox init`, a default configuration is generated. `contenox` looks for this directory in your current working directory, then walks up to the root, and finally checks your home directory (`~/.contenox/`).
 
 ## Default `config.yaml`
 

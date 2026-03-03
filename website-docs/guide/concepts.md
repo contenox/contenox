@@ -4,7 +4,7 @@
 
 A **chain** is a JSON file that defines how the AI agent behaves — which model to use, what it can do, and how it moves between steps.
 
-Chains are the central building block. `vibe`, the runtime API, and the EE all run the same chain engine.
+Chains are the central building block. `contenox`, the runtime API, and the EE all run the same chain engine.
 
 ```json
 {

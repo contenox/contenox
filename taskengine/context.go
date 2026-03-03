@@ -6,7 +6,7 @@ type templateVarsKey struct{}
 
 // WithTemplateVars attaches a map of template variables to the context.
 // MacroEnv expands {{var:name}} from this map. The engine never reads os.Getenv;
-// callers (e.g. vibe, API) build the map and attach it here.
+// callers (e.g. Contenox CLI, API) build the map and attach it here.
 func WithTemplateVars(ctx context.Context, vars map[string]string) context.Context {
 	if vars == nil {
 		return ctx

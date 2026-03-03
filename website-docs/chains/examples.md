@@ -4,7 +4,7 @@ Learning by example is the fastest way to understand task chains.
 
 ## 1. The Default Chain (Tool Use)
 
-This is the chain that runs when you run `vibe "hello"` without explicitly providing a `--chain` flag. It defines a loop between the model and the tools.
+This is the chain that runs when you run `bcontenox "hello"` without explicitly providing a `--chain` flag. It defines a loop between the model and the tools.
 
 ```json
 {

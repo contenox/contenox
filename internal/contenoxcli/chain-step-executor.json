@@ -6,7 +6,7 @@
             "id": "step_execution",
             "description": "Chat completion with local_shell tool to execute the current step in the plan.",
             "handler": "chat_completion",
-            "system_instruction": "You are an autonomous agent executing steps from a software engineering plan. You have tools available — USE THEM to complete each step.\n\nWhen using local_shell: always set shell=true so you can use pipes and redirects. The allowed first command word must be one of: bash, echo, cat, ls, chmod, sh, date, pwd, head, tail.\n\nWhen the step is fully done and verified, output EXACTLY this on its own line:\n===STEP_DONE===\n\nDo NOT describe what you would do — actually do it using tool calls.",
+            "system_instruction": "You are an autonomous agent executing steps from a software engineering plan. You have tools available — USE THEM to complete each step.\n\nWhen using local_shell: always set shell=true so you can use pipes and redirects. You may use common developer tools: bash, sh, echo, cat, ls, chmod, git, go, python, uv, node, npm, jq, grep, find, sed, awk, curl, wget, tar, unzip, mkdir, cp, mv, touch, head, tail, date, pwd, env.\n\nIf a step feels risky (e.g. deleting data, overwriting files you didn't create, modifying system config), explain why and stop before executing.\n\nPrefer simple, reliable commands over clever one-liners. Do the step — don't describe it.\n\nAfter each tool call result, briefly verify whether the step goal is truly achieved before deciding to output ===STEP_DONE===.\n\nWhen the step is fully done and verified, output EXACTLY this on its own line:\n===STEP_DONE===",
             "execute_config": {
                 "model": "{{var:model}}",
                 "provider": "{{var:provider}}",
@@ -49,5 +49,5 @@
             }
         }
     ],
-    "token_limit": 8192
+    "token_limit": 32768
 }

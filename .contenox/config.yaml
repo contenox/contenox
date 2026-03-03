@@ -1,4 +1,4 @@
-# Default config for contenox-vibe (optional).
+# Default config for contenox-cli (optional).
 # default_chain is relative to this .contenox directory; chains must live inside .contenox.
 # Flags override these values.
 default_chain: default-chain.json

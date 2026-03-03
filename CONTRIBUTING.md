@@ -9,7 +9,7 @@ Please treat all contributors with respect. Engage in constructive discussions a
 ## Repository Structure
 
 This repository contains:
-1. **`vibe`** (CLI): A local workflow engine and LLM interface using SQLite and an in-memory bus.
+1. **`contenox-cli`** (CLI): A local workflow engine and LLM interface using SQLite and an in-memory bus.
 2. **`runtime-api`** (Server): The full HTTP server API utilizing PostgreSQL and NATS.
 3. **`enterprise/`** (Submodule): Optional, private enterprise code. If you don't have access, ignore it—the OSS runtime works perfectly without it.
 
@@ -23,13 +23,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a deeper conceptual breakdown.
 - Docker & Docker Compose (if you are working on the `runtime-api` server)
 - `make`
 
-### Building the CLI (`vibe`)
+### Building the CLI (`contenox-cli`)
 ```bash
-# Build the binary into ./bin/vibe
-make build-vibe
+# Build the binary into ./bin/contenox
+make build-contenox
 
 # Run an example
-make run-vibe ARGS="-input 'list files in my home directory'"
+make run-contenox ARGS="-input 'list files in my home directory'"
 ```
 
 ### Building the Server (`runtime-api`)

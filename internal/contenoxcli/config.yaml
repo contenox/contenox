@@ -1,5 +1,5 @@
-# Vibe config. Edit this file to connect to your LLM provider.
-# Run 'vibe init' to create this file, then 'vibe --help' for usage.
+# Contenox config. Edit this file to connect to your LLM provider.
+# Run 'contenox init' to create this file, then 'contenox --help' for usage.
 # All fields are optional; CLI flags override config values.
 default_chain: default-chain.json
 
@@ -40,13 +40,14 @@ context: 32768
 # default_provider: gemini
 # default_model: gemini-2.0-flash
 
-# NOTE: for 'vibe plan', the model MUST support tool calling.
+# NOTE: for 'contenox plan', the model MUST support tool calling.
 # Recommended: qwen2.5:7b (Ollama), gpt-4o-mini (OpenAI), gemini-2.0-flash (Gemini)
 
-# Shell execution hook — required for 'vibe plan' and natural language → shell commands.
-# When true, you must set an allow list (no command runs without it).
-enable_local_shell: true
-local_shell_allowed_commands: "bash,echo,cat,ls,chmod,sh,date,pwd,head,tail,grep,find,mkdir,cp,mv"
+# Shell execution hook — enables natural language → shell commands and 'contenox plan next'.
+# Set to true to enable. You MUST also configure local_shell_allowed_commands.
+# Disabled by default — enable only in trusted environments.
+enable_local_shell: false
+# local_shell_allowed_commands: "bash,sh,echo,cat,ls,chmod,git,go,python,uv,node,npm,jq,grep,find,sed,awk,curl,wget,tar,unzip,mkdir,cp,mv,touch,head,tail,date,pwd,env"
 # Optional deny list (always blocked even if in the allow list):
 # local_shell_denied_commands:
 #   - rm

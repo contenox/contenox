@@ -1,6 +1,6 @@
 # Runtime API — Capabilities Overview
 
-The **Runtime API** is the full-stack HTTP server product built on the same core task engine as `vibe`. It is deployed via Docker Compose and exposes a REST API over HTTP (default port 8081).
+The **Runtime API** is the full-stack HTTP server product built on the same core task engine as `contenox`. It is deployed via Docker Compose and exposes a REST API over HTTP (default port 8081).
 
 > Full machine-readable spec: [openapi.json](openapi.json) | [openapi.html](openapi.html) (interactive UI)
 > Quickstart: [server-quickstart.md](server-quickstart.md)
@@ -62,9 +62,9 @@ This means you can use Open WebUI, LiteLLM, LangChain, or any OpenAI SDK against
 
 ---
 
-## What makes it different from `vibe`
+## What makes it different from `contenox`
 
-| | `vibe` (CLI) | Runtime API (Server) |
+| | `contenox` (CLI) | Runtime API (Server) |
 |---|---|---|
 | Storage | SQLite (single file) | PostgreSQL |
 | Messaging | In-memory | NATS |
