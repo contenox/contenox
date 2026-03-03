@@ -8,13 +8,13 @@
 
     <title>Contenox — Archived Runtime for Sovereign GenAI Workflows</title>
     <meta name="description"
-        content="Contenox was a self-hostable runtime for building observable, deterministic AI workflows as state machines. The venture has been shut down; the kernel remains available as open-source reference software." />
+        content="Contenox Runtime is a self-hostable engine for building observable, deterministic AI workflows as state machines. The core runtime API is open-source, while the UI is part of the EE submodule." />
     <meta name="author" content="Contenox" />
 
     <!-- Open Graph -->
     <meta property="og:title" content="Contenox — Archived Runtime for Sovereign GenAI Workflows" />
     <meta property="og:description"
-        content="Contenox was a self-hostable, vendor-agnostic runtime for sovereign GenAI applications. The project is no longer under active development; the code remains open source on GitHub." />
+        content="Contenox was a self-hostable, vendor-agnostic runtime for sovereign GenAI applications. The API engine powering the CLI is open-source and ready for production." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://contenox.com/" />
     <meta property="og:image" content="https://contenox.com/assets/images/contenox-ui-screenshot-1.png" />
@@ -82,14 +82,14 @@
                         <span class="text-accent">observable state machines.</span>
                     </h1>
                     <p class="hero-subtitle">
-                        Contenox was a self-hostable runtime for
+                        Contenox Runtime is a self-hostable engine for
                         deterministic, chat-native AI applications. It
                         orchestrated language models, tools, and business
                         logic without giving up control over data, routing,
                         or behaviour.
                     </p>
                     <p class="hero-subtitle" style="font-size: 0.95rem">
-                        The Contenox venture has been shut down. The kernel
+                        We operate a dual-license model. The kernel
                         remains available as open-source software and can be
                         used as a reference implementation or for
                         experiments in AI workflow runtimes.
@@ -124,7 +124,7 @@
                     </ul>
 
                     <p class="smallprint">
-                        Contenox is no longer under active development. This
+                        The Contenox Runtime API is actively maintained. This
                         page remains as documentation and context for
                         engineers, analysts, and curious people exploring
                         the ideas and architecture behind the project.
@@ -175,9 +175,9 @@
             <!-- WHAT IT IS -->
             <section id="what-it-is" class="section">
                 <div class="container">
-                    <h2>What was Contenox?</h2>
+                    <h2>What is the Contenox Runtime?</h2>
                     <p class="section-lead">
-                        Contenox was a self-hostable runtime for building
+                        Contenox Runtime is a self-hostable engine for building
                         and operating enterprise-grade AI agents, semantic
                         search systems, and chat-driven applications. It
                         modelled AI behaviour as explicit, observable state
@@ -188,7 +188,7 @@
                         <article class="card service-card">
                             <h3>Runtime, not just a library</h3>
                             <p>
-                                Contenox was a complete runtime environment
+                                Contenox API is a complete runtime environment
                                 – with API gateway, background workers,
                                 storage, and observability – not just a
                                 collection of helper functions.
@@ -227,7 +227,7 @@
             <!-- WHY IT MATTERS -->
             <section id="why-it-matters" class="section section-alt">
                 <div class="container">
-                    <h2>Why the idea still matters</h2>
+                    <h2>Why the Runtime matters</h2>
                     <p class="section-lead">
                         Even though the Contenox venture has ended, the core
                         thesis remains relevant: modern AI systems drift
@@ -271,16 +271,16 @@
             <!-- WHEN TO USE -->
             <section id="when-to-use" class="section">
                 <div class="container">
-                    <h2>When Contenox was a fit</h2>
+                    <h2>When to use the Runtime API</h2>
                     <p class="section-lead">
-                        During its active lifetime, Contenox complemented
+                        The Runtime API is designed to complement
                         APIs like OpenAI’s tools or MCP. It was most useful
                         once single AI calls turned into real workflows.
                     </p>
 
                     <div class="services-grid">
                         <article class="card service-card">
-                            <h3>It made sense when…</h3>
+                            <h3>It makes sense when…</h3>
                             <ul class="tech-list">
                                 <li>
                                     Agents triggered real side effects in
@@ -301,7 +301,7 @@
                             </ul>
                         </article>
                         <article class="card service-card">
-                            <h3>It was probably overkill when…</h3>
+                            <h3>It is probably overkill when…</h3>
                             <ul class="tech-list">
                                 <li>
                                     You were building a simple Q&amp;A
@@ -326,7 +326,7 @@
                 <div class="container">
                     <h2>AI workflows as explicit state machines</h2>
                     <p class="section-lead">
-                        Contenox executed AI workflows as explicit state
+                        The API executes AI workflows as explicit state
                         machines. Every step – LLM call, data fetch, or
                         external action – was a task with defined inputs,
                         outputs, and transitions.
@@ -377,9 +377,9 @@
             <!-- ARCHITECTURE -->
             <section id="architecture" class="section">
                 <div class="container">
-                    <h2>Architecture at a glance</h2>
+                    <h2>Runtime Architecture</h2>
                     <p class="section-lead">
-                        Contenox was built as a modular, container-first
+                        The Runtime is built as a modular, container-first
                         system. The runtime could be embedded into existing
                         stacks or deployed as its own AI infrastructure
                         layer.
@@ -436,7 +436,7 @@
                     </div>
 
                     <p class="smallprint" style="margin-top: 2rem">
-                        Contenox was not a black-box SaaS, but software you
+                        This is not a black-box SaaS, but software you
                         could run and adapt – a runtime that sat between
                         LLMs and real systems.
                     </p>
@@ -446,34 +446,11 @@
             <!-- STATUS -->
             <section id="status" class="section section-alt">
                 <div class="container">
-                    <h2>Project status</h2>
+                    <h2>Get Started</h2>
                     <div class="card">
-                        <p>
-                            The core kernel of Contenox remains open-sourced
-                            at
-                            <a href="https://github.com/contenox/contenox" target="_blank" rel="noopener noreferrer">
-                                github.com/contenox/runtime</a>.
-                        </p>
-                        <p>
-                            A preliminary OpenAPI specification for the
-                            runtime API is available as
-                            <a href="docs/openapi.json">JSON</a> and
-                            <a href="docs/openapi.yaml">YAML</a>. It
-                            reflects the last public state of the project.
-                        </p>
-                        <p>
-                            The Contenox venture has been shut down. There
-                            is no hosted product, no commercial offering,
-                            and the code is not actively maintained. Issues
-                            and pull requests on GitHub may only be reviewed
-                            occasionally.
-                        </p>
-                        <p>
-                            For occasional questions or historical context
-                            about the project, you can still reach out at
-                            <a href="mailto:hello@contenox.com">hello@contenox.com</a>, but replies cannot be
-                            guaranteed.
-                        </p>
+                        <p>The core runtime engine is open-source at <a href="https://github.com/contenox/contenox" target="_blank" rel="noopener noreferrer">github.com/contenox/contenox</a>.</p>
+                        <p>View the <a href="docs/openapi.html">OpenAPI specification</a> or check the <a href="/docs/">Documentation</a> to get started with the API server.</p>
+                        <p>For the CLI, visit the <a href="/">Contenox homepage</a>.</p>
                     </div>
                 </div>
             </section>
