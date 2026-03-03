@@ -8,22 +8,32 @@ Get a working AI agent on your machine in 5 minutes.
   ```bash
   ollama pull qwen2.5:7b
   ```
-- Go 1.22+ (for building from source) **or** a pre-built `vibe` binary
 
-## Install vibe
+## Install Contenox
 
-**From source:**
+**Linux/Ubuntu:**
 ```bash
-git clone https://github.com/contenox/runtime
-cd runtime
-go install ./cmd/vibe
+TAG=$(curl -sL https://api.github.com/repos/contenox/contenox/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -sL "https://github.com/contenox/contenox/releases/download/${TAG}/contenox-${TAG}-linux-${ARCH}" -o contenox
+chmod +x contenox && sudo mv contenox /usr/local/bin/contenox
+contenox --version
+```
+
+**macOS:**
+```bash
+TAG=$(curl -sL https://api.github.com/repos/contenox/contenox/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/arm64/arm64/')
+curl -sL "https://github.com/contenox/contenox/releases/download/${TAG}/contenox-${TAG}-darwin-${ARCH}" -o contenox
+chmod +x contenox && sudo mv contenox /usr/local/bin/contenox
+contenox --version
 ```
 
 ## Initialize a workspace
 
 ```bash
 mkdir my-agent && cd my-agent
-vibe init
+contenox init
 ```
 
 This creates `.contenox/` with a default config and chain:
@@ -36,29 +46,29 @@ This creates `.contenox/` with a default config and chain:
 ## Start chatting
 
 ```bash
-vibe "what is the capital of France?"
+contenox "what is the capital of France?"
 # → Paris.
 
-vibe "list files in the current directory" --enable-local-exec
+contenox "list files in the current directory" --enable-local-exec
 # → the model calls local_shell with `ls` and returns the result
 ```
 
-`vibe` without a subcommand is interactive — type your message and press Enter. `Ctrl+D` exits.
+`contenox` without a subcommand is interactive — type your message and press Enter. `Ctrl+D` exits.
 
 ## Run a chain explicitly
 
 ```bash
-vibe exec --chain .contenox/default-chain.json --input-type chat "explain recursion briefly"
+contenox exec --chain .contenox/default-chain.json --input-type chat "explain recursion briefly"
 ```
 
 ## Add a remote API as a tool
 
 ```bash
 # US National Weather Service — free, no API key
-vibe hook add nws --url https://api.weather.gov --timeout 15000
-vibe hook show nws       # lists 60 discovered tools
+contenox hook add nws --url https://api.weather.gov --timeout 15000
+contenox hook show nws       # lists 60 discovered tools
 
-vibe exec --chain .contenox/chain-nws.json --input-type chat \
+contenox exec --chain .contenox/chain-nws.json --input-type chat \
   "how many active weather alerts are there right now?"
 ```
 
@@ -66,4 +76,4 @@ vibe exec --chain .contenox/chain-nws.json --input-type chat \
 
 - [Core Concepts](/guide/concepts) — understand chains, tasks, and hooks
 - [Chains reference](/chains/) — write your own chains
-- [vibe CLI reference](/reference/vibe-cli) — all flags and subcommands
+- [CLI reference](/reference/contenox-cli) — all flags and subcommands

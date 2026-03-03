@@ -18,7 +18,7 @@ try {
 
 export default defineConfig({
     title: 'Contenox Docs',
-    description: 'Documentation for Contenox Vibe — AI workflows at your fingertips.',
+    description: 'Documentation for Contenox — Local AI agent CLI.',
     base: '/docs/',
 
     head: [
@@ -36,7 +36,7 @@ export default defineConfig({
             { text: 'Guide', link: '/guide/introduction' },
             { text: 'Chains', link: '/chains/' },
             { text: 'Hooks', link: '/hooks/' },
-            { text: 'CLI Reference', link: '/reference/vibe-cli' },
+            { text: 'CLI Reference', link: '/reference/contenox-cli' },
         ],
 
         sidebar: {
@@ -75,7 +75,7 @@ export default defineConfig({
                 {
                     text: 'Reference',
                     items: [
-                        { text: 'vibe CLI', link: '/reference/vibe-cli' },
+                        { text: 'CLI', link: '/reference/contenox-cli' },
                         { text: 'Configuration', link: '/reference/config' },
                     ],
                 },
@@ -88,7 +88,7 @@ export default defineConfig({
 
         footer: {
             message: 'Released under the Apache 2.0 License.',
-            copyright: `Copyright © ${new Date().getFullYear()} Contenox · Vibe ${runtimeVersion}`,
+            copyright: `Copyright © ${new Date().getFullYear()} Contenox · CLI ${runtimeVersion}`,
         },
 
         search: {
