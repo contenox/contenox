@@ -1,4 +1,4 @@
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/contenox/vibe/backendservice"
-	"github.com/contenox/vibe/internal/runtimestate"
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/backendservice"
+	"github.com/contenox/contenox/internal/runtimestate"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/stretchr/testify/require"
 )
 

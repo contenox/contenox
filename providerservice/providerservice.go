@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/vibe/internal/runtimestate"
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/internal/runtimestate"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtimetypes"
 )
 
 const (

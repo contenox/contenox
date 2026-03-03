@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/taskchainservice"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/taskchainservice"
+	"github.com/contenox/contenox/taskengine"
 )
 
 func AddTaskChainRoutes(mux *http.ServeMux, service taskchainservice.Service) {

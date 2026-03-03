@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/libdbexec"
+	"github.com/contenox/contenox/libdbexec"
 )
 
 var ErrNotFound = errors.New("not found")

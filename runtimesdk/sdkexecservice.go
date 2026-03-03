@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/execservice"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/execservice"
 )
 
 // HTTPExecService implements the execservice.ExecService interface

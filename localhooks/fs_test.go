@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/taskengine"
 )
 
 func TestLocalFSHook(t *testing.T) {

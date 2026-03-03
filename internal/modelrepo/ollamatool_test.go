@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/contenox/vibe/internal/modelrepo"
-	"github.com/contenox/vibe/internal/modelrepo/ollama"
+	"github.com/contenox/contenox/internal/modelrepo"
+	"github.com/contenox/contenox/internal/modelrepo/ollama"
 	"github.com/ollama/ollama/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/vibe/functionstore"
+	"github.com/contenox/contenox/functionstore"
 	"github.com/stretchr/testify/require"
 )
 

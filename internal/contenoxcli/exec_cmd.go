@@ -1,4 +1,4 @@
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -12,22 +12,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/runtimetypes"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtimetypes"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/spf13/cobra"
 )
 
 // execCmd runs any task chain with any input type.
-// Unlike 'vibe run' (which hardcodes DataTypeChatHistory), 'vibe exec'
+// Unlike 'contenox run' (which hardcodes DataTypeChatHistory), 'contenox exec'
 // lets the caller specify the input type and is fully stateless (no chat history).
 var execCmd = &cobra.Command{
 	Use:   "exec",
 	Short: "Run any task chain with explicit input type control.",
 	Long: `Run a task chain with explicit control over input type and content.
 
-Unlike the default 'vibe run', exec is stateless — no chat history is loaded or saved.
+Unlike the default 'contenox run', exec is stateless — no chat history is loaded or saved.
 It accepts any task chain regardless of the first handler's expected input type.
 
 Input sources (in priority order):
@@ -44,10 +44,10 @@ Input types (--input-type):
   bool              Parse as boolean. DataTypeBool.
 
 Examples:
-  vibe exec --chain .contenox/score-chain.json "is this code safe?"
-  cat diff.txt | vibe exec --chain .contenox/review.json --input-type chat
-  vibe exec --chain .contenox/embed.json --input-type string --input @myfile.go
-  vibe exec --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
+  contenox exec --chain .contenox/score-chain.json "is this code safe?"
+  cat diff.txt | contenox exec --chain .contenox/review.json --input-type chat
+  contenox exec --chain .contenox/embed.json --input-type string --input @myfile.go
+  contenox exec --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -71,7 +71,7 @@ Examples:
 		// Resolve chain path (required for exec)
 		chainPath, _ := flags.GetString("chain")
 		if chainPath == "" {
-			return fmt.Errorf("--chain is required for 'vibe exec'\n  Example: vibe exec --chain .contenox/my-chain.json \"your input\"")
+			return fmt.Errorf("--chain is required for 'contenox exec'\n  Example: contenox exec --chain .contenox/my-chain.json \"your input\"")
 		}
 
 		// Resolve input
@@ -93,7 +93,7 @@ Examples:
 			return fmt.Errorf("--input-type %q: %w", inputTypeName, err)
 		}
 
-		// Build runOpts from flags (reuses the same resolution logic as vibe run)
+		// Build runOpts from flags (reuses the same resolution logic as contenox run)
 		o := buildExecOpts(cmd, cfg, contenoxDir)
 
 		// Open database

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/vibe/functionstore"
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/functionstore"
+	"github.com/contenox/contenox/libtracker"
 )
 
 type activityTrackerDecorator struct {

@@ -1,4 +1,4 @@
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -7,23 +7,23 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/contenox/vibe/backendservice"
-	"github.com/contenox/vibe/eventsourceservice"
-	"github.com/contenox/vibe/execservice"
-	"github.com/contenox/vibe/executor"
-	"github.com/contenox/vibe/functionservice"
-	"github.com/contenox/vibe/internal/eventdispatch"
-	"github.com/contenox/vibe/internal/hooks"
-	"github.com/contenox/vibe/internal/llmrepo"
-	"github.com/contenox/vibe/internal/ollamatokenizer"
-	"github.com/contenox/vibe/internal/runtimestate"
-	"github.com/contenox/vibe/jseval"
-	libbus "github.com/contenox/vibe/libbus"
-	"github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/localhooks"
-	"github.com/contenox/vibe/taskchainservice"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/backendservice"
+	"github.com/contenox/contenox/eventsourceservice"
+	"github.com/contenox/contenox/execservice"
+	"github.com/contenox/contenox/executor"
+	"github.com/contenox/contenox/functionservice"
+	"github.com/contenox/contenox/internal/eventdispatch"
+	"github.com/contenox/contenox/internal/hooks"
+	"github.com/contenox/contenox/internal/llmrepo"
+	"github.com/contenox/contenox/internal/ollamatokenizer"
+	"github.com/contenox/contenox/internal/runtimestate"
+	"github.com/contenox/contenox/jseval"
+	libbus "github.com/contenox/contenox/libbus"
+	"github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/localhooks"
+	"github.com/contenox/contenox/taskchainservice"
+	"github.com/contenox/contenox/taskengine"
 )
 
 type Engine struct {

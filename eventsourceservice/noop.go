@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/contenox/vibe/eventstore"
+	"github.com/contenox/contenox/eventstore"
 )
 
 // NoopService is a no-op implementation of Service for contexts that do not

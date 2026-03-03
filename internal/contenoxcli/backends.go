@@ -1,5 +1,5 @@
 // backends.go ensures backends from config exist in the DB and cloud provider API keys in KV.
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/contenox/vibe/backendservice"
-	"github.com/contenox/vibe/internal/runtimestate"
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/backendservice"
+	"github.com/contenox/contenox/internal/runtimestate"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/google/uuid"
 )
 

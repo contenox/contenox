@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

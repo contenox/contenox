@@ -10,9 +10,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/downloadservice"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/downloadservice"
+	"github.com/contenox/contenox/runtimetypes"
 )
 
 // HTTPDownloadService implements the downloadservice.Service interface

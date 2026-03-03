@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/vibe/libdbexec"
+	"github.com/contenox/contenox/libdbexec"
 )
 
 var _ Store = (*store)(nil)

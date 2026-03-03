@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	serverops "github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/downloadservice"
-	"github.com/contenox/vibe/modelservice"
-	"github.com/contenox/vibe/runtimetypes"
+	serverops "github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/downloadservice"
+	"github.com/contenox/contenox/modelservice"
+	"github.com/contenox/contenox/runtimetypes"
 )
 
 func AddModelRoutes(mux *http.ServeMux, modelService modelservice.Service, dwService downloadservice.Service) {

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/hookproviderservice"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/hookproviderservice"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 

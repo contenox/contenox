@@ -1,4 +1,4 @@
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/chatservice"
-	"github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/planstore"
-	"github.com/contenox/vibe/runtimetypes"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/chatservice"
+	"github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/planstore"
+	"github.com/contenox/contenox/runtimetypes"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -340,7 +340,7 @@ func runPlanList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(plans) == 0 {
-		fmt.Println("No plans yet. Run: vibe plan new <goal>")
+		fmt.Println("No plans yet. Run: contenox plan new <goal>")
 		return nil
 	}
 
@@ -374,7 +374,7 @@ func runPlanShow(cmd *cobra.Command, _ []string) error {
 	exec := db.WithoutTransaction()
 	activeID, err := getActivePlanID(ctx, exec)
 	if err != nil || activeID == "" {
-		return fmt.Errorf("no active plan; run 'vibe plan new' or 'vibe plan switch'")
+		return fmt.Errorf("no active plan; run 'contenox plan new' or 'contenox plan switch'")
 	}
 
 	store := planstore.New(exec)
@@ -735,7 +735,7 @@ func runPlanReplan(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	fmt.Printf("Replanned with %d new steps. Use 'vibe plan show' to see them.\n", len(planJSON.Steps))
+	fmt.Printf("Replanned with %d new steps. Use 'contenox plan show' to see them.\n", len(planJSON.Steps))
 	return nil
 }
 

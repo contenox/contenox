@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/contenox/vibe/playground"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/playground"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -1,4 +1,4 @@
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/planstore"
-	"github.com/contenox/vibe/runtimetypes"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/planstore"
+	"github.com/contenox/contenox/runtimetypes"
 )
 
 var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
@@ -33,7 +33,7 @@ func planNameFromGoal(goal, suffix string) string {
 }
 
 const (
-	kvActivePlan = "vibe.plan.active"
+	kvActivePlan = "contenox.plan.active"
 )
 
 // getActivePlanID reads the active plan ID from the kv table.

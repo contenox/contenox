@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/stateservice"
-	"github.com/contenox/vibe/statetype"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/stateservice"
+	"github.com/contenox/contenox/statetype"
 )
 
 // HTTPStateService implements the stateservice.Service interface

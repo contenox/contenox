@@ -1,4 +1,4 @@
-package vibecli
+package contenoxcli
 
 import (
 	_ "embed"
@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/taskengine"
 )
 
 //go:embed chain-planner.json
@@ -35,7 +35,7 @@ func ensurePlanChains(contenoxDir string) (plannerPath, executorPath string, err
 	return plannerPath, executorPath, nil
 }
 
-// validatePlannerChain checks that a chain meets the contract required by 'vibe plan new'.
+// validatePlannerChain checks that a chain meets the contract required by 'contenox plan new'.
 // The planner chain must:
 //   - Have at least one task
 //   - Have a chat_completion task as its first task (to generate the JSON step list)
@@ -52,7 +52,7 @@ func validatePlannerChain(chain *taskengine.TaskChainDefinition, path string) er
 	if first.Handler != taskengine.HandleChatCompletion {
 		return fmt.Errorf(
 			"planner chain %q: first task %q has handler %q, expected %q\n"+
-				"  'vibe plan new' sends the goal as a user message and expects the chain to return\n"+
+				"  'contenox plan new' sends the goal as a user message and expects the chain to return\n"+
 				"  a JSON object: {\"steps\": [{\"description\": \"...\"}]}\n"+
 				"  The first task must be a chat_completion that generates this structure.",
 			path, first.ID, first.Handler, taskengine.HandleChatCompletion,
@@ -61,7 +61,7 @@ func validatePlannerChain(chain *taskengine.TaskChainDefinition, path string) er
 	return nil
 }
 
-// validateExecutorChain checks that a chain meets the contract required by 'vibe plan next'.
+// validateExecutorChain checks that a chain meets the contract required by 'contenox plan next'.
 // The executor chain must:
 //   - Have at least one chat_completion task
 //   - Have at least one execute_tool_calls task (to run local_shell/local_fs tools)
@@ -96,7 +96,7 @@ func validateExecutorChain(chain *taskengine.TaskChainDefinition, path string) e
 	if !hasChatCompletion {
 		return fmt.Errorf(
 			"executor chain %q: no task with handler %q found\n"+
-				"  'vibe plan next' sends each plan step as a prompt and expects the chain to use\n"+
+				"  'contenox plan next' sends each plan step as a prompt and expects the chain to use\n"+
 				"  tools (local_shell, local_fs) and output ===STEP_DONE=== when complete.",
 			path, taskengine.HandleChatCompletion,
 		)

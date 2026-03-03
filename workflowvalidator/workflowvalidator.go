@@ -3,7 +3,7 @@ package workflowvalidator
 import (
 	"fmt"
 
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/taskengine"
 )
 
 // Validator validates workflows for specific use cases

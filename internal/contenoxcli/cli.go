@@ -1,5 +1,5 @@
-// cli.go holds the vibe CLI entrypoint (Main), default constants, flags, and merge logic.
-package vibecli
+// cli.go holds the contenox CLI entrypoint (Main), default constants, flags, and merge logic.
+package contenoxcli
 
 import (
 	"context"
@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/libtracker"
 	"github.com/spf13/cobra"
 )
 
-// Version is set at build time via -ldflags "-X github.com/contenox/vibe/internal/vibecli.Version=vX.Y.Z".
+// Version is set at build time via -ldflags "-X github.com/contenox/contenox/internal/contenoxcli.Version=vX.Y.Z".
 // Falls back to "dev" when building without the flag (e.g. go run).
 var Version = "dev"
 
@@ -31,10 +31,10 @@ const (
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
 var reservedSubcommands = map[string]bool{"init": true, "run": true, "help": true, "completion": true, "session": true, "plan": true, "exec": true, "hook": true}
 
-// Main runs the vibe CLI: init subcommand or run (default) with optional positional input.
+// Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
 	args := os.Args[1:]
-	// Only inject "run" when no reserved subcommand was given (so "vibe completion" and "vibe help" work).
+	// Only inject "run" when no reserved subcommand was given (so "contenox completion" and "contenox help" work).
 	// Scan past leading flags (e.g. --db /path) to find the first non-flag argument.
 	// Also skip injection when args contains only --help/-h so the root command shows its own help.
 	onlyHelp := len(args) == 0
@@ -89,32 +89,32 @@ func firstNonFlagIsReserved(args []string) bool {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "vibe",
+	Use:   "contenox",
 	Short: "AI agent CLI: plan and execute tasks using your LLM of choice.",
-	Long: `Vibe is a local AI agent CLI that plans and executes multi-step tasks on your
+	Long: `Contenox is a local AI agent CLI that plans and executes multi-step tasks on your
 machine using filesystem and shell tools — driven by your LLM of choice.
 No daemon, no cloud required. State is stored in SQLite.
 
   Quickstart:
-    vibe init                         # scaffold .contenox/ with config + chain
-    vibe list files in my home dir    # one-shot natural language → shell
-    vibe plan new "some multi-step goal"  # create an autonomous plan
-    vibe plan next --auto             # execute until done
+    contenox init                         # scaffold .contenox/ with config + chain
+    contenox list files in my home dir    # one-shot natural language → shell
+    contenox plan new "some multi-step goal"  # create an autonomous plan
+    contenox plan next --auto             # execute until done
 
-  LLM providers (edit .contenox/config.yaml after 'vibe init'):
+  LLM providers (edit .contenox/config.yaml after 'contenox init'):
     Local (Ollama):  ollama serve && ollama pull qwen2.5:7b
     OpenAI:          set OPENAI_API_KEY, uncomment openai backend in config
     Gemini:          set GEMINI_API_KEY, uncomment gemini backend in config
 
-  For vibe plan, the model MUST support tool calling.
-  Run 'vibe init' and open .contenox/config.yaml for full provider examples.`,
+  For contenox plan, the model MUST support tool calling.
+  Run 'contenox init' and open .contenox/config.yaml for full provider examples.`,
 	SilenceUsage: true,
 }
 
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run a task chain (default when no subcommand is given).",
-	Long:  `Run a task chain. You can pass input as positional args (e.g. vibe hi) or via --input.`,
+	Long:  `Run a task chain. You can pass input as positional args (e.g. contenox hi) or via --input.`,
 	Args:  cobra.ArbitraryArgs,
 	RunE:  runRun,
 }
@@ -131,13 +131,13 @@ func init() {
 	// Must be done here (not in the struct literal) so the ldflags value is used.
 	rootCmd.Version = Version
 
-	// Run flags on root so "vibe --input x" and "vibe hi" both work.
+	// Run flags on root so "contenox --input x" and "contenox hi" both work.
 	f := rootCmd.PersistentFlags()
 	f.String("db", "", "SQLite database path (default: .contenox/local.db)")
 	f.String("ollama", defaultOllama, "Ollama base URL")
 	f.String("model", defaultModel, "Model name (task/chat/embed)")
 	f.Int("context", defaultContext, "Context length")
-	f.Bool("no-delete-models", true, "Do not delete Ollama models that are not declared (default true for vibe)")
+	f.Bool("no-delete-models", true, "Do not delete Ollama models that are not declared (default true for contenox)")
 	f.String("chain", "", "Path to a task chain JSON file. Chains define the LLM workflow: which model, which hooks, how to branch. Falls back to default_chain in config, then .contenox/default-chain.json")
 	f.String("input", "", "Input for the chain (default: positional args or stdin if piped)")
 	f.Bool("enable-local-exec", false, "Enable the local_shell hook (use only in trusted environments)")
@@ -152,7 +152,7 @@ func init() {
 
 	rootCmd.AddCommand(initCmd, runCmd, sessionCmd, planCmd, execCmd, hookCmd)
 
-	rootCmd.InitDefaultHelpCmd() // so "vibe help" is handled by Cobra, not passed as run input
+	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
 }
 
@@ -163,7 +163,7 @@ func runInitCmd(cmd *cobra.Command, _ []string) error {
 }
 
 func runRun(cmd *cobra.Command, args []string) error {
-	// No subcommand and no input: show help and exit 0 (same as "vibe" alone).
+	// No subcommand and no input: show help and exit 0 (same as "contenox" alone).
 	flags := cmd.Root().Flags()
 	if len(args) == 0 && !flags.Changed("input") {
 		_ = cmd.Root().Usage()

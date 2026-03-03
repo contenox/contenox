@@ -3,9 +3,9 @@
 package main
 
 import (
-	"github.com/contenox/vibe/internal/vibecli"
+	"github.com/contenox/contenox/internal/contenoxcli"
 )
 
 func main() {
-	vibecli.Main()
+	contenoxcli.Main()
 }

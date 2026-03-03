@@ -1,4 +1,4 @@
-package vibecli
+package contenoxcli
 
 import (
 	"os"

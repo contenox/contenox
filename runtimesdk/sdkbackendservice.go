@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/backendservice"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/backendservice"
+	"github.com/contenox/contenox/runtimetypes"
 )
 
 // HTTPBackendService implements the backendservice.Service interface

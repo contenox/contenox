@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/contenox/vibe/eventstore"
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/eventstore"
+	"github.com/contenox/contenox/libtracker"
 )
 
 // activityTrackerDecorator implements Service with activity tracking

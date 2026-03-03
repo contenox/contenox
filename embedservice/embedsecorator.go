@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/libtracker"
 )
 
 type activityTrackerDecorator struct {

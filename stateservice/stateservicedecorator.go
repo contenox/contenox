@@ -3,8 +3,8 @@ package stateservice
 import (
 	"context"
 
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/statetype"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/statetype"
 )
 
 type activityTrackerDecorator struct {

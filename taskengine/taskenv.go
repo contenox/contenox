@@ -12,8 +12,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/libtracker"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 

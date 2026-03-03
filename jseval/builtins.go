@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/eventstore"
-	"github.com/contenox/vibe/execservice"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/eventstore"
+	"github.com/contenox/contenox/execservice"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/dop251/goja"
 )
 

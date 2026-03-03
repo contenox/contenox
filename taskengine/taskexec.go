@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"dario.cat/mergo"
-	"github.com/contenox/vibe/internal/llmrepo"
-	libmodelprovider "github.com/contenox/vibe/internal/modelrepo"
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/internal/llmrepo"
+	libmodelprovider "github.com/contenox/contenox/internal/modelrepo"
+	"github.com/contenox/contenox/libtracker"
 	"github.com/google/uuid"
 )
 

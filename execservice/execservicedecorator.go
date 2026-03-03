@@ -3,7 +3,7 @@ package execservice
 import (
 	"context"
 
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/libtracker"
 )
 
 type activityTrackerDecorator struct {

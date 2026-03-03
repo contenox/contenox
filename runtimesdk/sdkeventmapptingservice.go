@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/eventmappingservice"
-	"github.com/contenox/vibe/eventstore"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/eventmappingservice"
+	"github.com/contenox/contenox/eventstore"
 )
 
 // HTTPMappingService implements the eventmappingservice.Service interface

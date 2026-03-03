@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/contenox/vibe/eventstore"
-	"github.com/contenox/vibe/internal/eventdispatch"
-	"github.com/contenox/vibe/libbus"
-	"github.com/contenox/vibe/libdbexec"
+	"github.com/contenox/contenox/eventstore"
+	"github.com/contenox/contenox/internal/eventdispatch"
+	"github.com/contenox/contenox/libbus"
+	"github.com/contenox/contenox/libdbexec"
 )
 
 // Service defines the interface for the event source service

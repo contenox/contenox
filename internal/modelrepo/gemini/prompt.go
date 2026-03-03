@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/contenox/vibe/internal/modelrepo"
+	"github.com/contenox/contenox/internal/modelrepo"
 )
 
 type GeminiPromptClient struct {

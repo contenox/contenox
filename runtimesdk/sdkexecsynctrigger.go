@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/executor"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/executor"
 )
 
 // HTTPExecutorSyncTrigger implements executor.ExecutorSyncTrigger

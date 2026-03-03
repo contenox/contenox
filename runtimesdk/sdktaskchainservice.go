@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/taskchainservice"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/taskchainservice"
+	"github.com/contenox/contenox/taskengine"
 )
 
 // HTTPTaskChainService implements the taskchainservice.Service interface
