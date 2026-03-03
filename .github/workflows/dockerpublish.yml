@@ -126,7 +126,7 @@ jobs:
         with:
           go-version: "1.26"
 
-      - name: Build Vibe binaries
+      - name: Build Contenox binaries
         run: |
           TAG="${{ steps.vars.outputs.TAG }}"
           LDFLAGS="-X github.com/contenox/contenox/internal/contenoxcli.Version=${TAG}"
