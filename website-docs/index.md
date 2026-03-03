@@ -7,14 +7,14 @@ hero:
   text: "Sovereign GenAI Workflows"
   tagline: Build, run, and observe AI workflows as explicit state machines — on your infra, with full control.
   image:
-    src: /vibe.svg
-    alt: vibe CLI logo
+    src: /contenox.png
+    alt: Contenox CLI logo
   actions:
     - theme: brand
       text: Get Started →
       link: /guide/introduction
     - theme: alt
-      text: vibe CLI Quickstart
+      text: Contenox CLI Quickstart
       link: /guide/quickstart
     - theme: alt
       text: API Reference
@@ -22,16 +22,16 @@ hero:
       target: _blank
 
 features:
-  - title: vibe — local AI agent CLI
+  - title: Contenox — local AI agent CLI
     details: Run AI workflows locally with full observability. Autonomous planning, stateless execution, remote hooks. No cloud required.
     link: /guide/quickstart
-    linkText: Get started with vibe
+    linkText: Get started with Contenox
   - title: Task chains
     details: Define AI behaviour as composable JSON state machines — not prompt soup. Every step, branch, and tool call is explicit.
     link: /chains/
     linkText: Learn about chains
   - title: Remote hooks
-    details: Point vibe at any OpenAPI service and the model gets its operations as callable tools automatically.
+    details: Point Contenox at any OpenAPI service and the model gets its operations as callable tools automatically.
     link: /hooks/remote
     linkText: Add your first hook
   - title: Vendor-agnostic
