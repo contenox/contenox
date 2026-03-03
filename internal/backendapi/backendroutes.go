@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"time"
 
-	serverops "github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/backendservice"
-	"github.com/contenox/vibe/runtimetypes"
-	"github.com/contenox/vibe/stateservice"
-	"github.com/contenox/vibe/statetype"
+	serverops "github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/backendservice"
+	"github.com/contenox/contenox/runtimetypes"
+	"github.com/contenox/contenox/stateservice"
+	"github.com/contenox/contenox/statetype"
 	"github.com/google/uuid"
 )
 

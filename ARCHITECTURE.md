@@ -2,13 +2,13 @@
 
 Contenox provides a single, unified "Task Engine" that processes deterministic workflows (explicit state machines, branching, multi-model execution, external action hooks).
 
-This core task engine `github.com/contenox/vibe/taskengine` is identical across our two main products, but the infrastructure providing persistence and messaging changes depending on the environment.
+This core task engine `github.com/contenox/contenox/taskengine` is identical across our two main products, but the infrastructure providing persistence and messaging changes depending on the environment.
 
 ## The Two Environments
 
-### 1. `vibe` (Local CLI)
+### 1. `contenox` (Local CLI)
 **Goal:** Operate locally with minimal friction, perfect for single-developer workflows or admin scripting.
-- **Entrypoint:** `cmd/vibe`
+- **Entrypoint:** `cmd/contenox`
 - **Database:** SQLite (single file: `.contenox/local.db`, powered by `libdbexec`)
 - **Messaging:** In-memory bus (`libbus/inmem.go`)
 - **Tokenizer:** Estimate tokenizer (no external service required)
@@ -38,7 +38,7 @@ This core task engine `github.com/contenox/vibe/taskengine` is identical across 
 
 ## Directory Structure Highlights
 - `taskengine/` - Shared core: state machine transitions, handler execution.
-- `internal/vibecli/` - Specific CLI logic, execution planner, user interaction loops.
+- `internal/contenoxcli/` - Specific CLI logic, execution planner, user interaction loops.
 - `localhooks/` - Handlers uniquely scoped to running code/commands on a host operating system.
 - `libdbexec/` - Interfaces and adapters for PostgreSQL and SQLite.
 - `docs/` - Auto-generated API specs and user guides.

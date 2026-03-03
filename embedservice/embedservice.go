@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/vibe/internal/llmrepo"
+	"github.com/contenox/contenox/internal/llmrepo"
 )
 
 type Service interface {

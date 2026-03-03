@@ -3,8 +3,8 @@ package stateservice
 import (
 	"context"
 
-	"github.com/contenox/vibe/internal/runtimestate"
-	"github.com/contenox/vibe/statetype"
+	"github.com/contenox/contenox/internal/runtimestate"
+	"github.com/contenox/contenox/statetype"
 )
 
 type Service interface {

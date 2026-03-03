@@ -1,4 +1,4 @@
-module github.com/contenox/vibe
+module github.com/contenox/contenox
 
 go 1.24.5
 

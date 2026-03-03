@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/contenox/vibe/internal/hooks"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/internal/hooks"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

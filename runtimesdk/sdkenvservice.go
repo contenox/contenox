@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/execservice"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/execservice"
+	"github.com/contenox/contenox/taskengine"
 )
 
 type HTTPTasksEnvService struct {

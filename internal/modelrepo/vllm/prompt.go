@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/contenox/vibe/internal/modelrepo"
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/internal/modelrepo"
+	"github.com/contenox/contenox/libtracker"
 )
 
 // NewVLLMPromptClient creates a new prompt client

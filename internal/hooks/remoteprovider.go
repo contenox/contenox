@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/runtimetypes"
-	"github.com/contenox/vibe/taskengine"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtimetypes"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 

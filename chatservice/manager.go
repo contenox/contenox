@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/messagestore"
-	"github.com/contenox/vibe/taskengine"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/messagestore"
+	"github.com/contenox/contenox/taskengine"
 )
 
 // Manager coordinates chat message management.

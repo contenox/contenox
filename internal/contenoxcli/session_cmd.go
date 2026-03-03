@@ -1,6 +1,6 @@
-// session_cmd.go — vibe session subcommand tree (new, list, switch, delete, show).
+// session_cmd.go — contenox session subcommand tree (new, list, switch, delete, show).
 // Each subcommand opens only the DB; no LLM stack is needed.
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -12,27 +12,27 @@ import (
 	"path/filepath"
 	"time"
 
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/messagestore"
-	"github.com/contenox/vibe/runtimetypes"
-	"github.com/contenox/vibe/taskengine"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/messagestore"
+	"github.com/contenox/contenox/runtimetypes"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
-// sessionCmd is the parent "vibe session" command.
+// sessionCmd is the parent "contenox session" command.
 var sessionCmd = &cobra.Command{
 	Use:   "session",
 	Short: "Manage chat sessions (new, list, switch, delete, show).",
 	Long: `Create and switch named chat sessions.
 Each session maintains its own persistent conversation history.
 
-  vibe session new [name]     create a session and make it active
-  vibe session list           list all sessions (* = active)
-  vibe session switch <name>  switch the active session
-  vibe session delete <name>  delete a session and its messages
-  vibe session show           print the active session's conversation`,
+  contenox session new [name]     create a session and make it active
+  contenox session list           list all sessions (* = active)
+  contenox session switch <name>  switch the active session
+  contenox session delete <name>  delete a session and its messages
+  contenox session show           print the active session's conversation`,
 	SilenceUsage: true,
 }
 
@@ -172,7 +172,7 @@ func runSessionList(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to list sessions: %w", err)
 	}
 	if len(sessions) == 0 {
-		fmt.Println("No sessions yet. Run: vibe session new")
+		fmt.Println("No sessions yet. Run: contenox session new")
 		return nil
 	}
 
@@ -205,7 +205,7 @@ func runSessionSwitch(cmd *cobra.Command, args []string) error {
 	si, err := messagestore.New(exec).GetSessionByName(ctx, localIdentity, name)
 	if err != nil {
 		if errors.Is(err, messagestore.ErrNotFound) {
-			return fmt.Errorf("session %q not found; run 'vibe session list' to see available sessions", name)
+			return fmt.Errorf("session %q not found; run 'contenox session list' to see available sessions", name)
 		}
 		return fmt.Errorf("failed to look up session: %w", err)
 	}
@@ -250,7 +250,7 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 	if activeID == si.ID {
 		raw, _ := marshalJSON("")
 		runtimetypes.New(txExec).SetKV(ctx, kvActiveSession, raw) //nolint:errcheck
-		fmt.Printf("Deleted session %q (was active; run 'vibe session new' or 'vibe session switch' to set a new active session).\n", name)
+		fmt.Printf("Deleted session %q (was active; run 'contenox session new' or 'contenox session switch' to set a new active session).\n", name)
 	} else {
 		fmt.Printf("Deleted session %q.\n", name)
 	}
@@ -268,7 +268,7 @@ func runSessionShow(cmd *cobra.Command, _ []string) error {
 	exec := db.WithoutTransaction()
 	activeID, err := getActiveSessionID(ctx, exec)
 	if err != nil || activeID == "" {
-		return fmt.Errorf("no active session; run 'vibe session new' to create one")
+		return fmt.Errorf("no active session; run 'contenox session new' to create one")
 	}
 
 	sessions, _ := messagestore.New(exec).ListAllSessions(ctx, localIdentity)

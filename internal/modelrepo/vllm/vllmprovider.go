@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/contenox/vibe/internal/modelrepo"
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/internal/modelrepo"
+	"github.com/contenox/contenox/libtracker"
 )
 
 type vLLMProvider struct {

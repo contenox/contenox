@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/execservice"
-	"github.com/contenox/vibe/playground"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/execservice"
+	"github.com/contenox/contenox/playground"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

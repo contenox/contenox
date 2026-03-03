@@ -3,7 +3,7 @@ package functionstore
 import (
 	"context"
 
-	"github.com/contenox/vibe/libdbexec"
+	"github.com/contenox/contenox/libdbexec"
 )
 
 // InitSchema creates the main table

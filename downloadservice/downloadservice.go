@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	libbus "github.com/contenox/vibe/libbus"
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/runtimetypes"
+	libbus "github.com/contenox/contenox/libbus"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtimetypes"
 )
 
 var (

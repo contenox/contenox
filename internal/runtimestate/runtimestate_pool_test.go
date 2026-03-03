@@ -7,12 +7,12 @@ package runtimestate_test
 // 	"testing"
 // 	"time"
 
-// 	libbus "github.com/contenox/vibe/bus"
-// 	libdb "github.com/contenox/vibe/dbexec"
-// 	"github.com/contenox/vibe-mvp/core/runtimestate"
-// 	"github.com/contenox/vibe/store"
-// 	"github.com/contenox/vibe-mvp/libs/libroutine"
-// 	"github.com/contenox/vibe-mvp/libs/libtestenv"
+// 	libbus "github.com/contenox/contenox/bus"
+// 	libdb "github.com/contenox/contenox/dbexec"
+// 	"github.com/contenox/contenox-mvp/core/runtimestate"
+// 	"github.com/contenox/contenox/store"
+// 	"github.com/contenox/contenox-mvp/libs/libroutine"
+// 	"github.com/contenox/contenox-mvp/libs/libtestenv"
 // 	"github.com/google/uuid"
 // 	"github.com/stretchr/testify/require"
 // )

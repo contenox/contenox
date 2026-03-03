@@ -1,14 +1,14 @@
-# Contenox Vibe
+# Contenox CLI
 
 [![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**Vibe** – AI workflows at your fingertips. 
+**Contenox** – AI workflows at your fingertips. 
 
-Vibe is a local AI-powered CLI that plans and executes multi-step tasks on your machine — using filesystem and shell tools, driven by your LLM of choice (OpenAI, Gemini, Ollama, vLLM). Zero cloud dependencies required if you run local models. SQLite-backed.
+Contenox is a local AI-powered CLI that plans and executes multi-step tasks on your machine — using filesystem and shell tools, driven by your LLM of choice (OpenAI, Gemini, Ollama, vLLM). Zero cloud dependencies required if you run local models. SQLite-backed.
 
 ```
-$ vibe plan new "install a git pre-commit hook that prevents commits when go build fails"
+$ contenox plan new "install a git pre-commit hook that prevents commits when go build fails"
 
 Creating plan "install-a-git-pre-commit-a3f9e12b" with 5 steps. Now active.
 1. [ ] Install necessary tools: Ensure git and go are installed
@@ -17,7 +17,7 @@ Creating plan "install-a-git-pre-commit-a3f9e12b" with 5 steps. Now active.
 4. [ ] Write the bash content to the hook file
 5. [ ] Make the hook executable: chmod +x .git/hooks/pre-commit
 
-$ vibe plan next --auto
+$ contenox plan next --auto
 
 Executing Step 1: Install necessary tools...   ✓
 Executing Step 2: Create pre-commit hook...    ✓
@@ -45,7 +45,7 @@ fi
 
 ## What it does
 
-`vibe plan` breaks any natural-language goal into ordered steps, then executes them one at a time using real shell and filesystem tools:
+`contenox plan` breaks any natural-language goal into ordered steps, then executes them one at a time using real shell and filesystem tools:
 
 | Tool | What the model can do |
 |------|-----------------------|
@@ -61,24 +61,24 @@ The plan is persisted to SQLite. You can pause, inspect, retry individual steps,
 ### Ubuntu / Linux
 
 ```bash
-TAG=$(curl -sL https://api.github.com/repos/contenox/vibe/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+TAG=$(curl -sL https://api.github.com/repos/contenox/contenox/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -sL "https://github.com/contenox/vibe/releases/download/${TAG}/vibe-${TAG}-linux-${ARCH}" -o vibe
-chmod +x vibe && sudo mv vibe /usr/local/bin/vibe
-vibe --version
+curl -sL "https://github.com/contenox/contenox/releases/download/${TAG}/contenox-${TAG}-linux-${ARCH}" -o contenox
+chmod +x contenox && sudo mv contenox /usr/local/bin/contenox
+contenox --version
 ```
 
 ### macOS
 
 ```bash
-TAG=$(curl -sL https://api.github.com/repos/contenox/vibe/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+TAG=$(curl -sL https://api.github.com/repos/contenox/contenox/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/arm64/arm64/')
-curl -sL "https://github.com/contenox/vibe/releases/download/${TAG}/vibe-${TAG}-darwin-${ARCH}" -o vibe
-chmod +x vibe && sudo mv vibe /usr/local/bin/vibe
-vibe --version
+curl -sL "https://github.com/contenox/contenox/releases/download/${TAG}/contenox-${TAG}-darwin-${ARCH}" -o contenox
+chmod +x contenox && sudo mv contenox /usr/local/bin/contenox
+contenox --version
 ```
 
-Or pick a binary from [Releases](https://github.com/contenox/vibe/releases).
+Or pick a binary from [Releases](https://github.com/contenox/contenox/releases).
 
 ---
 
@@ -99,29 +99,29 @@ Or pick a binary from [Releases](https://github.com/contenox/vibe/releases).
 ### First run
 
 ```bash
-./vibe init                      # creates .contenox/ in the current directory
-./vibe list files in my home directory   # natural language → shell command
+./contenox init                      # creates .contenox/ in the current directory
+./contenox list files in my home directory   # natural language → shell command
 ```
 
 ---
 
-## `vibe plan` — autonomous multi-step execution
+## `contenox plan` — autonomous multi-step execution
 
-`vibe plan` is the power feature: describe a goal once, get back an ordered plan, then execute it step by step.
+`contenox plan` is the power feature: describe a goal once, get back an ordered plan, then execute it step by step.
 
 ### Create a plan
 
 ```bash
-vibe plan new "migrate all TODO comments in the codebase to a TODOS.md"
-vibe plan new "set up a git pre-commit hook that blocks commits when go build fails"
-vibe plan new "find all .go files larger than 500 lines and write a refactoring report"
+contenox plan new "migrate all TODO comments in the codebase to a TODOS.md"
+contenox plan new "set up a git pre-commit hook that blocks commits when go build fails"
+contenox plan new "find all .go files larger than 500 lines and write a refactoring report"
 ```
 
 ### Inspect
 
 ```bash
-vibe plan list          # all plans   (* = active)
-vibe plan show          # steps of the active plan with status
+contenox plan list          # all plans   (* = active)
+contenox plan show          # steps of the active plan with status
 ```
 
 ```
@@ -137,13 +137,13 @@ Plan: install-a-git-pre-commit-a3f9e12b (active) — 5/5 complete
 
 | Command | Behaviour |
 |---------|-----------|
-| `vibe plan next` | Execute exactly **one** pending step, then pause for review |
-| `vibe plan next --auto` | Execute **all** pending steps autonomously |
-| `vibe plan retry <N>` | Reset step N back to pending and re-execute |
-| `vibe plan skip <N>` | Mark step N skipped and move on |
-| `vibe plan replan` | Regenerate remaining steps from current state |
-| `vibe plan delete <name>` | Delete a plan by name (removes DB entry and markdown file) |
-| `vibe plan clean` | Delete all completed or archived plans |
+| `contenox plan next` | Execute exactly **one** pending step, then pause for review |
+| `contenox plan next --auto` | Execute **all** pending steps autonomously |
+| `contenox plan retry <N>` | Reset step N back to pending and re-execute |
+| `contenox plan skip <N>` | Mark step N skipped and move on |
+| `contenox plan replan` | Regenerate remaining steps from current state |
+| `contenox plan delete <name>` | Delete a plan by name (removes DB entry and markdown file) |
+| `contenox plan clean` | Delete all completed or archived plans |
 
 **Human-in-the-loop is the default** — `next` without `--auto` executes one step and stops. This protects you from runaway automation. Use `--auto` when you trust the plan.
 
@@ -151,66 +151,66 @@ Plan: install-a-git-pre-commit-a3f9e12b (active) — 5/5 complete
 
 ```bash
 # 1. Create
-vibe plan new "install a git pre-commit hook that blocks commits when go build fails"
+contenox plan new "install a git pre-commit hook that blocks commits when go build fails"
 
 # 2. Review the plan before running anything
-vibe plan show
+contenox plan show
 
 # 3. Execute one step at a time (review each result)
-vibe plan next
-vibe plan next
-vibe plan next
+contenox plan next
+contenox plan next
+contenox plan next
 # ...
 
 # Or, once you trust it, run everything at once:
-vibe plan next --auto
+contenox plan next --auto
 
 # 4. If a step went wrong, retry it
-vibe plan retry 3
+contenox plan retry 3
 
 # 5. Check the final state
-vibe plan show
+contenox plan show
 ```
 
 ---
 
-## `vibe` — interactive chat (the classic mode)
+## `contenox` — interactive chat (the classic mode)
 
 ```bash
-vibe list files in my home directory
-vibe --input "what is my current working directory?"
-echo "explain this file" | vibe
+contenox list files in my home directory
+contenox --input "what is my current working directory?"
+echo "explain this file" | contenox
 ```
 
 Uses `.contenox/default-chain.json` by default. Natural language → shell commands → results back in chat.
 
 ---
 
-## `vibe exec` — run any chain with any input type
+## `contenox exec` — run any chain with any input type
 
 For scripting and pipeline use where you want full control over the input type:
 
 ```bash
 # Default: string input
-vibe exec --chain .contenox/my-chain.json "what is the sum of 2+2?"
+contenox exec --chain .contenox/my-chain.json "what is the sum of 2+2?"
 
 # Wrap input as a chat message
-cat diff.txt | vibe exec --chain .contenox/review.json --input-type chat
+cat diff.txt | contenox exec --chain .contenox/review.json --input-type chat
 
 # Read input from a file
-vibe exec --chain .contenox/doc-chain.json --input @main.go
+contenox exec --chain .contenox/doc-chain.json --input @main.go
 
 # Pass structured JSON input
-vibe exec --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
+contenox exec --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
 ```
 
-`vibe exec` is stateless — no chat history is loaded or saved. `--chain` is required. Supported `--input-type` values: `string` (default), `chat`, `json`, `int`, `float`, `bool`.
+`contenox exec` is stateless — no chat history is loaded or saved. `--chain` is required. Supported `--input-type` values: `string` (default), `chat`, `json`, `int`, `float`, `bool`.
 
 ---
 
 ## Configuration (`.contenox/config.yaml`)
 
-`vibe init` generates this file. Edit it to select your LLM provider.
+`contenox init` generates this file. Edit it to select your LLM provider.
 
 ### Local model (Ollama — default)
 
@@ -220,7 +220,7 @@ backends:
     type: ollama
     base_url: http://127.0.0.1:11434
 default_provider: local
-default_model: qwen2.5:7b    # must support tool calling for vibe plan
+default_model: qwen2.5:7b    # must support tool calling for contenox plan
 context: 32768
 
 enable_local_shell: true
@@ -270,10 +270,10 @@ local_shell_allowed_commands: "bash,echo,cat,ls,chmod,sh,date,pwd,head,tail,grep
 ## Build from source
 
 ```bash
-git clone https://github.com/contenox/vibe
-cd vibe
-go build ./cmd/vibe/...
-./vibe init
+git clone https://github.com/contenox/contenox
+cd contenox
+go build ./cmd/contenox/...
+./contenox init
 ```
 
 ---
@@ -281,7 +281,7 @@ go build ./cmd/vibe/...
 ## Architecture
 
 ```
-vibe CLI
+contenox CLI
   ├── plan new        → LLM planner chain → SQLite plan + steps
   ├── plan next       → LLM step-executor chain → local_shell / local_fs tools → result persisted
   ├── plan delete     → remove plan from DB + markdown file
@@ -290,31 +290,31 @@ vibe CLI
   └── run (default)   → LLM chat chain → local_shell / local_fs tools → interactive response
 
 SQLite (.contenox/local.db)
-  ├── plans + plan_steps   (vibe plan state)
+  ├── plans + plan_steps   (contenox plan state)
   ├── message_index        (chat sessions)
   └── kv                   (active session pointer, config)
 ```
 
 The chains are JSON files in `.contenox/`. They define the LLM workflow: which model to use, which hooks are available, and how to branch based on the model's output.
 
-`vibe run` (the default command) accepts a custom chain via `--chain`:
+`contenox run` (the default command) accepts a custom chain via `--chain`:
 
 ```bash
-vibe --chain .contenox/my-chain.json "summarize this file"
+contenox --chain .contenox/my-chain.json "summarize this file"
 ```
 
 The chain's first task must accept `DataTypeChatHistory` as input — meaning its handler must be `chat_completion`. The input (positional args, `--input`, or stdin) is always delivered as a user message in the chat history. Chains producing `DataTypeChatHistory` or `DataTypeString` output print cleanly to stdout; other output types are JSON-marshalled.
 
 The bundled `default-chain.json` gives the model access to `local_shell` and `local_fs` for agentic work. You can write your own chain — with different hooks, different models, or no hooks at all for plain LLM queries.
 
-> **Note:** `vibe plan` uses its own built-in planner and executor chains. `--chain` does not apply to `vibe plan` subcommands.
+> **Note:** `contenox plan` uses its own built-in planner and executor chains. `--chain` does not apply to `contenox plan` subcommands.
 
 
 ---
 
 ## The Runtime API Server
 
-`vibe` is just the local CLI layer over the core Contenox task engine. 
+`contenox` is just the local CLI layer over the core Contenox task engine. 
 
 For full-stack server deployments, the **Runtime API** is an HTTP server exposing the exact same workflow engine backed by PostgreSQL and NATS messaging, deployed via Docker Compose.
 

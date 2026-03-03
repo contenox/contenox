@@ -25,9 +25,9 @@ COMPOSE_CMD ?= docker compose -f compose.yaml -f compose.local.yaml
 .PHONY: run-runtime-api build-runtime-api \
         docker-build-runtime docker-up-runtime docker-run-runtime \
         docker-down-runtime docker-clear-runtime docker-logs-runtime \
-        build-vibe run-vibe \
+        build-contenox run-contenox \
         start-ollama-pull start-ollama ollama-status \
-        test test-unit test-system test-vibecli \
+        test test-unit test-system test-contenoxcli \
         test-api test-api-full test-api-init wait-for-server \
         docs-gen docs-markdown docs-html \
         website-dev website-build website-install website-clean \
@@ -56,15 +56,16 @@ docker-logs-runtime:
 	$(COMPOSE_CMD) logs -f runtime-api
 
 # --------------------------------------------------------------------
-# Vibe CLI --------------------------------------------------------------------
-build-vibe:
+# Contenox CLI
+# --------------------------------------------------------------------
+build-contenox:
 	go build \
-		-ldflags="-X github.com/contenox/vibe/internal/vibecli.Version=$(shell cat $(VERSION_FILE))" \
-		-o $(PROJECT_ROOT)/bin/vibe $(PROJECT_ROOT)/cmd/vibe
+		-ldflags="-X github.com/contenox/contenox/internal/contenoxcli.Version=$(shell cat $(VERSION_FILE))" \
+		-o $(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/cmd/contenox
 
-# Run the Vibe binary (builds if needed). Example: make run-vibe ARGS="-input 'hello'"
-run-vibe: build-vibe
-	$(PROJECT_ROOT)/bin/vibe $(ARGS)
+# Run the contenox binary (builds if needed). Example: make run-contenox ARGS="hello"
+run-contenox: build-contenox
+	$(PROJECT_ROOT)/bin/contenox $(ARGS)
 
 # --------------------------------------------------------------------
 # Local Runtime API: HTTP server
@@ -109,8 +110,8 @@ test-unit:
 test-system:
 	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -run '^TestSystem_' ./...
 
-test-vibecli:
-	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -v ./internal/vibecli/...
+test-contenoxcli:
+	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -v ./internal/contenoxcli/...
 
 
 # --------------------------------------------------------------------

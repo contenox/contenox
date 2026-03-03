@@ -7,21 +7,21 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/vibe/affinitygroupservice"
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/backendservice"
-	"github.com/contenox/vibe/openaichatservice"
-	"github.com/contenox/vibe/downloadservice"
-	"github.com/contenox/vibe/embedservice"
-	"github.com/contenox/vibe/eventmappingservice"
-	"github.com/contenox/vibe/eventsourceservice"
-	"github.com/contenox/vibe/execservice"
-	"github.com/contenox/vibe/executor"
-	"github.com/contenox/vibe/hookproviderservice"
-	"github.com/contenox/vibe/modelservice"
-	"github.com/contenox/vibe/providerservice"
-	"github.com/contenox/vibe/stateservice"
-	"github.com/contenox/vibe/taskchainservice"
+	"github.com/contenox/contenox/affinitygroupservice"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/backendservice"
+	"github.com/contenox/contenox/openaichatservice"
+	"github.com/contenox/contenox/downloadservice"
+	"github.com/contenox/contenox/embedservice"
+	"github.com/contenox/contenox/eventmappingservice"
+	"github.com/contenox/contenox/eventsourceservice"
+	"github.com/contenox/contenox/execservice"
+	"github.com/contenox/contenox/executor"
+	"github.com/contenox/contenox/hookproviderservice"
+	"github.com/contenox/contenox/modelservice"
+	"github.com/contenox/contenox/providerservice"
+	"github.com/contenox/contenox/stateservice"
+	"github.com/contenox/contenox/taskchainservice"
 )
 
 // Client is the main SDK client that provides access to all services
@@ -88,7 +88,7 @@ func NewClient(ctx context.Context, config Config, httpClient *http.Client) (*Cl
 	if sdkVersion != about.Version {
 		return nil, fmt.Errorf(
 			"version mismatch: server=%q, sdk=%q (must be identical)\n"+
-				"Hint: Run 'go get github.com/contenox/vibe@%s' to fix",
+				"Hint: Run 'go get github.com/contenox/contenox@%s' to fix",
 			about.Version,
 			sdkVersion,
 			about.Version,

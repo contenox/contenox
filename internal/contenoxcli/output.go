@@ -1,5 +1,5 @@
 // output.go holds CLI output helpers.
-package vibecli
+package contenoxcli
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/taskengine"
 )
 
 // splitAndTrim splits s by sep and trims each element.

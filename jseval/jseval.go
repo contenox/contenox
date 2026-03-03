@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/vibe/eventsourceservice"
-	"github.com/contenox/vibe/execservice"
-	"github.com/contenox/vibe/functionservice"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/taskchainservice"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/eventsourceservice"
+	"github.com/contenox/contenox/execservice"
+	"github.com/contenox/contenox/functionservice"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/taskchainservice"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/dop251/goja"
 )
 

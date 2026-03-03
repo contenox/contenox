@@ -1,5 +1,5 @@
 // session.go — active session pointer helpers (reads/writes the SQLite kv table).
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/messagestore"
-	"github.com/contenox/vibe/runtimetypes"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/messagestore"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/google/uuid"
 )
 
@@ -24,7 +24,7 @@ func marshalJSON(v any) (json.RawMessage, error) {
 }
 
 const (
-	kvActiveSession    = "vibe.session.active"
+	kvActiveSession    = "contenox.session.active"
 	localIdentity      = "local-user"
 	defaultSessionName = "default"
 )

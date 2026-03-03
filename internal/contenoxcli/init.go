@@ -1,5 +1,5 @@
-// init.go implements the vibe init subcommand (scaffold .contenox/).
-package vibecli
+// init.go implements the contenox init subcommand (scaffold .contenox/).
+package contenoxcli
 
 import (
 	_ "embed"
@@ -12,7 +12,7 @@ import (
 //go:embed config.yaml
 var initConfig string
 
-//go:embed chain-vibes.json
+//go:embed chain-contenox.json
 var initChain string
 
 // RunInit scaffolds .contenox/ (config and default chain). If force is true, overwrites existing files.
@@ -55,12 +55,12 @@ func RunInit(force bool) {
 	fmt.Println("       Gemini:         export GEMINI_API_KEY=...    (then uncomment the Gemini section)")
 	fmt.Println("")
 	fmt.Println("  2. Try a one-shot command:")
-	fmt.Println("       vibe list files in my home directory")
-	fmt.Println("       vibe what is in /tmp")
+	fmt.Println("       contenox list files in my home directory")
+	fmt.Println("       contenox what is in /tmp")
 	fmt.Println("")
 	fmt.Println("  3. Plan and execute a multi-step task:")
-	fmt.Println("       vibe plan new \"create a TODOS.md from all TODO comments in the codebase\"")
-	fmt.Println("       vibe plan next --auto")
+	fmt.Println("       contenox plan new \"create a TODOS.md from all TODO comments in the codebase\"")
+	fmt.Println("       contenox plan next --auto")
 	fmt.Println("")
-	fmt.Println("  Run 'vibe --help' for full usage.")
+	fmt.Println("  Run 'contenox --help' for full usage.")
 }

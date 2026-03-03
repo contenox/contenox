@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/taskengine"
 )
 
 // MockHookRepo is a mock implementation of the HookProvider interface.

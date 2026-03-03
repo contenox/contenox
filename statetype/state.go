@@ -3,7 +3,7 @@ package statetype
 import (
 	"time"
 
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/ollama/ollama/api"
 )
 

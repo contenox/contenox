@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	serverops "github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/eventsourceservice"
-	"github.com/contenox/vibe/eventstore"
+	serverops "github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/eventsourceservice"
+	"github.com/contenox/contenox/eventstore"
 )
 
 // AddEventSourceRoutes registers HTTP routes for event source operations.

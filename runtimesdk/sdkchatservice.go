@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/openaichatservice"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/openaichatservice"
+	"github.com/contenox/contenox/taskengine"
 )
 
 // HTTPChatService implements the chatservice.Service interface

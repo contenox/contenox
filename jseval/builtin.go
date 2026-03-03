@@ -3,7 +3,7 @@ package jseval
 import (
 	"context"
 
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/libtracker"
 	"github.com/dop251/goja"
 )
 

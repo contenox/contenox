@@ -4,13 +4,13 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/contenox/vibe/internal/modelrepo"
-	"github.com/contenox/vibe/internal/modelrepo/gemini"
-	"github.com/contenox/vibe/internal/modelrepo/ollama"
-	"github.com/contenox/vibe/internal/modelrepo/openai"
-	"github.com/contenox/vibe/internal/modelrepo/vllm"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/statetype"
+	"github.com/contenox/contenox/internal/modelrepo"
+	"github.com/contenox/contenox/internal/modelrepo/gemini"
+	"github.com/contenox/contenox/internal/modelrepo/ollama"
+	"github.com/contenox/contenox/internal/modelrepo/openai"
+	"github.com/contenox/contenox/internal/modelrepo/vllm"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/statetype"
 )
 
 // LocalProviderAdapter creates providers for self-hosted backends (Ollama, vLLM)

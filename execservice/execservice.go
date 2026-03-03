@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/internal/llmrepo"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/internal/llmrepo"
 	"github.com/google/uuid"
 )
 

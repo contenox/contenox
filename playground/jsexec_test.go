@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/vibe/eventstore"
-	"github.com/contenox/vibe/functionstore"
-	"github.com/contenox/vibe/libtracker"
-	"github.com/contenox/vibe/playground"
+	"github.com/contenox/contenox/eventstore"
+	"github.com/contenox/contenox/functionstore"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/playground"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

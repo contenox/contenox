@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/modelservice"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/modelservice"
+	"github.com/contenox/contenox/runtimetypes"
 )
 
 // HTTPModelService implements the modelservice.Service interface

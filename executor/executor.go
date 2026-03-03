@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/contenox/vibe/internal/eventdispatch"
+	"github.com/contenox/contenox/internal/eventdispatch"
 )
 
 type ExecutorManager interface {

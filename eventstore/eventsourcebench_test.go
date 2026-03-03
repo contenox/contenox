@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/vibe/eventstore"
-	libdb "github.com/contenox/vibe/libdbexec"
+	"github.com/contenox/contenox/eventstore"
+	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )

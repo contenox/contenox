@@ -3,8 +3,8 @@ package llmresolver
 import (
 	"context"
 
-	"github.com/contenox/vibe/internal/modelrepo"
-	"github.com/contenox/vibe/libtracker"
+	"github.com/contenox/contenox/internal/modelrepo"
+	"github.com/contenox/contenox/libtracker"
 )
 
 // Resolver is the interface for selecting appropriate model providers based on requirements.

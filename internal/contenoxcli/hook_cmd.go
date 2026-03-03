@@ -1,6 +1,6 @@
-// hook_cmd.go — vibe hook subcommand tree (add, list, show, remove, update).
+// hook_cmd.go — contenox hook subcommand tree (add, list, show, remove, update).
 // Each subcommand opens only the DB; no LLM stack is needed.
-package vibecli
+package contenoxcli
 
 import (
 	"context"
@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/vibe/internal/hooks"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/internal/hooks"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/spf13/cobra"
 )
 
-// hookCmd is the parent "vibe hook" command.
+// hookCmd is the parent "contenox hook" command.
 var hookCmd = &cobra.Command{
 	Use:   "hook",
 	Short: "Manage remote hooks (add, list, show, remove, update).",
@@ -23,11 +23,11 @@ var hookCmd = &cobra.Command{
 A remote hook points at an OpenAPI v3 service. When used in a chain the runtime
 fetches its schema, discovers every operation, and makes them callable by the model.
 
-  vibe hook add <name> --url <endpoint> [--header "Key: Value"]... [--timeout ms]
-  vibe hook list
-  vibe hook show <name>
-  vibe hook remove <name>
-  vibe hook update <name> [--url <endpoint>] [--header "Key: Value"]... [--timeout ms]`,
+  contenox hook add <name> --url <endpoint> [--header "Key: Value"]... [--timeout ms]
+  contenox hook list
+  contenox hook show <name>
+  contenox hook remove <name>
+  contenox hook update <name> [--url <endpoint>] [--header "Key: Value"]... [--timeout ms]`,
 	SilenceUsage: true,
 }
 
@@ -128,7 +128,7 @@ func runHookAdd(cmd *cobra.Command, args []string) error {
 
 	// Check name not already taken.
 	if _, err := store.GetRemoteHookByName(ctx, name); err == nil {
-		return fmt.Errorf("hook %q already exists; use 'vibe hook update' to modify it", name)
+		return fmt.Errorf("hook %q already exists; use 'contenox hook update' to modify it", name)
 	}
 
 	// Probe tools (non-fatal).
@@ -177,7 +177,7 @@ func runHookList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(all) == 0 {
-		fmt.Println("No remote hooks registered. Run: vibe hook add <name> --url <endpoint>")
+		fmt.Println("No remote hooks registered. Run: contenox hook add <name> --url <endpoint>")
 		return nil
 	}
 

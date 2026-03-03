@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/PaesslerAG/jsonpath"
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/eventmappingservice"
-	"github.com/contenox/vibe/eventsourceservice"
-	"github.com/contenox/vibe/eventstore"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/eventmappingservice"
+	"github.com/contenox/contenox/eventsourceservice"
+	"github.com/contenox/contenox/eventstore"
 )
 
 var (

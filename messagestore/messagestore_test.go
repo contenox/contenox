@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/vibe/chatservice"
-	libdb "github.com/contenox/vibe/libdbexec"
-	"github.com/contenox/vibe/messagestore"
-	"github.com/contenox/vibe/runtimetypes"
-	"github.com/contenox/vibe/taskengine"
+	"github.com/contenox/contenox/chatservice"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/messagestore"
+	"github.com/contenox/contenox/runtimetypes"
+	"github.com/contenox/contenox/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

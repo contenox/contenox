@@ -1,5 +1,5 @@
 // config.go holds .contenox config types and resolution (load, backends, default provider/model).
-package vibecli
+package contenoxcli
 
 import (
 	"fmt"

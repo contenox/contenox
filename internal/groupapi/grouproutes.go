@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/contenox/vibe/affinitygroupservice"
-	"github.com/contenox/vibe/apiframework"
-	"github.com/contenox/vibe/runtimetypes"
+	"github.com/contenox/contenox/affinitygroupservice"
+	"github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/runtimetypes"
 )
 
 func AddgroupRoutes(mux *http.ServeMux, groupService affinitygroupservice.Service) {

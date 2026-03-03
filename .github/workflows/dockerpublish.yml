@@ -129,10 +129,10 @@ jobs:
       - name: Build Vibe binaries
         run: |
           TAG="${{ steps.vars.outputs.TAG }}"
-          LDFLAGS="-X github.com/contenox/vibe/internal/vibecli.Version=${TAG}"
+          LDFLAGS="-X github.com/contenox/contenox/internal/contenoxcli.Version=${TAG}"
           for goos in linux darwin; do
             for goarch in amd64 arm64; do
-              GOOS=$goos GOARCH=$goarch go build -ldflags="${LDFLAGS}" -o "vibe-${TAG}-${goos}-${goarch}" ./cmd/vibe
+              GOOS=$goos GOARCH=$goarch go build -ldflags="${LDFLAGS}" -o "contenox-${TAG}-${goos}-${goarch}" ./cmd/contenox
             done
           done
 
@@ -141,6 +141,6 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
-          files: vibe-*
+          files: contenox-*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

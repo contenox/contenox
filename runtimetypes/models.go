@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/vibe/libdbexec"
+	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/google/uuid"
 )
 

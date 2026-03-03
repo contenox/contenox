@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/vibe/eventstore"
+	"github.com/contenox/contenox/eventstore"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
