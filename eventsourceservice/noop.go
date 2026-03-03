@@ -8,7 +8,7 @@ import (
 )
 
 // NoopService is a no-op implementation of Service for contexts that do not
-// persist events (e.g. vibe CLI with SQLite, where partition-based storage is not available).
+// persist events (e.g. Contenox CLI with SQLite, where partition-based storage is not available).
 // All writes are dropped; reads return empty results or ErrNotFound where appropriate.
 type NoopService struct{}
 
@@ -18,7 +18,7 @@ type noopSubscription struct{}
 func (noopSubscription) Unsubscribe() error { return nil }
 
 // NewNoopService returns a Service that does nothing. Useful when event persistence
-// is not required (e.g. local CLI) or when the backing store cannot be used (e.g. SQLite without partitions).
+// is not required (e.g. Contenox CLI) or when the backing store cannot be used (e.g. SQLite without partitions).
 func NewNoopService() Service {
 	return &NoopService{}
 }

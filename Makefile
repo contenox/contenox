@@ -88,7 +88,7 @@ ollama-status:
 	@curl -s -f http://$(OLLAMA_HOST)/api/tags > /dev/null || (echo "Error: Ollama server not responding at $(OLLAMA_HOST). Start it with 'ollama serve' or check OLLAMA_HOST." && exit 1)
 	@echo "Ollama is reachable."
 
-# Pull the Ollama model used by contenox-vibe (default: phi3:3.8b).
+# Pull the Ollama model used by contenox-cli (default: phi3:3.8b).
 start-ollama-pull: ollama-status
 	OLLAMA_HOST=$(OLLAMA_HOST) ollama pull $(TASK_MODEL)
 

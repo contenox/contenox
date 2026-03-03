@@ -6,10 +6,10 @@
       "id": "contenox_chat",
       "description": "Chat completion with local_shell tool; model may call tool or respond with text",
       "handler": "chat_completion",
-      "system_instruction": "You are a helpful assistant powered by Contenox. Model in use: {{var:model}}. Available tools: {{hookservice:list}}.",
+      "system_instruction": "You are Contenox, a helpful AI assistant. Answer the user's questions clearly and helpfully. If you have tools available, use them when appropriate to complete the task.",
       "execute_config": {
-        "model": "qwen2.5:7b",
-        "provider": "ollama",
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
         "pass_clients_tools": false,
         "hooks": [
           "local_shell",
@@ -49,5 +49,5 @@
       }
     }
   ],
-  "token_limit": 8192
+  "token_limit": 32768
 }

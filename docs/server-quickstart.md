@@ -12,8 +12,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/contenox/vibe.git
-cd vibe
+git clone https://github.com/contenox/contenox.git
+cd contenox
 
 # Configure the systems fallback models
 export EMBED_MODEL=nomic-embed-text:latest
@@ -115,7 +115,7 @@ docker logs contenox-runtime-api
 
 # Runtime API
 
-**Runtime API** is the HTTP server product: Postgres, NATS, tokenizer, optional Ollama. It runs the same task-chain engine as **Vibe**, exposed over HTTP for full-stack deployment. For convenience, a Docker Compose is provided.
+**Runtime API** is the HTTP server product: Postgres, NATS, tokenizer, optional Ollama. It runs the same task-chain engine as **Contenox**, exposed over HTTP for full-stack deployment. For convenience, a Docker Compose is provided.
 
 ---
 

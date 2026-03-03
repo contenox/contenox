@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS remote_hooks (
 
 CREATE INDEX IF NOT EXISTS idx_job_queue_v2_task_type ON job_queue_v2(task_type);
 
--- Event-dispatched functions and triggers (used by vibe CLI event dispatcher / Goja executor).
+-- Event-dispatched functions and triggers (used by Contenox CLI event dispatcher / Goja executor).
 CREATE TABLE IF NOT EXISTS functions (
     name TEXT PRIMARY KEY,
     description TEXT,

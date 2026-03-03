@@ -83,7 +83,7 @@ graph TD
         U[User / Client Application]
     end
 
-    subgraph "contenox/vibe"
+    subgraph "contenox/contenox"
         API[API Layer]
         OE["Orchestration Engine <br/> Task Execution <br/> & State Management"]
         CONN["Connectors <br/> Model Resolver <br/> & Hook Client"]
@@ -131,9 +131,9 @@ Hooks are the bridge between AI workflows and any external system. They allow ag
 
 -----
 
-#### 🖥️ Local CLI (`vibe`)
+#### 🖥️ Local CLI (`contenox`)
 
-The same task engine runs as a local CLI (`vibe`) with two built-in hooks that give the model direct access to your machine:
+The same task engine runs as a local CLI (`contenox`) with two built-in hooks that give the model direct access to your machine:
 
 | Hook | What the model can do |
 |------|-----------------------|
@@ -142,20 +142,20 @@ The same task engine runs as a local CLI (`vibe`) with two built-in hooks that g
 
 **Interactive mode** — Natural language input, model uses tools and replies in text:
 ```bash
-vibe "find all TODO comments in the Go files and list them"
+bcontenox "find all TODO comments in the Go files and list them"
 ```
 
 **Autonomous planning** — Break a goal into steps, execute with human review between each:
 ```bash
-vibe plan new "migrate all TODOs in the codebase to TODOS.md"
-vibe plan next          # one step at a time
-vibe plan next --auto   # run to completion
+contenox plan new "migrate all TODOs in the codebase to TODOS.md"
+contenox plan next          # one step at a time
+contenox plan next --auto   # run to completion
 ```
 
 **Stateless pipeline** — Run any chain with explicit input type control:
 ```bash
-cat diff.txt | vibe exec --chain .contenox/review-chain.json --input-type chat
+cat diff.txt | contenox exec --chain .contenox/review-chain.json --input-type chat
 ```
 
-See [docs/contenox-vibe.md](contenox-vibe.md) for full configuration and chain authoring reference.
+See [docs/contenox-cli.md](contenox-cli.md) for full configuration and chain authoring reference.
 

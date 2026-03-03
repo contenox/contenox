@@ -1,7 +1,7 @@
 {
   "id": "qa-ollama",
   "debug": true,
-  "description": "Single prompt with Ollama (for contenox-vibe)",
+  "description": "Single prompt with Ollama (for contenox-cli)",
   "tasks": [
     {
       "id": "generate_response",
@@ -11,7 +11,12 @@
       "prompt_template": "{{.input}}",
       "input_var": "input",
       "transition": {
-        "branches": [{ "operator": "default", "goto": "end" }]
+        "branches": [
+          {
+            "operator": "default",
+            "goto": "end"
+          }
+        ]
       }
     }
   ],

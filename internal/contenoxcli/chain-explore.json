@@ -1,15 +1,15 @@
 {
-  "id": "chain-vibes",
-  "description": "Natural language to directory/command: model uses local_shell to run e.g. ls, then responds in text",
+  "id": "chain-explore",
+  "description": "Fast, creative, exploratory chat mode. Model uses tools aggressively to explore and prototype.",
   "tasks": [
     {
       "id": "vibe_chat",
-      "description": "Chat completion with local_shell tool; model may call tool or respond with text",
+      "description": "Chat completion in vibe mode — fast, creative, tool-aggressive",
       "handler": "chat_completion",
-      "system_instruction": "You are a helpful assistant contenox-vibe. Model in use: {{var:model}}. Available tools: {{hookservice:list}}.",
+      "system_instruction": "You are Contenox — fast, creative, a bit cheeky. Embrace the flow: experiment, iterate quickly, use tools aggressively to explore. Keep answers short and sharp unless asked for depth. Think out loud, show your work, make it fun. You can output ===STEP_DONE=== if a user asks you to complete a concrete step, but don't feel forced — stay loose unless directed.",
       "execute_config": {
-        "model": "qwen2.5:7b",
-        "provider": "ollama",
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
         "pass_clients_tools": false,
         "hooks": [
           "local_shell",
@@ -49,5 +49,5 @@
       }
     }
   ],
-  "token_limit": 8192
+  "token_limit": 32768
 }

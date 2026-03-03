@@ -1,6 +1,6 @@
-# Vibe
+# Contenox CLI
 
-**Vibe** is the local CLI layer over the Contenox task engine. It runs without Postgres, NATS, or a tokenizer service — just SQLite and an in-memory bus. Point it at Ollama, OpenAI, vLLM, or Gemini, and run AI workflows from the terminal: interactive chat, multi-step autonomous plans, or arbitrary chain pipelines.
+**Contenox CLI** is the local CLI layer over the Contenox task engine. It runs without Postgres, NATS, or a tokenizer service — just SQLite and an in-memory bus. Point it at Ollama, OpenAI, vLLM, or Gemini, and run AI workflows from the terminal: interactive chat, multi-step autonomous plans, or arbitrary chain pipelines.
 
 ---
 
@@ -8,14 +8,14 @@
 
 ```bash
 # From a release binary:
-./vibe init                          # scaffold .contenox/ with config + default chain
-./vibe "list files in my home dir"   # natural language → shell → response
+contenox init                          # scaffold .contenox/ with config + default chain
+contenox "list files in my home dir"   # natural language → shell → response
 
 # Or build from source:
-git clone https://github.com/contenox/vibe.git
-cd vibe
-go build -o vibe ./cmd/vibe/...
-./vibe init
+git clone https://github.com/contenox/contenox.git
+cd contenox
+go build -o contenox ./cmd/contenox
+contenox init
 ```
 
 **Requirements:** Ollama running (`ollama serve`) and a model that supports tool calling:
@@ -27,75 +27,75 @@ ollama pull qwen2.5:7b
 
 ## Subcommands
 
-### `vibe` / `vibe run` — interactive chat
+### `contenox` / `contenox run` — interactive chat
 
 ```bash
-vibe "what is the current directory?"
-vibe --input "explain this error" < build.log
-echo "summarise this" | vibe
+contenox "what is the current directory?"
+contenox --input "explain this error" < build.log
+echo "summarise this" | contenox
 ```
 
 Input comes from positional args, `--input`, or stdin (in that order of priority). The result is printed to stdout. Uses `.contenox/default-chain.json` by default; override with `--chain`.
 
 ---
 
-### `vibe plan` — autonomous multi-step execution
+### `contenox plan` — autonomous multi-step execution
 
 Break a goal into an ordered plan of steps, then execute them one at a time (or all at once). State is persisted in SQLite so you can pause, inspect, retry, or replan at any point.
 
 ```bash
 # Create a plan
-vibe plan new "set up a git pre-commit hook that blocks commits when go build fails"
+contenox plan new "set up a git pre-commit hook that blocks commits when go build fails"
 
 # Inspect
-vibe plan list          # all plans  (* = active)
-vibe plan show          # steps of the active plan
+contenox plan list          # all plans  (* = active)
+contenox plan show          # steps of the active plan
 
 # Execute
-vibe plan next          # run one step, then stop
-vibe plan next --auto   # run all pending steps
+contenox plan next          # run one step, then stop
+contenox plan next --auto   # run all pending steps
 
 # Control
-vibe plan retry <N>     # reset step N to pending and re-run
-vibe plan skip <N>      # mark step N skipped
-vibe plan replan        # regenerate remaining steps from current state
+contenox plan retry <N>     # reset step N to pending and re-run
+contenox plan skip <N>      # mark step N skipped
+contenox plan replan        # regenerate remaining steps from current state
 
 # Cleanup
-vibe plan delete <name> # remove a plan (DB + .contenox/plans/<name>.md)
-vibe plan clean         # remove all completed and archived plans
+contenox plan delete <name> # remove a plan (DB + .contenox/plans/<name>.md)
+contenox plan clean         # remove all completed and archived plans
 ```
 
 Plan names are derived from the goal text (`fix-auth-token-expiry-a3f9e12b`), so they're readable in `plan list` and in the markdown snapshot written to `.contenox/plans/`.
 
-> **Human-in-the-loop by default.** `vibe plan next` executes exactly one step and stops. Use `--auto` only when you trust the plan.
+> **Human-in-the-loop by default.** `contenox plan next` executes exactly one step and stops. Use `--auto` only when you trust the plan.
 
 ---
 
-### `vibe exec` — run any chain, any input type
+### `contenox exec` — run any chain, any input type
 
 For scripting and pipeline use cases where you want full control:
 
 ```bash
 # String input (default)
-vibe exec --chain .contenox/my-chain.json "is this code safe?"
+contenox exec --chain .contenox/my-chain.json "is this code safe?"
 
 # Wrap as a chat message
-cat diff.txt | vibe exec --chain .contenox/review.json --input-type chat
+cat diff.txt | contenox exec --chain .contenox/review.json --input-type chat
 
 # Read input from a file
-vibe exec --chain .contenox/doc-chain.json --input @main.go
+contenox exec --chain .contenox/doc-chain.json --input @main.go
 
 # Structured JSON input
-vibe exec --chain .contenox/parse.json --input-type json '{"key":"value"}'
+contenox exec --chain .contenox/parse.json --input-type json '{"key":"value"}'
 ```
 
 `--chain` is required. Supported `--input-type` values: `string` (default), `chat`, `json`, `int`, `float`, `bool`.
 
-`vibe exec` is **stateless** — no session history is loaded or saved.
+`contenox exec` is **stateless** — no session history is loaded or saved.
 
 ---
 
-### `vibe hook` — manage remote hooks
+### `contenox hook` — manage remote hooks
 
 Register external HTTP services as LLM tools. The runtime fetches the service's `/openapi.json`, discovers every operation, and exposes them as callable tools in chains.
 
@@ -103,10 +103,10 @@ Register external HTTP services as LLM tools. The runtime fetches the service's 
 
 ```bash
 # Register
-vibe hook add nws --url https://api.weather.gov --timeout 15000
+contenox hook add nws --url https://api.weather.gov --timeout 15000
 
 # Inspect — lists all discovered tools live from the schema
-vibe hook show nws
+contenox hook show nws
 # Name:    nws
 # URL:     https://api.weather.gov
 # Timeout: 15000ms
@@ -120,16 +120,16 @@ vibe hook show nws
 
 Run a query using the included example chain:
 ```bash
-vibe exec --chain .contenox/chain-nws.json --input-type chat \
+contenox exec --chain .contenox/chain-nws.json --input-type chat \
   "how many active weather alerts are there right now?"
 ```
 
 Manage hooks:
 ```bash
-vibe hook list                                    # NAME  URL  TIMEOUT
-vibe hook update nws --timeout 30000              # update timeout
-vibe hook update nws --header "X-App: myapp"      # add a header
-vibe hook remove nws                              # remove
+contenox hook list                                    # NAME  URL  TIMEOUT
+contenox hook update nws --timeout 30000              # update timeout
+contenox hook update nws --header "X-App: myapp"      # add a header
+contenox hook remove nws                              # remove
 ```
 
 **Use in any chain** — reference by name in `execute_config.hooks`:
@@ -149,7 +149,7 @@ Header values are never echoed back (`hook show` prints header keys only). If th
 
 ## Configuration (`.contenox/config.yaml`)
 
-`vibe init` generates a starter config. All keys are optional; CLI flags override config.
+`contenox init` generates a starter config. All keys are optional; CLI flags override config.
 
 ```yaml
 # Minimal Ollama setup
@@ -161,8 +161,8 @@ default_provider: local
 default_model: qwen2.5:7b
 context: 32768
 
-enable_local_shell: true
-local_shell_allowed_commands: "bash,echo,cat,ls,chmod,sh,date,pwd,head,tail,grep,find,mkdir,cp,mv"
+enable_local_shell: false
+# local_shell_allowed_commands: "bash,sh,echo,cat,ls,chmod,git,go,python,uv,node,npm,jq,grep,find,sed,awk,curl,wget,tar,unzip,mkdir,cp,mv,touch,head,tail,date,pwd,env"
 ```
 
 ### Supported backends
@@ -233,24 +233,24 @@ Chain fields like `system_instruction` and `prompt_template` support macros expa
 | `{{var:model}}` | Current model name |
 | `{{var:provider}}` | Current provider name |
 | `{{var:chain}}` | Chain ID |
-| `{{var:NAME}}` | Value from `template_vars_from_env` config (vibe only) |
+| `{{var:NAME}}` | Value from `template_vars_from_env` config (contenox only) |
 | `{{now}}` / `{{now:layout}}` | Current time |
 | `{{chain:id}}` | Chain ID (same as `{{var:chain}}`) |
 | `{{hookservice:list}}` | All registered hooks + tools as JSON (useful for inspection/debug chains; the model already receives per-task tool schemas via the API protocol) |
 | `{{hookservice:hooks}}` | Hook names only |
 | `{{hookservice:tools <hook>}}` | Tool names for a specific hook |
 
-### `--chain` and `vibe plan`
+### `--chain` and `contenox plan`
 
-`--chain` selects which chain `vibe run`/`vibe exec` uses. It does **not** apply to `vibe plan` subcommands — the planner and executor chains for `vibe plan` are built-in and live in `.contenox/chain-planner.json` and `.contenox/chain-executor.json` (written by `vibe init`). These chains have a specific contract (input/output types, handler sequence) and are validated on use.
+`--chain` selects which chain `contenox run`/`contenox exec` uses. It does **not** apply to `contenox plan` subcommands — the planner and executor chains for `contenox plan` are built-in and live in `.contenox/chain-planner.json` and `.contenox/chain-executor.json` (written by `contenox init`). These chains have a specific contract (input/output types, handler sequence) and are validated on use.
 
 ---
 
 ## Build from source
 
 ```bash
-git clone https://github.com/contenox/vibe.git
-cd vibe
-go build -o vibe ./cmd/vibe/...
-./vibe init
+git clone https://github.com/contenox/contenox.git
+cd contenox
+go build -o contenox ./cmd/contenox
+contenox init
 ```

@@ -262,7 +262,7 @@ func initChatModel(ctx context.Context, config *Config, tx libdb.Exec, contextLe
 	return initOrUpdateModel(ctx, tx, config.TenantID, config.ChatModel, contextLength, canChat)
 }
 
-// ExtraModelSpec describes an extra model to ensure exists in ollama_models (e.g. for contenox-vibe extra_models config).
+// ExtraModelSpec describes an extra model to ensure exists in ollama_models (e.g. for contenox-cli extra_models config).
 type ExtraModelSpec struct {
 	Name          string
 	ContextLength int
@@ -272,7 +272,7 @@ type ExtraModelSpec struct {
 }
 
 // EnsureModels ensures each given model exists in ollama_models with the specified context length and capabilities.
-// It is intended for contenox-vibe so that extra models (e.g. qwen2.5:7b for the vibes chain) are declared and
+// It is intended for contenox-cli so that extra models (e.g. qwen2.5:7b for the vibes chain) are declared and
 // get correct context/capabilities during backend sync. Call after InitEmbeder/InitPromptExec/InitChatExec and before RunBackendCycle.
 func EnsureModels(ctx context.Context, dbInstance libdb.DBManager, tenantID string, specs []ExtraModelSpec) error {
 	if len(specs) == 0 {

@@ -1,15 +1,15 @@
 {
-  "id": "chain-vibes",
+  "id": "chain-contenox",
   "description": "Natural language to directory/command: model uses local_shell to run e.g. ls, then responds in text",
   "tasks": [
     {
-      "id": "vibe_chat",
+      "id": "contenox_chat",
       "description": "Chat completion with local_shell tool; model may call tool or respond with text",
       "handler": "chat_completion",
-      "system_instruction": "You are a helpful assistant. Model in use: {{var:model}}.",
+      "system_instruction": "You are Contenox, a helpful AI assistant. Answer the user's questions clearly and helpfully. If you have tools available, use them when appropriate to complete the task.",
       "execute_config": {
-        "model": "qwen2.5:7b",
-        "provider": "ollama",
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
         "pass_clients_tools": false,
         "hooks": [
           "local_shell",
@@ -36,14 +36,14 @@
       "id": "run_tools",
       "description": "Execute tool calls from the last message and append results to chat history",
       "handler": "execute_tool_calls",
-      "input_var": "vibe_chat",
+      "input_var": "contenox_chat",
       "transition": {
         "on_failure": "",
         "branches": [
           {
             "operator": "default",
             "when": "",
-            "goto": "vibe_chat"
+            "goto": "contenox_chat"
           }
         ]
       }
