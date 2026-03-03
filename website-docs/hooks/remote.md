@@ -6,35 +6,35 @@ Contenox reads the service's `/openapi.json` file, discovers every API operation
 
 ## Managing Hooks
 
-Use the `vibe hook` command to manage remote hooks. They are stored in `.contenox/local.db`.
+Use the `contenox hook` command to manage remote hooks. They are stored in `.contenox/local.db`.
 
 ### 1. Register a hook
 ```bash
-vibe hook add <name> --url <endpoint_url>
+contenox hook add <name> --url <endpoint_url>
 ```
 Example using the US National Weather Service (free, public):
 ```bash
-vibe hook add nws --url https://api.weather.gov --timeout 15000
+contenox hook add nws --url https://api.weather.gov --timeout 15000
 ```
 *Note: The engine automatically appends `/openapi.json` to the URL you provide to fetch the spec.*
 
 ### 2. Inspect discovered tools
 ```bash
-vibe hook show nws
+contenox hook show nws
 ```
 This lists all tools discovered from the OpenAPI spec, along with their expected parameters. The NWS api exposes ~60 tools like `alerts_active_area` and `gridpoint_forecast`.
 
 ### 3. List and Remove
 ```bash
-vibe hook list
-vibe hook remove nws
+contenox hook list
+contenox hook remove nws
 ```
 
 ## Authentication
 
 If your API requires a token, you can pass headers when adding the hook:
 ```bash
-vibe hook add github --url https://api.github.com --header "Authorization: Bearer my-token"
+contenox hook add github --url https://api.github.com --header "Authorization: Bearer my-token"
 ```
 Headers are saved securely in the database and are never echoed back in `hook show` outputs. They are injected transparently into every tool call made to that service.
 
