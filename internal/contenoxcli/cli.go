@@ -120,10 +120,18 @@ var runCmd = &cobra.Command{
 }
 
 var initCmd = &cobra.Command{
-	Use:   "init",
+	Use:   "init [provider]",
 	Short: "Scaffold .contenox/ (config and default chain).",
-	Long:  `Create .contenox/config.yaml and .contenox/default-chain.json. Use --force to overwrite existing files.`,
-	RunE:  runInitCmd,
+	Long: `Create .contenox/config.yaml and .contenox/default-chain.json.
+
+Optional provider argument sets the default LLM backend in config.yaml:
+  ollama   Local model via Ollama (default)
+  openai   OpenAI — set OPENAI_API_KEY
+  gemini   Google Gemini — set GEMINI_API_KEY
+
+Use --force to overwrite existing files.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runInitCmd,
 }
 
 func init() {
@@ -156,9 +164,13 @@ func init() {
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
 }
 
-func runInitCmd(cmd *cobra.Command, _ []string) error {
+func runInitCmd(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool("force")
-	RunInit(force)
+	provider := ""
+	if len(args) > 0 {
+		provider = args[0]
+	}
+	RunInit(force, provider)
 	return nil
 }
 
