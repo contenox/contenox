@@ -18,7 +18,8 @@ context: 32768
 # ──────────────────────────────────────────────────────
 # OPTION B: OpenAI
 # Prerequisites: export OPENAI_API_KEY=sk-...
-# Uncomment and replace the backend block above with this:
+# If OPENAI_API_KEY is set, the backend is auto-declared — no config edit needed.
+# To override the default model or name, uncomment:
 # ──────────────────────────────────────────────────────
 # backends:
 #   - name: openai
@@ -26,12 +27,13 @@ context: 32768
 #     base_url: https://api.openai.com/v1
 #     api_key_from_env: OPENAI_API_KEY
 # default_provider: openai
-# default_model: gpt-4o-mini
+# default_model: gpt-4.1-mini
 
 # ──────────────────────────────────────────────────────
 # OPTION C: Google Gemini
 # Prerequisites: export GEMINI_API_KEY=...
-# Uncomment and replace the backend block above with this:
+# If GEMINI_API_KEY is set, the backend is auto-declared — no config edit needed.
+# To override the default model or name, uncomment:
 # ──────────────────────────────────────────────────────
 # backends:
 #   - name: gemini
@@ -41,7 +43,7 @@ context: 32768
 # default_model: gemini-3.1-flash-lite-preview
 
 # NOTE: for 'contenox plan', the model MUST support tool calling.
-# Recommended: qwen2.5:7b (Ollama), gpt-4o-mini (OpenAI), gemini-3.1-flash-lite-preview (Gemini)
+# Recommended: qwen2.5:7b (Ollama), gpt-4.1-mini (OpenAI), gemini-3.1-flash-lite-preview (Gemini)
 
 # Shell execution hook — enables natural language → shell commands and 'contenox plan next'.
 # Set to true to enable. You MUST also configure local_shell_allowed_commands.
