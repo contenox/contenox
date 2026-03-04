@@ -1,10 +1,12 @@
 package statetype
 
 import (
+	"strings"
 	"time"
 
 	"github.com/contenox/contenox/runtimetypes"
 	"github.com/ollama/ollama/api"
+	ollamamodel "github.com/ollama/ollama/types/model"
 )
 
 // BackendRuntimeState represents the observed state of a single LLM backend.
@@ -50,6 +52,34 @@ func (s *BackendRuntimeState) GetAPIKey() string {
 
 func (s *BackendRuntimeState) SetAPIKey(key string) {
 	s.apiKey = key
+}
+
+// EnrichFromOllamaShow populates capability and context fields on a ModelPullStatus
+// using the response from Ollama's /api/show endpoint.
+// Only zero/false fields are written — callers may override afterwards.
+func EnrichFromOllamaShow(m *ModelPullStatus, r *api.ShowResponse) {
+	for _, cap := range r.Capabilities {
+		switch cap {
+		case ollamamodel.CapabilityCompletion:
+			m.CanChat = true
+			m.CanPrompt = true
+			m.CanStream = true
+		case ollamamodel.CapabilityEmbedding:
+			m.CanEmbed = true
+		case ollamamodel.CapabilityTools:
+			m.CanChat = true
+		}
+	}
+	if m.ContextLength == 0 {
+		for k, v := range r.ModelInfo {
+			if strings.HasSuffix(k, ".context_length") {
+				if n, ok := v.(float64); ok {
+					m.ContextLength = int(n)
+				}
+				break
+			}
+		}
+	}
 }
 
 func ConvertOllamaModelResponse(model *api.ListModelResponse) *ModelPullStatus {

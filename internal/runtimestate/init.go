@@ -50,9 +50,6 @@ func InitEmbeder(ctx context.Context, config *Config, dbInstance libdb.DBManager
 	}
 	defer r()
 
-	if contextLen <= 0 {
-		return fmt.Errorf("invalid context length")
-	}
 	group, err := initEmbedgroup(ctx, config, tx, false)
 	if err != nil {
 		return fmt.Errorf("init embed group: %w", err)
@@ -75,9 +72,6 @@ func InitPromptExec(ctx context.Context, config *Config, dbInstance libdb.DBMana
 	}
 	defer r()
 
-	if contextLen <= 0 {
-		return fmt.Errorf("invalid context length")
-	}
 	group, err := initTaskgroup(ctx, config, tx, false)
 	if err != nil {
 		return fmt.Errorf("init task group: %w", err)
@@ -100,9 +94,6 @@ func InitChatExec(ctx context.Context, config *Config, dbInstance libdb.DBManage
 	}
 	defer r()
 
-	if contextLen <= 0 {
-		return fmt.Errorf("invalid context length")
-	}
 	group, err := initChatgroup(ctx, config, tx, false)
 	if err != nil {
 		return fmt.Errorf("init chat group: %w", err)
@@ -218,8 +209,12 @@ func initOrUpdateModel(ctx context.Context, tx libdb.Exec, tenantID, modelName s
 	}
 
 	// Case 3: Model exists. Validate and update its capabilities if needed.
-	if model.ContextLength != contextLength {
+	// Upgrade context length if stored value was 0 (auto-detect placeholder).
+	if model.ContextLength != contextLength && !(model.ContextLength == 0 && contextLength > 0) {
 		return nil, fmt.Errorf("model '%s' already exists with a different context length (stored: %d, new: %d)", modelName, model.ContextLength, contextLength)
+	}
+	if model.ContextLength == 0 && contextLength > 0 {
+		model.ContextLength = contextLength
 	}
 
 	needsUpdate := false
@@ -286,9 +281,6 @@ func EnsureModels(ctx context.Context, dbInstance libdb.DBManager, tenantID stri
 	for _, spec := range specs {
 		if spec.Name == "" {
 			return fmt.Errorf("extra_models entry has empty name")
-		}
-		if spec.ContextLength <= 0 {
-			return fmt.Errorf("extra_models entry %q has invalid context length %d", spec.Name, spec.ContextLength)
 		}
 		if spec.CanEmbed {
 			if _, err := initOrUpdateModel(ctx, tx, tenantID, spec.Name, spec.ContextLength, canEmbed); err != nil {

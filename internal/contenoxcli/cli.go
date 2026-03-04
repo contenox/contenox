@@ -23,7 +23,7 @@ const localTenantID = "00000000-0000-0000-0000-000000000001"
 
 const (
 	defaultOllama  = "http://127.0.0.1:11434"
-	defaultModel   = "phi3:3.8b"
+	defaultModel   = "qwen2.5:7b"
 	defaultContext = 2048
 	defaultTimeout = 5 * time.Minute
 )
