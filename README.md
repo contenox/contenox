@@ -197,7 +197,7 @@ backends:
     type: gemini
     api_key_from_env: GEMINI_API_KEY
 default_provider: gemini
-default_model: gemini-2.0-flash
+default_model: gemini-3.1-flash-lite-preview
 ```
 
 | Backend | `type` | Notes |
