@@ -136,17 +136,17 @@ func bumpVersion(bumpType string) error {
 	}
 	tx.commitCreated = true
 
-	// 8. Create tag
-	if err := createTag(newVersion); err != nil {
-		return fmt.Errorf("failed to create tag: %w", err)
-	}
-	tx.tagCreated = true
-
-	// 9. Regenerate docs
+	// 8. Regenerate docs (this amends the commit)
 	fmt.Println("\n🔄 Regenerating documentation with new version...")
 	if err := updateDocsAndAmendCommit(); err != nil {
 		return fmt.Errorf("failed to update documentation: %w", err)
 	}
+
+	// 9. Create tag (after commit is amended)
+	if err := createTag(newVersion); err != nil {
+		return fmt.Errorf("failed to create tag: %w", err)
+	}
+	tx.tagCreated = true
 
 	// Success - no rollback needed
 	tx.markSuccessful()
