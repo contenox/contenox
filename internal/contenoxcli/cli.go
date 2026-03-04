@@ -103,8 +103,8 @@ No daemon, no cloud required. State is stored in SQLite.
 
   LLM providers (edit .contenox/config.yaml after 'contenox init'):
     Local (Ollama):  ollama serve && ollama pull qwen2.5:7b
-    OpenAI:          set OPENAI_API_KEY, uncomment openai backend in config
-    Gemini:          set GEMINI_API_KEY, uncomment gemini backend in config
+    OpenAI:          set OPENAI_API_KEY (auto-declared, no config edit needed)
+    Gemini:          set GEMINI_API_KEY (auto-declared, no config edit needed)
 
   For contenox plan, the model MUST support tool calling.
   Run 'contenox init' and open .contenox/config.yaml for full provider examples.`,

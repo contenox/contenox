@@ -187,7 +187,7 @@ backends:
     base_url: https://api.openai.com/v1
     api_key_from_env: OPENAI_API_KEY
 default_provider: openai
-default_model: gpt-4o-mini
+default_model: gpt-4.1-mini
 ```
 
 **Gemini**

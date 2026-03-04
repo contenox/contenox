@@ -91,6 +91,42 @@ func resolveEffectiveBackends(cfg localConfig, effectiveOllama, effectiveModel s
 	if defaultModel == "" {
 		defaultModel = effectiveModel
 	}
+
+	// Auto-inject cloud providers from environment when an API key is present
+	// and no backend of that type is already declared in config.
+	// This does NOT change the default provider or model — the injected
+	// backends are available as secondary options for chain steps that
+	// explicitly request a specific provider (e.g. provider: gemini).
+	for _, auto := range []struct {
+		envKey  string
+		name    string
+		typ     string
+		baseURL string
+	}{
+		{"GEMINI_API_KEY", "gemini", "gemini", ""},
+		{"OPENAI_API_KEY", "openai", "openai", "https://api.openai.com/v1"},
+	} {
+		apiKey := os.Getenv(auto.envKey)
+		if apiKey == "" {
+			continue
+		}
+		alreadyDeclared := false
+		for _, b := range out {
+			if b.typ == auto.typ {
+				alreadyDeclared = true
+				break
+			}
+		}
+		if !alreadyDeclared {
+			out = append(out, resolvedBackend{
+				name:    auto.name,
+				typ:     auto.typ,
+				baseURL: auto.baseURL,
+				apiKey:  apiKey,
+			})
+		}
+	}
+
 	return out, defaultProvider, defaultModel
 }
 
