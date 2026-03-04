@@ -18,9 +18,6 @@ func (s *store) AppendModel(ctx context.Context, model *Model) error {
 	if model.ID == "" {
 		model.ID = uuid.New().String()
 	}
-	if model.ContextLength <= 0 {
-		return fmt.Errorf("context length cannot be zero")
-	}
 	if model.Model == "" {
 		return fmt.Errorf("model cannot be empty")
 	}

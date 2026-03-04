@@ -497,13 +497,42 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	for _, model := range modelResp.Models {
 		lmr := statetype.ConvertOllamaModelResponse(&model)
 
-		// Enhance with declared capabilities if available
+		// Auto-fetch capabilities and context_length from Ollama /api/show.
+		// This mirrors fetchGeminiModelInfo: we trust the provider's own metadata
+		// rather than requiring manual declaration.
+		if showResp, err := client.Show(ctx, &api.ShowRequest{Model: model.Model}); err == nil {
+			statetype.EnrichFromOllamaShow(lmr, showResp)
+
+			// If the declared model has no context_length yet (auto-detect placeholder),
+			// write the discovered value back to the DB so subsequent cycles skip Show.
+			if decl, exists := declaredModelMap[lmr.Name]; exists && decl.ContextLength == 0 && lmr.ContextLength > 0 {
+				declCopy := decl
+				declCopy.ContextLength = lmr.ContextLength
+				declCopy.CanChat = lmr.CanChat
+				declCopy.CanEmbed = lmr.CanEmbed
+				declCopy.CanPrompt = lmr.CanPrompt
+				declCopy.CanStream = lmr.CanStream
+				_ = runtimetypes.New(s.dbInstance.WithoutTransaction()).UpdateModel(ctx, &declCopy)
+			}
+		}
+
+		// Declared caps act as explicit overrides (admin intent wins over auto-detected values).
 		if declaredModel, exists := declaredModelMap[lmr.Name]; exists {
-			lmr.ContextLength = declaredModel.ContextLength
-			lmr.CanChat = declaredModel.CanChat
-			lmr.CanEmbed = declaredModel.CanEmbed
-			lmr.CanPrompt = declaredModel.CanPrompt
-			lmr.CanStream = declaredModel.CanStream
+			if declaredModel.ContextLength > 0 {
+				lmr.ContextLength = declaredModel.ContextLength
+			}
+			if declaredModel.CanChat {
+				lmr.CanChat = true
+			}
+			if declaredModel.CanEmbed {
+				lmr.CanEmbed = true
+			}
+			if declaredModel.CanPrompt {
+				lmr.CanPrompt = true
+			}
+			if declaredModel.CanStream {
+				lmr.CanStream = true
+			}
 		}
 
 		pulledModels = append(pulledModels, *lmr)
@@ -513,6 +542,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	stateservice.Models = models
 	s.state.Store(backend.ID, stateservice)
 	// log.Printf("Stored updated state for backend %s", backend.ID)
+
 }
 
 // processVLLMBackend handles the state reconciliation for a single vLLM backend.

@@ -81,12 +81,6 @@ func validate(model *runtimetypes.Model) error {
 	if model.Model == "" {
 		return fmt.Errorf("%w %w: model name is required", apiframework.ErrBadRequest, ErrInvalidModel)
 	}
-	if model.ContextLength == 0 {
-		return fmt.Errorf("%w %w: context length is required", apiframework.ErrBadRequest, ErrInvalidModel)
-	}
-	if !model.CanChat && !model.CanEmbed && !model.CanPrompt && !model.CanStream {
-		return fmt.Errorf("%w %w: capabilities are required", apiframework.ErrBadRequest, ErrInvalidModel)
-	}
 	return nil
 }
 

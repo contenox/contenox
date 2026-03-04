@@ -246,23 +246,26 @@ func TestUnit_Models_ListHandlesPagination(t *testing.T) {
 	}
 }
 
-// New test for context length validation
-func TestUnit_Models_InvalidContextLength(t *testing.T) {
+// TestUnit_Models_ZeroContextLength verifies that context_length=0 is accepted
+// as an auto-detect placeholder (capabilities will be filled by the backend cycle
+// via Ollama /api/show). Only the model name is required.
+func TestUnit_Models_ZeroContextLength(t *testing.T) {
 	ctx, s := runtimetypes.SetupStore(t)
 
-	// Test zero context length
+	// Zero context length is now valid — backend cycle will populate it via Show.
 	model := &runtimetypes.Model{
 		ID:            uuid.New().String(),
-		Model:         "invalid-model",
-		ContextLength: 0, // Invalid value
+		Model:         "auto-detect-model",
+		ContextLength: 0,
 	}
 	err := s.AppendModel(ctx, model)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "context length cannot be zero")
+	require.NoError(t, err)
 
-	// Test negative context length
-	model.ContextLength = -100
-	err = s.AppendModel(ctx, model)
+	// Model name is still required.
+	noName := &runtimetypes.Model{
+		ID:            uuid.New().String(),
+		ContextLength: 0,
+	}
+	err = s.AppendModel(ctx, noName)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "context length cannot be zero")
 }
