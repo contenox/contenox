@@ -40,7 +40,7 @@ func ensureBackendsFromConfig(ctx context.Context, db libdb.DBManager, backendSv
 		byBaseURL[b.BaseURL] = b
 	}
 	for _, r := range resolved {
-		if r.baseURL == "" {
+		if r.baseURL == "" && r.apiKey == "" {
 			continue
 		}
 		existing := byName[r.name]

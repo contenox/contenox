@@ -231,10 +231,9 @@ temp/
 # Project-specific
 # ==============================
 
-# Vibe CLI build output and local DB
+# Vibe CLI build output and local config
 bin/
-.contenox/*.db
-.contenox/plans/
+.contenox/
 
 
 # Local AI context control (Cursor)
