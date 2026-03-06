@@ -40,6 +40,8 @@ type chatRequest struct {
 	Seed        *int                `json:"seed,omitempty"`
 	Stream      bool                `json:"stream,omitempty"`
 	Tools       []modelrepo.Tool    `json:"tools,omitempty"`
+	// ExtraBody passes provider-specific parameters (e.g. enable_thinking for Qwen3/Granite).
+	ExtraBody map[string]any `json:"extra_body,omitempty"`
 }
 
 func (c *vLLMClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
@@ -108,7 +110,7 @@ func buildChatRequest(modelName string, messages []modelrepo.Message, args []mod
 		arg.Apply(config)
 	}
 
-	return chatRequest{
+	req := chatRequest{
 		Model:       modelName,
 		Messages:    messages,
 		Temperature: config.Temperature,
@@ -118,4 +120,22 @@ func buildChatRequest(modelName string, messages []modelrepo.Message, args []mod
 		Stream:      false,
 		Tools:       config.Tools,
 	}
+
+	// Wire enable_thinking for Qwen3, Granite, and DeepSeek-V3.1 served via vLLM.
+	// DeepSeek-R1 reasoning output is enabled server-side (--reasoning-parser deepseek_r1);
+	// it doesn't need this flag but harmlessly ignores it.
+	if config.Think != nil {
+		switch *config.Think {
+		case "true", "high", "medium", "low":
+			req.ExtraBody = map[string]any{
+				"chat_template_kwargs": map[string]any{"enable_thinking": true},
+			}
+		case "false":
+			req.ExtraBody = map[string]any{
+				"chat_template_kwargs": map[string]any{"enable_thinking": false},
+			}
+		}
+	}
+
+	return req
 }

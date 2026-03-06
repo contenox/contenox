@@ -8,8 +8,8 @@ Local hooks execute directly on the machine where the Contenox runtime is hosted
 
 For the `contenox` CLI, local hooks are disabled by default. You must explicitly opt-in:
 ```bash
-contenox run "list my files" --enable-local-exec
-contenox exec --chain mychain.json --enable-local-exec "do something"
+contenox run "list my files" --shell
+contenox exec --chain mychain.json --shell "do something"
 ```
 
 ## Available Local Hooks

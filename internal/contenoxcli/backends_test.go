@@ -81,6 +81,8 @@ func Test_ensureBackendsFromConfig_createsNewBackend(t *testing.T) {
 func Test_ensureBackendsFromConfig_updatesExistingBackend(t *testing.T) {
 	ctx, db, _ := setupSQLiteStore(t)
 	backendSvc := backendservice.New(db)
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
 
 	// Create initial backend
 	resolved1, _, _ := resolveEffectiveBackends(localConfig{}, "http://old:11434", "old-model")
@@ -104,6 +106,8 @@ func Test_ensureBackendsFromConfig_updatesExistingBackend(t *testing.T) {
 func Test_ensureBackendsFromConfig_skipsEmptyBaseURL(t *testing.T) {
 	ctx, db, store := setupSQLiteStore(t)
 	backendSvc := backendservice.New(db)
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
 
 	// One valid, one empty baseURL - we need to build resolved manually for empty.
 	// resolveEffectiveBackends with empty Backends gives one backend from effectiveOllama.
@@ -129,6 +133,8 @@ func Test_ensureBackendsFromConfig_skipsEmptyBaseURL(t *testing.T) {
 func Test_ensureBackendsFromConfig_sameBaseURLDifferentName_updatesExisting(t *testing.T) {
 	ctx, db, _ := setupSQLiteStore(t)
 	backendSvc := backendservice.New(db)
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
 
 	// Create a backend with name "ollama" (e.g. from an old config).
 	resolved1, _, _ := resolveEffectiveBackends(localConfig{

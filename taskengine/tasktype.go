@@ -251,6 +251,11 @@ type LLMExecutionConfig struct {
 	Hooks            []string `yaml:"hooks,omitempty" json:"hooks,omitempty" example:"[\"slack_notification\", \"email_notification\"]"`
 	HideTools        []string `yaml:"hide_tools,omitempty" json:"hide_tools,omitempty" example:"[\"tool1\", \"hook_name1.tool1\"]"`
 	PassClientsTools bool     `yaml:"pass_clients_tools" json:"pass_clients_tools"`
+	// Think enables reasoning mode for supported models.
+	// Accepts "true"/"false" or "high"/"medium"/"low". Empty = provider default (off).
+	Think string `yaml:"think,omitempty" json:"think,omitempty" example:"high"`
+	// Shift allows the context window to slide on overflow instead of erroring.
+	Shift bool `yaml:"shift,omitempty" json:"shift,omitempty"`
 }
 
 // HookCall represents an external integration or side-effect triggered during a task.
@@ -419,6 +424,9 @@ type Message struct {
 	Role string `json:"role" example:"user"`
 	// Content is the content of the message.
 	Content string `json:"content,omitempty" example:"What is the capital of France?"`
+	// Thinking is the model's internal reasoning trace.
+	// Only populated when thinking is enabled; never sent back to the model as history.
+	Thinking string `json:"thinking,omitempty"`
 	// ToolCallID is the ID of the tool call associated with the message.
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	// CallTools is the tool call of the message sender.
@@ -460,7 +468,14 @@ type OpenAIChatRequest struct {
 
 type OpenAIChatRequestMessage struct {
 	Role    string `json:"role" example:"user"`
-	Content string `json:"content" example:"Hello, how are you?"`
+	Content string `json:"content,omitempty" example:"Hello, how are you?"`
+	// Thinking allows clients to supply their own reasoning traces for assistant messages.
+	Thinking string `json:"thinking,omitempty" example:"The user is asking a greeting."`
+	// ToolCalls carries tool call requests from an assistant message.
+	// Required to round-trip Gemini thought_signature (via ProviderMeta) through the OpenAI-compat path.
+	ToolCalls []ToolCall `json:"tool_calls,omitempty" openapi_include_type:"taskengine.ToolCall"`
+	// ToolCallID links a tool-result message back to its originating call.
+	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 type OpenAIChatResponse struct {
@@ -491,6 +506,9 @@ type ToolCall struct {
 	ID       string       `json:"id" example:"call_abc123"`
 	Type     string       `json:"type" example:"function"`
 	Function FunctionCall `json:"function" openapi_include_type:"taskengine.FunctionCall"`
+	// ProviderMeta carries opaque provider-specific data (e.g. Gemini thought_signature)
+	// that must be round-tripped back on the next turn.
+	ProviderMeta map[string]string `json:"provider_meta,omitempty" example:"{\"thought_signature\":\"123456\"}"`
 }
 
 // FunctionCall specifies the function name and arguments for a tool call.
@@ -507,5 +525,6 @@ type FunctionCallObject struct {
 type OpenAIChatResponseMessage struct {
 	Role      string     `json:"role" example:"assistant"`
 	Content   *string    `json:"content,omitempty" example:"I can help with that."` // Pointer to handle null content for tool calls
+	Thinking  string     `json:"thinking,omitempty" example:"The user asked for help. I should respond positively."`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty" openapi_include_type:"taskengine.ToolCall"`
 }

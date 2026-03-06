@@ -1029,3 +1029,59 @@ func (p *Playground) WaitUntilModelIsReady(ctx context.Context, backendName, mod
 		}
 	}
 }
+
+// WithSQLiteDB initializes a lightweight in-process SQLite database.
+// Use this for CLI-style tests that don't need a Postgres container.
+func (p *Playground) WithSQLiteDB(ctx context.Context, path string) *Playground {
+	if p.Error != nil {
+		return p
+	}
+	dbManager, err := libdbexec.NewSQLiteDBManager(ctx, path, runtimetypes.SchemaSQLite)
+	if err != nil {
+		p.Error = fmt.Errorf("failed to create sqlite db manager: %w", err)
+		return p
+	}
+	p.db = dbManager
+	p.AddCleanUp(func() { _ = dbManager.Close() })
+	return p
+}
+
+// DirectChatResult is the return value from DirectChat.
+type DirectChatResult struct {
+	// Content is the model's text response.
+	Content string
+	// Thinking is the reasoning trace — non-empty only when thinking is enabled
+	// and the provider supports it (Ollama ≥0.17.5, Gemini 2.5+, vLLM with reasoning parser).
+	Thinking string
+	// ToolCalls contains any tool calls requested by the model.
+	ToolCalls []modelrepo.ToolCall
+}
+
+// DirectChat calls the LLM repo directly with the given messages and arguments.
+// This is the primary way to validate thinking support in the playground:
+//
+//	result, err := p.DirectChat(ctx,
+//	    []modelrepo.Message{{Role: "user", Content: "explain recursion"}},
+//	    modelrepo.WithThink("high"),
+//	)
+//	// result.Thinking contains the chain-of-thought trace
+func (p *Playground) DirectChat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (DirectChatResult, error) {
+	if p.Error != nil {
+		return DirectChatResult{}, p.Error
+	}
+	if p.llmRepo == nil {
+		return DirectChatResult{}, errors.New("DirectChat: llmRepo not initialized — call WithLLMRepo first")
+	}
+	if p.tracker == nil {
+		p.tracker = libtracker.NoopTracker{}
+	}
+	result, _, err := p.llmRepo.Chat(ctx, llmrepo.Request{Tracker: p.tracker}, messages, args...)
+	if err != nil {
+		return DirectChatResult{}, fmt.Errorf("DirectChat: %w", err)
+	}
+	return DirectChatResult{
+		Content:   result.Message.Content,
+		Thinking:  result.Message.Thinking,
+		ToolCalls: result.ToolCalls,
+	}, nil
+}

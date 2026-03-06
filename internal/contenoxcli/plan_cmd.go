@@ -93,6 +93,7 @@ var planCleanCmd = &cobra.Command{
 func init() {
 	planCmd.AddCommand(planNewCmd, planListCmd, planShowCmd, planNextCmd, planRetryCmd, planSkipCmd, planReplanCmd, planDeleteCmd, planCleanCmd)
 	planNextCmd.Flags().Bool("auto", false, "Automatically continue to the next step until finished or failed")
+	planNextCmd.Flags().Bool("shell", false, "Enable shell execution for this plan step (use only in trusted environments)")
 }
 
 // openPlanDB is similar to openSessionDB but for plans.
@@ -134,6 +135,125 @@ func openPlanDB(cmd *cobra.Command) (context.Context, libdbexec.DBManager, strin
 	return ctx, db, contenoxDir, cleanup, nil
 }
 
+// withTransaction is the single source of truth for all plan DB writes.
+func withTransaction(ctx context.Context, db libdbexec.DBManager, fn func(tx libdbexec.Exec) error) error {
+	txExec, commit, release, err := db.WithTransaction(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer release()
+	if err := fn(txExec); err != nil {
+		return err
+	}
+	if err := commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
+}
+
+// parsePlanSteps extracts the JSON step list from LLM output.
+func parsePlanSteps(output any) ([]struct {
+	Description string `json:"description"`
+}, error) {
+	var raw string
+	switch v := output.(type) {
+	case taskengine.ChatHistory:
+		if len(v.Messages) == 0 {
+			return nil, fmt.Errorf("LLM returned no messages")
+		}
+		raw = v.Messages[len(v.Messages)-1].Content
+	case string:
+		raw = v
+	default:
+		return nil, fmt.Errorf("unexpected output type %T from planner", output)
+	}
+
+	// Strip common markdown code fences.
+	raw = strings.TrimPrefix(raw, "```json\n")
+	raw = strings.TrimPrefix(raw, "```\n")
+	raw = strings.TrimSuffix(raw, "\n```")
+	raw = strings.TrimSpace(raw)
+
+	var planJSON struct {
+		Steps []struct {
+			Description string `json:"description"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal([]byte(raw), &planJSON); err != nil {
+		return nil, fmt.Errorf("failed to parse steps JSON (raw output shown below)\n---\n%s\n---\n%w", raw, err)
+	}
+	if len(planJSON.Steps) == 0 {
+		return nil, fmt.Errorf("LLM returned zero steps")
+	}
+	return planJSON.Steps, nil
+}
+
+// updateStepAndSync combines status update + markdown sync in one transaction.
+func updateStepAndSync(ctx context.Context, db libdbexec.DBManager, cDir, planID, stepID string, status planstore.StepStatus, result string) error {
+	return withTransaction(ctx, db, func(tx libdbexec.Exec) error {
+		store := planstore.New(tx)
+		if err := store.UpdatePlanStepStatus(ctx, stepID, status, result); err != nil {
+			return fmt.Errorf("failed to update step status: %w", err)
+		}
+		if err := syncPlanMarkdown(ctx, tx, planID, cDir); err != nil {
+			return fmt.Errorf("failed to sync plan markdown: %w", err)
+		}
+		return nil
+	})
+}
+
+// executeSinglePlanStep runs one plan step and returns its final status, result, and any engine error.
+func executeSinglePlanStep(execCtx context.Context, engine *Engine, db libdbexec.DBManager, plan *planstore.Plan, step *planstore.PlanStep, chain *taskengine.TaskChainDefinition) (planstore.StepStatus, string, error) {
+	sessionID := "plan-" + plan.ID
+	chatMgr := chatservice.NewManager(nil)
+
+	exec := db.WithoutTransaction()
+	history, _ := chatMgr.ListMessages(execCtx, exec, sessionID)
+
+	prompt := fmt.Sprintf(
+		"Overall Goal: %s\n\nExecute Step %d: %s\n\nUse your local_shell tools to accomplish this. Once you have fully completed and verified this step, output exactly `===STEP_DONE===` on a new line.",
+		plan.Goal, step.Ordinal, step.Description,
+	)
+	userMsg := taskengine.Message{Role: "user", Content: prompt, Timestamp: time.Now()}
+	chainInput := taskengine.ChatHistory{Messages: append(history, userMsg)}
+
+	output, _, _, err := engine.TaskService.Execute(execCtx, chain, chainInput, taskengine.DataTypeChatHistory)
+
+	finalStatus := planstore.StepStatusFailed
+	finalResult := "Execution failed or stopped prematurely."
+
+	if err == nil {
+		if updatedHistory, ok := output.(taskengine.ChatHistory); ok && len(updatedHistory.Messages) > 0 {
+			lastMsg := updatedHistory.Messages[len(updatedHistory.Messages)-1].Content
+			finalResult = lastMsg
+			if strings.Contains(lastMsg, "===STEP_DONE===") {
+				finalStatus = planstore.StepStatusCompleted
+			}
+			// Persist chat diff (non-fatal).
+			_ = withTransaction(execCtx, db, func(tx libdbexec.Exec) error {
+				return chatMgr.PersistDiff(execCtx, tx, sessionID, updatedHistory.Messages)
+			})
+		}
+	}
+
+	return finalStatus, finalResult, err
+}
+
+// handlePlanCompletion marks the plan as completed and syncs its markdown.
+func handlePlanCompletion(ctx context.Context, db libdbexec.DBManager, cDir, activeID string) error {
+	return withTransaction(ctx, db, func(tx libdbexec.Exec) error {
+		store := planstore.New(tx)
+		if err := store.UpdatePlanStatus(ctx, activeID, planstore.PlanStatusCompleted); err != nil {
+			return fmt.Errorf("failed to mark plan completed: %w", err)
+		}
+		if err := syncPlanMarkdown(ctx, tx, activeID, cDir); err != nil {
+			return fmt.Errorf("failed to sync plan markdown: %w", err)
+		}
+		fmt.Println("All steps complete. Plan is done!")
+		return nil
+	})
+}
+
 func buildPlanOpts(cmd *cobra.Command, input string) runOpts {
 	cfg, _, _ := loadLocalConfig()
 	flags := cmd.Root().Flags()
@@ -165,6 +285,12 @@ func buildPlanOpts(cmd *cobra.Command, input string) runOpts {
 	}
 	if v, _ := flags.GetBool("enable-local-exec"); flags.Changed("enable-local-exec") {
 		effectiveEnableLocalExec = v
+	}
+	// Also check the subcommand's own local flags (e.g. plan next --local-shell).
+	if localFlags := cmd.Flags(); localFlags != flags {
+		if v, _ := localFlags.GetBool("shell"); localFlags.Changed("shell") {
+			effectiveEnableLocalExec = v
+		}
 	}
 
 	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
@@ -264,81 +390,48 @@ func runPlanNew(cmd *cobra.Command, args []string) error {
 	userMsg := taskengine.Message{Role: "user", Content: goal, Timestamp: time.Now()}
 	chainInput := taskengine.ChatHistory{Messages: []taskengine.Message{userMsg}}
 
-	output, outputType, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
+	output, _, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
 	if err != nil {
 		return fmt.Errorf("planner chain execution failed: %w", err)
 	}
 
-	// 5. Parse the JSON result
-	var planJSON struct {
-		Steps []struct {
-			Description string `json:"description"`
-		} `json:"steps"`
-	}
-
-	success := false
-	if outputType == taskengine.DataTypeChatHistory {
-		if hist, ok := output.(taskengine.ChatHistory); ok && len(hist.Messages) > 0 {
-			lastMsg := hist.Messages[len(hist.Messages)-1].Content
-			// Strip markdown code block
-			lastMsg = strings.TrimPrefix(lastMsg, "```json\n")
-			lastMsg = strings.TrimPrefix(lastMsg, "```\n")
-			lastMsg = strings.TrimSuffix(lastMsg, "\n```")
-			if err := json.Unmarshal([]byte(lastMsg), &planJSON); err == nil {
-				success = true
-			} else {
-				slog.Error("Failed to parse LLM json output", "output", lastMsg, "error", err)
-			}
-		}
-	}
-	if !success {
-		return fmt.Errorf("failed to get a valid JSON response from the planner")
+	// 5. Parse steps
+	steps, err := parsePlanSteps(output)
+	if err != nil {
+		return fmt.Errorf("planner failed: %w", err)
 	}
 
 	// 6. Save to DB
-	txExec, commit, release, txErr := db.WithTransaction(ctx)
-	if txErr != nil {
-		return txErr
-	}
-	defer release()
+	if err := withTransaction(ctx, db, func(tx libdbexec.Exec) error {
+		store := planstore.New(tx)
+		planID := uuid.New().String()
 
-	store := planstore.New(txExec)
-	planID := uuid.New().String()
-
-	plan := &planstore.Plan{
-		ID:   planID,
-		Name: name,
-		Goal: goal,
-	}
-	if err := store.CreatePlan(ctx, plan); err != nil {
-		return fmt.Errorf("failed to create plan: %w", err)
-	}
-
-	for i, st := range planJSON.Steps {
-		step := &planstore.PlanStep{
-			ID:          uuid.New().String(),
-			PlanID:      planID,
-			Ordinal:     i + 1,
-			Description: st.Description,
+		plan := &planstore.Plan{ID: planID, Name: name, Goal: goal}
+		if err := store.CreatePlan(ctx, plan); err != nil {
+			return fmt.Errorf("failed to create plan: %w", err)
 		}
-		if err := store.CreatePlanSteps(ctx, step); err != nil {
-			return fmt.Errorf("failed to save step: %w", err)
+
+		for i, st := range steps {
+			step := &planstore.PlanStep{
+				ID:          uuid.New().String(),
+				PlanID:      planID,
+				Ordinal:     i + 1,
+				Description: st.Description,
+			}
+			if err := store.CreatePlanSteps(ctx, step); err != nil {
+				return fmt.Errorf("failed to save step: %w", err)
+			}
 		}
+
+		if err := setActivePlanID(ctx, tx, planID); err != nil {
+			return fmt.Errorf("failed to set active plan: %w", err)
+		}
+		return syncPlanMarkdown(ctx, tx, planID, cDir)
+	}); err != nil {
+		return err
 	}
 
-	if err := setActivePlanID(ctx, txExec, planID); err != nil {
-		return fmt.Errorf("failed to set active plan pointer: %w", err)
-	}
-
-	if err := syncPlanMarkdown(ctx, txExec, planID, cDir); err != nil {
-		fmt.Printf("Warning: failed to sync markdown: %v\n", err)
-	}
-
-	if err := commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit: %w", err)
-	}
-
-	fmt.Printf("Created plan %q with %d steps. Now active.\n", name, len(planJSON.Steps))
+	fmt.Printf("Created plan %q with %d steps. Now active.\n", name, len(steps))
 	return nil
 }
 
@@ -470,93 +563,67 @@ func runPlanNext(cmd *cobra.Command, _ []string) error {
 
 	// execution loop
 	for {
-		exec := db.WithoutTransaction()
-		activeID, err := getActivePlanID(ctx, exec)
-		if err != nil || activeID == "" {
-			return fmt.Errorf("no active plan")
-		}
-
-		store := planstore.New(exec)
-		plan, err := store.GetPlanByID(ctx, activeID)
-		if err != nil {
-			return err
-		}
-
-		steps, err := store.ListPlanSteps(ctx, activeID)
-		if err != nil {
-			return err
-		}
-
+		var activeID string
 		var nextStep *planstore.PlanStep
-		for _, s := range steps {
-			if s.Status == planstore.StepStatusPending {
-				nextStep = s
-				break
+		var plan *planstore.Plan
+
+		if err := withTransaction(ctx, db, func(tx libdbexec.Exec) error {
+			store := planstore.New(tx)
+			var err2 error
+			activeID, err2 = getActivePlanID(ctx, tx)
+			if err2 != nil || activeID == "" {
+				return fmt.Errorf("no active plan")
 			}
+			plan, err2 = store.GetPlanByID(ctx, activeID)
+			if err2 != nil {
+				return fmt.Errorf("failed to load plan: %w", err2)
+			}
+			steps, err2 := store.ListPlanSteps(ctx, activeID)
+			if err2 != nil {
+				return fmt.Errorf("failed to load steps: %w", err2)
+			}
+			for _, s := range steps {
+				if s.Status == planstore.StepStatusPending {
+					nextStep = s
+					break
+				}
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 
 		if nextStep == nil {
-			_ = planstore.New(exec).UpdatePlanStatus(ctx, activeID, planstore.PlanStatusCompleted)
-			_ = syncPlanMarkdown(ctx, exec, activeID, cDir)
-			fmt.Println("No pending steps. Plan is complete!")
-			return nil
+			return handlePlanCompletion(ctx, db, cDir, activeID)
 		}
 
 		fmt.Printf("\nExecuting Step %d: %s...\n", nextStep.Ordinal, nextStep.Description)
 
-		sessionID := "plan-" + activeID
-		chatMgr := chatservice.NewManager(nil)
-		history, _ := chatMgr.ListMessages(ctx, exec, sessionID)
+		finalStatus, finalResult, execErr := executeSinglePlanStep(execCtx, engine, db, plan, nextStep, &chain)
 
-		prompt := fmt.Sprintf("Overall Goal: %s\n\nExecute Step %d: %s\n\nUse your local_shell tools to accomplish this. Once you have fully completed and verified this step, output exactly `===STEP_DONE===` on a new line.", plan.Goal, nextStep.Ordinal, nextStep.Description)
-		userMsg := taskengine.Message{Role: "user", Content: prompt, Timestamp: time.Now()}
-		chainInput := taskengine.ChatHistory{Messages: append(history, userMsg)}
-
-		output, _, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
-
-		finalStatus := planstore.StepStatusFailed
-		finalResult := "Execution failed or stopped prematurely."
-
-		isEmptyContentErr := err != nil && strings.Contains(err.Error(), "empty content from model")
-
-		if err == nil || isEmptyContentErr {
-			if updatedHistory, ok := output.(taskengine.ChatHistory); ok {
-				// Persist chat diff
-				txExec, commit, release, txErr := db.WithTransaction(ctx)
-				if txErr == nil {
-					_ = chatMgr.PersistDiff(ctx, txExec, sessionID, updatedHistory.Messages)
-					_ = commit(ctx)
-					release()
-				}
-
-				if len(updatedHistory.Messages) > 0 {
-					lastMsg := updatedHistory.Messages[len(updatedHistory.Messages)-1].Content
-					finalResult = lastMsg
-					if strings.Contains(lastMsg, "===STEP_DONE===") {
-						finalStatus = planstore.StepStatusCompleted
-					}
-				}
-			}
+		if err := updateStepAndSync(ctx, db, cDir, activeID, nextStep.ID, finalStatus, finalResult); err != nil {
+			return err
 		}
-
-		if err := store.UpdatePlanStepStatus(ctx, nextStep.ID, finalStatus, finalResult); err != nil {
-			return fmt.Errorf("failed to update step status: %w", err)
-		}
-
-		_ = syncPlanMarkdown(ctx, exec, activeID, cDir)
 
 		if finalStatus != planstore.StepStatusCompleted {
-			fmt.Println("\nStep execution stopped or failed. Please review the output above.")
-			break
+			if execErr != nil {
+				fmt.Fprintf(os.Stderr, "\nStep failed: %v\n", execErr)
+			}
+			if finalResult != "" && finalResult != "Execution failed or stopped prematurely." {
+				fmt.Fprintf(os.Stderr, "\nStep output:\n%s\n", finalResult)
+			}
+			fmt.Fprintln(os.Stderr, "\nStep did not complete successfully.\n"+
+				"  • contenox plan show          → see current status\n"+
+				"  • contenox plan retry <N>     → retry this step\n"+
+				"  • contenox plan replan        → regenerate remaining steps")
+			return nil
 		}
 
-		fmt.Printf("\nStep %d completed successfully.\n", nextStep.Ordinal)
+		fmt.Printf("✓ Step %d completed.\n", nextStep.Ordinal)
 		if !isAuto {
-			break
+			return nil
 		}
 	}
-
-	return nil
 }
 
 func runPlanRetry(cmd *cobra.Command, args []string) error {
@@ -613,7 +680,9 @@ func updateStepStatusByOrdinal(ctx context.Context, db libdbexec.DBManager, cDir
 		return fmt.Errorf("failed to update step: %w", err)
 	}
 
-	_ = syncPlanMarkdown(ctx, exec, activeID, cDir)
+	if err := syncPlanMarkdown(ctx, exec, activeID, cDir); err != nil {
+		slog.Warn("failed to sync plan markdown after step update", "error", err)
+	}
 	fmt.Printf("Step %d updated to %s.\n", ordinal, newStatus)
 	return nil
 }
@@ -689,70 +758,40 @@ func runPlanReplan(cmd *cobra.Command, _ []string) error {
 	userMsg := taskengine.Message{Role: "user", Content: goalPrompt, Timestamp: time.Now()}
 	chainInput := taskengine.ChatHistory{Messages: []taskengine.Message{userMsg}}
 
-	output, outputType, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
+	output, _, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
 	if err != nil {
-		return err
+		return fmt.Errorf("replan execution failed: %w", err)
 	}
 
-	var planJSON struct {
-		Steps []struct {
-			Description string `json:"description"`
-		} `json:"steps"`
+	newSteps, err := parsePlanSteps(output)
+	if err != nil {
+		return fmt.Errorf("replan failed: %w", err)
 	}
 
-	success := false
-	if outputType == taskengine.DataTypeChatHistory {
-		if hist, ok := output.(taskengine.ChatHistory); ok && len(hist.Messages) > 0 {
-			lastMsg := hist.Messages[len(hist.Messages)-1].Content
-			lastMsg = strings.TrimPrefix(lastMsg, "```json\n")
-			lastMsg = strings.TrimPrefix(lastMsg, "```\n")
-			lastMsg = strings.TrimSuffix(lastMsg, "\n```")
-			if err := json.Unmarshal([]byte(lastMsg), &planJSON); err == nil {
-				success = true
-			} else {
-				slog.Error("Failed to parse LLM json output", "error", err, "output", lastMsg)
+	if err := withTransaction(ctx, db, func(tx libdbexec.Exec) error {
+		txStore := planstore.New(tx)
+		if err := txStore.DeletePendingPlanSteps(ctx, activeID); err != nil {
+			return fmt.Errorf("failed to delete pending steps: %w", err)
+		}
+		currentOrdinal := maxOrdinal + 1
+		for _, st := range newSteps {
+			step := &planstore.PlanStep{
+				ID:          uuid.New().String(),
+				PlanID:      activeID,
+				Ordinal:     currentOrdinal,
+				Description: st.Description,
 			}
+			if err := txStore.CreatePlanSteps(ctx, step); err != nil {
+				return fmt.Errorf("failed to save step: %w", err)
+			}
+			currentOrdinal++
 		}
-	}
-	if !success {
-		return fmt.Errorf("failed to get a valid JSON response from the planner")
-	}
-
-	txExec, commit, release, txErr := db.WithTransaction(ctx)
-	if txErr != nil {
-		return txErr
-	}
-	defer release()
-
-	txStore := planstore.New(txExec)
-
-	if err := txStore.DeletePendingPlanSteps(ctx, activeID); err != nil {
+		return syncPlanMarkdown(ctx, tx, activeID, cDir)
+	}); err != nil {
 		return err
 	}
 
-	currentOrdinal := maxOrdinal + 1
-	for _, st := range planJSON.Steps {
-		step := &planstore.PlanStep{
-			ID:          uuid.New().String(),
-			PlanID:      activeID,
-			Ordinal:     currentOrdinal,
-			Description: st.Description,
-		}
-		if err := txStore.CreatePlanSteps(ctx, step); err != nil {
-			return err
-		}
-		currentOrdinal++
-	}
-
-	if err := syncPlanMarkdown(ctx, txExec, activeID, cDir); err != nil {
-		fmt.Printf("Warning: failed to sync markdown: %v\n", err)
-	}
-
-	if err := commit(ctx); err != nil {
-		return err
-	}
-
-	fmt.Printf("Replanned with %d new steps. Use 'contenox plan show' to see them.\n", len(planJSON.Steps))
+	fmt.Printf("Replanned with %d new steps. Use 'contenox plan show' to see them.\n", len(newSteps))
 	return nil
 }
 

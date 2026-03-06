@@ -49,6 +49,7 @@ type runOpts struct {
 	EffectiveTracing                  bool
 	EffectiveSteps                    bool
 	EffectiveRaw                      bool
+	EffectiveThink                    bool
 	InputValue                        string
 	InputFlagPassed                   bool
 	Cfg                               localConfig
@@ -435,6 +436,16 @@ func run(ctx context.Context, opts runOpts) {
 	// ------------------------------------------------------------------------
 	// 12. Print results
 	// ------------------------------------------------------------------------
+	if opts.EffectiveThink {
+		if hist, ok := output.(taskengine.ChatHistory); ok {
+			for _, msg := range hist.Messages {
+				if msg.Role == "assistant" && msg.Thinking != "" {
+					fmt.Fprintln(os.Stderr, "\n💭 Reasoning:")
+					fmt.Fprintln(os.Stderr, msg.Thinking)
+				}
+			}
+		}
+	}
 	printRelevantOutput(output, outputType, opts.EffectiveRaw)
 	if opts.EffectiveSteps && len(stateUnits) > 0 {
 		fmt.Fprintln(os.Stderr, "\n📋 Steps:")

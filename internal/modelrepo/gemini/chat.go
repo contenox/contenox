@@ -52,23 +52,26 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	cand := resp.Candidates[0]
 
 	var (
-		outText   string
-		toolCalls []modelrepo.ToolCall
+		outText       string
+		thinkingText  string
+		toolCalls     []modelrepo.ToolCall
+		lastSignature string
 	)
-
 	for _, p := range cand.Content.Parts {
 		switch {
+		case p.Thought && p.Text != "":
+			// Gemini 2.5+ returns thinking content in Parts with thought=true
+			thinkingText += p.Text
 		case p.Text != "":
 			outText += p.Text
 		case p.FunctionCall != nil:
 			// Convert args (map[string]any) -> JSON string
 			argsJSON, err := json.Marshal(p.FunctionCall.Args)
 			if err != nil {
-				// Skip this call but still try to return text/tool calls we did parse
 				continue
 			}
 			id := fmt.Sprintf("%x", rand.Int63())
-			toolCalls = append(toolCalls, modelrepo.ToolCall{
+			tc := modelrepo.ToolCall{
 				ID:   id,
 				Type: "function",
 				Function: struct {
@@ -78,7 +81,22 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 					Name:      p.FunctionCall.Name,
 					Arguments: string(argsJSON),
 				},
-			})
+			}
+			// Gemini 3: thoughtSignature is at the Part level (p.ThoughtSignature),
+			// not inside functionCall. Propagate it to parallel calls in the same turn
+			// where Gemini may only set it once.
+			sig := p.ThoughtSignature
+			if sig == "" {
+				sig = p.FunctionCall.ThoughtSignature // fallback: older API placement
+			}
+			if sig == "" {
+				sig = lastSignature // propagate to parallel calls in same turn
+			}
+			if sig != "" {
+				lastSignature = sig
+				tc.ProviderMeta = map[string]string{"thought_signature": sig}
+			}
+			toolCalls = append(toolCalls, tc)
 		}
 	}
 
@@ -89,7 +107,7 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	result := modelrepo.ChatResult{
-		Message:   modelrepo.Message{Role: "assistant", Content: outText},
+		Message:   modelrepo.Message{Role: "assistant", Content: outText, Thinking: thinkingText},
 		ToolCalls: toolCalls,
 	}
 

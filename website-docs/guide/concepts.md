@@ -41,7 +41,7 @@ The `handler` determines what the task does. See [Handlers](/chains/handlers) fo
 
 A **hook** is a capability the model can call — a local shell command, the local filesystem, or a remote HTTP service.
 
-- **`local_shell`** — run shell commands (requires `--enable-local-exec`)
+- **`local_shell`** — run shell commands (requires `--shell`)
 - **`local_fs`** — read/write files
 - **Remote hooks** — any service with an OpenAPI v3 spec at `/openapi.json`
 

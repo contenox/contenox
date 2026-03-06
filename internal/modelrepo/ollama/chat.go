@@ -57,6 +57,17 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	think := api.ThinkValue{Value: false}
+	if config.Think != nil {
+		s := *config.Think
+		switch s {
+		case "true", "high", "medium", "low":
+			think = api.ThinkValue{Value: s}
+		case "false":
+			think = api.ThinkValue{Value: false}
+		default:
+			think = api.ThinkValue{Value: false}
+		}
+	}
 	stream := false
 
 	// Convert modelrepo tools → Ollama tools using ToolFunctionParameters
@@ -107,6 +118,12 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		Options:  llamaOptions,
 		Tools:    apiTools,
 	}
+	if config.Shift != nil {
+		req.Shift = config.Shift
+	}
+	if config.Truncate != nil {
+		req.Truncate = config.Truncate
+	}
 
 	var finalResponse api.ChatResponse
 
@@ -153,8 +170,9 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 
 	// Base assistant message
 	message := modelrepo.Message{
-		Role:    finalResponse.Message.Role,
-		Content: finalResponse.Message.Content,
+		Role:     finalResponse.Message.Role,
+		Content:  finalResponse.Message.Content,
+		Thinking: finalResponse.Message.Thinking,
 	}
 
 	// Convert Ollama tool calls → modelrepo.ToolCall

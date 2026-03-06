@@ -29,6 +29,9 @@ Sends the current input to the LLM and waits for a reply. If the model calls a t
 | `execute_config.hooks` | No | List of hook names to expose as tools |
 | `execute_config.hide_tools` | No | Tools to suppress from the model |
 | `execute_config.temperature` | No | Sampling temperature (0–1) |
+| `execute_config.think` | No | Reasoning effort level. `"low"`, `"medium"`, `"high"`, or `"false"`. Supported by Ollama (v0.17.5+), Gemini 2.5+, vLLM, and OpenAI o-series models. |
+| `execute_config.shift` | No | Boolean. If true, slides the context window by dropping old messages instead of erroring on token limits. |
+| `execute_config.truncate` | No | Boolean. If true, truncates the initial prompt instead of sliding the context window (Ollama-specific). |
 
 **Transition values:**
 - `"tool-call"` — model issued one or more tool calls

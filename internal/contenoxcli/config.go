@@ -81,6 +81,14 @@ func resolveEffectiveBackends(cfg localConfig, effectiveOllama, effectiveModel s
 		if apiKey == "" && b.APIKeyFromEnv != "" {
 			apiKey = os.Getenv(strings.TrimSpace(b.APIKeyFromEnv))
 		}
+		if baseURL == "" {
+			switch typ {
+			case "openai":
+				baseURL = "https://api.openai.com/v1"
+			case "gemini":
+				baseURL = "https://generativelanguage.googleapis.com"
+			}
+		}
 		out = append(out, resolvedBackend{name: name, typ: typ, baseURL: baseURL, apiKey: apiKey})
 	}
 	defaultProvider := strings.ToLower(strings.TrimSpace(cfg.DefaultProvider))
@@ -103,7 +111,7 @@ func resolveEffectiveBackends(cfg localConfig, effectiveOllama, effectiveModel s
 		typ     string
 		baseURL string
 	}{
-		{"GEMINI_API_KEY", "gemini", "gemini", ""},
+		{"GEMINI_API_KEY", "gemini", "gemini", "https://generativelanguage.googleapis.com"},
 		{"OPENAI_API_KEY", "openai", "openai", "https://api.openai.com/v1"},
 	} {
 		apiKey := os.Getenv(auto.envKey)

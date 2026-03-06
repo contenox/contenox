@@ -28,6 +28,7 @@ import (
 
 type Engine struct {
 	TaskService execservice.TasksEnvService
+	Tracker     libtracker.ActivityTracker
 	JSEnv       *jseval.Env
 	Stop        func()
 }
@@ -247,6 +248,7 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts runOpts) (*En
 	})
 
 	engine.TaskService = taskService
+	engine.Tracker = tracker
 	engine.JSEnv = jsEnv
 
 	oldStop := engine.Stop
