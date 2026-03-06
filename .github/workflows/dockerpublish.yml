@@ -137,11 +137,12 @@ jobs:
           done
 
       - name: Create GitHub Release and upload assets
-        uses: softprops/action-gh-release@v2.4.2
-        with:
-          files: contenox-*
-          overwrite_files: true
-          draft: false
-          make_latest: true
+        run: |
+          TAG="${{ steps.vars.outputs.TAG }}"
+          gh release create "$TAG" contenox-* \
+            --title "$TAG" \
+            --notes "" \
+            --latest \
+            --verify-tag
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
