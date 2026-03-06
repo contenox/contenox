@@ -16,6 +16,9 @@ var initConfig string
 //go:embed chain-contenox.json
 var initChain string
 
+//go:embed chain-run.json
+var initRunChain string
+
 // providerConfig holds the provider-specific values used to generate config.yaml.
 type providerConfig struct {
 	name         string
@@ -35,7 +38,7 @@ var providerConfigs = map[string]providerConfig{
     base_url: http://127.0.0.1:11434
 default_provider: local
 default_model: qwen2.5:7b
-context: 32768
+context: 131072
 `,
 	},
 	"gemini": {
@@ -48,7 +51,7 @@ context: 32768
     api_key_from_env: GEMINI_API_KEY
 default_provider: gemini
 default_model: gemini-3.1-flash-lite-preview
-context: 32768
+context: 1048576
 `,
 	},
 	"openai": {
@@ -62,7 +65,7 @@ context: 32768
     api_key_from_env: OPENAI_API_KEY
 default_provider: openai
 default_model: gpt-4.1-mini
-context: 32768
+context: 131072
 `,
 	},
 }
@@ -97,7 +100,7 @@ func makeProviderConfig(pc providerConfig) string {
 			after = append(after, line)
 		}
 	}
-	return strings.Join(before, "\n") + pc.configBlock + "\n" + strings.Join(after, "\n")
+	return strings.Join(before, "\n") + "\n" + pc.configBlock + "\n" + strings.Join(after, "\n")
 }
 
 // RunInit scaffolds .contenox/ (config and default chain).
@@ -126,6 +129,7 @@ func RunInit(force bool, provider string) {
 	}
 	configPath := filepath.Join(contenoxDir, "config.yaml")
 	chainPath := filepath.Join(contenoxDir, "default-chain.json")
+	runChainPath := filepath.Join(contenoxDir, "default-run-chain.json")
 	writeFile := func(path, content string) bool {
 		if !force {
 			if _, err := os.Stat(path); err == nil {
@@ -147,6 +151,7 @@ func RunInit(force bool, provider string) {
 	}
 	writeFile(configPath, configContent)
 	writeFile(chainPath, initChain)
+	writeFile(runChainPath, initRunChain)
 
 	fmt.Println("Done.")
 	fmt.Println("")

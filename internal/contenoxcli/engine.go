@@ -34,7 +34,7 @@ type Engine struct {
 }
 
 // BuildEngine scaffolds the complex dependency graph needed to run task chains.
-func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts runOpts) (*Engine, error) {
+func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*Engine, error) {
 	// 4. Ensure models
 	// 2. In-memory bus
 	bus := libbus.NewInMem()

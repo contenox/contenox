@@ -34,8 +34,8 @@ import (
 	"github.com/contenox/contenox/taskengine"
 )
 
-// runOpts carries all effective config and flags needed by the run pipeline.
-type runOpts struct {
+// chatOpts carries all effective config and flags needed by the run pipeline.
+type chatOpts struct {
 	EffectiveDB                       string
 	EffectiveChain                    string
 	EffectiveDefaultModel             string
@@ -57,7 +57,7 @@ type runOpts struct {
 	ContenoxDir                       string
 }
 
-func run(ctx context.Context, opts runOpts) {
+func execChat(ctx context.Context, opts chatOpts) {
 	// ------------------------------------------------------------------------
 	// 1. SQLite database
 	// ------------------------------------------------------------------------

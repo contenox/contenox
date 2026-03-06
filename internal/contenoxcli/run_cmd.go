@@ -19,15 +19,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// execCmd runs any task chain with any input type.
-// Unlike 'contenox run' (which hardcodes DataTypeChatHistory), 'contenox exec'
+// runCmd runs any task chain with any input type.
+// Unlike 'contenox chat' (which hardcodes DataTypeChatHistory), 'contenox run'
 // lets the caller specify the input type and is fully stateless (no chat history).
-var execCmd = &cobra.Command{
-	Use:   "exec",
-	Short: "Run any task chain with explicit input type control.",
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run any task chain with explicit input type control (stateless).",
 	Long: `Run a task chain with explicit control over input type and content.
 
-Unlike the default 'contenox run', exec is stateless — no chat history is loaded or saved.
+Unlike the default 'contenox chat', run is stateless — no chat history is loaded or saved.
 It accepts any task chain regardless of the first handler's expected input type.
 
 Input sources (in priority order):
@@ -44,10 +44,10 @@ Input types (--input-type):
   bool              Parse as boolean. DataTypeBool.
 
 Examples:
-  contenox exec --chain .contenox/score-chain.json "is this code safe?"
-  cat diff.txt | contenox exec --chain .contenox/review.json --input-type chat
-  contenox exec --chain .contenox/embed.json --input-type string --input @myfile.go
-  contenox exec --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
+  contenox run --chain .contenox/score-chain.json "is this code safe?"
+  cat diff.txt | contenox run --chain .contenox/review.json --input-type chat
+  contenox run --chain .contenox/embed.json --input-type string --input @myfile.go
+  contenox run --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -68,14 +68,20 @@ Examples:
 			contenoxDir = filepath.Join(cwd, ".contenox")
 		}
 
-		// Resolve chain path (required for exec)
+		// Resolve chain path (fallback to default chain if not specified)
 		chainPath, _ := flags.GetString("chain")
+		if chainPath == "" && !flags.Changed("chain") {
+			wellKnown := filepath.Join(contenoxDir, "default-run-chain.json")
+			if _, err := os.Stat(wellKnown); err == nil {
+				chainPath = wellKnown
+			}
+		}
 		if chainPath == "" {
-			return fmt.Errorf("--chain is required for 'contenox exec'\n  Example: contenox exec --chain .contenox/my-chain.json \"your input\"")
+			return fmt.Errorf("--chain is required for 'contenox run'\n  Example: contenox run --chain .contenox/my-chain.json \"your input\"")
 		}
 
 		// Resolve input
-		rawInput, err := resolveExecInput(cmd, args)
+		rawInput, err := resolveRunInput(cmd, args)
 		if err != nil {
 			return err
 		}
@@ -88,13 +94,18 @@ Examples:
 
 		// Resolve input type
 		inputTypeName, _ := flags.GetString("input-type")
-		inputVal, inputType, err := parseExecInput(rawInput, inputTypeName)
+		if !flags.Changed("input-type") && !flags.Changed("chain") {
+			// If neither chain nor input-type were provided, and we are falling back to the default run chain,
+			// the default run chain expects a string input natively rather than chat history.
+			inputTypeName = "string"
+		}
+		inputVal, inputType, err := parseRunInput(rawInput, inputTypeName)
 		if err != nil {
 			return fmt.Errorf("--input-type %q: %w", inputTypeName, err)
 		}
 
-		// Build runOpts from flags (reuses the same resolution logic as contenox run)
-		o := buildExecOpts(cmd, cfg, contenoxDir)
+		// Build chatOpts from flags (reuses the same resolution logic as contenox chat)
+		o := buildRunOpts(cmd, cfg, contenoxDir)
 
 		// Open database
 		effectiveDB, _ := flags.GetString("db")
@@ -197,8 +208,8 @@ Examples:
 	},
 }
 
-// resolveExecInput returns the raw input string from --input, @file, positional args, or stdin.
-func resolveExecInput(cmd *cobra.Command, args []string) (string, error) {
+// resolveRunInput returns the raw input string from --input, @file, positional args, or stdin.
+func resolveRunInput(cmd *cobra.Command, args []string) (string, error) {
 	flags := cmd.Flags()
 
 	if flags.Changed("input") {
@@ -230,8 +241,8 @@ func resolveExecInput(cmd *cobra.Command, args []string) (string, error) {
 	return "", nil
 }
 
-// parseExecInput converts a raw string into the typed value and DataType the engine expects.
-func parseExecInput(raw, typeName string) (any, taskengine.DataType, error) {
+// parseRunInput converts a raw string into the typed value and DataType the engine expects.
+func parseRunInput(raw, typeName string) (any, taskengine.DataType, error) {
 	switch strings.ToLower(typeName) {
 	case "string", "":
 		return raw, taskengine.DataTypeString, nil
@@ -275,9 +286,9 @@ func parseExecInput(raw, typeName string) (any, taskengine.DataType, error) {
 	}
 }
 
-// buildExecOpts resolves effective options from flags and config for exec.
+// buildRunOpts resolves effective options from flags and config for run.
 // It deliberately reuses the same resolution helpers as the root run command.
-func buildExecOpts(cmd *cobra.Command, cfg localConfig, contenoxDir string) runOpts {
+func buildRunOpts(cmd *cobra.Command, cfg localConfig, contenoxDir string) chatOpts {
 	flags := cmd.Root().Flags()
 
 	effectiveModel, _ := flags.GetString("model")
@@ -323,9 +334,9 @@ func buildExecOpts(cmd *cobra.Command, cfg localConfig, contenoxDir string) runO
 
 	resolvedBackends, effectiveDefaultProvider, effectiveDefaultModel := resolveEffectiveBackends(cfg, effectiveOllama, effectiveModel)
 
-	return runOpts{
+	return chatOpts{
 		EffectiveDB:                       "", // resolved separately in RunE
-		EffectiveChain:                    "", // unused — exec loads chain directly
+		EffectiveChain:                    "", // unused — run loads chain directly
 		EffectiveContext:                  effectiveContext,
 		EffectiveDefaultModel:             effectiveDefaultModel,
 		EffectiveDefaultProvider:          effectiveDefaultProvider,
@@ -342,7 +353,7 @@ func buildExecOpts(cmd *cobra.Command, cfg localConfig, contenoxDir string) runO
 }
 
 func init() {
-	f := execCmd.Flags()
+	f := runCmd.Flags()
 	f.String("chain", "", "Path to a task chain JSON file (required)")
 	f.String("input", "", "Input value or @path to read from a file (e.g. --input @main.go)")
 	f.String("input-type", "string", "Input type: string, chat, json, int, float, bool")

@@ -27,7 +27,7 @@ ollama pull qwen2.5:7b
 
 ## Subcommands
 
-### `contenox` / `contenox run` — interactive chat
+### `contenox` / `contenox chat` — interactive chat
 
 ```bash
 contenox "what is the current directory?"
@@ -72,27 +72,27 @@ Plan names are derived from the goal text (`fix-auth-token-expiry-a3f9e12b`), so
 
 ---
 
-### `contenox exec` — run any chain, any input type
+### `contenox run` — run any chain, any input type
 
 For scripting and pipeline use cases where you want full control:
 
 ```bash
 # String input (default)
-contenox exec --chain .contenox/my-chain.json "is this code safe?"
+contenox run --chain .contenox/my-chain.json "is this code safe?"
 
 # Wrap as a chat message
-cat diff.txt | contenox exec --chain .contenox/review.json --input-type chat
+cat diff.txt | contenox run --chain .contenox/review.json --input-type chat
 
 # Read input from a file
-contenox exec --chain .contenox/doc-chain.json --input @main.go
+contenox run --chain .contenox/doc-chain.json --input @main.go
 
 # Structured JSON input
-contenox exec --chain .contenox/parse.json --input-type json '{"key":"value"}'
+contenox run --chain .contenox/parse.json --input-type json '{"key":"value"}'
 ```
 
 `--chain` is required. Supported `--input-type` values: `string` (default), `chat`, `json`, `int`, `float`, `bool`.
 
-`contenox exec` is **stateless** — no session history is loaded or saved.
+`contenox run` is **stateless** — no session history is loaded or saved.
 
 ---
 
@@ -121,7 +121,7 @@ contenox hook show nws
 
 Run a query using the included example chain:
 ```bash
-contenox exec --chain .contenox/chain-nws.json --input-type chat \
+contenox run --chain .contenox/chain-nws.json --input-type chat \
   "how many active weather alerts are there right now?"
 ```
 
@@ -243,7 +243,7 @@ Chain fields like `system_instruction` and `prompt_template` support macros expa
 
 ### `--chain` and `contenox plan`
 
-`--chain` selects which chain `contenox run`/`contenox exec` uses. It does **not** apply to `contenox plan` subcommands — the planner and executor chains for `contenox plan` are built-in and live in `.contenox/chain-planner.json` and `.contenox/chain-executor.json` (written by `contenox init`). These chains have a specific contract (input/output types, handler sequence) and are validated on use.
+`--chain` selects which chain `contenox chat`/`contenox run` uses. It does **not** apply to `contenox plan` subcommands — the planner and executor chains for `contenox plan` are built-in and live in `.contenox/chain-planner.json` and `.contenox/chain-executor.json` (written by `contenox init`). These chains have a specific contract (input/output types, handler sequence) and are validated on use.
 
 ---
 

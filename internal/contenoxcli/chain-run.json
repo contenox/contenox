@@ -1,0 +1,53 @@
+{
+    "id": "chain-run",
+    "description": "Stateless execution chain for 'contenox run'. Takes a string or chat input, returns a string output. Supports local_shell and local_fs hooks when enabled via --shell.",
+    "tasks": [
+        {
+            "id": "contenox_run",
+            "description": "Stateless chat completion with optional shell/fs tools. Model may call tools or respond directly.",
+            "handler": "chat_completion",
+            "system_instruction": "You are Contenox, a helpful AI assistant. Answer the user's questions clearly and helpfully. If you have tools available, use them when appropriate to complete the task.",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}",
+                "pass_clients_tools": false,
+                "hooks": [
+                    "local_shell",
+                    "local_fs"
+                ]
+            },
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    {
+                        "operator": "equals",
+                        "when": "tool-call",
+                        "goto": "run_tools"
+                    },
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "end"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "run_tools",
+            "description": "Execute tool calls from the last message and append results to chat history",
+            "handler": "execute_tool_calls",
+            "input_var": "contenox_run",
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "contenox_run"
+                    }
+                ]
+            }
+        }
+    ],
+    "token_limit": 32768
+}
