@@ -137,7 +137,7 @@ jobs:
           done
 
       - name: Create GitHub Release and upload assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.4.2
         with:
           files: contenox-*
           overwrite_files: true
