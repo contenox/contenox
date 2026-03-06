@@ -54,6 +54,7 @@ contenox plan show          # steps of the active plan
 # Execute
 contenox plan next          # run one step, then stop
 contenox plan next --auto   # run all pending steps
+contenox plan next --shell  # enable shell execution for this step
 
 # Control
 contenox plan retry <N>     # reset step N to pending and re-run
@@ -67,7 +68,7 @@ contenox plan clean         # remove all completed and archived plans
 
 Plan names are derived from the goal text (`fix-auth-token-expiry-a3f9e12b`), so they're readable in `plan list` and in the markdown snapshot written to `.contenox/plans/`.
 
-> **Human-in-the-loop by default.** `contenox plan next` executes exactly one step and stops. Use `--auto` only when you trust the plan.
+> **Human-in-the-loop by default.** `contenox plan next` executes exactly one step and stops. Use `--auto` only when you trust the plan. Use `--shell` only in trusted environments.
 
 ---
 
@@ -183,7 +184,7 @@ enable_local_shell: false
 | `default_provider` | `--model` | Provider name from `backends` |
 | `default_model` | `--model` | Model name |
 | `context` | `--context` | Context length in tokens |
-| `enable_local_shell` | `--enable-local-exec` | Enable `local_shell` hook |
+| `enable_local_shell` | `--shell` | Enable `local_shell` hook |
 | `local_shell_allowed_commands` | `--local-exec-allowed-commands` | Comma-separated allow list |
 | `local_shell_allowed_dir` | `--local-exec-allowed-dir` | Directory scope for allowed executables |
 | `local_shell_denied_commands` | `--local-exec-denied-commands` | Block list (checked first) |
@@ -198,7 +199,7 @@ enable_local_shell: false
 
 Runs commands on your local machine — real side effects. **Opt-in only.**
 
-Enable with `enable_local_shell: true` in config or `--enable-local-exec` flag. You must also set an allow list or no commands will run.
+Enable with `enable_local_shell: true` in config or `--shell` flag. You must also set an allow list or no commands will run.
 
 **Security controls:**
 - `local_shell_allowed_commands` — comma-separated list of allowed executable names/paths (at least one required)

@@ -37,6 +37,7 @@ func ConvertChatHistoryToOpenAI(id string, chatHistory ChatHistory) OpenAIChatRe
 			// Pointer to the content string
 			content := lastMessage.Content
 			choice.Message.Content = &content
+			choice.Message.Thinking = lastMessage.Thinking
 		}
 
 		resp.Choices = append(resp.Choices, choice)
@@ -55,9 +56,12 @@ func ConvertOpenAIToChatHistory(request OpenAIChatRequest) (ChatHistory, int, []
 
 	for _, reqMsg := range request.Messages {
 		chatHistory.Messages = append(chatHistory.Messages, Message{
-			Role:      reqMsg.Role,
-			Content:   reqMsg.Content,
-			Timestamp: time.Now().UTC(),
+			Role:       reqMsg.Role,
+			Content:    reqMsg.Content,
+			Thinking:   reqMsg.Thinking,
+			CallTools:  reqMsg.ToolCalls,
+			ToolCallID: reqMsg.ToolCallID,
+			Timestamp:  time.Now().UTC(),
 		})
 	}
 
@@ -78,8 +82,11 @@ func ConvertChatHistoryToOpenAIRequest(
 	messages := make([]OpenAIChatRequestMessage, 0, len(chatHistory.Messages))
 	for _, msg := range chatHistory.Messages {
 		messages = append(messages, OpenAIChatRequestMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
+			Role:       msg.Role,
+			Content:    msg.Content,
+			Thinking:   msg.Thinking,
+			ToolCalls:  msg.CallTools,
+			ToolCallID: msg.ToolCallID,
 		})
 	}
 

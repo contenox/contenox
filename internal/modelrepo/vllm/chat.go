@@ -38,9 +38,13 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message,
 	var response struct {
 		Choices []struct {
 			Message struct {
-				Role      string `json:"role"`
-				Content   string `json:"content"`
-				ToolCalls []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+				// ReasoningContent contains the model's chain-of-thought trace.
+				// Populated by vLLM when --reasoning-parser is set (DeepSeek-R1)
+				// or when enable_thinking is passed via extra_body (Qwen3, Granite).
+				ReasoningContent string `json:"reasoning_content"`
+				ToolCalls        []struct {
 					ID       string `json:"id"`
 					Type     string `json:"type"`
 					Function struct {
@@ -68,8 +72,9 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message,
 
 	// Convert to our format
 	message := modelrepo.Message{
-		Role:    choice.Message.Role,
-		Content: choice.Message.Content,
+		Role:     choice.Message.Role,
+		Content:  choice.Message.Content,
+		Thinking: choice.Message.ReasoningContent,
 	}
 
 	// Convert tool calls

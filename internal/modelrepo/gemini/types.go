@@ -15,8 +15,9 @@ type geminiToolRequest struct {
 // --- Function calls & content parts (messages) ---
 
 type geminiFunctionCall struct {
-	Name string                 `json:"name"`
-	Args map[string]interface{} `json:"args"`
+	Name             string                 `json:"name"`
+	Args             map[string]interface{} `json:"args"`
+	ThoughtSignature string                 `json:"thoughtSignature,omitempty"`
 }
 
 type geminiFunctionResponse struct {
@@ -26,6 +27,8 @@ type geminiFunctionResponse struct {
 
 type geminiPart struct {
 	Text             string                  `json:"text,omitempty"`
+	Thought          bool                    `json:"thought,omitempty"`
+	ThoughtSignature string                  `json:"thoughtSignature,omitempty"`
 	FunctionCall     *geminiFunctionCall     `json:"functionCall,omitempty"`
 	FunctionResponse *geminiFunctionResponse `json:"functionResponse,omitempty"`
 }

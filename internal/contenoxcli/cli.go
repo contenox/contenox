@@ -148,7 +148,7 @@ func init() {
 	f.Bool("no-delete-models", true, "Do not delete Ollama models that are not declared (default true for contenox)")
 	f.String("chain", "", "Path to a task chain JSON file. Chains define the LLM workflow: which model, which hooks, how to branch. Falls back to default_chain in config, then .contenox/default-chain.json")
 	f.String("input", "", "Input for the chain (default: positional args or stdin if piped)")
-	f.Bool("enable-local-exec", false, "Enable the local_shell hook (use only in trusted environments)")
+	f.Bool("shell", false, "Enable the local_shell hook (use only in trusted environments)")
 	f.String("local-exec-allowed-dir", "", "If set, local_shell may only run scripts/binaries under this directory")
 	f.String("local-exec-allowed-commands", "", "Comma-separated list of allowed executable paths/names for local_shell")
 	f.String("local-exec-denied-commands", "", "Comma-separated list of denied executable basenames/paths for local_shell")
@@ -157,6 +157,7 @@ func init() {
 
 	f.Bool("steps", false, "Print execution steps after the result")
 	f.Bool("raw", false, "Print full output (e.g. entire chat JSON)")
+	f.Bool("think", false, "Print model reasoning trace to stderr (for thinking models)")
 
 	rootCmd.AddCommand(initCmd, runCmd, sessionCmd, planCmd, execCmd, hookCmd)
 
@@ -245,8 +246,8 @@ func runRun(cmd *cobra.Command, args []string) error {
 		return errChainRequired
 	}
 
-	effectiveEnableLocalExec, _ := flags.GetBool("enable-local-exec")
-	if !effectiveEnableLocalExec && !changed("enable-local-exec") && cfg.EnableLocalExec != nil {
+	effectiveEnableLocalExec, _ := flags.GetBool("shell")
+	if !effectiveEnableLocalExec && !changed("shell") && cfg.EnableLocalExec != nil {
 		effectiveEnableLocalExec = *cfg.EnableLocalExec
 	}
 
@@ -341,6 +342,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		EffectiveTracing:                  effectiveTracing,
 		EffectiveSteps:                    effectiveSteps,
 		EffectiveRaw:                      effectiveRaw,
+		EffectiveThink:                    func() bool { v, _ := flags.GetBool("think"); return v }(),
 		InputValue:                        inputValue,
 		InputFlagPassed:                   inputPassed,
 		Cfg:                               cfg,

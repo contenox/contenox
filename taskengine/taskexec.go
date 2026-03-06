@@ -782,6 +782,7 @@ func (exe *SimpleExec) executeLLM(
 				toolCalls[i].Type = tc.Type
 				toolCalls[i].Function.Name = tc.Function.Name
 				toolCalls[i].Function.Arguments = tc.Function.Arguments
+				toolCalls[i].ProviderMeta = tc.ProviderMeta
 			}
 		}
 
@@ -831,12 +832,19 @@ func (exe *SimpleExec) executeLLM(
 		}
 	}
 
+	chatArgs := []libmodelprovider.ChatArgument{libmodelprovider.WithTools(tools...)}
+	if llmCall.Think != "" {
+		chatArgs = append(chatArgs, libmodelprovider.WithThink(llmCall.Think))
+	}
+	if llmCall.Shift {
+		chatArgs = append(chatArgs, libmodelprovider.WithShift{})
+	}
 	resp, meta, err := exe.repo.Chat(ctx, llmrepo.Request{
 		ProviderTypes: providerNames,
 		ModelNames:    modelNames,
 		ContextLength: input.InputTokens,
 		Tracker:       exe.tracker,
-	}, messagesC, libmodelprovider.WithTools(tools...))
+	}, messagesC, chatArgs...)
 	if err != nil {
 		return nil, DataTypeAny, "", fmt.Errorf("chat failed: %w", err)
 	}
@@ -848,15 +856,17 @@ func (exe *SimpleExec) executeLLM(
 			Arguments: tc.Function.Arguments,
 		}
 		callTools[i] = ToolCall{
-			ID:       tc.ID,
-			Function: function,
-			Type:     tc.Type,
+			ID:           tc.ID,
+			Function:     function,
+			Type:         tc.Type,
+			ProviderMeta: tc.ProviderMeta,
 		}
 	}
 	respMessage := resp.Message
 	input.Messages = append(input.Messages, Message{
 		Role:      respMessage.Role,
 		Content:   respMessage.Content,
+		Thinking:  respMessage.Thinking,
 		CallTools: callTools,
 		Timestamp: time.Now().UTC(),
 	})

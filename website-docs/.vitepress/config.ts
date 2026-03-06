@@ -36,6 +36,7 @@ export default defineConfig({
             { text: 'Guide', link: '/guide/introduction' },
             { text: 'Chains', link: '/chains/' },
             { text: 'Hooks', link: '/hooks/' },
+            { text: 'Cookbook', link: '/cookbook/' },
             { text: 'CLI Reference', link: '/reference/contenox-cli' },
         ],
 
@@ -77,6 +78,15 @@ export default defineConfig({
                     items: [
                         { text: 'CLI', link: '/reference/contenox-cli' },
                         { text: 'Configuration', link: '/reference/config' },
+                    ],
+                },
+            ],
+            '/cookbook/': [
+                {
+                    text: 'Cookbook',
+                    items: [
+                        { text: 'Overview', link: '/cookbook/' },
+                        { text: 'Git & DevOps', link: '/cookbook/git-devops' },
                     ],
                 },
             ],

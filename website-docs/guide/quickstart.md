@@ -49,7 +49,7 @@ This creates `.contenox/` with a default config and chain:
 contenox "what is the capital of France?"
 # → Paris.
 
-contenox "list files in the current directory" --enable-local-exec
+contenox "list files in the current directory" --shell
 # → the model calls local_shell with `ls` and returns the result
 ```
 

@@ -36,6 +36,18 @@ type geminiGenerationConfig struct {
 	MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
 	StopSequences   []string `json:"stopSequences,omitempty"`
 	Seed            *int     `json:"seed,omitempty"`
+	// ThinkingConfig controls extended thinking on Gemini 2.5+ models.
+	// Use nil to omit (default behaviour, no thinking).
+	ThinkingConfig *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+// geminiThinkingConfig maps to Gemini's thinkingConfig.thinkingBudget:
+//
+//	 -1 = dynamic / uncapped
+//	  0 = disabled
+//	N>0 = exact token budget
+type geminiThinkingConfig struct {
+	ThinkingBudget int `json:"thinkingBudget"`
 }
 
 // sendRequest: shared HTTP helper for Gemini clients
@@ -160,6 +172,21 @@ func buildGeminiRequest(_ string, messages []modelrepo.Message, systemInstructio
 	}
 	req.GenerationConfig.Seed = cfg.Seed
 
+	// Wire ThinkingConfig for Gemini 2.5+ thinking models.
+	// Omitting it (nil) means the model uses its default (usually no thinking).
+	if cfg.Think != nil {
+		switch *cfg.Think {
+		case "true", "high":
+			req.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{ThinkingBudget: -1} // uncapped
+		case "medium":
+			req.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{ThinkingBudget: 8192}
+		case "low":
+			req.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{ThinkingBudget: 1024}
+		case "false":
+			req.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{ThinkingBudget: 0}
+		}
+	}
+
 	return req
 }
 
@@ -215,19 +242,30 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 				var args map[string]any
 				if tc.Function.Arguments != "" {
 					if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-						// If args aren't valid JSON, fall back to empty map
 						args = map[string]any{}
 					}
 				} else {
 					args = map[string]any{}
 				}
 
-				parts = append(parts, geminiPart{
-					FunctionCall: &geminiFunctionCall{
-						Name: tc.Function.Name,
-						Args: args,
-					},
-				})
+				fc := &geminiFunctionCall{
+					Name: tc.Function.Name,
+					Args: args,
+				}
+
+				// Gemini 3 requires thoughtSignature at the Part level.
+				// Use the preserved signature from ProviderMeta when available.
+				// For tool calls without a signature (first turn, parallel calls, legacy history)
+				// use the official Google bypass value so the strict validator never rejects the turn.
+				// See: https://ai.google.dev/gemini-api/docs/thought-signatures
+				part := geminiPart{FunctionCall: fc}
+				if sig, ok := tc.ProviderMeta["thought_signature"]; ok && sig != "" {
+					part.ThoughtSignature = sig
+				} else {
+					part.ThoughtSignature = "skip_thought_signature_validator"
+				}
+
+				parts = append(parts, part)
 			}
 		}
 

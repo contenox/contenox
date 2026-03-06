@@ -14,6 +14,9 @@ type ToolCall struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+	// ProviderMeta carries opaque provider-specific data that must be
+	// round-tripped back on the next turn (e.g. Gemini thought_signature).
+	ProviderMeta map[string]string `json:"provider_meta,omitempty"`
 }
 
 // Message now supports OpenAI-style tool calling:
@@ -22,10 +25,11 @@ type ToolCall struct {
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+	// Thinking contains the model's internal reasoning trace (thinking tokens).
+	// Only populated when thinking is enabled. Never sent back to the model.
+	Thinking string `json:"thinking,omitempty"`
 
-	// For tool calling (OpenAI / vLLM compatible). These are optional and
-	// simply serialized into the JSON payload. Providers that don't care
-	// can ignore them, but OpenAI will now see valid tool call history.
+	// For tool calling (OpenAI / vLLM compatible).
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
@@ -56,6 +60,30 @@ type ChatConfig struct {
 	TopP        *float64 `json:"top_p,omitempty"`
 	Seed        *int     `json:"seed,omitempty"`
 	Tools       []Tool   `json:"tools,omitempty"`
+	// Think controls reasoning-model behaviour. nil = use provider default (off).
+	// Accepts "true"/"false" or "high"/"medium"/"low" where supported.
+	Think *string `json:"think,omitempty"`
+	// Shift instructs the provider to slide the context window on overflow
+	// instead of returning a token-limit error.
+	Shift *bool `json:"shift,omitempty"`
+	// Truncate instructs the provider to truncate history on overflow.
+	Truncate *bool `json:"truncate,omitempty"`
+}
+
+// WithThink is a ChatArgument that enables/controls reasoning mode.
+type WithThink string
+
+func (w WithThink) Apply(cfg *ChatConfig) {
+	s := string(w)
+	cfg.Think = &s
+}
+
+// WithShift is a ChatArgument that enables context shift on overflow.
+type WithShift struct{}
+
+func (WithShift) Apply(cfg *ChatConfig) {
+	t := true
+	cfg.Shift = &t
 }
 
 // Client interfaces

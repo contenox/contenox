@@ -31,6 +31,10 @@ type openAIChatRequest struct {
 	Seed        *int                `json:"seed,omitempty"`
 	Stream      bool                `json:"stream,omitempty"`
 	Tools       []openAITool        `json:"tools,omitempty"`
+	// ReasoningEffort controls thinking depth for o-series models (o1, o3, o4-mini etc.).
+	// Accepted values: "low", "medium", "high". Empty = omitted (non-reasoning models).
+	// Note: when set, Temperature must be omitted (OpenAI rejects temperature on o-series).
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 type openAITool struct {
@@ -153,6 +157,23 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 	req.MaxTokens = cfg.MaxTokens
 	req.TopP = cfg.TopP
 	req.Seed = cfg.Seed
+
+	// Wire reasoning_effort for o-series models.
+	// "true"/"high" → "high", "medium" → "medium", "low" → "low".
+	// When reasoning_effort is set, temperature must be cleared (OpenAI rejects it on o-series).
+	if cfg.Think != nil {
+		switch *cfg.Think {
+		case "true", "high":
+			req.ReasoningEffort = "high"
+			req.Temperature = nil
+		case "medium":
+			req.ReasoningEffort = "medium"
+			req.Temperature = nil
+		case "low":
+			req.ReasoningEffort = "low"
+			req.Temperature = nil
+		}
+	}
 
 	// Convert tools -> OpenAI tools with sanitized/unique function names
 	nameMap := make(map[string]string) // sanitized -> original

@@ -87,9 +87,32 @@ func Test_resolveEffectiveBackends(t *testing.T) {
 				assert.Equal(t, "ollama", got[0].typ)
 			},
 		},
+		{
+			name: "inject default baseURLs for openai and gemini",
+			cfg: localConfig{
+				Backends: []backendEntry{
+					{Name: "o1", Type: "openai", BaseURL: ""},
+					{Name: "g1", Type: "gemini", BaseURL: ""},
+				},
+			},
+			effectiveOllama:  "http://ignored:11434",
+			effectiveModel:   "gpt-4",
+			wantDefaultProv:  "openai",
+			wantDefaultModel: "gpt-4",
+			checkBackends: func(t *testing.T, got []resolvedBackend) {
+				require.Len(t, got, 2)
+				assert.Equal(t, "openai", got[0].typ)
+				assert.Equal(t, "https://api.openai.com/v1", got[0].baseURL)
+				assert.Equal(t, "gemini", got[1].typ)
+				assert.Equal(t, "https://generativelanguage.googleapis.com", got[1].baseURL)
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Clear cloud API keys so auto-injection does not add unexpected backends.
+			t.Setenv("GEMINI_API_KEY", "")
+			t.Setenv("OPENAI_API_KEY", "")
 			got, defaultProv, defaultModel := resolveEffectiveBackends(tt.cfg, tt.effectiveOllama, tt.effectiveModel)
 			assert.Equal(t, tt.wantDefaultProv, defaultProv)
 			assert.Equal(t, tt.wantDefaultModel, defaultModel)
@@ -102,8 +125,10 @@ func Test_resolveEffectiveBackends(t *testing.T) {
 
 func Test_resolveEffectiveBackends_apiKeyFromEnv(t *testing.T) {
 	const envKey = "VIBE_TEST_OPENAI_KEY"
-	os.Setenv(envKey, "env-secret")
-	t.Cleanup(func() { os.Unsetenv(envKey) })
+	t.Setenv(envKey, "env-secret")
+	// Clear cloud keys to prevent auto-injection adding extra backends.
+	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
 
 	cfg := localConfig{
 		Backends: []backendEntry{

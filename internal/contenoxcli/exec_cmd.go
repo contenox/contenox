@@ -175,6 +175,17 @@ Examples:
 
 		effectiveRaw, _ := flags.GetBool("raw")
 		effectiveSteps, _ := flags.GetBool("steps")
+		effectiveThink, _ := flags.GetBool("think")
+		if effectiveThink {
+			if hist, ok := output.(taskengine.ChatHistory); ok {
+				for _, msg := range hist.Messages {
+					if msg.Role == "assistant" && msg.Thinking != "" {
+						fmt.Fprintln(os.Stderr, "\n💭 Reasoning:")
+						fmt.Fprintln(os.Stderr, msg.Thinking)
+					}
+				}
+			}
+		}
 		printRelevantOutput(output, outputType, effectiveRaw)
 		if effectiveSteps && len(stateUnits) > 0 {
 			fmt.Fprintln(os.Stderr, "\n📋 Steps:")
@@ -294,7 +305,7 @@ func buildExecOpts(cmd *cobra.Command, cfg localConfig, contenoxDir string) runO
 	if cfg.EnableLocalExec != nil {
 		effectiveEnableLocalExec = *cfg.EnableLocalExec
 	}
-	if v, _ := flags.GetBool("enable-local-exec"); flags.Changed("enable-local-exec") {
+	if v, _ := flags.GetBool("shell"); flags.Changed("shell") {
 		effectiveEnableLocalExec = v
 	}
 
