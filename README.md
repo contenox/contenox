@@ -136,29 +136,29 @@ Contenox breaks any goal into an ordered plan, then executes it step by step usi
 
 ## Other Modes
 
-### `contenox` — Interactive chat
+### `contenox chat` — Interactive chat
 
 ```bash
-contenox "what is my current working directory?"
-contenox list files in my home directory
-contenox --input "explain this file"
-echo "explain this" | contenox
+contenox chat "what is my current working directory?"
+contenox chat list files in my home directory
+contenox chat --input "explain this file"
+echo "explain this" | contenox chat
 ```
 
 Uses `.contenox/default-chain.json`. Natural language → shell tools → response.
 
-### `contenox exec` — Scriptable, stateless execution
+### `contenox run` — Scriptable, stateless execution
 
 For CI/pipelines where you want full control:
 
 ```bash
-contenox exec --chain .contenox/my-chain.json "what is 2+2?"
-cat diff.txt | contenox exec --chain .contenox/review.json --input-type chat
-contenox exec --chain .contenox/doc-chain.json --input @main.go
-contenox exec --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
+contenox run --chain .contenox/my-chain.json "what is 2+2?"
+cat diff.txt | contenox run --chain .contenox/review.json --input-type chat
+contenox run --chain .contenox/doc-chain.json --input @main.go
+contenox run --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
 ```
 
-`exec` is stateless — no chat history. `--chain` is required. Supported `--input-type`: `string` (default), `chat`, `json`, `int`, `float`, `bool`.
+`run` is stateless — no chat history. `--chain` is required. Supported `--input-type`: `string` (default), `chat`, `json`, `int`, `float`, `bool`.
 
 ---
 
@@ -222,10 +222,10 @@ default_model: gemini-3.1-flash-lite-preview
 
 ```
 contenox CLI
-  ├── plan new      → LLM planner chain → SQLite plan + steps
-  ├── plan next     → LLM executor chain → local_shell / local_fs → result persisted
-  ├── exec          → run any chain, any input type, stateless
-  └── run (default) → LLM chat chain → interactive response
+  ├── plan new       → LLM planner chain → SQLite plan + steps
+  ├── plan next      → LLM executor chain → local_shell / local_fs → result persisted
+  ├── run            → run any chain, any input type, stateless
+  └── chat (default) → LLM chat chain → interactive response
 
 SQLite (.contenox/local.db)
   ├── plans + plan_steps   (autonomous plan state)

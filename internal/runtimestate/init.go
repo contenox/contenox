@@ -208,16 +208,12 @@ func initOrUpdateModel(ctx context.Context, tx libdb.Exec, tenantID, modelName s
 		return nil, fmt.Errorf("failed to get model '%s': %w", modelName, err)
 	}
 
-	// Case 3: Model exists. Validate and update its capabilities if needed.
-	// Upgrade context length if stored value was 0 (auto-detect placeholder).
-	if model.ContextLength != contextLength && !(model.ContextLength == 0 && contextLength > 0) {
-		return nil, fmt.Errorf("model '%s' already exists with a different context length (stored: %d, new: %d)", modelName, model.ContextLength, contextLength)
-	}
-	if model.ContextLength == 0 && contextLength > 0 {
-		model.ContextLength = contextLength
-	}
-
+	// Case 3: Model exists. Update context length if it changed (config may have been updated).
 	needsUpdate := false
+	if model.ContextLength != contextLength && contextLength > 0 {
+		model.ContextLength = contextLength
+		needsUpdate = true
+	}
 	switch capability {
 	case canEmbed:
 		if !model.CanEmbed {

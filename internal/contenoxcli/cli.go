@@ -29,7 +29,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "run": true, "help": true, "completion": true, "session": true, "plan": true, "exec": true, "hook": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "plan": true, "run": true, "hook": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -49,7 +49,7 @@ func Main() {
 		onlyHelp = allRootFlags
 	}
 	if !onlyHelp && !firstNonFlagIsReserved(args) {
-		rootCmd.SetArgs(append([]string{"run"}, args...))
+		rootCmd.SetArgs(append([]string{"chat"}, args...))
 	}
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -111,12 +111,12 @@ No daemon, no cloud required. State is stored in SQLite.
 	SilenceUsage: true,
 }
 
-var runCmd = &cobra.Command{
-	Use:   "run",
-	Short: "Run a task chain (default when no subcommand is given).",
-	Long:  `Run a task chain. You can pass input as positional args (e.g. contenox hi) or via --input.`,
+var chatCmd = &cobra.Command{
+	Use:   "chat",
+	Short: "Run a stateful chat session (default when no subcommand is given).",
+	Long:  `Run a stateful task chain with chat history. You can pass input as positional args (e.g. contenox hi) or via --input.`,
 	Args:  cobra.ArbitraryArgs,
-	RunE:  runRun,
+	RunE:  runChat,
 }
 
 var initCmd = &cobra.Command{
@@ -159,7 +159,7 @@ func init() {
 	f.Bool("raw", false, "Print full output (e.g. entire chat JSON)")
 	f.Bool("think", false, "Print model reasoning trace to stderr (for thinking models)")
 
-	rootCmd.AddCommand(initCmd, runCmd, sessionCmd, planCmd, execCmd, hookCmd)
+	rootCmd.AddCommand(initCmd, chatCmd, sessionCmd, planCmd, runCmd, hookCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
@@ -175,7 +175,7 @@ func runInitCmd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runRun(cmd *cobra.Command, args []string) error {
+func runChat(cmd *cobra.Command, args []string) error {
 	// No subcommand, no input, and no piped stdin: show help and exit 0.
 	flags := cmd.Root().Flags()
 	if len(args) == 0 && !flags.Changed("input") {
@@ -328,7 +328,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	opts := runOpts{
+	opts := chatOpts{
 		EffectiveDB:                       effectiveDB,
 		EffectiveChain:                    effectiveChain,
 		EffectiveDefaultModel:             effectiveDefaultModel,
@@ -349,7 +349,7 @@ func runRun(cmd *cobra.Command, args []string) error {
 		ResolvedBackends:                  resolvedBackends,
 		ContenoxDir:                       contenoxDir,
 	}
-	run(ctx, opts)
+	execChat(ctx, opts)
 	return nil
 }
 

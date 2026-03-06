@@ -546,8 +546,20 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				return nil, DataTypeAny, "", fmt.Errorf("input data for handler %s claimed to be %s but was %T", currentTask.Handler, dataType.String(), input)
 			}
 
+		case DataTypeString:
+			// Automatically coerce simple string input into a chat-compatible format
+			strInput, ok := input.(string)
+			if !ok {
+				return nil, DataTypeAny, "", fmt.Errorf("input data for handler %s claimed to be string but was %T", currentTask.Handler, input)
+			}
+			chatHistory = ChatHistory{
+				Messages: []Message{
+					{Role: "user", Content: strInput, Timestamp: time.Now()},
+				},
+			}
+
 		default:
-			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'openai_chat' or 'chat_history', used var: %s but got '%s'", currentTask.InputVar, currentTask.Handler, dataType.String())
+			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'openai_chat', 'chat_history', or 'string', used var: %s but got '%s'", currentTask.InputVar, currentTask.Handler, dataType.String())
 		}
 
 		// Count tokens and check limits for chat completion

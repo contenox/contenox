@@ -254,7 +254,7 @@ func handlePlanCompletion(ctx context.Context, db libdbexec.DBManager, cDir, act
 	})
 }
 
-func buildPlanOpts(cmd *cobra.Command, input string) runOpts {
+func buildPlanOpts(cmd *cobra.Command, input string) chatOpts {
 	cfg, _, _ := loadLocalConfig()
 	flags := cmd.Root().Flags()
 
@@ -307,7 +307,7 @@ func buildPlanOpts(cmd *cobra.Command, input string) runOpts {
 
 	resolvedBackends, effectiveDefaultProvider, effectiveDefaultModel := resolveEffectiveBackends(cfg, effectiveOllama, effectiveModel)
 
-	return runOpts{
+	return chatOpts{
 		Cfg:                               cfg,
 		InputFlagPassed:                   true,
 		InputValue:                        input,

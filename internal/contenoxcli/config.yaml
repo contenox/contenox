@@ -13,7 +13,7 @@ backends:
     base_url: http://127.0.0.1:11434
 default_provider: local
 default_model: qwen2.5:7b
-context: 32768
+context: 131072
 
 # ──────────────────────────────────────────────────────
 # OPTION B: OpenAI
@@ -49,7 +49,7 @@ context: 32768
 # Set to true to enable. You MUST also configure local_shell_allowed_commands.
 # Disabled by default — enable only in trusted environments.
 enable_local_shell: false
-# local_shell_allowed_commands: "bash,sh,echo,cat,ls,chmod,git,go,python,uv,node,npm,jq,grep,find,sed,awk,curl,wget,tar,unzip,mkdir,cp,mv,touch,head,tail,date,pwd,env"
+local_shell_allowed_commands: "bash,sh,echo,cat,ls,chmod,git,go,python,python3,uv,node,npm,jq,grep,find,sed,awk,curl,wget,tar,unzip,mkdir,cp,mv,touch,head,tail,date,pwd,env,diff,wc,sort,uniq,xargs,cut,tr"
 # Optional deny list (always blocked even if in the allow list):
 # local_shell_denied_commands:
 #   - rm
