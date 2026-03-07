@@ -226,7 +226,20 @@ func resolveRunInput(cmd *cobra.Command, args []string) (string, error) {
 	}
 
 	if len(args) > 0 {
-		return strings.Join(args, " "), nil
+		argsInput := strings.Join(args, " ")
+		// If stdin is also piped, combine: args = instruction, stdin = data.
+		// e.g. git diff | contenox run "suggest a commit message"
+		stat, _ := os.Stdin.Stat()
+		if (stat.Mode() & os.ModeCharDevice) == 0 {
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return "", fmt.Errorf("failed to read from stdin: %w", err)
+			}
+			if len(strings.TrimSpace(string(data))) > 0 {
+				return argsInput + "\n\n" + string(data), nil
+			}
+		}
+		return argsInput, nil
 	}
 
 	stat, _ := os.Stdin.Stat()

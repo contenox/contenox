@@ -95,6 +95,24 @@ func resolveEffectiveBackends(cfg localConfig, effectiveOllama, effectiveModel s
 	defaultModel := strings.TrimSpace(cfg.DefaultModel)
 	if defaultProvider == "" && len(out) > 0 {
 		defaultProvider = out[0].typ
+	} else if defaultProvider != "" {
+		// If default_provider is a backend name (not a type), resolve to the backend's type.
+		// e.g. default_provider: local with a backend named "local" of type "ollama" → "ollama"
+		typeMatch := false
+		for _, b := range out {
+			if b.typ == defaultProvider {
+				typeMatch = true
+				break
+			}
+		}
+		if !typeMatch {
+			for _, b := range out {
+				if b.name == defaultProvider {
+					defaultProvider = b.typ
+					break
+				}
+			}
+		}
 	}
 	if defaultModel == "" {
 		defaultModel = effectiveModel

@@ -326,17 +326,26 @@ func execChat(ctx context.Context, opts chatOpts) {
 		os.Exit(1)
 	}
 
-	// Determine input: from flag or stdin if piped
+	// Determine input: from flag, positional args (+optional stdin), or stdin alone.
 	in := opts.InputValue
-	if in == "" && !opts.InputFlagPassed {
+	if !opts.InputFlagPassed {
 		stat, _ := os.Stdin.Stat()
 		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			bytes, err := io.ReadAll(os.Stdin)
+			stdinBytes, err := io.ReadAll(os.Stdin)
 			if err != nil {
 				slog.Error("Failed to read from stdin", "error", err)
 				os.Exit(1)
 			}
-			in = string(bytes)
+			stdinStr := strings.TrimSpace(string(stdinBytes))
+			if stdinStr != "" {
+				if in != "" {
+					// Combine: positional args = instruction, stdin = data.
+					// e.g. cat file.go | contenox "summarise this"
+					in = in + "\n\n" + stdinStr
+				} else {
+					in = stdinStr
+				}
+			}
 		}
 	}
 	if in == "" {
