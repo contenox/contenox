@@ -346,6 +346,14 @@ func buildRunOpts(cmd *cobra.Command, cfg localConfig, contenoxDir string) chatO
 	effectiveLocalExecDeniedCommands := cfg.LocalExecDeniedCommands
 
 	resolvedBackends, effectiveDefaultProvider, effectiveDefaultModel := resolveEffectiveBackends(cfg, effectiveOllama, effectiveModel)
+	if flags.Changed("model") {
+		effectiveDefaultModel = effectiveModel
+	}
+	if flags.Changed("provider") {
+		if v, _ := flags.GetString("provider"); v != "" {
+			effectiveDefaultProvider = v
+		}
+	}
 
 	return chatOpts{
 		EffectiveDB:                       "", // resolved separately in RunE

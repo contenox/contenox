@@ -179,6 +179,7 @@ func init() {
 	f.String("db", "", "SQLite database path (default: .contenox/local.db)")
 	f.String("ollama", defaultOllama, "Ollama base URL")
 	f.String("model", defaultModel, "Model name (task/chat/embed)")
+	f.String("provider", "", "Provider type override (ollama, openai, vllm, gemini). Overrides config default_provider.")
 	f.Int("context", defaultContext, "Context length")
 	f.Bool("no-delete-models", true, "Do not delete Ollama models that are not declared (default true for contenox)")
 	f.String("chain", "", "Path to a task chain JSON file. Chains define the LLM workflow: which model, which hooks, how to branch. Falls back to default_chain in config, then .contenox/default-chain.json")
@@ -327,6 +328,9 @@ func runChat(cmd *cobra.Command, args []string) error {
 	resolvedBackends, effectiveDefaultProvider, effectiveDefaultModel := resolveEffectiveBackends(cfg, effectiveOllama, effectiveModel)
 	if changed("model") {
 		effectiveDefaultModel = effectiveModel
+	}
+	if changed("provider") {
+		effectiveDefaultProvider, _ = flags.GetString("provider")
 	}
 
 	if effectiveEnableLocalExec && effectiveLocalExecAllowedDir != "" && effectiveLocalExecAllowedCommands != "" {
