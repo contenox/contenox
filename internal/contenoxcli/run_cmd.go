@@ -248,7 +248,7 @@ func parseRunInput(raw, typeName string) (any, taskengine.DataType, error) {
 		return raw, taskengine.DataTypeString, nil
 
 	case "chat":
-		msg := taskengine.Message{Role: "user", Content: raw, Timestamp: time.Now()}
+		msg := taskengine.Message{Role: "user", Content: raw, Timestamp: time.Now().UTC()}
 		return taskengine.ChatHistory{Messages: []taskengine.Message{msg}}, taskengine.DataTypeChatHistory, nil
 
 	case "json":

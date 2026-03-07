@@ -70,8 +70,16 @@ Or pick a binary from [Releases](https://github.com/contenox/contenox/releases).
 ### First run
 
 ```bash
-contenox init                              # scaffold .contenox/ with config + chain
-contenox "list files in my home directory" # instant agentic chat
+# 1. Initialize configuration
+contenox init
+
+# 2. Chat with your model:
+contenox "hey, what can you do?"
+echo 'fix the typos in README.md' | contenox
+
+# 3. Plan and execute a multi-step task:
+contenox plan new "create a TODOS.md from all TODO comments in the codebase"
+contenox plan next --auto
 ```
 
 **Requirements:** an LLM with tool calling support.

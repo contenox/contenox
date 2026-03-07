@@ -322,10 +322,14 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 			continue
 		}
 
-		out = append(out, geminiContent{
-			Role:  role,
-			Parts: parts,
-		})
+		if len(out) > 0 && out[len(out)-1].Role == role {
+			out[len(out)-1].Parts = append(out[len(out)-1].Parts, parts...)
+		} else {
+			out = append(out, geminiContent{
+				Role:  role,
+				Parts: parts,
+			})
+		}
 	}
 
 	return out

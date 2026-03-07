@@ -50,6 +50,8 @@ type chatOpts struct {
 	EffectiveSteps                    bool
 	EffectiveRaw                      bool
 	EffectiveThink                    bool
+	HistoryTrim                       int
+	LastN                             int
 	InputValue                        string
 	InputFlagPassed                   bool
 	Cfg                               localConfig
@@ -394,8 +396,13 @@ func execChat(ctx context.Context, opts chatOpts) {
 		}
 	}
 
+	// Apply --trim: cap history sent to model to last N messages.
+	if opts.HistoryTrim > 0 && len(history) > opts.HistoryTrim {
+		history = history[len(history)-opts.HistoryTrim:]
+	}
+
 	// Prepare Input
-	userMsg := taskengine.Message{Role: "user", Content: in, Timestamp: time.Now()}
+	userMsg := taskengine.Message{Role: "user", Content: in, Timestamp: time.Now().UTC()}
 	chainInput := taskengine.ChatHistory{
 		Messages: append(history, userMsg),
 	}
@@ -447,6 +454,28 @@ func execChat(ctx context.Context, opts chatOpts) {
 		}
 	}
 	printRelevantOutput(output, outputType, opts.EffectiveRaw)
+
+	// --last N: print last N non-system messages from the updated history.
+	if opts.LastN > 0 {
+		if hist, ok := output.(taskengine.ChatHistory); ok {
+			var visible []taskengine.Message
+			for _, m := range hist.Messages {
+				if m.Role != "system" && m.Role != "tool" && len(m.CallTools) == 0 {
+					visible = append(visible, m)
+				}
+			}
+			if opts.LastN < len(visible) {
+				visible = visible[len(visible)-opts.LastN:]
+			}
+			if len(visible) > 0 {
+				fmt.Fprintln(os.Stderr, "\n── last", opts.LastN, "turns ──────────────────────")
+				for _, m := range visible {
+					fmt.Fprintf(os.Stderr, "[%s] %s:\n  %s\n\n", m.Timestamp.Format("15:04:05"), m.Role, m.Content)
+				}
+				fmt.Fprintln(os.Stderr, "────────────────────────────────────")
+			}
+		}
+	}
 	if opts.EffectiveSteps && len(stateUnits) > 0 {
 		fmt.Fprintln(os.Stderr, "\n📋 Steps:")
 		for i, u := range stateUnits {

@@ -554,7 +554,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 			chatHistory = ChatHistory{
 				Messages: []Message{
-					{Role: "user", Content: strInput, Timestamp: time.Now()},
+					{Role: "user", Content: strInput, Timestamp: time.Now().UTC()},
 				},
 			}
 
@@ -638,8 +638,10 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				hookArgs = currentTask.Hook.Args
 			}
 			hookCall := &HookCall{
-				Name:     resolutionInfo.HookName,
-				ToolName: toolCall.Function.Name,
+				Name: resolutionInfo.HookName,
+				// Strip the "hookName." prefix: tools are advertised to the model as
+				// "hookName.toolName" for namespacing, but Exec() only needs the leaf name.
+				ToolName: strings.TrimPrefix(toolCall.Function.Name, resolutionInfo.HookName+"."),
 				// NOTE: dynamic args are passed as `input` to Exec; Hook.Args is static/template-level (may be empty for execute_tool_calls)
 				Args: hookArgs,
 			}

@@ -15,13 +15,37 @@
 
 ### `contenox chat` (or just `contenox`)
 
-Starts an interactive chat session using the default chain (`.contenox/default-chain.json`).
+Sends a message to the active chat session and prints the response. History is persisted across invocations.
 
 ```bash
-contenox "what is the capital of France?"
-contenox   # enters interactive REPL mode
-contenox "list files here" --shell  # enable shell execution
-contenox "explain recursion" --think  # show the model's reasoning process
+contenox "what can you do?"
+echo "summarise README.md" | contenox
+contenox chat --shell "list files here"
+contenox chat --local-exec-allowed-dir . "summarise the README"
+```
+
+| Flag | Description |
+|---|---|
+| `--trim N` | Only send last N messages from session history to the model (0 = all) |
+| `--last N` | Print last N user/assistant turns after the reply (0 = only new reply) |
+| `--shell` | Enable `local_shell` hook (use only in trusted environments) |
+| `--local-exec-allowed-dir <dir>` | Allow `local_fs` tools inside this directory |
+| `--local-exec-allowed-commands <cmds>` | Comma-separated allowed shell commands |
+
+### `contenox session`
+
+Manage named chat sessions. Each session maintains its own conversation history.
+
+```bash
+contenox session list                    # list all sessions (* = active)
+contenox session new [name]             # create a session (becomes active)
+contenox session switch <name>          # switch to a different session
+contenox session show                   # show active session's history
+contenox session show <name>            # show any session by name
+contenox session show --tail 10         # show last 10 messages
+contenox session show --head 5          # show first 5 messages
+contenox session show default --tail 6  # tail a non-active session
+contenox session delete <name>          # delete session and all messages
 ```
 
 ### `contenox run`
@@ -68,3 +92,21 @@ contenox hook remove <name>
 ### `contenox init`
 
 Initializes a new `.contenox/` configuration directory in the current path.
+
+```bash
+$ contenox init
+  Created .contenox/config.yaml
+  Created .contenox/default-chain.json
+  Created .contenox/default-run-chain.json
+Done.
+
+Next steps:
+
+  1. Chat with your model:
+       contenox hey, what can you do?
+       echo 'fix the typos in README.md' | contenox
+
+  Plan and execute a multi-step task:
+       contenox plan new "create a TODOS.md from all TODO comments in the codebase"
+       contenox plan next --auto
+```

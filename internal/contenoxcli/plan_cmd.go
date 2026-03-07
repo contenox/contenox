@@ -214,7 +214,7 @@ func executeSinglePlanStep(execCtx context.Context, engine *Engine, db libdbexec
 		"Overall Goal: %s\n\nExecute Step %d: %s\n\nUse your local_shell tools to accomplish this. Once you have fully completed and verified this step, output exactly `===STEP_DONE===` on a new line.",
 		plan.Goal, step.Ordinal, step.Description,
 	)
-	userMsg := taskengine.Message{Role: "user", Content: prompt, Timestamp: time.Now()}
+	userMsg := taskengine.Message{Role: "user", Content: prompt, Timestamp: time.Now().UTC()}
 	chainInput := taskengine.ChatHistory{Messages: append(history, userMsg)}
 
 	output, _, _, err := engine.TaskService.Execute(execCtx, chain, chainInput, taskengine.DataTypeChatHistory)
@@ -387,7 +387,7 @@ func runPlanNew(cmd *cobra.Command, args []string) error {
 	}
 	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
 
-	userMsg := taskengine.Message{Role: "user", Content: goal, Timestamp: time.Now()}
+	userMsg := taskengine.Message{Role: "user", Content: goal, Timestamp: time.Now().UTC()}
 	chainInput := taskengine.ChatHistory{Messages: []taskengine.Message{userMsg}}
 
 	output, _, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
@@ -755,7 +755,7 @@ func runPlanReplan(cmd *cobra.Command, _ []string) error {
 	}
 	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
 
-	userMsg := taskengine.Message{Role: "user", Content: goalPrompt, Timestamp: time.Now()}
+	userMsg := taskengine.Message{Role: "user", Content: goalPrompt, Timestamp: time.Now().UTC()}
 	chainInput := taskengine.ChatHistory{Messages: []taskengine.Message{userMsg}}
 
 	output, _, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
