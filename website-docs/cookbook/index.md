@@ -9,3 +9,4 @@ Each recipe works the same way: `contenox run` is a **stateless, composable exec
 ## Categories
 
 - [Git & DevOps](/cookbook/git-devops) — commit messages, PR reviews, log summarization
+- [Automated Release Notes](/cookbook/release-notes) — generate `RELEASE_NOTES.md` from `git log` using a chain pipeline
