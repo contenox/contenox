@@ -324,17 +324,27 @@ func buildPlanOpts(cmd *cobra.Command, input string) chatOpts {
 }
 
 func runPlanNew(cmd *cobra.Command, args []string) error {
+	// Resolve goal from arg or stdin; combine both if they coexist.
 	var goal string
+	stat, _ := os.Stdin.Stat()
+	stdinPiped := (stat.Mode() & os.ModeCharDevice) == 0
 	if len(args) > 0 {
 		goal = args[0]
-	} else {
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			bytes, err := io.ReadAll(os.Stdin)
-			if err != nil {
-				return fmt.Errorf("failed to read from stdin: %w", err)
+	}
+	if stdinPiped {
+		stdinBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return fmt.Errorf("failed to read from stdin: %w", err)
+		}
+		stdinStr := strings.TrimSpace(string(stdinBytes))
+		if stdinStr != "" {
+			if goal != "" {
+				// Combine: arg = goal/instruction, stdin = context.
+				// e.g. git diff | contenox plan new "refactor these changes"
+				goal = goal + "\n\n" + stdinStr
+			} else {
+				goal = stdinStr
 			}
-			goal = strings.TrimSpace(string(bytes))
 		}
 	}
 

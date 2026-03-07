@@ -36,7 +36,7 @@ var providerConfigs = map[string]providerConfig{
   - name: local
     type: ollama
     base_url: http://127.0.0.1:11434
-default_provider: local
+default_provider: ollama
 default_model: qwen2.5:7b
 context: 131072
 `,

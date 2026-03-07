@@ -344,15 +344,17 @@ func runChat(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Input: --input overrides positional args; else positionals joined; else empty (run() will try stdin).
+	// Input: --input flag takes priority (InputFlagPassed=true prevents stdin reading).
+	// Positional args fill InputValue but leave InputFlagPassed=false so that
+	// chat_cmd.go can still combine piped stdin with the positional args.
 	var inputValue string
 	var inputPassed bool
 	if changed("input") {
 		inputValue, _ = flags.GetString("input")
-		inputPassed = true
+		inputPassed = true // explicit --input: skip stdin entirely
 	} else if len(args) > 0 {
 		inputValue = strings.Join(args, " ")
-		inputPassed = true
+		// inputPassed stays false → chat_cmd.go will combine stdin if piped
 	}
 
 	timeout, _ := flags.GetDuration("timeout")
