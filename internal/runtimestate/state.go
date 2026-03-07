@@ -782,7 +782,7 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 	// Store successful result in cache
 	s.providerCache.Store(backend.ID, providerCacheEntry{
 		models:    pulledModels,
-		timestamp: time.Now(),
+		timestamp: time.Now().UTC(),
 		apiKey:    cfg.APIKey,
 	})
 }

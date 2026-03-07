@@ -65,13 +65,15 @@ var sessionDeleteCmd = &cobra.Command{
 }
 
 var sessionShowCmd = &cobra.Command{
-	Use:   "show",
-	Short: "Print the active session's conversation.",
-	Args:  cobra.NoArgs,
+	Use:   "show [name]",
+	Short: "Print a session's conversation (default: active session).",
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runSessionShow,
 }
 
 func init() {
+	sessionShowCmd.Flags().Int("tail", 0, "Show last N messages (0 = all)")
+	sessionShowCmd.Flags().Int("head", 0, "Show first N messages (0 = all)")
 	sessionCmd.AddCommand(sessionNewCmd, sessionListCmd, sessionSwitchCmd, sessionDeleteCmd, sessionShowCmd)
 }
 
@@ -258,54 +260,82 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 	return commit(ctx)
 }
 
-func runSessionShow(cmd *cobra.Command, _ []string) error {
+func runSessionShow(cmd *cobra.Command, args []string) error {
 	ctx, db, cleanup, err := openSessionDB(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	exec := db.WithoutTransaction()
-	activeID, err := getActiveSessionID(ctx, exec)
-	if err != nil || activeID == "" {
-		return fmt.Errorf("no active session; run 'contenox session new' to create one")
-	}
+	tailN, _ := cmd.Flags().GetInt("tail")
+	headN, _ := cmd.Flags().GetInt("head")
 
-	sessions, _ := messagestore.New(exec).ListAllSessions(ctx, localIdentity)
-	sessionName := activeID[:8] + "…"
-	for _, s := range sessions {
-		if s.ID == activeID {
-			if s.Name != "" {
+	exec := db.WithoutTransaction()
+	store := messagestore.New(exec)
+	sessions, _ := store.ListAllSessions(ctx, localIdentity)
+
+	var sessionID, sessionName string
+
+	if len(args) > 0 {
+		// Look up by name.
+		name := args[0]
+		for _, s := range sessions {
+			if s.Name == name {
+				sessionID = s.ID
 				sessionName = s.Name
+				break
 			}
-			break
+		}
+		if sessionID == "" {
+			return fmt.Errorf("session %q not found; run 'contenox session list'", name)
+		}
+	} else {
+		// Use active session.
+		activeID, err := getActiveSessionID(ctx, exec)
+		if err != nil || activeID == "" {
+			return fmt.Errorf("no active session; run 'contenox session new' to create one")
+		}
+		sessionID = activeID
+		sessionName = sessionID[:8] + "…"
+		for _, s := range sessions {
+			if s.ID == sessionID && s.Name != "" {
+				sessionName = s.Name
+				break
+			}
 		}
 	}
 
-	msgs, err := messagestore.New(exec).ListMessages(ctx, activeID)
+	rawMsgs, err := store.ListMessages(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to read messages: %w", err)
 	}
-	if len(msgs) == 0 {
+	if len(rawMsgs) == 0 {
 		fmt.Printf("Session %q has no messages yet.\n", sessionName)
 		return nil
 	}
 
-	fmt.Printf("━━━━ Session: %s ━━━━\n", sessionName)
-	for _, raw := range msgs {
+	// Apply head/tail filters.
+	slice := rawMsgs
+	if headN > 0 && headN < len(slice) {
+		slice = slice[:headN]
+	} else if tailN > 0 && tailN < len(slice) {
+		slice = slice[len(slice)-tailN:]
+	}
+
+	fmt.Printf("━━━━ Session: %s (%d/%d messages) ━━━━\n", sessionName, len(slice), len(rawMsgs))
+	for _, raw := range slice {
 		var m taskengine.Message
 		if err := json.Unmarshal(raw.Payload, &m); err != nil {
 			continue
 		}
-		roleLabel := m.Role
 		ts := ""
 		if !m.Timestamp.IsZero() {
 			ts = m.Timestamp.Format(time.RFC3339)
 		}
 		if ts != "" {
-			fmt.Printf("[%s] %s:\n", ts, roleLabel)
+			fmt.Printf("[%s] %s:\n", ts, m.Role)
 		} else {
-			fmt.Printf("%s:\n", roleLabel)
+			fmt.Printf("%s:\n", m.Role)
 		}
 		fmt.Printf("  %s\n\n", m.Content)
 	}

@@ -114,9 +114,44 @@ No daemon, no cloud required. State is stored in SQLite.
 var chatCmd = &cobra.Command{
 	Use:   "chat",
 	Short: "Run a stateful chat session (default when no subcommand is given).",
-	Long:  `Run a stateful task chain with chat history. You can pass input as positional args (e.g. contenox hi) or via --input.`,
-	Args:  cobra.ArbitraryArgs,
-	RunE:  runChat,
+	Long: `Send a message to the active chat session and get a response.
+Input is passed as positional args, --input, or piped via stdin.
+
+  contenox "what can you do?"
+  echo "summarise README.md" | contenox
+  contenox chat --shell "list files in the current dir"
+
+Sessions persist conversation history across invocations (stored in SQLite).
+Each session remembers previous messages so the model has context.
+The first run auto-creates a "default" session. Manage sessions with:
+
+  contenox session list              list all sessions (* = active)
+  contenox session new <name>        create a new named session (becomes active)
+  contenox session switch <name>     switch to a different session
+  contenox session show              print the active session's full history
+  contenox session delete <name>     delete a session and all its messages
+
+Giving the model tools (file system and shell access):
+
+  --local-exec-allowed-dir <dir>     allow local_fs tools inside <dir>
+  --shell                            enable local_shell (requires allow list)
+  --local-exec-allowed-commands git,ls   comma-separated allowed commands
+
+Examples:
+  # Chat with file system access to the current project:
+  contenox chat --local-exec-allowed-dir . "summarise the README"
+
+  # Shell access for git operations:
+  contenox chat --shell --local-exec-allowed-commands git \
+    "suggest a commit message from git diff"
+
+  # Trim context: only send last 10 messages to the model:
+  contenox chat --trim 10 "let's continue where we left off"
+
+  # Show last 6 turns of the conversation after the reply:
+  contenox chat --last 6 "hello"`,
+	Args: cobra.ArbitraryArgs,
+	RunE: runChat,
 }
 
 var initCmd = &cobra.Command{
@@ -163,6 +198,10 @@ func init() {
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
+
+	// Chat-specific local flags (not exposed globally).
+	chatCmd.Flags().Int("trim", 0, "Only send the last N messages from session history to the model (0 = send all)")
+	chatCmd.Flags().Int("last", 0, "Print last N user/assistant turns after the reply (0 = only print new reply)")
 }
 
 func runInitCmd(cmd *cobra.Command, args []string) error {
@@ -328,6 +367,10 @@ func runChat(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
+	effectiveThink, _ := flags.GetBool("think")
+	historyTrim, _ := cmd.Flags().GetInt("trim")
+	lastN, _ := cmd.Flags().GetInt("last")
+
 	opts := chatOpts{
 		EffectiveDB:                       effectiveDB,
 		EffectiveChain:                    effectiveChain,
@@ -342,7 +385,9 @@ func runChat(cmd *cobra.Command, args []string) error {
 		EffectiveTracing:                  effectiveTracing,
 		EffectiveSteps:                    effectiveSteps,
 		EffectiveRaw:                      effectiveRaw,
-		EffectiveThink:                    func() bool { v, _ := flags.GetBool("think"); return v }(),
+		EffectiveThink:                    effectiveThink,
+		HistoryTrim:                       historyTrim,
+		LastN:                             lastN,
 		InputValue:                        inputValue,
 		InputFlagPassed:                   inputPassed,
 		Cfg:                               cfg,

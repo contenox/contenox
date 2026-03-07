@@ -348,10 +348,16 @@
                         <div>ollama serve &amp;&amp; ollama pull qwen2.5:7b</div>
                         <br>
                         <div><span class="prompt">$</span> <span class="cmd">contenox init</span></div>
-                        <div class="out">Created .contenox/config.yaml and .contenox/default-chain.json</div>
+                        <div class="out">Created .contenox/config.yaml and .contenox/default-chain.json...</div>
                         <br>
-                        <div><span class="prompt">$</span> <span class="cmd">contenox "what is in my home
-                                directory?"</span></div>
+                        <div><span class="comment"># Chat with your model</span></div>
+                        <div><span class="prompt">$</span> <span class="cmd">contenox "hey, what can you do?"</span>
+                        </div>
+                        <br>
+                        <div><span class="comment"># Plan and execute a multi-step task</span></div>
+                        <div><span class="prompt">$</span> <span class="cmd">contenox plan new "create a TODOS.md from
+                                all TODO comments in the codebase"</span></div>
+                        <div><span class="prompt">$</span> <span class="cmd">contenox plan next --auto</span></div>
                     </div>
                     <p style="margin-top:0.75rem; font-size: 0.88rem; opacity: 0.7;">
                         Cloud providers (OpenAI, Gemini, vLLM) also work — set your API key in
