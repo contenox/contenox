@@ -28,6 +28,7 @@ import (
 	"github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libroutine"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/mcpserverservice"
 	"github.com/contenox/contenox/modelservice"
 	"github.com/contenox/contenox/openaichatservice"
 	"github.com/contenox/contenox/providerservice"
@@ -930,6 +931,17 @@ func (p *Playground) GetHookProviderService() (hookproviderservice.Service, erro
 		return nil, errors.New("cannot get hook provider service: hook repository is not initialized")
 	}
 	return hookproviderservice.New(p.db, p.hookrepo), nil
+}
+
+// GetMCPServerService returns a new MCP server service instance.
+func (p *Playground) GetMCPServerService() (mcpserverservice.Service, error) {
+	if p.Error != nil {
+		return nil, p.Error
+	}
+	if p.db == nil {
+		return nil, errors.New("cannot get MCP server service: database is not initialized")
+	}
+	return mcpserverservice.New(p.db), nil
 }
 
 // New method for real Ollama backend (complements container-based)

@@ -27,7 +27,7 @@ var runCmd = &cobra.Command{
 	Short: "Run any task chain with explicit input type control (stateless).",
 	Long: `Run a task chain with explicit control over input type and content.
 
-Unlike the default 'contenox chat', run is stateless — no chat history is loaded or saved.
+Unlike 'contenox chat', run is stateless — no chat history is loaded or saved.
 It accepts any task chain regardless of the first handler's expected input type.
 
 Input sources (in priority order):
@@ -36,18 +36,22 @@ Input sources (in priority order):
   3. Stdin                   if piped
 
 Input types (--input-type):
-  string (default)  Raw string. DataTypeString.
-  chat              Wrap as a single user message. DataTypeChatHistory.
-  json              Parse as JSON object. DataTypeJSON.
-  int               Parse as integer. DataTypeInt.
-  float             Parse as float. DataTypeFloat.
-  bool              Parse as boolean. DataTypeBool.
+  string (default)  Raw string passed to the chain as DataTypeString
+  chat              Wrapped as a single user message (DataTypeChatHistory)
+  json              Parsed as a JSON object (DataTypeJSON)
+  int               Parsed as integer (DataTypeInt)
+  float             Parsed as float (DataTypeFloat)
+  bool              Parsed as boolean: true/false/1/0 (DataTypeBool)
+
+If --chain is not specified, falls back to .contenox/default-run-chain.json
+if that file exists in the current directory.
 
 Examples:
   contenox run --chain .contenox/score-chain.json "is this code safe?"
   cat diff.txt | contenox run --chain .contenox/review.json --input-type chat
-  contenox run --chain .contenox/embed.json --input-type string --input @myfile.go
+  contenox run --chain .contenox/embed.json --input @myfile.go
   contenox run --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
+  git diff | contenox run "suggest a commit message"  # uses default-run-chain.json
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -56,17 +60,13 @@ Examples:
 		}
 
 		flags := cmd.Flags()
-		cfgFilePath := ""
-		cfg, cfgFilePath, err := loadLocalConfig()
+
+		// Resolve contenox dir from cwd convention.
+		cwd, err := os.Getwd()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to get current working directory: %w", err)
 		}
-		// loadLocalConfig returns the path to config.yaml; we need the directory.
-		contenoxDir := filepath.Dir(cfgFilePath)
-		if cfgFilePath == "" {
-			cwd, _ := os.Getwd()
-			contenoxDir = filepath.Join(cwd, ".contenox")
-		}
+		contenoxDir := filepath.Join(cwd, ".contenox")
 
 		// Resolve chain path (fallback to default chain if not specified)
 		chainPath, _ := flags.GetString("chain")
@@ -95,8 +95,6 @@ Examples:
 		// Resolve input type
 		inputTypeName, _ := flags.GetString("input-type")
 		if !flags.Changed("input-type") && !flags.Changed("chain") {
-			// If neither chain nor input-type were provided, and we are falling back to the default run chain,
-			// the default run chain expects a string input natively rather than chat history.
 			inputTypeName = "string"
 		}
 		inputVal, inputType, err := parseRunInput(rawInput, inputTypeName)
@@ -104,32 +102,22 @@ Examples:
 			return fmt.Errorf("--input-type %q: %w", inputTypeName, err)
 		}
 
-		// Build chatOpts from flags (reuses the same resolution logic as contenox chat)
-		o := buildRunOpts(cmd, cfg, contenoxDir)
-
-		// Open database
-		effectiveDB, _ := flags.GetString("db")
-		if effectiveDB == "" && cfg.DB != "" {
-			effectiveDB = cfg.DB
-		}
-		if effectiveDB == "" {
-			effectiveDB = filepath.Join(contenoxDir, "local.db")
-		}
-		dbPathAbs, err := filepath.Abs(effectiveDB)
+		// Open database (needed for buildRunOpts KV read and engine).
+		dbPathAbs, err := resolveDBPath(cmd)
 		if err != nil {
 			return fmt.Errorf("invalid database path: %w", err)
 		}
-		if err := os.MkdirAll(filepath.Dir(dbPathAbs), 0755); err != nil {
-			return fmt.Errorf("cannot create database directory: %w", err)
-		}
 		dbCtx := libtracker.WithNewRequestID(context.Background())
-		db, err := libdbexec.NewSQLiteDBManager(dbCtx, dbPathAbs, runtimetypes.SchemaSQLite)
+		db, err := openDBAt(dbCtx, dbPathAbs)
 		if err != nil {
 			return fmt.Errorf("failed to open database: %w", err)
 		}
 		defer db.Close()
 
-		// Build engine
+		// Build chatOpts from flags and SQLite KV defaults.
+		o := buildRunOpts(cmd, db, contenoxDir)
+		o.EffectiveDB = dbPathAbs
+
 		engine, err := BuildEngine(ctx, db, o)
 		if err != nil {
 			return fmt.Errorf("failed to build engine: %w", err)
@@ -156,11 +144,6 @@ Examples:
 			"model":    o.EffectiveDefaultModel,
 			"provider": o.EffectiveDefaultProvider,
 			"chain":    chain.ID,
-		}
-		for _, key := range cfg.TemplateVarsFromEnv {
-			if v := os.Getenv(key); v != "" {
-				templateVars[key] = v
-			}
 		}
 		execCtx := taskengine.WithTemplateVars(
 			libtracker.WithNewRequestID(ctx),
@@ -299,67 +282,42 @@ func parseRunInput(raw, typeName string) (any, taskengine.DataType, error) {
 	}
 }
 
-// buildRunOpts resolves effective options from flags and config for run.
-// It deliberately reuses the same resolution helpers as the root run command.
-func buildRunOpts(cmd *cobra.Command, cfg localConfig, contenoxDir string) chatOpts {
+// buildRunOpts resolves effective options from flags and persistent SQLite config.
+func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string) chatOpts {
 	flags := cmd.Root().Flags()
 
+	ctx := libtracker.WithNewRequestID(context.Background())
+	store := runtimetypes.New(db.WithoutTransaction())
+
+	// Read persistent defaults from SQLite KV; flags always override.
+	kvModel, _ := getConfigKV(ctx, store, "default-model")
+	kvProvider, _ := getConfigKV(ctx, store, "default-provider")
+
 	effectiveModel, _ := flags.GetString("model")
-	if !flags.Changed("model") && cfg.Model != "" {
-		effectiveModel = cfg.Model
+	if !flags.Changed("model") && effectiveModel == "" {
+		effectiveModel = kvModel
 	}
 
-	effectiveOllama, _ := flags.GetString("ollama")
-	if !flags.Changed("ollama") && cfg.Ollama != "" {
-		effectiveOllama = cfg.Ollama
-	}
-
-	effectiveContext, _ := flags.GetInt("context")
-	if !flags.Changed("context") && cfg.Context != nil {
-		effectiveContext = *cfg.Context
-	}
-
-	effectiveTracing, _ := flags.GetBool("trace")
-	if !flags.Changed("trace") && cfg.Tracing != nil {
-
-		effectiveTracing = *cfg.Tracing
-	}
-
-	effectiveEnableLocalExec := false
-	if cfg.EnableLocalExec != nil {
-		effectiveEnableLocalExec = *cfg.EnableLocalExec
-	}
-	if v, _ := flags.GetBool("shell"); flags.Changed("shell") {
-		effectiveEnableLocalExec = v
-	}
-
-	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	if !flags.Changed("local-exec-allowed-dir") && cfg.LocalExecAllowedDir != "" {
-		effectiveLocalExecAllowedDir = cfg.LocalExecAllowedDir
-	}
-
-	effectiveLocalExecAllowedCommands, _ := flags.GetString("local-exec-allowed-commands")
-	if !flags.Changed("local-exec-allowed-commands") && cfg.LocalExecAllowedCommands != "" {
-		effectiveLocalExecAllowedCommands = cfg.LocalExecAllowedCommands
-	}
-
-	effectiveLocalExecDeniedCommands := cfg.LocalExecDeniedCommands
-
-	resolvedBackends, effectiveDefaultProvider, effectiveDefaultModel := resolveEffectiveBackends(cfg, effectiveOllama, effectiveModel)
-	if flags.Changed("model") {
-		effectiveDefaultModel = effectiveModel
-	}
+	effectiveDefaultProvider := kvProvider
 	if flags.Changed("provider") {
 		if v, _ := flags.GetString("provider"); v != "" {
 			effectiveDefaultProvider = v
 		}
 	}
 
+	effectiveContext, _ := flags.GetInt("context")
+	effectiveTracing, _ := flags.GetBool("trace")
+
+	effectiveEnableLocalExec, _ := flags.GetBool("shell")
+	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
+	effectiveLocalExecAllowedCommands, _ := flags.GetString("local-exec-allowed-commands")
+	var effectiveLocalExecDeniedCommands []string
+
 	return chatOpts{
 		EffectiveDB:                       "", // resolved separately in RunE
 		EffectiveChain:                    "", // unused — run loads chain directly
 		EffectiveContext:                  effectiveContext,
-		EffectiveDefaultModel:             effectiveDefaultModel,
+		EffectiveDefaultModel:             effectiveModel,
 		EffectiveDefaultProvider:          effectiveDefaultProvider,
 		EffectiveNoDeleteModels:           true,
 		EffectiveEnableLocalExec:          effectiveEnableLocalExec,
@@ -367,15 +325,13 @@ func buildRunOpts(cmd *cobra.Command, cfg localConfig, contenoxDir string) chatO
 		EffectiveLocalExecAllowedCommands: effectiveLocalExecAllowedCommands,
 		EffectiveLocalExecDeniedCommands:  effectiveLocalExecDeniedCommands,
 		EffectiveTracing:                  effectiveTracing,
-		Cfg:                               cfg,
-		ResolvedBackends:                  resolvedBackends,
 		ContenoxDir:                       contenoxDir,
 	}
 }
 
 func init() {
 	f := runCmd.Flags()
-	f.String("chain", "", "Path to a task chain JSON file (required)")
+	f.String("chain", "", "Path to a task chain JSON file (falls back to .contenox/default-run-chain.json if present)")
 	f.String("input", "", "Input value or @path to read from a file (e.g. --input @main.go)")
-	f.String("input-type", "string", "Input type: string, chat, json, int, float, bool")
+	f.String("input-type", "string", "Input data type: string, chat, json, int, float, bool")
 }

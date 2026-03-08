@@ -26,7 +26,7 @@
       "handler": "prompt_to_int",
       "system_instruction": "Classify the input as safe (0) or unsafe (10) respond with a numeric value between 0 for safe and 10 for unsafe.",
       "execute_config": {
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.1-flash-lite-preview",
         "provider": "gemini",
         "pass_clients_tools": false
       },
@@ -54,7 +54,7 @@
       "handler": "chat_completion",
       "system_instruction": "You're a helpful assistant in the Contenox system talking to an expert.",
       "execute_config": {
-        "model": "gemini-2.5-flash",
+        "model": "gemini-3.1-flash-lite-preview",
         "provider": "gemini",
         "pass_clients_tools": false
       },

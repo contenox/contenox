@@ -148,50 +148,59 @@ Header values are never echoed back (`hook show` prints header keys only). If th
 
 ---
 
-## Configuration (`.contenox/config.yaml`)
+## Configuration
 
-`contenox init` generates a starter config. All keys are optional; CLI flags override config.
+Contenox stores all configuration in SQLite (`.contenox/local.db`, or `~/.contenox/local.db` globally).
+No YAML file — use CLI commands to register backends and set defaults.
 
-```yaml
-# Minimal Ollama setup
-backends:
-  - name: local
-    type: ollama
-    base_url: http://127.0.0.1:11434
-default_provider: local
-default_model: qwen2.5:7b
-context: 32768
+### Register a backend
 
-enable_local_shell: false
-# local_shell_allowed_commands: "bash,sh,echo,cat,ls,chmod,git,go,python,uv,node,npm,jq,grep,find,sed,awk,curl,wget,tar,unzip,mkdir,cp,mv,touch,head,tail,date,pwd,env"
+```bash
+contenox backend add local   --type ollama
+contenox backend add openai  --type openai  --api-key-env OPENAI_API_KEY
+contenox backend add gemini  --type gemini  --api-key-env GEMINI_API_KEY
+contenox backend add myvllm --type vllm    --url http://gpu-host:8000
+
+contenox backend list
+contenox backend show openai
+contenox backend remove myvllm
+```
+
+### Set persistent defaults
+
+```bash
+contenox config set default-model    qwen2.5:7b
+contenox config set default-provider ollama
+contenox config set default-chain    .contenox/default-chain.json
+
+contenox config list   # review current settings
 ```
 
 ### Supported backends
 
-| Key `type` | Provider | Notes |
-|------------|----------|-------|
-| `ollama`   | Ollama  | Local. Run `ollama serve` first. |
-| `openai`   | OpenAI  | `api_key_from_env: OPENAI_API_KEY` |
-| `vllm`     | vLLM    | Self-hosted OpenAI-compatible endpoint |
-| `gemini`   | Gemini  | `api_key_from_env: GEMINI_API_KEY` |
+| `--type` | Provider | Notes |
+|----------|----------|-------|
+| `ollama` | Ollama   | Local. Run `ollama serve` first. |
+| `openai` | OpenAI   | Use `--api-key-env OPENAI_API_KEY` |
+| `vllm`   | vLLM     | Self-hosted OpenAI-compatible endpoint, requires `--url` |
+| `gemini` | Gemini   | Use `--api-key-env GEMINI_API_KEY` |
 
-### Config keys reference
+### Global flags reference
 
-| Key | CLI flag | Purpose |
-|-----|----------|---------|
-| `default_chain` | `--chain` | Path to chain JSON (relative to `.contenox/`) |
-| `db` | `--db` | SQLite path (default: `.contenox/local.db`) |
-| `default_provider` | `--model` | Provider name from `backends` |
-| `default_model` | `--model` | Model name |
-| `context` | `--context` | Context length in tokens |
-| `enable_local_shell` | `--shell` | Enable `local_shell` hook |
-| `local_shell_allowed_commands` | `--local-exec-allowed-commands` | Comma-separated allow list |
-| `local_shell_allowed_dir` | `--local-exec-allowed-dir` | Directory scope for allowed executables |
-| `local_shell_denied_commands` | `--local-exec-denied-commands` | Block list (checked first) |
-| `tracing` | `--trace` | Emit structured operation telemetry to stderr |
-| `steps` | `--steps` | Print execution steps after result |
-| `raw` | `--raw` | Print full output instead of last assistant message |
-| `template_vars_from_env` | — | List of env var names to expose as `{{var:NAME}}` in chains |
+| Flag | Purpose |
+|-----|---------|
+| `--chain` | Path to chain JSON (overrides `config default-chain`) |
+| `--db` | SQLite path (default: `.contenox/local.db`) |
+| `--provider` | Provider type override |
+| `--model` | Model name override |
+| `--context` | Context length in tokens |
+| `--shell` | Enable `local_shell` hook |
+| `--local-exec-allowed-commands` | Comma-separated allow list for local_shell |
+| `--local-exec-allowed-dir` | Directory scope for allowed executables |
+| `--local-exec-denied-commands` | Block list (checked before allow list) |
+| `--trace` | Emit structured operation telemetry to stderr |
+| `--steps` | Print execution steps after result |
+| `--raw` | Print full output instead of last assistant message |
 
 ---
 
@@ -199,14 +208,19 @@ enable_local_shell: false
 
 Runs commands on your local machine — real side effects. **Opt-in only.**
 
-Enable with `enable_local_shell: true` in config or `--shell` flag. You must also set an allow list or no commands will run.
+Enable with `--shell`. You must also set an allow list or no commands will run:
+
+```bash
+contenox chat --shell --local-exec-allowed-commands "git,go,bash,ls" "run the tests"
+contenox plan next --shell
+```
 
 **Security controls:**
-- `local_shell_allowed_commands` — comma-separated list of allowed executable names/paths (at least one required)
-- `local_shell_allowed_dir` — only run binaries/scripts under this directory
-- `local_shell_denied_commands` — block list checked before the allow list
+- `--local-exec-allowed-commands` — comma-separated list of allowed executable names/paths (required)
+- `--local-exec-allowed-dir` — only run binaries/scripts under this directory
+- `--local-exec-denied-commands` — block list checked before the allow list
 
-The model receives the tool schema via the API call protocol. When local_shell is disabled the hook is simply not registered — chains that reference it will run without it.
+When `--shell` is not passed, the `local_shell` hook is simply not registered — chains that reference it will run without it.
 
 ---
 

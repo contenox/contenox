@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"time"
 
 	libdb "github.com/contenox/contenox/libdbexec"
@@ -67,8 +65,20 @@ var sessionDeleteCmd = &cobra.Command{
 var sessionShowCmd = &cobra.Command{
 	Use:   "show [name]",
 	Short: "Print a session's conversation (default: active session).",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runSessionShow,
+	Long: `Print the full conversation history for a session.
+
+Defaults to the currently active session. Pass a session name to view another.
+
+Flags:
+  --tail N    Show only the last N messages
+  --head N    Show only the first N messages
+
+Examples:
+  contenox session show
+  contenox session show my-session
+  contenox session show --tail 10`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runSessionShow,
 }
 
 func init() {
@@ -77,40 +87,14 @@ func init() {
 	sessionCmd.AddCommand(sessionNewCmd, sessionListCmd, sessionSwitchCmd, sessionDeleteCmd, sessionShowCmd)
 }
 
-// openSessionDB resolves the DB path from config/flags and opens SQLite.
+// openSessionDB resolves the DB path from flags and opens SQLite.
 func openSessionDB(cmd *cobra.Command) (context.Context, libdb.DBManager, func(), error) {
-	cfg, configPath, err := loadLocalConfig()
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to load config: %w", err)
-	}
-
-	var contenoxDir string
-	if configPath != "" {
-		contenoxDir = filepath.Dir(configPath)
-	} else {
-		cwd, _ := os.Getwd()
-		contenoxDir = filepath.Join(cwd, ".contenox")
-	}
-
-	flags := cmd.Root().Flags()
-	effectiveDB, _ := flags.GetString("db")
-	if effectiveDB == "" && cfg.DB != "" {
-		effectiveDB = cfg.DB
-	}
-	if effectiveDB == "" {
-		effectiveDB = filepath.Join(contenoxDir, "local.db")
-	}
-
-	dbPathAbs, err := filepath.Abs(effectiveDB)
+	dbPath, err := resolveDBPath(cmd)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("invalid database path: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(dbPathAbs), 0755); err != nil {
-		return nil, nil, nil, fmt.Errorf("cannot create database directory: %w", err)
-	}
-
 	ctx := libtracker.WithNewRequestID(context.Background())
-	db, err := libdb.NewSQLiteDBManager(ctx, dbPathAbs, runtimetypes.SchemaSQLite)
+	db, err := openDBAt(ctx, dbPath)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to open database: %w", err)
 	}

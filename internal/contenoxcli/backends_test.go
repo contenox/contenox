@@ -3,7 +3,6 @@ package contenoxcli
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/contenox/contenox/internal/runtimestate"
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/runtimetypes"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,12 +26,21 @@ func setupSQLiteStore(t *testing.T) (context.Context, libdb.DBManager, runtimety
 }
 
 func Test_isUniqueConstraintBaseURLError(t *testing.T) {
-	require.True(t, isUniqueConstraintBaseURLError(fmt.Errorf("constraint failed: UNIQUE constraint failed: llm_backends.base_url (2067)")))
-	require.True(t, isUniqueConstraintBaseURLError(fmt.Errorf("libdb: unexpected database error: UNIQUE constraint failed: llm_backends.base_url")))
+	require.True(t, isUniqueConstraintBaseURLError(newTestErr("constraint failed: UNIQUE constraint failed: llm_backends.base_url (2067)")))
+	require.True(t, isUniqueConstraintBaseURLError(newTestErr("libdb: unexpected database error: UNIQUE constraint failed: llm_backends.base_url")))
 	require.False(t, isUniqueConstraintBaseURLError(nil))
-	require.False(t, isUniqueConstraintBaseURLError(fmt.Errorf("other error")))
-	require.False(t, isUniqueConstraintBaseURLError(fmt.Errorf("UNIQUE constraint failed: llm_backends.name")))
+	require.False(t, isUniqueConstraintBaseURLError(newTestErr("other error")))
+	require.False(t, isUniqueConstraintBaseURLError(newTestErr("UNIQUE constraint failed: llm_backends.name")))
 }
+
+type testErr struct{ msg string }
+
+func (e *testErr) Error() string  { return e.msg }
+func newTestErr(msg string) error { return &testErr{msg} }
+
+// ---------------------------------------------------------------------------
+// setProviderConfigKV
+// ---------------------------------------------------------------------------
 
 func Test_setProviderConfigKV(t *testing.T) {
 	ctx, _, store := setupSQLiteStore(t)
@@ -60,117 +69,6 @@ func Test_setProviderConfigKV_gemini_keyFormat(t *testing.T) {
 	require.Equal(t, "gemini-secret", pc.APIKey)
 }
 
-func Test_ensureBackendsFromConfig_createsNewBackend(t *testing.T) {
-	ctx, db, _ := setupSQLiteStore(t)
-	backendSvc := backendservice.New(db)
-
-	resolved, _, _ := resolveEffectiveBackends(localConfig{}, "http://127.0.0.1:11434", "phi3:3.8b")
-	require.Len(t, resolved, 1)
-
-	err := ensureBackendsFromConfig(ctx, db, backendSvc, resolved)
-	require.NoError(t, err)
-
-	list, err := backendSvc.List(ctx, nil, 10)
-	require.NoError(t, err)
-	require.Len(t, list, 1)
-	require.Equal(t, "default", list[0].Name)
-	require.Equal(t, "ollama", list[0].Type)
-	require.Equal(t, "http://127.0.0.1:11434", list[0].BaseURL)
-}
-
-func Test_ensureBackendsFromConfig_updatesExistingBackend(t *testing.T) {
-	ctx, db, _ := setupSQLiteStore(t)
-	backendSvc := backendservice.New(db)
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("OPENAI_API_KEY", "")
-
-	// Create initial backend
-	resolved1, _, _ := resolveEffectiveBackends(localConfig{}, "http://old:11434", "old-model")
-	require.NoError(t, ensureBackendsFromConfig(ctx, db, backendSvc, resolved1))
-
-	// Resolve with new URL (same backend name)
-	cfg := localConfig{
-		Backends: []backendEntry{
-			{Name: "default", Type: "ollama", BaseURL: "http://new:11434"},
-		},
-	}
-	resolved2, _, _ := resolveEffectiveBackends(cfg, "http://ignored:11434", "ignored")
-	require.NoError(t, ensureBackendsFromConfig(ctx, db, backendSvc, resolved2))
-
-	list, err := backendSvc.List(ctx, nil, 10)
-	require.NoError(t, err)
-	require.Len(t, list, 1)
-	require.Equal(t, "http://new:11434", list[0].BaseURL)
-}
-
-func Test_ensureBackendsFromConfig_skipsEmptyBaseURL(t *testing.T) {
-	ctx, db, store := setupSQLiteStore(t)
-	backendSvc := backendservice.New(db)
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("OPENAI_API_KEY", "")
-
-	// One valid, one empty baseURL - we need to build resolved manually for empty.
-	// resolveEffectiveBackends with empty Backends gives one backend from effectiveOllama.
-	// To get a backend with empty baseURL we need cfg.Backends with one entry that has empty BaseURL.
-	cfg := localConfig{
-		Backends: []backendEntry{
-			{Name: "empty", Type: "ollama", BaseURL: ""},
-			{Name: "valid", Type: "ollama", BaseURL: "http://127.0.0.1:11434"},
-		},
-	}
-	resolved, _, _ := resolveEffectiveBackends(cfg, "http://x:11434", "m")
-	require.NoError(t, ensureBackendsFromConfig(ctx, db, backendSvc, resolved))
-
-	list, err := backendSvc.List(ctx, nil, 10)
-	require.NoError(t, err)
-	// Only "valid" should be created; "empty" is skipped
-	require.Len(t, list, 1)
-	require.Equal(t, "valid", list[0].Name)
-
-	_ = store
-}
-
-func Test_ensureBackendsFromConfig_sameBaseURLDifferentName_updatesExisting(t *testing.T) {
-	ctx, db, _ := setupSQLiteStore(t)
-	backendSvc := backendservice.New(db)
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("OPENAI_API_KEY", "")
-
-	// Create a backend with name "ollama" (e.g. from an old config).
-	resolved1, _, _ := resolveEffectiveBackends(localConfig{
-		Backends: []backendEntry{{Name: "ollama", Type: "ollama", BaseURL: "http://127.0.0.1:11434"}},
-	}, "http://x:11434", "m")
-	require.NoError(t, ensureBackendsFromConfig(ctx, db, backendSvc, resolved1))
-
-	// Config now wants "default" with the same base_url (DB has UNIQUE on base_url).
-	resolved2, _, _ := resolveEffectiveBackends(localConfig{}, "http://127.0.0.1:11434", "phi3:3.8b")
-	require.NoError(t, ensureBackendsFromConfig(ctx, db, backendSvc, resolved2))
-
-	list, err := backendSvc.List(ctx, nil, 10)
-	require.NoError(t, err)
-	require.Len(t, list, 1)
-	require.Equal(t, "default", list[0].Name)
-	require.Equal(t, "http://127.0.0.1:11434", list[0].BaseURL)
-}
-
-func Test_ensureBackendsFromConfig_storesOpenAIKeyInKV(t *testing.T) {
-	ctx, db, store := setupSQLiteStore(t)
-	backendSvc := backendservice.New(db)
-
-	cfg := localConfig{
-		Backends: []backendEntry{
-			{Name: "openai", Type: "openai", BaseURL: "https://api.openai.com", APIKey: "sk-test"},
-		},
-	}
-	resolved, _, _ := resolveEffectiveBackends(cfg, "http://x:11434", "m")
-	require.NoError(t, ensureBackendsFromConfig(ctx, db, backendSvc, resolved))
-
-	var pc runtimestate.ProviderConfig
-	err := store.GetKV(ctx, runtimestate.ProviderKeyPrefix+"openai", &pc)
-	require.NoError(t, err)
-	require.Equal(t, "sk-test", pc.APIKey)
-}
-
 func Test_setProviderConfigKV_valueRoundTrip(t *testing.T) {
 	ctx, _, store := setupSQLiteStore(t)
 
@@ -184,4 +82,126 @@ func Test_setProviderConfigKV_valueRoundTrip(t *testing.T) {
 	require.NoError(t, store.GetKV(ctx, key, &out))
 	require.Equal(t, pc.APIKey, out.APIKey)
 	require.Equal(t, pc.Type, out.Type)
+}
+
+// ---------------------------------------------------------------------------
+// backendservice CRUD (replaces the old ensureBackendsFromConfig tests)
+// ---------------------------------------------------------------------------
+
+func Test_backendService_create(t *testing.T) {
+	ctx, db, _ := setupSQLiteStore(t)
+	svc := backendservice.New(db)
+
+	b := &runtimetypes.Backend{
+		ID:      uuid.NewString(),
+		Name:    "local",
+		Type:    "ollama",
+		BaseURL: "http://127.0.0.1:11434",
+	}
+	require.NoError(t, svc.Create(ctx, b))
+
+	list, err := svc.List(ctx, nil, 10)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, "local", list[0].Name)
+	require.Equal(t, "ollama", list[0].Type)
+	require.Equal(t, "http://127.0.0.1:11434", list[0].BaseURL)
+}
+
+func Test_backendService_update(t *testing.T) {
+	ctx, db, _ := setupSQLiteStore(t)
+	svc := backendservice.New(db)
+
+	b := &runtimetypes.Backend{
+		ID:      uuid.NewString(),
+		Name:    "local",
+		Type:    "ollama",
+		BaseURL: "http://old:11434",
+	}
+	require.NoError(t, svc.Create(ctx, b))
+
+	b.BaseURL = "http://new:11434"
+	require.NoError(t, svc.Update(ctx, b))
+
+	list, err := svc.List(ctx, nil, 10)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.Equal(t, "http://new:11434", list[0].BaseURL)
+}
+
+func Test_backendService_delete(t *testing.T) {
+	ctx, db, _ := setupSQLiteStore(t)
+	svc := backendservice.New(db)
+
+	b := &runtimetypes.Backend{
+		ID:      uuid.NewString(),
+		Name:    "local",
+		Type:    "ollama",
+		BaseURL: "http://127.0.0.1:11434",
+	}
+	require.NoError(t, svc.Create(ctx, b))
+	require.NoError(t, svc.Delete(ctx, b.ID))
+
+	list, err := svc.List(ctx, nil, 10)
+	require.NoError(t, err)
+	require.Empty(t, list)
+}
+
+func Test_backendService_uniqueBaseURL_rejected(t *testing.T) {
+	ctx, db, _ := setupSQLiteStore(t)
+	svc := backendservice.New(db)
+
+	b1 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "a", Type: "ollama", BaseURL: "http://127.0.0.1:11434"}
+	b2 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "b", Type: "ollama", BaseURL: "http://127.0.0.1:11434"}
+
+	require.NoError(t, svc.Create(ctx, b1))
+	err := svc.Create(ctx, b2)
+	require.Error(t, err)
+	require.True(t, isUniqueConstraintBaseURLError(err))
+}
+
+// ---------------------------------------------------------------------------
+// getConfigKV / cliKVPrefix (new config cmd helpers)
+// ---------------------------------------------------------------------------
+
+func Test_getConfigKV_emptyIfNotSet(t *testing.T) {
+	ctx, _, store := setupSQLiteStore(t)
+	val, err := getConfigKV(ctx, store, "default-model")
+	require.NoError(t, err)
+	require.Equal(t, "", val)
+}
+
+func Test_getConfigKV_roundTrip(t *testing.T) {
+	ctx, _, store := setupSQLiteStore(t)
+
+	// Simulate what `contenox config set` does.
+	data, _ := json.Marshal("qwen2.5:7b")
+	require.NoError(t, store.SetKV(ctx, cliKVPrefix+"default-model", data))
+
+	val, err := getConfigKV(ctx, store, "default-model")
+	require.NoError(t, err)
+	require.Equal(t, "qwen2.5:7b", val)
+}
+
+func Test_getConfigKV_multipleKeys(t *testing.T) {
+	ctx, _, store := setupSQLiteStore(t)
+
+	for k, v := range map[string]string{
+		"default-model":    "phi3:3.8b",
+		"default-provider": "ollama",
+		"default-chain":    "default-chain.json",
+	} {
+		data, _ := json.Marshal(v)
+		require.NoError(t, store.SetKV(ctx, cliKVPrefix+k, data))
+	}
+
+	for k, want := range map[string]string{
+		"default-model":    "phi3:3.8b",
+		"default-provider": "ollama",
+		"default-chain":    "default-chain.json",
+	} {
+		got, err := getConfigKV(ctx, store, k)
+		require.NoError(t, err, "key=%s", k)
+		require.Equal(t, want, got, "key=%s", k)
+	}
 }

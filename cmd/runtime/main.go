@@ -202,7 +202,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s initializing ssh-hook failed: %v", nodeInstanceID, err)
 	}
-	hookRepo := hooks.NewPersistentRepo(localHookrepoInstance, dbInstance, http.DefaultClient)
+	hookRepo := hooks.NewPersistentRepo(localHookrepoInstance, dbInstance, http.DefaultClient, ps)
 	exec, err := taskengine.NewExec(ctx, repo, hookRepo, serveropsChainedTracker)
 	if err != nil {
 		log.Fatalf("%s initializing task engine engine failed: %v", nodeInstanceID, err)

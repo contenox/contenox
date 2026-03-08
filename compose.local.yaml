@@ -20,3 +20,16 @@ services:
       - CHAT_MODEL=${CHAT_MODEL}
       - CHAT_MODEL_CONTEXT_LENGTH=${CHAT_MODEL_CONTEXT_LENGTH}
       - CHAT_PROVIDER=${CHAT_PROVIDER}
+
+  mcp-testserver:
+    build:
+      context: .
+      dockerfile: cmd/mcp-testserver/Dockerfile
+    image: contenox/mcp-testserver:local
+    ports:
+      - "8090:8090"
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "-O-", "http://localhost:8090/health" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5

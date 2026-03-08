@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contenox/contenox/libbus"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/mcpworker"
 	"github.com/contenox/contenox/runtimetypes"
 	"github.com/contenox/contenox/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -21,12 +23,14 @@ type PersistentRepo struct {
 	dbInstance   libdb.DBManager
 	httpClient   *http.Client
 	toolProtocol ToolProtocol
+	messenger    libbus.Messenger
 }
 
 func NewPersistentRepo(
 	localHooks map[string]taskengine.HookRepo,
 	dbInstance libdb.DBManager,
 	httpClient *http.Client,
+	messenger libbus.Messenger,
 ) taskengine.HookRepo {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
@@ -37,6 +41,7 @@ func NewPersistentRepo(
 		dbInstance:   dbInstance,
 		httpClient:   httpClient,
 		toolProtocol: &OpenAPIToolProtocol{},
+		messenger:    messenger,
 	}
 }
 
@@ -48,19 +53,82 @@ func (p *PersistentRepo) Exec(
 	debug bool,
 	args *taskengine.HookCall,
 ) (any, taskengine.DataType, error) {
-	// Check local hooks first
+	// 1. Check local built-in hooks first.
 	if hook, ok := p.localHooks[args.Name]; ok {
 		return hook.Exec(ctx, startingTime, input, debug, args)
 	}
 
-	// Fetch remote hook
 	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
+
+	// 2. Check MCP servers from DB (transient connection per call).
+	if mcpSrv, err := store.GetMCPServerByName(ctx, args.Name); err == nil {
+		return p.execMCPHook(ctx, mcpSrv, args, input)
+	}
+
+	// 3. Fall back to HTTP remote hooks from DB.
 	remoteHook, err := store.GetRemoteHookByName(ctx, args.Name)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("unknown hook: %s", args.Name)
 	}
 
 	return p.execRemoteHook(ctx, remoteHook, input, args)
+}
+
+// execMCPHook routes a tool call to the persistent session worker via NATS.
+func (p *PersistentRepo) execMCPHook(
+	ctx context.Context,
+	srv *runtimetypes.MCPServer,
+	args *taskengine.HookCall,
+	input any,
+) (any, taskengine.DataType, error) {
+	// Determine tool name: strip "hookname." prefix that taskengine adds.
+	toolName := args.ToolName
+	if prefix := srv.Name + "."; strings.HasPrefix(toolName, prefix) {
+		toolName = strings.TrimPrefix(toolName, prefix)
+	}
+	if toolName == "" {
+		toolName = args.Args["tool"]
+	}
+
+	// Merge input + hook args into the MCP tool arguments map.
+	toolArgs := map[string]any{}
+	if m, ok := input.(map[string]any); ok {
+		for k, v := range m {
+			toolArgs[k] = v
+		}
+	} else if input != nil {
+		toolArgs["input"] = input
+	}
+	for k, v := range args.Args {
+		toolArgs[k] = v
+	}
+
+	sessionID := ""
+	if v := ctx.Value(runtimetypes.SessionIDContextKey); v != nil {
+		if s, ok := v.(string); ok {
+			sessionID = s
+		}
+	}
+
+	reqPayload, err := json.Marshal(mcpworker.MCPToolRequest{
+		SessionID: sessionID,
+		Tool:      toolName,
+		Args:      toolArgs,
+	})
+	if err != nil {
+		return nil, taskengine.DataTypeAny, fmt.Errorf("mcp hook %q: encode request: %w", srv.Name, err)
+	}
+
+	replyData, err := p.messenger.Request(ctx, mcpworker.SubjectExecute(srv.Name), reqPayload)
+	if err != nil {
+		return nil, taskengine.DataTypeAny, fmt.Errorf("mcp hook %q: nats request: %w", srv.Name, err)
+	}
+
+	result, err := mcpworker.DecodeToolReply(replyData)
+	if err != nil {
+		return nil, taskengine.DataTypeAny, fmt.Errorf("mcp hook %q: %w", srv.Name, err)
+	}
+	return result, taskengine.DataTypeString, nil
 }
 
 func (p *PersistentRepo) execRemoteHook(
@@ -138,15 +206,41 @@ func (p *PersistentRepo) execRemoteHook(
 	return result, dataType, nil
 }
 
-// GetToolsForHookByName returns the list of tools exposed by the remote hook.
+// GetToolsForHookByName returns the list of tools exposed by the named hook.
 func (p *PersistentRepo) GetToolsForHookByName(ctx context.Context, name string) ([]taskengine.Tool, error) {
-	// Check local hooks first
+	// 1. Local hooks.
 	if hook, ok := p.localHooks[name]; ok {
 		return hook.GetToolsForHookByName(ctx, name)
 	}
 
-	// Fetch remote hook
 	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
+
+	// 2. MCP servers — route list-tools through persistent NATS worker.
+	if mcpSrv, err := store.GetMCPServerByName(ctx, name); err == nil {
+		// Extract SessionID so the worker routes to the correct per-session pool.
+		sessionID := ""
+		if v := ctx.Value(runtimetypes.SessionIDContextKey); v != nil {
+			if s, ok := v.(string); ok {
+				sessionID = s
+			}
+		}
+		reqPayload, _ := json.Marshal(mcpworker.MCPToolRequest{SessionID: sessionID})
+		replyData, err := p.messenger.Request(ctx, mcpworker.SubjectListTools(mcpSrv.Name), reqPayload)
+		if err != nil {
+			return nil, fmt.Errorf("mcp list-tools for %q: %w", name, err)
+		}
+		mcpTools, err := mcpworker.DecodeListToolsReply(replyData)
+		if err != nil {
+			return nil, fmt.Errorf("mcp list-tools decode for %q: %w", name, err)
+		}
+		tools := make([]taskengine.Tool, 0, len(mcpTools))
+		for _, t := range mcpTools {
+			tools = append(tools, mcpToolToTaskTool(mcpSrv.Name, t))
+		}
+		return tools, nil
+	}
+
+	// 3. HTTP remote hooks from DB.
 	remoteHook, err := store.GetRemoteHookByName(ctx, name)
 	if err != nil {
 		return nil, fmt.Errorf("unknown hook %q: %w", name, taskengine.ErrHookNotFound)
@@ -220,30 +314,42 @@ func (p *PersistentRepo) GetSchemasForSupportedHooks(ctx context.Context) (map[s
 	return schemas, nil
 }
 
-// Supports returns a list of all hook names (local + remote).
+// Supports returns a list of all hook names (local + MCP + remote).
 func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
 	names := make([]string, 0, len(p.localHooks))
-
-	// Add local hooks
 	for name := range p.localHooks {
 		names = append(names, name)
 	}
 
-	// Add remote hooks page by page
 	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
 	var cursor *time.Time
 	const limit = 100
 
+	// MCP servers
+	for {
+		page, err := store.ListMCPServers(ctx, cursor, limit)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list MCP servers: %w", err)
+		}
+		for _, s := range page {
+			names = append(names, s.Name)
+		}
+		if len(page) < limit {
+			break
+		}
+		cursor = &page[len(page)-1].CreatedAt
+	}
+
+	// HTTP remote hooks
+	cursor = nil
 	for {
 		page, err := store.ListRemoteHooks(ctx, cursor, limit)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list remote hooks: %w", err)
 		}
-
 		for _, hook := range page {
 			names = append(names, hook.Name)
 		}
-
 		if len(page) < limit {
 			break
 		}

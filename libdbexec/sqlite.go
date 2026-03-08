@@ -25,7 +25,17 @@ func NewSQLiteDBManager(ctx context.Context, path string, schema string) (DBMana
 	if err := ensureSQLiteParentDir(path); err != nil {
 		return nil, fmt.Errorf("sqlite parent dir: %w", err)
 	}
-	db, err := sql.Open("sqlite", path)
+	// Append WAL mode and a 5-second busy timeout to the DSN so concurrent
+	// writers (e.g. mcpworker bus + config upsert at startup) never immediately
+	// fail with SQLITE_BUSY. These params work with modernc.org/sqlite's URI syntax.
+	dsn := path
+	if !strings.Contains(dsn, "?") {
+		dsn += "?"
+	} else {
+		dsn += "&"
+	}
+	dsn += "_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", translateSQLiteError(err))
 	}

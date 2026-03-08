@@ -22,20 +22,37 @@ var hookCmd = &cobra.Command{
 
 A remote hook points at an OpenAPI v3 service. When used in a chain the runtime
 fetches its schema, discovers every operation, and makes them callable by the model.
+The service MUST expose an OpenAPI v3 spec at its base URL.
 
-  contenox hook add <name> --url <endpoint> [--header "Key: Value"]... [--timeout ms]
+Examples:
+  contenox hook add myapi --url http://localhost:8080
+  contenox hook add myapi --url http://localhost:8080 --header "Authorization: Bearer $TOKEN"
   contenox hook list
-  contenox hook show <name>
-  contenox hook remove <name>
-  contenox hook update <name> [--url <endpoint>] [--header "Key: Value"]... [--timeout ms]`,
+  contenox hook show myapi
+  contenox hook update myapi --url http://new-host:8080
+  contenox hook remove myapi`,
 	SilenceUsage: true,
 }
 
 var hookAddCmd = &cobra.Command{
 	Use:   "add <name>",
 	Short: "Register a remote hook by name and URL.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runHookAdd,
+	Long: `Register an external OpenAPI v3 service as a named hook.
+
+The runtime probes the endpoint at registration time to count available tools.
+If the service is unreachable at registration, it will be retried at chain execution time.
+
+Headers are injected into every call to the service (e.g. for authentication).
+Specify each header as a separate --header flag in "Key: Value" format.
+
+Examples:
+  contenox hook add myapi --url http://localhost:8080
+  contenox hook add myapi --url https://api.example.com \
+    --header "Authorization: Bearer $TOKEN" \
+    --header "X-Tenant: acme" \
+    --timeout 5000`,
+	Args: cobra.ExactArgs(1),
+	RunE: runHookAdd,
 }
 
 var hookListCmd = &cobra.Command{
@@ -62,8 +79,17 @@ var hookRemoveCmd = &cobra.Command{
 var hookUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
 	Short: "Update an existing remote hook's URL, headers, or timeout.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runHookUpdate,
+	Long: `Update one or more properties of a registered hook.
+
+Only flags that are explicitly provided are updated; others are left unchanged.
+Passing --header replaces ALL existing headers for that hook.
+
+Examples:
+  contenox hook update myapi --url http://new-host:9090
+  contenox hook update myapi --timeout 15000
+  contenox hook update myapi --header "Authorization: Bearer $NEW_TOKEN"`,
+	Args: cobra.ExactArgs(1),
+	RunE: runHookUpdate,
 }
 
 func init() {

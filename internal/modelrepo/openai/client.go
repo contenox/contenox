@@ -140,8 +140,14 @@ func (c *openAIClient) sendRequest(ctx context.Context, endpoint string, request
 }
 
 // buildOpenAIRequest builds a compliant request and sanitizes tool names per
-// OpenAI's pattern. It ALSO returns a map from sanitized -> original so callers
-// can translate tool-call names back.
+// OpenAI's pattern (^[a-zA-Z0-9_-]+$). It ALSO returns a map from
+// sanitized->original so callers can translate tool-call names back.
+//
+// Critically, it also sanitizes tool_calls[].function.name in the message
+// history: the taskengine qualifies tool names as "hookName.toolName"
+// (e.g. "filesystem.list_directory"). The dot violates OpenAI's pattern,
+// so any prior-turn assistant messages must have their tool call names
+// sanitized before being forwarded to the API.
 func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) (openAIChatRequest, map[string]string) {
 	req := openAIChatRequest{
 		Model:    modelName,
@@ -159,7 +165,7 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 	req.Seed = cfg.Seed
 
 	// Wire reasoning_effort for o-series models.
-	// "true"/"high" → "high", "medium" → "medium", "low" → "low".
+	// "true"/"high" = "high", "medium" = "medium", "low" = "low".
 	// When reasoning_effort is set, temperature must be cleared (OpenAI rejects it on o-series).
 	if cfg.Think != nil {
 		switch *cfg.Think {
@@ -175,10 +181,10 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 		}
 	}
 
-	// Convert tools -> OpenAI tools with sanitized/unique function names
+	// Convert tools to OpenAI tools with sanitized/unique function names.
 	nameMap := make(map[string]string) // sanitized -> original
+	seen := map[string]int{}
 	if len(cfg.Tools) > 0 {
-		seen := map[string]int{}
 		tools := make([]openAITool, 0, len(cfg.Tools))
 		for i, t := range cfg.Tools {
 			if strings.ToLower(t.Type) != "function" || t.Function == nil {
@@ -208,6 +214,33 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 			req.Tools = tools
 		}
 	}
+
+	// Sanitize tool_calls[].function.name in the message history.
+	// Build a reverse map (original -> sanitized) from the tool definitions above.
+	// For names not in that map (prior turns), fall back to plain sanitization.
+	origToSanitized := make(map[string]string, len(nameMap))
+	for san, orig := range nameMap {
+		origToSanitized[orig] = san
+	}
+	sanitizedMsgs := make([]modelrepo.Message, len(messages))
+	copy(sanitizedMsgs, messages)
+	for i, msg := range sanitizedMsgs {
+		if len(msg.ToolCalls) == 0 {
+			continue
+		}
+		// Deep-copy CallTools for this message before mutating.
+		fixed := make([]modelrepo.ToolCall, len(msg.ToolCalls))
+		copy(fixed, msg.ToolCalls)
+		for j, tc := range fixed {
+			if san, ok := origToSanitized[tc.Function.Name]; ok {
+				fixed[j].Function.Name = san
+			} else {
+				fixed[j].Function.Name = sanitizeToolName(tc.Function.Name)
+			}
+		}
+		sanitizedMsgs[i].ToolCalls = fixed
+	}
+	req.Messages = sanitizedMsgs
 
 	return req, nameMap
 }

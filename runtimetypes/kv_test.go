@@ -73,17 +73,18 @@ func TestUnitKV(t *testing.T) {
 			err := s.SetKV(ctx, key, value)
 			require.NoError(t, err)
 
-			if tt.name == "Set and Get simple string value" {
+			switch tt.name {
+			case "Set and Get simple string value":
 				var str string
 				err = s.GetKV(ctx, key, &str)
 				require.NoError(t, err)
 				require.Equal(t, "simple string value", str)
-			} else if tt.name == "Set and Get struct value" {
+			case "Set and Get struct value":
 				var tv testValue
 				err = s.GetKV(ctx, key, &tv)
 				require.NoError(t, err)
 				require.Equal(t, testValue{Field1: "test", Field2: 42}, tv)
-			} else {
+			default:
 				var m map[string]interface{}
 				err = s.GetKV(ctx, key, &m)
 				require.NoError(t, err)
