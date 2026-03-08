@@ -1,0 +1,246 @@
+package contenoxcli
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/contenox/contenox/backendservice"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtimetypes"
+	"github.com/google/uuid"
+	"github.com/spf13/cobra"
+)
+
+var backendCmd = &cobra.Command{
+	Use:   "backend",
+	Short: "Manage LLM backends (add, list, show, remove).",
+	Long: `Register and manage LLM backend endpoints.
+
+A backend points at a running LLM server (Ollama, OpenAI, Gemini, vLLM, etc).
+Once registered, the runtime uses it for model resolution during chain execution.
+
+Examples:
+  # Register a local Ollama server (default URL inferred):
+  contenox backend add local --type ollama
+
+  # Register OpenAI using an environment variable for the key:
+  contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
+
+  # Register Google Gemini:
+  contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
+
+  # Register a custom vLLM server:
+  contenox backend add myvllm --type vllm --url http://gpu-host:8000
+
+  contenox backend list
+  contenox backend show openai
+  contenox backend remove myvllm`,
+}
+
+var backendAddCmd = &cobra.Command{
+	Use:   "add <name>",
+	Short: "Register an LLM backend endpoint.",
+	Long: `Register a named LLM backend endpoint in the local SQLite database.
+
+The --type flag determines which provider protocol is used.
+For openai and gemini, the base URL is inferred automatically if --url is omitted.
+
+API keys should be passed via --api-key-env (reads from environment) rather than
+--api-key (inline literal) to avoid leaking secrets into shell history.
+
+Examples:
+  contenox backend add local   --type ollama
+  contenox backend add openai  --type openai  --api-key-env OPENAI_API_KEY
+  contenox backend add gemini  --type gemini  --api-key-env GEMINI_API_KEY
+  contenox backend add myvllm --type vllm    --url http://gpu-host:8000`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := libtracker.WithNewRequestID(context.Background())
+		name := args[0]
+		flags := cmd.Flags()
+
+		typ, _ := flags.GetString("type")
+		baseURL, _ := flags.GetString("url")
+		apiKeyEnv, _ := flags.GetString("api-key-env")
+		apiKeyLit, _ := flags.GetString("api-key")
+
+		typ = strings.ToLower(strings.TrimSpace(typ))
+		if typ == "" {
+			typ = "ollama"
+		}
+		if baseURL == "" {
+			switch typ {
+			case "openai":
+				baseURL = "https://api.openai.com/v1"
+			case "gemini":
+				baseURL = "https://generativelanguage.googleapis.com"
+			}
+		}
+		apiKey := apiKeyLit
+		if apiKey == "" && apiKeyEnv != "" {
+			apiKey = os.Getenv(apiKeyEnv)
+		}
+
+		db, svc, err := openBackendDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		backend := &runtimetypes.Backend{
+			ID:      uuid.NewString(),
+			Name:    name,
+			Type:    typ,
+			BaseURL: baseURL,
+		}
+		if err := svc.Create(ctx, backend); err != nil {
+			if isUniqueConstraintBaseURLError(err) {
+				return fmt.Errorf("a backend with URL %q already exists", baseURL)
+			}
+			return fmt.Errorf("failed to add backend: %w", err)
+		}
+
+		if apiKey != "" {
+			if err := setProviderConfigKV(ctx, runtimetypes.New(db.WithoutTransaction()), typ, apiKey); err != nil {
+				return fmt.Errorf("backend added but failed to store API key: %w", err)
+			}
+		}
+
+		fmt.Printf("Backend %q added (%s → %s).\n", name, typ, baseURL)
+		return nil
+	},
+}
+
+var backendListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all registered backends.",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := libtracker.WithNewRequestID(context.Background())
+		db, svc, err := openBackendDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		backends, err := svc.List(ctx, nil, 100)
+		if err != nil {
+			return fmt.Errorf("failed to list backends: %w", err)
+		}
+		if len(backends) == 0 {
+			fmt.Println("No backends registered. Run: contenox backend add <name> --type <type>")
+			return nil
+		}
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "NAME\tTYPE\tURL")
+		for _, b := range backends {
+			fmt.Fprintf(w, "%s\t%s\t%s\n", b.Name, b.Type, b.BaseURL)
+		}
+		return w.Flush()
+	},
+}
+
+var backendShowCmd = &cobra.Command{
+	Use:   "show <name>",
+	Short: "Show details for a backend.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := libtracker.WithNewRequestID(context.Background())
+		db, _, err := openBackendDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		store := runtimetypes.New(db.WithoutTransaction())
+		b, err := store.GetBackendByName(ctx, args[0])
+		if err != nil {
+			return fmt.Errorf("backend %q not found: %w", args[0], err)
+		}
+		data, _ := json.MarshalIndent(b, "", "  ")
+		fmt.Println(string(data))
+		return nil
+	},
+}
+
+var backendRemoveCmd = &cobra.Command{
+	Use:     "remove <name>",
+	Aliases: []string{"rm"},
+	Short:   "Remove a registered backend.",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := libtracker.WithNewRequestID(context.Background())
+		db, svc, err := openBackendDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		store := runtimetypes.New(db.WithoutTransaction())
+		b, err := store.GetBackendByName(ctx, args[0])
+		if err != nil {
+			return fmt.Errorf("backend %q not found: %w", args[0], err)
+		}
+		if err := svc.Delete(ctx, b.ID); err != nil {
+			return fmt.Errorf("failed to remove backend: %w", err)
+		}
+		fmt.Printf("Backend %q removed.\n", args[0])
+		return nil
+	},
+}
+
+func openBackendDB(cmd *cobra.Command) (libdb.DBManager, backendservice.Service, error) {
+	dbPath, err := resolveDBPath(cmd)
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx := libtracker.WithNewRequestID(context.Background())
+	db, err := openDBAt(ctx, dbPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	return db, backendservice.New(db), nil
+}
+
+// resolveDBPath finds the database path from the --db flag then falls back to well-known defaults.
+func resolveDBPath(cmd *cobra.Command) (string, error) {
+	dbFlag, _ := cmd.Flags().GetString("db")
+	if dbFlag == "" {
+		dbFlag, _ = cmd.Root().PersistentFlags().GetString("db")
+	}
+	if dbFlag != "" {
+		return filepath.Abs(dbFlag)
+	}
+	cwd, _ := os.Getwd()
+	// Prefer project-local DB; fall back to global.
+	localDB := filepath.Join(cwd, ".contenox", "local.db")
+	if _, err := os.Stat(localDB); err == nil {
+		return localDB, nil
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		globalDB := filepath.Join(home, ".contenox", "local.db")
+		if _, err := os.Stat(globalDB); err == nil {
+			return globalDB, nil
+		}
+	}
+	// Default: create in local .contenox/
+	return filepath.Abs(localDB)
+}
+
+func init() {
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: ollama, openai, gemini, vllm")
+	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/gemini if omitted)")
+	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")
+	backendAddCmd.Flags().String("api-key", "", "API key literal — prefer --api-key-env to avoid leaking into shell history")
+
+	backendCmd.AddCommand(backendAddCmd)
+	backendCmd.AddCommand(backendListCmd)
+	backendCmd.AddCommand(backendShowCmd)
+	backendCmd.AddCommand(backendRemoveCmd)
+}

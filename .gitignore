@@ -3,6 +3,7 @@
 # ==============================
 
 # Binaries
+mcp-testserver
 *.exe
 *.exe~
 *.dll

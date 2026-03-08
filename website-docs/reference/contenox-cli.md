@@ -9,7 +9,7 @@
 | `--trace` | Print verbose chain execution logs |
 | `--steps` | Stream intermediate task names and tool executions |
 | `--think` | Stream the model's reasoning/thinking trace to stderr before the main output |
-| `--model <name>` | Override the model defined in `.contenox/config.yaml` |
+| `--model <name>` | Override the default model (set via `contenox config set default-model`) |
 
 ## Subcommands
 
@@ -91,22 +91,70 @@ contenox hook remove <name>
 
 ### `contenox init`
 
-Initializes a new `.contenox/` configuration directory in the current path.
+Initializes a new `.contenox/` directory with default chain files.
 
 ```bash
 $ contenox init
-  Created .contenox/config.yaml
   Created .contenox/default-chain.json
   Created .contenox/default-run-chain.json
 Done.
+```
 
-Next steps:
+After init, register a backend:
 
-  1. Chat with your model:
-       contenox hey, what can you do?
-       echo 'fix the typos in README.md' | contenox
+```bash
+contenox backend add local --type ollama
+contenox config set default-model qwen2.5:7b
+```
 
-  Plan and execute a multi-step task:
-       contenox plan new "create a TODOS.md from all TODO comments in the codebase"
-       contenox plan next --auto
+### `contenox backend`
+
+Register and manage LLM backend endpoints.
+
+```bash
+contenox backend add local   --type ollama
+contenox backend add openai  --type openai  --api-key-env OPENAI_API_KEY
+contenox backend add gemini  --type gemini  --api-key-env GEMINI_API_KEY
+contenox backend add myvllm --type vllm    --url http://gpu-host:8000
+
+contenox backend list
+contenox backend show openai
+contenox backend remove myvllm
+```
+
+| Flag | Description |
+|---|---|
+| `--type` | Backend type: `ollama`, `openai`, `gemini`, `vllm` |
+| `--url` | Base URL (auto-inferred for openai/gemini) |
+| `--api-key-env` | Environment variable holding the API key (preferred) |
+| `--api-key` | API key literal (avoid — use `--api-key-env`) |
+
+### `contenox config`
+
+Manage persistent CLI defaults stored in SQLite.
+
+```bash
+contenox config set default-model    qwen2.5:7b
+contenox config set default-provider ollama
+contenox config set default-chain    .contenox/default-chain.json
+
+contenox config get default-model
+contenox config list
+```
+
+### `contenox mcp`
+
+Register and manage MCP (Model Context Protocol) servers.
+
+```bash
+# Stdio transport (local process)
+contenox mcp add myserver --transport stdio --command npx \
+  --args "-y,@modelcontextprotocol/server-filesystem,/tmp"
+
+# SSE transport (remote)
+contenox mcp add remote --transport sse --url https://mcp.example.com/sse
+
+contenox mcp list
+contenox mcp show myserver
+contenox mcp remove myserver
 ```

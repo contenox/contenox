@@ -1,35 +1,55 @@
 # Configuration
 
-The Contenox runtime is configured via `.contenox/config.yaml`.
+Contenox stores all configuration in SQLite (`.contenox/local.db`, or `~/.contenox/local.db` globally).
+There is no YAML file — register backends and set defaults using CLI commands.
 
-When you run `contenox init`, a default configuration is generated. `contenox` looks for this directory in your current working directory, then walks up to the root, and finally checks your home directory (`~/.contenox/`).
+## Register a backend
 
-## Default `config.yaml`
+```bash
+# Local Ollama (base URL inferred automatically)
+contenox backend add local --type ollama
 
-```yaml
-version: 1
-default_provider: ollama
-default_model: qwen2.5:7b
-providers:
-  ollama:
-    base_url: http://localhost:11434
-  openai:
-    api_key: ""
+# OpenAI (base URL inferred)
+contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
+
+# Google Gemini
+contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
+
+# Self-hosted vLLM or compatible endpoint
+contenox backend add myvllm --type vllm --url http://gpu-host:8000
 ```
 
-## Settings
+## Set persistent defaults
 
-| Key | Description | Example |
-|-----|-------------|---------|
-| `default_provider` | The fallback provider if a chain doesn't specify one | `ollama` |
-| `default_model` | The fallback model if a chain doesn't specify one | `gpt-4o` |
-| `providers.<name>` | Provider-specific connection settings | see below |
+```bash
+contenox config set default-model    qwen2.5:7b
+contenox config set default-provider ollama
+contenox config set default-chain    .contenox/default-chain.json
 
-## Supported Providers
+contenox config list   # review current settings
+```
 
-Contenox uses a unified translation layer, meaning you can swap providers per-task in your chains without changing the prompt format or tool schemas.
+## Manage backends
 
-1. **`ollama`**: Requires `base_url` (usually `http://localhost:11434`).
-2. **`openai`**: Requires `api_key` (or uses `OPENAI_API_KEY` from environment).
-3. **`vllm`**: Exposes an OpenAI-compatible endpoint. Requires `base_url`.
-4. **`gemini`**: Requires `api_key`.
+```bash
+contenox backend list
+contenox backend show openai
+contenox backend remove myvllm
+```
+
+## Supported providers
+
+| `--type` | Notes |
+|---|---|
+| `ollama` | Local. Run `ollama serve` first. |
+| `openai` | Use `--api-key-env OPENAI_API_KEY`. Base URL inferred. |
+| `gemini` | Use `--api-key-env GEMINI_API_KEY`. Base URL inferred. |
+| `vllm`   | Self-hosted OpenAI-compatible endpoint. Requires `--url`. |
+
+## Database location
+
+Contenox resolves the database path in this order:
+1. `--db <path>` flag
+2. `.contenox/local.db` in the current working directory
+3. `~/.contenox/local.db` (global fallback)
+

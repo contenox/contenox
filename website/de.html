@@ -355,7 +355,7 @@
                         <div>ollama serve &amp;&amp; ollama pull qwen2.5:7b</div>
                         <br>
                         <div><span class="prompt">$</span> <span class="cmd">contenox init</span></div>
-                        <div class="out">Created .contenox/config.yaml and .contenox/default-chain.json...</div>
+                        <div class="out">Created .contenox/ with default chains...</div>
                         <br>
                         <div><span class="comment"># Mit dem Modell chatten</span></div>
                         <div><span class="prompt">$</span> <span class="cmd">contenox "hey, was kannst du tun?"</span>
@@ -367,8 +367,8 @@
                         <div><span class="prompt">$</span> <span class="cmd">contenox plan next --auto</span></div>
                     </div>
                     <p style="margin-top:0.75rem; font-size: 0.88rem; opacity: 0.7;">
-                        Cloud-Anbieter (OpenAI, Gemini, vLLM) funktionieren ebenfalls — API-Schlüssel in
-                        <code>.contenox/config.yaml</code> nach <code>contenox init</code> eintragen.
+                        Cloud-Anbieter (OpenAI, Gemini, vLLM) funktionieren ebenfalls —
+                        <code>contenox backend add openai --type openai --api-key-env OPENAI_API_KEY</code>
                     </p>
                 </div>
             </section>
@@ -412,6 +412,72 @@
                             </p>
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <!-- MCP -->
+            <section id="mcp" class="section" aria-labelledby="mcp-heading">
+                <div class="container" style="max-width: 760px;">
+                    <h2 id="mcp-heading">Nativer MCP-Client — KI mit echtem Gedächtnis</h2>
+                    <p class="section-lead">
+                        Contenox spricht das <a href="https://modelcontextprotocol.io/" target="_blank"
+                            rel="noopener noreferrer">Model Context Protocol</a> —
+                        den offenen Standard der Linux Foundation, der Agenten dauerhafte Verbindungen zu echten Tools
+                        ermöglicht.
+                    </p>
+
+                    <p>
+                        Die meisten Agenten vergessen alles, sobald ein Tool-Call endet. Contenox hält für jeden
+                        registrierten MCP-Server
+                        eine <strong>persistente, sitzungsgebundene Verbindung</strong> aufrecht. Der Agent macht exakt
+                        da weiter, wo er aufgehört hat —
+                        über Tool-Calls, Plan-Schritte und Neustarts hinweg.
+                    </p>
+
+                    <div class="terminal" style="margin: 1.5rem 0;">
+                        <div><span class="comment"># Lokalen Dateisystem-MCP-Server registrieren</span></div>
+                        <div><span class="prompt">$</span> <span class="cmd">contenox mcp add myfiles --transport stdio
+                                \</span></div>
+                        <div><span class="cmd">&nbsp;&nbsp;--command npx --args
+                                "-y,@modelcontextprotocol/server-filesystem,/home/user/projects"</span></div>
+                        <br>
+                        <div><span class="comment"># Oder einen Remote-HTTP-Server</span></div>
+                        <div><span class="prompt">$</span> <span class="cmd">contenox mcp add memory --transport http
+                                --url http://mcp-host:8090</span></div>
+                        <br>
+                        <div><span class="comment"># Plan ausführen — der Agent trägt den Kontext über jeden Schritt
+                                hinweg</span></div>
+                        <div><span class="prompt">$</span> <span class="cmd">contenox plan new "untersuche die Codebase,
+                                finde die Top 3 Bugs, schreibe einen Report"</span></div>
+                        <div><span class="prompt">$</span> <span class="cmd">contenox plan next --auto</span></div>
+                    </div>
+
+                    <div class="services-grid" style="margin-top: 1.5rem;">
+                        <article class="card service-card">
+                            <h3>Echtes Sitzungsgedächtnis</h3>
+                            <p>Jeder Plan oder Chat bekommt seine eigene persistente Verbindung. Der Zustand bleibt über
+                                Tool-Calls und Plan-Läufe erhalten.</p>
+                        </article>
+                        <article class="card service-card">
+                            <h3>Jeder Transport</h3>
+                            <p><code>stdio</code> für lokale Prozesse, <code>sse</code> für Event-Stream-Server,
+                                <code>http</code> für Produktionsumgebungen. Alles fühlt sich nativ an.</p>
+                        </article>
+                        <article class="card service-card">
+                            <h3>Jeder MCP-Server</h3>
+                            <p>Dateisystem, Datenbanken, GitHub, interne Tools — wenn es MCP spricht, verbindet Contenox
+                                sich sofort damit.</p>
+                        </article>
+                        <article class="card service-card">
+                            <h3>Gleiche CLI, gleicher Server</h3>
+                            <p>Was lokal funktioniert, läuft identisch in der Runtime API. Keine
+                                Konfigurationsänderungen nötig.</p>
+                        </article>
+                    </div>
+
+                    <p style="margin-top: 1.25rem; font-size: 0.9rem;">
+                        <a href="/docs/guide/mcp">MCP-Integrations-Dokumentation lesen →</a>
+                    </p>
                 </div>
             </section>
 

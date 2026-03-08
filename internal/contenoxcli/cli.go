@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/spf13/cobra"
 )
 
@@ -29,7 +30,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "plan": true, "run": true, "hook": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "plan": true, "run": true, "hook": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -96,18 +97,27 @@ machine using filesystem and shell tools — driven by your LLM of choice.
 No daemon, no cloud required. State is stored in SQLite.
 
   Quickstart:
-    contenox init                         # scaffold .contenox/ with config + chain
-    contenox list files in my home dir    # one-shot natural language → shell
-    contenox plan new "some multi-step goal"  # create an autonomous plan
-    contenox plan next --auto             # execute until done
+    contenox init                          # scaffold .contenox/ with default chains
+    contenox "list files in my home dir"   # one-shot natural language → shell
+    contenox plan new "some multi-step goal"  # create an autonomous multi-step plan
+    contenox plan next --auto              # execute plan steps until done
 
-  LLM providers (edit .contenox/config.yaml after 'contenox init'):
-    Local (Ollama):  ollama serve && ollama pull qwen2.5:7b
-    OpenAI:          set OPENAI_API_KEY (auto-declared, no config edit needed)
-    Gemini:          set GEMINI_API_KEY (auto-declared, no config edit needed)
+  Register an LLM backend:
+    # Local (Ollama)
+    ollama serve && ollama pull qwen2.5:7b
+    contenox backend add local --type ollama
 
-  For contenox plan, the model MUST support tool calling.
-  Run 'contenox init' and open .contenox/config.yaml for full provider examples.`,
+    # OpenAI — key is read from the environment automatically
+    contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
+
+    # Google Gemini — key is read from the environment automatically
+    contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
+
+  Persist CLI defaults:
+    contenox config set default-model  qwen2.5:7b
+    contenox config set default-chain  .contenox/default-chain.json
+
+  Note: contenox plan requires a model that supports tool calling.`,
 	SilenceUsage: true,
 }
 
@@ -145,7 +155,7 @@ Examples:
   contenox chat --shell --local-exec-allowed-commands git \
     "suggest a commit message from git diff"
 
-  # Trim context: only send last 10 messages to the model:
+  # Trim context: only send last 10 messages from session history to the model:
   contenox chat --trim 10 "let's continue where we left off"
 
   # Show last 6 turns of the conversation after the reply:
@@ -156,13 +166,22 @@ Examples:
 
 var initCmd = &cobra.Command{
 	Use:   "init [provider]",
-	Short: "Scaffold .contenox/ (config and default chain).",
-	Long: `Create .contenox/config.yaml and .contenox/default-chain.json.
+	Short: "Scaffold .contenox/ with default chain files.",
+	Long: `Create the .contenox/ directory and populate it with default chain files.
 
-Optional provider argument sets the default LLM backend in config.yaml:
-  ollama   Local model via Ollama (default)
-  openai   OpenAI — set OPENAI_API_KEY
-  gemini   Google Gemini — set GEMINI_API_KEY
+After init, register a backend and set your default model:
+
+  # Local Ollama:
+  contenox backend add local --type ollama
+  contenox config set default-model qwen2.5:7b
+
+  # OpenAI:
+  contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
+  contenox config set default-model gpt-4o
+
+  # Google Gemini:
+  contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
+  contenox config set default-model gemini-2.0-flash
 
 Use --force to overwrite existing files.`,
 	Args: cobra.MaximumNArgs(1),
@@ -196,6 +215,10 @@ func init() {
 	f.Bool("think", false, "Print model reasoning trace to stderr (for thinking models)")
 
 	rootCmd.AddCommand(initCmd, chatCmd, sessionCmd, planCmd, runCmd, hookCmd)
+	rootCmd.AddCommand(mcpCmd)
+	rootCmd.AddCommand(backendCmd)
+	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(modelCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
@@ -226,54 +249,53 @@ func runChat(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	cfg, configPath, err := loadLocalConfig()
+	cwd, _ := os.Getwd()
+	contenoxDir := filepath.Join(cwd, ".contenox")
+
+	// Resolve DB path (needed for KV reads below).
+	dbPath, err := resolveDBPath(cmd)
 	if err != nil {
-		slog.Error("Failed to load config", "error", err)
 		return err
 	}
-
-	var contenoxDir string
-	if configPath != "" {
-		contenoxDir = filepath.Dir(configPath)
-	} else {
-		cwd, _ := os.Getwd()
-		contenoxDir = filepath.Join(cwd, ".contenox")
+	dbCtx := libtracker.WithNewRequestID(context.Background())
+	db, err := openDBAt(dbCtx, dbPath)
+	if err != nil {
+		return err
 	}
+	defer db.Close()
 
-	flags = cmd.Root().Flags()
+	store := runtimetypes.New(db.WithoutTransaction())
+
 	changed := func(name string) bool { return flags.Changed(name) }
 
-	effectiveDB, _ := flags.GetString("db")
-	if effectiveDB == "" && !changed("db") && cfg.DB != "" {
-		effectiveDB = cfg.DB
-	}
-	if effectiveDB == "" {
-		effectiveDB = filepath.Join(contenoxDir, "local.db")
-	}
-
-	effectiveOllama, _ := flags.GetString("ollama")
-	if effectiveOllama == defaultOllama && !changed("ollama") && cfg.Ollama != "" {
-		effectiveOllama = cfg.Ollama
-	}
-
+	// Resolve model: flag > SQLite KV > hardcoded default.
 	effectiveModel, _ := flags.GetString("model")
-	if effectiveModel == defaultModel && !changed("model") && cfg.Model != "" {
-		effectiveModel = cfg.Model
+	if !changed("model") || effectiveModel == defaultModel {
+		if kv, _ := getConfigKV(dbCtx, store, "default-model"); kv != "" {
+			effectiveModel = kv
+		}
+	}
+
+	effectiveDefaultProvider := ""
+	if kv, _ := getConfigKV(dbCtx, store, "default-provider"); kv != "" {
+		effectiveDefaultProvider = kv
+	}
+	if changed("provider") {
+		effectiveDefaultProvider, _ = flags.GetString("provider")
 	}
 
 	effectiveContext, _ := flags.GetInt("context")
-	if effectiveContext == defaultContext && !changed("context") && cfg.Context != nil {
-		effectiveContext = *cfg.Context
-	}
-
 	effectiveNoDeleteModels, _ := flags.GetBool("no-delete-models")
-	if effectiveNoDeleteModels && !changed("no-delete-models") && cfg.NoDeleteModels != nil {
-		effectiveNoDeleteModels = *cfg.NoDeleteModels
-	}
 
+	// Resolve chain: flag > SQLite KV default-chain > well-known file.
 	effectiveChain, _ := flags.GetString("chain")
-	if effectiveChain == "" && !changed("chain") && cfg.DefaultChain != "" {
-		effectiveChain = filepath.Join(contenoxDir, cfg.DefaultChain)
+	if effectiveChain == "" && !changed("chain") {
+		if kv, _ := getConfigKV(dbCtx, store, "default-chain"); kv != "" {
+			effectiveChain = kv
+			if !filepath.IsAbs(effectiveChain) {
+				effectiveChain = filepath.Join(contenoxDir, effectiveChain)
+			}
+		}
 	}
 	if effectiveChain == "" && !changed("chain") {
 		wellKnown := filepath.Join(contenoxDir, "default-chain.json")
@@ -282,56 +304,23 @@ func runChat(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if effectiveChain == "" {
-		slog.Error("No chain file specified", "hint", "use --chain <path>, or set default_chain in .contenox/config.yaml, or add .contenox/default-chain.json")
+		slog.Error("No chain file specified", "hint", "use --chain <path>, or run: contenox config set default-chain <path>")
 		return errChainRequired
 	}
 
 	effectiveEnableLocalExec, _ := flags.GetBool("shell")
-	if !effectiveEnableLocalExec && !changed("shell") && cfg.EnableLocalExec != nil {
-		effectiveEnableLocalExec = *cfg.EnableLocalExec
-	}
-
 	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	if effectiveLocalExecAllowedDir == "" && !changed("local-exec-allowed-dir") && cfg.LocalExecAllowedDir != "" {
-		effectiveLocalExecAllowedDir = cfg.LocalExecAllowedDir
-	}
-
 	effectiveLocalExecAllowedCommands, _ := flags.GetString("local-exec-allowed-commands")
-	if effectiveLocalExecAllowedCommands == "" && !changed("local-exec-allowed-commands") && cfg.LocalExecAllowedCommands != "" {
-		effectiveLocalExecAllowedCommands = cfg.LocalExecAllowedCommands
-	}
 
 	var effectiveLocalExecDeniedCommands []string
 	if changed("local-exec-denied-commands") {
 		denied, _ := flags.GetString("local-exec-denied-commands")
 		effectiveLocalExecDeniedCommands = splitAndTrim(denied, ",")
-	} else if len(cfg.LocalExecDeniedCommands) > 0 {
-		effectiveLocalExecDeniedCommands = cfg.LocalExecDeniedCommands
 	}
 
 	effectiveTracing, _ := flags.GetBool("trace")
-	if !effectiveTracing && !changed("trace") && cfg.Tracing != nil {
-
-		effectiveTracing = *cfg.Tracing
-	}
-
 	effectiveSteps, _ := flags.GetBool("steps")
-	if !effectiveSteps && !changed("steps") && cfg.Steps != nil {
-		effectiveSteps = *cfg.Steps
-	}
-
 	effectiveRaw, _ := flags.GetBool("raw")
-	if !effectiveRaw && !changed("raw") && cfg.Raw != nil {
-		effectiveRaw = *cfg.Raw
-	}
-
-	resolvedBackends, effectiveDefaultProvider, effectiveDefaultModel := resolveEffectiveBackends(cfg, effectiveOllama, effectiveModel)
-	if changed("model") {
-		effectiveDefaultModel = effectiveModel
-	}
-	if changed("provider") {
-		effectiveDefaultProvider, _ = flags.GetString("provider")
-	}
 
 	if effectiveEnableLocalExec && effectiveLocalExecAllowedDir != "" && effectiveLocalExecAllowedCommands != "" {
 		allowedDir, err := filepath.Abs(effectiveLocalExecAllowedDir)
@@ -348,17 +337,13 @@ func runChat(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Input: --input flag takes priority (InputFlagPassed=true prevents stdin reading).
-	// Positional args fill InputValue but leave InputFlagPassed=false so that
-	// chat_cmd.go can still combine piped stdin with the positional args.
 	var inputValue string
 	var inputPassed bool
 	if changed("input") {
 		inputValue, _ = flags.GetString("input")
-		inputPassed = true // explicit --input: skip stdin entirely
+		inputPassed = true
 	} else if len(args) > 0 {
 		inputValue = strings.Join(args, " ")
-		// inputPassed stays false → chat_cmd.go will combine stdin if piped
 	}
 
 	timeout, _ := flags.GetDuration("timeout")
@@ -378,9 +363,9 @@ func runChat(cmd *cobra.Command, args []string) error {
 	lastN, _ := cmd.Flags().GetInt("last")
 
 	opts := chatOpts{
-		EffectiveDB:                       effectiveDB,
+		EffectiveDB:                       dbPath,
 		EffectiveChain:                    effectiveChain,
-		EffectiveDefaultModel:             effectiveDefaultModel,
+		EffectiveDefaultModel:             effectiveModel,
 		EffectiveDefaultProvider:          effectiveDefaultProvider,
 		EffectiveContext:                  effectiveContext,
 		EffectiveNoDeleteModels:           effectiveNoDeleteModels,
@@ -396,8 +381,6 @@ func runChat(cmd *cobra.Command, args []string) error {
 		LastN:                             lastN,
 		InputValue:                        inputValue,
 		InputFlagPassed:                   inputPassed,
-		Cfg:                               cfg,
-		ResolvedBackends:                  resolvedBackends,
 		ContenoxDir:                       contenoxDir,
 	}
 	execChat(ctx, opts)

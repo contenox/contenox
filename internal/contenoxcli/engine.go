@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/contenox/contenox/backendservice"
 	"github.com/contenox/contenox/eventsourceservice"
 	"github.com/contenox/contenox/execservice"
 	"github.com/contenox/contenox/executor"
@@ -22,6 +21,8 @@ import (
 	"github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/localhooks"
+	"github.com/contenox/contenox/mcpworker"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/contenox/contenox/taskchainservice"
 	"github.com/contenox/contenox/taskengine"
 )
@@ -31,21 +32,29 @@ type Engine struct {
 	Tracker     libtracker.ActivityTracker
 	JSEnv       *jseval.Env
 	Stop        func()
+	MCPManager  *mcpworker.Manager
 }
 
 // BuildEngine scaffolds the complex dependency graph needed to run task chains.
 func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*Engine, error) {
-	// 4. Ensure models
-	// 2. In-memory bus
-	bus := libbus.NewInMem()
-	engine := &Engine{Stop: func() { bus.Close() }}
+	// Derive a cancellable context owned by this engine instance.
+	// Cancelling it unblocks all goroutines (WatchEvents, bus streams, etc.)
+	// before bus.Close() is called, preventing the process from hanging.
+	engineCtx, engineCancel := context.WithCancel(ctx)
+
+	// 2. SQLite-backed bus (same architecture as runtime-API, just without NATS)
+	bus := libbus.NewSQLite(db.WithoutTransaction())
+	engine := &Engine{Stop: func() {
+		engineCancel() // signal all goroutines to stop
+		bus.Close()
+	}}
 
 	// 3. Runtime state
 	stateOpts := []runtimestate.Option{}
 	if opts.EffectiveNoDeleteModels {
 		stateOpts = append(stateOpts, runtimestate.WithSkipDeleteUndeclaredModels())
 	}
-	state, err := runtimestate.New(ctx, db, bus, stateOpts...)
+	state, err := runtimestate.New(engineCtx, db, bus, stateOpts...)
 	if err != nil {
 		bus.Close()
 		return nil, fmt.Errorf("failed to create runtime state: %w", err)
@@ -71,50 +80,20 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		return nil, fmt.Errorf("failed to init chat executor: %w", err)
 	}
 
-	// 4b. Ensure extra models from config
-	specs := make([]runtimestate.ExtraModelSpec, 0, len(opts.Cfg.ExtraModels)+1)
-
+	// 4b. Ensure the default model is registered in the local tenant.
 	defaultContextLen := opts.EffectiveContext
 	if defaultContextLen <= 0 {
 		defaultContextLen = defaultContext
 	}
-
-	// Always ensure the default model is present
-	specs = append(specs, runtimestate.ExtraModelSpec{
-		Name:          opts.EffectiveDefaultModel,
-		ContextLength: defaultContextLen,
-		CanChat:       true,
-		CanPrompt:     true,
-		CanEmbed:      false,
-	})
-
-	if len(opts.Cfg.ExtraModels) > 0 {
-		for _, e := range opts.Cfg.ExtraModels {
-			if e.Context <= 0 {
-				continue
-			}
-			canChat := true
-			if e.CanChat != nil {
-				canChat = *e.CanChat
-			}
-			canPrompt := true
-			if e.CanPrompt != nil {
-				canPrompt = *e.CanPrompt
-			}
-			canEmbed := false
-			if e.CanEmbed != nil {
-				canEmbed = *e.CanEmbed
-			}
-			specs = append(specs, runtimestate.ExtraModelSpec{
-				Name:          e.Name,
-				ContextLength: e.Context,
-				CanChat:       canChat,
-				CanPrompt:     canPrompt,
-				CanEmbed:      canEmbed,
-			})
-		}
+	specs := []runtimestate.ExtraModelSpec{
+		{
+			Name:          opts.EffectiveDefaultModel,
+			ContextLength: defaultContextLen,
+			CanChat:       true,
+			CanPrompt:     true,
+			CanEmbed:      false,
+		},
 	}
-
 	if len(specs) > 0 {
 		if err := runtimestate.EnsureModels(ctx, db, localTenantID, specs); err != nil {
 			bus.Close()
@@ -122,13 +101,7 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		}
 	}
 
-	// 5. Ensure backends
-	backendSvc := backendservice.New(db)
-	if err := ensureBackendsFromConfig(ctx, db, backendSvc, opts.ResolvedBackends); err != nil {
-		bus.Close()
-		return nil, fmt.Errorf("failed to ensure backends: %w", err)
-	}
-
+	// 5. Backends are already in SQLite from `contenox backend add`; just run the sync cycle.
 	// 6. Run backend cycle
 	if opts.EffectiveTracing {
 		slog.Info("Running backend cycle to sync models...")
@@ -206,15 +179,28 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		jsHooks["local_shell"] = localExecHook
 		localHooks["local_shell"] = localExecHook
 	}
-	hookRepo := hooks.NewPersistentRepo(localHooks, db, http.DefaultClient)
+	// Start mcpworker.Manager — loads MCP servers from SQLite and serves them
+	// via the SQLite bus. This is the same code path as the runtime-API (which uses NATS).
+	store := runtimetypes.New(db.WithoutTransaction())
+	mgr, err := mcpworker.New(engineCtx, store, bus, tracker)
+	if err != nil {
+		bus.Close()
+		return nil, fmt.Errorf("failed to create mcp worker manager: %w", err)
+	}
+	if err := mgr.WatchEvents(engineCtx); err != nil {
+		bus.Close()
+		return nil, fmt.Errorf("failed to start mcp event watcher: %w", err)
+	}
+	engine.MCPManager = mgr
+	hookRepo := hooks.NewPersistentRepo(localHooks, db, http.DefaultClient, bus)
 	jsHookRepo := hooks.NewSimpleProvider(jsHooks)
 
 	// 9. Task engine
-	exec, err := taskengine.NewExec(ctx, repo, hookRepo, tracker)
+	exec, err := taskengine.NewExec(engineCtx, repo, hookRepo, tracker)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task executor: %w", err)
 	}
-	envExec, err := taskengine.NewEnv(ctx, tracker, exec, taskengine.NewSimpleInspector(), hookRepo)
+	envExec, err := taskengine.NewEnv(engineCtx, tracker, exec, taskengine.NewSimpleInspector(), hookRepo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create environment executor: %w", err)
 	}
@@ -222,12 +208,12 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	if err != nil {
 		return nil, fmt.Errorf("failed to create macro environment: %w", err)
 	}
-	taskService := execservice.NewTasksEnv(ctx, envExec, hookRepo)
-	execSvc := execservice.NewExec(ctx, repo)
+	taskService := execservice.NewTasksEnv(engineCtx, envExec, hookRepo)
+	execSvc := execservice.NewExec(engineCtx, repo)
 	chainSvc := taskchainservice.New(db)
 	functionSvc := functionservice.New(db)
 	gojaExec := executor.NewGojaExecutor(tracker, functionSvc)
-	dispatcher, err := eventdispatch.New(ctx, functionSvc, func(ctx context.Context, err error) {
+	dispatcher, err := eventdispatch.New(engineCtx, functionSvc, func(ctx context.Context, err error) {
 		slog.ErrorContext(ctx, "event dispatch error", "error", err)
 	}, time.Second, gojaExec, tracker)
 	if err != nil {
@@ -236,7 +222,7 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	_ = dispatcher
 	eventsource := eventsourceservice.NewNoopService()
 	gojaExec.AddBuildInServices(eventsource, execSvc, chainSvc, taskService, jsHookRepo)
-	gojaExec.StartSync(ctx, time.Second*3)
+	gojaExec.StartSync(engineCtx, time.Second*3)
 
 	jsEnv.SetBuiltinHandlers(jseval.BuiltinHandlers{
 		Eventsource:          eventsource,
@@ -254,6 +240,7 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	oldStop := engine.Stop
 	engine.Stop = func() {
 		gojaExec.StopSync()
+		mgr.StopAll() // terminates all stdio MCP child processes
 		oldStop()
 	}
 	return engine, nil

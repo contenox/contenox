@@ -79,6 +79,48 @@ run-runtime-api: build-runtime-api
 	$(PROJECT_ROOT)/bin/runtime-api
 
 # --------------------------------------------------------------------
+# MCP Test Server: stateful session fixture for CLI / API tests
+# --------------------------------------------------------------------
+build-mcp-testserver:
+	go build -o $(PROJECT_ROOT)/bin/mcp-testserver $(PROJECT_ROOT)/cmd/mcp-testserver
+
+docker-build-mcp-testserver:
+	docker build -t contenox/mcp-testserver:local \
+		-f $(PROJECT_ROOT)/cmd/mcp-testserver/Dockerfile \
+		$(PROJECT_ROOT)
+
+run-mcp-testserver: build-mcp-testserver
+	$(PROJECT_ROOT)/bin/mcp-testserver
+
+docker-run-mcp-testserver: docker-build-mcp-testserver
+	docker run --rm -p 8090:8090 contenox/mcp-testserver:local
+
+# Start MCP test server in the background (idempotent: kills previous instance first).
+run-mcp-testserver-bg: build-mcp-testserver
+	@pkill -f bin/mcp-testserver 2>/dev/null || true
+	@$(PROJECT_ROOT)/bin/mcp-testserver &
+	@sleep 1
+	@curl -sf http://localhost:8090/health && echo " mcp-testserver ready" || (echo "ERROR: mcp-testserver failed to start"; exit 1)
+
+# Start MCP test server in background via Docker (bypasses go-sdk localhost DNS-rebinding protection).
+# The container binds on 0.0.0.0:8090 inside Docker, so the server-local addr is not loopback.
+docker-run-mcp-testserver-bg: docker-build-mcp-testserver
+	@docker rm -f mcp-testserver-bg 2>/dev/null || true
+	@docker run --rm -d --name mcp-testserver-bg -p 8090:8090 contenox/mcp-testserver:local
+	@sleep 2
+	@curl -sf http://localhost:8090/health && echo " mcp-testserver (docker) ready" || (echo "ERROR: mcp-testserver container failed"; docker logs mcp-testserver-bg; exit 1)
+
+# Run the full MCP session persistence test against the CLI binary.
+# Verifies that all tool calls within one agentic loop share the same session_token.
+test-mcp-session: build-contenox docker-run-mcp-testserver-bg
+	@echo "=== MCP session persistence test ==="
+	$(PROJECT_ROOT)/bin/contenox run \
+		--chain $(PROJECT_ROOT)/.contenox/chain-mcp-session-test.json \
+		"call session_set key=player value=Alice, then call session_dump. Confirm if the session_tokens match exactly."
+	@echo "=== Expected: session_token identical across all tool calls ==="
+
+
+# --------------------------------------------------------------------
 # Ollama
 # --------------------------------------------------------------------
 

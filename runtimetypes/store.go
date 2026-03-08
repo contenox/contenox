@@ -185,6 +185,18 @@ type Store interface {
 	ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*RemoteHook, error)
 	EstimateRemoteHookCount(ctx context.Context) (int64, error)
 
+	CreateMCPServer(ctx context.Context, srv *MCPServer) error
+	GetMCPServer(ctx context.Context, id string) (*MCPServer, error)
+	GetMCPServerByName(ctx context.Context, name string) (*MCPServer, error)
+	UpdateMCPServer(ctx context.Context, srv *MCPServer) error
+	DeleteMCPServer(ctx context.Context, id string) error
+	ListMCPServers(ctx context.Context, createdAtCursor *time.Time, limit int) ([]*MCPServer, error)
+	EstimateMCPServerCount(ctx context.Context) (int64, error)
+	// UpsertMCPServerByName inserts or updates an MCP server record keyed by name.
+	// If a server with the same name already exists it is updated in place (same ID).
+	// Used by the CLI to register config-file MCP servers into SQLite at startup.
+	UpsertMCPServerByName(ctx context.Context, srv *MCPServer) error
+
 	EnforceMaxRowCount(ctx context.Context, count int64) error
 }
 
@@ -211,6 +223,7 @@ const MaxRowsCount = 100000
 var sqliteCountableTables = map[string]bool{
 	"job_queue_v2": true, "kv": true, "remote_hooks": true,
 	"ollama_models": true, "llm_affinity_group": true, "llm_backends": true,
+	"mcp_servers": true,
 }
 
 func (s *store) estimateCount(ctx context.Context, table string) (int64, error) {

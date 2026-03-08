@@ -48,6 +48,7 @@ export default defineConfig({
                         { text: 'Introduction', link: '/guide/introduction' },
                         { text: 'Quickstart', link: '/guide/quickstart' },
                         { text: 'Core Concepts', link: '/guide/concepts' },
+                        { text: 'MCP Integration', link: '/guide/mcp' },
                     ],
                 },
             ],
@@ -87,6 +88,7 @@ export default defineConfig({
                     items: [
                         { text: 'Overview', link: '/cookbook/' },
                         { text: 'Git & DevOps', link: '/cookbook/git-devops' },
+                        { text: 'Stateful Agents with MCP', link: '/cookbook/stateful-agents-mcp' },
                     ],
                 },
             ],

@@ -36,11 +36,23 @@ mkdir my-agent && cd my-agent
 contenox init
 ```
 
-This creates `.contenox/` with a default config and chain:
+This creates `.contenox/` with default chain files:
 ```
 .contenox/
-├── config.yaml          ← model, backend settings
-└── default-chain.json   ← the default task chain
+├── default-chain.json       ← default chat chain
+└── default-run-chain.json   ← default run chain
+```
+
+Next, register a backend and set your default model:
+
+```bash
+# Local Ollama:
+contenox backend add local --type ollama
+contenox config set default-model qwen2.5:7b
+
+# Or OpenAI:
+# contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
+# contenox config set default-model gpt-4o
 ```
 
 ## Start chatting
@@ -58,7 +70,7 @@ contenox "list files in the current directory" --shell
 ## Run a chain explicitly
 
 ```bash
-contenox exec --chain .contenox/default-chain.json --input-type chat "explain recursion briefly"
+contenox run --chain .contenox/default-chain.json --input-type chat "explain recursion briefly"
 ```
 
 ## Add a remote API as a tool
@@ -68,7 +80,7 @@ contenox exec --chain .contenox/default-chain.json --input-type chat "explain re
 contenox hook add nws --url https://api.weather.gov --timeout 15000
 contenox hook show nws       # lists 60 discovered tools
 
-contenox exec --chain .contenox/chain-nws.json --input-type chat \
+contenox run --chain .contenox/chain-nws.json --input-type chat \
   "how many active weather alerts are there right now?"
 ```
 

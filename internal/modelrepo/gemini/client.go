@@ -148,7 +148,8 @@ func buildGeminiRequest(_ string, messages []modelrepo.Message, systemInstructio
 				decls = append(decls, geminiFunctionDeclaration{
 					Name:        t.Function.Name,
 					Description: t.Function.Description,
-					Parameters:  t.Function.Parameters,
+					// Gemini rejects additionalProperties in function schemas.
+					Parameters: geminiSanitiseSchema(t.Function.Parameters),
 				})
 			}
 		}
@@ -333,4 +334,27 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 	}
 
 	return out
+}
+
+// geminiSanitiseSchema removes JSON Schema fields that the Gemini API rejects
+// (currently: `additionalProperties`, which go-sdk v1.4.0+ adds automatically).
+// This is intentionally private to the gemini package — other providers are unaffected.
+func geminiSanitiseSchema(params any) any {
+	if params == nil {
+		return nil
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return params
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return params // not an object; return as-is
+	}
+	delete(m, "additionalProperties")
+	out, err := json.Marshal(m)
+	if err != nil {
+		return params
+	}
+	return json.RawMessage(out)
 }

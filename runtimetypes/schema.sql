@@ -124,3 +124,19 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_idx_id ON messages (idx_id);
 CREATE INDEX IF NOT EXISTS idx_messages_added_at ON messages (added_at);
 CREATE INDEX IF NOT EXISTS idx_message_indices_identity ON message_indices (identity);
+
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id                      VARCHAR(255) PRIMARY KEY,
+    name                    VARCHAR(255) NOT NULL UNIQUE,
+    transport               VARCHAR(50)  NOT NULL DEFAULT 'sse',
+    command                 TEXT,
+    args_json               TEXT,
+    url                     TEXT,
+    auth_type               VARCHAR(50),
+    auth_token              TEXT,
+    auth_env_key            TEXT,
+    connect_timeout_seconds INTEGER NOT NULL DEFAULT 30,
+    created_at              TIMESTAMP NOT NULL,
+    updated_at              TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);

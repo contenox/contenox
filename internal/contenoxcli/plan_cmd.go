@@ -24,15 +24,41 @@ import (
 var planCmd = &cobra.Command{
 	Use:   "plan",
 	Short: "Manage execution plans (new, list, show, next, retry, skip, replan, delete, clean).",
+	Long: `Create and execute multi-step AI plans that run shell commands on your machine.
 
+Workflow:
+  1. contenox plan new "<goal>"    # LLM generates a step-by-step plan and saves it
+  2. contenox plan show            # inspect the generated steps
+  3. contenox plan next --shell    # execute the next pending step (enable shell tools)
+  4. contenox plan next --auto --shell  # run all steps until done or failed
+
+On failure:
+  contenox plan retry <N>    # reset step N back to pending and retry
+  contenox plan skip  <N>    # mark step N as skipped and continue
+  contenox plan replan       # ask the LLM to regenerate remaining steps
+
+Note: plan execution requires a model that supports tool calling.
+The active plan is tracked automatically; use 'contenox plan list' to see all plans.`,
 	SilenceUsage: true,
 }
 
 var planNewCmd = &cobra.Command{
 	Use:   "new <goal>",
-	Short: "Create a new execution plan.",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runPlanNew,
+	Short: "Create a new execution plan from a goal description.",
+	Long: `Ask the LLM to break a goal into ordered steps and save the plan to SQLite.
+
+The new plan becomes the active plan automatically.
+Input can be provided as a positional argument, piped via stdin, or both:
+
+  contenox plan new "set up a Go project with tests and CI"
+  git diff | contenox plan new "write a commit message and update CHANGELOG"
+  cat ERROR.log | contenox plan new "diagnose and fix this error"
+
+The planner chain must output valid JSON with a "steps" array. If your model
+produces malformed output, switch to a stronger model via --model or
+'contenox config set default-model'.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runPlanNew,
 }
 
 var planListCmd = &cobra.Command{
@@ -51,30 +77,60 @@ var planShowCmd = &cobra.Command{
 
 var planNextCmd = &cobra.Command{
 	Use:   "next",
-	Short: "Execute the next pending step.",
-	Args:  cobra.NoArgs,
-	RunE:  runPlanNext,
+	Short: "Execute the next pending step of the active plan.",
+	Long: `Run the next pending step using the LLM step-executor chain.
+
+The step is marked completed if the model outputs ===STEP_DONE=== or failed otherwise.
+
+Flags:
+  --auto     Continue executing steps until the plan is done or a step fails
+  --shell    Enable the local_shell hook so the model can run commands
+
+Examples:
+  contenox plan next
+  contenox plan next --shell             # single step with shell access
+  contenox plan next --auto --shell      # run everything until done`,
+	Args: cobra.NoArgs,
+	RunE: runPlanNext,
 }
 
 var planRetryCmd = &cobra.Command{
 	Use:   "retry <ordinal>",
-	Short: "Reset a failed/skipped step to pending.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPlanRetry,
+	Short: "Reset a failed or skipped step back to pending.",
+	Long: `Reset a step by its ordinal number (1-based) back to pending status so it
+can be re-executed by 'contenox plan next'.
+
+Example:
+  contenox plan retry 3`,
+	Args: cobra.ExactArgs(1),
+	RunE: runPlanRetry,
 }
 
 var planSkipCmd = &cobra.Command{
 	Use:   "skip <ordinal>",
-	Short: "Mark a pending/failed step as skipped.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runPlanSkip,
+	Short: "Mark a pending or failed step as skipped.",
+	Long: `Mark a step as skipped so 'contenox plan next' moves on to the next one.
+Useful when a step is not applicable or was completed manually.
+
+Example:
+  contenox plan skip 2`,
+	Args: cobra.ExactArgs(1),
+	RunE: runPlanSkip,
 }
 
 var planReplanCmd = &cobra.Command{
 	Use:   "replan",
-	Short: "Regenerate remaining steps based on current context and failures.",
-	Args:  cobra.NoArgs,
-	RunE:  runPlanReplan,
+	Short: "Regenerate remaining steps based on current progress.",
+	Long: `Ask the LLM to generate a new set of steps for the active plan, taking into
+account steps that have already been completed, failed, or skipped.
+
+Pending steps are deleted and replaced with the newly generated ones.
+Completed and skipped steps are preserved.
+
+Example:
+  contenox plan replan`,
+	Args: cobra.NoArgs,
+	RunE: runPlanReplan,
 }
 
 var planDeleteCmd = &cobra.Command{
@@ -92,41 +148,22 @@ var planCleanCmd = &cobra.Command{
 
 func init() {
 	planCmd.AddCommand(planNewCmd, planListCmd, planShowCmd, planNextCmd, planRetryCmd, planSkipCmd, planReplanCmd, planDeleteCmd, planCleanCmd)
-	planNextCmd.Flags().Bool("auto", false, "Automatically continue to the next step until finished or failed")
-	planNextCmd.Flags().Bool("shell", false, "Enable shell execution for this plan step (use only in trusted environments)")
+	planNextCmd.Flags().Bool("auto", false, "Continue executing steps automatically until the plan is done or a step fails")
+	planNextCmd.Flags().Bool("shell", false, "Enable the local_shell hook for this plan step (required for shell-based tasks)")
 }
 
 // openPlanDB is similar to openSessionDB but for plans.
 func openPlanDB(cmd *cobra.Command) (context.Context, libdbexec.DBManager, string, func(), error) {
-	cfg, configPath, err := loadLocalConfig()
-	if err != nil {
-		return nil, nil, "", nil, fmt.Errorf("failed to load config: %w", err)
-	}
+	cwd, _ := os.Getwd()
+	contenoxDir := filepath.Join(cwd, ".contenox")
 
-	var contenoxDir string
-	if configPath != "" {
-		contenoxDir = filepath.Dir(configPath)
-	} else {
-		cwd, _ := os.Getwd()
-		contenoxDir = filepath.Join(cwd, ".contenox")
-	}
-
-	flags := cmd.Root().Flags()
-	effectiveDB, _ := flags.GetString("db")
-	if effectiveDB == "" && cfg.DB != "" {
-		effectiveDB = cfg.DB
-	}
-	if effectiveDB == "" {
-		effectiveDB = filepath.Join(contenoxDir, "local.db")
-	}
-
-	dbPathAbs, err := filepath.Abs(effectiveDB)
+	dbPath, err := resolveDBPath(cmd)
 	if err != nil {
 		return nil, nil, "", nil, fmt.Errorf("invalid database path: %w", err)
 	}
 
 	ctx := libtracker.WithNewRequestID(context.Background())
-	db, err := libdbexec.NewSQLiteDBManager(ctx, dbPathAbs, runtimetypes.SchemaSQLite)
+	db, err := openDBAt(ctx, dbPath)
 	if err != nil {
 		return nil, nil, "", nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -254,39 +291,34 @@ func handlePlanCompletion(ctx context.Context, db libdbexec.DBManager, cDir, act
 	})
 }
 
-func buildPlanOpts(cmd *cobra.Command, input string) chatOpts {
-	cfg, _, _ := loadLocalConfig()
+func buildPlanOpts(cmd *cobra.Command, db libdbexec.DBManager, input string) chatOpts {
 	flags := cmd.Root().Flags()
 
-	effectiveOllama, _ := flags.GetString("ollama")
-	if !flags.Changed("ollama") && cfg.Ollama != "" {
-		effectiveOllama = cfg.Ollama
-	}
+	ctx := libtracker.WithNewRequestID(context.Background())
+	store := runtimetypes.New(db.WithoutTransaction())
+
+	kvModel, _ := getConfigKV(ctx, store, "default-model")
+	kvProvider, _ := getConfigKV(ctx, store, "default-provider")
 
 	effectiveModel, _ := flags.GetString("model")
-	if !flags.Changed("model") && cfg.Model != "" {
-		effectiveModel = cfg.Model
+	if !flags.Changed("model") && effectiveModel == defaultModel {
+		if kvModel != "" {
+			effectiveModel = kvModel
+		}
+	}
+
+	effectiveDefaultProvider := kvProvider
+	if flags.Changed("provider") {
+		if v, _ := flags.GetString("provider"); v != "" {
+			effectiveDefaultProvider = v
+		}
 	}
 
 	effectiveContext, _ := flags.GetInt("context")
-	if !flags.Changed("context") && cfg.Context != nil {
-		effectiveContext = *cfg.Context
-	}
-
 	effectiveTracing, _ := flags.GetBool("trace")
-	if !flags.Changed("trace") && cfg.Tracing != nil {
+	effectiveEnableLocalExec, _ := flags.GetBool("shell")
 
-		effectiveTracing = *cfg.Tracing
-	}
-
-	effectiveEnableLocalExec := false
-	if cfg.EnableLocalExec != nil {
-		effectiveEnableLocalExec = *cfg.EnableLocalExec
-	}
-	if v, _ := flags.GetBool("enable-local-exec"); flags.Changed("enable-local-exec") {
-		effectiveEnableLocalExec = v
-	}
-	// Also check the subcommand's own local flags (e.g. plan next --local-shell).
+	// Also check the subcommand's own local flags (e.g. plan next --shell).
 	if localFlags := cmd.Flags(); localFlags != flags {
 		if v, _ := localFlags.GetBool("shell"); localFlags.Changed("shell") {
 			effectiveEnableLocalExec = v
@@ -294,32 +326,18 @@ func buildPlanOpts(cmd *cobra.Command, input string) chatOpts {
 	}
 
 	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	if !flags.Changed("local-exec-allowed-dir") && cfg.LocalExecAllowedDir != "" {
-		effectiveLocalExecAllowedDir = cfg.LocalExecAllowedDir
-	}
-
 	effectiveLocalExecAllowedCommands, _ := flags.GetString("local-exec-allowed-commands")
-	if !flags.Changed("local-exec-allowed-commands") && cfg.LocalExecAllowedCommands != "" {
-		effectiveLocalExecAllowedCommands = cfg.LocalExecAllowedCommands
-	}
-
-	effectiveLocalExecDeniedCommands := cfg.LocalExecDeniedCommands
-
-	resolvedBackends, effectiveDefaultProvider, effectiveDefaultModel := resolveEffectiveBackends(cfg, effectiveOllama, effectiveModel)
 
 	return chatOpts{
-		Cfg:                               cfg,
 		InputFlagPassed:                   true,
 		InputValue:                        input,
-		EffectiveDefaultModel:             effectiveDefaultModel,
+		EffectiveDefaultModel:             effectiveModel,
 		EffectiveDefaultProvider:          effectiveDefaultProvider,
 		EffectiveContext:                  effectiveContext,
 		EffectiveEnableLocalExec:          effectiveEnableLocalExec,
 		EffectiveLocalExecAllowedDir:      effectiveLocalExecAllowedDir,
 		EffectiveLocalExecAllowedCommands: effectiveLocalExecAllowedCommands,
-		EffectiveLocalExecDeniedCommands:  effectiveLocalExecDeniedCommands,
 		EffectiveTracing:                  effectiveTracing,
-		ResolvedBackends:                  resolvedBackends,
 	}
 }
 
@@ -363,7 +381,7 @@ func runPlanNew(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Generating plan for: %s...\n", goal)
 
 	// 2. Build the task engine
-	o := buildPlanOpts(cmd, goal)
+	o := buildPlanOpts(cmd, db, goal)
 	engine, err := BuildEngine(ctx, db, o)
 	if err != nil {
 		return fmt.Errorf("failed to build engine: %w", err)
@@ -540,7 +558,7 @@ func runPlanNext(cmd *cobra.Command, _ []string) error {
 
 	isAuto, _ := cmd.Flags().GetBool("auto")
 
-	o := buildPlanOpts(cmd, "")
+	o := buildPlanOpts(cmd, db, "")
 	engine, err := BuildEngine(ctx, db, o)
 	if err != nil {
 		return fmt.Errorf("failed to build engine: %w", err)
@@ -736,7 +754,7 @@ func runPlanReplan(cmd *cobra.Command, _ []string) error {
 
 	fmt.Println("Generating new plan steps based on current progress...")
 
-	o := buildPlanOpts(cmd, goalPrompt)
+	o := buildPlanOpts(cmd, db, goalPrompt)
 	engine, err := BuildEngine(ctx, db, o)
 	if err != nil {
 		return err

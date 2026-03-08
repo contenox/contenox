@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/contenox/backendservice"
 	"github.com/contenox/contenox/chatservice"
 	"github.com/contenox/contenox/eventsourceservice"
 	"github.com/contenox/contenox/execservice"
@@ -54,8 +53,6 @@ type chatOpts struct {
 	LastN                             int
 	InputValue                        string
 	InputFlagPassed                   bool
-	Cfg                               localConfig
-	ResolvedBackends                  []resolvedBackend
 	ContenoxDir                       string
 }
 
@@ -124,49 +121,18 @@ func execChat(ctx context.Context, opts chatOpts) {
 		os.Exit(1)
 	}
 
-	// ------------------------------------------------------------------------
-	// 4b. Ensure extra models from config
-	// ------------------------------------------------------------------------
-	if len(opts.Cfg.ExtraModels) > 0 {
-		specs := make([]runtimestate.ExtraModelSpec, 0, len(opts.Cfg.ExtraModels))
-		for _, e := range opts.Cfg.ExtraModels {
-			if e.Context <= 0 {
-				continue
-			}
-			canChat := true
-			if e.CanChat != nil {
-				canChat = *e.CanChat
-			}
-			canPrompt := true
-			if e.CanPrompt != nil {
-				canPrompt = *e.CanPrompt
-			}
-			canEmbed := false
-			if e.CanEmbed != nil {
-				canEmbed = *e.CanEmbed
-			}
-			specs = append(specs, runtimestate.ExtraModelSpec{
-				Name:          e.Name,
-				ContextLength: e.Context,
-				CanChat:       canChat,
-				CanPrompt:     canPrompt,
-				CanEmbed:      canEmbed,
-			})
-		}
-		if len(specs) > 0 {
-			if err := runtimestate.EnsureModels(ctx, db, localTenantID, specs); err != nil {
-				slog.Error("Failed to ensure extra models", "error", err)
-				os.Exit(1)
-			}
-		}
+	// 4b. Ensure the default model is registered in the local tenant.
+	specs := []runtimestate.ExtraModelSpec{
+		{
+			Name:          opts.EffectiveDefaultModel,
+			ContextLength: opts.EffectiveContext,
+			CanChat:       true,
+			CanPrompt:     true,
+			CanEmbed:      false,
+		},
 	}
-
-	// ------------------------------------------------------------------------
-	// 5. Ensure backends from config
-	// ------------------------------------------------------------------------
-	backendSvc := backendservice.New(db)
-	if err := ensureBackendsFromConfig(ctx, db, backendSvc, opts.ResolvedBackends); err != nil {
-		slog.Error("Failed to ensure backends", "error", err)
+	if err := runtimestate.EnsureModels(ctx, db, localTenantID, specs); err != nil {
+		slog.Error("Failed to ensure models", "error", err)
 		os.Exit(1)
 	}
 
@@ -260,7 +226,7 @@ func execChat(ctx context.Context, opts chatOpts) {
 		jsHooks["local_shell"] = localExecHook
 		localHooks["local_shell"] = localExecHook
 	}
-	hookRepo := hooks.NewPersistentRepo(localHooks, db, http.DefaultClient)
+	hookRepo := hooks.NewPersistentRepo(localHooks, db, http.DefaultClient, libbus.NewInMem())
 	jsHookRepo := hooks.NewSimpleProvider(jsHooks)
 
 	// ------------------------------------------------------------------------
@@ -382,11 +348,6 @@ func execChat(ctx context.Context, opts chatOpts) {
 		}
 		templateVars["sandbox_api"] = b.String()
 	}
-	for _, key := range opts.Cfg.TemplateVarsFromEnv {
-		if v := os.Getenv(key); v != "" {
-			templateVars[key] = v
-		}
-	}
 	ctx = taskengine.WithTemplateVars(ctx, templateVars)
 
 	// Persistent Session Management
@@ -394,6 +355,9 @@ func execChat(ctx context.Context, opts chatOpts) {
 	if err != nil {
 		slog.Warn("Failed to resolve active session — history will not be persisted", "error", err)
 		sessionID = ""
+	} else if sessionID != "" {
+		// INJECT: Tunnel the session ID down the call stack so MCP workers can multiplex connections
+		ctx = context.WithValue(ctx, runtimetypes.SessionIDContextKey, sessionID)
 	}
 	chatMgr := chatservice.NewManager(nil)
 

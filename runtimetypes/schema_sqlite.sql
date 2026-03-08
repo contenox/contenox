@@ -164,3 +164,43 @@ CREATE TABLE IF NOT EXISTS plan_steps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_plan_steps_plan ON plan_steps(plan_id, ordinal);
+
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id                      VARCHAR(255) PRIMARY KEY,
+    name                    VARCHAR(255) NOT NULL UNIQUE,
+    transport               VARCHAR(50)  NOT NULL DEFAULT 'sse',
+    command                 TEXT,
+    args_json               TEXT,
+    url                     TEXT,
+    auth_type               VARCHAR(50),
+    auth_token              TEXT,
+    auth_env_key            TEXT,
+    connect_timeout_seconds INTEGER NOT NULL DEFAULT 30,
+    created_at              TIMESTAMP NOT NULL,
+    updated_at              TIMESTAMP NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);
+
+-- libbus.SQLiteBus tables -----------------------------------------------
+
+CREATE TABLE IF NOT EXISTS bus_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject    TEXT    NOT NULL,
+    data       BLOB    NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_bus_events_subject ON bus_events(subject, id);
+
+CREATE TABLE IF NOT EXISTS bus_requests (
+    id         TEXT    PRIMARY KEY,
+    subject    TEXT    NOT NULL,
+    data       BLOB    NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_bus_requests_subject ON bus_requests(subject, created_at);
+
+CREATE TABLE IF NOT EXISTS bus_replies (
+    request_id TEXT    PRIMARY KEY,
+    data       BLOB    NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch('now'))
+);

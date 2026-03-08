@@ -35,6 +35,7 @@ import (
 	"github.com/contenox/contenox/internal/groupapi"
 	"github.com/contenox/contenox/internal/hooksapi"
 	"github.com/contenox/contenox/internal/llmrepo"
+	"github.com/contenox/contenox/internal/mcpserverapi"
 	"github.com/contenox/contenox/internal/providerapi"
 	"github.com/contenox/contenox/internal/runtimestate"
 	"github.com/contenox/contenox/internal/taskchainapi"
@@ -42,9 +43,12 @@ import (
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libroutine"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/mcpserverservice"
+	"github.com/contenox/contenox/mcpworker"
 	"github.com/contenox/contenox/modelservice"
 	"github.com/contenox/contenox/openaichatservice"
 	"github.com/contenox/contenox/providerservice"
+	"github.com/contenox/contenox/runtimetypes"
 	"github.com/contenox/contenox/stateservice"
 	"github.com/contenox/contenox/taskchainservice"
 	"github.com/contenox/contenox/taskengine"
@@ -167,6 +171,22 @@ func New(
 	hookproviderService := hookproviderservice.New(dbInstance, hookRegistry)
 	hookproviderService = hookproviderservice.WithActivityTracker(hookproviderService, serveropsChainedTracker)
 	hooksapi.AddRemoteHookRoutes(mux, hookproviderService)
+
+	mcpService := mcpserverservice.New(dbInstance)
+	mcpService = mcpserverservice.WithActivityTracker(mcpService, serveropsChainedTracker)
+
+	// Start persistent MCP session workers — one per registered server.
+	// Workers Serve() on NATS; PersistentRepo.execMCPHook routes via Request().
+	dbStore := runtimetypes.New(dbInstance.WithoutTransaction())
+	workerManager, err := mcpworker.New(ctx, dbStore, pubsub, serveropsChainedTracker)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start MCP worker manager: %w", err)
+	}
+	if err := workerManager.WatchEvents(ctx); err != nil {
+		return nil, fmt.Errorf("failed to watch MCP lifecycle events: %w", err)
+	}
+
+	mcpserverapi.AddMCPServerRoutes(mux, mcpService, pubsub)
 	chatService := openaichatservice.New(
 		taskService,
 		taskChainService,
