@@ -47,6 +47,7 @@ docker-up-runtime:
 docker-run-runtime: docker-down-runtime docker-build-runtime docker-up-runtime
 
 docker-down-runtime:
+	@docker rm -f mcp-testserver-bg 2>/dev/null || true
 	$(COMPOSE_CMD) down
 
 docker-clear-runtime:
@@ -98,6 +99,7 @@ docker-run-mcp-testserver: docker-build-mcp-testserver
 # Start MCP test server in the background (idempotent: kills previous instance first).
 run-mcp-testserver-bg: build-mcp-testserver
 	@pkill -f bin/mcp-testserver 2>/dev/null || true
+	@sleep 1
 	@$(PROJECT_ROOT)/bin/mcp-testserver &
 	@sleep 1
 	@curl -sf http://localhost:8090/health && echo " mcp-testserver ready" || (echo "ERROR: mcp-testserver failed to start"; exit 1)

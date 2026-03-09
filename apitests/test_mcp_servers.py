@@ -219,3 +219,69 @@ def test_create_mcp_server_with_bearer_auth(base_url):
     data = r.json()
     assert data["authType"] == "bearer"
     assert data["authEnvKey"] == "MY_MCP_TOKEN"
+
+
+# ─── Inject params & headers ──────────────────────────────────────────────────
+
+def test_create_mcp_server_with_inject_params(base_url):
+    """Test creating an MCP server with injectParams stored and round-tripped."""
+    payload = {
+        **make_unique(VALID_HTTP),
+        "injectParams": {"tenant_id": "acme", "env": "production"},
+    }
+    r = requests.post(f"{base_url}/{BASE}", json=payload)
+    assert_status_code(r, 201)
+    data = r.json()
+    assert "injectParams" in data
+    assert data["injectParams"]["tenant_id"] == "acme"
+    assert data["injectParams"]["env"] == "production"
+
+
+def test_create_mcp_server_with_headers(base_url):
+    """Test creating an MCP server with additional HTTP headers stored and round-tripped."""
+    payload = {
+        **make_unique(VALID_SSE),
+        "headers": {"X-Tenant": "acme", "X-Version": "2"},
+    }
+    r = requests.post(f"{base_url}/{BASE}", json=payload)
+    assert_status_code(r, 201)
+    data = r.json()
+    assert "headers" in data
+    assert data["headers"]["X-Tenant"] == "acme"
+    assert data["headers"]["X-Version"] == "2"
+
+
+def test_update_mcp_server_inject_params_replaces_all(base_url):
+    """Test that updating injectParams via PUT replaces the entire map."""
+    payload = {
+        **make_unique(VALID_HTTP),
+        "injectParams": {"tenant_id": "old", "extra": "gone"},
+    }
+    create_r = requests.post(f"{base_url}/{BASE}", json=payload)
+    assert_status_code(create_r, 201)
+    srv_id = create_r.json()["id"]
+
+    updated = {**payload, "injectParams": {"tenant_id": "new"}}
+    update_r = requests.put(f"{base_url}/{BASE}/{srv_id}", json=updated)
+    assert_status_code(update_r, 200)
+
+    get_r = requests.get(f"{base_url}/{BASE}/{srv_id}")
+    data = get_r.json()
+    assert data["injectParams"]["tenant_id"] == "new"
+    assert "extra" not in data.get("injectParams", {})
+
+
+def test_mcp_server_inject_params_persist_across_get(base_url):
+    """Test that injectParams survive a create → get by ID round-trip."""
+    payload = {
+        **make_unique(VALID_SSE),
+        "injectParams": {"correlation_id": "trace-xyz"},
+    }
+    create_r = requests.post(f"{base_url}/{BASE}", json=payload)
+    assert_status_code(create_r, 201)
+    srv_id = create_r.json()["id"]
+
+    get_r = requests.get(f"{base_url}/{BASE}/{srv_id}")
+    assert_status_code(get_r, 200)
+    data = get_r.json()
+    assert data["injectParams"]["correlation_id"] == "trace-xyz"

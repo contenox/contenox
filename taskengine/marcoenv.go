@@ -16,7 +16,7 @@ import (
 //   - {{hookservice:list}}              -> JSON map of hook name -> tool names
 //   - {{hookservice:hooks}}             -> JSON array of hook names
 //   - {{hookservice:tools <hook_name>}} -> JSON array of tool names for that hook
-//   - {{var:<name>}}                    -> value from context template vars (set by caller via WithTemplateVars; engine never reads env)
+//   - {{var:<name>}}                    -> value from context template vars (set by caller via WithTemplateVars; engine never reads env); errors if key is missing
 //   - {{now}} or {{now:<layout>}}       -> current time (default RFC3339; layout e.g. 2006-01-02)
 //   - {{chain:id}}                      -> chain ID of the chain being executed
 //
@@ -167,14 +167,14 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, na
 			return original, nil
 		}
 	case "var":
-		vars := TemplateVarsFromContext(ctx)
-		if vars == nil {
-			return "", nil
+		vars, err := TemplateVarsFromContext(ctx)
+		if err != nil {
+			return "", fmt.Errorf("{{var:%s}}: %w", payload, err)
 		}
 		if v, ok := vars[payload]; ok {
 			return v, nil
 		}
-		return "", nil // missing key -> empty string
+		return "", fmt.Errorf("template var %q is not set", payload)
 	case "now":
 		layout := time.RFC3339
 		if payload != "" {

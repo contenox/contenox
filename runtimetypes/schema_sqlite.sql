@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS remote_hooks (
     timeout_ms INT NOT NULL DEFAULT 5000,
     headers TEXT,
     properties BLOB,
+    inject_params_json TEXT NOT NULL DEFAULT '{}',
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
@@ -176,6 +177,8 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     auth_token              TEXT,
     auth_env_key            TEXT,
     connect_timeout_seconds INTEGER NOT NULL DEFAULT 30,
+    headers_json            TEXT NOT NULL DEFAULT '{}',
+    inject_params_json      TEXT NOT NULL DEFAULT '{}',
     created_at              TIMESTAMP NOT NULL,
     updated_at              TIMESTAMP NOT NULL
 );

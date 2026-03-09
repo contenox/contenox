@@ -81,6 +81,17 @@ Examples:
 		authType, _ := flags.GetString("auth-type")
 		authToken, _ := flags.GetString("auth-token")
 		authEnv, _ := flags.GetString("auth-env")
+		rawHeaders, _ := flags.GetStringArray("header")
+		rawInjects, _ := flags.GetStringArray("inject")
+
+		headers, err := parseHeaders(rawHeaders)
+		if err != nil {
+			return err
+		}
+		injectParams, err := parseInjects(rawInjects)
+		if err != nil {
+			return err
+		}
 
 		if transport == "" {
 			return fmt.Errorf("--transport is required (stdio, sse, http)")
@@ -108,6 +119,8 @@ Examples:
 			AuthType:              authType,
 			AuthToken:             authToken,
 			AuthEnvKey:            authEnv,
+			Headers:               headers,
+			InjectParams:          injectParams,
 		}
 
 		if err := store.CreateMCPServer(ctx, srv); err != nil {
@@ -178,7 +191,27 @@ var mcpShowCmd = &cobra.Command{
 			return fmt.Errorf("mcp server %q not found: %w", name, err)
 		}
 
-		b, _ := json.MarshalIndent(srv, "", "  ")
+		// Never print auth token values.
+		display := *srv
+		if display.AuthToken != "" {
+			display.AuthToken = "(set, value hidden)"
+		}
+		if len(display.Headers) > 0 {
+			hidden := make(map[string]string, len(display.Headers))
+			for k := range display.Headers {
+				hidden[k] = "(hidden)"
+			}
+			display.Headers = hidden
+		}
+		if len(display.InjectParams) > 0 {
+			hidden := make(map[string]string, len(display.InjectParams))
+			for k := range display.InjectParams {
+				hidden[k] = "(hidden)"
+			}
+			display.InjectParams = hidden
+		}
+
+		b, _ := json.MarshalIndent(display, "", "  ")
 		fmt.Println(string(b))
 		return nil
 	},
@@ -227,6 +260,65 @@ func openMCPDB(cmd *cobra.Command) (libdbexec.DBManager, runtimetypes.Store, err
 	return db, runtimetypes.New(db.WithoutTransaction()), nil
 }
 
+var mcpUpdateCmd = &cobra.Command{
+	Use:   "update <name>",
+	Short: "Update an existing MCP server registration.",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		name := args[0]
+		db, store, err := openMCPDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		srv, err := store.GetMCPServerByName(ctx, name)
+		if err != nil {
+			return fmt.Errorf("mcp server %q not found: %w", name, err)
+		}
+
+		flags := cmd.Flags()
+		if flags.Changed("timeout") {
+			srv.ConnectTimeoutSeconds, _ = flags.GetInt("timeout")
+		}
+		if flags.Changed("auth-type") {
+			srv.AuthType, _ = flags.GetString("auth-type")
+		}
+		if flags.Changed("auth-token") {
+			srv.AuthToken, _ = flags.GetString("auth-token")
+		}
+		if flags.Changed("auth-env") {
+			srv.AuthEnvKey, _ = flags.GetString("auth-env")
+		}
+		if flags.Changed("header") {
+			rawHeaders, _ := flags.GetStringArray("header")
+			headers, err := parseHeaders(rawHeaders)
+			if err != nil {
+				return err
+			}
+			srv.Headers = headers
+		}
+		if flags.Changed("inject") {
+			rawInjects, _ := flags.GetStringArray("inject")
+			injectParams, err := parseInjects(rawInjects)
+			if err != nil {
+				return err
+			}
+			srv.InjectParams = injectParams
+		}
+
+		if err := store.UpdateMCPServer(ctx, srv); err != nil {
+			return fmt.Errorf("failed to update mcp server: %w", err)
+		}
+		fmt.Printf("MCP server %q updated.\n", name)
+		return nil
+	},
+}
+
 func init() {
 	mcpAddCmd.Flags().String("transport", "stdio", "Transport type: stdio (local process), sse, or http (remote server)")
 	mcpAddCmd.Flags().String("command", "", "Command to execute (required for stdio transport)")
@@ -237,9 +329,19 @@ func init() {
 	mcpAddCmd.Flags().String("auth-type", "", "Authentication type (e.g. bearer)")
 	mcpAddCmd.Flags().String("auth-token", "", "Authentication token literal (prefer --auth-env)")
 	mcpAddCmd.Flags().String("auth-env", "", "Environment variable containing the authentication token")
+	mcpAddCmd.Flags().StringArray("header", nil, `Additional HTTP header for SSE/HTTP transport, e.g. "X-Tenant: acme" (repeatable)`)
+	mcpAddCmd.Flags().StringArray("inject", nil, `Tool call param to inject and hide from model, e.g. "tenant_id=acme" (repeatable)`)
+
+	mcpUpdateCmd.Flags().Int("timeout", 0, "New connection timeout in seconds")
+	mcpUpdateCmd.Flags().String("auth-type", "", "New authentication type")
+	mcpUpdateCmd.Flags().String("auth-token", "", "New authentication token literal")
+	mcpUpdateCmd.Flags().String("auth-env", "", "New environment variable for auth token")
+	mcpUpdateCmd.Flags().StringArray("header", nil, `Additional HTTP headers (replaces all existing headers)`)
+	mcpUpdateCmd.Flags().StringArray("inject", nil, `Injected tool call params (replaces all existing inject params)`)
 
 	mcpCmd.AddCommand(mcpAddCmd)
 	mcpCmd.AddCommand(mcpListCmd)
 	mcpCmd.AddCommand(mcpShowCmd)
 	mcpCmd.AddCommand(mcpRemoveCmd)
+	mcpCmd.AddCommand(mcpUpdateCmd)
 }

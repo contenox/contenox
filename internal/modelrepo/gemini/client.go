@@ -336,8 +336,9 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 	return out
 }
 
-// geminiSanitiseSchema removes JSON Schema fields that the Gemini API rejects
-// (currently: `additionalProperties`, which go-sdk v1.4.0+ adds automatically).
+// geminiSanitiseSchema recursively removes JSON Schema fields that the Gemini API rejects
+// (currently: `additionalProperties`). The previous shallow delete only cleaned the root
+// object; MCP servers often return deeply nested schemas that also triggered 400 errors.
 // This is intentionally private to the gemini package — other providers are unaffected.
 func geminiSanitiseSchema(params any) any {
 	if params == nil {
@@ -347,12 +348,29 @@ func geminiSanitiseSchema(params any) any {
 	if err != nil {
 		return params
 	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return params // not an object; return as-is
+
+	var data any
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return params
 	}
-	delete(m, "additionalProperties")
-	out, err := json.Marshal(m)
+
+	var clean func(v any)
+	clean = func(v any) {
+		switch t := v.(type) {
+		case map[string]any:
+			delete(t, "additionalProperties")
+			for _, val := range t {
+				clean(val)
+			}
+		case []any:
+			for _, val := range t {
+				clean(val)
+			}
+		}
+	}
+	clean(data)
+
+	out, err := json.Marshal(data)
 	if err != nil {
 		return params
 	}

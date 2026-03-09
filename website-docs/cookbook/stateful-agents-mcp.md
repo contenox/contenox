@@ -1,112 +1,103 @@
 # Stateful Agents with MCP
 
-> **Prerequisites:** `contenox init`, a backend registered, and at least one MCP server configured.
+Connect your models to the local filesystem, a persistent memory graph, and live web pages using Contenox's native MCP (Model Context Protocol) integration.
 
-Most AI agents forget the moment a tool call ends. This recipe shows you how to wire up an
-MCP server so your agent carries full context across every single step of a long-running plan —
-reads, writes, decisions and all.
+## Prerequisites
 
-## What you'll accomplish
-
-By the end of this recipe your agent will be able to:
-- Read and write real files with memory that persists across tool calls
-- Maintain private session state for the duration of a plan or conversation
-- Pick up exactly where it left off, even after a restart
-
-## Step 1 — Start the test server (optional but great for learning)
-
-Contenox ships an MCP test server you can run locally:
+Run these commands once to register the three built-in local MCP servers:
 
 ```bash
-go run ./cmd/mcp-testserver
-# Server listening on http://localhost:8090
+# Register local MCP servers (one-time setup)
+contenox mcp add filesystem --transport stdio \
+  --command npx --args "-y,@modelcontextprotocol/server-filesystem,/"
+
+contenox mcp add memory --transport stdio \
+  --command npx --args "-y,@modelcontextprotocol/server-memory"
+
+contenox mcp add fetch --transport stdio \
+  --command npx --args "-y,fetch-mcp"
 ```
 
-Every response includes a `session_token` so you can literally watch the agent staying
-connected to its own session.
+## Recipe 1: Filesystem Explorer
 
-## Step 2 — Register an MCP server
+Ask the model to read real files from disk and generate a report:
 
 ```bash
-# Local filesystem server via stdio (most common):
-contenox mcp add myfiles \
-  --transport stdio \
-  --command npx \
-  --args "-y,@modelcontextprotocol/server-filesystem,$HOME/projects"
-
-# Or the test server via HTTP:
-contenox mcp add test --transport http --url http://localhost:8090
+contenox run \
+  --chain .contenox/chain-mcp-filesystem.json \
+  --provider openai --model gpt-5-mini \
+  "List all JSON chain files in the .contenox directory. \
+   Read each one and return a markdown table: filename | what the chain does."
 ```
 
-Verify it's registered:
+**Example output:**
+
+| filename                    | what the chain does |
+|-----------------------------|---------------------|
+| chain-mcp-filesystem.json   | Chat chain with access to the local filesystem via the MCP filesystem server. |
+| chain-mcp-memory.json       | Chat chain with access to a persistent key-value memory store via the MCP memory server. |
+| chain-release-notes.json    | Deterministic CI pipeline: runs `git log` since a tag and writes `RELEASE_NOTES.md`. |
+
+## Recipe 2: Persistent Memory (state across separate invocations)
+
+Store a fact in one run:
 
 ```bash
-contenox mcp list
-contenox mcp show myfiles
+contenox run \
+  --chain .contenox/chain-mcp-memory.json \
+  --provider openai --model gpt-5-mini \
+  "Remember: the project name is Contenox and the version is 0.2.4."
 ```
 
-## Step 3 — Reference it in a chain
+Retrieve it in a completely separate run (new process):
 
-In any chain JSON file, list the server by name in `execute_config`:
+```bash
+contenox run \
+  --chain .contenox/chain-mcp-memory.json \
+  --provider openai --model gpt-5-mini \
+  "What project and version did I ask you to remember?"
+```
+
+The model uses `search_nodes` on the memory graph and replies:  
+*"You asked me to remember the project 'Contenox' with version '0.2.4'."*
+
+> [!TIP]
+> `contenox run` is intentionally stateless for predictability and scripting safety. `stdio` MCP servers are spawned as child processes and terminated on exit.  
+> For cross-invocation persistence, use servers that manage their own storage (e.g. `@modelcontextprotocol/server-memory` writes to disk) or remote HTTP/SSE servers you control.
+
+## Recipe 3: Live Web Research
+
+Fetch and summarize any live page:
+
+```bash
+contenox run \
+  --chain .contenox/chain-mcp-fetch.json \
+  --provider openai --model gpt-5-mini \
+  "Fetch https://modelcontextprotocol.io and give me a one-paragraph summary."
+```
+
+The model calls `fetch_url`, receives the current HTML, and returns a clean summary.
+
+## How the chains work
+
+All three example chains use the same simple structure:
 
 ```json
 {
-  "id": "explore",
-  "handler": "chat_completion",
-  "execute_config": {
-    "model": "qwen2.5:7b",
-    "provider": "ollama",
-    "mcp_servers": ["myfiles"]
-  }
+  "tasks": [{
+    "handler": "chat_completion",
+    "system_instruction": "...Available tools: {{hookservice:list}}.",
+    "execute_config": {
+      "hooks": ["filesystem"],
+      "pass_clients_tools": false
+    }
+  }]
 }
 ```
 
-The agent now has access to every tool that server exposes — for the entire session.
+- `hooks` lists the MCP servers the model can access as tools.  
+- `{{hookservice:list}}` injects the live tool manifest into the system prompt.  
+- The task engine automatically handles the full tool-call loop—no manual branching required.
 
-## Step 4 — Run a stateful plan
-
-```bash
-contenox plan new "explore the codebase, find all TODO comments, write a report to TODOS.md"
-contenox plan next --auto
-```
-
-Each step connects to `myfiles`, performs its work, and the next step inherits the full
-session context. The agent remembers what it found in step 1 when it writes in step 5.
-
-## How session continuity works
-
-Contenox maintains one MCP connection per registered server, per session. The session is
-tied to the chat session ID (for `contenox chat`) or the plan ID (for `contenox plan`).
-
-- Tool call responses are kept in session memory
-- Session state survives individual tool calls within a plan
-- On restart, sessions are resumed from the SQLite-persisted plan state
-
-## Real-world ideas
-
-| Goal | MCP server to use |
-|---|---|
-| Edit files across a multi-step plan | `@modelcontextprotocol/server-filesystem` |
-| Remember decisions across days | A custom key-value MCP server |
-| Query a company database | An internal MCP HTTP server |
-| Manage GitHub issues | `@modelcontextprotocol/server-github` |
-
-## Full CLI reference
-
-```bash
-# Add
-contenox mcp add <name> --transport stdio --command <cmd> --args <arg1,arg2>
-contenox mcp add <name> --transport sse   --url <url> --auth-type bearer --auth-env TOKEN
-contenox mcp add <name> --transport http  --url <url>
-
-# Manage
-contenox mcp list
-contenox mcp show <name>
-contenox mcp remove <name>
-```
-
-## Further reading
-
-- [MCP docs page](/guide/mcp) — full protocol overview and transport reference
-- [Official MCP server registry](https://github.com/modelcontextprotocol/servers)
-- [`contenox plan` reference](/reference/contenox-cli#contenox-plan)
+> [!TIP]
+> Add `--trace` to watch every MCP tool call, its arguments, and results in real time.

@@ -198,3 +198,59 @@ def test_get_remote_hook_by_name_not_found(base_url):
     url = f"{base_url}/hooks/remote/by-name/{non_existent_name}"
     response = requests.get(url)
     assert_status_code(response, 404)
+
+
+# ─── Inject params & headers ──────────────────────────────────────────────────
+
+def test_create_remote_hook_with_headers(base_url):
+    """Test creating a hook with HTTP headers stored and returned."""
+    payload = {
+        **VALID_HOOK,
+        "name": f"hook-with-headers-{uuid.uuid4()}",
+        "headers": {"Authorization": "Bearer secret123", "X-Tenant": "acme"},
+    }
+    r = requests.post(f"{base_url}/hooks/remote", json=payload)
+    assert_status_code(r, 201)
+    data = r.json()
+    # Headers must be returned (values included at rest; CLI hides them on display)
+    assert "headers" in data
+    assert "Authorization" in data["headers"]
+    assert "X-Tenant" in data["headers"]
+
+
+def test_create_remote_hook_with_inject_params(base_url):
+    """Test creating a hook with injectParams stored and returned."""
+    payload = {
+        **VALID_HOOK,
+        "name": f"hook-with-inject-{uuid.uuid4()}",
+        "injectParams": {"tenant_id": "acme", "env": "production"},
+    }
+    r = requests.post(f"{base_url}/hooks/remote", json=payload)
+    assert_status_code(r, 201)
+    data = r.json()
+    assert "injectParams" in data
+    assert data["injectParams"]["tenant_id"] == "acme"
+    assert data["injectParams"]["env"] == "production"
+
+
+def test_update_remote_hook_inject_params_replaces_all(base_url):
+    """Test that updating injectParams replaces the entire map."""
+    # Create with two injected params
+    payload = {
+        **VALID_HOOK,
+        "name": f"hook-inject-update-{uuid.uuid4()}",
+        "injectParams": {"tenant_id": "old", "extra": "value"},
+    }
+    create_r = requests.post(f"{base_url}/hooks/remote", json=payload)
+    assert_status_code(create_r, 201)
+    hook_id = create_r.json()["id"]
+
+    # Update with a different set (should replace entirely)
+    updated = {**payload, "injectParams": {"tenant_id": "new"}}
+    update_r = requests.put(f"{base_url}/hooks/remote/{hook_id}", json=updated)
+    assert_status_code(update_r, 200)
+
+    get_r = requests.get(f"{base_url}/hooks/remote/{hook_id}")
+    data = get_r.json()
+    assert data["injectParams"]["tenant_id"] == "new"
+    assert "extra" not in data.get("injectParams", {})

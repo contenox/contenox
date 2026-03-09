@@ -90,7 +90,7 @@ func (p *PersistentRepo) execMCPHook(
 		toolName = args.Args["tool"]
 	}
 
-	// Merge input + hook args into the MCP tool arguments map.
+	// Merge model args first, then inject system params (injected values always win).
 	toolArgs := map[string]any{}
 	if m, ok := input.(map[string]any); ok {
 		for k, v := range m {
@@ -100,6 +100,10 @@ func (p *PersistentRepo) execMCPHook(
 		toolArgs["input"] = input
 	}
 	for k, v := range args.Args {
+		toolArgs[k] = v
+	}
+	// Inject system-level params — these override any model-provided values.
+	for k, v := range srv.InjectParams {
 		toolArgs[k] = v
 	}
 
@@ -128,7 +132,16 @@ func (p *PersistentRepo) execMCPHook(
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("mcp hook %q: %w", srv.Name, err)
 	}
-	return result, taskengine.DataTypeString, nil
+	// Always return JSON so the LLM sees structured data, not Go's map[key:value] format.
+	if result != nil {
+		if s, ok := result.(string); ok {
+			return s, taskengine.DataTypeString, nil
+		}
+		if b, err := json.Marshal(result); err == nil {
+			return string(b), taskengine.DataTypeString, nil
+		}
+	}
+	return "", taskengine.DataTypeString, nil
 }
 
 func (p *PersistentRepo) execRemoteHook(
@@ -235,7 +248,7 @@ func (p *PersistentRepo) GetToolsForHookByName(ctx context.Context, name string)
 		}
 		tools := make([]taskengine.Tool, 0, len(mcpTools))
 		for _, t := range mcpTools {
-			tools = append(tools, mcpToolToTaskTool(mcpSrv.Name, t))
+			tools = append(tools, mcpToolToTaskTool(mcpSrv.Name, t, mcpSrv.InjectParams))
 		}
 		return tools, nil
 	}

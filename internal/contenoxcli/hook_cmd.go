@@ -96,10 +96,12 @@ func init() {
 	hookAddCmd.Flags().String("url", "", "Base URL of the remote hook service (required)")
 	_ = hookAddCmd.MarkFlagRequired("url")
 	hookAddCmd.Flags().StringArray("header", nil, `Header to inject into every call, e.g. "Authorization: Bearer $TOKEN" (repeatable)`)
+	hookAddCmd.Flags().StringArray("inject", nil, `Param to inject as a tool call argument and hide from the model, e.g. "tenant_id=acme" (repeatable)`)
 	hookAddCmd.Flags().Int("timeout", 10000, "Request timeout in milliseconds")
 
 	hookUpdateCmd.Flags().String("url", "", "New base URL")
 	hookUpdateCmd.Flags().StringArray("header", nil, `Header to inject, e.g. "Authorization: Bearer $TOKEN" (repeatable; replaces all existing headers)`)
+	hookUpdateCmd.Flags().StringArray("inject", nil, `Params to inject as tool call args (repeatable; replaces all existing injected params)`)
 	hookUpdateCmd.Flags().Int("timeout", 0, "New timeout in milliseconds (0 = keep existing)")
 
 	hookCmd.AddCommand(hookAddCmd, hookListCmd, hookShowCmd, hookRemoveCmd, hookUpdateCmd)
@@ -115,6 +117,21 @@ func parseHeaders(raw []string) (map[string]string, error) {
 		}
 		key := strings.TrimSpace(h[:idx])
 		val := strings.TrimSpace(h[idx+1:])
+		out[key] = val
+	}
+	return out, nil
+}
+
+// parseInjects parses a []string of "key=value" into a map[string]string.
+func parseInjects(raw []string) (map[string]string, error) {
+	out := make(map[string]string, len(raw))
+	for _, kv := range raw {
+		idx := strings.Index(kv, "=")
+		if idx < 1 {
+			return nil, fmt.Errorf("invalid inject param %q — expected format \"key=value\"", kv)
+		}
+		key := strings.TrimSpace(kv[:idx])
+		val := strings.TrimSpace(kv[idx+1:])
 		out[key] = val
 	}
 	return out, nil
@@ -137,9 +154,14 @@ func runHookAdd(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	url, _ := cmd.Flags().GetString("url")
 	rawHeaders, _ := cmd.Flags().GetStringArray("header")
+	rawInjects, _ := cmd.Flags().GetStringArray("inject")
 	timeoutMs, _ := cmd.Flags().GetInt("timeout")
 
 	headers, err := parseHeaders(rawHeaders)
+	if err != nil {
+		return err
+	}
+	injectParams, err := parseInjects(rawInjects)
 	if err != nil {
 		return err
 	}
@@ -161,10 +183,11 @@ func runHookAdd(cmd *cobra.Command, args []string) error {
 	toolCount := probeTools(url)
 
 	hook := &runtimetypes.RemoteHook{
-		Name:        name,
-		EndpointURL: url,
-		TimeoutMs:   timeoutMs,
-		Headers:     headers,
+		Name:         name,
+		EndpointURL:  url,
+		TimeoutMs:    timeoutMs,
+		Headers:      headers,
+		InjectParams: injectParams,
 	}
 	if err := store.CreateRemoteHook(ctx, hook); err != nil {
 		return fmt.Errorf("failed to register hook: %w", err)
@@ -246,6 +269,13 @@ func runHookShow(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println(strings.Join(keys, ", ") + " (values hidden)")
 	}
+	if len(hook.InjectParams) > 0 {
+		keys := make([]string, 0, len(hook.InjectParams))
+		for k := range hook.InjectParams {
+			keys = append(keys, k)
+		}
+		fmt.Printf("Inject:    %s (values hidden)\n", strings.Join(keys, ", "))
+	}
 
 	// Probe live tools.
 	proto := &hooks.OpenAPIToolProtocol{}
@@ -318,6 +348,14 @@ func runHookUpdate(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		hook.Headers = headers
+	}
+	if cmd.Flags().Changed("inject") {
+		rawInjects, _ := cmd.Flags().GetStringArray("inject")
+		injectParams, err := parseInjects(rawInjects)
+		if err != nil {
+			return err
+		}
+		hook.InjectParams = injectParams
 	}
 
 	if err := store.UpdateRemoteHook(ctx, hook); err != nil {
