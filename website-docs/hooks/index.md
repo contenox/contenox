@@ -23,9 +23,9 @@ In your chain JSON, specify which hooks the task can use:
 }
 ```
 
-Use `{{hookservice:list}}` in your `system_instruction` to inject the live tool manifest into the system prompt so the model knows exactly what tools are available:
+Use <span v-pre>`{{hookservice:list}}`</span> in your `system_instruction` to inject the live tool manifest into the system prompt so the model knows exactly what tools are available:
 
-```json
+```json v-pre
 "system_instruction": "You are a helpful assistant. Available tools: {{hookservice:list}}."
 ```
 

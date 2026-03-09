@@ -8,7 +8,7 @@ Use a contenox chain as a deterministic CI pipeline: run `git log`, send commits
 
 Save this as `.contenox/chain-release-notes.json`:
 
-```json
+```json v-pre
 {
     "id": "chain-release-notes",
     "description": "Deterministic pipeline: git log → LLM → RELEASE_NOTES.md",
@@ -90,10 +90,10 @@ This is a **deterministic pipeline** — three tasks wired in sequence, no agent
 | Step | Handler | What it does |
 |---|---|---|
 | `get_git_log` | `hook` → `local_shell` | Runs `git log --oneline "<input>"..HEAD`; `$(cat)` reads the tag from stdin |
-| `generate_notes` | `prompt_to_string` | LLM formats the commit log into grouped markdown; `{{.get_git_log}}` injects the log |
+| `generate_notes` | `prompt_to_string` | LLM formats the commit log into grouped markdown; <code v-pre>{{.get_git_log}}</code> injects the log |
 | `write_file` | `hook` → `local_shell` | Pipes the release notes string into `cat > RELEASE_NOTES.md` |
 
-The key template variable is `{{.get_git_log}}` — not `{{.input}}`. In a chain, `{{.input}}` is always the **original chain input** (the tag string). Each task's output is available under its task ID.
+The key template variable is <code v-pre>{{.get_git_log}}</code> — not <code v-pre>{{.input}}</code>. In a chain, <code v-pre>{{.input}}</code> is always the **original chain input** (the tag string). Each task's output is available under its task ID.
 
 ---
 
