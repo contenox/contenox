@@ -84,10 +84,19 @@ Manage remote OpenAPI hooks. See [Remote Hooks](/hooks/remote).
 
 ```bash
 contenox hook add <name> --url <url>
+contenox hook add <name> --url <url> --header "Authorization: Bearer $TOKEN" --inject "tenant_id=acme"
 contenox hook list
 contenox hook show <name>
+contenox hook update <name> --header <...> --inject <...>
 contenox hook remove <name>
 ```
+
+| Flag | Description |
+|---|---|
+| `--url` | Base URL of the OpenAPI service (required) |
+| `--header` | HTTP header to inject on every call, e.g. `"Authorization: Bearer $TOKEN"` (repeatable) |
+| `--inject` | Tool call argument to inject and hide from the model, e.g. `"tenant_id=acme"` (repeatable) |
+| `--timeout` | Request timeout in milliseconds (default: 10000) |
 
 ### `contenox init`
 
@@ -151,10 +160,32 @@ Register and manage MCP (Model Context Protocol) servers.
 contenox mcp add myserver --transport stdio --command npx \
   --args "-y,@modelcontextprotocol/server-filesystem,/tmp"
 
-# SSE transport (remote)
-contenox mcp add remote --transport sse --url https://mcp.example.com/sse
+# SSE transport (remote) with bearer auth
+contenox mcp add remote --transport sse --url https://mcp.example.com/sse \
+  --auth-type bearer --auth-env MCP_TOKEN
+
+# Inject hidden params into every tool call (model never sees them)
+contenox mcp add myserver --transport http --url http://localhost:8090 \
+  --header "X-Tenant: acme" \
+  --inject "tenant_id=acme" --inject "env=production"
 
 contenox mcp list
 contenox mcp show myserver
+contenox mcp update myserver --inject "tenant_id=newvalue"
 contenox mcp remove myserver
 ```
+
+| Flag | Description |
+|---|---|
+| `--transport` | Server transport: `stdio`, `sse`, `http` |
+| `--command` | Command to execute (stdio only) |
+| `--args` | Comma-separated command arguments |
+| `--url` | Remote endpoint URL (sse, http) |
+| `--auth-type` | Authentication type (e.g. `bearer`) |
+| `--auth-env` | Environment variable holding auth token (preferred) |
+| `--auth-token` | Auth token literal (avoid — use `--auth-env`) |
+| `--header` | Additional HTTP header for SSE/HTTP connections, e.g. `"X-Tenant: acme"` (repeatable) |
+| `--inject` | Tool call argument to inject and hide from the model, e.g. `"tenant_id=acme"` (repeatable) |
+
+> [!NOTE]
+> `mcp update --header` and `mcp update --inject` each **replace** the entire corresponding map. Pass all required values in a single update call.

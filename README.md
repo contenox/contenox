@@ -40,6 +40,45 @@ Contenox is different:
 - **Fully offline** with Ollama — no data leaves your machine
 - **Chains are just JSON** — write your own LLM workflows
 - **Workflow Engine** — Contenox is not a toy, a complete statemachine lives under the hood.
+- **Native MCP Support** — connect to local filesystems, memory servers, and remote tools instantly via the Model Context Protocol.
+
+---
+
+## 🔌 Universal Tooling with MCP
+
+Contenox is a native [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) client. Instead of writing custom integrations, you can instantly connect your local agent to any MCP-compatible data source, persistent memory, or tool API.
+
+```bash
+# Give your agent access to the local filesystem
+contenox mcp add filesystem --transport stdio \
+  --command npx --args "-y,@modelcontextprotocol/server-filesystem,/"
+
+# Give your agent a persistent memory graph across reboots
+contenox mcp add memory --transport stdio \
+  --command npx --args "-y,@modelcontextprotocol/server-memory"
+
+# Connect to cloud tools securely over SSE
+contenox mcp add cloud-tools --transport sse --url https://api.example.com/mcp
+```
+
+Every registered MCP server becomes natively available to your agent during chat sessions and execution plans.
+
+---
+
+## 🛠 Turn Any API into an Agent Tool
+
+Don't need the MCP ecosystem? Expose any HTTP API as an agent tool in seconds with `contenox hook add`.
+Write a [FastAPI](https://fastapi.tiangolo.com/) service — Contenox reads its OpenAPI schema and makes every endpoint callable by the model, with no extra glue code.
+
+```bash
+# Register your FastAPI service as a tool
+contenox hook add my-api --url http://localhost:8000
+
+# The model can now call any endpoint on it directly as a tool
+contenox run "fetch the latest metrics from my API and summarize them"
+```
+
+Any service that speaks HTTP and exposes an OpenAPI spec becomes a first-class agent tool.
 
 ---
 

@@ -16,20 +16,30 @@ type contextKey string
 
 const SessionIDContextKey contextKey = "contenox_session_id"
 
+// orEmptyMap returns m if non-nil, otherwise an empty map.
+func orEmptyMap(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
+}
+
 // MCPServer represents a persisted MCP server configuration.
 type MCPServer struct {
-	ID                    string    `json:"id" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
-	Name                  string    `json:"name" example:"filesystem"`
-	Transport             string    `json:"transport" example:"sse"` // sse | http | stdio
-	Command               string    `json:"command,omitempty" example:"npx"`
-	Args                  []string  `json:"args,omitempty" example:"['-y','@modelcontextprotocol/server-filesystem','/tmp']" openapi_include_type:"string"`
-	URL                   string    `json:"url,omitempty" example:"http://mcp-fs:8080/sse"`
-	AuthType              string    `json:"authType,omitempty" example:"bearer"`         // "" | "bearer"
-	AuthToken             string    `json:"authToken,omitempty"`                         // literal token (avoid in prod)
-	AuthEnvKey            string    `json:"authEnvKey,omitempty" example:"MCP_FS_TOKEN"` // env var name
-	ConnectTimeoutSeconds int       `json:"connectTimeoutSeconds" example:"30"`
-	CreatedAt             time.Time `json:"createdAt" example:"2024-01-15T10:00:00Z"`
-	UpdatedAt             time.Time `json:"updatedAt" example:"2024-01-15T10:00:00Z"`
+	ID                    string            `json:"id" example:"a1b2c3d4-e5f6-7890-abcd-ef1234567890"`
+	Name                  string            `json:"name" example:"filesystem"`
+	Transport             string            `json:"transport" example:"sse"` // sse | http | stdio
+	Command               string            `json:"command,omitempty" example:"npx"`
+	Args                  []string          `json:"args,omitempty" example:"['-y','@modelcontextprotocol/server-filesystem','/tmp']" openapi_include_type:"string"`
+	URL                   string            `json:"url,omitempty" example:"http://mcp-fs:8080/sse"`
+	AuthType              string            `json:"authType,omitempty" example:"bearer"`         // "" | "bearer"
+	AuthToken             string            `json:"authToken,omitempty"`                         // literal token (avoid in prod)
+	AuthEnvKey            string            `json:"authEnvKey,omitempty" example:"MCP_FS_TOKEN"` // env var name
+	ConnectTimeoutSeconds int               `json:"connectTimeoutSeconds" example:"30"`
+	Headers               map[string]string `json:"headers,omitempty"`      // additional HTTP headers for SSE/HTTP transports
+	InjectParams          map[string]string `json:"injectParams,omitempty"` // injected as tool call args, hidden from model schema
+	CreatedAt             time.Time         `json:"createdAt" example:"2024-01-15T10:00:00Z"`
+	UpdatedAt             time.Time         `json:"updatedAt" example:"2024-01-15T10:00:00Z"`
 }
 
 // MCPTool is a minimal tool descriptor returned by mcpworker list-tools.
@@ -60,6 +70,9 @@ func (s *store) CreateMCPServer(ctx context.Context, srv *MCPServer) error {
 		argsJSON = []byte("[]")
 	}
 
+	headersJSON, _ := json.Marshal(orEmptyMap(srv.Headers))
+	injectJSON, _ := json.Marshal(orEmptyMap(srv.InjectParams))
+
 	timeout := srv.ConnectTimeoutSeconds
 	if timeout <= 0 {
 		timeout = 30
@@ -67,11 +80,11 @@ func (s *store) CreateMCPServer(ctx context.Context, srv *MCPServer) error {
 
 	_, err = s.Exec.ExecContext(ctx, `
 		INSERT INTO mcp_servers
-		(id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+		(id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, headers_json, inject_params_json, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		srv.ID, srv.Name, srv.Transport, srv.Command, string(argsJSON),
 		srv.URL, srv.AuthType, srv.AuthToken, srv.AuthEnvKey,
-		timeout, srv.CreatedAt, srv.UpdatedAt,
+		timeout, string(headersJSON), string(injectJSON), srv.CreatedAt, srv.UpdatedAt,
 	)
 	return err
 }
@@ -100,10 +113,13 @@ func (s *store) UpsertMCPServerByName(ctx context.Context, srv *MCPServer) error
 		timeout = 30
 	}
 
+	headersJSON, _ := json.Marshal(orEmptyMap(srv.Headers))
+	injectJSON, _ := json.Marshal(orEmptyMap(srv.InjectParams))
+
 	_, err = s.Exec.ExecContext(ctx, `
 		INSERT INTO mcp_servers
-		(id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		(id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, headers_json, inject_params_json, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		ON CONFLICT(name) DO UPDATE SET
 			transport               = excluded.transport,
 			command                 = excluded.command,
@@ -113,33 +129,35 @@ func (s *store) UpsertMCPServerByName(ctx context.Context, srv *MCPServer) error
 			auth_token              = excluded.auth_token,
 			auth_env_key            = excluded.auth_env_key,
 			connect_timeout_seconds = excluded.connect_timeout_seconds,
+			headers_json            = excluded.headers_json,
+			inject_params_json      = excluded.inject_params_json,
 			updated_at              = excluded.updated_at`,
 		srv.ID, srv.Name, srv.Transport, srv.Command, string(argsJSON),
 		srv.URL, srv.AuthType, srv.AuthToken, srv.AuthEnvKey,
-		timeout, srv.CreatedAt, srv.UpdatedAt,
+		timeout, string(headersJSON), string(injectJSON), srv.CreatedAt, srv.UpdatedAt,
 	)
 	return err
 }
 
 func (s *store) GetMCPServer(ctx context.Context, id string) (*MCPServer, error) {
 	return s.scanMCPServer(ctx, `
-		SELECT id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, created_at, updated_at
+		SELECT id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, headers_json, inject_params_json, created_at, updated_at
 		FROM mcp_servers WHERE id = $1`, id)
 }
 
 func (s *store) GetMCPServerByName(ctx context.Context, name string) (*MCPServer, error) {
 	return s.scanMCPServer(ctx, `
-		SELECT id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, created_at, updated_at
+		SELECT id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, headers_json, inject_params_json, created_at, updated_at
 		FROM mcp_servers WHERE name = $1`, name)
 }
 
 func (s *store) scanMCPServer(ctx context.Context, query string, arg any) (*MCPServer, error) {
 	var srv MCPServer
-	var argsJSON string
+	var argsJSON, headersJSON, injectJSON string
 	err := s.Exec.QueryRowContext(ctx, query, arg).Scan(
 		&srv.ID, &srv.Name, &srv.Transport, &srv.Command, &argsJSON,
 		&srv.URL, &srv.AuthType, &srv.AuthToken, &srv.AuthEnvKey,
-		&srv.ConnectTimeoutSeconds, &srv.CreatedAt, &srv.UpdatedAt,
+		&srv.ConnectTimeoutSeconds, &headersJSON, &injectJSON, &srv.CreatedAt, &srv.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -149,6 +167,12 @@ func (s *store) scanMCPServer(ctx context.Context, query string, arg any) (*MCPS
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &srv.Args); err != nil {
 		srv.Args = nil
+	}
+	if err := json.Unmarshal([]byte(headersJSON), &srv.Headers); err != nil {
+		srv.Headers = nil
+	}
+	if err := json.Unmarshal([]byte(injectJSON), &srv.InjectParams); err != nil {
+		srv.InjectParams = nil
 	}
 	return &srv, nil
 }
@@ -163,15 +187,18 @@ func (s *store) UpdateMCPServer(ctx context.Context, srv *MCPServer) error {
 		argsJSON = []byte("[]")
 	}
 
+	headersJSON, _ := json.Marshal(orEmptyMap(srv.Headers))
+	injectJSON, _ := json.Marshal(orEmptyMap(srv.InjectParams))
+
 	result, err := s.Exec.ExecContext(ctx, `
 		UPDATE mcp_servers
 		SET name=$2, transport=$3, command=$4, args_json=$5, url=$6,
 		    auth_type=$7, auth_token=$8, auth_env_key=$9,
-		    connect_timeout_seconds=$10, updated_at=$11
+		    connect_timeout_seconds=$10, headers_json=$11, inject_params_json=$12, updated_at=$13
 		WHERE id=$1`,
 		srv.ID, srv.Name, srv.Transport, srv.Command, string(argsJSON),
 		srv.URL, srv.AuthType, srv.AuthToken, srv.AuthEnvKey,
-		srv.ConnectTimeoutSeconds, srv.UpdatedAt,
+		srv.ConnectTimeoutSeconds, string(headersJSON), string(injectJSON), srv.UpdatedAt,
 	)
 	if err != nil {
 		return err
@@ -197,7 +224,7 @@ func (s *store) ListMCPServers(ctx context.Context, createdAtCursor *time.Time, 
 	}
 
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, created_at, updated_at
+		SELECT id, name, transport, command, args_json, url, auth_type, auth_token, auth_env_key, connect_timeout_seconds, headers_json, inject_params_json, created_at, updated_at
 		FROM mcp_servers
 		WHERE created_at < $1
 		ORDER BY created_at DESC, id DESC
@@ -210,16 +237,22 @@ func (s *store) ListMCPServers(ctx context.Context, createdAtCursor *time.Time, 
 	var out []*MCPServer
 	for rows.Next() {
 		var srv MCPServer
-		var argsJSON string
+		var argsJSON, headersJSON, injectJSON string
 		if err := rows.Scan(
 			&srv.ID, &srv.Name, &srv.Transport, &srv.Command, &argsJSON,
 			&srv.URL, &srv.AuthType, &srv.AuthToken, &srv.AuthEnvKey,
-			&srv.ConnectTimeoutSeconds, &srv.CreatedAt, &srv.UpdatedAt,
+			&srv.ConnectTimeoutSeconds, &headersJSON, &injectJSON, &srv.CreatedAt, &srv.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("mcp: scan row: %w", err)
 		}
 		if err := json.Unmarshal([]byte(argsJSON), &srv.Args); err != nil {
 			srv.Args = nil
+		}
+		if err := json.Unmarshal([]byte(headersJSON), &srv.Headers); err != nil {
+			srv.Headers = nil
+		}
+		if err := json.Unmarshal([]byte(injectJSON), &srv.InjectParams); err != nil {
+			srv.InjectParams = nil
 		}
 		out = append(out, &srv)
 	}

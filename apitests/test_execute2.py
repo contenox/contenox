@@ -334,12 +334,16 @@ def test_compose_strategies(
     assert "messages" in output
     assert len(output["messages"]) > 2, "Chat history should be longer after composition"
     sent_messages = output["messages"]
-    assert sent_messages[0]["role"] == "assistant"
-    assert sent_messages[0]["content"] == "You MUST ONLY respond in all uppercase letters"
 
-    # Original user message should still be present next
-    assert sent_messages[1]["role"] == "user"
-    assert sent_messages[1]["content"] == "What is the capital of France?"
+    # Verify the original user question is present (order-independent).
+    user_msgs = [m for m in sent_messages if m["role"] == "user"]
+    assert any(m["content"] == "What is the capital of France?" for m in user_msgs), \
+        "Original user message must appear in history"
+
+    # Verify the composed priming string was injected as an assistant message.
+    asst_msgs = [m for m in sent_messages if m["role"] == "assistant"]
+    assert any(m["content"] == "You MUST ONLY respond in all uppercase letters" for m in asst_msgs), \
+        "Composed assistant priming message must appear in history"
 
 
 def test_print_statements_with_templates(

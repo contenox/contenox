@@ -38,6 +38,14 @@ func decodeProperties(data []byte) (InjectionArg, error) {
 	return props, nil
 }
 
+// orEmptyStringMap returns m if non-nil, otherwise an empty map.
+func orEmptyStringMap(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
+}
+
 func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 	now := time.Now().UTC()
 	hook.CreatedAt = now
@@ -51,6 +59,11 @@ func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 		return fmt.Errorf("failed to marshal hook headers: %w", err)
 	}
 
+	injectJSON, err := json.Marshal(orEmptyStringMap(hook.InjectParams))
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook inject params: %w", err)
+	}
+
 	// Use gob encoding for body properties
 	bodyPropsBytes, err := encodeProperties(hook.Properties)
 	if err != nil {
@@ -59,14 +72,15 @@ func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 
 	_, err = s.Exec.ExecContext(ctx, `
         INSERT INTO remote_hooks
-        (id, name, endpoint_url, timeout_ms, headers, properties, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        (id, name, endpoint_url, timeout_ms, headers, properties, inject_params_json, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 		hook.ID,
 		hook.Name,
 		hook.EndpointURL,
 		hook.TimeoutMs,
 		headersJSON,
 		bodyPropsBytes,
+		string(injectJSON),
 		hook.CreatedAt,
 		hook.UpdatedAt,
 	)
@@ -76,9 +90,10 @@ func (s *store) CreateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 func (s *store) GetRemoteHook(ctx context.Context, id string) (*RemoteHook, error) {
 	var hook RemoteHook
 	var headersJSON, bodyPropsBytes []byte
+	var injectJSON string
 
 	err := s.Exec.QueryRowContext(ctx, `
-        SELECT id, name, endpoint_url, timeout_ms, headers, properties, created_at, updated_at
+        SELECT id, name, endpoint_url, timeout_ms, headers, properties, inject_params_json, created_at, updated_at
         FROM remote_hooks
         WHERE id = $1`, id).Scan(
 		&hook.ID,
@@ -87,6 +102,7 @@ func (s *store) GetRemoteHook(ctx context.Context, id string) (*RemoteHook, erro
 		&hook.TimeoutMs,
 		&headersJSON,
 		&bodyPropsBytes,
+		&injectJSON,
 		&hook.CreatedAt,
 		&hook.UpdatedAt,
 	)
@@ -109,15 +125,22 @@ func (s *store) GetRemoteHook(ctx context.Context, id string) (*RemoteHook, erro
 	}
 	hook.Properties = props
 
+	if injectJSON != "" && injectJSON != "{}" && injectJSON != "null" {
+		if err := json.Unmarshal([]byte(injectJSON), &hook.InjectParams); err != nil {
+			hook.InjectParams = nil
+		}
+	}
+
 	return &hook, nil
 }
 
 func (s *store) GetRemoteHookByName(ctx context.Context, name string) (*RemoteHook, error) {
 	var hook RemoteHook
 	var headersJSON, bodyPropsBytes []byte
+	var injectJSON string
 
 	err := s.Exec.QueryRowContext(ctx, `
-        SELECT id, name, endpoint_url,  timeout_ms, headers, properties, created_at, updated_at
+        SELECT id, name, endpoint_url,  timeout_ms, headers, properties, inject_params_json, created_at, updated_at
         FROM remote_hooks
         WHERE name = $1`, name).Scan(
 		&hook.ID,
@@ -126,6 +149,7 @@ func (s *store) GetRemoteHookByName(ctx context.Context, name string) (*RemoteHo
 		&hook.TimeoutMs,
 		&headersJSON,
 		&bodyPropsBytes,
+		&injectJSON,
 		&hook.CreatedAt,
 		&hook.UpdatedAt,
 	)
@@ -147,6 +171,12 @@ func (s *store) GetRemoteHookByName(ctx context.Context, name string) (*RemoteHo
 		return nil, err
 	}
 	hook.Properties = props
+
+	if injectJSON != "" && injectJSON != "{}" && injectJSON != "null" {
+		if err := json.Unmarshal([]byte(injectJSON), &hook.InjectParams); err != nil {
+			hook.InjectParams = nil
+		}
+	}
 
 	return &hook, nil
 }
@@ -159,6 +189,11 @@ func (s *store) UpdateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 		return fmt.Errorf("failed to marshal hook headers for update: %w", err)
 	}
 
+	injectJSON, err := json.Marshal(orEmptyStringMap(hook.InjectParams))
+	if err != nil {
+		return fmt.Errorf("failed to marshal hook inject params for update: %w", err)
+	}
+
 	// Use gob encoding for body properties
 	bodyPropsBytes, err := encodeProperties(hook.Properties)
 	if err != nil {
@@ -167,7 +202,7 @@ func (s *store) UpdateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 
 	result, err := s.Exec.ExecContext(ctx, `
 		UPDATE remote_hooks
-		SET name = $2, endpoint_url = $3,  timeout_ms = $4, headers = $5, properties = $6, updated_at = $7
+		SET name = $2, endpoint_url = $3, timeout_ms = $4, headers = $5, properties = $6, inject_params_json = $7, updated_at = $8
 		WHERE id = $1`,
 		hook.ID,
 		hook.Name,
@@ -175,6 +210,7 @@ func (s *store) UpdateRemoteHook(ctx context.Context, hook *RemoteHook) error {
 		hook.TimeoutMs,
 		headersJSON,
 		bodyPropsBytes,
+		string(injectJSON),
 		hook.UpdatedAt,
 	)
 
@@ -194,7 +230,7 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 	}
 
 	rows, err := s.Exec.QueryContext(ctx, `
-        SELECT id, name, endpoint_url, timeout_ms, headers, properties, created_at, updated_at
+        SELECT id, name, endpoint_url, timeout_ms, headers, properties, inject_params_json, created_at, updated_at
         FROM remote_hooks
         WHERE created_at < $1
         ORDER BY created_at DESC, id DESC
@@ -209,6 +245,7 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 	for rows.Next() {
 		var hook RemoteHook
 		var headersJSON, bodyPropsBytes []byte
+		var injectJSON string
 		if err := rows.Scan(
 			&hook.ID,
 			&hook.Name,
@@ -216,6 +253,7 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 			&hook.TimeoutMs,
 			&headersJSON,
 			&bodyPropsBytes,
+			&injectJSON,
 			&hook.CreatedAt,
 			&hook.UpdatedAt,
 		); err != nil {
@@ -232,6 +270,12 @@ func (s *store) ListRemoteHooks(ctx context.Context, createdAtCursor *time.Time,
 			return nil, err
 		}
 		hook.Properties = props
+
+		if injectJSON != "" && injectJSON != "{}" && injectJSON != "null" {
+			if err := json.Unmarshal([]byte(injectJSON), &hook.InjectParams); err != nil {
+				hook.InjectParams = nil
+			}
+		}
 
 		hooks = append(hooks, &hook)
 	}

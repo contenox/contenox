@@ -23,18 +23,38 @@ type openAIClient struct {
 }
 
 type openAIChatRequest struct {
-	Model       string              `json:"model"`
-	Messages    []modelrepo.Message `json:"messages"`
-	Temperature *float64            `json:"temperature,omitempty"`
-	MaxTokens   *int                `json:"max_tokens,omitempty"`
-	TopP        *float64            `json:"top_p,omitempty"`
-	Seed        *int                `json:"seed,omitempty"`
-	Stream      bool                `json:"stream,omitempty"`
-	Tools       []openAITool        `json:"tools,omitempty"`
+	Model       string           `json:"model"`
+	Messages    []apiChatMessage `json:"messages"`
+	Temperature *float64         `json:"temperature,omitempty"`
+	MaxTokens   *int             `json:"max_tokens,omitempty"`
+	TopP        *float64         `json:"top_p,omitempty"`
+	Seed        *int             `json:"seed,omitempty"`
+	Stream      bool             `json:"stream,omitempty"`
+	Tools       []openAITool     `json:"tools,omitempty"`
 	// ReasoningEffort controls thinking depth for o-series models (o1, o3, o4-mini etc.).
 	// Accepted values: "low", "medium", "high". Empty = omitted (non-reasoning models).
 	// Note: when set, Temperature must be omitted (OpenAI rejects temperature on o-series).
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+}
+
+// apiChatMessage is the wire-format message sent to the OpenAI REST API.
+// We use *string for Content so assistant messages with tool_calls can have null content.
+type apiChatMessage struct {
+	Role       string           `json:"role"`
+	Content    *string          `json:"content"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+	ToolCalls  []apiToolCallReq `json:"tool_calls,omitempty"`
+}
+
+type apiToolCallReq struct {
+	ID       string          `json:"id"`
+	Type     string          `json:"type"`
+	Function openAIFunction2 `json:"function"`
+}
+
+type openAIFunction2 struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 type openAITool struct {
@@ -150,8 +170,7 @@ func (c *openAIClient) sendRequest(ctx context.Context, endpoint string, request
 // sanitized before being forwarded to the API.
 func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) (openAIChatRequest, map[string]string) {
 	req := openAIChatRequest{
-		Model:    modelName,
-		Messages: messages,
+		Model: modelName,
 	}
 
 	// Apply chat args
@@ -188,7 +207,6 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 		tools := make([]openAITool, 0, len(cfg.Tools))
 		for i, t := range cfg.Tools {
 			if strings.ToLower(t.Type) != "function" || t.Function == nil {
-				// OpenAI only accepts function tools
 				continue
 			}
 			orig := t.Function.Name
@@ -197,10 +215,7 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 				name = fmt.Sprintf("tool_%d", i)
 			}
 			name = uniquifyToolName(seen, name)
-
-			// record mapping (sanitized -> original)
 			nameMap[name] = orig
-
 			tools = append(tools, openAITool{
 				Type: "function",
 				Function: openAIFunction{
@@ -215,35 +230,57 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 		}
 	}
 
-	// Sanitize tool_calls[].function.name in the message history.
-	// Build a reverse map (original -> sanitized) from the tool definitions above.
-	// For names not in that map (prior turns), fall back to plain sanitization.
+	// Build reverse map: original tool name -> sanitized name, for rewriting history.
 	origToSanitized := make(map[string]string, len(nameMap))
 	for san, orig := range nameMap {
 		origToSanitized[orig] = san
 	}
-	sanitizedMsgs := make([]modelrepo.Message, len(messages))
-	copy(sanitizedMsgs, messages)
-	for i, msg := range sanitizedMsgs {
-		if len(msg.ToolCalls) == 0 {
-			continue
+
+	// Convert messages to the explicit wire format.
+	// • Content is *string so assistant messages with tool_calls can have a null body.
+	// • ToolCalls in assistant messages have their names sanitized via origToSanitized.
+	// • tool_call_id is preserved on tool-role messages.
+	apiMsgs := make([]apiChatMessage, 0, len(messages))
+	for _, msg := range messages {
+		content := msg.Content
+		var contentPtr *string
+		// For assistant messages that only have tool calls, content may be empty — send null.
+		if content != "" || len(msg.ToolCalls) == 0 {
+			contentPtr = &content
 		}
-		// Deep-copy CallTools for this message before mutating.
-		fixed := make([]modelrepo.ToolCall, len(msg.ToolCalls))
-		copy(fixed, msg.ToolCalls)
-		for j, tc := range fixed {
-			if san, ok := origToSanitized[tc.Function.Name]; ok {
-				fixed[j].Function.Name = san
-			} else {
-				fixed[j].Function.Name = sanitizeToolName(tc.Function.Name)
+
+		apiMsg := apiChatMessage{
+			Role:       msg.Role,
+			Content:    contentPtr,
+			ToolCallID: msg.ToolCallID,
+		}
+
+		if len(msg.ToolCalls) > 0 {
+			apiMsg.ToolCalls = make([]apiToolCallReq, 0, len(msg.ToolCalls))
+			for _, tc := range msg.ToolCalls {
+				name := tc.Function.Name
+				if san, ok := origToSanitized[name]; ok {
+					name = san
+				} else {
+					name = sanitizeToolName(name)
+				}
+				apiMsg.ToolCalls = append(apiMsg.ToolCalls, apiToolCallReq{
+					ID:   tc.ID,
+					Type: tc.Type,
+					Function: openAIFunction2{
+						Name:      name,
+						Arguments: tc.Function.Arguments,
+					},
+				})
 			}
 		}
-		sanitizedMsgs[i].ToolCalls = fixed
+		apiMsgs = append(apiMsgs, apiMsg)
 	}
-	req.Messages = sanitizedMsgs
+	req.Messages = apiMsgs
 
 	return req, nameMap
 }
+
 
 // sanitizeToolName replaces invalid characters with '_' and trims leading/trailing separators.
 // Allowed: letters, digits, underscore, hyphen.

@@ -110,14 +110,15 @@ type InjectionArg struct {
 
 // RemoteHook represents a remote hook configuration
 type RemoteHook struct {
-	ID          string            `json:"id" example:"h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
-	Name        string            `json:"name" example:"mailing-tools"`
-	EndpointURL string            `json:"endpointUrl" example:"http://hooks-endpoint:port"`
-	TimeoutMs   int               `json:"timeoutMs" example:"5000"`
-	Headers     map[string]string `json:"headers,omitempty" example:"Authorization:Bearer token,Content-Type:application/json"`
-	Properties  InjectionArg      `json:"properties"`
-	CreatedAt   time.Time         `json:"createdAt" example:"2023-11-15T14:30:45Z"`
-	UpdatedAt   time.Time         `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
+	ID           string            `json:"id" example:"h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
+	Name         string            `json:"name" example:"mailing-tools"`
+	EndpointURL  string            `json:"endpointUrl" example:"http://hooks-endpoint:port"`
+	TimeoutMs    int               `json:"timeoutMs" example:"5000"`
+	Headers      map[string]string `json:"headers,omitempty" example:"Authorization:Bearer token,Content-Type:application/json"`
+	Properties   InjectionArg      `json:"properties"`
+	InjectParams map[string]string `json:"injectParams,omitempty"` // injected as tool call args, hidden from model schema
+	CreatedAt    time.Time         `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt    time.Time         `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
 type Store interface {

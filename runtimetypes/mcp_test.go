@@ -316,3 +316,157 @@ func TestUnit_MCPServers_EstimateCount(t *testing.T) {
 	_, err := s.EstimateMCPServerCount(ctx)
 	require.NoError(t, err)
 }
+
+// ─── headers_json / inject_params_json round-trips ───────────────────────────
+// These tests specifically cover the fields that were silently absent from the
+// SELECT queries in GetMCPServer and GetMCPServerByName before the fix, causing
+// a runtime "sql: expected 12 destination arguments in Scan, not 14" error.
+// Any future field added to MCPServer must be tested here.
+
+func TestUnit_MCPServers_HeadersAndInjectParams_GetByID(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	srv := newSSE("inject-by-id-" + uuid.New().String()[:8])
+	srv.Headers = map[string]string{"X-Tenant": "acme", "X-Version": "2"}
+	srv.InjectParams = map[string]string{"tenant_id": "acme", "env": "production"}
+
+	require.NoError(t, s.CreateMCPServer(ctx, srv))
+
+	got, err := s.GetMCPServer(ctx, srv.ID)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"X-Tenant": "acme", "X-Version": "2"}, got.Headers)
+	require.Equal(t, map[string]string{"tenant_id": "acme", "env": "production"}, got.InjectParams)
+}
+
+func TestUnit_MCPServers_HeadersAndInjectParams_GetByName(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	name := "inject-by-name-" + uuid.New().String()[:8]
+	srv := newSSE(name)
+	srv.Headers = map[string]string{"Authorization": "Bearer tok"}
+	srv.InjectParams = map[string]string{"correlation_id": "trace-xyz"}
+
+	require.NoError(t, s.CreateMCPServer(ctx, srv))
+
+	got, err := s.GetMCPServerByName(ctx, name)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"Authorization": "Bearer tok"}, got.Headers)
+	require.Equal(t, map[string]string{"correlation_id": "trace-xyz"}, got.InjectParams)
+}
+
+func TestUnit_MCPServers_UpdateReplacesInjectParamsAndHeaders(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	srv := newSSE("inject-update-" + uuid.New().String()[:8])
+	srv.Headers = map[string]string{"Old-Header": "1"}
+	srv.InjectParams = map[string]string{"old_key": "old_val", "extra": "gone"}
+	require.NoError(t, s.CreateMCPServer(ctx, srv))
+
+	srv.Headers = map[string]string{"New-Header": "2"}
+	srv.InjectParams = map[string]string{"tenant_id": "new"}
+	require.NoError(t, s.UpdateMCPServer(ctx, srv))
+
+	got, err := s.GetMCPServer(ctx, srv.ID)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"New-Header": "2"}, got.Headers)
+	require.Equal(t, map[string]string{"tenant_id": "new"}, got.InjectParams)
+	_, hasExtra := got.InjectParams["extra"]
+	require.False(t, hasExtra, "update must replace entire map, not merge")
+}
+
+func TestUnit_MCPServers_ListIncludesInjectParamsAndHeaders(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	srv := newSSE("inject-list-" + uuid.New().String()[:8])
+	srv.Headers = map[string]string{"X-Key": "val"}
+	srv.InjectParams = map[string]string{"key": "val"}
+	require.NoError(t, s.CreateMCPServer(ctx, srv))
+
+	list, err := s.ListMCPServers(ctx, nil, 100)
+	require.NoError(t, err)
+
+	var found *runtimetypes.MCPServer
+	for _, m := range list {
+		if m.ID == srv.ID {
+			found = m
+			break
+		}
+	}
+	require.NotNil(t, found, "created server must appear in list")
+	require.Equal(t, map[string]string{"X-Key": "val"}, found.Headers)
+	require.Equal(t, map[string]string{"key": "val"}, found.InjectParams)
+}
+
+func TestUnit_MCPServers_EmptyMapsRoundTrip(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	srv := newStdio("empty-maps-" + uuid.New().String()[:8])
+	// No Headers or InjectParams — verify no crash and empty result.
+	require.NoError(t, s.CreateMCPServer(ctx, srv))
+
+	got, err := s.GetMCPServer(ctx, srv.ID)
+	require.NoError(t, err)
+	require.Empty(t, got.InjectParams)
+	require.Empty(t, got.Headers)
+}
+
+// ─── RemoteHook inject_params_json round-trips ────────────────────────────────
+
+func newHook(name string) *runtimetypes.RemoteHook {
+	return &runtimetypes.RemoteHook{
+		ID:          uuid.New().String(),
+		Name:        name,
+		EndpointURL: "https://api.example.com/hook",
+		TimeoutMs:   5000,
+	}
+}
+
+func TestUnit_RemoteHook_InjectParamsRoundTrip(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	hook := newHook("hook-inject-" + uuid.New().String()[:8])
+	hook.InjectParams = map[string]string{"tenant_id": "acme", "env": "prod"}
+	require.NoError(t, s.CreateRemoteHook(ctx, hook))
+
+	got, err := s.GetRemoteHook(ctx, hook.ID)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"tenant_id": "acme", "env": "prod"}, got.InjectParams)
+}
+
+func TestUnit_RemoteHook_UpdateInjectParamsReplaceAll(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	hook := newHook("hook-upd-" + uuid.New().String()[:8])
+	hook.InjectParams = map[string]string{"old": "value", "extra": "gone"}
+	require.NoError(t, s.CreateRemoteHook(ctx, hook))
+
+	hook.InjectParams = map[string]string{"tenant_id": "new"}
+	require.NoError(t, s.UpdateRemoteHook(ctx, hook))
+
+	got, err := s.GetRemoteHook(ctx, hook.ID)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"tenant_id": "new"}, got.InjectParams)
+	_, hasExtra := got.InjectParams["extra"]
+	require.False(t, hasExtra, "update must replace entire map")
+}
+
+func TestUnit_RemoteHook_ListIncludesInjectParams(t *testing.T) {
+	ctx, s := runtimetypes.SetupStore(t)
+
+	hook := newHook("hook-list-" + uuid.New().String()[:8])
+	hook.InjectParams = map[string]string{"correlation_id": "trace-abc"}
+	require.NoError(t, s.CreateRemoteHook(ctx, hook))
+
+	list, err := s.ListRemoteHooks(ctx, nil, 100)
+	require.NoError(t, err)
+
+	var found *runtimetypes.RemoteHook
+	for _, h := range list {
+		if h.ID == hook.ID {
+			found = h
+			break
+		}
+	}
+	require.NotNil(t, found)
+	require.Equal(t, map[string]string{"correlation_id": "trace-abc"}, found.InjectParams)
+}

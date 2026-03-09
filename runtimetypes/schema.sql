@@ -83,12 +83,14 @@ CREATE TABLE IF NOT EXISTS remote_hooks (
     timeout_ms INT NOT NULL DEFAULT 5000,
     headers JSONB,
     properties BYTEA,
+    inject_params_json JSONB NOT NULL DEFAULT '{}',
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL
 );
 
 ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS body_properties BYTEA;
 ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS headers JSONB;
+ALTER TABLE remote_hooks ADD COLUMN IF NOT EXISTS inject_params_json JSONB DEFAULT '{}';
 
 
 CREATE INDEX IF NOT EXISTS idx_job_queue_v2_task_type ON job_queue_v2 USING hash(task_type);
@@ -139,4 +141,6 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     created_at              TIMESTAMP NOT NULL,
     updated_at              TIMESTAMP NOT NULL
 );
+ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS headers_json JSONB DEFAULT '{}';
+ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS inject_params_json JSONB DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);

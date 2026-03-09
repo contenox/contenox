@@ -22,12 +22,32 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "ollama", "model", c.modelName)
 	defer end()
 
-	// Convert messages to Ollama API format (we preserve role, including "tool")
+	// Convert messages to Ollama API format (we preserve role, including "tool").
+	// We must also map ToolCalls from assistant messages so Ollama knows what tools
+	// were already called — without this the LLM has no context of its prior tool calls.
 	apiMessages := make([]api.Message, 0, len(messages))
 	for _, msg := range messages {
+		var apiToolCalls []api.ToolCall
+		if len(msg.ToolCalls) > 0 {
+			for _, tc := range msg.ToolCalls {
+				argsStr := tc.Function.Arguments
+				if argsStr == "" {
+					argsStr = "{}"
+				}
+				var tcArgs api.ToolCallFunctionArguments
+				_ = json.Unmarshal([]byte(argsStr), &tcArgs)
+				apiToolCalls = append(apiToolCalls, api.ToolCall{
+					Function: api.ToolCallFunction{
+						Name:      tc.Function.Name,
+						Arguments: tcArgs,
+					},
+				})
+			}
+		}
 		apiMessages = append(apiMessages, api.Message{
-			Role:    msg.Role,
-			Content: msg.Content,
+			Role:      msg.Role,
+			Content:   msg.Content,
+			ToolCalls: apiToolCalls,
 		})
 	}
 
