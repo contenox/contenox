@@ -99,7 +99,7 @@ The following paths are automatically excluded from tool discovery:
 
 Add the hook's name to `execute_config.hooks`:
 
-```json
+```json v-pre
 {
   "id": "weather_task",
   "handler": "chat_completion",

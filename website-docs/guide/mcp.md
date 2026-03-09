@@ -67,7 +67,7 @@ The test server returns a `session_token` in every response so you can see the p
 
 Reference them by name in `execute_config.hooks`:
 
-```json
+```json v-pre
 {
   "id": "ask_with_memory",
   "handler": "chat_completion",
