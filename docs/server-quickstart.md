@@ -19,11 +19,11 @@ cd contenox
 export EMBED_MODEL=nomic-embed-text:latest
 export EMBED_PROVIDER=ollama
 export EMBED_MODEL_CONTEXT_LENGTH=2048
-export TASK_MODEL=phi3:3.8b
-export TASK_MODEL_CONTEXT_LENGTH=2048
+export TASK_MODEL=qwen2.5:7b
+export TASK_MODEL_CONTEXT_LENGTH=32768
 export TASK_PROVIDER=ollama
-export CHAT_MODEL=phi3:3.8b
-export CHAT_MODEL_CONTEXT_LENGTH=2048
+export CHAT_MODEL=qwen2.5:7b
+export CHAT_MODEL_CONTEXT_LENGTH=32768
 export CHAT_PROVIDER=ollama
 export OLLAMA_BACKEND_URL="http://ollama:11434"
 # or any other like: export OLLAMA_BACKEND_URL="http://host.docker.internal:11434"

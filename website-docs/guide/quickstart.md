@@ -52,7 +52,7 @@ contenox config set default-model qwen2.5:7b
 
 # Or OpenAI:
 # contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
-# contenox config set default-model gpt-4o
+# contenox config set default-model gpt-5-mini
 ```
 
 ## Start chatting

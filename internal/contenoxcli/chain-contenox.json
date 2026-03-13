@@ -11,10 +11,7 @@
         "model": "{{var:model}}",
         "provider": "{{var:provider}}",
         "pass_clients_tools": false,
-        "hooks": [
-          "local_shell",
-          "local_fs"
-        ]
+        "hooks": ["*"]
       },
       "transition": {
         "on_failure": "",
@@ -49,5 +46,5 @@
       }
     }
   ],
-  "token_limit": 32768
+  "token_limit": 131072
 }

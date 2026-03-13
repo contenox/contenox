@@ -30,7 +30,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "plan": true, "run": true, "hook": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "vibe": true, "help": true, "completion": true, "session": true, "plan": true, "run": true, "hook": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -60,6 +60,14 @@ func Main() {
 // firstNonFlagIsReserved scans args, skipping flags and their values, and returns
 // true if the first positional argument is a reserved subcommand name.
 func firstNonFlagIsReserved(args []string) bool {
+	// Boolean flags that do NOT consume the next token as their value.
+	// Without this list, `contenox --trace chat` would mistake "chat" for the
+	// value of --trace and then forward it to the chat command as text input.
+	boolFlags := map[string]bool{
+		"--shell": true, "--trace": true, "--steps": true, "--raw": true,
+		"--think": true, "--no-delete-models": true,
+		"-h": true, "--help": true, "-v": true, "--version": true,
+	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		if a == "--" {
@@ -70,10 +78,11 @@ func firstNonFlagIsReserved(args []string) bool {
 			return false
 		}
 		if strings.HasPrefix(a, "--") {
-			// Long flag: if it has no '=' it consumes the next token as its value.
-			if !strings.Contains(a, "=") {
-				i++ // skip value
+			// Long flag: boolean flags and flag=value forms don't consume next token.
+			if strings.Contains(a, "=") || boolFlags[a] {
+				continue
 			}
+			i++ // this flag consumes the next token as its value
 			continue
 		}
 		if strings.HasPrefix(a, "-") && len(a) > 1 {
@@ -99,6 +108,7 @@ No daemon, no cloud required. State is stored in SQLite.
   Quickstart:
     contenox init                          # scaffold .contenox/ with default chains
     contenox "list files in my home dir"   # one-shot natural language → shell
+    contenox vibe                          # interactive TUI: chat + plans + shell
     contenox plan new "some multi-step goal"  # create an autonomous multi-step plan
     contenox plan next --auto              # execute plan steps until done
 
@@ -177,11 +187,11 @@ After init, register a backend and set your default model:
 
   # OpenAI:
   contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
-  contenox config set default-model gpt-4o
+  contenox config set default-model gpt-5-mini
 
   # Google Gemini:
   contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
-  contenox config set default-model gemini-2.0-flash
+  contenox config set default-model gemini-3.1-pro-preview
 
 Use --force to overwrite existing files.`,
 	Args: cobra.MaximumNArgs(1),
@@ -242,8 +252,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 	// No subcommand, no input, and no piped stdin: show help and exit 0.
 	flags := cmd.Root().Flags()
 	if len(args) == 0 && !flags.Changed("input") {
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) != 0 {
+		if stat, err := os.Stdin.Stat(); err != nil || (stat.Mode()&os.ModeCharDevice) != 0 {
 			_ = cmd.Root().Usage()
 			return nil
 		}
@@ -350,13 +359,10 @@ func runChat(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(libtracker.WithNewRequestID(context.Background()), timeout)
 	defer cancel()
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		slog.Warn("Received interrupt, shutting down...")
-		cancel()
-	}()
+	// Use signal.NotifyContext so cleanup is automatic when the cmd returns;
+	// avoids leaking a goroutine blocked forever on <-sigCh.
+	ctx, cancel = signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
 	effectiveThink, _ := flags.GetBool("think")
 	historyTrim, _ := cmd.Flags().GetInt("trim")
@@ -383,8 +389,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 		InputFlagPassed:                   inputPassed,
 		ContenoxDir:                       contenoxDir,
 	}
-	execChat(ctx, opts)
-	return nil
+	return execChat(ctx, db, opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 // Sentinel errors so RunE can return and main can os.Exit(1).

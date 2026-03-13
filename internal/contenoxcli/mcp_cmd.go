@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"text/tabwriter"
 
-	"github.com/contenox/contenox/libdbexec"
+	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/mcpserverservice"
 	"github.com/contenox/contenox/runtimetypes"
 	"github.com/spf13/cobra"
 )
@@ -65,10 +65,7 @@ Examples:
     --auth-type bearer --auth-env MCP_TOKEN`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if ctx == nil {
-			ctx = context.Background()
-		}
+		ctx := libtracker.WithNewRequestID(context.Background())
 		name := args[0]
 		flags := cmd.Flags()
 
@@ -103,7 +100,7 @@ Examples:
 			return fmt.Errorf("--url is required for sse/http transport")
 		}
 
-		db, store, err := openMCPDB(cmd)
+		db, svc, err := openMCPService(cmd)
 		if err != nil {
 			return err
 		}
@@ -123,10 +120,10 @@ Examples:
 			InjectParams:          injectParams,
 		}
 
-		if err := store.CreateMCPServer(ctx, srv); err != nil {
+		if err := svc.Create(ctx, srv); err != nil {
 			return fmt.Errorf("failed to add MCP server: %w", err)
 		}
-		fmt.Printf("MCP server %q added successfully.\n", name)
+		fmt.Fprintf(cmd.OutOrStdout(), "MCP server %q added successfully.\n", name)
 		return nil
 	},
 }
@@ -136,28 +133,24 @@ var mcpListCmd = &cobra.Command{
 	Short: "List all registered MCP servers.",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if ctx == nil {
-			ctx = context.Background()
-		}
-
-		db, store, err := openMCPDB(cmd)
+		ctx := libtracker.WithNewRequestID(context.Background())
+		db, svc, err := openMCPService(cmd)
 		if err != nil {
 			return err
 		}
 		defer db.Close()
 
-		servers, err := store.ListMCPServers(ctx, nil, 100)
+		servers, err := svc.List(ctx, nil, 100)
 		if err != nil {
 			return fmt.Errorf("failed to list MCP servers: %w", err)
 		}
 
 		if len(servers) == 0 {
-			fmt.Println("No MCP servers registered. Run: contenox mcp add <name> --transport <type> ...")
+			fmt.Fprintln(cmd.OutOrStdout(), "No MCP servers registered. Run: contenox mcp add <name> --transport <type> ...")
 			return nil
 		}
 
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND/URL")
 		for _, s := range servers {
 			target := s.Command
@@ -175,18 +168,15 @@ var mcpShowCmd = &cobra.Command{
 	Short: "Show details for an MCP server.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if ctx == nil {
-			ctx = context.Background()
-		}
+		ctx := libtracker.WithNewRequestID(context.Background())
 		name := args[0]
-		db, store, err := openMCPDB(cmd)
+		db, svc, err := openMCPService(cmd)
 		if err != nil {
 			return err
 		}
 		defer db.Close()
 
-		srv, err := store.GetMCPServerByName(ctx, name)
+		srv, err := svc.GetByName(ctx, name)
 		if err != nil {
 			return fmt.Errorf("mcp server %q not found: %w", name, err)
 		}
@@ -212,7 +202,7 @@ var mcpShowCmd = &cobra.Command{
 		}
 
 		b, _ := json.MarshalIndent(display, "", "  ")
-		fmt.Println(string(b))
+		fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		return nil
 	},
 }
@@ -223,31 +213,28 @@ var mcpRemoveCmd = &cobra.Command{
 	Short:   "Remove a registered MCP server.",
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if ctx == nil {
-			ctx = context.Background()
-		}
+		ctx := libtracker.WithNewRequestID(context.Background())
 		name := args[0]
-		db, store, err := openMCPDB(cmd)
+		db, svc, err := openMCPService(cmd)
 		if err != nil {
 			return err
 		}
 		defer db.Close()
 
-		srv, err := store.GetMCPServerByName(ctx, name)
+		srv, err := svc.GetByName(ctx, name)
 		if err != nil {
 			return fmt.Errorf("mcp server %q not found: %w", name, err)
 		}
 
-		if err := store.DeleteMCPServer(ctx, srv.ID); err != nil {
+		if err := svc.Delete(ctx, srv.ID); err != nil {
 			return fmt.Errorf("failed to remove mcp server: %w", err)
 		}
-		fmt.Printf("MCP server %q removed.\n", name)
+		fmt.Fprintf(cmd.OutOrStdout(), "MCP server %q removed.\n", name)
 		return nil
 	},
 }
 
-func openMCPDB(cmd *cobra.Command) (libdbexec.DBManager, runtimetypes.Store, error) {
+func openMCPService(cmd *cobra.Command) (libdb.DBManager, mcpserverservice.Service, error) {
 	dbPath, err := resolveDBPath(cmd)
 	if err != nil {
 		return nil, nil, fmt.Errorf("invalid database path: %w", err)
@@ -257,7 +244,7 @@ func openMCPDB(cmd *cobra.Command) (libdbexec.DBManager, runtimetypes.Store, err
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open database: %w", err)
 	}
-	return db, runtimetypes.New(db.WithoutTransaction()), nil
+	return db, mcpserverservice.New(db), nil
 }
 
 var mcpUpdateCmd = &cobra.Command{
@@ -265,18 +252,15 @@ var mcpUpdateCmd = &cobra.Command{
 	Short: "Update an existing MCP server registration.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if ctx == nil {
-			ctx = context.Background()
-		}
+		ctx := libtracker.WithNewRequestID(context.Background())
 		name := args[0]
-		db, store, err := openMCPDB(cmd)
+		db, svc, err := openMCPService(cmd)
 		if err != nil {
 			return err
 		}
 		defer db.Close()
 
-		srv, err := store.GetMCPServerByName(ctx, name)
+		srv, err := svc.GetByName(ctx, name)
 		if err != nil {
 			return fmt.Errorf("mcp server %q not found: %w", name, err)
 		}
@@ -311,10 +295,10 @@ var mcpUpdateCmd = &cobra.Command{
 			srv.InjectParams = injectParams
 		}
 
-		if err := store.UpdateMCPServer(ctx, srv); err != nil {
+		if err := svc.Update(ctx, srv); err != nil {
 			return fmt.Errorf("failed to update mcp server: %w", err)
 		}
-		fmt.Printf("MCP server %q updated.\n", name)
+		fmt.Fprintf(cmd.OutOrStdout(), "MCP server %q updated.\n", name)
 		return nil
 	},
 }

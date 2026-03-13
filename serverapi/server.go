@@ -36,9 +36,11 @@ import (
 	"github.com/contenox/contenox/internal/hooksapi"
 	"github.com/contenox/contenox/internal/llmrepo"
 	"github.com/contenox/contenox/internal/mcpserverapi"
+	"github.com/contenox/contenox/internal/planapi"
 	"github.com/contenox/contenox/internal/providerapi"
 	"github.com/contenox/contenox/internal/runtimestate"
 	"github.com/contenox/contenox/internal/taskchainapi"
+	"github.com/contenox/contenox/internal/vfsapi"
 	libbus "github.com/contenox/contenox/libbus"
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libroutine"
@@ -47,11 +49,13 @@ import (
 	"github.com/contenox/contenox/mcpworker"
 	"github.com/contenox/contenox/modelservice"
 	"github.com/contenox/contenox/openaichatservice"
+	"github.com/contenox/contenox/planservice"
 	"github.com/contenox/contenox/providerservice"
 	"github.com/contenox/contenox/runtimetypes"
 	"github.com/contenox/contenox/stateservice"
 	"github.com/contenox/contenox/taskchainservice"
 	"github.com/contenox/contenox/taskengine"
+	"github.com/contenox/contenox/vfsservice"
 )
 
 func New(
@@ -207,6 +211,13 @@ func New(
 	eventmappingapi.AddMappingRoutes(mux, eventMappingService)
 	eventbridgeService := eventbridgeservice.New(eventMappingService, eventSourceService, time.Second*3)
 	eventbridgeapi.AddEventBridgeRoutes(mux, eventbridgeService)
+
+	vfsSvc := vfsservice.New(dbInstance, vfsservice.Callbacks{})
+	vfsSvc = vfsservice.WithActivityTracker(vfsSvc, serveropsChainedTracker)
+	vfsapi.AddRoutes(mux, vfsSvc)
+
+	planSvc := planservice.New(dbInstance, taskService, vfsSvc)
+	planapi.AddPlanRoutes(mux, planSvc, taskChainService)
 
 	return cleanup, nil
 }

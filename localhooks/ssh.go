@@ -3,6 +3,7 @@ package localhooks
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net"
@@ -106,15 +107,16 @@ func (c *SSHClientCache) Clear() {
 	}
 }
 
-// IsAlive checks if a cached client is still connected
+// IsAlive checks if a cached client is still connected.
+// The read lock is released before the network call so that concurrent
+// Put/Remove calls do not deadlock while SendRequest blocks.
 func (c *SSHClientCache) IsAlive(key string) bool {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 	client, exists := c.clients[key]
+	c.mu.RUnlock() // release before blocking I/O
 	if !exists {
 		return false
 	}
-
 	// Send a keepalive request to check connection
 	_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
 	return err == nil
@@ -658,7 +660,11 @@ func (h *SSHHook) createNewClient(config *SSHConfig, sshConfig *ssh.ClientConfig
 
 // getCachedClient retrieves or creates a cached SSH client
 func (h *SSHHook) getCachedClient(config *SSHConfig, sshConfig *ssh.ClientConfig) (*ssh.Client, error) {
-	cacheKey := fmt.Sprintf("%s@%s:%d", config.User, config.Host, config.Port)
+	// Include auth credentials in the cache key so two connections to the same
+	// host with different keys/passwords never share a cached session.
+	authMaterial := config.Password + "|" + config.PrivateKey + "|" + config.PrivateKeyFile
+	authHash := sha256.Sum256([]byte(authMaterial))
+	cacheKey := fmt.Sprintf("%s@%s:%d|%x", config.User, config.Host, config.Port, authHash)
 
 	// Check cache first
 	if client, exists := h.clientCache.Get(cacheKey); exists {

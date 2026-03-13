@@ -40,7 +40,7 @@ func TestChatService_OpenAIChatCompletions(t *testing.T) {
 	t.Run("ModelExecutionHandler_ProcessesOpenAIChatInput", func(t *testing.T) {
 		// Create a task chain definitions
 		td := []*taskengine.TaskChainDefinition{
-			&taskengine.TaskChainDefinition{
+			{
 				ID:          "openai-direct-exec-chain-magic",
 				Description: "Test chain for OpenAI chat completions with model execution",
 				TokenLimit:  2048,
@@ -66,7 +66,7 @@ func TestChatService_OpenAIChatCompletions(t *testing.T) {
 					},
 				},
 			},
-			&taskengine.TaskChainDefinition{
+			{
 				ID:          "openai-direct-exec-chain-simple",
 				Description: "Test chain for OpenAI chat completions with model execution",
 				TokenLimit:  2048,

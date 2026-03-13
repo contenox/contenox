@@ -94,6 +94,65 @@ func (s *store) getPlanByCondition(ctx context.Context, condition string, arg an
 	return &p, nil
 }
 
+// GetActivePlan returns the most recently updated active plan.
+func (s *store) GetActivePlan(ctx context.Context) (*Plan, error) {
+	var p Plan
+	var sessionID sql.NullString
+	var status string
+	err := s.Exec.QueryRowContext(ctx, `
+		SELECT id, name, goal, status, session_id, created_at, updated_at
+		FROM plans
+		WHERE status = 'active'
+		ORDER BY updated_at DESC
+		LIMIT 1`,
+	).Scan(&p.ID, &p.Name, &p.Goal, &status, &sessionID, &p.CreatedAt, &p.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active plan: %w", err)
+	}
+	p.Status = PlanStatus(status)
+	if sessionID.Valid {
+		p.SessionID = sessionID.String
+	}
+	return &p, nil
+}
+
+// ClaimNextPendingStep atomically transitions the next pending step to running
+// and returns it. Returns ErrNotFound when no pending step exists.
+// FOR UPDATE SKIP LOCKED ensures two concurrent callers cannot claim the same step.
+func (s *store) ClaimNextPendingStep(ctx context.Context, planID string) (*PlanStep, error) {
+	var step PlanStep
+	var status string
+	var execAt sql.NullTime
+	err := s.Exec.QueryRowContext(ctx, `
+		UPDATE plan_steps
+		SET status = 'running'
+		WHERE id = (
+			SELECT id FROM plan_steps
+			WHERE plan_id = $1 AND status = 'pending'
+			ORDER BY ordinal ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		AND status = 'pending'
+		RETURNING id, plan_id, ordinal, description, status, execution_result, executed_at`,
+		planID,
+	).Scan(&step.ID, &step.PlanID, &step.Ordinal, &step.Description, &status, &step.ExecutionResult, &execAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to claim next pending step: %w", err)
+	}
+	step.Status = StepStatus(status)
+	if execAt.Valid {
+		step.ExecutedAt = execAt.Time
+	}
+	return &step, nil
+}
+
 func (s *store) ListPlans(ctx context.Context) ([]*Plan, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
 		SELECT id, name, goal, status, session_id, created_at, updated_at
@@ -249,15 +308,6 @@ func (s *store) UpdatePlanStepStatus(ctx context.Context, stepID string, status 
 	return checkRowsAffected(res)
 }
 
-func (s *store) UpdatePlanSteps(ctx context.Context, planID string, steps ...*PlanStep) error {
-	// Replan operation: delete all existing steps and recreate them
-	_, err := s.Exec.ExecContext(ctx, "DELETE FROM plan_steps WHERE plan_id = $1", planID)
-	if err != nil {
-		return fmt.Errorf("failed to delete old plan steps for replan: %w", err)
-	}
-	return s.CreatePlanSteps(ctx, steps...)
-}
-
 func (s *store) DeletePendingPlanSteps(ctx context.Context, planID string) error {
 	_, err := s.Exec.ExecContext(ctx, "DELETE FROM plan_steps WHERE plan_id = $1 AND status = 'pending'", planID)
 	if err != nil {
@@ -265,6 +315,37 @@ func (s *store) DeletePendingPlanSteps(ctx context.Context, planID string) error
 	}
 	return nil
 }
+
+// DeleteFinishedPlans removes all completed and archived plans in a single
+// statement. Returns the number of plans deleted.
+func (s *store) DeleteFinishedPlans(ctx context.Context) (int, error) {
+	rows, err := s.Exec.QueryContext(ctx,
+		`DELETE FROM plans WHERE status IN ('completed','archived') RETURNING id`)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete finished plans: %w", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var id string
+		_ = rows.Scan(&id)
+		count++
+	}
+	return count, rows.Err()
+}
+
+// ArchiveActivePlans sets every active plan's status to 'archived' in one query.
+func (s *store) ArchiveActivePlans(ctx context.Context) error {
+	_, err := s.Exec.ExecContext(ctx,
+		`UPDATE plans SET status = 'archived', updated_at = $1 WHERE status = 'active'`,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to archive active plans: %w", err)
+	}
+	return nil
+}
+
 
 func (s *store) touchPlanByStepID(ctx context.Context, stepID string, now time.Time) error {
 	_, err := s.Exec.ExecContext(ctx, `

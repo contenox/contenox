@@ -7,16 +7,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <title>
-        Contenox — Archivierte Runtime für souveräne GenAI-Workflows
+        Contenox — Runtime für souveräne GenAI-Workflows
     </title>
     <meta name="description"
-        content="Contenox war eine selbst hostbare Runtime zum Aufbau beobachtbarer, deterministischer KI-Workflows als Zustandsmaschinen. Das Projekt ist eingestellt, der Kernel bleibt als Open-Source-Referenz auf GitHub verfügbar." />
+        content="Contenox ist eine selbst hostbare Runtime zum Aufbau beobachtbarer, deterministischer KI-Workflows als Zustandsmaschinen. Open-Source und aktiv weiterentwickelt." />
     <meta name="author" content="Contenox" />
 
     <!-- Open Graph -->
-    <meta property="og:title" content="Contenox — Archivierte Runtime für souveräne GenAI-Workflows" />
+    <meta property="og:title" content="Contenox — Runtime für souveräne GenAI-Workflows" />
     <meta property="og:description"
-        content="Contenox war eine selbst hostbare, anbieterunabhängige Runtime für souveräne GenAI-Anwendungen. Das Projekt wird nicht mehr aktiv weiterentwickelt; der Code bleibt als Open Source verfügbar." />
+        content="Contenox ist eine selbst hostbare, anbieterunabhängige Runtime für souveräne GenAI-Anwendungen. Open-Source und aktiv weiterentwickelt." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://contenox.com/de.html" />
     <meta property="og:image" content="https://contenox.com/assets/images/contenox-ui-screenshot-1.png" />
@@ -57,10 +57,11 @@
                     <li><a href="#when-to-use">Wann</a></li>
                     <li><a href="#how-it-works">Wie</a></li>
                     <li><a href="#architecture">Architektur</a></li>
-                    
+
                     <li><a href="/docs/">Docs</a></li>
                     <li>
-                        <a href="https://github.com/contenox/contenox" target="_blank" rel="noopener noreferrer">GitHub</a>
+                        <a href="https://github.com/contenox/contenox" target="_blank"
+                            rel="noopener noreferrer">GitHub</a>
                     </li>
                     <li>
                         <a href="index.html" class="language-switch" hreflang="en" lang="en">EN</a>
@@ -78,7 +79,7 @@
                 </div>
                 <div class="hero-content container">
                     <p class="hero-subtitle" style="margin-bottom: 0.75rem">
-                        Archiviertes Runtime-Projekt für souveräne
+                        Runtime für souveräne
                         GenAI-Anwendungen
                     </p>
                     <h1 id="hero-heading">
@@ -86,17 +87,17 @@
                         <span class="text-accent">beobachtbare Zustandsmaschinen.</span>
                     </h1>
                     <p class="hero-subtitle">
-                        Contenox war eine selbst hostbare Runtime für
+                        Contenox ist eine selbst hostbare Runtime für
                         deterministische, chat-native KI-Anwendungen.
                         Orchestriere Sprachmodelle, Tools und
                         Business-Logik, ohne Kontrolle über Daten, Routing
                         oder Verhalten abzugeben.
                     </p>
                     <p class="hero-subtitle" style="font-size: 0.95rem">
-                        Das Venture hinter Contenox wurde eingestellt. Der
-                        Kernel bleibt als Open-Source-Projekt verfügbar und
-                        kann weiterhin als Referenz oder
-                        Experimentierplattform genutzt werden.
+                        Die Contenox Runtime API wird aktiv weiterentwickelt. Der
+                        Kernel ist Open-Source und kann als Referenz,
+                        für Produktionsdeployments per Docker oder als
+                        Experimentierbasis genutzt werden.
                     </p>
                     <div class="hero-actions">
                         <a href="https://github.com/contenox/contenox" target="_blank" rel="noopener noreferrer"
@@ -128,11 +129,10 @@
                     </ul>
 
                     <p class="smallprint">
-                        Contenox wird nicht mehr aktiv weiterentwickelt.
-                        Diese Seite bleibt als Dokumentation und Kontext für
-                        Entwickler:innen, Analyst:innen und neugierige
-                        Menschen bestehen, die die Architektur oder Ansätze
-                        des Projekts nachvollziehen möchten.
+                        Die Contenox Runtime API wird aktiv weiterentwickelt.
+                        Diese Seite dient als Dokumentation und Kontext für
+                        Entwickler:innen, Analyst:innen und alle, die die
+                        Architektur und Ansätze des Projekts nachvollziehen möchten.
                     </p>
                 </div>
             </section>
@@ -180,12 +180,12 @@
             <!-- WHAT IT IS -->
             <section id="what-it-is" class="section">
                 <div class="container">
-                    <h2>Was war Contenox?</h2>
+                    <h2>Was ist Contenox?</h2>
                     <p class="section-lead">
-                        Contenox war eine selbst hostbare Runtime zum Aufbau
+                        Contenox ist eine selbst hostbare Runtime zum Aufbau
                         und Betrieb von Enterprise-Agents, semantischer
                         Suche und chat-getriebenen Anwendungen. KI-Verhalten
-                        wurde als explizite, beobachtbare Zustandsmaschinen
+                        wird als explizite, beobachtbare Zustandsmaschinen
                         statt als intransparente Prompt-Ketten modelliert.
                     </p>
 
@@ -193,7 +193,7 @@
                         <article class="card service-card">
                             <h3>Runtime, nicht nur Library</h3>
                             <p>
-                                Contenox war eine vollständige
+                                Contenox ist eine vollständige
                                 Runtime-Umgebung – mit API-Gateway,
                                 Background-Workern, Storage und
                                 Observability – nicht nur eine Sammlung von
@@ -223,7 +223,7 @@
                             </h3>
                             <p>
                                 Betrieb on-prem, in der eigenen Cloud oder
-                                air-gapped. Requests konnten über OpenAI,
+                                air-gapped. Requests können über OpenAI,
                                 Ollama, vLLM oder eigene Backends geroutet
                                 werden – ohne Lock-in.
                             </p>
@@ -237,22 +237,21 @@
                 <div class="container">
                     <h2>Warum der Ansatz weiterhin relevant ist</h2>
                     <p class="section-lead">
-                        Auch wenn Contenox als Venture beendet wurde, bleibt
-                        die Grundidee gültig: moderne KI-Systeme driften
-                        schnell in Intransparenz. Runtimes, die Logik,
-                        Datenflüsse und Seiteneffekte explizit machen,
-                        helfen Teams, über Verhalten nachzudenken statt zu
-                        raten.
+                        Moderne KI-Systeme driften schnell in Intransparenz.
+                        Runtimes, die Logik, Datenflüsse und Seiteneffekte
+                        explizit machen, helfen Teams, über Verhalten
+                        nachzudenken statt zu raten. Contenox ist auf
+                        diesem Prinzip aufgebaut.
                     </p>
 
                     <div class="capabilities-grid">
                         <div class="card capability-card">
                             <h4>Souveränität</h4>
                             <p>
-                                Die Runtime war so ausgelegt, dass Teams
+                                Die Runtime ist so ausgelegt, dass Teams
                                 Daten, Ausführungsgrenzen und
                                 Entscheidungslogik selbst kontrollieren
-                                konnten – ohne versteckte SaaS-Schichten.
+                                können – ohne versteckte SaaS-Schichten.
                             </p>
                         </div>
                         <div class="card capability-card">
@@ -345,9 +344,9 @@
                         <div class="card capability-card">
                             <h4>Hooks: Anbindung an beliebige Systeme</h4>
                             <p>
-                                Über Hooks konnten externe APIs, Datenbanken
+                                Über Hooks können externe APIs, Datenbanken
                                 oder Tools angebunden werden. Beliebige
-                                OpenAPI-kompatible Endpunkte wurden zu
+                                OpenAPI-kompatible Endpunkte werden zu
                                 aufrufbaren Tools für das Modell.
                             </p>
                         </div>
@@ -386,8 +385,8 @@
                 <div class="container">
                     <h2>Architektur im Überblick</h2>
                     <p class="section-lead">
-                        Contenox war modular und container-first aufgebaut.
-                        Die Runtime konnte in bestehende Stacks eingebettet
+                        Contenox ist modular und container-first aufgebaut.
+                        Die Runtime kann in bestehende Stacks eingebettet
                         oder als eigene Infrastruktur-Schicht für KI
                         betrieben werden.
                     </p>
@@ -443,8 +442,8 @@
                     </div>
 
                     <p class="smallprint" style="margin-top: 2rem">
-                        Contenox war keine Black-Box-SaaS, sondern Software,
-                        die selbst betrieben und angepasst werden konnte –
+                        Contenox ist keine Black-Box-SaaS, sondern Software,
+                        die selbst betrieben und angepasst werden kann –
                         eine Runtime zwischen LLMs und produktiven Systemen.
                     </p>
                 </div>
@@ -471,11 +470,9 @@
                         </p>
 
                         <p>
-                            Das Venture hinter Contenox wurde beendet und
-                            das Projekt wird nicht mehr aktiv
-                            weiterentwickelt oder kommerziell betrieben.
-                            Issues und Pull Requests auf GitHub werden nur
-                            unregelmäßig geprüft.
+                            Contenox ist ein aktiv gewartetes Open-Source-Projekt.
+                            Issues und Pull Requests auf GitHub werden regelmäßig geprüft.
+                            Die Runtime lässt sich per Docker selbst hosten.
                         </p>
                         <p>
                             Für gelegentliche Fragen oder Hintergrund zum
@@ -506,7 +503,7 @@
                                 <a href="#how-it-works">Funktionsweise</a>
                             </li>
                             <li><a href="#architecture">Architektur</a></li>
-                            
+
                             <li>
                                 <a href="https://github.com/contenox/contenox" target="_blank"
                                     rel="noopener noreferrer">GitHub</a>
@@ -523,7 +520,7 @@
                     </nav>
 
                     <p class="copyright">
-                        &copy; 2025 Contenox. Alle Rechte vorbehalten.
+                        &copy; 2026 Contenox. Alle Rechte vorbehalten.
                     </p>
 
                     <div class="card" style="margin-top: 1.5rem">
@@ -597,7 +594,7 @@
                 "@type": "SoftwareApplication",
                 "name": "Contenox",
                 "applicationCategory": "AI workflow runtime",
-                "description": "Selbst hostbare Runtime zum Aufbau beobachtbarer KI-Workflows als Zustandsmaschinen. Das Projekt wird nicht mehr aktiv weiterentwickelt und dient als Open-Source-Referenz.",
+                "description": "Selbst hostbare Runtime zum Aufbau beobachtbarer KI-Workflows als Zustandsmaschinen. Open-Source und aktiv weiterentwickelt.",
                 "operatingSystem": "Linux, Kubernetes, Docker",
                 "url": "https://contenox.com/de.html",
                 "inLanguage": "de",

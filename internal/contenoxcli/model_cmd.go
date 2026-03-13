@@ -3,14 +3,18 @@ package contenoxcli
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"sort"
+	"strconv"
+	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/contenox/contenox/internal/runtimestate"
 	libbus "github.com/contenox/contenox/libbus"
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/modelservice"
 	"github.com/contenox/contenox/runtimetypes"
 	"github.com/spf13/cobra"
 )
@@ -58,15 +62,15 @@ Examples:
 		defer db.Close()
 
 		if declared {
-			return printDeclaredModels(ctx, db)
+			return printDeclaredModels(ctx, db, cmd.OutOrStdout())
 		}
-		return printLiveModels(ctx, db)
+		return printLiveModels(ctx, db, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	},
 }
 
 // printLiveModels runs one backend reconciliation cycle and prints what each
 // backend is actually serving right now.
-func printLiveModels(ctx context.Context, db libdb.DBManager) error {
+func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Writer) error {
 	bus := libbus.NewSQLite(db.WithoutTransaction())
 	defer bus.Close()
 
@@ -78,12 +82,12 @@ func printLiveModels(ctx context.Context, db libdb.DBManager) error {
 	// A single cycle contacts every backend and populates PulledModels.
 	if err := state.RunBackendCycle(ctx); err != nil {
 		// Non-fatal: partial results are still useful.
-		fmt.Fprintf(os.Stderr, "warning: backend cycle error: %v\n", err)
+		fmt.Fprintf(errW, "warning: backend cycle error: %v\n", err)
 	}
 
 	rt := state.Get(ctx)
 	if len(rt) == 0 {
-		fmt.Println("No backends registered. Run: contenox backend add <name> --type <type>")
+		fmt.Fprintln(out, "No backends registered. Run: contenox backend add <name> --type <type>")
 		return nil
 	}
 
@@ -120,7 +124,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager) error {
 	sort.Slice(entries, func(i, j int) bool { return entries[i].backendName < entries[j].backendName })
 
 	any := false
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "BACKEND\tMODEL\tCHAT\tEMBED\tPROMPT\tCTX")
 	for _, e := range entries {
 		if e.backendErr != "" {
@@ -146,22 +150,24 @@ func printLiveModels(ctx context.Context, db libdb.DBManager) error {
 		return err
 	}
 	if !any {
-		fmt.Println("\nNo models found. Add a model with: contenox model add <model-name>")
+		fmt.Fprintln(out, "\nNo models found. Add a model with: contenox model add <model-name>")
 	}
 	return nil
 }
 
 // printDeclaredModels lists the models stored in the local SQLite database.
-func printDeclaredModels(ctx context.Context, db libdb.DBManager) error {
-	models, err := runtimetypes.New(db.WithoutTransaction()).ListAllModels(ctx)
+// Delegates to modelservice to leverage validation and row-count policies.
+func printDeclaredModels(ctx context.Context, db libdb.DBManager, out io.Writer) error {
+	svc := modelservice.New(db, "")
+	models, err := svc.List(ctx, nil, 10000)
 	if err != nil {
 		return fmt.Errorf("failed to list models: %w", err)
 	}
 	if len(models) == 0 {
-		fmt.Println("No models declared. Run: contenox model add <model-name>")
+		fmt.Fprintln(out, "No models declared. Run: contenox model add <model-name>")
 		return nil
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "MODEL\tCHAT\tEMBED\tPROMPT\tCTX")
 	for _, m := range models {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\n",
@@ -197,16 +203,17 @@ Examples:
 		defer db.Close()
 
 		modelName := args[0]
-		store := runtimetypes.New(db.WithoutTransaction())
-		existing, _ := store.GetModelByName(ctx, modelName)
+		svc := modelservice.New(db, "")
+		// Idempotent: check if already declared before trying to create.
+		existing, _ := runtimetypes.New(db.WithoutTransaction()).GetModelByName(ctx, modelName)
 		if existing != nil {
-			fmt.Printf("Model %q is already declared.\n", modelName)
+			fmt.Fprintf(cmd.OutOrStdout(), "Model %q is already declared.\n", modelName)
 			return nil
 		}
-		if err := store.AppendModel(ctx, &runtimetypes.Model{Model: modelName}); err != nil {
+		if err := svc.Append(ctx, &runtimetypes.Model{Model: modelName}); err != nil {
 			return fmt.Errorf("failed to add model: %w", err)
 		}
-		fmt.Printf("Model %q declared.\n", modelName)
+		fmt.Fprintf(cmd.OutOrStdout(), "Model %q declared.\n", modelName)
 		return nil
 	},
 }
@@ -232,10 +239,10 @@ Example:
 		defer db.Close()
 
 		modelName := args[0]
-		if err := runtimetypes.New(db.WithoutTransaction()).DeleteModel(ctx, modelName); err != nil {
+		if err := modelservice.New(db, "").Delete(ctx, modelName); err != nil {
 			return fmt.Errorf("failed to remove model %q: %w", modelName, err)
 		}
-		fmt.Printf("Model %q removed.\n", modelName)
+		fmt.Fprintf(cmd.OutOrStdout(), "Model %q removed.\n", modelName)
 		return nil
 	},
 }
@@ -247,9 +254,96 @@ func boolMark(b bool) string {
 	return "-"
 }
 
+// parseContextSize converts a human-friendly token-count string to an int.
+// Accepted suffixes (case-insensitive): k (×1 000), m (×1 000 000).
+// A bare integer is returned as-is.  Examples:
+//
+//	"12k" → 12000
+//	"128K" → 128000
+//	"1m"  → 1000000
+//	"8192" → 8192
+//	"0"   → 0  (API-authoritative)
+func parseContextSize(s string) (int, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, fmt.Errorf("context size must not be empty")
+	}
+	last := rune(s[len(s)-1])
+	var multiplier int64 = 1
+	numPart := s
+	if unicode.IsLetter(last) {
+		numPart = s[:len(s)-1]
+		switch unicode.ToLower(last) {
+		case 'k':
+			multiplier = 1_000
+		case 'm':
+			multiplier = 1_000_000
+		default:
+			return 0, fmt.Errorf("unknown suffix %q: use k (thousands) or m (millions)", string(last))
+		}
+	}
+	n, err := strconv.ParseInt(numPart, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid context size %q: %w", s, err)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("context size must be ≥ 0, got %d", n)
+	}
+	return int(n * multiplier), nil
+}
+
+var modelSetContextCmd = &cobra.Command{
+	Use:   "set-context <model-name>",
+	Short: "Set the context window for a declared model.",
+	Long: `Override the registered context window for a model.
+
+Accepts a bare integer or a k/m shorthand (case-insensitive):
+  k  – thousands   (12k  = 12 000)
+  m  – millions    (1m   = 1 000 000)
+
+Examples:
+  contenox model set-context gpt-5-mini           --context 128k
+  contenox model set-context gemini-3.1-pro-preview --context 1m
+  contenox model set-context qwen2.5:7b             --context 32k`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := libtracker.WithNewRequestID(context.Background())
+		db, _, err := openBackendDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		ctxRaw, _ := cmd.Flags().GetString("context")
+		ctxLen, err := parseContextSize(ctxRaw)
+		if err != nil {
+			return fmt.Errorf("--context: %w", err)
+		}
+		modelName := args[0]
+		store := runtimetypes.New(db.WithoutTransaction())
+		m, err := store.GetModelByName(ctx, modelName)
+		if err != nil {
+			return fmt.Errorf("model %q not found: %w", modelName, err)
+		}
+		m.ContextLength = ctxLen
+		if err := modelservice.New(db, "").Update(ctx, m); err != nil {
+			return fmt.Errorf("failed to update model: %w", err)
+		}
+		if ctxLen == 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "Model %q context cleared (API is authoritative).\n", modelName)
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "Model %q context set to %d.\n", modelName, ctxLen)
+		}
+		return nil
+	},
+}
+
 func init() {
 	modelListCmd.Flags().Bool("declared", false, "Show models recorded in the local database instead of querying live backends")
+	modelSetContextCmd.Flags().String("context", "", "Context window size: bare int or shorthand (12k, 128k, 1m).")
+	_ = modelSetContextCmd.MarkFlagRequired("context")
 	modelCmd.AddCommand(modelListCmd)
 	modelCmd.AddCommand(modelAddCmd)
 	modelCmd.AddCommand(modelRemoveCmd)
+	modelCmd.AddCommand(modelSetContextCmd)
 }

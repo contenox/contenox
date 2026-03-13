@@ -36,6 +36,8 @@ import (
 	"github.com/contenox/contenox/stateservice"
 	"github.com/contenox/contenox/taskchainservice"
 	"github.com/contenox/contenox/taskengine"
+	"github.com/contenox/contenox/vfsservice"
+	"github.com/contenox/contenox/vfsstore"
 )
 
 // Playground provides a fluent API for setting up a test environment.
@@ -766,6 +768,21 @@ func (p *Playground) GetBackendService() (backendservice.Service, error) {
 		return nil, errors.New("cannot get backend service: database is not initialized")
 	}
 	return backendservice.New(p.db), nil
+}
+
+// GetVFSService initialises the vfsstore schema and returns a vfsservice.Service
+// backed by the playground database. Call after WithPostgresTestContainer.
+func (p *Playground) GetVFSService(ctx context.Context) (vfsservice.Service, error) {
+	if p.Error != nil {
+		return nil, p.Error
+	}
+	if p.db == nil {
+		return nil, errors.New("cannot get vfs service: database is not initialized")
+	}
+	if err := vfsstore.InitSchema(ctx, p.db.WithoutTransaction()); err != nil {
+		return nil, fmt.Errorf("vfsstore schema init: %w", err)
+	}
+	return vfsservice.New(p.db, vfsservice.Callbacks{}), nil
 }
 
 // GetDownloadService returns a new download service instance.

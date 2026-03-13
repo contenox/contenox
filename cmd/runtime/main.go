@@ -32,6 +32,7 @@ import (
 	"github.com/contenox/contenox/serverapi"
 	"github.com/contenox/contenox/taskchainservice"
 	"github.com/contenox/contenox/taskengine"
+	"github.com/contenox/contenox/vfsstore"
 	"github.com/google/uuid"
 )
 
@@ -226,6 +227,11 @@ func main() {
 	err = functionstore.InitSchema(ctx, dbInstance.WithoutTransaction())
 	if err != nil {
 		log.Fatalf("%s initializing task store schema failed: %v", nodeInstanceID, err)
+	}
+
+	err = vfsstore.InitSchema(ctx, dbInstance.WithoutTransaction())
+	if err != nil {
+		log.Fatalf("%s initializing vfs store schema failed: %v", nodeInstanceID, err)
 	}
 	internalMux := http.NewServeMux()
 	var apiHandler http.Handler = internalMux

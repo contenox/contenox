@@ -29,7 +29,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a deeper conceptual breakdown.
 make build-contenox
 
 # Run an example
-make run-contenox ARGS="-input 'list files in my home directory'"
+./bin/contenox "list files in my home directory"
 ```
 
 ### Building the Server (`runtime-api`)

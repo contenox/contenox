@@ -70,13 +70,20 @@ func (h *WebCaller) Exec(ctx context.Context, startTime time.Time, input any, de
 		return nil, taskengine.DataTypeAny, fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// Handle query parameters
+	// Handle query parameters — merge with any params already on the URL
+	// (e.g. pre-configured auth tokens) instead of overwriting them.
 	if queryParams, ok := hook.Args["query"]; ok {
-		params, err := url.ParseQuery(queryParams)
+		extra, err := url.ParseQuery(queryParams)
 		if err != nil {
 			return nil, taskengine.DataTypeAny, fmt.Errorf("invalid query parameters: %w", err)
 		}
-		baseURL.RawQuery = params.Encode()
+		existing := baseURL.Query()
+		for k, vals := range extra {
+			for _, v := range vals {
+				existing.Add(k, v)
+			}
+		}
+		baseURL.RawQuery = existing.Encode()
 	}
 
 	// Determine HTTP method

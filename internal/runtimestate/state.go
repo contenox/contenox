@@ -554,8 +554,10 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 		Timeout: 5 * time.Second,
 	}
 	wantedModels := []string{}
+	declaredModelMap := make(map[string]*runtimetypes.Model)
 	for _, m := range models {
 		wantedModels = append(wantedModels, m.Model)
+		declaredModelMap[m.Model] = m
 	}
 	// Build models endpoint URL
 	modelsURL := strings.TrimSuffix(backend.BaseURL, "/") + "/v1/models"
@@ -606,23 +608,31 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 	var modelResp struct {
 		Object string `json:"object"`
 		Data   []struct {
-			ID string `json:"id"`
+			ID          string `json:"id"`
+			MaxModelLen int    `json:"max_model_len"`
 		} `json:"data"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&modelResp); err != nil {
-		bodyBytes, readErr := io.ReadAll(resp.Body)
-		bodyStr := string(bodyBytes)
-		if readErr != nil {
-			bodyStr = fmt.Sprintf("<failed to read body: %v>", readErr)
-		}
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
 		s.state.Store(backend.ID, &statetype.BackendRuntimeState{
 			ID:           backend.ID,
 			Name:         backend.Name,
 			Models:       []string{},
 			PulledModels: []statetype.ModelPullStatus{},
 			Backend:      *backend,
-			Error:        fmt.Sprintf("Failed to decode response: %v | Raw response: %s", err, bodyStr),
+			Error:        fmt.Sprintf("Failed to read response body: %v", err),
+		})
+		return
+	}
+	if err := json.Unmarshal(bodyBytes, &modelResp); err != nil {
+		s.state.Store(backend.ID, &statetype.BackendRuntimeState{
+			ID:           backend.ID,
+			Name:         backend.Name,
+			Models:       []string{},
+			PulledModels: []statetype.ModelPullStatus{},
+			Backend:      *backend,
+			Error:        fmt.Sprintf("Failed to decode response: %v | Raw response: %s", err, string(bodyBytes)),
 		})
 		return
 	}
@@ -656,11 +666,25 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 	for _, m := range models {
 		if m.Model == servedModel {
 			found = true
+
+			// Auto-detect context length from vLLM when the admin hasn't set one.
+			// Mirrors the Ollama EnrichFromOllamaShow pattern: provider metadata wins
+			// only when ContextLength == 0 (the "let the API be authoritative" sentinel).
+			vllmContextLen := modelResp.Data[0].MaxModelLen
+			effectiveContextLen := m.ContextLength
+			if effectiveContextLen == 0 && vllmContextLen > 0 {
+				effectiveContextLen = vllmContextLen
+				// Persist the discovered value so subsequent cycles skip the override.
+				declCopy := *m
+				declCopy.ContextLength = vllmContextLen
+				_ = runtimetypes.New(s.dbInstance.WithoutTransaction()).UpdateModel(ctx, &declCopy)
+			}
+
 			pulledModels[0] = statetype.ModelPullStatus{
 				Name:          m.ID,
 				Model:         m.Model,
 				ModifiedAt:    m.UpdatedAt,
-				ContextLength: m.ContextLength,
+				ContextLength: effectiveContextLen,
 				CanChat:       m.CanChat,
 				CanEmbed:      m.CanEmbed,
 				CanPrompt:     m.CanPrompt,

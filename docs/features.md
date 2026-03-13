@@ -142,7 +142,7 @@ The same task engine runs as a local CLI (`contenox`) with two built-in hooks th
 
 **Interactive mode** — Natural language input, model uses tools and replies in text:
 ```bash
-bcontenox "find all TODO comments in the Go files and list them"
+contenox "find all TODO comments in the Go files and list them"
 ```
 
 **Autonomous planning** — Break a goal into steps, execute with human review between each:
@@ -152,9 +152,26 @@ contenox plan next          # one step at a time
 contenox plan next --auto   # run to completion
 ```
 
+**Interactive TUI** (`contenox vibe`) — Full terminal UI with sidebar, chat log, and slash commands:
+```bash
+contenox vibe
+```
+
+TUI slash commands cover the full CLI surface — plan management, model introspection, config — all without leaving the TUI:
+
+| Command | Description |
+|---------|-------------|
+| `/plan new <goal>` | Generate a new plan |
+| `/plan next [--auto]` | Execute the next step |
+| `/plan step <N>` | Show the full output of step N |
+| `/plan retry/skip/replan/delete/clean` | Full plan lifecycle |
+| `/model list\|add\|remove` | Manage declared models |
+| `/config get\|set <key>` | Read/write persistent config |
+| `$ <cmd>` | Shell — stdout injected into LLM context |
+
 **Stateless pipeline** — Run any chain with explicit input type control:
 ```bash
-cat diff.txt | contenox exec --chain .contenox/review-chain.json --input-type chat
+cat diff.txt | contenox run --chain .contenox/review-chain.json --input-type chat
 ```
 
 See [docs/contenox-cli.md](contenox-cli.md) for full configuration and chain authoring reference.

@@ -2,12 +2,12 @@ package contenoxcli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	libdb "github.com/contenox/contenox/libdbexec"
@@ -15,26 +15,8 @@ import (
 	"github.com/contenox/contenox/runtimetypes"
 )
 
-var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
 
-// planNameFromGoal creates a human-readable plan name from the goal text.
-// e.g. "Fix the auth token expiry bug" → "fix-the-auth-token-expiry-a3f9e12b"
-func planNameFromGoal(goal, suffix string) string {
-	words := strings.Fields(strings.ToLower(goal))
-	if len(words) > 5 {
-		words = words[:5]
-	}
-	slug := nonAlnum.ReplaceAllString(strings.Join(words, "-"), "-")
-	slug = strings.Trim(slug, "-")
-	if slug == "" {
-		slug = "plan"
-	}
-	return slug + "-" + suffix
-}
-
-const (
-	kvActivePlan = "contenox.plan.active"
-)
+const kvActivePlan = "contenox.plan.active"
 
 // getActivePlanID reads the active plan ID from the kv table.
 // Returns ("", nil) if no active plan has been set yet.
@@ -53,9 +35,9 @@ func getActivePlanID(ctx context.Context, exec libdb.Exec) (string, error) {
 // setActivePlanID persists the active plan ID to the kv table.
 func setActivePlanID(ctx context.Context, exec libdb.Exec, id string) error {
 	store := runtimetypes.New(exec)
-	raw, err := marshalJSON(id)
+	raw, err := json.Marshal(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal plan id: %w", err)
 	}
 	return store.SetKV(ctx, kvActivePlan, raw)
 }
@@ -103,7 +85,10 @@ func syncPlanMarkdown(ctx context.Context, exec libdb.Exec, planID string, conte
 		}
 	}
 
-	filePath := filepath.Join(plansDir, fmt.Sprintf("%s.md", plan.Name))
+	// filepath.Base prevents a crafted/hallucinated plan name like
+	// "../../.ssh/authorized_keys" from writing outside the plans directory.
+	safeFileName := filepath.Base(plan.Name) + ".md"
+	filePath := filepath.Join(plansDir, safeFileName)
 	if err := os.WriteFile(filePath, []byte(sb.String()), 0644); err != nil {
 		return fmt.Errorf("failed to write markdown file: %w", err)
 	}

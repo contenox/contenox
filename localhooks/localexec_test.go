@@ -93,7 +93,28 @@ func TestLocalExecHook_Exec_Success_InputAsStdin(t *testing.T) {
 	assert.Equal(t, "stdin content here", res.Stdout)
 }
 
-func TestLocalExecHook_Exec_ShellMode(t *testing.T) {
+func TestLocalExecHook_Exec_ShellMode_NoPolicy_Rejected(t *testing.T) {
+	// With no policy configured, the default-deny guard fires before shell mode
+	// is even attempted. shell:true without an allowlist is never safe.
+	ctx := context.Background()
+	h := NewLocalExecHook().(*LocalExecHook)
+	start := time.Now().UTC()
+	hookCall := &taskengine.HookCall{
+		Name: "local_shell",
+		Args: map[string]string{
+			"command": "echo shell test",
+			"shell":   "true",
+		},
+	}
+	_, _, err := h.Exec(ctx, start, nil, false, hookCall)
+	require.Error(t, err)
+	// Default-deny guard fires (no allowlist configured).
+	assert.Contains(t, err.Error(), "no allow list configured")
+}
+
+func TestLocalExecHook_Exec_ShellMode_WithPolicyRejected(t *testing.T) {
+	// shell:true must be REJECTED when an allowlist policy is active to prevent
+	// command injection (e.g. "git status; rm -rf /" bypassing allowlist checks).
 	ctx := context.Background()
 	h := NewLocalExecHook(WithLocalExecAllowedCommands(testAllowedCommands)).(*LocalExecHook)
 	start := time.Now().UTC()
@@ -104,12 +125,9 @@ func TestLocalExecHook_Exec_ShellMode(t *testing.T) {
 			"shell":   "true",
 		},
 	}
-	out, _, err := h.Exec(ctx, start, nil, false, hookCall)
-	require.NoError(t, err)
-	res, ok := out.(*LocalExecResult)
-	require.True(t, ok)
-	assert.True(t, res.Success)
-	assert.Equal(t, "shell test", res.Stdout)
+	_, _, err := h.Exec(ctx, start, nil, false, hookCall)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "strictly forbidden")
 }
 
 func TestLocalExecHook_Exec_AllowlistReject(t *testing.T) {
@@ -214,6 +232,27 @@ func TestLocalExecHook_Exec_NilHook(t *testing.T) {
 }
 
 func TestLocalExecHook_Exec_NonZeroExit(t *testing.T) {
+	// Run a script under allowedDir WITHOUT shell mode to capture a non-zero exit.
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "fail.sh")
+	err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 3\n"), 0755)
+	require.NoError(t, err)
+	ctx := context.Background()
+	h := NewLocalExecHook(WithLocalExecAllowedDir(dir)).(*LocalExecHook)
+	hookCall := &taskengine.HookCall{
+		Name: "local_shell",
+		Args: map[string]string{"command": scriptPath},
+	}
+	out, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, hookCall)
+	require.NoError(t, err)
+	res, ok := out.(*LocalExecResult)
+	require.True(t, ok)
+	assert.False(t, res.Success)
+	assert.Equal(t, 3, res.ExitCode)
+}
+
+func TestLocalExecHook_Exec_NonZeroExit_WithPolicy_Rejected(t *testing.T) {
+	// shell:true + allowlist must be rejected (security fix).
 	ctx := context.Background()
 	h := NewLocalExecHook(WithLocalExecAllowedCommands(testAllowedCommands)).(*LocalExecHook)
 	hookCall := &taskengine.HookCall{
@@ -223,10 +262,7 @@ func TestLocalExecHook_Exec_NonZeroExit(t *testing.T) {
 			"shell":   "true",
 		},
 	}
-	out, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, hookCall)
-	require.NoError(t, err)
-	res, ok := out.(*LocalExecResult)
-	require.True(t, ok)
-	assert.False(t, res.Success)
-	assert.Equal(t, 3, res.ExitCode)
+	_, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, hookCall)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "strictly forbidden")
 }

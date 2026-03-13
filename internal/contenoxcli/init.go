@@ -10,21 +10,17 @@ import (
 	"strings"
 )
 
-//go:embed config.yaml
-var initConfig string
-
 //go:embed chain-contenox.json
 var initChain string
 
 //go:embed chain-run.json
 var initRunChain string
 
-// providerConfig holds the provider-specific values used to generate config.yaml.
+// providerConfig holds the provider-specific values used during init.
 type providerConfig struct {
 	name         string
 	defaultModel string
 	envKey       string
-	configBlock  string // the backends: + default_provider: + default_model: block
 }
 
 var providerConfigs = map[string]providerConfig{
@@ -32,78 +28,20 @@ var providerConfigs = map[string]providerConfig{
 		name:         "Ollama (local)",
 		defaultModel: defaultModel,
 		envKey:       "",
-		configBlock: `backends:
-  - name: local
-    type: ollama
-    base_url: http://127.0.0.1:11434
-default_provider: ollama
-default_model: qwen2.5:7b
-context: 131072
-`,
 	},
 	"gemini": {
 		name:         "Google Gemini",
-		defaultModel: "gemini-3.1-flash-lite-preview",
+		defaultModel: "gemini-3.1-pro-preview",
 		envKey:       "GEMINI_API_KEY",
-		configBlock: `backends:
-  - name: gemini
-    type: gemini
-    api_key_from_env: GEMINI_API_KEY
-default_provider: gemini
-default_model: gemini-3.1-flash-lite-preview
-context: 1048576
-`,
 	},
 	"openai": {
 		name:         "OpenAI",
-		defaultModel: "gpt-4.1-mini",
+		defaultModel: "gpt-5-mini",
 		envKey:       "OPENAI_API_KEY",
-		configBlock: `backends:
-  - name: openai
-    type: openai
-    base_url: https://api.openai.com/v1
-    api_key_from_env: OPENAI_API_KEY
-default_provider: openai
-default_model: gpt-4.1-mini
-context: 131072
-`,
 	},
 }
 
-// makeProviderConfig generates a minimal, focused config.yaml for the given provider.
-// It injects the provider block into the embedded template, replacing the default Ollama block.
-func makeProviderConfig(pc providerConfig) string {
-	// Replace the existing backends/default_provider/default_model/context section
-	// with the provider-specific block, keeping comments below intact.
-	lines := strings.Split(initConfig, "\n")
-	var before, after []string
-	inBlock := false
-	done := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !done && !inBlock && trimmed == "backends:" {
-			inBlock = true
-			continue
-		}
-		if inBlock {
-			// Skip until we hit the first comment-only section after the block
-			if strings.HasPrefix(trimmed, "#") || trimmed == "" {
-				inBlock = false
-				done = true
-				after = append(after, line)
-			}
-			continue
-		}
-		if !done {
-			before = append(before, line)
-		} else {
-			after = append(after, line)
-		}
-	}
-	return strings.Join(before, "\n") + "\n" + pc.configBlock + "\n" + strings.Join(after, "\n")
-}
-
-// RunInit scaffolds .contenox/ (config and default chain).
+// RunInit scaffolds .contenox/ with default chain files.
 // provider is "" (default = ollama), "ollama", "gemini", or "openai".
 func RunInit(force bool, provider string) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
@@ -127,7 +65,6 @@ func RunInit(force bool, provider string) {
 		slog.Error("Failed to create .contenox directory", "error", err)
 		os.Exit(1)
 	}
-	configPath := filepath.Join(contenoxDir, "config.yaml")
 	chainPath := filepath.Join(contenoxDir, "default-chain.json")
 	runChainPath := filepath.Join(contenoxDir, "default-run-chain.json")
 	writeFile := func(path, content string) bool {
@@ -145,11 +82,6 @@ func RunInit(force bool, provider string) {
 		return true
 	}
 
-	configContent := initConfig
-	if provider != "ollama" {
-		configContent = makeProviderConfig(pc)
-	}
-	writeFile(configPath, configContent)
 	writeFile(chainPath, initChain)
 	writeFile(runChainPath, initRunChain)
 
@@ -173,6 +105,11 @@ func RunInit(force bool, provider string) {
 		fmt.Println("  1. Start Ollama and pull the default model:")
 		fmt.Println("       ollama serve && ollama pull qwen2.5:7b")
 		fmt.Println("")
+	} else {
+		fmt.Printf("  1. Register the %s backend:\n", pc.name)
+		fmt.Printf("       contenox backend add %s --type %s --api-key-env %s\n", provider, provider, pc.envKey)
+		fmt.Printf("       contenox config set default-model %s\n", pc.defaultModel)
+		fmt.Println("")
 	}
 	fmt.Printf("  %d. Chat with your model:\n", map[bool]int{true: 1, false: 2}[provider != "ollama"])
 	fmt.Println("       contenox hey, what can you do?")
@@ -182,8 +119,8 @@ func RunInit(force bool, provider string) {
 	fmt.Println("       contenox plan new \"create a TODOS.md from all TODO comments in the codebase\"")
 	fmt.Println("       contenox plan next --auto")
 	fmt.Println("")
-	fmt.Println("  To enable shell and filesystem tools (local_shell / local_fs), set")
-	fmt.Println("  enable_local_shell: true in .contenox/config.yaml and configure the allow list.")
+	fmt.Println("  To enable shell and filesystem tools pass --shell to any command, e.g.:")
+	fmt.Println("       contenox --shell --local-exec-allowed-commands git,go \"run the tests\"")
 	fmt.Println("")
 	fmt.Println("  Run 'contenox --help' for full usage.")
 }

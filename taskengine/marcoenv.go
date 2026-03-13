@@ -52,31 +52,50 @@ func (m *MacroEnv) ExecEnv(
 	clone.Tasks = make([]TaskDefinition, len(chain.Tasks))
 	copy(clone.Tasks, chain.Tasks)
 
+	// deep-copy pointer fields so macro expansion never mutates the
+	// globally-cached chain definition that may be shared across goroutines.
+	for i := range clone.Tasks {
+		if clone.Tasks[i].ExecuteConfig != nil {
+			ec := *clone.Tasks[i].ExecuteConfig
+			clone.Tasks[i].ExecuteConfig = &ec
+		}
+		if clone.Tasks[i].Hook != nil {
+			h := *clone.Tasks[i].Hook
+			clone.Tasks[i].Hook = &h
+		}
+	}
+
 	// Expand macros in all relevant string fields of each task.
 	for i := range clone.Tasks {
 		t := &clone.Tasks[i]
 
+		// Determine the allowlist for this specific task.
+		var allowlist []string
+		if t.ExecuteConfig != nil {
+			allowlist = t.ExecuteConfig.Hooks
+		}
+
 		var err error
 		if t.PromptTemplate != "" {
-			t.PromptTemplate, err = m.expandSpecialTemplates(ctx, &clone, t.PromptTemplate)
+			t.PromptTemplate, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.PromptTemplate)
 			if err != nil {
 				return nil, DataTypeAny, nil, fmt.Errorf("task %s: prompt_template macro error: %w", t.ID, err)
 			}
 		}
 		if t.Print != "" {
-			t.Print, err = m.expandSpecialTemplates(ctx, &clone, t.Print)
+			t.Print, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.Print)
 			if err != nil {
 				return nil, DataTypeAny, nil, fmt.Errorf("task %s: print macro error: %w", t.ID, err)
 			}
 		}
 		if t.OutputTemplate != "" {
-			t.OutputTemplate, err = m.expandSpecialTemplates(ctx, &clone, t.OutputTemplate)
+			t.OutputTemplate, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.OutputTemplate)
 			if err != nil {
 				return nil, DataTypeAny, nil, fmt.Errorf("task %s: output_template macro error: %w", t.ID, err)
 			}
 		}
 		if t.SystemInstruction != "" {
-			t.SystemInstruction, err = m.expandSpecialTemplates(ctx, &clone, t.SystemInstruction)
+			t.SystemInstruction, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.SystemInstruction)
 			if err != nil {
 				return nil, DataTypeAny, nil, fmt.Errorf("task %s: system_instruction macro error: %w", t.ID, err)
 			}
@@ -86,13 +105,13 @@ func (m *MacroEnv) ExecEnv(
 		// {{var:model}} and {{var:provider}} without callers doing manual string replacement.
 		if t.ExecuteConfig != nil {
 			if t.ExecuteConfig.Model != "" {
-				t.ExecuteConfig.Model, err = m.expandSpecialTemplates(ctx, &clone, t.ExecuteConfig.Model)
+				t.ExecuteConfig.Model, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.ExecuteConfig.Model)
 				if err != nil {
 					return nil, DataTypeAny, nil, fmt.Errorf("task %s: execute_config.model macro error: %w", t.ID, err)
 				}
 			}
 			if t.ExecuteConfig.Provider != "" {
-				t.ExecuteConfig.Provider, err = m.expandSpecialTemplates(ctx, &clone, t.ExecuteConfig.Provider)
+				t.ExecuteConfig.Provider, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.ExecuteConfig.Provider)
 				if err != nil {
 					return nil, DataTypeAny, nil, fmt.Errorf("task %s: execute_config.provider macro error: %w", t.ID, err)
 				}
@@ -107,7 +126,7 @@ func (m *MacroEnv) ExecEnv(
 // unified macro: {{namespace}} or {{namespace:payload}}
 var macroRe = regexp.MustCompile(`\{\{([a-zA-Z0-9_]+)(?::([^}]*))?\}\}`)
 
-func (m *MacroEnv) expandSpecialTemplates(ctx context.Context, chain *TaskChainDefinition, in string) (string, error) {
+func (m *MacroEnv) expandSpecialTemplates(ctx context.Context, chain *TaskChainDefinition, allowlist []string, in string) (string, error) {
 	matches := macroRe.FindAllStringSubmatchIndex(in, -1)
 	if len(matches) == 0 {
 		return in, nil
@@ -129,7 +148,7 @@ func (m *MacroEnv) expandSpecialTemplates(ctx context.Context, chain *TaskChainD
 			payload = strings.TrimSpace(in[payloadStart:payloadEnd])
 		}
 
-		replacement, err := m.expandOne(ctx, chain, namespace, payload, in[start:end])
+		replacement, err := m.expandOne(ctx, chain, allowlist, namespace, payload, in[start:end])
 		if err != nil {
 			return "", err
 		}
@@ -141,10 +160,14 @@ func (m *MacroEnv) expandSpecialTemplates(ctx context.Context, chain *TaskChainD
 	return buf.String(), nil
 }
 
-func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, namespace, payload, original string) (string, error) {
+func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, allowlist []string, namespace, payload, original string) (string, error) {
 	switch namespace {
 	case "hookservice":
 		if m.hookProvider == nil {
+			return original, nil
+		}
+		allowed, err := resolveHookNames(ctx, allowlist, m.hookProvider)
+		if err != nil {
 			return original, nil
 		}
 		parts := strings.SplitN(payload, " ", 2)
@@ -155,14 +178,14 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, na
 		}
 		switch cmd {
 		case "list":
-			return m.renderHooksAndToolsJSON(ctx)
+			return m.renderHooksAndToolsJSON(ctx, allowed)
 		case "hooks":
-			return m.renderHookNamesJSON(ctx)
+			return m.renderHookNamesJSON(allowed)
 		case "tools":
 			if arg == "" {
 				return "", fmt.Errorf("hookservice:tools requires a hook name argument")
 			}
-			return m.renderToolsForHookJSON(ctx, arg)
+			return m.renderToolsForHookJSON(ctx, allowed, arg)
 		default:
 			return original, nil
 		}
@@ -196,11 +219,7 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, na
 	}
 }
 
-func (m *MacroEnv) renderHookNamesJSON(ctx context.Context) (string, error) {
-	names, err := m.hookProvider.Supports(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to list hooks: %w", err)
-	}
+func (m *MacroEnv) renderHookNamesJSON(names []string) (string, error) {
 	b, err := json.Marshal(names)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal hook names: %w", err)
@@ -208,12 +227,7 @@ func (m *MacroEnv) renderHookNamesJSON(ctx context.Context) (string, error) {
 	return string(b), nil
 }
 
-func (m *MacroEnv) renderHooksAndToolsJSON(ctx context.Context) (string, error) {
-	names, err := m.hookProvider.Supports(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to list hooks: %w", err)
-	}
-
+func (m *MacroEnv) renderHooksAndToolsJSON(ctx context.Context, names []string) (string, error) {
 	result := make(map[string][]string, len(names))
 	for _, name := range names {
 		tools, err := m.hookProvider.GetToolsForHookByName(ctx, name)
@@ -235,7 +249,19 @@ func (m *MacroEnv) renderHooksAndToolsJSON(ctx context.Context) (string, error) 
 	return string(b), nil
 }
 
-func (m *MacroEnv) renderToolsForHookJSON(ctx context.Context, hookName string) (string, error) {
+func (m *MacroEnv) renderToolsForHookJSON(ctx context.Context, allowed []string, hookName string) (string, error) {
+	// Respect the allowlist: only expose tools if the hook is allowed.
+	permitted := false
+	for _, a := range allowed {
+		if a == hookName {
+			permitted = true
+			break
+		}
+	}
+	if !permitted {
+		b, _ := json.Marshal([]string{})
+		return string(b), nil
+	}
 	tools, err := m.hookProvider.GetToolsForHookByName(ctx, hookName)
 	if err != nil {
 		return "", fmt.Errorf("failed to get tools for hook %s: %w", hookName, err)

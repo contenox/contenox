@@ -95,9 +95,9 @@ All three example chains use the same simple structure:
 }
 ```
 
-- `hooks` lists the MCP servers the model can access as tools.  
-- <span v-pre>`{{hookservice:list}}`</span> injects the live tool manifest into the system prompt.  
-- The task engine automatically handles the full tool-call loop—no manual branching required.
+- `hooks` is the allowlist of MCP servers the model can access as tools. Use `["*"]` to include all registered servers, or `["*", "!name"]` to exclude one.  
+- <span v-pre>`{{hookservice:list}}`</span> injects the live tool manifest into the system prompt — filtered to only the hooks the task allows.  
+- The task engine automatically handles the full tool-call loop — no manual branching required.
 
 > [!TIP]
 > Add `--trace` to watch every MCP tool call, its arguments, and results in real time.

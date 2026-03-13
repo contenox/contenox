@@ -112,7 +112,7 @@ Examples:
 			}
 		}
 
-		fmt.Printf("Backend %q added (%s → %s).\n", name, typ, baseURL)
+		fmt.Fprintf(cmd.OutOrStdout(), "Backend %q added (%s → %s).\n", name, typ, baseURL)
 		return nil
 	},
 }
@@ -134,10 +134,10 @@ var backendListCmd = &cobra.Command{
 			return fmt.Errorf("failed to list backends: %w", err)
 		}
 		if len(backends) == 0 {
-			fmt.Println("No backends registered. Run: contenox backend add <name> --type <type>")
+			fmt.Fprintln(cmd.OutOrStdout(), "No backends registered. Run: contenox backend add <name> --type <type>")
 			return nil
 		}
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tTYPE\tURL")
 		for _, b := range backends {
 			fmt.Fprintf(w, "%s\t%s\t%s\n", b.Name, b.Type, b.BaseURL)
@@ -164,7 +164,7 @@ var backendShowCmd = &cobra.Command{
 			return fmt.Errorf("backend %q not found: %w", args[0], err)
 		}
 		data, _ := json.MarshalIndent(b, "", "  ")
-		fmt.Println(string(data))
+		fmt.Fprintln(cmd.OutOrStdout(), string(data))
 		return nil
 	},
 }
@@ -190,7 +190,7 @@ var backendRemoveCmd = &cobra.Command{
 		if err := svc.Delete(ctx, b.ID); err != nil {
 			return fmt.Errorf("failed to remove backend: %w", err)
 		}
-		fmt.Printf("Backend %q removed.\n", args[0])
+		fmt.Fprintf(cmd.OutOrStdout(), "Backend %q removed.\n", args[0])
 		return nil
 	},
 }
@@ -218,10 +218,11 @@ func resolveDBPath(cmd *cobra.Command) (string, error) {
 		return filepath.Abs(dbFlag)
 	}
 	cwd, _ := os.Getwd()
-	// Prefer project-local DB; fall back to global.
-	localDB := filepath.Join(cwd, ".contenox", "local.db")
-	if _, err := os.Stat(localDB); err == nil {
-		return localDB, nil
+	// Prefer project-local DB if a .contenox directory exists (even if local.db
+	// doesn't yet — e.g. right after `contenox init`).
+	localDir := filepath.Join(cwd, ".contenox")
+	if _, err := os.Stat(localDir); err == nil {
+		return filepath.Join(localDir, "local.db"), nil
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		globalDB := filepath.Join(home, ".contenox", "local.db")
@@ -230,7 +231,7 @@ func resolveDBPath(cmd *cobra.Command) (string, error) {
 		}
 	}
 	// Default: create in local .contenox/
-	return filepath.Abs(localDB)
+	return filepath.Abs(filepath.Join(localDir, "local.db"))
 }
 
 func init() {

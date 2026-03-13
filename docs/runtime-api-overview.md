@@ -29,7 +29,7 @@ The **Runtime API** is the full-stack HTTP server product built on the same core
 ### Workflow Definitions
 | Domain | What you can do |
 |--------|----------------|
-| **Task Chains** | CRUD for JSON chain definitions — the state machine workflows the engine executes. |
+| **Task Chains** | CRUD for JSON chain definitions — the state machine workflows the engine executes. Each task can restrict which hooks the model sees via an `execute_config.hooks` allowlist (`["*"]` = all, `["*","!name"]` = all-except, `[]` = none). |
 | **Hooks (Remote)** | Register any external OpenAPI v3 endpoint as a callable LLM tool. Credentials injected server-side. |
 | **Hooks (Local)** | Inspect locally available hooks and their JSON schemas. |
 

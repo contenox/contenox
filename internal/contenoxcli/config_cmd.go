@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"text/tabwriter"
 
 	libdb "github.com/contenox/contenox/libdbexec"
@@ -70,7 +69,7 @@ Examples:
 		if err := store.SetKV(ctx, kvKey, json.RawMessage(data)); err != nil {
 			return fmt.Errorf("failed to set %q: %w", key, err)
 		}
-		fmt.Printf("Set %s = %s\n", key, value)
+		fmt.Fprintf(cmd.OutOrStdout(), "Set %s = %s\n", key, value)
 		return nil
 	},
 }
@@ -101,7 +100,7 @@ Examples:
 		if err != nil {
 			return err
 		}
-		fmt.Println(val)
+		fmt.Fprintln(cmd.OutOrStdout(), val)
 		return nil
 	},
 }
@@ -124,7 +123,7 @@ Example:
 		defer db.Close()
 
 		ctx := libtracker.WithNewRequestID(context.Background())
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "KEY\tVALUE")
 		for key := range validConfigKeys {
 			val, _ := getConfigKV(ctx, store, key)

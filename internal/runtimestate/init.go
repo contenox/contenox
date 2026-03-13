@@ -208,12 +208,10 @@ func initOrUpdateModel(ctx context.Context, tx libdb.Exec, tenantID, modelName s
 		return nil, fmt.Errorf("failed to get model '%s': %w", modelName, err)
 	}
 
-	// Case 3: Model exists. Update context length if it changed (config may have been updated).
+	// Case 3: Model exists. Update capabilities only — never overwrite context_length.
+	// Context length is set once at creation, then owned by the backend cycle or
+	// by an explicit user action ('contenox model set-context').
 	needsUpdate := false
-	if model.ContextLength != contextLength && contextLength > 0 {
-		model.ContextLength = contextLength
-		needsUpdate = true
-	}
 	switch capability {
 	case canEmbed:
 		if !model.CanEmbed {

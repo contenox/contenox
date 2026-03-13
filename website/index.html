@@ -276,15 +276,16 @@
                         <article class="card service-card">
                             <h3>Zero infrastructure</h3>
                             <p>Single binary. SQLite. No daemon, no Docker, no NATS, no Postgres. Drop it on any
-                                machine and it works. The Runtime API server is available for team and production
-                                use — but the CLI needs nothing.</p>
+                                machine and it works. Contenox is powered by a battle-tested enterprise workflow
+                                engine — the CLI needs nothing extra.</p>
                         </article>
                         <article class="card service-card">
-                            <h3>Pure UNIX.</h3>
-                            <p>Contenox is an autonomous engine, not a chatbot wrapper. There is no TUI or GUI to trap
-                                you.
-                                It uses standard streams, exits when done, and is designed to run headless in CI/CD
-                                pipelines or be composed with other UNIX tools.</p>
+                            <h3>Terminal-first — CLI and TUI</h3>
+                            <p>Contenox works headlessly in CI/CD pipelines and composes cleanly with other UNIX
+                                tools via standard streams. When you want a richer experience, <code>contenox
+                                vibe</code> gives you a full-screen TUI dashboard with a live plan sidebar and
+                                interactive approvals.
+                            </p>
                         </article>
                     </div>
                 </div>
@@ -370,7 +371,7 @@
             <section id="how" class="section section-alt" aria-labelledby="how-heading">
                 <div class="container">
                     <h2 id="how-heading">How it works</h2>
-                    <p class="section-lead">Three modes. One binary.</p>
+                    <p class="section-lead">Four modes. One binary.</p>
 
                     <div class="capabilities-grid">
                         <div class="card capability-card">
@@ -379,6 +380,15 @@
                                 Describe a goal. The LLM generates a plan. Steps are saved to SQLite.<br>
                                 Execute one step at a time with <code>plan next</code>, or go full-auto with
                                 <code>plan next --auto</code>. Retry, skip, or replan any step at any time.
+                            </p>
+                        </div>
+                        <div class="card capability-card">
+                            <h4><code>contenox vibe</code> — Interactive TUI</h4>
+                            <p>
+                                A full-screen terminal dashboard built with Bubble Tea. Chat with the model,
+                                watch autonomous plans execute in a live sidebar, and approve sensitive
+                                filesystem actions with interactive <code>y</code>/<code>n</code> prompts —
+                                all without leaving your terminal.
                             </p>
                         </div>
                         <div class="card capability-card">

@@ -22,8 +22,7 @@ export OLLAMA_HOST
 # Allow user override of COMPOSE_CMD
 COMPOSE_CMD ?= docker compose -f compose.yaml -f compose.local.yaml
 
-.PHONY: run-runtime-api build-runtime-api \
-        docker-build-runtime docker-up-runtime docker-run-runtime \
+.PHONY: docker-build-runtime docker-up-runtime docker-run-runtime \
         docker-down-runtime docker-clear-runtime docker-logs-runtime \
         build-contenox run-contenox \
         start-ollama-pull start-ollama ollama-status \
@@ -67,17 +66,6 @@ build-contenox:
 # Run the contenox binary (builds if needed). Example: make run-contenox ARGS="hello"
 run-contenox: build-contenox
 	$(PROJECT_ROOT)/bin/contenox $(ARGS)
-
-# --------------------------------------------------------------------
-# Local Runtime API: HTTP server
-# --------------------------------------------------------------------
-build-runtime-api:
-	go build -o $(PROJECT_ROOT)/bin/runtime-api $(PROJECT_ROOT)/cmd/runtime
-
-run-runtime-api: build-runtime-api
-	@echo "Run with env: DATABASE_URL, NATS_URL, TOKENIZER_SERVICE_URL, PORT, etc. Example:"
-	@echo "  DATABASE_URL=postgres://... NATS_URL=nats://... TOKENIZER_SERVICE_URL=... ./bin/runtime-api"
-	$(PROJECT_ROOT)/bin/runtime-api
 
 # --------------------------------------------------------------------
 # MCP Test Server: stateful session fixture for CLI / API tests
@@ -232,17 +220,6 @@ website-install:
 ## Wipe the VitePress build output (website/docs/)
 website-clean:
 	rm -rf $(PROJECT_ROOT)/website/docs
-
-## Remove old enterprise/vitepress-docs and deinit contenox.github.io submodule.
-## Run this once after the migration, from inside the enterprise/ repo.
-## NOTE: run these commands manually in the enterprise repo — not from here.
-enterprise-clean:
-	@echo "Run the following commands inside the enterprise/ repo:"
-	@echo "  git submodule deinit -f contenox.github.io"
-	@echo "  git rm -f contenox.github.io"
-	@echo "  rm -rf .git/modules/contenox.github.io"
-	@echo "  rm -rf vitepress-docs/"
-	@echo "  git commit -m 'chore: remove contenox.github.io submodule and vitepress-docs (moved to runtime repo)'"
 
 commit-docs: docs-markdown vitepress-build docs-html
 	git add $(PROJECT_ROOT)/docs

@@ -7,29 +7,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/contenox/contenox/chatservice"
-	"github.com/contenox/contenox/eventsourceservice"
-	"github.com/contenox/contenox/execservice"
-	"github.com/contenox/contenox/executor"
-	"github.com/contenox/contenox/functionservice"
-	"github.com/contenox/contenox/internal/eventdispatch"
-	"github.com/contenox/contenox/internal/hooks"
-	"github.com/contenox/contenox/internal/llmrepo"
-	"github.com/contenox/contenox/internal/ollamatokenizer"
-	"github.com/contenox/contenox/internal/runtimestate"
-	"github.com/contenox/contenox/jseval"
-	libbus "github.com/contenox/contenox/libbus"
 	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/localhooks"
 	"github.com/contenox/contenox/runtimetypes"
-	"github.com/contenox/contenox/taskchainservice"
 	"github.com/contenox/contenox/taskengine"
 )
 
@@ -54,259 +40,56 @@ type chatOpts struct {
 	InputValue                        string
 	InputFlagPassed                   bool
 	ContenoxDir                       string
+	// AskApproval is an optional HITL callback. When non-nil, BuildEngine wraps
+	// local_fs and local_shell with a HITLWrapper that requests human approval
+	// before executing mutating or shell tools. Used only by the vibe TUI.
+	AskApproval localhooks.AskApproval
+	// PlannerChain and ExecutorChain, when both non-nil, cause BuildEngine to
+	// register the plan_manager hook so the chat LLM can create and run plans
+	// via tool calls. Used only by the vibe TUI.
+	PlannerChain  *taskengine.TaskChainDefinition
+	ExecutorChain *taskengine.TaskChainDefinition
 }
 
-func execChat(ctx context.Context, opts chatOpts) {
-	// ------------------------------------------------------------------------
-	// 1. SQLite database
-	// ------------------------------------------------------------------------
-	dbPathAbs, err := filepath.Abs(opts.EffectiveDB)
+// execChat runs the full chat pipeline and returns any error encountered.
+// db is already opened by the caller (runChat in cli.go) so we share it here.
+func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW io.Writer) error {
+	// Component 1: use BuildEngine instead of the 150-line duplicate scaffold.
+	// This fixes MCP being broken for `contenox chat` (the old code used
+	// libbus.NewInMem() and never initialised mcpworker.Manager).
+	engine, err := BuildEngine(ctx, db, opts)
 	if err != nil {
-		slog.Error("Invalid database path", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to build engine: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(dbPathAbs), 0755); err != nil {
-		slog.Error("Cannot create database directory", "error", err)
-		os.Exit(1)
-	}
-	db, err := libdb.NewSQLiteDBManager(ctx, dbPathAbs, runtimetypes.SchemaSQLite)
-	if err != nil {
-		slog.Error("Failed to open SQLite database", "error", err)
-		os.Exit(1)
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			slog.Error("Error closing database", "error", err)
-		}
-	}()
+	defer engine.Stop()
 
-	// ------------------------------------------------------------------------
-	// 2. In-memory bus
-	// ------------------------------------------------------------------------
-	bus := libbus.NewInMem()
-	defer bus.Close()
-
-	// ------------------------------------------------------------------------
-	// 3. Runtime state
-	// ------------------------------------------------------------------------
-	stateOpts := []runtimestate.Option{}
-	if opts.EffectiveNoDeleteModels {
-		stateOpts = append(stateOpts, runtimestate.WithSkipDeleteUndeclaredModels())
-	}
-	state, err := runtimestate.New(ctx, db, bus, stateOpts...)
-	if err != nil {
-		slog.Error("Failed to create runtime state", "error", err)
-		os.Exit(1)
-	}
-
-	// ------------------------------------------------------------------------
-	// 4. Initialize embed/task/chat groups
-	// ------------------------------------------------------------------------
-	config := &runtimestate.Config{
-		TenantID:   localTenantID,
-		EmbedModel: opts.EffectiveDefaultModel,
-		TaskModel:  opts.EffectiveDefaultModel,
-		ChatModel:  opts.EffectiveDefaultModel,
-	}
-	if err := runtimestate.InitEmbeder(ctx, config, db, opts.EffectiveContext, state); err != nil {
-		slog.Error("Failed to init embedder", "error", err)
-		os.Exit(1)
-	}
-	if err := runtimestate.InitPromptExec(ctx, config, db, state, opts.EffectiveContext); err != nil {
-		slog.Error("Failed to init prompt executor", "error", err)
-		os.Exit(1)
-	}
-	if err := runtimestate.InitChatExec(ctx, config, db, state, opts.EffectiveContext); err != nil {
-		slog.Error("Failed to init chat executor", "error", err)
-		os.Exit(1)
-	}
-
-	// 4b. Ensure the default model is registered in the local tenant.
-	specs := []runtimestate.ExtraModelSpec{
-		{
-			Name:          opts.EffectiveDefaultModel,
-			ContextLength: opts.EffectiveContext,
-			CanChat:       true,
-			CanPrompt:     true,
-			CanEmbed:      false,
-		},
-	}
-	if err := runtimestate.EnsureModels(ctx, db, localTenantID, specs); err != nil {
-		slog.Error("Failed to ensure models", "error", err)
-		os.Exit(1)
-	}
-
-	// ------------------------------------------------------------------------
-	// 6. Run one backend cycle to sync models
-	// ------------------------------------------------------------------------
-	if opts.EffectiveTracing {
-		slog.Info("Running backend cycle to sync models...")
-	}
-	if err := state.RunBackendCycle(ctx); err != nil {
-		slog.Warn("Backend cycle encountered errors", "error", err)
-	}
-	rt := state.Get(ctx)
-	anyReachable := false
-	for id, bs := range rt {
-		if bs.Error != "" {
-			if opts.EffectiveTracing {
-				slog.Warn("Backend unreachable", "id", id, "url", bs.Backend.BaseURL, "error", bs.Error)
-			}
-		} else {
-			anyReachable = true
-			if opts.EffectiveTracing {
-				slog.Info("Backend reachable", "id", id, "url", bs.Backend.BaseURL, "models", len(bs.PulledModels))
-				for _, m := range bs.PulledModels {
-					slog.Debug("Pulled model", "model", m.Model)
-				}
-			}
-		}
-	}
-	if !anyReachable && opts.EffectiveTracing {
-		slog.Warn("No reachable backends – subsequent model operations may fail")
-	}
-
-	// ------------------------------------------------------------------------
-	// 7. Tokenizer and model manager
-	// ------------------------------------------------------------------------
-	tokenizer := ollamatokenizer.NewEstimateTokenizer()
-	var tracker libtracker.ActivityTracker
-	if opts.EffectiveTracing {
-		tracker = libtracker.NewLogActivityTracker(slog.Default())
-	} else {
-		tracker = libtracker.NoopTracker{}
-	}
-	repo, err := llmrepo.NewModelManager(state, tokenizer, llmrepo.ModelManagerConfig{
-		DefaultPromptModel:    llmrepo.ModelConfig{Name: opts.EffectiveDefaultModel, Provider: opts.EffectiveDefaultProvider},
-		DefaultEmbeddingModel: llmrepo.ModelConfig{Name: opts.EffectiveDefaultModel, Provider: opts.EffectiveDefaultProvider},
-		DefaultChatModel:      llmrepo.ModelConfig{Name: opts.EffectiveDefaultModel, Provider: opts.EffectiveDefaultProvider},
-	}, tracker)
-	if err != nil {
-		slog.Error("Failed to create model manager", "error", err)
-		os.Exit(1)
-	}
-
-	// ------------------------------------------------------------------------
-	// 8. Local hooks
-	// ------------------------------------------------------------------------
-	jsEnv := jseval.NewEnv(tracker, jseval.BuiltinHandlers{}, jseval.DefaultBuiltins())
-	localHooks := map[string]taskengine.HookRepo{
-		"echo":         localhooks.NewEchoHook(),
-		"print":        localhooks.NewPrint(tracker),
-		"webhook":      localhooks.NewWebCaller(),
-		"js_execution": localhooks.NewJSSandboxHook(jsEnv, tracker),
-		"local_fs":     localhooks.NewLocalFSHook(opts.EffectiveLocalExecAllowedDir),
-	}
-	jsHooks := map[string]taskengine.HookRepo{
-		"echo":         localhooks.NewEchoHook(),
-		"print":        localhooks.NewPrint(tracker),
-		"webhook":      localhooks.NewWebCaller(),
-		"js_execution": localhooks.NewJSSandboxHook(jsEnv, tracker),
-	}
-	if sshHook, err := localhooks.NewSSHHook(); err != nil {
-		slog.Debug("SSH hook not registered (e.g. no known_hosts)", "error", err)
-	} else {
-		jsHooks["ssh"] = sshHook
-	}
-	if opts.EffectiveEnableLocalExec {
-		hookOpts := []localhooks.LocalExecOption{}
-		if opts.EffectiveLocalExecAllowedDir != "" {
-			hookOpts = append(hookOpts, localhooks.WithLocalExecAllowedDir(opts.EffectiveLocalExecAllowedDir))
-		}
-		if opts.EffectiveLocalExecAllowedCommands != "" {
-			commands := splitAndTrim(opts.EffectiveLocalExecAllowedCommands, ",")
-			if len(commands) > 0 {
-				hookOpts = append(hookOpts, localhooks.WithLocalExecAllowedCommands(commands))
-			}
-		}
-		if len(opts.EffectiveLocalExecDeniedCommands) > 0 {
-			hookOpts = append(hookOpts, localhooks.WithLocalExecDeniedCommands(opts.EffectiveLocalExecDeniedCommands))
-		}
-		localExecHook := localhooks.NewLocalExecHook(hookOpts...)
-		jsHooks["local_shell"] = localExecHook
-		localHooks["local_shell"] = localExecHook
-	}
-	hookRepo := hooks.NewPersistentRepo(localHooks, db, http.DefaultClient, libbus.NewInMem())
-	jsHookRepo := hooks.NewSimpleProvider(jsHooks)
-
-	// ------------------------------------------------------------------------
-	// 9. Task engine
-	// ------------------------------------------------------------------------
-	exec, err := taskengine.NewExec(ctx, repo, hookRepo, tracker)
-	if err != nil {
-		slog.Error("Failed to create task executor", "error", err)
-		os.Exit(1)
-	}
-	envExec, err := taskengine.NewEnv(ctx, tracker, exec, taskengine.NewSimpleInspector(), hookRepo)
-	if err != nil {
-		slog.Error("Failed to create environment executor", "error", err)
-		os.Exit(1)
-	}
-	envExec, err = taskengine.NewMacroEnv(envExec, hookRepo)
-	if err != nil {
-		slog.Error("Failed to create macro environment", "error", err)
-		os.Exit(1)
-	}
-	taskService := execservice.NewTasksEnv(ctx, envExec, hookRepo)
-	execSvc := execservice.NewExec(ctx, repo)
-	chainSvc := taskchainservice.New(db)
-	functionSvc := functionservice.New(db)
-	gojaExec := executor.NewGojaExecutor(tracker, functionSvc)
-	dispatcher, err := eventdispatch.New(ctx, functionSvc, func(ctx context.Context, err error) {
-		slog.ErrorContext(ctx, "event dispatch error", "error", err)
-	}, time.Second, gojaExec, tracker)
-	if err != nil {
-		slog.Error("Failed to create event dispatcher", "error", err)
-		os.Exit(1)
-	}
-	_ = dispatcher // not used with no-op event source; kept for consistent wiring
-	// Use no-op event source: CLI does not persist events (SQLite has no partition support).
-	eventsource := eventsourceservice.NewNoopService()
-	gojaExec.AddBuildInServices(eventsource, execSvc, chainSvc, taskService, jsHookRepo)
-	gojaExec.StartSync(ctx, time.Second*3)
-	defer gojaExec.StopSync()
-	jsEnv.SetBuiltinHandlers(jseval.BuiltinHandlers{
-		Eventsource:          eventsource,
-		TaskService:          execSvc,
-		TaskchainService:     chainSvc,
-		TaskchainExecService: taskService,
-		FunctionService:      functionSvc,
-		HookRepo:             jsHookRepo,
-	})
 	// ------------------------------------------------------------------------
 	// 10. Load chain from file
 	// ------------------------------------------------------------------------
 	chainPathAbs, err := filepath.Abs(opts.EffectiveChain)
 	if err != nil {
-		slog.Error("Invalid chain path", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("invalid chain path: %w", err)
 	}
 	chainData, err := os.ReadFile(chainPathAbs)
 	if err != nil {
-		slog.Error("Failed to read chain file", "path", chainPathAbs, "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to read chain file %q: %w", chainPathAbs, err)
 	}
 	var chain taskengine.TaskChainDefinition
 	if err := json.Unmarshal(chainData, &chain); err != nil {
-		slog.Error("Failed to parse chain JSON", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to parse chain JSON: %w", err)
 	}
 
 	// Determine input: from flag, positional args (+optional stdin), or stdin alone.
 	in := opts.InputValue
 	if !opts.InputFlagPassed {
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
+		if stat, err := os.Stdin.Stat(); err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
 			stdinBytes, err := io.ReadAll(os.Stdin)
 			if err != nil {
-				slog.Error("Failed to read from stdin", "error", err)
-				os.Exit(1)
+				return fmt.Errorf("failed to read from stdin: %w", err)
 			}
 			stdinStr := strings.TrimSpace(string(stdinBytes))
 			if stdinStr != "" {
 				if in != "" {
-					// Combine: positional args = instruction, stdin = data.
-					// e.g. cat file.go | contenox "summarise this"
 					in = in + "\n\n" + stdinStr
 				} else {
 					in = stdinStr
@@ -315,8 +98,7 @@ func execChat(ctx context.Context, opts chatOpts) {
 		}
 	}
 	if in == "" {
-		slog.Error("No input for chain", "hint", "pass input as args (e.g. vibe hello), or --input \"your prompt\", or pipe (e.g. echo 'hello' | vibe)")
-		os.Exit(1)
+		return fmt.Errorf("no input for chain: pass input as args, --input, or pipe via stdin")
 	}
 
 	// ------------------------------------------------------------------------
@@ -327,7 +109,7 @@ func execChat(ctx context.Context, opts chatOpts) {
 		"provider": opts.EffectiveDefaultProvider,
 		"chain":    chain.ID,
 	}
-	if builtins := jsEnv.GetBuiltinSignatures(); len(builtins) > 0 {
+	if builtins := engine.JSEnv.GetBuiltinSignatures(); len(builtins) > 0 {
 		var b strings.Builder
 		for _, t := range builtins {
 			if t.Function.Name != "console" {
@@ -337,7 +119,7 @@ func execChat(ctx context.Context, opts chatOpts) {
 				b.WriteString("\n")
 			}
 		}
-		if hookTools, err := jsEnv.GetExecuteHookToolDescriptions(ctx); err == nil && len(hookTools) > 0 {
+		if hookTools, err := engine.JSEnv.GetExecuteHookToolDescriptions(ctx); err == nil && len(hookTools) > 0 {
 			b.WriteString("executeHook tools: ")
 			for i, t := range hookTools {
 				if i > 0 {
@@ -383,24 +165,25 @@ func execChat(ctx context.Context, opts chatOpts) {
 	if opts.EffectiveTracing {
 		slog.Info("Executing chain", "chain", chainPathAbs)
 	} else {
-		fmt.Fprintln(os.Stderr, "Thinking...")
+		fmt.Fprintln(errW, "Thinking...")
 	}
-	output, outputType, stateUnits, err := taskService.Execute(ctx, &chain, chainInput, taskengine.DataTypeChatHistory)
+	output, outputType, stateUnits, err := engine.TaskService.Execute(ctx, &chain, chainInput, taskengine.DataTypeChatHistory)
 	if err != nil {
-		slog.Error("Chain execution failed", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("chain execution failed: %w", err)
 	}
 
-	// Persist Results Surgically
+	// Persist Results Surgically.
+	// Use context.WithoutCancel so a --timeout expiry doesn't lose the final message.
 	if sessionID != "" && outputType == taskengine.DataTypeChatHistory {
 		if updatedHistory, ok := output.(taskengine.ChatHistory); ok {
-			exec, commit, release, txErr := db.WithTransaction(ctx)
+			cleanCtx := context.WithoutCancel(ctx)
+			exec, commit, release, txErr := db.WithTransaction(cleanCtx)
 			if txErr == nil {
 				defer release()
-				if err := chatMgr.PersistDiff(ctx, exec, sessionID, updatedHistory.Messages); err != nil {
+				if err := chatMgr.PersistDiff(cleanCtx, exec, sessionID, updatedHistory.Messages); err != nil {
 					slog.Error("Failed to persist chat diff", "sessionID", sessionID, "error", err)
 				} else {
-					if err := commit(ctx); err != nil {
+					if err := commit(cleanCtx); err != nil {
 						slog.Error("Failed to commit chat persistence transaction", "error", err)
 					}
 				}
@@ -408,8 +191,7 @@ func execChat(ctx context.Context, opts chatOpts) {
 				slog.Error("Failed to start transaction for chat persistence", "error", txErr)
 			}
 		} else {
-			slog.Error("BUG: chain returned DataTypeChatHistory but output is not ChatHistory", "type", fmt.Sprintf("%T", output))
-			os.Exit(1)
+			return fmt.Errorf("BUG: chain returned DataTypeChatHistory but output is not ChatHistory (type=%T)", output)
 		}
 	}
 
@@ -420,13 +202,13 @@ func execChat(ctx context.Context, opts chatOpts) {
 		if hist, ok := output.(taskengine.ChatHistory); ok {
 			for _, msg := range hist.Messages {
 				if msg.Role == "assistant" && msg.Thinking != "" {
-					fmt.Fprintln(os.Stderr, "\n💭 Reasoning:")
-					fmt.Fprintln(os.Stderr, msg.Thinking)
+					fmt.Fprintln(errW, "\n💭 Reasoning:")
+					fmt.Fprintln(errW, msg.Thinking)
 				}
 			}
 		}
 	}
-	printRelevantOutput(output, outputType, opts.EffectiveRaw)
+	printRelevantOutput(out, output, outputType, opts.EffectiveRaw)
 
 	// --last N: print last N non-system messages from the updated history.
 	if opts.LastN > 0 {
@@ -441,18 +223,19 @@ func execChat(ctx context.Context, opts chatOpts) {
 				visible = visible[len(visible)-opts.LastN:]
 			}
 			if len(visible) > 0 {
-				fmt.Fprintln(os.Stderr, "\n── last", opts.LastN, "turns ──────────────────────")
+				fmt.Fprintln(errW, "\n── last", opts.LastN, "turns ──────────────────────")
 				for _, m := range visible {
-					fmt.Fprintf(os.Stderr, "[%s] %s:\n  %s\n\n", m.Timestamp.Format("15:04:05"), m.Role, m.Content)
+					fmt.Fprintf(errW, "[%s] %s:\n  %s\n\n", m.Timestamp.Format("15:04:05"), m.Role, m.Content)
 				}
-				fmt.Fprintln(os.Stderr, "────────────────────────────────────")
+				fmt.Fprintln(errW, "────────────────────────────────────")
 			}
 		}
 	}
 	if opts.EffectiveSteps && len(stateUnits) > 0 {
-		fmt.Fprintln(os.Stderr, "\n📋 Steps:")
+		fmt.Fprintln(errW, "\n📋 Steps:")
 		for i, u := range stateUnits {
-			fmt.Fprintf(os.Stderr, "  %d. %s (%s) %s %s\n", i+1, u.TaskID, u.TaskHandler, formatDuration(u.Duration), u.Transition)
+			fmt.Fprintf(errW, "  %d. %s (%s) %s %s\n", i+1, u.TaskID, u.TaskHandler, formatDuration(u.Duration), u.Transition)
 		}
 	}
+	return nil
 }

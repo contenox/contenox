@@ -212,21 +212,26 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	}
 	filter := map[string]ToolWithResolution{}
 	for _, task := range chain.Tasks {
-		if task.ExecuteConfig != nil && len(task.ExecuteConfig.Hooks) > 0 {
-			for _, hookName := range task.ExecuteConfig.Hooks {
-				hookTools, err := env.hookProvider.GetToolsForHookByName(ctx, hookName)
-				if err != nil {
-					if errors.Is(err, ErrHookNotFound) {
-						// Hook not registered (e.g. local_shell disabled via --enable-local-exec=false).
-						// The model simply won't see this tool.
-						continue
-					}
-					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: failed to get tools for hook %s: %w", currentTask.ID, hookName, err)
+		if task.ExecuteConfig == nil {
+			continue
+		}
+		hookNames, err := resolveHookNames(ctx, task.ExecuteConfig.Hooks, env.hookProvider)
+		if err != nil {
+			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: failed to resolve hooks: %w", currentTask.ID, err)
+		}
+		for _, hookName := range hookNames {
+			hookTools, err := env.hookProvider.GetToolsForHookByName(ctx, hookName)
+			if err != nil {
+				if errors.Is(err, ErrHookNotFound) {
+					// Hook not registered (e.g. local_shell disabled via --enable-local-exec=false).
+					// The model simply won't see this tool.
+					continue
 				}
-				for _, tool := range hookTools {
-					tool.Function.Name = hookName + "." + tool.Function.Name
-					filter[tool.Function.Name] = ToolWithResolution{Tool: tool, HookName: hookName}
-				}
+				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: failed to get tools for hook %s: %w", currentTask.ID, hookName, err)
+			}
+			for _, tool := range hookTools {
+				tool.Function.Name = hookName + "." + tool.Function.Name
+				filter[tool.Function.Name] = ToolWithResolution{Tool: tool, HookName: hookName}
 			}
 		}
 	}
@@ -361,8 +366,8 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 					"next_task", currentTask.ID,
 					"reason", "error",
 				)
-				defer endErrTransition()
 				reportChangeErrTransition(currentTask.ID, taskErr)
+				endErrTransition() // Fix 2: direct call, not defer — defers inside loops leak
 				continue
 			}
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s failed after %d retries: %v", currentTask.ID, maxRetries, taskErr)
@@ -431,8 +436,8 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				ctx,
 				"chain_complete",
 				"chain")
-			defer endFinal()
 			reportChangeFinal("chain", finalOutput)
+			endFinal() // Fix 2: direct call, not defer
 			break
 		}
 
@@ -443,8 +448,8 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			currentTask.ID,
 			"next_task", nextTaskID,
 		)
-		defer endTransition()
 		reportChangeTransition(nextTaskID, transitionEval)
+		endTransition() // Fix 2: direct call, not defer
 
 		// Find next task
 		currentTask, err = findTaskByID(chain.Tasks, nextTaskID)
@@ -533,8 +538,11 @@ func (env SimpleEnv) composeAppendStringToChatHistory(leftVal any, leftType Data
 		Timestamp: time.Now().UTC(),
 	}
 
+	// Fix 6: force reallocation so we never mutate the backing array of the
+	// original slice, which could corrupt shared state on branching/retries.
+	newMessages := append([]Message(nil), chatHist.Messages...)
 	result := ChatHistory{
-		Messages:     append(chatHist.Messages, newMsg),
+		Messages:     append(newMessages, newMsg),
 		Model:        chatHist.Model,
 		OutputTokens: chatHist.OutputTokens,
 		InputTokens:  chatHist.InputTokens,
@@ -596,7 +604,9 @@ func (exe SimpleEnv) evaluateTransitions(_ context.Context, _ string, transition
 
 		match, err := compare(branch.Operator, eval, branch.When)
 		if err != nil {
-			return "", nil, err
+			// Fix 8: treat parse errors as non-match so OpDefault can still fire.
+			// Returning an error here would bypass the safe fallback branch entirely.
+			match = false
 		}
 		if match {
 			return branch.Goto, &branch, nil
@@ -673,30 +683,28 @@ func compare(operator OperatorTerm, response, when string) (bool, error) {
 		}
 		return resNum < targetNum, nil
 	case OpInRange:
-		parts := strings.Split(when, "-")
-		if len(parts) != 2 {
-			return false, fmt.Errorf("invalid inrange format: %s (expected 'min-max')", when)
+		// Fix 11: use regex so negative bounds like "-10--2" or "-5-5" parse correctly.
+		// strings.Split(when, "-") breaks on any leading '-' in a negative number.
+		rangeRe := regexp.MustCompile(`^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$`)
+		m := rangeRe.FindStringSubmatch(strings.TrimSpace(when))
+		if m == nil {
+			return false, fmt.Errorf("invalid inrange format: %q (expected 'min-max')", when)
 		}
-
-		lower, err := parseNumber(strings.TrimSpace(parts[0]))
+		lower, err := parseNumber(m[1])
 		if err != nil {
 			return false, fmt.Errorf("invalid lower bound in range %q: %w", when, err)
 		}
-
-		upper, err := parseNumber(strings.TrimSpace(parts[1]))
+		upper, err := parseNumber(m[2])
 		if err != nil {
 			return false, fmt.Errorf("invalid upper bound in range %q: %w", when, err)
 		}
-
 		if lower > upper {
 			return false, fmt.Errorf("invalid range: lower bound %f > upper bound %f", lower, upper)
 		}
-
 		resNum, err := parseNumber(response)
 		if err != nil {
 			return false, fmt.Errorf("failed to parse response as number: %q: %w", response, err)
 		}
-
 		return resNum >= lower && resNum <= upper, nil
 	default:
 		return false, fmt.Errorf("unsupported operator: %s", operator)

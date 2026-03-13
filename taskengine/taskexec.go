@@ -579,6 +579,9 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			if !alreadyPresent {
 				messages := []Message{{Role: "system", Content: currentTask.SystemInstruction, Timestamp: time.Now().UTC()}}
 				chatHistory.Messages = append(messages, chatHistory.Messages...)
+				// Fix 9: force recount — the system instruction tokens are not in
+				// the old InputTokens value, so executeLLM would skip counting.
+				chatHistory.InputTokens = 0
 			}
 		}
 
@@ -627,7 +630,13 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 
 			var args map[string]any
-			if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &args); err != nil {
+			// Fix 10: LLMs sometimes omit arguments entirely (empty string).
+			// Default to '{}' so Unmarshal succeeds and other tool calls aren't skipped.
+			argsStr := toolCall.Function.Arguments
+			if strings.TrimSpace(argsStr) == "" {
+				argsStr = "{}"
+			}
+			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
 				taskErr = fmt.Errorf("failed to unmarshal tool arguments for %s: %w",
 					toolCall.Function.Name, err)
 				break
@@ -949,25 +958,16 @@ func (exe *SimpleExec) condition(ctx context.Context, systemInstruction string, 
 	if err != nil {
 		return false, fmt.Errorf("condition: prompt execution failed: %w", err)
 	}
-	found := false
-	for k := range validConditions {
-		if k == response {
-			found = true
-		}
-	}
-	if !found {
-		return false, fmt.Errorf("failed to parse into valid condition output was: %s prompt was: %s", response, prompt)
-	}
+	// Fix 7: use only EqualFold+TrimSpace. The previous strict-equality early-abort
+	// made all fuzzy matching unreachable — any LLM response with a trailing space
+	// or different capitalisation would always fail.
+	trimmed := strings.TrimSpace(response)
 	for key, val := range validConditions {
-		if strings.EqualFold(response, key) {
-			if val {
-				return strings.EqualFold(strings.TrimSpace(response), key), nil
-			}
-			return !strings.EqualFold(strings.TrimSpace(response), key), nil
+		if strings.EqualFold(trimmed, key) {
+			return val, nil
 		}
 	}
-
-	return strings.EqualFold(strings.TrimSpace(response), "yes"), nil
+	return false, fmt.Errorf("condition: unrecognised response %q (valid: %v) prompt: %.200s", response, validConditions, prompt)
 }
 
 func parseKeyValueString(input string) (map[string]any, error) {
@@ -1007,9 +1007,11 @@ func parseKeyValueString(input string) (map[string]any, error) {
 		key := strings.TrimSpace(kv[0])
 		value := strings.TrimSpace(kv[1])
 
-		// Handle quoted values
-		if (strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
-			(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'")) {
+		// Fix 3: guard against single-character quoted strings (len==1 would produce
+		// value[1:0] which panics). Both prefix and suffix must match.
+		if len(value) >= 2 &&
+			((strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"")) ||
+				(strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'"))) {
 			value = value[1 : len(value)-1]
 		}
 

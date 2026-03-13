@@ -30,6 +30,21 @@ No pending steps. Plan is complete!
 
 ---
 
+### 📺 `contenox vibe` — Interactive TUI
+
+When you want more than a shell prompt:
+
+```bash
+contenox vibe
+```
+
+A full-screen terminal dashboard (Bubble Tea) with:
+- **Live plan sidebar** — watch steps execute with `⟳` / `✓` / `✗` indicators in real time
+- **Interactive approvals** — approve or deny sensitive filesystem actions with `y`/`n` before they run
+- **Slash commands** — `/plan next --auto`, `/session new`, `/mcp list`, `/model add` without leaving chat
+
+---
+
 ## Why Contenox?
 
 Contenox is different:
@@ -119,7 +134,7 @@ contenox config set default-model qwen2.5:7b
 
 # Or for OpenAI / Gemini:
 # contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
-# contenox config set default-model gpt-4o
+# contenox config set default-model gpt-5-mini
 
 # 3. Chat with your model:
 contenox "hey, what can you do?"
@@ -190,8 +205,6 @@ Contenox breaks any goal into an ordered plan, then executes it step by step usi
 
 ---
 
-## Other Modes
-
 ### `contenox chat` — Interactive chat
 
 ```bash
@@ -215,6 +228,15 @@ contenox run --chain .contenox/parse-chain.json --input-type json '{"key":"value
 ```
 
 `run` is stateless — no chat history. `--chain` is required. Supported `--input-type`: `string` (default), `chat`, `json`, `int`, `float`, `bool`.
+
+### 🧠 Reasoning model support
+
+Pass `--think` to stream the model's internal chain-of-thought to stderr before it acts — works with DeepSeek-R1, OpenAI o3, Gemini Thinking, and Ollama thinking models:
+
+```bash
+contenox --think "why is my API slow?"
+contenox run --chain .contenox/review.json --think --input @main.go
+```
 
 ---
 
@@ -281,6 +303,7 @@ contenox backend remove myvllm
 contenox CLI
   ├── plan new       → LLM planner chain → SQLite plan + steps
   ├── plan next      → LLM executor chain → local_shell / local_fs → result persisted
+  ├── vibe           → Bubble Tea TUI: chat + live plan sidebar + HITL approvals
   ├── run            → run any chain, any input type, stateless
   └── chat (default) → LLM chat chain → interactive response
 
@@ -292,7 +315,7 @@ SQLite (.contenox/local.db)
 
 Chains are JSON files in `.contenox/`. They define the LLM workflow: model, hooks, branching logic. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture.
 
-Contenox is also the local CLI layer of a full **Runtime API** server (PostgreSQL + NATS) for production deployments. [Read the server docs →](docs/server-quickstart.md)
+Contenox is powered by a battle-tested enterprise workflow engine. The [Runtime API](docs/server-quickstart.md) is also available as a self-hostable Docker deployment for teams who want the full server with REST API, observability, and multi-tenant support.
 
 ---
 

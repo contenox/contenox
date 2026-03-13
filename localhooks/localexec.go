@@ -166,17 +166,18 @@ func (h *LocalExecHook) parseArgs(hook *taskengine.HookCall, input any) (command
 }
 
 func (h *LocalExecHook) checkAllowlist(command string, useShell bool) error {
-	if useShell {
-		// Shell mode: we run /bin/sh -c "<command>"; the "command" we check is the whole string.
-		// For allowlist we only allow if shell is allowed and we could restrict to allowedDir for script paths.
-		if h.allowedDir != "" || len(h.allowedCommands) > 0 {
-			// First word might be the script/binary
-			first := strings.Fields(command)
-			if len(first) > 0 {
-				command = first[0]
-			}
-		}
+	// 🚨 Security: forbid shell mode entirely when any policy is active.
+	// It is impossible to statically analyse a raw bash string for pipes (|),
+	// logic operators (&&, ||) and subshells ($(...)), so we refuse to run
+	// /bin/sh -c <string> when an allowlist, denylist or allowed-dir policy is
+	// configured.  Without this guard, an LLM could bypass
+	// --local-exec-allowed-commands=git with: {"command":"git status; rm -rf /","shell":true}
+	if useShell && (len(h.allowedCommands) > 0 || h.allowedDir != "" || len(h.deniedCommands) > 0) {
+		return fmt.Errorf("local_shell: 'shell: true' is strictly forbidden when security " +
+			"policies (allowlist / denylist / allowed-dir) are active to prevent command injection; " +
+			"set shell:false and supply the command and args separately")
 	}
+
 	resolved := command
 	if !filepath.IsAbs(command) {
 		if path, err := exec.LookPath(command); err == nil {

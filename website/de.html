@@ -283,15 +283,16 @@
                         <article class="card service-card">
                             <h3>Keine Infrastruktur</h3>
                             <p>Einzelnes Binary. SQLite. Kein Daemon, kein Docker, kein NATS, kein Postgres. Leg es auf
-                                einem beliebigen Rechner ab und es funktioniert. Der Runtime-API-Server ist für Team-
-                                und Produktionseinsatz verfügbar — aber das CLI braucht nichts davon.</p>
+                                einem beliebigen Rechner ab und es funktioniert. Contenox läuft auf einer
+                                kampferprobten Enterprise-Workflow-Engine — das CLI braucht nichts extra.</p>
                         </article>
                         <article class="card service-card">
-                            <h3>Pures UNIX.</h3>
-                            <p>Contenox ist eine autonome Engine, kein Chatbot-Wrapper. Es gibt keine TUI oder GUI,
-                                die dich einschränkt. Es nutzt Standard-Streams, beendet sich nach Abschluss und ist
-                                dafür gemacht, headless in CI/CD-Pipelines oder zusammen mit anderen UNIX-Tools zu
-                                laufen.</p>
+                            <h3>Terminal-first — CLI und TUI</h3>
+                            <p>Contenox läuft headless in CI/CD-Pipelines und lässt sich sauber mit anderen
+                                UNIX-Tools über Standard-Streams kombinieren. Wer mehr will: <code>contenox
+                                vibe</code> bietet ein vollbildfähiges TUI-Dashboard mit Live-Seitenleiste
+                                und interaktiven Genehmigungen.
+                            </p>
                         </article>
                     </div>
                 </div>
@@ -377,7 +378,7 @@
             <section id="how" class="section section-alt" aria-labelledby="how-heading">
                 <div class="container">
                     <h2 id="how-heading">Wie es funktioniert</h2>
-                    <p class="section-lead">Drei Modi. Ein Binary.</p>
+                    <p class="section-lead">Vier Modi. Ein Binary.</p>
 
                     <div class="capabilities-grid">
                         <div class="card capability-card">
@@ -387,6 +388,15 @@
                                 gespeichert.<br>
                                 Führe einen Schritt zur Zeit mit <code>plan next</code> aus, oder gehe voll automatisch
                                 mit <code>plan next --auto</code>. Wiederhole, überspringe oder plane jeden Schritt neu.
+                            </p>
+                        </div>
+                        <div class="card capability-card">
+                            <h4><code>contenox vibe</code> — Interaktive TUI</h4>
+                            <p>
+                                Ein vollbildfähiges Terminal-Dashboard, gebaut mit Bubble Tea. Chatte mit dem Modell,
+                                beobachte autonome Pläne live in einer Seitenleiste und genehmige sensible
+                                Dateisystemaktionen mit interaktiven <code>j</code>/<code>n</code>-Prompts —
+                                alles ohne das Terminal zu verlassen.
                             </p>
                         </div>
                         <div class="card capability-card">
@@ -461,7 +471,8 @@
                         <article class="card service-card">
                             <h3>Jeder Transport</h3>
                             <p><code>stdio</code> für lokale Prozesse, <code>sse</code> für Event-Stream-Server,
-                                <code>http</code> für Produktionsumgebungen. Alles fühlt sich nativ an.</p>
+                                <code>http</code> für Produktionsumgebungen. Alles fühlt sich nativ an.
+                            </p>
                         </article>
                         <article class="card service-card">
                             <h3>Jeder MCP-Server</h3>
