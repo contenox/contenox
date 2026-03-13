@@ -332,12 +332,22 @@ func (h *LocalExecHook) GetToolsForHookByName(ctx context.Context, name string) 
 	if name != localExecHookName {
 		return nil, fmt.Errorf("unknown hook: %s", name)
 	}
+	desc := "Run a terminal command on the local host. Input is passed as stdin."
+	if len(h.allowedCommands) > 0 {
+		desc += " Allowed commands: " + strings.Join(h.allowedCommands, ", ") + "."
+	}
+	if h.allowedDir != "" {
+		desc += " Commands must reside under: " + h.allowedDir + "."
+	}
+	if len(h.deniedCommands) > 0 {
+		desc += " Denied commands: " + strings.Join(h.deniedCommands, ", ") + "."
+	}
 	return []taskengine.Tool{
 		{
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "local_shell",
-				Description: "Run a terminal command on the local host. Input is passed as stdin.",
+				Description: desc,
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
