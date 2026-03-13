@@ -9,7 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/contenox/contenox/hookproviderservice"
 	"github.com/contenox/contenox/internal/hooks"
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtimetypes"
 	"github.com/spf13/cobra"
 )
@@ -107,6 +110,21 @@ func init() {
 	hookCmd.AddCommand(hookAddCmd, hookListCmd, hookShowCmd, hookRemoveCmd, hookUpdateCmd)
 }
 
+// openHookService resolves the DB path, opens SQLite and returns a hookproviderservice.
+// The hookRegistry is nil here (CLI doesn't need ListLocalHooks / GetSchemasForSupportedHooks).
+func openHookService(cmd *cobra.Command) (libdb.DBManager, hookproviderservice.Service, error) {
+	dbPath, err := resolveDBPath(cmd)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid database path: %w", err)
+	}
+	ctx := libtracker.WithNewRequestID(context.Background())
+	db, err := openDBAt(ctx, dbPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open database: %w", err)
+	}
+	return db, hookproviderservice.New(db, nil), nil
+}
+
 // parseHeaders parses a []string of "Key: Value" into a map[string]string.
 func parseHeaders(raw []string) (map[string]string, error) {
 	out := make(map[string]string, len(raw))
@@ -166,20 +184,19 @@ func runHookAdd(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	ctx, db, cleanup, err := openSessionDB(cmd)
+	ctx := libtracker.WithNewRequestID(context.Background())
+	db, svc, err := openHookService(cmd)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
-
-	store := runtimetypes.New(db.WithoutTransaction())
+	defer db.Close()
 
 	// Check name not already taken.
-	if _, err := store.GetRemoteHookByName(ctx, name); err == nil {
+	if _, err := svc.GetByName(ctx, name); err == nil {
 		return fmt.Errorf("hook %q already exists; use 'contenox hook update' to modify it", name)
 	}
 
-	// Probe tools (non-fatal).
+	// Probe tools (non-fatal — purely presentation logic, not a service concern).
 	toolCount := probeTools(url)
 
 	hook := &runtimetypes.RemoteHook{
@@ -189,31 +206,31 @@ func runHookAdd(cmd *cobra.Command, args []string) error {
 		Headers:      headers,
 		InjectParams: injectParams,
 	}
-	if err := store.CreateRemoteHook(ctx, hook); err != nil {
+	if err := svc.Create(ctx, hook); err != nil {
 		return fmt.Errorf("failed to register hook: %w", err)
 	}
 
+	out := cmd.OutOrStdout()
 	if toolCount >= 0 {
-		fmt.Printf("Registered hook %q — %d tool(s) discovered.\n", name, toolCount)
+		fmt.Fprintf(out, "Registered hook %q — %d tool(s) discovered.\n", name, toolCount)
 	} else {
-		fmt.Printf("Registered hook %q — could not reach endpoint to count tools (will retry at chain execution time).\n", name)
+		fmt.Fprintf(out, "Registered hook %q — could not reach endpoint to count tools (will retry at chain execution time).\n", name)
 	}
 	return nil
 }
 
 func runHookList(cmd *cobra.Command, args []string) error {
-	ctx, db, cleanup, err := openSessionDB(cmd)
+	ctx := libtracker.WithNewRequestID(context.Background())
+	db, svc, err := openHookService(cmd)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
-
-	store := runtimetypes.New(db.WithoutTransaction())
+	defer db.Close()
 
 	var all []*runtimetypes.RemoteHook
 	var cursor *time.Time
 	for {
-		page, err := store.ListRemoteHooks(ctx, cursor, 100)
+		page, err := svc.List(ctx, cursor, 100)
 		if err != nil {
 			return fmt.Errorf("failed to list hooks: %w", err)
 		}
@@ -226,55 +243,57 @@ func runHookList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(all) == 0 {
-		fmt.Println("No remote hooks registered. Run: contenox hook add <name> --url <endpoint>")
+		fmt.Fprintln(cmd.OutOrStdout(), "No remote hooks registered. Run: contenox hook add <name> --url <endpoint>")
 		return nil
 	}
 
-	fmt.Printf("%-20s  %-45s  %s\n", "NAME", "URL", "TIMEOUT")
-	fmt.Printf("%-20s  %-45s  %s\n", strings.Repeat("-", 20), strings.Repeat("-", 45), "-------")
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "%-20s  %-45s  %s\n", "NAME", "URL", "TIMEOUT")
+	fmt.Fprintf(out, "%-20s  %-45s  %s\n", strings.Repeat("-", 20), strings.Repeat("-", 45), "-------")
 	for _, h := range all {
 		urlStr := h.EndpointURL
 		if len(urlStr) > 45 {
 			urlStr = urlStr[:42] + "..."
 		}
-		fmt.Printf("%-20s  %-45s  %dms\n", h.Name, urlStr, h.TimeoutMs)
+		fmt.Fprintf(out, "%-20s  %-45s  %dms\n", h.Name, urlStr, h.TimeoutMs)
 	}
 	return nil
 }
 
 func runHookShow(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	ctx, db, cleanup, err := openSessionDB(cmd)
+	ctx := libtracker.WithNewRequestID(context.Background())
+	db, svc, err := openHookService(cmd)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer db.Close()
 
-	store := runtimetypes.New(db.WithoutTransaction())
-	hook, err := store.GetRemoteHookByName(ctx, name)
+	hook, err := svc.GetByName(ctx, name)
 	if err != nil {
 		return fmt.Errorf("hook %q not found", name)
 	}
 
-	fmt.Printf("Name:      %s\n", hook.Name)
-	fmt.Printf("URL:       %s\n", hook.EndpointURL)
-	fmt.Printf("Timeout:   %dms\n", hook.TimeoutMs)
-	fmt.Printf("Registered:%s\n", hook.CreatedAt.Local().Format("2006-01-02 15:04:05"))
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Name:      %s\n", hook.Name)
+	fmt.Fprintf(out, "URL:       %s\n", hook.EndpointURL)
+	fmt.Fprintf(out, "Timeout:   %dms\n", hook.TimeoutMs)
+	fmt.Fprintf(out, "Registered:%s\n", hook.CreatedAt.Local().Format("2006-01-02 15:04:05"))
 
 	if len(hook.Headers) > 0 {
-		fmt.Printf("Headers:   ")
+		fmt.Fprintf(out, "Headers:   ")
 		keys := make([]string, 0, len(hook.Headers))
 		for k := range hook.Headers {
 			keys = append(keys, k)
 		}
-		fmt.Println(strings.Join(keys, ", ") + " (values hidden)")
+		fmt.Fprintln(out, strings.Join(keys, ", ")+" (values hidden)")
 	}
 	if len(hook.InjectParams) > 0 {
 		keys := make([]string, 0, len(hook.InjectParams))
 		for k := range hook.InjectParams {
 			keys = append(keys, k)
 		}
-		fmt.Printf("Inject:    %s (values hidden)\n", strings.Join(keys, ", "))
+		fmt.Fprintf(out, "Inject:    %s (values hidden)\n", strings.Join(keys, ", "))
 	}
 
 	// Probe live tools.
@@ -290,47 +309,47 @@ func runHookShow(cmd *cobra.Command, args []string) error {
 
 	tools, err := proto.FetchTools(toolCtx, hook.EndpointURL, injectParams, http.DefaultClient)
 	if err != nil {
-		fmt.Printf("Tools:     (could not reach endpoint: %v)\n", err)
+		fmt.Fprintf(out, "Tools:     (could not reach endpoint: %v)\n", err)
 		return nil
 	}
 
-	fmt.Printf("Tools (%d):\n", len(tools))
+	fmt.Fprintf(out, "Tools (%d):\n", len(tools))
 	for _, t := range tools {
-		fmt.Printf("  %-30s  %s\n", t.Function.Name, t.Function.Description)
+		fmt.Fprintf(out, "  %-30s  %s\n", t.Function.Name, t.Function.Description)
 	}
 	return nil
 }
 
 func runHookRemove(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	ctx, db, cleanup, err := openSessionDB(cmd)
+	ctx := libtracker.WithNewRequestID(context.Background())
+	db, svc, err := openHookService(cmd)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer db.Close()
 
-	store := runtimetypes.New(db.WithoutTransaction())
-	hook, err := store.GetRemoteHookByName(ctx, name)
+	hook, err := svc.GetByName(ctx, name)
 	if err != nil {
 		return fmt.Errorf("hook %q not found", name)
 	}
-	if err := store.DeleteRemoteHook(ctx, hook.ID); err != nil {
+	if err := svc.Delete(ctx, hook.ID); err != nil {
 		return fmt.Errorf("failed to remove hook: %w", err)
 	}
-	fmt.Printf("Removed hook %q.\n", name)
+	fmt.Fprintf(cmd.OutOrStdout(), "Removed hook %q.\n", name)
 	return nil
 }
 
 func runHookUpdate(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	ctx, db, cleanup, err := openSessionDB(cmd)
+	ctx := libtracker.WithNewRequestID(context.Background())
+	db, svc, err := openHookService(cmd)
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	defer db.Close()
 
-	store := runtimetypes.New(db.WithoutTransaction())
-	hook, err := store.GetRemoteHookByName(ctx, name)
+	hook, err := svc.GetByName(ctx, name)
 	if err != nil {
 		return fmt.Errorf("hook %q not found", name)
 	}
@@ -358,9 +377,9 @@ func runHookUpdate(cmd *cobra.Command, args []string) error {
 		hook.InjectParams = injectParams
 	}
 
-	if err := store.UpdateRemoteHook(ctx, hook); err != nil {
+	if err := svc.Update(ctx, hook); err != nil {
 		return fmt.Errorf("failed to update hook: %w", err)
 	}
-	fmt.Printf("Updated hook %q.\n", name)
+	fmt.Fprintf(cmd.OutOrStdout(), "Updated hook %q.\n", name)
 	return nil
 }

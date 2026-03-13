@@ -33,6 +33,8 @@ type Engine struct {
 	JSEnv       *jseval.Env
 	Stop        func()
 	MCPManager  *mcpworker.Manager
+	// LocalHooks lists the names of all registered local hook handlers.
+	LocalHooks []string
 }
 
 // BuildEngine scaffolds the complex dependency graph needed to run task chains.
@@ -42,21 +44,31 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	// before bus.Close() is called, preventing the process from hanging.
 	engineCtx, engineCancel := context.WithCancel(ctx)
 
-	// 2. SQLite-backed bus (same architecture as runtime-API, just without NATS)
+	// SQLite-backed bus (same architecture as runtime-API, just without NATS)
 	bus := libbus.NewSQLite(db.WithoutTransaction())
+
+	// Armed defer: if we return early on error, cancel the engine context and
+	// close the bus so no goroutines are leaked.
+	success := false
+	defer func() {
+		if !success {
+			engineCancel()
+			bus.Close()
+		}
+	}()
+
 	engine := &Engine{Stop: func() {
 		engineCancel() // signal all goroutines to stop
 		bus.Close()
 	}}
 
-	// 3. Runtime state
+	// Runtime state
 	stateOpts := []runtimestate.Option{}
 	if opts.EffectiveNoDeleteModels {
 		stateOpts = append(stateOpts, runtimestate.WithSkipDeleteUndeclaredModels())
 	}
 	state, err := runtimestate.New(engineCtx, db, bus, stateOpts...)
 	if err != nil {
-		bus.Close()
 		return nil, fmt.Errorf("failed to create runtime state: %w", err)
 	}
 
@@ -68,15 +80,12 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		ChatModel:  opts.EffectiveDefaultModel,
 	}
 	if err := runtimestate.InitEmbeder(ctx, config, db, opts.EffectiveContext, state); err != nil {
-		bus.Close()
 		return nil, fmt.Errorf("failed to init embedder: %w", err)
 	}
 	if err := runtimestate.InitPromptExec(ctx, config, db, state, opts.EffectiveContext); err != nil {
-		bus.Close()
 		return nil, fmt.Errorf("failed to init prompt executor: %w", err)
 	}
 	if err := runtimestate.InitChatExec(ctx, config, db, state, opts.EffectiveContext); err != nil {
-		bus.Close()
 		return nil, fmt.Errorf("failed to init chat executor: %w", err)
 	}
 
@@ -96,7 +105,6 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	}
 	if len(specs) > 0 {
 		if err := runtimestate.EnsureModels(ctx, db, localTenantID, specs); err != nil {
-			bus.Close()
 			return nil, fmt.Errorf("failed to ensure models: %w", err)
 		}
 	}
@@ -179,6 +187,29 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		jsHooks["local_shell"] = localExecHook
 		localHooks["local_shell"] = localExecHook
 	}
+	// Wrap mutating local hooks with the HITL approval gate when the vibe TUI
+	// wants interactive confirmation before every file write or shell command.
+	if opts.AskApproval != nil {
+		wrap := func(inner taskengine.HookRepo, tools map[string]bool) taskengine.HookRepo {
+			return &localhooks.HITLWrapper{
+				Inner:          inner,
+				Ask:            opts.AskApproval,
+				RequireApprove: tools,
+			}
+		}
+		if h, ok := localHooks["local_fs"]; ok {
+			localHooks["local_fs"] = wrap(h, map[string]bool{
+				"write_file": true,
+				"sed":        true,
+			})
+		}
+		if h, ok := localHooks["local_shell"]; ok {
+			localHooks["local_shell"] = wrap(h, map[string]bool{
+				"local_shell": true,
+			})
+			jsHooks["local_shell"] = localHooks["local_shell"]
+		}
+	}
 	// Start mcpworker.Manager — loads MCP servers from SQLite and serves them
 	// via the SQLite bus. This is the same code path as the runtime-API (which uses NATS).
 	store := runtimetypes.New(db.WithoutTransaction())
@@ -192,6 +223,9 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		return nil, fmt.Errorf("failed to start mcp event watcher: %w", err)
 	}
 	engine.MCPManager = mgr
+	for name := range localHooks {
+		engine.LocalHooks = append(engine.LocalHooks, name)
+	}
 	hookRepo := hooks.NewPersistentRepo(localHooks, db, http.DefaultClient, bus)
 	jsHookRepo := hooks.NewSimpleProvider(jsHooks)
 
@@ -209,6 +243,25 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		return nil, fmt.Errorf("failed to create macro environment: %w", err)
 	}
 	taskService := execservice.NewTasksEnv(engineCtx, envExec, hookRepo)
+	// Register plan_manager after taskService is built.
+	// PersistentRepo holds localHooks by map reference, so this addition is
+	// visible to hookRepo and all callers going forward.
+	if opts.PlannerChain != nil && opts.ExecutorChain != nil {
+		planHook := localhooks.NewPlanManagerHook(
+			db, opts.PlannerChain, opts.ExecutorChain, taskService, opts.ContenoxDir,
+		)
+		if opts.AskApproval != nil {
+			planHook = &localhooks.HITLWrapper{
+				Inner: planHook,
+				Ask:   opts.AskApproval,
+				RequireApprove: map[string]bool{
+					"run_next_step": true,
+				},
+			}
+		}
+		localHooks["plan_manager"] = planHook
+		engine.LocalHooks = append(engine.LocalHooks, "plan_manager")
+	}
 	execSvc := execservice.NewExec(engineCtx, repo)
 	chainSvc := taskchainservice.New(db)
 	functionSvc := functionservice.New(db)
@@ -243,5 +296,6 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		mgr.StopAll() // terminates all stdio MCP child processes
 		oldStop()
 	}
+	success = true
 	return engine, nil
 }

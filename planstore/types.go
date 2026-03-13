@@ -19,6 +19,7 @@ type StepStatus string
 
 const (
 	StepStatusPending   StepStatus = "pending"
+	StepStatusRunning   StepStatus = "running"
 	StepStatusCompleted StepStatus = "completed"
 	StepStatusFailed    StepStatus = "failed"
 	StepStatusSkipped   StepStatus = "skipped"
@@ -52,6 +53,8 @@ type Store interface {
 	CreatePlan(ctx context.Context, plan *Plan) error
 	GetPlanByID(ctx context.Context, id string) (*Plan, error)
 	GetPlanByName(ctx context.Context, name string) (*Plan, error)
+	// GetActivePlan returns the most recently updated active plan, or ErrNotFound.
+	GetActivePlan(ctx context.Context) (*Plan, error)
 	ListPlans(ctx context.Context) ([]*Plan, error)
 	DeletePlan(ctx context.Context, id string) error
 	UpdatePlanStatus(ctx context.Context, planID string, status PlanStatus) error
@@ -60,6 +63,14 @@ type Store interface {
 	CreatePlanSteps(ctx context.Context, steps ...*PlanStep) error
 	ListPlanSteps(ctx context.Context, planID string) ([]*PlanStep, error)
 	UpdatePlanStepStatus(ctx context.Context, stepID string, status StepStatus, result string) error
-	UpdatePlanSteps(ctx context.Context, planID string, steps ...*PlanStep) error // Used for replan
 	DeletePendingPlanSteps(ctx context.Context, planID string) error
+	// ClaimNextPendingStep atomically marks the next pending step as running
+	// and returns it. Returns ErrNotFound when no pending step exists.
+	ClaimNextPendingStep(ctx context.Context, planID string) (*PlanStep, error)
+
+	// Bulk operations for efficiency
+	// DeleteFinishedPlans removes all completed/archived plans; returns count.
+	DeleteFinishedPlans(ctx context.Context) (int, error)
+	// ArchiveActivePlans sets all active plans to archived status.
+	ArchiveActivePlans(ctx context.Context) error
 }

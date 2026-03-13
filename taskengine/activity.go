@@ -7,8 +7,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/contenox/contenox/libtracker"
 	libkv "github.com/contenox/contenox/libkvstore"
+	"github.com/contenox/contenox/libtracker"
 	"github.com/google/uuid"
 )
 
@@ -36,14 +36,17 @@ type TrackedEvent struct {
 	RequestID  string            `json:"requestID,omitempty"`
 }
 
-func (c *CapturedStateUnit) MarshalJSON() ([]byte, error) {
+// value receiver so json.Marshal works on both CapturedStateUnit values
+// and pointers. With a pointer receiver, marshal-by-value skips the custom method
+// and stores Duration as a raw nanosecond integer.
+func (c CapturedStateUnit) MarshalJSON() ([]byte, error) {
 	type Alias CapturedStateUnit
-	return json.Marshal(&struct {
+	return json.Marshal(struct {
 		Duration float64 `json:"duration"` // Convert to milliseconds
-		*Alias
+		Alias
 	}{
 		Duration: float64(c.Duration) / float64(time.Millisecond),
-		Alias:    (*Alias)(c),
+		Alias:    (Alias)(c),
 	})
 }
 
@@ -116,25 +119,30 @@ func (t *KVActivitySink) Start(
 			return
 		}
 
+		// use a context that is not canceled even if the request context
+		// timed out — without this, any task that fails via timeout silently
+		// drops its entire telemetry trace.
+		cleanupCtx := context.WithoutCancel(ctx)
+
 		// Store in key-value system
-		kv, err := t.kvManager.Executor(ctx)
+		kv, err := t.kvManager.Executor(cleanupCtx)
 		if err != nil {
 			log.Printf("SERVERBUG: Failed to get KV executor: %v", err)
 			return
 		}
 
 		// Push to activity log and trim
-		if err := kv.ListPush(ctx, "activity:log", data); err != nil {
+		if err := kv.ListPush(cleanupCtx, "activity:log", data); err != nil {
 			log.Printf("SERVERBUG: Failed to push activity event: %v", err)
 		}
 
 		// Maintain last 1000 events
-		if err := kv.ListTrim(ctx, "activity:log", 0, 999); err != nil {
+		if err := kv.ListTrim(cleanupCtx, "activity:log", 0, 999); err != nil {
 			log.Printf("SERVERBUG: Failed to trim activity log: %v", err)
 		}
 		if event.RequestID != "" {
 			reqKey := "activity:request:" + event.RequestID
-			if err := kv.ListPush(ctx, reqKey, data); err != nil {
+			if err := kv.ListPush(cleanupCtx, reqKey, data); err != nil {
 				log.Printf("SERVERBUG: Failed to push requestID activity event: %v", err)
 			}
 			trackedRequest := TrackedRequest{
@@ -144,10 +152,10 @@ func (t *KVActivitySink) Start(
 			if err != nil {
 				log.Printf("SERVERBUG: Failed to marshal tracked request: %v", err)
 			}
-			if err := kv.SetAdd(ctx, "activity:requests", treq); err != nil {
+			if err := kv.SetAdd(cleanupCtx, "activity:requests", treq); err != nil {
 				log.Printf("SERVERBUG: Failed to track requestID: %v", err)
 			}
-			if err := kv.SetAdd(ctx, "activity:"+event.Operation+","+event.Subject, treq); err != nil {
+			if err := kv.SetAdd(cleanupCtx, "activity:"+event.Operation+","+event.Subject, treq); err != nil {
 				log.Printf("SERVERBUG: Failed to track requestID: %v", err)
 			}
 			op := Operation{Operation: event.Operation, Subject: event.Subject}
@@ -155,7 +163,7 @@ func (t *KVActivitySink) Start(
 			if err != nil {
 				log.Printf("SERVERBUG: Failed to marshal operation: %v", err)
 			} else {
-				if err := kv.SetAdd(ctx, "activity:operations", opData); err != nil {
+				if err := kv.SetAdd(cleanupCtx, "activity:operations", opData); err != nil {
 					log.Printf("SERVERBUG: Failed to track operation: %v", err)
 				}
 			}

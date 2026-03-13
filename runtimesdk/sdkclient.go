@@ -10,7 +10,6 @@ import (
 	"github.com/contenox/contenox/affinitygroupservice"
 	"github.com/contenox/contenox/apiframework"
 	"github.com/contenox/contenox/backendservice"
-	"github.com/contenox/contenox/openaichatservice"
 	"github.com/contenox/contenox/downloadservice"
 	"github.com/contenox/contenox/embedservice"
 	"github.com/contenox/contenox/eventmappingservice"
@@ -19,9 +18,11 @@ import (
 	"github.com/contenox/contenox/executor"
 	"github.com/contenox/contenox/hookproviderservice"
 	"github.com/contenox/contenox/modelservice"
+	"github.com/contenox/contenox/openaichatservice"
 	"github.com/contenox/contenox/providerservice"
 	"github.com/contenox/contenox/stateservice"
 	"github.com/contenox/contenox/taskchainservice"
+	"github.com/contenox/contenox/vfsservice"
 )
 
 // Client is the main SDK client that provides access to all services
@@ -41,6 +42,7 @@ type Client struct {
 	EventSourceService  eventsourceservice.Service
 	ExecutorSyncTrigger executor.ExecutorSyncTrigger
 	MappingService      eventmappingservice.Service
+	VFSService          vfsservice.Service
 }
 
 // Config holds configuration for the SDK client
@@ -67,6 +69,7 @@ func createClient(config Config, httpClient *http.Client) (*Client, error) {
 		EventSourceService:  NewHTTPEvenSourceService(config.BaseURL, config.Token, httpClient),
 		ExecutorSyncTrigger: NewHTTPExecutorSyncTrigger(config.BaseURL, config.Token, httpClient),
 		MappingService:      NewHTTPMappingService(config.BaseURL, config.Token, httpClient),
+		VFSService:          NewHTTPVFSService(config.BaseURL, config.Token, httpClient),
 	}, nil
 }
 

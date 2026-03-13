@@ -1,0 +1,565 @@
+// Package vfsapi provides HTTP handlers for file and folder management.
+package vfsapi
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"strconv"
+	"time"
+
+	serverops "github.com/contenox/contenox/apiframework"
+	"github.com/contenox/contenox/vfsservice"
+)
+
+const (
+	MaxRequestSize      = vfsservice.MaxUploadSize + 10*1024
+	multipartFormMemory = 8 << 20 // 8 MiB
+	formFieldFile       = "file"
+	formFieldName       = "name"
+	formFieldParent     = "parentid"
+)
+
+// AddRoutes sets up the routes for file and folder operations.
+func AddRoutes(mux *http.ServeMux, fileService vfsservice.Service) {
+	f := &fileManager{service: fileService}
+
+	// File operations
+	mux.HandleFunc("POST /files", f.create)                // Create a new file
+	mux.HandleFunc("GET /files/{id}", f.getMetadata)       // Get file metadata
+	mux.HandleFunc("PUT /files/{id}", f.update)            // Update file content
+	mux.HandleFunc("DELETE /files/{id}", f.deleteFile)     // Delete a file
+	mux.HandleFunc("GET /files/{id}/download", f.download) // Download file content
+	mux.HandleFunc("PUT /files/{id}/name", f.renameFile)   // Rename a file
+	mux.HandleFunc("PUT /files/{id}/move", f.moveFile)     // Move a file
+
+	// Folder operations
+	mux.HandleFunc("POST /folders", f.createFolder)          // Create a new folder
+	mux.HandleFunc("PUT /folders/{id}/name", f.renameFolder) // Rename a folder
+	mux.HandleFunc("DELETE /folders/{id}", f.deleteFolder)   // Delete a folder
+	mux.HandleFunc("PUT /folders/{id}/move", f.moveFolder)   // Move a folder
+
+	// Listing operations
+	mux.HandleFunc("GET /files", f.listFiles) // List files and folders
+}
+
+type fileManager struct {
+	service vfsservice.Service
+}
+
+// FileResponse represents a file in API responses.
+type FileResponse struct {
+	ID          string    `json:"id" example:"file_abc123"`
+	Path        string    `json:"path" example:"/documents/report.pdf"`
+	Name        string    `json:"name" example:"report.pdf"`
+	ContentType string    `json:"contentType,omitempty" example:"application/pdf"`
+	Size        int64     `json:"size" example:"102400"`
+	CreatedAt   time.Time `json:"createdAt" example:"2024-06-01T12:00:00Z"`
+	UpdatedAt   time.Time `json:"updatedAt" example:"2024-06-01T12:00:00Z"`
+}
+
+// FolderResponse represents a folder in API responses.
+type FolderResponse struct {
+	ID        string    `json:"id" example:"folder_xyz789"`
+	Path      string    `json:"path" example:"/documents/projects"`
+	Name      string    `json:"name" example:"projects"`
+	ParentID  string    `json:"parentId,omitempty" example:"folder_root"`
+	CreatedAt time.Time `json:"createdAt" example:"2024-06-01T12:00:00Z"`
+	UpdatedAt time.Time `json:"updatedAt" example:"2024-06-01T12:00:00Z"`
+}
+
+// nameUpdateRequest is used for rename operations.
+type nameUpdateRequest struct {
+	Name string `json:"name" example:"new-name.txt"`
+}
+
+// moveRequest is used for move operations.
+type moveRequest struct {
+	NewParentID string `json:"newParentId" example:"folder_abc123"`
+}
+
+// folderCreateRequest is used to create a new folder.
+type folderCreateRequest struct {
+	Name     string `json:"name" example:"New Folder"`
+	ParentID string `json:"parentId,omitempty" example:"folder_root"`
+}
+
+// It validates the request, size, and MIME type. Reads the file content into memory,
+// ensuring not to read more than MaxUploadSize bytes even if headers are manipulated.
+func (f *fileManager) processAndReadFileUpload(w http.ResponseWriter, r *http.Request) (
+	header *multipart.FileHeader,
+	fileData []byte,
+	name string,
+	parentID string,
+	mimeType string,
+	err error,
+) {
+	r.Body = http.MaxBytesReader(w, r.Body, MaxRequestSize)
+
+	if err := r.ParseMultipartForm(multipartFormMemory); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return nil, nil, "", "", "", fmt.Errorf("request body too large (limit %d bytes): %w", maxBytesErr.Limit, serverops.ErrFileSizeLimitExceeded)
+		}
+		if errors.Is(err, http.ErrNotMultipart) {
+			return nil, nil, "", "", "", fmt.Errorf("invalid request format (not multipart): %w", serverops.ErrUnprocessableEntity)
+		}
+		return nil, nil, "", "", "", fmt.Errorf("failed to parse multipart form: %w", serverops.ErrUnprocessableEntity)
+	}
+
+	filePart, header, err := r.FormFile(formFieldFile)
+	if err != nil {
+		if errors.Is(err, http.ErrMissingFile) {
+			return nil, nil, "", "", "", fmt.Errorf("missing required file field '%s': %w", formFieldFile, serverops.ErrUnprocessableEntity)
+		}
+		return nil, nil, "", "", "", fmt.Errorf("invalid file upload: %w", serverops.ErrUnprocessableEntity)
+	}
+	defer filePart.Close()
+
+	if header.Size == 0 {
+		return nil, nil, "", "", "", serverops.ErrFileEmpty
+	}
+	if header.Size > vfsservice.MaxUploadSize {
+		return nil, nil, "", "", "", serverops.ErrFileSizeLimitExceeded
+	}
+
+	limitedReader := io.LimitReader(filePart, vfsservice.MaxUploadSize+1)
+	fileData, err = io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, nil, "", "", "", fmt.Errorf("failed to read file content: %w", serverops.ErrUnprocessableEntity)
+	}
+
+	if int64(len(fileData)) > vfsservice.MaxUploadSize {
+		return nil, nil, "", "", "", serverops.ErrFileSizeLimitExceeded
+	}
+
+	mimeType = http.DetectContentType(fileData)
+	name = r.FormValue(formFieldName)
+	if name == "" {
+		name = header.Filename
+	}
+	parentID = r.FormValue(formFieldParent)
+
+	return header, fileData, name, parentID, mimeType, nil
+}
+
+// Creates a new file by uploading binary content via multipart/form-data.
+//
+// The 'file' field is required. Optional 'name' and 'parentid' fields control naming and placement.
+// Files are limited to 100 MiB (configurable via vfsservice.MaxUploadSize).
+func (f *fileManager) create(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	header, fileData, name, parentID, mimeType, err := f.processAndReadFileUpload(w, r)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.CreateOperation)
+		return
+	}
+
+	req := vfsservice.File{
+		Name:        name,
+		ParentID:    parentID,
+		ContentType: mimeType,
+		Data:        fileData,
+		Size:        header.Size,
+	}
+
+	file, err := f.service.CreateFile(ctx, &req)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.CreateOperation)
+		return
+	}
+
+	resp := FileResponse{
+		ID:          file.ID,
+		Path:        file.Path,
+		Name:        file.Name,
+		ContentType: file.ContentType,
+		Size:        file.Size,
+		CreatedAt:   file.CreatedAt,
+		UpdatedAt:   file.UpdatedAt,
+	}
+
+	serverops.Encode(w, r, http.StatusCreated, resp) // @response vfsapi.FileResponse
+}
+
+// Retrieves metadata for a specific file.
+//
+// Returns 404 if the file does not exist.
+func (f *fileManager) getMetadata(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the file.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("file ID is required: %w", serverops.ErrBadPathValue), serverops.GetOperation)
+		return
+	}
+
+	file, err := f.service.GetFileByID(ctx, id)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.GetOperation)
+		return
+	}
+
+	resp := FileResponse{
+		ID:          file.ID,
+		Path:        file.Path,
+		Name:        file.Name,
+		ContentType: file.ContentType,
+		Size:        file.Size,
+		CreatedAt:   file.CreatedAt,
+		UpdatedAt:   file.UpdatedAt,
+	}
+
+	serverops.Encode(w, r, http.StatusOK, resp) // @response vfsapi.FileResponse
+}
+
+// Updates an existing file's content via multipart/form-data.
+//
+// Replaces the entire file content. The file ID is taken from the URL path.
+func (f *fileManager) update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the file.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("file ID is required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		return
+	}
+
+	header, fileData, _, parentID, mimeType, err := f.processAndReadFileUpload(w, r)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	req := vfsservice.File{
+		ID:          id,
+		ParentID:    parentID,
+		ContentType: mimeType,
+		Data:        fileData,
+		Size:        header.Size,
+	}
+
+	file, err := f.service.UpdateFile(ctx, &req)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	resp := FileResponse{
+		ID:          file.ID,
+		Path:        file.Path,
+		Name:        file.Name,
+		ContentType: file.ContentType,
+		Size:        file.Size,
+		CreatedAt:   file.CreatedAt,
+		UpdatedAt:   file.UpdatedAt,
+	}
+
+	serverops.Encode(w, r, http.StatusOK, resp) // @response vfsapi.FileResponse
+}
+
+// Deletes a file from the system.
+//
+// Returns a confirmation message on success.
+func (f *fileManager) deleteFile(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the file.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("file ID is required: %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
+		return
+	}
+
+	if err := f.service.DeleteFile(ctx, id); err != nil {
+		serverops.Error(w, r, err, serverops.DeleteOperation)
+		return
+	}
+
+	serverops.Encode(w, r, http.StatusOK, map[string]string{"message": "file removed"}) // @response map[string]string
+}
+
+// Downloads the raw content of a file.
+//
+// The 'skip' query parameter (if "true") omits the Content-Disposition header.
+func (f *fileManager) download(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the file.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("file ID is required: %w", serverops.ErrBadPathValue), serverops.GetOperation)
+		return
+	}
+
+	skip := serverops.GetQueryParam(r, "skip", "false", "If 'true', skips Content-Disposition header.") // @query skip string
+
+	file, err := f.service.GetFileByID(ctx, id)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.GetOperation)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Length", strconv.FormatInt(file.Size, 10))
+
+	if skip != "true" {
+		sanitized := strconv.Quote(file.Path)
+		w.Header().Set("Content-Disposition", "attachment; filename="+sanitized)
+	}
+
+	if _, err := bytes.NewReader(file.Data).WriteTo(w); err != nil {
+		// Log error internally, but cannot recover mid-response
+		http.Error(w, "failed to stream file", http.StatusInternalServerError)
+	}
+}
+
+// Lists files and folders, optionally filtered by path.
+//
+// Use the 'path' query parameter to list contents of a specific directory.
+func (f *fileManager) listFiles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	pathFilter := serverops.GetQueryParam(r, "path", "", "Filter results by file path prefix.") // @query path string
+	decodedPath, err := url.QueryUnescape(pathFilter)
+	if err != nil {
+		serverops.Error(w, r, fmt.Errorf("invalid 'path' parameter: %w", serverops.ErrUnprocessableEntity), serverops.ListOperation)
+		return
+	}
+
+	files, err := f.service.GetFilesByPath(ctx, decodedPath)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.ListOperation)
+		return
+	}
+
+	response := make([]FileResponse, len(files))
+	for i, file := range files {
+		response[i] = FileResponse{
+			ID:          file.ID,
+			Path:        file.Path,
+			Name:        file.Name,
+			ContentType: file.ContentType,
+			Size:        file.Size,
+			CreatedAt:   file.CreatedAt,
+			UpdatedAt:   file.UpdatedAt,
+		}
+	}
+
+	serverops.Encode(w, r, http.StatusOK, response) // @response []vfsapi.FileResponse
+}
+
+// Creates a new folder.
+//
+// Requires a 'name'. Optionally accepts 'parentId' to place it inside another folder.
+func (f *fileManager) createFolder(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	req, err := serverops.Decode[folderCreateRequest](r) // @request vfsapi.folderCreateRequest
+	if err != nil {
+		serverops.Error(w, r, err, serverops.CreateOperation)
+		return
+	}
+
+	if req.Name == "" {
+		serverops.Error(w, r, fmt.Errorf("'name' is required: %w", serverops.ErrUnprocessableEntity), serverops.CreateOperation)
+		return
+	}
+
+	folder, err := f.service.CreateFolder(ctx, req.ParentID, req.Name)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.CreateOperation)
+		return
+	}
+
+	resp := FolderResponse{
+		ID:        folder.ID,
+		Path:      folder.Path,
+		Name:      folder.Name,
+		ParentID:  folder.ParentID,
+		CreatedAt: folder.CreatedAt,
+		UpdatedAt: folder.UpdatedAt,
+	}
+
+	serverops.Encode(w, r, http.StatusCreated, resp) // @response vfsapi.FolderResponse
+}
+
+// Renames a folder.
+//
+// Accepts a JSON body with the new 'name'.
+func (f *fileManager) renameFolder(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the folder.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("folder ID is required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		return
+	}
+
+	req, err := serverops.Decode[nameUpdateRequest](r) // @request vfsapi.nameUpdateRequest
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	if req.Name == "" {
+		serverops.Error(w, r, fmt.Errorf("'name' is required: %w", serverops.ErrUnprocessableEntity), serverops.UpdateOperation)
+		return
+	}
+
+	folder, err := f.service.RenameFolder(ctx, id, req.Name)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	resp := FolderResponse{
+		ID:        folder.ID,
+		Path:      folder.Path,
+		Name:      folder.Name,
+		ParentID:  folder.ParentID,
+		CreatedAt: folder.CreatedAt,
+		UpdatedAt: folder.UpdatedAt,
+	}
+
+	serverops.Encode(w, r, http.StatusOK, resp) // @response vfsapi.FolderResponse
+}
+
+// Renames a file.
+//
+// Accepts a JSON body with the new 'name'.
+func (f *fileManager) renameFile(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the file.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("file ID is required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		return
+	}
+
+	req, err := serverops.Decode[nameUpdateRequest](r) // @request vfsapi.nameUpdateRequest
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	if req.Name == "" {
+		serverops.Error(w, r, fmt.Errorf("'name' is required: %w", serverops.ErrUnprocessableEntity), serverops.UpdateOperation)
+		return
+	}
+
+	file, err := f.service.RenameFile(ctx, id, req.Name)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	resp := FileResponse{
+		ID:          file.ID,
+		Path:        file.Path,
+		Name:        file.Name,
+		ContentType: file.ContentType,
+		Size:        file.Size,
+		CreatedAt:   file.CreatedAt,
+		UpdatedAt:   file.UpdatedAt,
+	}
+
+	serverops.Encode(w, r, http.StatusOK, resp) // @response vfsapi.FileResponse
+}
+
+// Deletes a folder and all its contents.
+//
+// Returns a confirmation message on success.
+func (f *fileManager) deleteFolder(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the folder.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("folder ID is required: %w", serverops.ErrBadPathValue), serverops.DeleteOperation)
+		return
+	}
+
+	if err := f.service.DeleteFolder(ctx, id); err != nil {
+		serverops.Error(w, r, err, serverops.DeleteOperation)
+		return
+	}
+
+	serverops.Encode(w, r, http.StatusOK, map[string]string{"message": "folder removed"}) // @response map[string]string
+}
+
+// Moves a file to a new parent folder.
+//
+// Accepts a JSON body with 'newParentId'.
+func (f *fileManager) moveFile(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the file.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("file ID is required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		return
+	}
+
+	req, err := serverops.Decode[moveRequest](r) // @request vfsapi.moveRequest
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	movedFile, err := f.service.MoveFile(ctx, id, req.NewParentID)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	resp := FileResponse{
+		ID:          movedFile.ID,
+		Path:        movedFile.Path,
+		Name:        movedFile.Name,
+		ContentType: movedFile.ContentType,
+		Size:        movedFile.Size,
+		CreatedAt:   movedFile.CreatedAt,
+		UpdatedAt:   movedFile.UpdatedAt,
+	}
+
+	serverops.Encode(w, r, http.StatusOK, resp) // @response vfsapi.FileResponse
+}
+
+// Moves a folder to a new parent folder.
+//
+// Accepts a JSON body with 'newParentId'.
+func (f *fileManager) moveFolder(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	id := serverops.GetPathParam(r, "id", "The unique identifier of the folder.") // @param id string
+	if id == "" {
+		serverops.Error(w, r, fmt.Errorf("folder ID is required: %w", serverops.ErrBadPathValue), serverops.UpdateOperation)
+		return
+	}
+
+	req, err := serverops.Decode[moveRequest](r) // @request vfsapi.moveRequest
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	movedFolder, err := f.service.MoveFolder(ctx, id, req.NewParentID)
+	if err != nil {
+		serverops.Error(w, r, err, serverops.UpdateOperation)
+		return
+	}
+
+	resp := FolderResponse{
+		ID:        movedFolder.ID,
+		Path:      movedFolder.Path,
+		Name:      movedFolder.Name,
+		ParentID:  movedFolder.ParentID,
+		CreatedAt: movedFolder.CreatedAt,
+		UpdatedAt: movedFolder.UpdatedAt,
+	}
+
+	serverops.Encode(w, r, http.StatusOK, resp) // @response vfsapi.FolderResponse
+}

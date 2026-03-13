@@ -13,7 +13,7 @@ Chain starts
                       └─ Result appended to history → model continues
 ```
 
-In your chain JSON, specify which hooks the task can use:
+In your chain JSON, specify which hooks the task can use via the `execute_config.hooks` allowlist:
 
 ```json
 "execute_config": {
@@ -23,7 +23,19 @@ In your chain JSON, specify which hooks the task can use:
 }
 ```
 
-Use <span v-pre>`{{hookservice:list}}`</span> in your `system_instruction` to inject the live tool manifest into the system prompt so the model knows exactly what tools are available:
+Pattern support:
+
+| Value | Meaning |
+|---|---|
+| field absent | All registered hooks |
+| `[]` | No hooks exposed to the model |
+| `["*"]` | All registered hooks (explicit) |
+| `["a", "b"]` | Only the named hooks |
+| `["*", "!plan_manager"]` | All except `plan_manager` |
+
+Unknown names in an exact list are silently ignored — if `local_shell` is disabled the chain still runs.
+
+Use <span v-pre>`{{hookservice:list}}`</span> in your `system_instruction` to inject the live tool manifest. This macro respects the task's `hooks` allowlist — the model only sees what the task permits:
 
 ```json v-pre
 "system_instruction": "You are a helpful assistant. Available tools: {{hookservice:list}}."

@@ -123,9 +123,12 @@ func filterCandidates(
 	return candidates, nil
 }
 
-// validateProvider checks if a provider meets requirements
+// validateProvider checks if a provider meets requirements.
+// A provider whose context length is 0 (unknown) is never rejected on context
+// grounds — we only filter out models that are *known* to be insufficient.
 func validateProvider(p libmodelprovider.Provider, minContext int, capCheck func(libmodelprovider.Provider) bool) bool {
-	if minContext > 0 && p.GetContextLength() < minContext {
+	cl := p.GetContextLength()
+	if minContext > 0 && cl > 0 && cl < minContext {
 		return false
 	}
 	return capCheck(p)

@@ -133,14 +133,13 @@ func TestSystem_ModelService(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "model name is required")
 
-		// Invalid model: missing context length
+		// valid model: missing context length is fine now
 		invalidModel2 := &runtimetypes.Model{
-			Model:   "invalid-model",
+			Model:   "valid-model",
 			CanChat: true,
 		}
 		err = modelService.Append(ctx, invalidModel2)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "context length is required")
+		require.NoError(t, err)
 
 		// Invalid model: no capabilities
 		invalidModel3 := &runtimetypes.Model{
@@ -149,7 +148,7 @@ func TestSystem_ModelService(t *testing.T) {
 		}
 		err = modelService.Append(ctx, invalidModel3)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "capabilities are required")
+		assert.Contains(t, err.Error(), "model must have at least one capability")
 
 		// Invalid update: missing ID
 		invalidUpdate := &runtimetypes.Model{

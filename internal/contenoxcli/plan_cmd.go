@@ -8,16 +8,17 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
-	"time"
 
-	"github.com/contenox/contenox/chatservice"
-	"github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/execservice"
+	libdbexec "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/planservice"
 	"github.com/contenox/contenox/planstore"
 	"github.com/contenox/contenox/runtimetypes"
 	"github.com/contenox/contenox/taskengine"
-	"github.com/google/uuid"
+	"github.com/contenox/contenox/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -54,7 +55,7 @@ Input can be provided as a positional argument, piped via stdin, or both:
   git diff | contenox plan new "write a commit message and update CHANGELOG"
   cat ERROR.log | contenox plan new "diagnose and fix this error"
 
-The planner chain must output valid JSON with a "steps" array. If your model
+The planner chain must output a JSON array of step descriptions. If your model
 produces malformed output, switch to a stronger model via --model or
 'contenox config set default-model'.`,
 	Args: cobra.MaximumNArgs(1),
@@ -172,6 +173,11 @@ func openPlanDB(cmd *cobra.Command) (context.Context, libdbexec.DBManager, strin
 	return ctx, db, contenoxDir, cleanup, nil
 }
 
+// WithTransaction is the exported helper for DB writes used by sub-packages.
+func WithTransaction(ctx context.Context, db libdbexec.DBManager, fn func(tx libdbexec.Exec) error) error {
+	return withTransaction(ctx, db, fn)
+}
+
 // withTransaction is the single source of truth for all plan DB writes.
 func withTransaction(ctx context.Context, db libdbexec.DBManager, fn func(tx libdbexec.Exec) error) error {
 	txExec, commit, release, err := db.WithTransaction(ctx)
@@ -186,109 +192,6 @@ func withTransaction(ctx context.Context, db libdbexec.DBManager, fn func(tx lib
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 	return nil
-}
-
-// parsePlanSteps extracts the JSON step list from LLM output.
-func parsePlanSteps(output any) ([]struct {
-	Description string `json:"description"`
-}, error) {
-	var raw string
-	switch v := output.(type) {
-	case taskengine.ChatHistory:
-		if len(v.Messages) == 0 {
-			return nil, fmt.Errorf("LLM returned no messages")
-		}
-		raw = v.Messages[len(v.Messages)-1].Content
-	case string:
-		raw = v
-	default:
-		return nil, fmt.Errorf("unexpected output type %T from planner", output)
-	}
-
-	// Strip common markdown code fences.
-	raw = strings.TrimPrefix(raw, "```json\n")
-	raw = strings.TrimPrefix(raw, "```\n")
-	raw = strings.TrimSuffix(raw, "\n```")
-	raw = strings.TrimSpace(raw)
-
-	var planJSON struct {
-		Steps []struct {
-			Description string `json:"description"`
-		} `json:"steps"`
-	}
-	if err := json.Unmarshal([]byte(raw), &planJSON); err != nil {
-		return nil, fmt.Errorf("failed to parse steps JSON (raw output shown below)\n---\n%s\n---\n%w", raw, err)
-	}
-	if len(planJSON.Steps) == 0 {
-		return nil, fmt.Errorf("LLM returned zero steps")
-	}
-	return planJSON.Steps, nil
-}
-
-// updateStepAndSync combines status update + markdown sync in one transaction.
-func updateStepAndSync(ctx context.Context, db libdbexec.DBManager, cDir, planID, stepID string, status planstore.StepStatus, result string) error {
-	return withTransaction(ctx, db, func(tx libdbexec.Exec) error {
-		store := planstore.New(tx)
-		if err := store.UpdatePlanStepStatus(ctx, stepID, status, result); err != nil {
-			return fmt.Errorf("failed to update step status: %w", err)
-		}
-		if err := syncPlanMarkdown(ctx, tx, planID, cDir); err != nil {
-			return fmt.Errorf("failed to sync plan markdown: %w", err)
-		}
-		return nil
-	})
-}
-
-// executeSinglePlanStep runs one plan step and returns its final status, result, and any engine error.
-func executeSinglePlanStep(execCtx context.Context, engine *Engine, db libdbexec.DBManager, plan *planstore.Plan, step *planstore.PlanStep, chain *taskengine.TaskChainDefinition) (planstore.StepStatus, string, error) {
-	sessionID := "plan-" + plan.ID
-	chatMgr := chatservice.NewManager(nil)
-
-	exec := db.WithoutTransaction()
-	history, _ := chatMgr.ListMessages(execCtx, exec, sessionID)
-
-	prompt := fmt.Sprintf(
-		"Overall Goal: %s\n\nExecute Step %d: %s\n\nUse your local_shell tools to accomplish this. Once you have fully completed and verified this step, output exactly `===STEP_DONE===` on a new line.",
-		plan.Goal, step.Ordinal, step.Description,
-	)
-	userMsg := taskengine.Message{Role: "user", Content: prompt, Timestamp: time.Now().UTC()}
-	chainInput := taskengine.ChatHistory{Messages: append(history, userMsg)}
-
-	output, _, _, err := engine.TaskService.Execute(execCtx, chain, chainInput, taskengine.DataTypeChatHistory)
-
-	finalStatus := planstore.StepStatusFailed
-	finalResult := "Execution failed or stopped prematurely."
-
-	if err == nil {
-		if updatedHistory, ok := output.(taskengine.ChatHistory); ok && len(updatedHistory.Messages) > 0 {
-			lastMsg := updatedHistory.Messages[len(updatedHistory.Messages)-1].Content
-			finalResult = lastMsg
-			if strings.Contains(lastMsg, "===STEP_DONE===") {
-				finalStatus = planstore.StepStatusCompleted
-			}
-			// Persist chat diff (non-fatal).
-			_ = withTransaction(execCtx, db, func(tx libdbexec.Exec) error {
-				return chatMgr.PersistDiff(execCtx, tx, sessionID, updatedHistory.Messages)
-			})
-		}
-	}
-
-	return finalStatus, finalResult, err
-}
-
-// handlePlanCompletion marks the plan as completed and syncs its markdown.
-func handlePlanCompletion(ctx context.Context, db libdbexec.DBManager, cDir, activeID string) error {
-	return withTransaction(ctx, db, func(tx libdbexec.Exec) error {
-		store := planstore.New(tx)
-		if err := store.UpdatePlanStatus(ctx, activeID, planstore.PlanStatusCompleted); err != nil {
-			return fmt.Errorf("failed to mark plan completed: %w", err)
-		}
-		if err := syncPlanMarkdown(ctx, tx, activeID, cDir); err != nil {
-			return fmt.Errorf("failed to sync plan markdown: %w", err)
-		}
-		fmt.Println("All steps complete. Plan is done!")
-		return nil
-	})
 }
 
 func buildPlanOpts(cmd *cobra.Command, db libdbexec.DBManager, input string) chatOpts {
@@ -341,15 +244,31 @@ func buildPlanOpts(cmd *cobra.Command, db libdbexec.DBManager, input string) cha
 	}
 }
 
+// buildPlanService constructs a planservice.Service that persists plan markdown
+// files under <cDir>/plans/ via a local VFS.
+func buildPlanService(db libdbexec.DBManager, engine *Engine, cDir string) planservice.Service {
+	plansDir := filepath.Join(cDir, "plans")
+	vfs := vfsservice.NewLocalFS(plansDir)
+	var taskSvc execservice.TasksEnvService
+	if engine != nil {
+		taskSvc = engine.TaskService
+	}
+	return planservice.New(db, taskSvc, vfs)
+}
+
+// execCtxForPlan builds a context with template vars set for plan chain execution.
+func execCtxForPlan(ctx context.Context, opts chatOpts, chainID string) context.Context {
+	return taskengine.WithTemplateVars(ctx, map[string]string{
+		"model":    opts.EffectiveDefaultModel,
+		"provider": opts.EffectiveDefaultProvider,
+		"chain":    chainID,
+	})
+}
+
 func runPlanNew(cmd *cobra.Command, args []string) error {
 	// Resolve goal from arg or stdin; combine both if they coexist.
 	var goal string
-	stat, _ := os.Stdin.Stat()
-	stdinPiped := (stat.Mode() & os.ModeCharDevice) == 0
-	if len(args) > 0 {
-		goal = args[0]
-	}
-	if stdinPiped {
+	if stat, err := os.Stdin.Stat(); err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
 		stdinBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return fmt.Errorf("failed to read from stdin: %w", err)
@@ -357,30 +276,25 @@ func runPlanNew(cmd *cobra.Command, args []string) error {
 		stdinStr := strings.TrimSpace(string(stdinBytes))
 		if stdinStr != "" {
 			if goal != "" {
-				// Combine: arg = goal/instruction, stdin = context.
-				// e.g. git diff | contenox plan new "refactor these changes"
 				goal = goal + "\n\n" + stdinStr
 			} else {
 				goal = stdinStr
 			}
 		}
 	}
-
+	if len(args) > 0 {
+		goal = args[0]
+	}
 	if goal == "" {
 		return fmt.Errorf("goal cannot be empty; provide an argument or pipe via stdin")
 	}
+
 	ctx, db, cDir, cleanup, err := openPlanDB(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	// 1. Generate name
-	name := planNameFromGoal(goal, uuid.New().String()[:8])
-
-	fmt.Printf("Generating plan for: %s...\n", goal)
-
-	// 2. Build the task engine
 	o := buildPlanOpts(cmd, db, goal)
 	engine, err := BuildEngine(ctx, db, o)
 	if err != nil {
@@ -388,7 +302,6 @@ func runPlanNew(cmd *cobra.Command, args []string) error {
 	}
 	defer engine.Stop()
 
-	// 3. Ensure and load the planner chain
 	plannerPath, _, err := ensurePlanChains(cDir)
 	if err != nil {
 		return fmt.Errorf("failed to ensure plan chains: %w", err)
@@ -398,68 +311,32 @@ func runPlanNew(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to read planner chain: %w", err)
 	}
-
-	var chain taskengine.TaskChainDefinition
-	if err := json.Unmarshal(chainData, &chain); err != nil {
+	var plannerChain taskengine.TaskChainDefinition
+	if err := json.Unmarshal(chainData, &plannerChain); err != nil {
 		return fmt.Errorf("failed to parse planner chain: %w", err)
 	}
-	if err := validatePlannerChain(&chain, plannerPath); err != nil {
+	if err := validatePlannerChain(&plannerChain, plannerPath); err != nil {
 		return err
 	}
 
-	// 4. Execute the planner chain
-	templateVars := map[string]string{
-		"model":    o.EffectiveDefaultModel,
-		"provider": o.EffectiveDefaultProvider,
-		"chain":    chain.ID,
-	}
-	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
+	fmt.Fprintf(cmd.OutOrStdout(), "Generating plan for: %s...\n", goal)
 
-	userMsg := taskengine.Message{Role: "user", Content: goal, Timestamp: time.Now().UTC()}
-	chainInput := taskengine.ChatHistory{Messages: []taskengine.Message{userMsg}}
+	planSvc := buildPlanService(db, engine, cDir)
+	execCtx := execCtxForPlan(ctx, o, plannerChain.ID)
 
-	output, _, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
+	plan, steps, _, err := planSvc.New(execCtx, goal, &plannerChain)
 	if err != nil {
-		return fmt.Errorf("planner chain execution failed: %w", err)
+		return fmt.Errorf("plan generation failed: %w", err)
 	}
 
-	// 5. Parse steps
-	steps, err := parsePlanSteps(output)
-	if err != nil {
-		return fmt.Errorf("planner failed: %w", err)
-	}
-
-	// 6. Save to DB
+	// Update the KV active pointer so `runPlanList` can mark the active plan.
 	if err := withTransaction(ctx, db, func(tx libdbexec.Exec) error {
-		store := planstore.New(tx)
-		planID := uuid.New().String()
-
-		plan := &planstore.Plan{ID: planID, Name: name, Goal: goal}
-		if err := store.CreatePlan(ctx, plan); err != nil {
-			return fmt.Errorf("failed to create plan: %w", err)
-		}
-
-		for i, st := range steps {
-			step := &planstore.PlanStep{
-				ID:          uuid.New().String(),
-				PlanID:      planID,
-				Ordinal:     i + 1,
-				Description: st.Description,
-			}
-			if err := store.CreatePlanSteps(ctx, step); err != nil {
-				return fmt.Errorf("failed to save step: %w", err)
-			}
-		}
-
-		if err := setActivePlanID(ctx, tx, planID); err != nil {
-			return fmt.Errorf("failed to set active plan: %w", err)
-		}
-		return syncPlanMarkdown(ctx, tx, planID, cDir)
+		return setActivePlanID(ctx, tx, plan.ID)
 	}); err != nil {
-		return err
+		slog.Warn("failed to set active plan KV pointer", "error", err)
 	}
 
-	fmt.Printf("Created plan %q with %d steps. Now active.\n", name, len(steps))
+	fmt.Fprintf(cmd.OutOrStdout(), "Created plan %q with %d steps. Now active.\n", plan.Name, len(steps))
 	return nil
 }
 
@@ -478,7 +355,7 @@ func runPlanList(cmd *cobra.Command, _ []string) error {
 	}
 
 	if len(plans) == 0 {
-		fmt.Println("No plans yet. Run: contenox plan new <goal>")
+		fmt.Fprintln(cmd.OutOrStdout(), "No plans yet. Run: contenox plan new <goal>")
 		return nil
 	}
 
@@ -497,7 +374,7 @@ func runPlanList(cmd *cobra.Command, _ []string) error {
 			}
 		}
 
-		fmt.Printf("%s%-20s [%d/%d] %s\n", prefix, p.Name, completed, len(steps), p.Status)
+		fmt.Fprintf(cmd.OutOrStdout(), "%s%-20s [%d/%d] %s\n", prefix, p.Name, completed, len(steps), p.Status)
 	}
 	return nil
 }
@@ -533,7 +410,7 @@ func runPlanShow(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	fmt.Printf("Plan: %s (active) — %d/%d complete\n", plan.Name, completed, len(steps))
+	fmt.Fprintf(cmd.OutOrStdout(), "Plan: %s (active) — %d/%d complete\n", plan.Name, completed, len(steps))
 	for _, s := range steps {
 		var checkbox string
 		switch s.Status {
@@ -544,7 +421,7 @@ func runPlanShow(cmd *cobra.Command, _ []string) error {
 		default:
 			checkbox = "[ ]"
 		}
-		fmt.Printf("%d. %s %s\n", s.Ordinal, checkbox, s.Description)
+		fmt.Fprintf(cmd.OutOrStdout(), "%d. %s %s\n", s.Ordinal, checkbox, s.Description)
 	}
 	return nil
 }
@@ -573,7 +450,6 @@ func runPlanNext(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-
 	var chain taskengine.TaskChainDefinition
 	if err := json.Unmarshal(chainData, &chain); err != nil {
 		return err
@@ -582,72 +458,51 @@ func runPlanNext(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	templateVars := map[string]string{
-		"model":    o.EffectiveDefaultModel,
-		"provider": o.EffectiveDefaultProvider,
-		"chain":    chain.ID,
-	}
-	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
+	planSvc := buildPlanService(db, engine, cDir)
+	execCtx := execCtxForPlan(ctx, o, chain.ID)
 
-	// execution loop
 	for {
-		var activeID string
+		// Peek at the next pending step for display before execution.
+		plan, steps, err := planSvc.Active(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load active plan: %w", err)
+		}
+		if plan == nil {
+			return fmt.Errorf("no active plan; run 'contenox plan new <goal>'")
+		}
+
 		var nextStep *planstore.PlanStep
-		var plan *planstore.Plan
-
-		if err := withTransaction(ctx, db, func(tx libdbexec.Exec) error {
-			store := planstore.New(tx)
-			var err2 error
-			activeID, err2 = getActivePlanID(ctx, tx)
-			if err2 != nil || activeID == "" {
-				return fmt.Errorf("no active plan")
+		for _, s := range steps {
+			if s.Status == planstore.StepStatusPending {
+				nextStep = s
+				break
 			}
-			plan, err2 = store.GetPlanByID(ctx, activeID)
-			if err2 != nil {
-				return fmt.Errorf("failed to load plan: %w", err2)
-			}
-			steps, err2 := store.ListPlanSteps(ctx, activeID)
-			if err2 != nil {
-				return fmt.Errorf("failed to load steps: %w", err2)
-			}
-			for _, s := range steps {
-				if s.Status == planstore.StepStatusPending {
-					nextStep = s
-					break
-				}
-			}
-			return nil
-		}); err != nil {
-			return err
 		}
-
 		if nextStep == nil {
-			return handlePlanCompletion(ctx, db, cDir, activeID)
+			fmt.Fprintln(cmd.OutOrStdout(), "All steps complete. Plan is done!")
+			return nil
 		}
 
-		fmt.Printf("\nExecuting Step %d: %s...\n", nextStep.Ordinal, nextStep.Description)
+		fmt.Fprintf(cmd.OutOrStdout(), "\nExecuting Step %d: %s...\n", nextStep.Ordinal, nextStep.Description)
 
-		finalStatus, finalResult, execErr := executeSinglePlanStep(execCtx, engine, db, plan, nextStep, &chain)
+		// Delegate execution entirely to planservice — it handles DB updates and
+		// markdown sync automatically.
+		args := planservice.Args{WithShell: o.EffectiveEnableLocalExec, WithAuto: isAuto}
+		result, _, execErr := planSvc.Next(execCtx, args, &chain)
 
-		if err := updateStepAndSync(ctx, db, cDir, activeID, nextStep.ID, finalStatus, finalResult); err != nil {
-			return err
-		}
-
-		if finalStatus != planstore.StepStatusCompleted {
-			if execErr != nil {
-				fmt.Fprintf(os.Stderr, "\nStep failed: %v\n", execErr)
+		if execErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "\nStep failed: %v\n", execErr)
+			if result != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "\nStep output:\n%s\n", result)
 			}
-			if finalResult != "" && finalResult != "Execution failed or stopped prematurely." {
-				fmt.Fprintf(os.Stderr, "\nStep output:\n%s\n", finalResult)
-			}
-			fmt.Fprintln(os.Stderr, "\nStep did not complete successfully.\n"+
+			fmt.Fprintln(cmd.ErrOrStderr(), "\nStep did not complete successfully.\n"+
 				"  • contenox plan show          → see current status\n"+
 				"  • contenox plan retry <N>     → retry this step\n"+
 				"  • contenox plan replan        → regenerate remaining steps")
 			return nil
 		}
 
-		fmt.Printf("✓ Step %d completed.\n", nextStep.Ordinal)
+		fmt.Fprintf(cmd.OutOrStdout(), "✓ Step %d completed.\n", nextStep.Ordinal)
 		if !isAuto {
 			return nil
 		}
@@ -661,7 +516,19 @@ func runPlanRetry(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	return updateStepStatusByOrdinal(ctx, db, cDir, args[0], planstore.StepStatusPending, "")
+	ordinal, err := strconv.Atoi(args[0])
+	if err != nil {
+		return fmt.Errorf("invalid ordinal %q: must be a number", args[0])
+	}
+
+	// Use a nil engine — plan service doesn't need engine for Retry.
+	planSvc := buildPlanService(db, nil, cDir)
+	msg, err := planSvc.Retry(ctx, ordinal)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), msg)
+	return nil
 }
 
 func runPlanSkip(cmd *cobra.Command, args []string) error {
@@ -671,47 +538,17 @@ func runPlanSkip(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	return updateStepStatusByOrdinal(ctx, db, cDir, args[0], planstore.StepStatusSkipped, "Skipped by user")
-}
-
-func updateStepStatusByOrdinal(ctx context.Context, db libdbexec.DBManager, cDir string, ordinalStr string, newStatus planstore.StepStatus, reason string) error {
-	exec := db.WithoutTransaction()
-	activeID, err := getActivePlanID(ctx, exec)
-	if err != nil || activeID == "" {
-		return fmt.Errorf("no active plan")
+	ordinal, err := strconv.Atoi(args[0])
+	if err != nil {
+		return fmt.Errorf("invalid ordinal %q: must be a number", args[0])
 	}
 
-	var ordinal int
-	if _, err := fmt.Sscanf(ordinalStr, "%d", &ordinal); err != nil {
-		return fmt.Errorf("invalid ordinal: %s", ordinalStr)
-	}
-
-	store := planstore.New(exec)
-	steps, err := store.ListPlanSteps(ctx, activeID)
+	planSvc := buildPlanService(db, nil, cDir)
+	msg, err := planSvc.Skip(ctx, ordinal)
 	if err != nil {
 		return err
 	}
-
-	var targetStep *planstore.PlanStep
-	for _, s := range steps {
-		if s.Ordinal == ordinal {
-			targetStep = s
-			break
-		}
-	}
-
-	if targetStep == nil {
-		return fmt.Errorf("step %d not found in active plan", ordinal)
-	}
-
-	if err := store.UpdatePlanStepStatus(ctx, targetStep.ID, newStatus, reason); err != nil {
-		return fmt.Errorf("failed to update step: %w", err)
-	}
-
-	if err := syncPlanMarkdown(ctx, exec, activeID, cDir); err != nil {
-		slog.Warn("failed to sync plan markdown after step update", "error", err)
-	}
-	fmt.Printf("Step %d updated to %s.\n", ordinal, newStatus)
+	fmt.Fprintln(cmd.OutOrStdout(), msg)
 	return nil
 }
 
@@ -722,39 +559,7 @@ func runPlanReplan(cmd *cobra.Command, _ []string) error {
 	}
 	defer cleanup()
 
-	exec := db.WithoutTransaction()
-	activeID, err := getActivePlanID(ctx, exec)
-	if err != nil || activeID == "" {
-		return fmt.Errorf("no active plan")
-	}
-
-	store := planstore.New(exec)
-	plan, err := store.GetPlanByID(ctx, activeID)
-	if err != nil {
-		return err
-	}
-
-	steps, err := store.ListPlanSteps(ctx, activeID)
-	if err != nil {
-		return err
-	}
-
-	var completedStr string
-	maxOrdinal := 0
-	for _, s := range steps {
-		if s.Ordinal > maxOrdinal {
-			maxOrdinal = s.Ordinal
-		}
-		if s.Status != planstore.StepStatusPending {
-			completedStr += fmt.Sprintf("Step %d: %s (Status: %s, Result: %s)\n", s.Ordinal, s.Description, s.Status, s.ExecutionResult)
-		}
-	}
-
-	goalPrompt := fmt.Sprintf("Goal: %s\n\nWhat we have done so far:\n%s\nSome steps failed or we need to replan. Please generate a NEW list of logical remaining steps to finish the goal. DO NOT INCLUDE ALREADY COMPLETED OR SKIPPED STEPS.", plan.Goal, completedStr)
-
-	fmt.Println("Generating new plan steps based on current progress...")
-
-	o := buildPlanOpts(cmd, db, goalPrompt)
+	o := buildPlanOpts(cmd, db, "")
 	engine, err := BuildEngine(ctx, db, o)
 	if err != nil {
 		return err
@@ -765,61 +570,26 @@ func runPlanReplan(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-
 	chainData, err := os.ReadFile(plannerPath)
 	if err != nil {
 		return err
 	}
-
-	var chain taskengine.TaskChainDefinition
-	if err := json.Unmarshal(chainData, &chain); err != nil {
+	var plannerChain taskengine.TaskChainDefinition
+	if err := json.Unmarshal(chainData, &plannerChain); err != nil {
 		return err
 	}
 
-	templateVars := map[string]string{
-		"model":    o.EffectiveDefaultModel,
-		"provider": o.EffectiveDefaultProvider,
-		"chain":    chain.ID,
-	}
-	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
+	fmt.Fprintln(cmd.OutOrStdout(), "Generating new plan steps based on current progress...")
 
-	userMsg := taskengine.Message{Role: "user", Content: goalPrompt, Timestamp: time.Now().UTC()}
-	chainInput := taskengine.ChatHistory{Messages: []taskengine.Message{userMsg}}
+	planSvc := buildPlanService(db, engine, cDir)
+	execCtx := execCtxForPlan(ctx, o, plannerChain.ID)
 
-	output, _, _, err := engine.TaskService.Execute(execCtx, &chain, chainInput, taskengine.DataTypeChatHistory)
-	if err != nil {
-		return fmt.Errorf("replan execution failed: %w", err)
-	}
-
-	newSteps, err := parsePlanSteps(output)
+	newSteps, _, err := planSvc.Replan(execCtx, &plannerChain)
 	if err != nil {
 		return fmt.Errorf("replan failed: %w", err)
 	}
 
-	if err := withTransaction(ctx, db, func(tx libdbexec.Exec) error {
-		txStore := planstore.New(tx)
-		if err := txStore.DeletePendingPlanSteps(ctx, activeID); err != nil {
-			return fmt.Errorf("failed to delete pending steps: %w", err)
-		}
-		currentOrdinal := maxOrdinal + 1
-		for _, st := range newSteps {
-			step := &planstore.PlanStep{
-				ID:          uuid.New().String(),
-				PlanID:      activeID,
-				Ordinal:     currentOrdinal,
-				Description: st.Description,
-			}
-			if err := txStore.CreatePlanSteps(ctx, step); err != nil {
-				return fmt.Errorf("failed to save step: %w", err)
-			}
-			currentOrdinal++
-		}
-		return syncPlanMarkdown(ctx, tx, activeID, cDir)
-	}); err != nil {
-		return err
-	}
-
-	fmt.Printf("Replanned with %d new steps. Use 'contenox plan show' to see them.\n", len(newSteps))
+	fmt.Fprintf(cmd.OutOrStdout(), "Replanned with %d new steps. Use 'contenox plan show' to see them.\n", len(newSteps))
 	return nil
 }
 
@@ -830,85 +600,75 @@ func runPlanDelete(cmd *cobra.Command, args []string) error {
 	}
 	defer cleanup()
 
-	exec, commit, release, err := db.WithTransaction(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
-
+	// Look up plan name first so we can clean up the markdown file.
+	exec := db.WithoutTransaction()
 	store := planstore.New(exec)
 	plan, err := store.GetPlanByName(ctx, args[0])
 	if err != nil {
 		return fmt.Errorf("plan %q not found: %w", args[0], err)
 	}
 
-	if err := store.DeletePlan(ctx, plan.ID); err != nil {
-		return fmt.Errorf("failed to delete plan: %w", err)
-	}
-
-	// Remove the markdown file if it exists.
-	mdPath := filepath.Join(cDir, "plans", plan.Name+".md")
-	_ = os.Remove(mdPath)
-
-	// If this was the active plan, clear the pointer.
-	activeID, _ := getActivePlanID(ctx, exec)
-	if activeID == plan.ID {
-		_ = setActivePlanID(ctx, exec, "")
-	}
-
-	if err := commit(ctx); err != nil {
+	planSvc := buildPlanService(db, nil, cDir)
+	if err := planSvc.Delete(ctx, args[0]); err != nil {
 		return err
 	}
 
-	fmt.Printf("Deleted plan %q.\n", plan.Name)
+	// Remove the markdown file if it exists.
+	mdPath := filepath.Join(cDir, "plans", filepath.Base(plan.Name)+".md")
+	_ = os.Remove(mdPath)
+
+	// If this was the active plan in the KV pointer, clear it.
+	activeID, _ := getActivePlanID(ctx, exec)
+	if activeID == plan.ID {
+		_ = withTransaction(ctx, db, func(tx libdbexec.Exec) error {
+			return setActivePlanID(ctx, tx, "")
+		})
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "Deleted plan %q.\n", plan.Name)
 	return nil
 }
 
-func runPlanClean(cmd *cobra.Command, args []string) error {
+func runPlanClean(cmd *cobra.Command, _ []string) error {
 	ctx, db, cDir, cleanup, err := openPlanDB(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	exec, commit, release, err := db.WithTransaction(ctx)
-	if err != nil {
-		return err
-	}
-	defer release()
-
+	// Snapshot plans before deletion so we can remove local markdown files.
+	exec := db.WithoutTransaction()
 	store := planstore.New(exec)
 	plans, err := store.ListPlans(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list plans: %w", err)
 	}
 
+	planSvc := buildPlanService(db, nil, cDir)
+	deleted, err := planSvc.Clean(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Remove local markdown files for plans that were just deleted.
 	activeID, _ := getActivePlanID(ctx, exec)
-	deleted := 0
 	for _, p := range plans {
 		if p.Status != planstore.PlanStatusCompleted && p.Status != planstore.PlanStatusArchived {
-			continue
-		}
-		if err := store.DeletePlan(ctx, p.ID); err != nil {
-			fmt.Printf("Warning: failed to delete plan %q: %v\n", p.Name, err)
 			continue
 		}
 		mdPath := filepath.Join(cDir, "plans", p.Name+".md")
 		_ = os.Remove(mdPath)
 		if p.ID == activeID {
-			_ = setActivePlanID(ctx, exec, "")
+			_ = withTransaction(ctx, db, func(tx libdbexec.Exec) error {
+				return setActivePlanID(ctx, tx, "")
+			})
 		}
-		deleted++
-	}
-
-	if err := commit(ctx); err != nil {
-		return err
 	}
 
 	if deleted == 0 {
-		fmt.Println("No completed or archived plans to clean up.")
+		fmt.Fprintln(cmd.OutOrStdout(), "No completed or archived plans to clean up.")
 	} else {
-		fmt.Printf("Deleted %d plan(s).\n", deleted)
+		fmt.Fprintf(cmd.OutOrStdout(), "Deleted %d plan(s).\n", deleted)
 	}
 	return nil
 }

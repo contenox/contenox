@@ -109,7 +109,7 @@ func TestLocalFSHook(t *testing.T) {
 		_, _, err := h.Exec(ctx, now, args, false, hookCall)
 		if err == nil {
 			t.Error("expected error for path outside allowed dir, got nil")
-		} else if !strings.Contains(err.Error(), "not under allowed directory") {
+		} else if !strings.Contains(err.Error(), "escapes allowed directory") {
 			t.Errorf("unexpected error message: %v", err)
 		}
 	})

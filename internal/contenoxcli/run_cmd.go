@@ -7,9 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/contenox/contenox/libdbexec"
@@ -155,16 +157,19 @@ Examples:
 		execCtx, cancel := context.WithTimeout(execCtx, timeout)
 		defer cancel()
 
+		// Use signal.NotifyContext so the goroutine is cleaned up automatically
+		// when the command returns, instead of leaking a blocked goroutine.
+		execCtx, cancel = signal.NotifyContext(execCtx, syscall.SIGINT, syscall.SIGTERM)
+
 		if o.EffectiveTracing {
 			slog.Info("Executing chain", "chain", chainPathAbs, "input_type", inputTypeName)
 		} else {
-			fmt.Fprintln(os.Stderr, "Thinking...")
+			fmt.Fprintln(cmd.ErrOrStderr(), "Thinking...")
 		}
 
 		output, outputType, stateUnits, err := engine.TaskService.Execute(execCtx, &chain, inputVal, inputType)
 		if err != nil {
-			slog.Error("Chain execution failed", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("chain execution failed: %w", err)
 		}
 
 		effectiveRaw, _ := flags.GetBool("raw")
@@ -174,17 +179,17 @@ Examples:
 			if hist, ok := output.(taskengine.ChatHistory); ok {
 				for _, msg := range hist.Messages {
 					if msg.Role == "assistant" && msg.Thinking != "" {
-						fmt.Fprintln(os.Stderr, "\n💭 Reasoning:")
-						fmt.Fprintln(os.Stderr, msg.Thinking)
+						fmt.Fprintln(cmd.ErrOrStderr(), "\n💭 Reasoning:")
+						fmt.Fprintln(cmd.ErrOrStderr(), msg.Thinking)
 					}
 				}
 			}
 		}
-		printRelevantOutput(output, outputType, effectiveRaw)
+		printRelevantOutput(cmd.OutOrStdout(), output, outputType, effectiveRaw)
 		if effectiveSteps && len(stateUnits) > 0 {
-			fmt.Fprintln(os.Stderr, "\n📋 Steps:")
+			fmt.Fprintln(cmd.ErrOrStderr(), "\n📋 Steps:")
 			for i, u := range stateUnits {
-				fmt.Fprintf(os.Stderr, "  %d. %s (%s) %s %s\n", i+1, u.TaskID, u.TaskHandler, formatDuration(u.Duration), u.Transition)
+				fmt.Fprintf(cmd.ErrOrStderr(), "  %d. %s (%s) %s %s\n", i+1, u.TaskID, u.TaskHandler, formatDuration(u.Duration), u.Transition)
 			}
 		}
 		return nil
@@ -212,8 +217,7 @@ func resolveRunInput(cmd *cobra.Command, args []string) (string, error) {
 		argsInput := strings.Join(args, " ")
 		// If stdin is also piped, combine: args = instruction, stdin = data.
 		// e.g. git diff | contenox run "suggest a commit message"
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
+		if stat, err := os.Stdin.Stat(); err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
 			data, err := io.ReadAll(os.Stdin)
 			if err != nil {
 				return "", fmt.Errorf("failed to read from stdin: %w", err)
@@ -225,8 +229,7 @@ func resolveRunInput(cmd *cobra.Command, args []string) (string, error) {
 		return argsInput, nil
 	}
 
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
+	if stat, err := os.Stdin.Stat(); err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return "", fmt.Errorf("failed to read from stdin: %w", err)
@@ -294,7 +297,7 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 	kvProvider, _ := getConfigKV(ctx, store, "default-provider")
 
 	effectiveModel, _ := flags.GetString("model")
-	if !flags.Changed("model") && effectiveModel == "" {
+	if !flags.Changed("model") && (effectiveModel == "" || effectiveModel == defaultModel) {
 		effectiveModel = kvModel
 	}
 

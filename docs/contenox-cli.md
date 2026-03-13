@@ -72,6 +72,87 @@ Plan names are derived from the goal text (`fix-auth-token-expiry-a3f9e12b`), so
 
 ---
 
+### `contenox vibe` — interactive TUI
+
+A full terminal UI: chat on the left, plan sidebar on the right. Everything `contenox chat` and `contenox plan` can do is available as a slash command — no context-switching required.
+
+```bash
+contenox vibe
+```
+
+The sidebar tracks the active plan live. The step currently executing shows `⟳`; completed steps show `✓` or `✗`. Use `Ctrl+B` to cycle sidebar width; `Ctrl+C` to quit.
+
+**Chat and shell**
+
+```
+hey, what's in this repo?          ← plain text = chat (same session as contenox chat)
+$ git log --oneline -10            ← $ prefix = shell; stdout injected into LLM context
+```
+
+**Plan workflow**
+
+```
+/plan new "add prometheus metrics to the HTTP server"
+/plan next                          ← execute one step, inspect result
+/plan step 3                        ← show the full output recorded for step 3
+/plan next --auto                   ← run to completion (careful)
+/plan retry 3                       ← reset step 3 to pending
+/plan skip 2                        ← mark step 2 skipped and move on
+/plan replan                        ← regenerate remaining steps with the LLM
+/plan list                          ← all plans (* = active)
+/plan show                          ← active plan steps and statuses in the log
+/plan delete what-is-this-repo-...  ← remove a plan
+/plan clean                         ← remove all completed plans
+```
+
+**Models and config — same as the CLI, no duplication**
+
+```
+/model list                         ← live query of all backends
+/model add gpt-5-mini
+/config set default-model qwen2.5:7b
+/config get default-model
+```
+
+**Run any chain statelessly**
+
+```
+/run --chain .contenox/review.json diff.txt
+```
+
+**Sessions**
+
+```
+/session list                       ← all sessions (* = active)
+/session new [name]                 ← create a new session (auto-named if no name given)
+/session switch <name>              ← switch the active session
+/session delete <name>              ← delete a session and its history
+/session show                       ← current session ID + message count
+```
+
+**Backends, hooks, MCP**
+
+```
+/backend list                       ← list registered backends
+/backend show local                 ← show backend details
+/hook list                          ← list registered remote hooks + tool count
+/hook show nws                      ← show hook details and live tool list
+/mcp list                           ← list registered MCP servers
+/mcp show myserver                  ← show MCP server config
+/mcp                                ← refresh MCP worker list in sidebar
+```
+
+**Utility**
+
+```
+/clear                              ← wipe the viewport log
+/help                               ← full command reference
+```
+
+> The TUI uses the exact same cobra command handlers as the CLI — `/model list`, `/config get`, `/session list`, `/backend list` etc. all call the same code as their CLI counterparts, with output captured into the viewport.
+
+---
+
 ### `contenox run` — run any chain, any input type
 
 For scripting and pipeline use cases where you want full control:
@@ -142,6 +223,18 @@ contenox hook remove nws                              # remove
 }
 ```
 
+The `hooks` array is an **allowlist** with pattern support:
+
+| Value | Meaning |
+|---|---|
+| field absent (`null`) | All registered hooks (backward compat default) |
+| `[]` | No hooks exposed to the model |
+| `["*"]` | All registered hooks (explicit) |
+| `["nws", "local_shell"]` | Only the named hooks |
+| `["*", "!plan_manager"]` | All except `plan_manager` |
+
+Unknown names in an exact list are silently ignored (e.g. if `local_shell` is disabled the chain still runs).
+
 Header values are never echoed back (`hook show` prints header keys only). If the service is unreachable at registration time, the hook is still saved and validated at execution time.
 
 > **NWS note:** Forecast lookups require two calls — the model first calls `point` with lat/lon to get the grid reference, then `gridpoint_forecast` with that reference. The included `chain-nws.json` explains this in its system prompt.
@@ -185,6 +278,24 @@ contenox config list   # review current settings
 | `vllm`   | vLLM     | Self-hosted OpenAI-compatible endpoint, requires `--url` |
 | `gemini` | Gemini   | Use `--api-key-env GEMINI_API_KEY` |
 
+### Model management
+
+```bash
+contenox model list                              # query live backends
+contenox model list --declared                   # show DB-declared models only
+
+contenox model add gpt-5-mini                    # declare a model
+contenox model remove qwen2.5:7b                 # remove a declared model
+
+# Override the context window for a model.
+# Accepts a bare integer or a k/m shorthand (case-insensitive):
+#   k = ×1 000  →  12k = 12 000
+#   m = ×1 000 000  →  1m = 1 000 000
+contenox model set-context gpt-5-mini            --context 128k
+contenox model set-context gemini-3.1-pro-preview --context 1m
+contenox model set-context qwen2.5:7b             --context 32k
+```
+
 ### Global flags reference
 
 | Flag | Purpose |
@@ -193,7 +304,7 @@ contenox config list   # review current settings
 | `--db` | SQLite path (default: `.contenox/local.db`) |
 | `--provider` | Provider type override |
 | `--model` | Model name override |
-| `--context` | Context length in tokens |
+| `--context` | Context length in tokens — bare int or shorthand (`12k`, `128k`, `1m`) |
 | `--shell` | Enable `local_shell` hook |
 | `--local-exec-allowed-commands` | Comma-separated allow list for local_shell |
 | `--local-exec-allowed-dir` | Directory scope for allowed executables |
@@ -251,9 +362,9 @@ Chain fields like `system_instruction` and `prompt_template` support macros expa
 | `{{var:NAME}}` | Value from `template_vars_from_env` config (contenox only) |
 | `{{now}}` / `{{now:layout}}` | Current time |
 | `{{chain:id}}` | Chain ID (same as `{{var:chain}}`) |
-| `{{hookservice:list}}` | All registered hooks + tools as JSON (useful for inspection/debug chains; the model already receives per-task tool schemas via the API protocol) |
-| `{{hookservice:hooks}}` | Hook names only |
-| `{{hookservice:tools <hook>}}` | Tool names for a specific hook |
+| `{{hookservice:list}}` | All **allowed** hooks + tools as JSON, filtered by this task's `hooks` allowlist |
+| `{{hookservice:hooks}}` | Allowed hook names only |
+| `{{hookservice:tools <hook>}}` | Tool names for a specific hook (empty if hook not in allowlist) |
 
 ### `--chain` and `contenox plan`
 

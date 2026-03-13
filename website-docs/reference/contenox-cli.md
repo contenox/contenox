@@ -78,9 +78,79 @@ contenox plan next --auto   # run all pending steps automatically
 - `--think`: Stream the model's reasoning/chain-of-thought to stderr before it takes action (for thinking models).
 - `--trace`: Verbose debugging output of the step-executor state machine.
 
+### `contenox vibe`
+
+Full terminal UI — chat, plan management, model introspection, and config in a single window with a live plan sidebar.
+
+```bash
+contenox vibe
+```
+
+The sidebar shows the active plan with real-time step status (`⟳` = executing, `✓` / `✗` = done). `Ctrl+B` cycles sidebar width; `Ctrl+C` quits.
+
+**Chat and shell**
+```
+hello, what's in this repo?         ← plain text → chat (shares session with contenox chat)
+$ git log --oneline -10             ← $ prefix → shell; stdout injected into LLM context
+```
+
+**Plan commands**
+```
+/plan new "add prometheus metrics to the HTTP server"
+/plan next                          ← one step, then stop
+/plan next --auto                   ← run to completion
+/plan step 3                        ← show the full output recorded for step 3
+/plan show                          ← all steps and statuses in the log
+/plan list                          ← all plans (* = active)
+/plan retry 3                       ← reset step 3 to pending
+/plan skip 2                        ← mark step 2 skipped
+/plan replan                        ← regenerate remaining steps with the LLM
+/plan delete <name>                 ← remove a plan by name
+/plan clean                         ← remove all completed plans
+```
+
+**Models and config — same handlers as the CLI**
+```
+/model list                         ← live query of all registered backends
+/model add gpt-5-mini
+/model remove gpt-5-mini
+/config set default-model qwen2.5:7b
+/config get default-model
+```
+
+**Sessions**
+```
+/session list                       ← all sessions (* = active)
+/session new [name]                 ← create a new session
+/session switch <name>              ← switch active session
+/session delete <name>              ← delete a session and its history
+/session show                       ← current session ID + message count
+```
+
+**Backends, hooks, MCP**
+```
+/backend list                       ← list registered backends
+/backend show <name>                ← show backend details
+/hook list                          ← list remote hooks
+/hook show <name>                   ← hook details + live tool list
+/mcp list                           ← list MCP servers
+/mcp show <name>                    ← MCP server config
+/mcp                                ← refresh MCP workers in sidebar
+```
+
+**Utility**
+```
+/clear                              ← wipe the viewport log
+/run --chain .contenox/review.json "summarise this"   ← stateless chain run
+/help                               ← in-TUI command reference
+```
+
+> [!NOTE]
+> `/model list`, `/config get`, `/session list`, `/backend list` etc. call the exact same cobra handler code as their CLI counterparts — the TUI captures their output into the viewport with no logic duplication.
+
 ### `contenox hook`
 
-Manage remote OpenAPI hooks. See [Remote Hooks](/hooks/remote).
+Manage remote OpenAPI hooks. See [Remote Hooks](/hooks/remote) and [Hook Allowlist Patterns](/hooks/#how-it-works).
 
 ```bash
 contenox hook add <name> --url <url>

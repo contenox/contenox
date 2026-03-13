@@ -248,7 +248,17 @@ type LLMExecutionConfig struct {
 	Provider         string   `yaml:"provider,omitempty" json:"provider,omitempty" example:"ollama"`
 	Providers        []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
 	Temperature      float32  `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
-	Hooks            []string `yaml:"hooks,omitempty" json:"hooks,omitempty" example:"[\"slack_notification\", \"email_notification\"]"`
+	// Hooks is the allowlist of hook names this task may invoke.
+	//
+	// Patterns supported:
+	//   - absent/null   — all registered hooks (backward-compatible default)
+	//   - []            — no hooks exposed to the model
+	//   - ["*"]         — all registered hooks (explicit)
+	//   - ["a","b"]     — only the named hooks (unknown names silently ignored)
+	//   - ["*","!name"] — all hooks except the excluded name(s)
+	//
+	// Exclusions ("!name") are only meaningful when combined with "*".
+	Hooks []string `yaml:"hooks,omitempty" json:"hooks,omitempty" example:"[\"local_shell\", \"nws\"]"`
 	HideTools        []string `yaml:"hide_tools,omitempty" json:"hide_tools,omitempty" example:"[\"tool1\", \"hook_name1.tool1\"]"`
 	PassClientsTools bool     `yaml:"pass_clients_tools" json:"pass_clients_tools"`
 	// Think enables reasoning mode for supported models.

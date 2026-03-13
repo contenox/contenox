@@ -207,3 +207,6 @@ CREATE TABLE IF NOT EXISTS bus_replies (
     data       BLOB    NOT NULL,
     created_at INTEGER NOT NULL DEFAULT (unixepoch('now'))
 );
+
+ALTER TABLE mcp_servers ADD COLUMN headers_json       TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE mcp_servers ADD COLUMN inject_params_json TEXT NOT NULL DEFAULT '{}';

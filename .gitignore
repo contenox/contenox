@@ -9,8 +9,7 @@ mcp-testserver
 *.dll
 *.so
 *.dylib
-vibe
-Vibe
+
 # Test binaries (built with `go test -c`)
 *.test
 

@@ -4,6 +4,7 @@ package contenoxcli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -33,42 +34,42 @@ func lastAssistantContentFromHistory(chat taskengine.ChatHistory) string {
 }
 
 // printRelevantOutput prints only the relevant part of the result based on output type, unless raw is true.
-func printRelevantOutput(output any, outputType taskengine.DataType, raw bool) {
+func printRelevantOutput(w io.Writer, output any, outputType taskengine.DataType, raw bool) {
 	if raw {
-		printOutput(output)
+		printOutput(w, output)
 		return
 	}
 	switch outputType {
 	case taskengine.DataTypeChatHistory:
 		if ch, ok := output.(taskengine.ChatHistory); ok {
 			if content := lastAssistantContentFromHistory(ch); content != "" {
-				fmt.Println(content)
+				fmt.Fprintln(w, content)
 				return
 			}
 		}
 	case taskengine.DataTypeString:
 		if s, ok := output.(string); ok {
-			fmt.Println(s)
+			fmt.Fprintln(w, s)
 			return
 		}
 	}
-	printOutput(output)
+	printOutput(w, output)
 }
 
 // printOutput prints output in a human-friendly way.
-func printOutput(output any) {
+func printOutput(w io.Writer, output any) {
 	switch v := output.(type) {
 	case string:
-		fmt.Println(v)
+		fmt.Fprintln(w, v)
 	case []byte:
-		fmt.Println(string(v))
+		fmt.Fprintln(w, string(v))
 	default:
 		b, err := json.MarshalIndent(output, "", "  ")
 		if err != nil {
-			fmt.Println(output)
+			fmt.Fprintln(w, output)
 			return
 		}
-		fmt.Println(string(b))
+		fmt.Fprintln(w, string(b))
 	}
 }
 

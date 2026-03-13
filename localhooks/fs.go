@@ -67,6 +67,8 @@ func (h *LocalFSHook) Exec(ctx context.Context, startTime time.Time, input any, 
 }
 
 // checkPath verifies if a path is within the allowed directory.
+// It resolves symlinks so that a symlink inside the sandbox pointing outside it
+// (e.g. ln -s /etc /allowed/link) is caught before any I/O is performed.
 func (h *LocalFSHook) checkPath(path string) (string, error) {
 	if h.allowedDir == "" {
 		return "", errors.New("local_fs: no allowed directory configured")
@@ -86,9 +88,21 @@ func (h *LocalFSHook) checkPath(path string) (string, error) {
 		return "", fmt.Errorf("local_fs: invalid path: %w", err)
 	}
 
+	// Resolve symlinks to find the true on-disk destination.
+	// We only skip on NotExist so write_file to new files still works.
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err == nil {
+		absPath = realPath
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("local_fs: path resolution error: %w", err)
+	}
+
+	// Use the strict prefix check: ".." alone or "../" prefix.
+	// strings.HasPrefix(rel, "..") would falsely trigger for "..hidden".
+	sep := string(filepath.Separator)
 	rel, err := filepath.Rel(absBase, absPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return "", fmt.Errorf("local_fs: path %s is not under allowed directory %s", path, h.allowedDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+sep) {
+		return "", fmt.Errorf("local_fs: path %s escapes allowed directory %s", path, h.allowedDir)
 	}
 
 	return absPath, nil

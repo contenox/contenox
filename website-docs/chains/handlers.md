@@ -26,7 +26,7 @@ Sends the current input to the LLM and waits for a reply. If the model calls a t
 | `system_instruction` | No | System prompt (supports macros) |
 | `execute_config.model` | Yes | Model name, e.g. `qwen2.5:7b` |
 | `execute_config.provider` | Yes | `ollama`, `openai`, `vllm`, `gemini` |
-| `execute_config.hooks` | No | List of hook names to expose as tools |
+| `execute_config.hooks` | No | Hook allowlist: `[]`=none, `["*"]`=all, `["a","b"]`=named, `["*","!x"]`=all-except. Absent=all (backward compat). |
 | `execute_config.hide_tools` | No | Tools to suppress from the model |
 | `execute_config.temperature` | No | Sampling temperature (0–1) |
 | `execute_config.think` | No | Reasoning effort level. `"low"`, `"medium"`, `"high"`, or `"false"`. Supported by Ollama (v0.17.5+), Gemini 2.5+, vLLM, and OpenAI o-series models. |

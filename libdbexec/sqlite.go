@@ -52,7 +52,7 @@ func NewSQLiteDBManager(ctx context.Context, path string, schema string) (DBMana
 	}
 
 	if schema != "" {
-		if _, err = db.ExecContext(ctx, schema); err != nil {
+		if _, err = db.ExecContext(ctx, schema); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			_ = db.Close()
 			return nil, fmt.Errorf("failed to initialize sqlite schema: %w", translateSQLiteError(err))
 		}
