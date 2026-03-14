@@ -154,16 +154,14 @@ The first run auto-creates a "default" session. Manage sessions with:
 Giving the model tools (file system and shell access):
 
   --local-exec-allowed-dir <dir>     allow local_fs tools inside <dir>
-  --shell                            enable local_shell (requires allow list)
-  --local-exec-allowed-commands git,ls   comma-separated allowed commands
+  --shell                            enable local_shell (command policy is defined in the chain)
 
 Examples:
   # Chat with file system access to the current project:
   contenox chat --local-exec-allowed-dir . "summarise the README"
 
-  # Shell access for git operations:
-  contenox chat --shell --local-exec-allowed-commands git \
-    "suggest a commit message from git diff"
+  # Shell access (policy comes from the chain's hook_policies; default chains allow common dev tools):
+  contenox chat --shell "suggest a commit message from git diff"
 
   # Trim context: only send last 10 messages from session history to the model:
   contenox chat --trim 10 "let's continue where we left off"
@@ -215,8 +213,6 @@ func init() {
 	f.String("input", "", "Input for the chain (default: positional args or stdin if piped)")
 	f.Bool("shell", false, "Enable the local_shell hook (use only in trusted environments)")
 	f.String("local-exec-allowed-dir", "", "If set, local_shell may only run scripts/binaries under this directory")
-	f.String("local-exec-allowed-commands", "", "Comma-separated list of allowed executable paths/names for local_shell")
-	f.String("local-exec-denied-commands", "", "Comma-separated list of denied executable basenames/paths for local_shell")
 	f.Duration("timeout", defaultTimeout, "Maximum execution time (e.g., 5m, 1h)")
 	f.Bool("trace", false, "Enable operation telemetry on stderr")
 
@@ -319,32 +315,10 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 	effectiveEnableLocalExec, _ := flags.GetBool("shell")
 	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	effectiveLocalExecAllowedCommands, _ := flags.GetString("local-exec-allowed-commands")
-
-	var effectiveLocalExecDeniedCommands []string
-	if changed("local-exec-denied-commands") {
-		denied, _ := flags.GetString("local-exec-denied-commands")
-		effectiveLocalExecDeniedCommands = splitAndTrim(denied, ",")
-	}
 
 	effectiveTracing, _ := flags.GetBool("trace")
 	effectiveSteps, _ := flags.GetBool("steps")
 	effectiveRaw, _ := flags.GetBool("raw")
-
-	if effectiveEnableLocalExec && effectiveLocalExecAllowedDir != "" && effectiveLocalExecAllowedCommands != "" {
-		allowedDir, err := filepath.Abs(effectiveLocalExecAllowedDir)
-		if err != nil {
-			slog.Error("Invalid allowed directory", "error", err)
-			return err
-		}
-		commands := splitAndTrim(effectiveLocalExecAllowedCommands, ",")
-		for _, c := range commands {
-			if filepath.IsAbs(c) && !strings.HasPrefix(c, allowedDir) {
-				slog.Error("Command path not inside allowed directory", "command", c, "allowed_dir", allowedDir)
-				return errInvalidConfig
-			}
-		}
-	}
 
 	var inputValue string
 	var inputPassed bool
@@ -377,8 +351,6 @@ func runChat(cmd *cobra.Command, args []string) error {
 		EffectiveNoDeleteModels:           effectiveNoDeleteModels,
 		EffectiveEnableLocalExec:          effectiveEnableLocalExec,
 		EffectiveLocalExecAllowedDir:      effectiveLocalExecAllowedDir,
-		EffectiveLocalExecAllowedCommands: effectiveLocalExecAllowedCommands,
-		EffectiveLocalExecDeniedCommands:  effectiveLocalExecDeniedCommands,
 		EffectiveTracing:                  effectiveTracing,
 		EffectiveSteps:                    effectiveSteps,
 		EffectiveRaw:                      effectiveRaw,

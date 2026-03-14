@@ -101,12 +101,29 @@ contenox run --shell "clean up unused imports in the codebase"
 contenox plan next --auto --shell
 ```
 
-Or configure an allowlist in persistent config:
+**Command policy is set in the chain, not on the CLI.** Add a `hook_policies` block to `execute_config`:
 
-```bash
-contenox config set local-shell-allowed-commands "go,git,make"
-contenox config set local-exec-allowed-dir /home/user/projects
+```json
+"execute_config": {
+  "model": "{{var:model}}",
+  "provider": "{{var:provider}}",
+  "hooks": ["local_shell"],
+  "hook_policies": {
+    "local_shell": {
+      "_allowed_commands": "git,go,make,ls,cat",
+      "_denied_commands":  "sudo,su,dd,mkfs"
+    }
+  }
+}
 ```
+
+- `_allowed_commands` — comma-separated list of permitted command names. When set, any command not on this list is rejected before it runs.
+- `_denied_commands` — comma-separated commands that are always blocked, regardless of the allowlist.
+- `_allowed_dir` — if set, the command (or its absolute path) must reside under this directory.
+
+The default chains (`default-chain.json`, `default-run-chain.json`) ship with sensible defaults: common dev tools allowed, privilege-escalation and raw-disk commands denied.
+
+To use `local_shell` with **no policy restrictions** (fully open), omit `hook_policies` entirely. Only do this in fully-trusted, local-only environments — the HITL approval gate in `contenox vibe` is still active regardless.
 
 ### Tool
 
@@ -114,18 +131,11 @@ contenox config set local-exec-allowed-dir /home/user/projects
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `command` | string | ✅ | Shell command to execute |
-
-### Chain example
-
-```json
-"execute_config": {
-  "model": "qwen2.5:7b",
-  "provider": "ollama",
-  "pass_clients_tools": false,
-  "hooks": ["local_shell"]
-}
-```
+| `command` | string | ✅ | Executable path or name |
+| `args` | string | — | Space-separated arguments |
+| `cwd` | string | — | Working directory |
+| `timeout` | string | — | Duration e.g. `30s` |
+| `shell` | boolean | — | Run via `/bin/sh -c` (allows pipes, redirects, `$VAR`). **Disabled when `_allowed_commands` or `_allowed_dir` is set.** |
 
 ---
 

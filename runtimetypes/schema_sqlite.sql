@@ -208,5 +208,16 @@ CREATE TABLE IF NOT EXISTS bus_replies (
     created_at INTEGER NOT NULL DEFAULT (unixepoch('now'))
 );
 
-ALTER TABLE mcp_servers ADD COLUMN headers_json       TEXT NOT NULL DEFAULT '{}';
-ALTER TABLE mcp_servers ADD COLUMN inject_params_json TEXT NOT NULL DEFAULT '{}';
+-- Incremental migrations — executed one-by-one by NewSQLiteDBManager so that
+-- "duplicate column name" errors on already-upgraded databases are silently
+-- skipped and the remaining statements still run.
+
+-- remote_hooks columns added after initial release
+ALTER TABLE remote_hooks ADD COLUMN headers             TEXT;
+ALTER TABLE remote_hooks ADD COLUMN properties         BLOB;
+ALTER TABLE remote_hooks ADD COLUMN inject_params_json TEXT NOT NULL DEFAULT '{}';
+
+-- mcp_servers columns added after initial release
+ALTER TABLE mcp_servers ADD COLUMN headers_json        TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE mcp_servers ADD COLUMN inject_params_json  TEXT NOT NULL DEFAULT '{}';
+

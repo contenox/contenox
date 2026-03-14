@@ -596,9 +596,7 @@ func (m vibeModel) slash(raw string) (tea.Model, tea.Cmd) {
 	case parts[0] == "/run":
 		return m, m.statelessRun(parts[1:])
 
-	// ── /mcp ───────────────────────────────────────────────────────────────────
-	case parts[0] == "/mcp":
-		return m, m.refreshMCP()
+
 
 	// ── /session ──────────────────────────────────────────────────────────────
 	case parts[0] == "/session":
@@ -664,24 +662,21 @@ func (m vibeModel) slash(raw string) (tea.Model, tea.Cmd) {
   /plan clean                     delete all completed/archived plans
   /run --chain <file> [input]     run a chain statelessly (like contenox run)
   /model list|add|remove          manage declared models
-  /config get|set <key>           read/write persistent config
+  /model set-context <name> --context <len>   set context window (e.g. 128k)
+  /config get|set|list <key>      read/write persistent config
   /session list|new|switch|delete manage chat sessions
   /session show                   show session ID and message count
-  /backend list                   list registered backends
-  /backend show <name>            show backend details
-  /hook list                      list registered hooks
-  /hook show <name>               show hook details and tools
-  /mcp list                       list registered MCP servers
-  /mcp show <name>                show MCP server details
+  /backend list|show|add|remove   manage LLM backends
+  /hook list|show|add|remove|update   manage remote hooks
+  /mcp list|show|add|remove|update    manage MCP servers
   /mcp                            refresh MCP workers in sidebar
   Ctrl+B                          cycle layout: normal → wide → full → …
   Ctrl+C                          quit`)))
 		m.sync()
 		return m, nil
 
-	// ── /model list ────────────────────────────────────────────────────────────
+	// ── /model ──────────────────────────────────────────────────────────────────
 	case parts[0] == "/model":
-		// Delegate to the real cobra handler, capture output to the viewport.
 		if len(parts) >= 2 {
 			switch parts[1] {
 			case "list", "ls":
@@ -701,17 +696,30 @@ func (m vibeModel) slash(raw string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				return m, m.runCobraCmd(modelRemoveCmd, parts[2:3])
+			case "set-context":
+				// /model set-context <name> --context <len>
+				if len(parts) < 4 {
+					m.push(vibeStyleError.Render("usage: /model set-context <model-name> --context <len>  (e.g. 128k)"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(modelSetContextCmd, parts[2:])
 			}
 		}
-		m.push(vibeStyleError.Render("usage: /model list|add|remove"))
+		m.push(vibeStyleError.Render("usage: /model list|add|remove|set-context"))
 		m.sync()
 		return m, nil
 
-	// ── /config get|set ─────────────────────────────────────────────────────────
+	// ── /config get|set|list ────────────────────────────────────────────────────
 	case parts[0] == "/config":
-		if len(parts) >= 3 {
+		if len(parts) >= 2 {
 			switch parts[1] {
 			case "get":
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /config get <key>"))
+					m.sync()
+					return m, nil
+				}
 				return m, m.runCobraCmd(configGetCmd, parts[2:3])
 			case "set":
 				if len(parts) < 4 {
@@ -720,9 +728,11 @@ func (m vibeModel) slash(raw string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				return m, m.runCobraCmd(configSetCmd, parts[2:4])
+			case "list", "ls":
+				return m, m.runCobraCmd(configListCmd, nil)
 			}
 		}
-		m.push(vibeStyleError.Render("usage: /config get|set <key> [value]"))
+		m.push(vibeStyleError.Render("usage: /config get|set|list"))
 		m.sync()
 		return m, nil
 
@@ -750,7 +760,7 @@ func (m vibeModel) slash(raw string) (tea.Model, tea.Cmd) {
 		m.sync()
 		return m, nil
 
-	// ── /backend list|show ─────────────────────────────────────────────────────
+	// ── /backend ─────────────────────────────────────────────────────────────────
 	case parts[0] == "/backend":
 		if len(parts) >= 2 {
 			switch parts[1] {
@@ -763,13 +773,28 @@ func (m vibeModel) slash(raw string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				return m, m.runCobraCmd(backendShowCmd, parts[2:3])
+			case "add":
+				// /backend add <name> --type <type> [--url <url>] [--api-key-env <env>]
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /backend add <name> --type <olama|openai|gemini|vllm> [--url <url>] [--api-key-env <env>]"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(backendAddCmd, parts[2:])
+			case "remove", "rm":
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /backend remove <name>"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(backendRemoveCmd, parts[2:3])
 			}
 		}
-		m.push(vibeStyleError.Render("usage: /backend list|show"))
+		m.push(vibeStyleError.Render("usage: /backend list|show|add|remove"))
 		m.sync()
 		return m, nil
 
-	// ── /hook list|show ────────────────────────────────────────────────────────
+	// ── /hook ─────────────────────────────────────────────────────────────────────
 	case parts[0] == "/hook":
 		if len(parts) >= 2 {
 			switch parts[1] {
@@ -782,13 +807,35 @@ func (m vibeModel) slash(raw string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				return m, m.runCobraCmd(hookShowCmd, parts[2:3])
+			case "add":
+				// /hook add <name> --url <url> [--timeout <ms>] [--header <h>] [--inject <k=v>]
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /hook add <name> --url <url> [--timeout <ms>]"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(hookAddCmd, parts[2:])
+			case "remove", "rm":
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /hook remove <name>"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(hookRemoveCmd, parts[2:3])
+			case "update":
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /hook update <name> [--timeout <ms>] [--header <h>]"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(hookUpdateCmd, parts[2:])
 			}
 		}
-		m.push(vibeStyleError.Render("usage: /hook list|show"))
+		m.push(vibeStyleError.Render("usage: /hook list|show|add|remove|update"))
 		m.sync()
 		return m, nil
 
-	// ── /mcp list|show|refresh ─────────────────────────────────────────────────
+	// ── /mcp ─────────────────────────────────────────────────────────────────────
 	case parts[0] == "/mcp":
 		if len(parts) >= 2 {
 			switch parts[1] {
@@ -801,6 +848,28 @@ func (m vibeModel) slash(raw string) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				return m, m.runCobraCmd(mcpShowCmd, parts[2:3])
+			case "add":
+				// /mcp add <name> --transport <type> [--url <url>] [--command <cmd>] [--args <a,b>]
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /mcp add <name> --transport <stdio|sse|http> [--url <url>] [--command <cmd>]"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(mcpAddCmd, parts[2:])
+			case "remove", "rm":
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /mcp remove <name>"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(mcpRemoveCmd, parts[2:3])
+			case "update":
+				if len(parts) < 3 {
+					m.push(vibeStyleError.Render("usage: /mcp update <name> [--inject <k=v>] [--header <h>]"))
+					m.sync()
+					return m, nil
+				}
+				return m, m.runCobraCmd(mcpUpdateCmd, parts[2:])
 			}
 		}
 		// bare /mcp = refresh sidebar

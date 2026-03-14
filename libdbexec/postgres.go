@@ -62,51 +62,38 @@ func (sm *postgresDBManager) WithTransaction(ctx context.Context, onRollback ...
 
 	// Executor bound to the transaction
 	store := &txAwareDB{tx: tx, errTranslate: translateError}
-	committed := false
-	rollback := func() {
+	// finalized guards against double-execution of onRollback hooks when
+	// releaseFn is deferred and commit also failed (both paths ran rollback logic).
+	finalized := false
+	fireRollback := func() {
 		for _, f := range onRollback {
 			if f != nil {
 				f()
 			}
 		}
+		onRollback = nil
 	}
-	// Define the Commit function
 	commitFn := func(commitCtx context.Context) error {
-		// Check context before attempting commit
-		// Use the context passed to *this function* for the check
 		if ctxErr := commitCtx.Err(); ctxErr != nil {
-			// If context is done, commit will likely fail anyway or is unwanted.
-			// Return a clear error indicating context issue *before* commit attempt.
-			// Rollback should happen via the separate ReleaseTx call (likely deferred).
 			return fmt.Errorf("%w: context error before commit: %w", ErrTxFailed, ctxErr)
 		}
-
-		// Attempt commit
 		err := tx.Commit()
 		if err != nil {
-			// Commit failed. The transaction is implicitly rolled back by the DB/driver.
-			// Return the translated commit error, wrapped for context.
 			return fmt.Errorf("%w: commit failed: %w", ErrTxFailed, translateError(err))
 		}
-		committed = true
-		// Commit succeeded
+		finalized = true
 		return nil
 	}
 
-	// Define the Release (Rollback) function
 	releaseFn := func() error {
-		// Attempt rollback
 		rollbackErr := tx.Rollback()
-		if !committed {
-			rollback()
+		if !finalized {
+			finalized = true
+			fireRollback()
 		}
-		// Rollback is often called via defer, even after a successful commit.
-		// Ignore sql.ErrTxDone, as it means the transaction is already finalized.
 		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			// Report any other *unexpected* rollback error, wrapped for context.
 			return fmt.Errorf("%w: rollback failed: %w", ErrTxFailed, translateError(rollbackErr))
 		}
-		// Rollback succeeded or was unnecessary (already finalized)
 		return nil
 	}
 
@@ -225,47 +212,36 @@ func translateError(err error) error {
 		// Use pqErr.Code which is the SQLSTATE code (e.g., "23505")
 		// Using Code.Name() can be less stable if lib/pq changes names.
 		switch pqErr.Code {
-		// Class 23 — Integrity Constraint Violation
 		case "23505":
-			return ErrUniqueViolation
+			return fmt.Errorf("%w: %w", ErrUniqueViolation, err)
 		case "23503":
-			return ErrForeignKeyViolation
+			return fmt.Errorf("%w: %w", ErrForeignKeyViolation, err)
 		case "23502":
-			return ErrNotNullViolation
+			return fmt.Errorf("%w: %w", ErrNotNullViolation, err)
 		case "23514":
-			return ErrCheckViolation
-		// Class 40 — Transaction Rollback
+			return fmt.Errorf("%w: %w", ErrCheckViolation, err)
 		case "40P01":
-			return ErrDeadlockDetected
+			return fmt.Errorf("%w: %w", ErrDeadlockDetected, err)
 		case "40001":
-			return ErrSerializationFailure
-		// Class 55 — Object Not In Prerequisite State
-		case "55P03": // lock_not_available
-			return ErrLockNotAvailable
-		// Class 57 — Operator Intervention
-		case "57014": // query_canceled
-			// Could be admin cancellation or query timeout on server side.
-			// Map to our generic query canceled error.
-			return fmt.Errorf("%w: %s", ErrQueryCanceled, pqErr.Message)
-		// Class 22 — Data Exception
-		case "22001": // string_data_right_truncation
-			return ErrDataTruncation
-		case "22003": // numeric_value_out_of_range
-			return ErrNumericOutOfRange
-		case "22P02": // invalid_text_representation (common for bad UUID/int syntax etc)
-			return fmt.Errorf("%w: %s", ErrInvalidInputSyntax, pqErr.Message) // Include message hint
-		// Class 42 — Syntax Error or Access Rule Violation
-		case "42703": // undefined_column
-			return ErrUndefinedColumn
-		case "42P01": // undefined_table
-			return ErrUndefinedTable
-		// Add other specific codes here if needed...
+			return fmt.Errorf("%w: %w", ErrSerializationFailure, err)
+		case "55P03":
+			return fmt.Errorf("%w: %w", ErrLockNotAvailable, err)
+		case "57014":
+			return fmt.Errorf("%w: %w", ErrQueryCanceled, err)
+		case "22001":
+			return fmt.Errorf("%w: %w", ErrDataTruncation, err)
+		case "22003":
+			return fmt.Errorf("%w: %w", ErrNumericOutOfRange, err)
+		case "22P02":
+			return fmt.Errorf("%w: %w", ErrInvalidInputSyntax, err)
+		case "42703":
+			return fmt.Errorf("%w: %w", ErrUndefinedColumn, err)
+		case "42P01":
+			return fmt.Errorf("%w: %w", ErrUndefinedTable, err)
 		default:
-			// Use a generic constraint error for unmapped Class 23 codes
 			if pqErr.Code.Class() == "23" {
-				return fmt.Errorf("%w: %s", ErrConstraintViolation, pqErr.Message)
+				return fmt.Errorf("%w: %w", ErrConstraintViolation, err)
 			}
-			// Fallback for other pq errors, include details
 			return fmt.Errorf("libdb: postgres error: code=%s detail=%q message=%q: %w",
 				pqErr.Code, pqErr.Detail, pqErr.Message, err)
 		}

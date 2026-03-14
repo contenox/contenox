@@ -29,8 +29,6 @@ type chatOpts struct {
 	EffectiveNoDeleteModels           bool
 	EffectiveEnableLocalExec          bool
 	EffectiveLocalExecAllowedDir      string
-	EffectiveLocalExecAllowedCommands string
-	EffectiveLocalExecDeniedCommands  []string
 	EffectiveTracing                  bool
 	EffectiveSteps                    bool
 	EffectiveRaw                      bool

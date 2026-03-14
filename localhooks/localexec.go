@@ -78,6 +78,39 @@ func NewLocalExecHook(opts ...LocalExecOption) taskengine.HookRepo {
 	return h
 }
 
+// resolvePolicy returns the effective allow/deny lists for this invocation.
+// Chain-level context args (injected by ExecEnv via WithHookArgs) take
+// precedence over the global struct-level defaults set at construction time.
+// The returned map values are comma-separated lists (e.g. "git,ls").
+func (h *LocalExecHook) resolvePolicy(ctx context.Context) (allowedCommands []string, allowedDir string, deniedCommands []string) {
+	if args := taskengine.HookArgsFromContext(ctx, localExecHookName); len(args) > 0 {
+		if v := args["_allowed_commands"]; v != "" {
+			allowedCommands = splitTrimmed(v)
+		}
+		if v := args["_allowed_dir"]; v != "" {
+			allowedDir = filepath.Clean(v)
+		}
+		if v := args["_denied_commands"]; v != "" {
+			deniedCommands = splitTrimmed(v)
+		}
+		return
+	}
+	// Fall back to construction-time defaults.
+	return h.allowedCommands, h.allowedDir, h.deniedCommands
+}
+
+// splitTrimmed splits a comma-separated string and trims whitespace.
+func splitTrimmed(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 // Exec implements taskengine.HookRepo.
 // Input is passed as stdin to the command when it is a string or when map contains "stdin".
 // When invoked from execute_tool_calls, hook.Args may be nil and the command comes from input (e.g. {"command":"ls"}).
@@ -93,7 +126,8 @@ func (h *LocalExecHook) Exec(ctx context.Context, startTime time.Time, input any
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	if err := h.checkAllowlist(command, useShell); err != nil {
+	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
+	if err := h.checkAllowlist(command, useShell, allowedCommands, allowedDir, deniedCommands); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
 	result, err := h.run(ctx, command, argsSlice, cwd, timeout, useShell, stdin)
@@ -165,14 +199,15 @@ func (h *LocalExecHook) parseArgs(hook *taskengine.HookCall, input any) (command
 	return command, argsSlice, cwd, timeout, useShell, stdin, nil
 }
 
-func (h *LocalExecHook) checkAllowlist(command string, useShell bool) error {
+func (h *LocalExecHook) checkAllowlist(command string, useShell bool, allowedCommands []string, allowedDir string, deniedCommands []string) error {
 	// 🚨 Security: forbid shell mode entirely when any policy is active.
 	// It is impossible to statically analyse a raw bash string for pipes (|),
 	// logic operators (&&, ||) and subshells ($(...)), so we refuse to run
 	// /bin/sh -c <string> when an allowlist, denylist or allowed-dir policy is
 	// configured.  Without this guard, an LLM could bypass
-	// --local-exec-allowed-commands=git with: {"command":"git status; rm -rf /","shell":true}
-	if useShell && (len(h.allowedCommands) > 0 || h.allowedDir != "" || len(h.deniedCommands) > 0) {
+	// This prevents the model from escaping policy via shell injection, e.g.
+	// with _allowed_commands=git and: {"command":"git status; rm -rf /","shell":true}
+	if useShell && (len(allowedCommands) > 0 || allowedDir != "" || len(deniedCommands) > 0) {
 		return fmt.Errorf("local_shell: 'shell: true' is strictly forbidden when security " +
 			"policies (allowlist / denylist / allowed-dir) are active to prevent command injection; " +
 			"set shell:false and supply the command and args separately")
@@ -189,9 +224,9 @@ func (h *LocalExecHook) checkAllowlist(command string, useShell bool) error {
 		resolved = filepath.Clean(command)
 	}
 	// 1. Denylist: never allow these basenames or paths
-	if len(h.deniedCommands) > 0 {
+	if len(deniedCommands) > 0 {
 		base := filepath.Base(resolved)
-		for _, d := range h.deniedCommands {
+		for _, d := range deniedCommands {
 			dClean := filepath.Clean(d)
 			if dClean == resolved || dClean == command || filepath.Base(dClean) == base || dClean == base {
 				return fmt.Errorf("local_shell: command %s is denied by policy", command)
@@ -199,12 +234,12 @@ func (h *LocalExecHook) checkAllowlist(command string, useShell bool) error {
 		}
 	}
 	// 2. Sensitive default: no allow list configured = deny all
-	if h.allowedDir == "" && len(h.allowedCommands) == 0 {
-		return fmt.Errorf("local_shell: no allow list configured; set local_shell_allowed_commands or local_shell_allowed_dir in .contenox/config.yaml (or via -local-exec-allowed-*)")
+	if allowedDir == "" && len(allowedCommands) == 0 {
+		return fmt.Errorf("local_shell: no allow list configured; define hook_policies in your chain JSON to allow commands or directories")
 	}
 	// 3. Allowlist checks
-	if h.allowedDir != "" {
-		absDir, err := filepath.Abs(h.allowedDir)
+	if allowedDir != "" {
+		absDir, err := filepath.Abs(allowedDir)
 		if err != nil {
 			return fmt.Errorf("local_shell: allowed dir invalid: %w", err)
 		}
@@ -214,12 +249,12 @@ func (h *LocalExecHook) checkAllowlist(command string, useShell bool) error {
 		}
 		rel, err := filepath.Rel(absDir, absCmd)
 		if err != nil || strings.HasPrefix(rel, "..") {
-			return fmt.Errorf("local_shell: command %s is not under allowed dir %s", command, h.allowedDir)
+			return fmt.Errorf("local_shell: command %s is not under allowed dir %s", command, allowedDir)
 		}
 	}
-	if len(h.allowedCommands) > 0 {
+	if len(allowedCommands) > 0 {
 		allowed := false
-		for _, c := range h.allowedCommands {
+		for _, c := range allowedCommands {
 			cClean := filepath.Clean(c)
 			if cClean == resolved || cClean == command {
 				allowed = true
@@ -328,19 +363,22 @@ func (h *LocalExecHook) GetSchemasForSupportedHooks(ctx context.Context) (map[st
 }
 
 // GetToolsForHookByName implements taskengine.HooksWithSchema.
+// Chain-level policy (allowed/denied commands, allowed dir) is read from ctx
+// via HookArgsFromContext when present, falling back to the struct defaults.
 func (h *LocalExecHook) GetToolsForHookByName(ctx context.Context, name string) ([]taskengine.Tool, error) {
 	if name != localExecHookName {
 		return nil, fmt.Errorf("unknown hook: %s", name)
 	}
+	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
 	desc := "Run a terminal command on the local host. Input is passed as stdin."
-	if len(h.allowedCommands) > 0 {
-		desc += " Allowed commands: " + strings.Join(h.allowedCommands, ", ") + "."
+	if len(allowedCommands) > 0 {
+		desc += " Allowed commands: " + strings.Join(allowedCommands, ", ") + "."
 	}
-	if h.allowedDir != "" {
-		desc += " Commands must reside under: " + h.allowedDir + "."
+	if allowedDir != "" {
+		desc += " Commands must reside under: " + allowedDir + "."
 	}
-	if len(h.deniedCommands) > 0 {
-		desc += " Denied commands: " + strings.Join(h.deniedCommands, ", ") + "."
+	if len(deniedCommands) > 0 {
+		desc += " Denied commands: " + strings.Join(deniedCommands, ", ") + "."
 	}
 	return []taskengine.Tool{
 		{

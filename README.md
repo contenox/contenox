@@ -41,7 +41,16 @@ contenox vibe
 A full-screen terminal dashboard (Bubble Tea) with:
 - **Live plan sidebar** — watch steps execute with `⟳` / `✓` / `✗` indicators in real time
 - **Interactive approvals** — approve or deny sensitive filesystem actions with `y`/`n` before they run
-- **Slash commands** — `/plan next --auto`, `/session new`, `/mcp list`, `/model add` without leaving chat
+- **Full CLI parity** — every `contenox` subcommand is a slash command inside vibe: `/plan`, `/model`, `/session`, `/backend`, `/hook`, `/mcp`, `/config`, `/run`
+
+```
+/plan new "add prometheus metrics to the HTTP server"
+/plan next --auto              ← run to completion
+/model set-context gpt-5-mini --context 128k
+/backend add local --type ollama --url http://127.0.0.1:11434
+/mcp add memory --transport stdio --command npx --args "-y,@modelcontextprotocol/server-memory"
+/help
+```
 
 ---
 
@@ -291,7 +300,7 @@ contenox backend remove myvllm
 ## Safety
 
 - **Opt-in shell access** — `--shell` flag must be passed explicitly to enable local_shell
-- **Allowlist** — only commands you explicitly allow (via `--local-exec-allowed-commands`) can run
+- **Chain-scoped policy** — allowed and denied commands are declared in the chain's `hook_policies` field; the default chains ship with a sensible allowlist out of the box
 - **Human-in-the-loop** — `plan next` executes one step and stops; `--auto` requires explicit intent
 - **Local-first** — with Ollama, nothing leaves your machine
 

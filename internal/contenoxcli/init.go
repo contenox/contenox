@@ -120,7 +120,7 @@ func RunInit(force bool, provider string) {
 	fmt.Println("       contenox plan next --auto")
 	fmt.Println("")
 	fmt.Println("  To enable shell and filesystem tools pass --shell to any command, e.g.:")
-	fmt.Println("       contenox --shell --local-exec-allowed-commands git,go \"run the tests\"")
+	fmt.Println("       contenox --shell \"run the tests\"")
 	fmt.Println("")
 	fmt.Println("  Run 'contenox --help' for full usage.")
 }

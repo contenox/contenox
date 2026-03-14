@@ -105,13 +105,16 @@ $ git log --oneline -10            ← $ prefix = shell; stdout injected into LL
 /plan clean                         ← remove all completed plans
 ```
 
-**Models and config — same as the CLI, no duplication**
+**Models and config — same handlers as the CLI, no duplication**
 
 ```
-/model list                         ← live query of all backends
-/model add gpt-5-mini
-/config set default-model qwen2.5:7b
+/model list                         ← all registered models across all backends
+/model add gpt-5-mini               ← declare a model (resolved by backend sync)
+/model remove gpt-5-mini
+/model set-context gpt-5-mini --context 128k   ← override stored context window
+/config list                        ← all persistent config keys
 /config get default-model
+/config set default-model qwen2.5:7b
 ```
 
 **Run any chain statelessly**
@@ -134,11 +137,21 @@ $ git log --oneline -10            ← $ prefix = shell; stdout injected into LL
 
 ```
 /backend list                       ← list registered backends
-/backend show local                 ← show backend details
+/backend show <name>                ← show backend details
+/backend add <name> --type <ollama|openai|gemini|vllm> [--url <url>] [--api-key-env <env>]
+/backend remove <name>
+
 /hook list                          ← list registered remote hooks + tool count
-/hook show nws                      ← show hook details and live tool list
+/hook show <name>                   ← hook details and live tool list
+/hook add <name> --url <url> [--timeout <ms>] [--header <h>] [--inject <k=v>]
+/hook remove <name>
+/hook update <name> [--timeout <ms>] [--header <h>] [--inject <k=v>]
+
 /mcp list                           ← list registered MCP servers
-/mcp show myserver                  ← show MCP server config
+/mcp show <name>                    ← MCP server config and tools
+/mcp add <name> --transport <stdio|sse|http> [--url <url>] [--command <cmd>] [--args <a,b>]
+/mcp remove <name>
+/mcp update <name> [--inject <k=v>] [--header <h>]
 /mcp                                ← refresh MCP worker list in sidebar
 ```
 
@@ -305,10 +318,8 @@ contenox model set-context qwen2.5:7b             --context 32k
 | `--provider` | Provider type override |
 | `--model` | Model name override |
 | `--context` | Context length in tokens — bare int or shorthand (`12k`, `128k`, `1m`) |
-| `--shell` | Enable `local_shell` hook |
-| `--local-exec-allowed-commands` | Comma-separated allow list for local_shell |
-| `--local-exec-allowed-dir` | Directory scope for allowed executables |
-| `--local-exec-denied-commands` | Block list (checked before allow list) |
+| `--shell` | Enable `local_shell` hook (opt-in; policy is set in the chain, not here) |
+| `--local-exec-allowed-dir` | Restrict `local_fs` to this directory |
 | `--trace` | Emit structured operation telemetry to stderr |
 | `--steps` | Print execution steps after result |
 | `--raw` | Print full output instead of last assistant message |
@@ -319,17 +330,32 @@ contenox model set-context qwen2.5:7b             --context 32k
 
 Runs commands on your local machine — real side effects. **Opt-in only.**
 
-Enable with `--shell`. You must also set an allow list or no commands will run:
+Enable with `--shell`. Policy (which commands are allowed or denied) is declared **in the chain**, not as CLI flags:
 
 ```bash
-contenox chat --shell --local-exec-allowed-commands "git,go,bash,ls" "run the tests"
+contenox chat --shell "run the tests"
 contenox plan next --shell
 ```
 
-**Security controls:**
-- `--local-exec-allowed-commands` — comma-separated list of allowed executable names/paths (required)
-- `--local-exec-allowed-dir` — only run binaries/scripts under this directory
-- `--local-exec-denied-commands` — block list checked before the allow list
+The default chains (`default-chain.json`, `default-run-chain.json`) ship with a sensible baseline:
+- **Allowed:** `ls`, `cat`, `echo`, `git`, `go`, `python3`, `node`, `npm`, `make`, `cargo`, `curl`, `wget`, `jq`, and common read-only tools
+- **Denied:** `sudo`, `su`, `dd`, `mkfs`, `fdisk`, `parted`, `shred`
+
+To customise for a chain, add a `hook_policies` block to `execute_config`:
+
+```json
+"execute_config": {
+  "hooks": ["local_shell"],
+  "hook_policies": {
+    "local_shell": {
+      "_allowed_commands": "git,go,make",
+      "_denied_commands": "sudo,su,dd"
+    }
+  }
+}
+```
+
+`--local-exec-allowed-dir` still restricts `local_fs` to a directory; it does **not** affect `local_shell` command policy.
 
 When `--shell` is not passed, the `local_shell` hook is simply not registered — chains that reference it will run without it.
 

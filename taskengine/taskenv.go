@@ -220,7 +220,22 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: failed to resolve hooks: %w", currentTask.ID, err)
 		}
 		for _, hookName := range hookNames {
-			hookTools, err := env.hookProvider.GetToolsForHookByName(ctx, hookName)
+			// Build a task-scoped context carrying any chain-level policy args for
+			// this hook. WithHookArgs copies the map, so the stored value is
+			// immutable and safe to read concurrently without locks.
+			toolCtx := ctx
+			// 1. execute_config.hook_policies is the primary mechanism — chain authors
+			//    set per-hook policy here without touching the Hook field.
+			if task.ExecuteConfig != nil {
+				if policy, ok := task.ExecuteConfig.HookPolicies[hookName]; ok && len(policy) > 0 {
+					toolCtx = WithHookArgs(toolCtx, hookName, policy)
+				}
+			}
+			// 2. task.Hook.Args is the secondary mechanism for HandleHook tasks.
+			if task.Hook != nil && task.Hook.Name == hookName && len(task.Hook.Args) > 0 {
+				toolCtx = WithHookArgs(toolCtx, hookName, task.Hook.Args)
+			}
+			hookTools, err := env.hookProvider.GetToolsForHookByName(toolCtx, hookName)
 			if err != nil {
 				if errors.Is(err, ErrHookNotFound) {
 					// Hook not registered (e.g. local_shell disabled via --enable-local-exec=false).
