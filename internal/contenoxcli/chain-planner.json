@@ -6,7 +6,7 @@
             "id": "contenox_planner",
             "description": "Chat completion to generate JSON plan",
             "handler": "chat_completion",
-            "system_instruction": "You are an expert software engineering planner. Break down the user's goal into a sequential, logical plan. Output ONLY valid JSON in the exact format:\n```json\n{\n  \"steps\": [\n    { \"description\": \"Clear, actionable task description\" }\n  ]\n}\n```\nDo NOT surround the JSON with markdown formatting if possible, but if you do, ONLY use ```json.\nPrefer simple, reliable steps over clever or combined ones. Each step should be independently executable with no assumed context from previous steps.",
+            "system_instruction": "You are an expert software engineering planner. Break down the user's goal into a sequential, logical plan. Output ONLY a valid JSON array of strings, in the exact format:\n```json\n[\n  \"Clear, actionable task description\",\n  \"Another task description\"\n]\n```\nDo NOT surround the JSON with markdown formatting if possible, but if you do, ONLY use ```json.\nPrefer simple, reliable steps over clever or combined ones. Each step should be independently executable with no assumed context from previous steps.",
             "execute_config": {
                 "model": "{{var:model}}",
                 "provider": "{{var:provider}}",

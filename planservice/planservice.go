@@ -111,6 +111,14 @@ func (s *service) callPlanner(ctx context.Context, goal string, chain *taskengin
 	case taskengine.DataTypeJSON:
 		b, _ := json.Marshal(out)
 		raw = string(b)
+	case taskengine.DataTypeChatHistory:
+		if hist, ok := out.(taskengine.ChatHistory); ok && len(hist.Messages) > 0 {
+			raw = hist.Messages[len(hist.Messages)-1].Content
+		} else if histPtr, ok := out.(*taskengine.ChatHistory); ok && len(histPtr.Messages) > 0 {
+			raw = histPtr.Messages[len(histPtr.Messages)-1].Content
+		} else {
+			raw = fmt.Sprintf("%v", out)
+		}
 	default:
 		raw = fmt.Sprintf("%v", out)
 	}

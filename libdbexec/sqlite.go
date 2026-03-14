@@ -143,7 +143,7 @@ func splitSQLStatements(script string) []string {
 
 // WithoutTransaction returns an executor that uses the connection pool directly.
 func (sm *sqliteDBManager) WithoutTransaction() Exec {
-	return &txAwareDB{db: sm.dbInstance, errTranslate: translateSQLiteError}
+	return &txAwareDB{db: sm.dbInstance, errTranslate: translateSQLiteError, driverName: "sqlite"}
 }
 
 // WithTransaction starts a SQLite transaction and returns executor, commit, and release.
@@ -153,7 +153,7 @@ func (sm *sqliteDBManager) WithTransaction(ctx context.Context, onRollback ...fu
 		return nil, nil, func() error { return nil }, fmt.Errorf("%w: begin transaction failed: %w", ErrTxFailed, translateSQLiteError(err))
 	}
 
-	store := &txAwareDB{tx: tx, errTranslate: translateSQLiteError}
+	store := &txAwareDB{tx: tx, errTranslate: translateSQLiteError, driverName: "sqlite"}
 	// finalized guards against double-execution of onRollback hooks when
 	// releaseFn is deferred and commit also failed (both paths ran rollback logic).
 	finalized := false

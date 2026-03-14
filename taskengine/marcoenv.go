@@ -99,6 +99,17 @@ func (m *MacroEnv) ExecEnv(
 			if err != nil {
 				return nil, DataTypeAny, nil, fmt.Errorf("task %s: system_instruction macro error: %w", t.ID, err)
 			}
+
+			// Auto-append tools summary if tools are available and not already mentioned
+			if len(allowlist) > 0 && !strings.Contains(t.SystemInstruction, "Available tools") && !strings.Contains(t.SystemInstruction, "tool") {
+				allowed, _ := resolveHookNames(ctx, allowlist, m.hookProvider)
+				if len(allowed) > 0 {
+					summary, _ := m.renderHooksAndToolsJSON(ctx, allowed)
+					if summary != "" {
+						t.SystemInstruction += "\n\nAvailable tools (hook -> function names):\n" + summary
+					}
+				}
+			}
 		}
 
 		// Expand {{var:*}} in execute_config model/provider so chains can use
