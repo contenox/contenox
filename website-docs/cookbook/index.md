@@ -4,7 +4,7 @@ Practical, copy-paste recipes for automating real tasks with `contenox run`.
 
 Each recipe works the same way: `contenox run` is a **stateless, composable execution engine** — you pipe data in, the model does the work, you get output back. No chat history, no sessions, just results.
 
-> **Prerequisites:** `contenox init` has been run, a backend is registered (`contenox backend add`), and shell access is enabled via `--shell` with `--local-exec-allowed-commands`.
+> **Prerequisites:** `contenox init` has been run, a backend is registered (`contenox backend add`), and shell access is enabled via `--shell`. Command policy is configured in the chain's `hook_policies` — the default chain ships with a sensible allowlist.
 
 ## Categories
 

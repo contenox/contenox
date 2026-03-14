@@ -229,18 +229,16 @@ func buildPlanOpts(cmd *cobra.Command, db libdbexec.DBManager, input string) cha
 	}
 
 	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	effectiveLocalExecAllowedCommands, _ := flags.GetString("local-exec-allowed-commands")
 
 	return chatOpts{
-		InputFlagPassed:                   true,
-		InputValue:                        input,
-		EffectiveDefaultModel:             effectiveModel,
-		EffectiveDefaultProvider:          effectiveDefaultProvider,
-		EffectiveContext:                  effectiveContext,
-		EffectiveEnableLocalExec:          effectiveEnableLocalExec,
-		EffectiveLocalExecAllowedDir:      effectiveLocalExecAllowedDir,
-		EffectiveLocalExecAllowedCommands: effectiveLocalExecAllowedCommands,
-		EffectiveTracing:                  effectiveTracing,
+		InputFlagPassed:              true,
+		InputValue:                   input,
+		EffectiveDefaultModel:        effectiveModel,
+		EffectiveDefaultProvider:     effectiveDefaultProvider,
+		EffectiveContext:             effectiveContext,
+		EffectiveEnableLocalExec:     effectiveEnableLocalExec,
+		EffectiveLocalExecAllowedDir: effectiveLocalExecAllowedDir,
+		EffectiveTracing:             effectiveTracing,
 	}
 }
 

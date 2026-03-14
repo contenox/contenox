@@ -67,6 +67,33 @@ build-contenox:
 run-contenox: build-contenox
 	$(PROJECT_ROOT)/bin/contenox $(ARGS)
 
+# ── Local dev shorthand ──────────────────────────────────────────────────────
+# Build and symlink ./bin/contenox → ~/.local/bin/contenox so the dev binary
+# shadows any system-installed release binary automatically.
+#
+#   make dev          # build + link (idempotent)
+#   make dev-unlink   # remove the symlink (restores system binary)
+#
+# Requires ~/.local/bin to be on PATH before any system prefix. Add to your
+# shell profile if not already there:
+#   export PATH="$$HOME/.local/bin:$$PATH"
+DEV_BIN := $(HOME)/.local/bin/contenox
+
+dev: build-contenox dev-link
+	@echo "→ dev binary: $(PROJECT_ROOT)/bin/contenox"
+	@echo "→ symlink:    $(DEV_BIN)"
+	@echo "   Make sure ~/.local/bin appears before /usr/local/bin in PATH."
+
+dev-link: build-contenox
+	@mkdir -p $(dir $(DEV_BIN))
+	@ln -sf $(PROJECT_ROOT)/bin/contenox $(DEV_BIN)
+	@echo "Linked $(DEV_BIN) → $(PROJECT_ROOT)/bin/contenox"
+
+dev-unlink:
+	@rm -f $(DEV_BIN)
+	@echo "Removed $(DEV_BIN)"
+
+
 # --------------------------------------------------------------------
 # MCP Test Server: stateful session fixture for CLI / API tests
 # --------------------------------------------------------------------

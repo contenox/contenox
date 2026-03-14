@@ -50,6 +50,57 @@ func TestLocalExecHook_GetToolsForHookByName_Unknown(t *testing.T) {
 	assert.Nil(t, tools)
 }
 
+func TestLocalExecHook_GetToolsForHookByName_ContextPolicy_Description(t *testing.T) {
+	// Hook constructed with NO static policy.
+	// Context carries chain-level policy — description must reflect it.
+	h := NewLocalExecHook().(*LocalExecHook)
+	ctx := taskengine.WithHookArgs(context.Background(), "local_shell", map[string]string{
+		"_allowed_commands": "git, ls",
+		"_denied_commands":  "rm",
+	})
+	tools, err := h.GetToolsForHookByName(ctx, "local_shell")
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+	desc := tools[0].Function.Description
+	assert.Contains(t, desc, "git")
+	assert.Contains(t, desc, "ls")
+	assert.Contains(t, desc, "rm")
+}
+
+func TestLocalExecHook_Exec_ContextPolicy_Enforced(t *testing.T) {
+	// No static allowlist — context injects one. Command not in list must be rejected.
+	h := NewLocalExecHook().(*LocalExecHook)
+	ctx := taskengine.WithHookArgs(context.Background(), "local_shell", map[string]string{
+		"_allowed_commands": "ls",
+	})
+	hookCall := &taskengine.HookCall{
+		Name: "local_shell",
+		Args: map[string]string{"command": "echo", "args": "hello"},
+	}
+	_, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, hookCall)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not in allowlist")
+}
+
+func TestLocalExecHook_Exec_ContextPolicy_Allows(t *testing.T) {
+	// No static allowlist — context injects one that includes the command.
+	h := NewLocalExecHook().(*LocalExecHook)
+	ctx := taskengine.WithHookArgs(context.Background(), "local_shell", map[string]string{
+		"_allowed_commands": "echo",
+	})
+	hookCall := &taskengine.HookCall{
+		Name: "local_shell",
+		Args: map[string]string{"command": "echo", "args": "ctx policy works"},
+	}
+	out, dt, err := h.Exec(ctx, time.Now().UTC(), nil, false, hookCall)
+	require.NoError(t, err)
+	assert.Equal(t, taskengine.DataTypeJSON, dt)
+	res, ok := out.(*LocalExecResult)
+	require.True(t, ok)
+	assert.True(t, res.Success)
+	assert.Equal(t, "ctx policy works", res.Stdout)
+}
+
 // testAllowedCommands allows the commands used by Exec tests (echo, cat, sleep, shell, exit for shell mode).
 var testAllowedCommands = []string{"echo", "cat", "sleep", "/bin/sh", "exit"}
 

@@ -313,8 +313,6 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 
 	effectiveEnableLocalExec, _ := flags.GetBool("shell")
 	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	effectiveLocalExecAllowedCommands, _ := flags.GetString("local-exec-allowed-commands")
-	var effectiveLocalExecDeniedCommands []string
 
 	return chatOpts{
 		EffectiveDB:                       "", // resolved separately in RunE
@@ -325,8 +323,6 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 		EffectiveNoDeleteModels:           true,
 		EffectiveEnableLocalExec:          effectiveEnableLocalExec,
 		EffectiveLocalExecAllowedDir:      effectiveLocalExecAllowedDir,
-		EffectiveLocalExecAllowedCommands: effectiveLocalExecAllowedCommands,
-		EffectiveLocalExecDeniedCommands:  effectiveLocalExecDeniedCommands,
 		EffectiveTracing:                  effectiveTracing,
 		ContenoxDir:                       contenoxDir,
 	}

@@ -108,21 +108,17 @@ func runVibe(cmd *cobra.Command, _ []string) error {
 	effectiveContext, _ := flags.GetInt("context")
 	effectiveShell, _ := flags.GetBool("shell")
 	effectiveAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	effectiveAllowedCmds, _ := flags.GetString("local-exec-allowed-commands")
-	effectiveDeniedCmdsStr, _ := flags.GetString("local-exec-denied-commands")
 	effectiveTracing, _ := flags.GetBool("trace")
 
 	opts := chatOpts{
-		EffectiveDB:                       dbPath,
-		EffectiveDefaultModel:             effectiveModel,
-		EffectiveDefaultProvider:          effectiveProvider,
-		EffectiveContext:                  effectiveContext,
-		EffectiveNoDeleteModels:           true,
-		EffectiveEnableLocalExec:          effectiveShell,
-		EffectiveLocalExecAllowedDir:      effectiveAllowedDir,
-		EffectiveLocalExecAllowedCommands: effectiveAllowedCmds,
-		EffectiveLocalExecDeniedCommands:  splitAndTrim(effectiveDeniedCmdsStr, ","),
-		EffectiveTracing:                  effectiveTracing,
+		EffectiveDB:              dbPath,
+		EffectiveDefaultModel:    effectiveModel,
+		EffectiveDefaultProvider: effectiveProvider,
+		EffectiveContext:         effectiveContext,
+		EffectiveNoDeleteModels:  true,
+		EffectiveEnableLocalExec: effectiveShell,
+		EffectiveLocalExecAllowedDir: effectiveAllowedDir,
+		EffectiveTracing:         effectiveTracing,
 	}
 
 	// ── HITL approval gate ─────────────────────────────────────────────────────

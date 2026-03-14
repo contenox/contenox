@@ -258,9 +258,20 @@ type LLMExecutionConfig struct {
 	//   - ["*","!name"] — all hooks except the excluded name(s)
 	//
 	// Exclusions ("!name") are only meaningful when combined with "*".
-	Hooks []string `yaml:"hooks,omitempty" json:"hooks,omitempty" example:"[\"local_shell\", \"nws\"]"`
-	HideTools        []string `yaml:"hide_tools,omitempty" json:"hide_tools,omitempty" example:"[\"tool1\", \"hook_name1.tool1\"]"`
-	PassClientsTools bool     `yaml:"pass_clients_tools" json:"pass_clients_tools"`
+	Hooks     []string `yaml:"hooks,omitempty" json:"hooks,omitempty" example:"[\"local_shell\", \"nws\"]"`
+	HideTools []string `yaml:"hide_tools,omitempty" json:"hide_tools,omitempty" example:"[\"tool1\", \"hook_name1.tool1\"]"`
+	// HookPolicies carries per-hook policy overrides for this task.
+	// Keys are hook names; values are maps of policy key → value pairs.
+	// These are injected into the context before GetToolsForHookByName is called,
+	// so hooks can produce dynamic tool descriptions and enforce the policy at Exec time.
+	//
+	// Example (local_shell):
+	//   hook_policies:
+	//     local_shell:
+	//       _allowed_commands: "git,go,ls,cat,grep"
+	//       _denied_commands:  "sudo,su,dd,mkfs"
+	HookPolicies     map[string]map[string]string `yaml:"hook_policies,omitempty" json:"hook_policies,omitempty"`
+	PassClientsTools bool                         `yaml:"pass_clients_tools" json:"pass_clients_tools"`
 	// Think enables reasoning mode for supported models.
 	// Accepts "true"/"false" or "high"/"medium"/"low". Empty = provider default (off).
 	Think string `yaml:"think,omitempty" json:"think,omitempty" example:"high"`

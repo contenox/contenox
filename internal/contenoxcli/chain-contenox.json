@@ -13,7 +13,13 @@
         "pass_clients_tools": false,
         "hooks": [
           "*"
-        ]
+        ],
+        "hook_policies": {
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+          }
+        }
       },
       "transition": {
         "on_failure": "",

@@ -28,9 +28,8 @@ contenox chat --local-exec-allowed-dir . "summarise the README"
 |---|---|
 | `--trim N` | Only send last N messages from session history to the model (0 = all) |
 | `--last N` | Print last N user/assistant turns after the reply (0 = only new reply) |
-| `--shell` | Enable `local_shell` hook (use only in trusted environments) |
-| `--local-exec-allowed-dir <dir>` | Allow `local_fs` tools inside this directory |
-| `--local-exec-allowed-commands <cmds>` | Comma-separated allowed shell commands |
+| `--shell` | Enable `local_shell` hook (opt-in; command policy is defined in the chain) |
+| `--local-exec-allowed-dir <dir>` | Restrict `local_fs` tools to this directory |
 
 ### `contenox session`
 
@@ -109,13 +108,16 @@ $ git log --oneline -10             ← $ prefix → shell; stdout injected into
 /plan clean                         ← remove all completed plans
 ```
 
+
 **Models and config — same handlers as the CLI**
 ```
-/model list                         ← live query of all registered backends
+/model list                         ← all registered models across all backends
 /model add gpt-5-mini
 /model remove gpt-5-mini
-/config set default-model qwen2.5:7b
+/model set-context gpt-5-mini --context 128k   ← override stored context window
+/config list                        ← all persistent config keys
 /config get default-model
+/config set default-model qwen2.5:7b
 ```
 
 **Sessions**
@@ -131,10 +133,20 @@ $ git log --oneline -10             ← $ prefix → shell; stdout injected into
 ```
 /backend list                       ← list registered backends
 /backend show <name>                ← show backend details
+/backend add <name> --type <ollama|openai|gemini|vllm> [--url <url>] [--api-key-env <env>]
+/backend remove <name>
+
 /hook list                          ← list remote hooks
 /hook show <name>                   ← hook details + live tool list
+/hook add <name> --url <url> [--timeout <ms>] [--header <h>] [--inject <k=v>]
+/hook remove <name>
+/hook update <name> [--timeout <ms>] [--header <h>] [--inject <k=v>]
+
 /mcp list                           ← list MCP servers
 /mcp show <name>                    ← MCP server config
+/mcp add <name> --transport <stdio|sse|http> [--url <url>] [--command <cmd>]
+/mcp remove <name>
+/mcp update <name> [--inject <k=v>] [--header <h>]
 /mcp                                ← refresh MCP workers in sidebar
 ```
 

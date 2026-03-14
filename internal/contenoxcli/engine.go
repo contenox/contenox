@@ -174,15 +174,6 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		if opts.EffectiveLocalExecAllowedDir != "" {
 			hookOpts = append(hookOpts, localhooks.WithLocalExecAllowedDir(opts.EffectiveLocalExecAllowedDir))
 		}
-		if opts.EffectiveLocalExecAllowedCommands != "" {
-			commands := splitAndTrim(opts.EffectiveLocalExecAllowedCommands, ",")
-			if len(commands) > 0 {
-				hookOpts = append(hookOpts, localhooks.WithLocalExecAllowedCommands(commands))
-			}
-		}
-		if len(opts.EffectiveLocalExecDeniedCommands) > 0 {
-			hookOpts = append(hookOpts, localhooks.WithLocalExecDeniedCommands(opts.EffectiveLocalExecDeniedCommands))
-		}
 		localExecHook := localhooks.NewLocalExecHook(hookOpts...)
 		jsHooks["local_shell"] = localExecHook
 		localHooks["local_shell"] = localExecHook
