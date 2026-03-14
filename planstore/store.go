@@ -126,7 +126,7 @@ func (s *store) ClaimNextPendingStep(ctx context.Context, planID string) (*PlanS
 	var step PlanStep
 	var status string
 	var execAt sql.NullTime
-	err := s.Exec.QueryRowContext(ctx, `
+	query := `
 		UPDATE plan_steps
 		SET status = 'running'
 		WHERE id = (
@@ -134,12 +134,18 @@ func (s *store) ClaimNextPendingStep(ctx context.Context, planID string) (*PlanS
 			WHERE plan_id = $1 AND status = 'pending'
 			ORDER BY ordinal ASC
 			LIMIT 1
-			FOR UPDATE SKIP LOCKED
+			{{.Locking}}
 		)
 		AND status = 'pending'
-		RETURNING id, plan_id, ordinal, description, status, execution_result, executed_at`,
-		planID,
-	).Scan(&step.ID, &step.PlanID, &step.Ordinal, &step.Description, &status, &step.ExecutionResult, &execAt)
+		RETURNING id, plan_id, ordinal, description, status, execution_result, executed_at`
+
+	locking := ""
+	if s.Exec.DriverName() == "postgres" {
+		locking = "FOR UPDATE SKIP LOCKED"
+	}
+	query = strings.Replace(query, "{{.Locking}}", locking, 1)
+
+	err := s.Exec.QueryRowContext(ctx, query, planID).Scan(&step.ID, &step.PlanID, &step.Ordinal, &step.Description, &status, &step.ExecutionResult, &execAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

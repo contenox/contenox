@@ -3,7 +3,6 @@ package libdbexec
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"log"
 
@@ -47,7 +46,7 @@ func NewPostgresDBManager(ctx context.Context, dsn string, schema string) (DBMan
 
 // WithoutTransaction returns an executor that operates directly on the connection group.
 func (sm *postgresDBManager) WithoutTransaction() Exec {
-	return &txAwareDB{db: sm.dbInstance, errTranslate: translateError}
+	return &txAwareDB{db: sm.dbInstance, errTranslate: translateError, driverName: "postgres"}
 }
 
 // WithTransaction starts a PostgreSQL transaction and returns the associated
@@ -61,7 +60,7 @@ func (sm *postgresDBManager) WithTransaction(ctx context.Context, onRollback ...
 	}
 
 	// Executor bound to the transaction
-	store := &txAwareDB{tx: tx, errTranslate: translateError}
+	store := &txAwareDB{tx: tx, errTranslate: translateError, driverName: "postgres"}
 	// finalized guards against double-execution of onRollback hooks when
 	// releaseFn is deferred and commit also failed (both paths ran rollback logic).
 	finalized := false
@@ -91,7 +90,7 @@ func (sm *postgresDBManager) WithTransaction(ctx context.Context, onRollback ...
 			finalized = true
 			fireRollback()
 		}
-		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+		if rollbackErr != nil && fmt.Errorf("%w", rollbackErr).Error() != "sql: transaction has already been committed or rolled back" {
 			return fmt.Errorf("%w: rollback failed: %w", ErrTxFailed, translateError(rollbackErr))
 		}
 		return nil
@@ -109,79 +108,6 @@ func (sm *postgresDBManager) Close() error {
 	return nil
 }
 
-// txAwareDB implements the Exec interface, delegating to an underlying
-// *sql.DB or *sql.Tx and translating errors via an injected translator.
-// This allows each database driver (Postgres, SQLite, etc.) to wire
-// in its own error mapping so sentinel errors like ErrUniqueViolation
-// are always returned correctly regardless of driver.
-type txAwareDB struct {
-	db           *sql.DB
-	tx           *sql.Tx
-	errTranslate func(error) error // driver-specific error translator
-}
-
-// ExecContext delegates to the underlying DB or Tx and translates errors.
-func (s *txAwareDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	var res sql.Result
-	var err error
-	if s.tx != nil {
-		res, err = s.tx.ExecContext(ctx, query, args...)
-	} else if s.db != nil {
-		res, err = s.db.ExecContext(ctx, query, args...)
-	} else {
-		return nil, errors.New("libdb: Exec called on uninitialized txAwareDB")
-	}
-	return res, s.errTranslate(err)
-}
-
-// QueryContext delegates to the underlying DB or Tx and translates errors.
-func (s *txAwareDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	var rows *sql.Rows
-	var err error
-	if s.tx != nil {
-		rows, err = s.tx.QueryContext(ctx, query, args...)
-	} else if s.db != nil {
-		rows, err = s.db.QueryContext(ctx, query, args...)
-	} else {
-		return nil, errors.New("libdb: Query called on uninitialized txAwareDB")
-	}
-	if err != nil {
-		return nil, s.errTranslate(err)
-	}
-	return rows, nil
-}
-
-// QueryRowContext delegates to the underlying DB or Tx and wraps the result.
-func (s *txAwareDB) QueryRowContext(ctx context.Context, query string, args ...any) QueryRower {
-	var r *sql.Row
-	if s.tx != nil {
-		r = s.tx.QueryRowContext(ctx, query, args...)
-	} else if s.db != nil {
-		r = s.db.QueryRowContext(ctx, query, args...)
-	} else {
-		return &row{err: errors.New("libdb: QueryRow called on uninitialized txAwareDB")}
-	}
-	return &row{inner: r, errTranslate: s.errTranslate}
-}
-
-// row implements QueryRower, wrapping *sql.Row to translate Scan errors.
-type row struct {
-	inner        *sql.Row
-	err          error
-	errTranslate func(error) error
-}
-
-// Scan calls the underlying Scan method and translates the error.
-func (r *row) Scan(dest ...any) error {
-	if r.err != nil {
-		return r.err
-	}
-	if r.inner == nil {
-		return errors.New("libdb: Scan called on nil row wrapper")
-	}
-	return r.errTranslate(r.inner.Scan(dest...))
-}
-
 // translateError translates common sql and pq errors into package-defined errors.
 // It wraps unknown errors for context.
 func translateError(err error) error {
@@ -190,25 +116,31 @@ func translateError(err error) error {
 	}
 
 	// Handle no rows error first - this is common after QueryRow().Scan().
-	if errors.Is(err, sql.ErrNoRows) {
+	if err == sql.ErrNoRows {
 		return fmt.Errorf("%w: %w", ErrNotFound, err)
 	}
 
 	// Handle context errors explicitly. Although checked elsewhere, they might
 	// be returned directly by driver operations sometimes.
-	if errors.Is(err, context.Canceled) {
+	if err == context.Canceled {
 		// Wrap context.Canceled with our specific error type if desired,
 		// or just return a general query cancelled error.
 		// Adding context.Canceled itself provides more detail via errors.Is/As.
 		return fmt.Errorf("%w: %w", ErrQueryCanceled, context.Canceled)
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	if err == context.DeadlineExceeded {
 		return fmt.Errorf("%w: %w", ErrQueryCanceled, context.DeadlineExceeded)
 	}
 
 	// Check for PostgreSQL specific errors via pq.Error
 	var pqErr *pq.Error
-	if errors.As(err, &pqErr) {
+	if err != nil {
+		if e, ok := err.(*pq.Error); ok {
+			pqErr = e
+		}
+	}
+
+	if pqErr != nil {
 		// Use pqErr.Code which is the SQLSTATE code (e.g., "23505")
 		// Using Code.Name() can be less stable if lib/pq changes names.
 		switch pqErr.Code {

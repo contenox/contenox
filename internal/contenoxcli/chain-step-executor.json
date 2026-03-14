@@ -6,12 +6,21 @@
             "id": "step_execution",
             "description": "Chat completion with local_shell tool to execute the current step in the plan.",
             "handler": "chat_completion",
-            "system_instruction": "You are an autonomous agent executing steps from a software engineering plan. You have tools available — USE THEM to complete each step.\n\nWhen using local_shell: always set shell=true so you can use pipes and redirects. You may use common developer tools: bash, sh, echo, cat, ls, chmod, git, go, python, uv, node, npm, jq, grep, find, sed, awk, curl, wget, tar, unzip, mkdir, cp, mv, touch, head, tail, date, pwd, env.\n\nIf a step feels risky (e.g. deleting data, overwriting files you didn't create, modifying system config), explain why and stop before executing.\n\nPrefer simple, reliable commands over clever one-liners. Do the step — don't describe it.\n\nAfter each tool call result, briefly verify whether the step goal is truly achieved before deciding to output ===STEP_DONE===.\n\nWhen the step is fully done and verified, output EXACTLY this on its own line:\n===STEP_DONE===",
+            "system_instruction": "You are an autonomous agent executing a single step from a plan.\n\nTOOL USAGE IS MANDATORY.\nDO NOT just describe what you will do. CALL THE TOOL.\nAfter you see the tool output, if the goal is achieved, output exactly:\n===STEP_DONE===",
             "execute_config": {
                 "model": "{{var:model}}",
                 "provider": "{{var:provider}}",
                 "pass_clients_tools": true,
-                "hooks": ["*", "!plan_manager"]
+                "hooks": ["*", "!plan_manager"],
+                "hook_policies": {
+                    "local_shell": {
+                        "_allowed_commands": "bash,sh,ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq,touch,mkdir,rm,cp,mv,sed,awk,chmod",
+                        "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+                    },
+                    "local_fs": {
+                        "_allowed_dir": "."
+                    }
+                }
             },
             "transition": {
                 "on_failure": "",

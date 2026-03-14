@@ -755,7 +755,7 @@ func (exe *SimpleExec) executeLLM(
 	clientTools []Tool,
 	hookResolution map[string]ToolWithResolution,
 ) (any, DataType, string, error) {
-	reportErr, _, end := exe.tracker.Start(ctx, "SimpleExec", "prompt_model",
+	reportErr, reportChange, end := exe.tracker.Start(ctx, "SimpleExec", "prompt_model",
 		"model_name", llmCall.Model,
 		"model_names", llmCall.Models,
 		"provider_types", llmCall.Providers,
@@ -856,6 +856,10 @@ func (exe *SimpleExec) executeLLM(
 	}
 
 	chatArgs := []libmodelprovider.ChatArgument{libmodelprovider.WithTools(tools...)}
+	reportChange("tools_prepared", map[string]any{
+		"count": len(tools),
+		"model": llmCall.Model,
+	})
 	if llmCall.Think != "" {
 		chatArgs = append(chatArgs, libmodelprovider.WithThink(llmCall.Think))
 	}

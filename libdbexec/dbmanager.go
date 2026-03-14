@@ -133,6 +133,9 @@ type Exec interface {
 	// QueryRowContext always returns a non-nil value. Errors are deferred until
 	// QueryRower's Scan method is called.
 	QueryRowContext(ctx context.Context, query string, args ...any) QueryRower
+
+	// DriverName returns the name of the database driver ("postgres", "sqlite").
+	DriverName() string
 }
 
 // QueryRower provides the Scan method, typically implemented by wrapping *sql.Row.
@@ -168,3 +171,81 @@ type CommitTx func(ctx context.Context) error
 //   - nil:        Success or no-op (ErrTxDone)
 //   - ErrTxFailed: Wrapped error if rollback unexpectedly failed
 type ReleaseTx func() error
+
+// txAwareDB implements the Exec interface, delegating to an underlying
+// *sql.DB or *sql.Tx and translating errors via an injected translator.
+// This allows each database driver (Postgres, SQLite, etc.) to wire
+// in its own error mapping so sentinel errors like ErrUniqueViolation
+// are always returned correctly regardless of driver.
+type txAwareDB struct {
+	db           *sql.DB
+	tx           *sql.Tx
+	errTranslate func(error) error // driver-specific error translator
+	driverName   string
+}
+
+// ExecContext delegates to the underlying DB or Tx and translates errors.
+func (s *txAwareDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	var res sql.Result
+	var err error
+	if s.tx != nil {
+		res, err = s.tx.ExecContext(ctx, query, args...)
+	} else if s.db != nil {
+		res, err = s.db.ExecContext(ctx, query, args...)
+	} else {
+		return nil, errors.New("libdb: Exec called on uninitialized txAwareDB")
+	}
+	return res, s.errTranslate(err)
+}
+
+// QueryContext delegates to the underlying DB or Tx and translates errors.
+func (s *txAwareDB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	var rows *sql.Rows
+	var err error
+	if s.tx != nil {
+		rows, err = s.tx.QueryContext(ctx, query, args...)
+	} else if s.db != nil {
+		rows, err = s.db.QueryContext(ctx, query, args...)
+	} else {
+		return nil, errors.New("libdb: Query called on uninitialized txAwareDB")
+	}
+	if err != nil {
+		return nil, s.errTranslate(err)
+	}
+	return rows, nil
+}
+
+// QueryRowContext delegates to the underlying DB or Tx and wraps the result.
+func (s *txAwareDB) QueryRowContext(ctx context.Context, query string, args ...any) QueryRower {
+	var r *sql.Row
+	if s.tx != nil {
+		r = s.tx.QueryRowContext(ctx, query, args...)
+	} else if s.db != nil {
+		r = s.db.QueryRowContext(ctx, query, args...)
+	} else {
+		return &row{err: errors.New("libdb: QueryRow called on uninitialized txAwareDB")}
+	}
+	return &row{inner: r, errTranslate: s.errTranslate}
+}
+
+func (s *txAwareDB) DriverName() string {
+	return s.driverName
+}
+
+// row implements QueryRower, wrapping *sql.Row to translate Scan errors.
+type row struct {
+	inner        *sql.Row
+	err          error
+	errTranslate func(error) error
+}
+
+// Scan calls the underlying Scan method and translates the error.
+func (r *row) Scan(dest ...any) error {
+	if r.err != nil {
+		return r.err
+	}
+	if r.inner == nil {
+		return errors.New("libdb: Scan called on nil row wrapper")
+	}
+	return r.errTranslate(r.inner.Scan(dest...))
+}

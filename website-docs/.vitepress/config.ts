@@ -88,7 +88,9 @@ export default defineConfig({
                     items: [
                         { text: 'Overview', link: '/cookbook/' },
                         { text: 'Git & DevOps', link: '/cookbook/git-devops' },
+                        { text: 'Automated Release Notes', link: '/cookbook/release-notes' },
                         { text: 'Stateful Agents with MCP', link: '/cookbook/stateful-agents-mcp' },
+                        { text: 'Autonomous Planning', link: '/cookbook/autonomous-planning' },
                     ],
                 },
             ],

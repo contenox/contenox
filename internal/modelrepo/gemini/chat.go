@@ -44,12 +44,25 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	if len(resp.Candidates) == 0 {
-		err := fmt.Errorf("no candidates returned from Gemini for model %s", c.modelName)
+		reason := resp.PromptFeedback.BlockReason
+		if reason == "" {
+			reason = "unknown (check safety filters)"
+		}
+		err := fmt.Errorf("no candidates returned from Gemini for model %s: prompt blocked (%s)", c.modelName, reason)
 		reportErr(err)
 		return modelrepo.ChatResult{}, err
 	}
 
 	cand := resp.Candidates[0]
+	if len(cand.Content.Parts) == 0 {
+		reason := cand.FinishReason
+		if reason == "" {
+			reason = "unknown"
+		}
+		err := fmt.Errorf("empty candidate parts from Gemini for model %s: finish reason (%s)", c.modelName, reason)
+		reportErr(err)
+		return modelrepo.ChatResult{}, err
+	}
 
 	var (
 		outText       string
