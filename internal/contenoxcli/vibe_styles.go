@@ -2,21 +2,26 @@ package contenoxcli
 
 import "github.com/charmbracelet/lipgloss"
 
+// ─── Brand palette ────────────────────────────────────────────────────────────
+// Primary accent: Contenox emerald green (#4ADE80 / #34D399)
+// Everything derives from this single decision.
+
 var (
-	vibeColorUser      = lipgloss.Color("#7DF9FF")
-	vibeColorAssistant = lipgloss.Color("#A8FF78")
-	vibeColorShell     = lipgloss.Color("#FFD700")
-	vibeColorTool      = lipgloss.Color("#C8A2C8")
-	vibeColorError     = lipgloss.Color("#FF6B6B")
-	vibeColorMuted     = lipgloss.Color("#888888")
-	vibeColorBorder    = lipgloss.Color("#333333")
-	vibeColorActive    = lipgloss.Color("#A8FF78")
-	vibeColorInactive  = lipgloss.Color("#555555")
-	vibeColorPending   = lipgloss.Color("#FFD700")
-	vibeColorDone      = lipgloss.Color("#A8FF78")
-	vibeColorFailed    = lipgloss.Color("#FF6B6B")
-	vibeColorSkipped   = lipgloss.Color("#888888")
-	vibeColorHITL      = lipgloss.Color("#FF9F1C")
+	// Semantic role colors
+	vibeColorUser      = lipgloss.Color("#34D399") // emerald-400 — user prompt / input indicator
+	vibeColorAssistant = lipgloss.Color("#4ADE80") // emerald-300 — AI response text
+	vibeColorShell     = lipgloss.Color("#86EFAC") // emerald-200 — shell output (lighter, readable)
+	vibeColorTool      = lipgloss.Color("#6EE7B7") // emerald-300 mid — tool calls
+	vibeColorError     = lipgloss.Color("#FF6B6B") // red — error (semantic, keep)
+	vibeColorMuted     = lipgloss.Color("#6B7280") // cool gray-500 — muted text
+	vibeColorBorder    = lipgloss.Color("#1F3D2A") // dark emerald — border
+	vibeColorActive    = lipgloss.Color("#4ADE80") // emerald — active item
+	vibeColorInactive  = lipgloss.Color("#374151") // gray-700 — inactive
+	vibeColorPending   = lipgloss.Color("#FCD34D") // amber-300 — pending step (keep warm)
+	vibeColorDone      = lipgloss.Color("#4ADE80") // emerald — completed step
+	vibeColorFailed    = lipgloss.Color("#FF6B6B") // red — failed (semantic, keep)
+	vibeColorSkipped   = lipgloss.Color("#6B7280") // gray — skipped
+	vibeColorHITL      = lipgloss.Color("#FB923C") // orange-400 — human-in-the-loop (keep)
 )
 
 var (
@@ -32,17 +37,19 @@ var (
 				BorderForeground(vibeColorBorder).
 				Padding(0, 1)
 
+	// Header bar: near-black with a dark emerald tint — hacker terminal feel
 	vibeStyleHeader = lipgloss.NewStyle().
-			Background(lipgloss.Color("#1a1a2e")).
-			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#0d1a12")).
+			Foreground(lipgloss.Color("#D1FAE5")).
 			Padding(0, 1)
 
+	// Status bar: slightly lighter dark green baseline
 	vibeStyleStatus = lipgloss.NewStyle().
-			Background(lipgloss.Color("#16213e")).
+			Background(lipgloss.Color("#0f2318")).
 			Foreground(vibeColorMuted).
 			Padding(0, 1)
 
-	vibeStyleSidebarTitle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Underline(true)
+	vibeStyleSidebarTitle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#D1FAE5")).Bold(true).Underline(true)
 	vibeStyleSidebarSection = lipgloss.NewStyle().Foreground(vibeColorMuted).Bold(true)
 	vibeStyleInputPrompt    = lipgloss.NewStyle().Foreground(vibeColorUser).Bold(true)
 
@@ -53,10 +60,10 @@ var (
 			BorderForeground(vibeColorHITL).
 			Padding(1, 2)
 
-	// vibeStyleStatusWorking replaces the idle status bar when the engine is busy.
+	// Status working bar: dark amber-on-emerald-dark — visible but not jarring
 	vibeStyleStatusWorking = lipgloss.NewStyle().
-				Background(lipgloss.Color("#B8860B")).
-				Foreground(lipgloss.Color("#FFFFFF")).
+				Background(lipgloss.Color("#92400E")).
+				Foreground(lipgloss.Color("#FDE68A")).
 				Bold(true).
 				Padding(0, 1)
 )
