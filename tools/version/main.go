@@ -169,7 +169,7 @@ func updateDocsAndAmendCommit() error {
 		return fmt.Errorf("failed to git add docs/: %w\nOutput: %s", err, string(output))
 	}
 
-	cmd = exec.Command("git", "commit", "-Ss", "--amend", "--no-edit")
+	cmd = exec.Command("git", "commit", "-S", "--amend", "--no-edit")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if strings.Contains(string(output), "nothing to commit") {
 			fmt.Println("   Documentation was already up-to-date.")
