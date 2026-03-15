@@ -62,8 +62,12 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		bus.Close()
 	}}
 
-	// Runtime state
-	stateOpts := []runtimestate.Option{}
+	// Runtime state — always enable auto-discover for the CLI so users don't
+	// need to run 'model add' before using Ollama, OpenAI or vLLM models.
+	// The fleet-management runtime-api (Dockerfile) does NOT use this option.
+	stateOpts := []runtimestate.Option{
+		runtimestate.WithAutoDiscoverModels(),
+	}
 	if opts.EffectiveNoDeleteModels {
 		stateOpts = append(stateOpts, runtimestate.WithSkipDeleteUndeclaredModels())
 	}
@@ -90,14 +94,10 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	}
 
 	// 4b. Ensure the default model is registered in the local tenant.
-	defaultContextLen := opts.EffectiveContext
-	if defaultContextLen <= 0 {
-		defaultContextLen = defaultContext
-	}
 	specs := []runtimestate.ExtraModelSpec{
 		{
 			Name:          opts.EffectiveDefaultModel,
-			ContextLength: defaultContextLen,
+			ContextLength: opts.EffectiveContext, // 0 = unknown, resolver won't filter on context
 			CanChat:       true,
 			CanPrompt:     true,
 			CanEmbed:      false,

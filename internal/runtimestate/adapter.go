@@ -90,6 +90,22 @@ func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracke
 	}
 
 	return func(ctx context.Context, backendTypes ...string) ([]modelrepo.Provider, error) {
+		// If no specific backend types requested (or only empty strings from an
+		// unconfigured default-provider), return providers from ALL backend types.
+		hasNonEmpty := false
+		for _, bt := range backendTypes {
+			if bt != "" {
+				hasNonEmpty = true
+				break
+			}
+		}
+		if !hasNonEmpty {
+			var all []modelrepo.Provider
+			for _, providers := range providersByType {
+				all = append(all, providers...)
+			}
+			return all, nil
+		}
 		var providers []modelrepo.Provider
 		for _, backendType := range backendTypes {
 			if typeProviders, ok := providersByType[backendType]; ok {

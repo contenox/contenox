@@ -3,6 +3,7 @@ package contenoxcli
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -25,7 +26,7 @@ const localTenantID = "00000000-0000-0000-0000-000000000001"
 const (
 	defaultOllama  = "http://127.0.0.1:11434"
 	defaultModel   = "qwen2.5:7b"
-	defaultContext = 2048
+	defaultContext = 0
 	defaultTimeout = 5 * time.Minute
 )
 
@@ -50,9 +51,12 @@ func Main() {
 		onlyHelp = allRootFlags
 	}
 	if !onlyHelp && !firstNonFlagIsReserved(args) {
-		rootCmd.SetArgs(append([]string{"chat"}, args...))
+		rootCmd.SetArgs(append([]string{"run"}, args...))
 	}
 	if err := rootCmd.Execute(); err != nil {
+		// SilenceErrors is set, so cobra suppresses its own error printing.
+		// We always print it here.
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 		os.Exit(1)
 	}
 }
@@ -128,7 +132,8 @@ No daemon, no cloud required. State is stored in SQLite.
     contenox config set default-chain  .contenox/default-chain.json
 
   Note: contenox plan requires a model that supports tool calling.`,
-	SilenceUsage: true,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 var chatCmd = &cobra.Command{

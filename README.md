@@ -214,12 +214,11 @@ Contenox breaks any goal into an ordered plan, then executes it step by step usi
 
 ---
 
-### `contenox chat` — Interactive chat
+### `contenox chat` — Persistent chat session
 
 ```bash
 contenox chat "what is my current working directory?"
-contenox chat list files in my home directory
-contenox chat --input "explain this file"
+contenox chat "list files in my home directory"
 echo "explain this" | contenox chat
 ```
 
@@ -314,7 +313,8 @@ contenox CLI
   ├── plan next      → LLM executor chain → local_shell / local_fs → result persisted
   ├── vibe           → Bubble Tea TUI: chat + live plan sidebar + HITL approvals
   ├── run            → run any chain, any input type, stateless
-  └── chat (default) → LLM chat chain → interactive response
+  ├── (bare)         → stateless run via default-run-chain.json (same as run)
+  └── chat           → LLM chat chain → session history persisted in SQLite
 
 SQLite (.contenox/local.db)
   ├── plans + plan_steps   (autonomous plan state)

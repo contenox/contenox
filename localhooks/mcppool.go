@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/localhooks/mcpoauth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/oauth2"
 )
 
 // MCPTransport identifies how to connect to an MCP server.
@@ -31,6 +33,7 @@ type MCPAuthType string
 const (
 	MCPAuthNone   MCPAuthType = ""
 	MCPAuthBearer MCPAuthType = "bearer"
+	MCPAuthOAuth  MCPAuthType = "oauth"
 )
 
 // MCPAuthConfig holds auth parameters for connecting to an MCP server.
@@ -59,6 +62,46 @@ func (a *MCPAuthConfig) ResolveToken() string {
 	return ""
 }
 
+// MCPOAuthConfig holds parameters for the OAuth 2.1 PKCE authorization code flow.
+type MCPOAuthConfig struct {
+	// ClientName is registered with the authorization server (RFC 7591).
+	// Defaults to "contenox".
+	ClientName string
+
+	// ClientID is a pre-registered client ID. When empty, dynamic registration
+	// (RFC 7591) is attempted using the server's registration endpoint.
+	ClientID string
+
+	// Scopes to request during authorization.
+	Scopes []string
+
+	// CallbackPort is the localhost port for the redirect URI (default: 49152).
+	CallbackPort int
+
+	// TokenStore persists and retrieves OAuth tokens.
+	TokenStore mcpoauth.TokenStore
+
+	// OpenBrowser is called with the authorization URL. Defaults to launching
+	// the system browser via xdg-open / open.
+	OpenBrowser func(url string) error
+}
+
+// ResolveClientName returns ClientName or the default.
+func (c *MCPOAuthConfig) ResolveClientName() string {
+	if c.ClientName != "" {
+		return c.ClientName
+	}
+	return "contenox"
+}
+
+// ResolveCallbackPort returns CallbackPort or the default.
+func (c *MCPOAuthConfig) ResolveCallbackPort() int {
+	if c.CallbackPort > 0 {
+		return c.CallbackPort
+	}
+	return 49152
+}
+
 // MCPServerConfig describes a single MCP server connection.
 type MCPServerConfig struct {
 	// Name is the hook name used in chain JSON, e.g. "filesystem".
@@ -77,6 +120,10 @@ type MCPServerConfig struct {
 	// Auth for remote transports (optional).
 	Auth *MCPAuthConfig
 
+	// OAuth holds parameters for the OAuth 2.1 PKCE flow.
+	// Only used when Auth.Type == MCPAuthOAuth.
+	OAuth *MCPOAuthConfig
+
 	// ConnectTimeout for the initial handshake (default 30s).
 	ConnectTimeout time.Duration
 
@@ -89,6 +136,7 @@ type MCPServerConfig struct {
 	// Tracker is the activity tracker for observing MCP pool operations.
 	Tracker libtracker.ActivityTracker
 }
+
 
 // MCPSessionPool manages a single MCP client session with reconnect support.
 // Mirrors the SSHClientCache pattern: mutex-protected, reconnects on failure.
@@ -132,6 +180,14 @@ func (p *MCPSessionPool) connectLocked(ctx context.Context) error {
 	reportErr, reportChange, end := p.tracker.Start(ctx, "connect", "mcp_server", "name", p.cfg.Name, "transport", string(p.cfg.Transport))
 	defer end()
 
+	// Per MCP spec and required by Notion: initialization requests MUST NOT
+	// include an Mcp-Session-Id header. Clear any persisted session ID so the
+	// sessionRoundTripper starts fresh. A new session ID will be received from
+	// the server in the initialize response and persisted via OnSessionID.
+	p.sidMu.Lock()
+	p.mcpSessionID = ""
+	p.sidMu.Unlock()
+
 	timeout := p.cfg.ConnectTimeout
 	if timeout == 0 {
 		timeout = 30 * time.Second
@@ -160,6 +216,7 @@ func (p *MCPSessionPool) connectLocked(ctx context.Context) error {
 	reportChange(p.cfg.Name, map[string]any{"transport": string(p.cfg.Transport), "url": p.cfg.URL})
 	return nil
 }
+
 
 func (p *MCPSessionPool) buildTransport() (mcp.Transport, error) {
 	// Closures let sessionRoundTripper safely read/write the live session ID
@@ -194,7 +251,13 @@ func (p *MCPSessionPool) buildTransport() (mcp.Transport, error) {
 			return nil, fmt.Errorf("sse transport requires a url")
 		}
 		var rt http.RoundTripper = http.DefaultTransport
-		if token := p.cfg.Auth.ResolveToken(); token != "" {
+		if p.cfg.Auth != nil && p.cfg.Auth.Type == MCPAuthOAuth {
+			oauthRT, err := p.buildOAuthRoundTripper(rt)
+			if err != nil {
+				return nil, err
+			}
+			rt = oauthRT
+		} else if token := p.cfg.Auth.ResolveToken(); token != "" {
 			rt = &bearerRoundTripper{base: rt, token: token}
 		}
 		rt = &sessionRoundTripper{base: rt, getSessionID: getSessionID, setSessionID: setSessionID}
@@ -207,7 +270,13 @@ func (p *MCPSessionPool) buildTransport() (mcp.Transport, error) {
 			return nil, fmt.Errorf("http transport requires a url")
 		}
 		var rt http.RoundTripper = http.DefaultTransport
-		if token := p.cfg.Auth.ResolveToken(); token != "" {
+		if p.cfg.Auth != nil && p.cfg.Auth.Type == MCPAuthOAuth {
+			oauthRT, err := p.buildOAuthRoundTripper(rt)
+			if err != nil {
+				return nil, err
+			}
+			rt = oauthRT
+		} else if token := p.cfg.Auth.ResolveToken(); token != "" {
 			rt = &bearerRoundTripper{base: rt, token: token}
 		}
 		rt = &sessionRoundTripper{base: rt, getSessionID: getSessionID, setSessionID: setSessionID}
@@ -443,6 +512,7 @@ func mcpCollectText(contents []mcp.Content) string {
 	return string(sb)
 }
 
+
 // isAppError determines if the error returned by the MCP SDK is an application-level
 // JSON-RPC rejection (like invalid schema) or context cancellation, rather than a network drop.
 func isAppError(err error) bool {
@@ -458,3 +528,249 @@ func isAppError(err error) bool {
 		errors.Is(err, context.Canceled) ||
 		errors.Is(err, context.DeadlineExceeded)
 }
+
+// ErrOAuthNotAuthenticated is returned by buildOAuthRoundTripper when no
+// stored token exists for an OAuth-configured MCP server. The caller (or the
+// CLI error handler) should surface this as an actionable message.
+var ErrOAuthNotAuthenticated = fmt.Errorf("not authenticated")
+
+// buildOAuthRoundTripper constructs a non-interactive oauth2.Transport.
+//
+// It ONLY injects a previously-stored token and auto-refreshes it.
+// It never opens a browser or binds a long-lived port — if no valid token is
+// found in the store it returns ErrOAuthNotAuthenticated so the caller can
+// tell the user to run `contenox mcp auth <name>`.
+func (p *MCPSessionPool) buildOAuthRoundTripper(base http.RoundTripper) (http.RoundTripper, error) {
+	reportErr, reportChange, end := p.tracker.Start(
+		context.Background(), "build_oauth_transport", "mcp_server",
+		"name", p.cfg.Name,
+	)
+	defer end()
+	ctx := context.Background()
+
+	cfg := p.cfg.OAuth
+	if cfg == nil {
+		err := fmt.Errorf("mcp oauth: OAuth config is nil")
+		reportErr(err)
+		return nil, err
+	}
+	if cfg.TokenStore == nil {
+		err := fmt.Errorf("mcp oauth: TokenStore is not set")
+		reportErr(err)
+		return nil, err
+	}
+
+	// Discover the authorization server (needed for token refresh endpoint).
+	_, discoverReport, discoverEnd := p.tracker.Start(ctx, "oauth_discover", "mcp_server", "name", p.cfg.Name)
+	meta, err := mcpoauth.DiscoverAuthServer(ctx, p.cfg.URL)
+	if err != nil {
+		discoverEnd()
+		reportErr(err)
+		return nil, fmt.Errorf("mcp oauth: discover auth server: %w", err)
+	}
+	discoverReport("auth_endpoint", map[string]any{
+		"authorization_endpoint": meta.AuthorizationEndpoint,
+		"token_endpoint":         meta.TokenEndpoint,
+		"registration_endpoint":  meta.RegistrationEndpoint,
+	})
+	discoverEnd()
+
+	// Resolve client ID from stored registration.
+	clientID := cfg.ClientID
+	if clientID == "" {
+		reg, _ := cfg.TokenStore.GetClientRegistration(ctx, p.cfg.Name)
+		if reg != nil {
+			clientID = reg.ClientID
+		}
+	}
+
+	// Load the previously stored token.
+	stored, _ := cfg.TokenStore.GetOAuthToken(ctx, p.cfg.Name)
+
+	if stored == nil || stored.AccessToken == "" {
+		// No token at all — the user needs to authenticate first.
+		err := fmt.Errorf("%w: run 'contenox mcp auth %s' to authenticate", ErrOAuthNotAuthenticated, p.cfg.Name)
+		reportErr(err)
+		return nil, err
+	}
+
+	reportChange("token_loaded", map[string]any{
+		"client_id":   clientID,
+		"token_valid": stored.Valid(),
+		"has_refresh": stored.RefreshToken != "",
+		"expiry":      stored.Expiry.String(),
+	})
+
+	// Build a redirect URI to satisfy oauth2.Config (only needed for refresh).
+	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", cfg.ResolveCallbackPort())
+
+	o2cfg := &oauth2.Config{
+		ClientID:    clientID,
+		Scopes:      cfg.Scopes,
+		RedirectURL: redirectURI,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  meta.AuthorizationEndpoint,
+			TokenURL: meta.TokenEndpoint,
+		},
+	}
+
+	// We have a token (possibly expired but with a refresh token).
+	// oauth2.ReuseTokenSource will call o2cfg.TokenSource which transparently
+	// uses the refresh token when the access token has expired.
+	src := oauth2.ReuseTokenSource(stored, o2cfg.TokenSource(ctx, stored))
+
+	// Persist every newly-refreshed token so it survives process restarts.
+	persistingSrc := &persistingTokenSource{
+		inner:   src,
+		store:   cfg.TokenStore,
+		name:    p.cfg.Name,
+		o2cfg:   o2cfg,
+		baseCtx: ctx,
+	}
+
+	// Wrap the base transport with a logging layer that reports non-2xx
+	// response bodies through the activity tracker. This surfaces things like
+	// Notion's 400 Bad Request body without any changes to the user workflow.
+	logged := &loggingRoundTripper{
+		base:    base,
+		tracker: p.tracker,
+		name:    p.cfg.Name,
+	}
+
+	return &oauth2.Transport{Source: persistingSrc, Base: logged}, nil
+}
+
+// loggingRoundTripper logs non-2xx response bodies via the activity tracker
+// so failures in oauth-protected requests (e.g. "Bad Request" from Notion)
+// are visible through the tracing system.
+type loggingRoundTripper struct {
+	base    http.RoundTripper
+	tracker libtracker.ActivityTracker
+	name    string
+}
+
+func (l *loggingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := l.base.RoundTrip(req)
+	if err != nil {
+		reportErr, _, end := l.tracker.Start(req.Context(), "mcp_http_error", "mcp_server",
+			"name", l.name, "url", req.URL.String(), "method", req.Method)
+		defer end()
+		reportErr(err)
+		return resp, err
+	}
+	if resp != nil && (resp.StatusCode < 200 || resp.StatusCode >= 300) {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+		resp.Body = io.NopCloser(strings.NewReader(string(body)))
+
+		detail := map[string]any{
+			"url":    req.URL.String(),
+			"method": req.Method,
+			"status": resp.StatusCode,
+			"body":   strings.TrimSpace(string(body)),
+		}
+		if resp.StatusCode >= 500 {
+			// 5xx: server-side fault — report as error.
+			reportErr, _, end := l.tracker.Start(req.Context(), "mcp_http_error", "mcp_server", "name", l.name)
+			defer end()
+			reportErr(fmt.Errorf("HTTP %d from %s: %s", resp.StatusCode, req.URL.Host, strings.TrimSpace(string(body))))
+		} else {
+			// 4xx: diagnostic — logged at INFO level as a state change so it's
+			// visible in --trace output but doesn't look like a fatal error.
+			// (e.g. Notion returns 405 on GET SSE stream, which the SDK handles.)
+			_, reportChange, end := l.tracker.Start(req.Context(), "mcp_http_response", "mcp_server", "name", l.name)
+			defer end()
+			reportChange("4xx", detail)
+		}
+	}
+	return resp, err
+}
+
+
+
+// RunOAuthFlow performs the full PKCE authorization code flow interactively:
+// opens a browser at the authorization URL, waits for the callback, and
+// exchanges the code for a token set. It is also used by the `mcp auth` CLI
+// command when re-authenticating.
+func RunOAuthFlow(ctx context.Context, o2cfg *oauth2.Config, oauthCfg *MCPOAuthConfig, meta *mcpoauth.ServerMetadata) (*oauth2.Token, error) {
+	port := 0
+	if oauthCfg != nil {
+		port = oauthCfg.ResolveCallbackPort()
+	}
+	ln, redirectURI, callbackCh, err := mcpoauth.StartCallbackServer(port)
+	if err != nil {
+		return nil, fmt.Errorf("start callback: %w", err)
+	}
+	_ = ln // already serving; only used to get the port via StartCallbackServer
+	o2cfg.RedirectURL = redirectURI
+
+	verifier := oauth2.GenerateVerifier()
+	state := oauth2.GenerateVerifier() // reuse randomness helper for state too
+
+	authURL := o2cfg.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
+
+	openFn := openBrowserDefault
+	if oauthCfg != nil && oauthCfg.OpenBrowser != nil {
+		openFn = oauthCfg.OpenBrowser
+	}
+
+	fmt.Printf("\nOpening browser for Notion authorization...\nIf the browser doesn't open, visit:\n\n  %s\n\n", authURL)
+	_ = openFn(authURL)
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-callbackCh:
+		if result.Error != "" {
+			return nil, fmt.Errorf("authorization denied: %s — %s", result.Error, result.ErrorDescription)
+		}
+		if result.State != state {
+			return nil, fmt.Errorf("state mismatch: CSRF check failed")
+		}
+		tok, err := o2cfg.Exchange(ctx, result.Code, oauth2.VerifierOption(verifier))
+		if err != nil {
+			return nil, fmt.Errorf("token exchange: %w", err)
+		}
+		return tok, nil
+	}
+}
+
+// persistingTokenSource wraps an oauth2.TokenSource and persists every newly-
+// issued token back to the KV store, so tokens survive process restarts.
+type persistingTokenSource struct {
+	inner   oauth2.TokenSource
+	store   mcpoauth.TokenStore
+	name    string
+	o2cfg   *oauth2.Config
+	baseCtx context.Context
+}
+
+func (s *persistingTokenSource) Token() (*oauth2.Token, error) {
+	tok, err := s.inner.Token()
+	if err != nil {
+		return nil, err
+	}
+	_ = s.store.SetOAuthToken(s.baseCtx, s.name, tok)
+	return tok, nil
+}
+
+// openBrowserDefault opens the given URL in the system default browser.
+func openBrowserDefault(rawURL string) error {
+	var cmd *exec.Cmd
+	switch {
+	case commandExists("xdg-open"):
+		cmd = exec.Command("xdg-open", rawURL)
+	case commandExists("open"):
+		cmd = exec.Command("open", rawURL)
+	default:
+		// Windows fallback
+		cmd = exec.Command("cmd", "/c", "start", rawURL)
+	}
+	return cmd.Start()
+}
+
+func commandExists(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
