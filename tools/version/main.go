@@ -169,7 +169,7 @@ func updateDocsAndAmendCommit() error {
 		return fmt.Errorf("failed to git add docs/: %w\nOutput: %s", err, string(output))
 	}
 
-	cmd = exec.Command("git", "commit", "--amend", "--no-edit")
+	cmd = exec.Command("git", "commit", "-Ss", "--amend", "--no-edit")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if strings.Contains(string(output), "nothing to commit") {
 			fmt.Println("   Documentation was already up-to-date.")
@@ -294,7 +294,7 @@ func commitVersionFile(newVersion string) error {
 	}
 
 	// Commit the change
-	cmd = exec.Command("git", "commit", "-m", fmt.Sprintf("chore: release %s", newVersion))
+	cmd = exec.Command("git", "commit", "-S", "-m", fmt.Sprintf("chore: release %s", newVersion))
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to commit version file: %w\nOutput: %s", err, string(output))
 	}
@@ -306,7 +306,7 @@ func createTag(newVersion string) error {
 	fmt.Printf("🔖 Creating tag %s...\n", newVersion)
 
 	// Create an annotated tag pointing to the release commit
-	cmd := exec.Command("git", "tag", "-a", newVersion, "-m", fmt.Sprintf("Release %s", newVersion))
+	cmd := exec.Command("git", "tag", "-s", "-a", newVersion, "-m", fmt.Sprintf("Release %s", newVersion))
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to create tag: %w\nOutput: %s", err, string(output))
 	}
