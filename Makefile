@@ -251,8 +251,10 @@ website-clean:
 	rm -rf $(PROJECT_ROOT)/enterprise/site/.next
 
 commit-docs: docs-markdown docs-html
-	git add $(PROJECT_ROOT)/docs
-	git commit -m "chore: update docs"
+	git add $(PROJECT_ROOT)/docs $(PROJECT_ROOT)/website/docs
+	-git commit -m "chore: update api docs"
 
-release: docs-markdown docs-html set-version
+release: docs-markdown docs-html
+	git add $(PROJECT_ROOT)/docs $(PROJECT_ROOT)/website/docs
+	-git commit -m "chore: update api docs for release"
 	@echo "Release assets prepared. Next.js site deploys via CI — no local build needed."
