@@ -2750,6 +2750,12 @@ paths:
                 Retrieves events for a specific aggregate within a time range.
                 Useful for rebuilding aggregate state or auditing changes.
             parameters:
+                - description: Maximum number of events to return.
+                  in: query
+                  name: limit
+                  schema:
+                    default: "100"
+                    type: string
                 - description: The type of event to filter by.
                   in: query
                   name: event_type
@@ -2764,12 +2770,6 @@ paths:
                   in: query
                   name: aggregate_id
                   schema:
-                    type: string
-                - description: Maximum number of events to return.
-                  in: query
-                  name: limit
-                  schema:
-                    default: "100"
                     type: string
             responses:
                 "200":
@@ -2861,11 +2861,6 @@ paths:
                 USE WITH CAUTION — this is a destructive operation.
                 Typically used for GDPR compliance or cleaning up test data.
             parameters:
-                - description: The type of event to delete.
-                  in: query
-                  name: event_type
-                  schema:
-                    type: string
                 - description: Start time in RFC3339 format.
                   in: query
                   name: from
@@ -2874,6 +2869,11 @@ paths:
                 - description: End time in RFC3339 format.
                   in: query
                   name: to
+                  schema:
+                    type: string
+                - description: The type of event to delete.
+                  in: query
+                  name: event_type
                   schema:
                     type: string
             responses:
@@ -3632,16 +3632,16 @@ paths:
                 Lists remote hooks, optionally filtering by a unique name.
                 Returns a list of remote hooks.
             parameters:
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -3951,16 +3951,16 @@ paths:
                 Lists all pending jobs available for leasing.
                 Returns jobs in paginated format using cursor-based pagination.
             parameters:
-                - description: RFC3339 timestamp for pagination cursor.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: Maximum number of jobs to return.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: RFC3339 timestamp for pagination cursor.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -4186,16 +4186,16 @@ paths:
                 Lists all MCP server configurations.
                 Returns a paginated list of MCP server configurations.
             parameters:
+                - description: RFC3339Nano timestamp for pagination cursor.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: Maximum number of items to return.
                   in: query
                   name: limit
                   schema:
                     default: "100"
-                    type: string
-                - description: RFC3339Nano timestamp for pagination cursor.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
@@ -4615,16 +4615,16 @@ paths:
                 Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
                 the chainID parameter is currently unused.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -4656,16 +4656,16 @@ paths:
                 Models not assigned to any group exist in the configuration but are completely ignored by the routing system.
                 the chainID parameter is currently unused.
             parameters:
-                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
-                    type: string
                 - description: The maximum number of items to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "100"
+                    type: string
+                - description: An optional RFC3339Nano timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
                     type: string
             responses:
                 "200":
@@ -5157,14 +5157,14 @@ paths:
                 This is useful for inspecting original payloads before mapping,
                 or for preparing replay operations.
             parameters:
-                - description: Start time in RFC3339 format
-                  in: query
-                  name: from
-                  schema:
-                    type: string
                 - description: End time in RFC3339 format
                   in: query
                   name: to
+                  schema:
+                    type: string
+                - description: Start time in RFC3339 format
+                  in: query
+                  name: from
                   schema:
                     type: string
             responses:
@@ -5777,16 +5777,16 @@ paths:
                 Results are returned in reverse chronological order (newest first).
                 Use the 'cursor' parameter to fetch the next page of results.
             parameters:
+                - description: An optional RFC3339 timestamp to fetch the next page of results.
+                  in: query
+                  name: cursor
+                  schema:
+                    type: string
                 - description: The maximum number of users to return per page.
                   in: query
                   name: limit
                   schema:
                     default: "10"
-                    type: string
-                - description: An optional RFC3339 timestamp to fetch the next page of results.
-                  in: query
-                  name: cursor
-                  schema:
                     type: string
             responses:
                 "200":
