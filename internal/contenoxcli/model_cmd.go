@@ -33,7 +33,18 @@ Examples:
   contenox model list
   contenox model list --declared
   contenox model add qwen2.5:7b
-  contenox model remove qwen2.5:7b`,
+  contenox model remove qwen2.5:7b
+
+Set the default model:
+  contenox config set default-model    models/gemini-2.0-flash
+  contenox config set default-provider gemini`,
+	Args: cobra.ArbitraryArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return fmt.Errorf("unknown subcommand %q\n\nTo set a default model:\n  contenox config set default-model <model>\n  contenox config set default-provider <provider>", args[0])
+		}
+		return cmd.Help()
+	},
 }
 
 var modelListCmd = &cobra.Command{
@@ -74,7 +85,14 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	bus := libbus.NewSQLite(db.WithoutTransaction())
 	defer bus.Close()
 
-	state, err := runtimestate.New(ctx, db, bus, runtimestate.WithSkipDeleteUndeclaredModels())
+	// Read the preferred model from config so we can mark it.
+	store := runtimetypes.New(db.WithoutTransaction())
+	preferredModel, err := getConfigKV(ctx, store, "default-model")
+	if err != nil {
+		return fmt.Errorf("failed to get preferred model: %w", err)
+	}
+
+	state, err := runtimestate.New(ctx, db, bus, runtimestate.WithSkipDeleteUndeclaredModels(), runtimestate.WithAutoDiscoverModels())
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime state: %w", err)
 	}
@@ -118,6 +136,13 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 			e.canPrompt[pm.Model] = pm.CanPrompt
 			e.ctx[pm.Model] = pm.ContextLength
 		}
+		// For backends where PulledModels is empty (e.g. OpenAI — no capability
+		// info available without declaration), fall back to the raw model list so
+		// users can at least see what models exist and use model add + config set
+		// to start using them.
+		if len(e.pulled) == 0 && len(bs.Models) > 0 {
+			e.pulled = append(e.pulled, bs.Models...)
+		}
 		sort.Strings(e.pulled)
 		entries = append(entries, e)
 	}
@@ -128,7 +153,11 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	fmt.Fprintln(w, "BACKEND\tMODEL\tCHAT\tEMBED\tPROMPT\tCTX")
 	for _, e := range entries {
 		if e.backendErr != "" {
-			fmt.Fprintf(w, "%s\t(unreachable: %s)\t\t\t\t\n", e.backendName, e.backendErr)
+			errMsg := e.backendErr
+			if len(errMsg) > 80 {
+				errMsg = errMsg[:80] + "..."
+			}
+			fmt.Fprintf(w, "%s\t(unreachable: %s)\t\t\t\t\n", e.backendName, errMsg)
 			continue
 		}
 		if len(e.pulled) == 0 {
@@ -137,8 +166,12 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 		}
 		for _, m := range e.pulled {
 			any = true
+			displayName := m
+			if preferredModel != "" && m == preferredModel {
+				displayName = m + " *"
+			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\n",
-				e.backendName, m,
+				e.backendName, displayName,
 				boolMark(e.canChat[m]),
 				boolMark(e.canEmbed[m]),
 				boolMark(e.canPrompt[m]),
@@ -152,14 +185,20 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	if !any {
 		fmt.Fprintln(out, "\nNo models found. Add a model with: contenox model add <model-name>")
 	}
+	if preferredModel != "" {
+		fmt.Fprintln(out, "\n* = default model (contenox config set default-model <name>)")
+	}
 	return nil
 }
 
 // printDeclaredModels lists the models stored in the local SQLite database.
 // Delegates to modelservice to leverage validation and row-count policies.
 func printDeclaredModels(ctx context.Context, db libdb.DBManager, out io.Writer) error {
+	store := runtimetypes.New(db.WithoutTransaction())
+	preferredModel, _ := getConfigKV(ctx, store, "default-model")
+
 	svc := modelservice.New(db, "")
-	models, err := svc.List(ctx, nil, 10000)
+	models, err := svc.List(ctx, nil, 1000)
 	if err != nil {
 		return fmt.Errorf("failed to list models: %w", err)
 	}
@@ -170,15 +209,25 @@ func printDeclaredModels(ctx context.Context, db libdb.DBManager, out io.Writer)
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "MODEL\tCHAT\tEMBED\tPROMPT\tCTX")
 	for _, m := range models {
+		displayName := m.Model
+		if preferredModel != "" && m.Model == preferredModel {
+			displayName = m.Model + " *"
+		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\n",
-			m.Model,
+			displayName,
 			boolMark(m.CanChat),
 			boolMark(m.CanEmbed),
 			boolMark(m.CanPrompt),
 			m.ContextLength,
 		)
 	}
-	return w.Flush()
+	if err := w.Flush(); err != nil {
+		return err
+	}
+	if preferredModel != "" {
+		fmt.Fprintln(out, "\n* = default model (contenox config set default-model <name>)")
+	}
+	return nil
 }
 
 var modelAddCmd = &cobra.Command{

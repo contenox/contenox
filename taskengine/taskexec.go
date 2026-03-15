@@ -839,18 +839,26 @@ func (exe *SimpleExec) executeLLM(
 	}
 
 	if len(llmCall.Hooks) > 0 {
-		for _, v := range llmCall.Hooks {
-			for _, twr := range hookResolution {
-				if v == twr.HookName {
-					tools = append(tools, libmodelprovider.Tool{
-						Type: twr.Type,
-						Function: &libmodelprovider.FunctionTool{
-							Name:        twr.Function.Name,
-							Description: twr.Function.Description,
-							Parameters:  twr.Function.Parameters,
-						},
-					})
-				}
+		// Use the same resolveHookNames helper used in taskenv.go so that
+		// "*" / "!name" semantics are honoured correctly.
+		resolvedNames, err := resolveHookNames(ctx, llmCall.Hooks, exe.hookProvider)
+		if err != nil {
+			return nil, DataTypeAny, "", fmt.Errorf("failed to resolve hooks for LLM call: %w", err)
+		}
+		included := make(map[string]struct{}, len(resolvedNames))
+		for _, name := range resolvedNames {
+			included[name] = struct{}{}
+		}
+		for _, twr := range hookResolution {
+			if _, ok := included[twr.HookName]; ok {
+				tools = append(tools, libmodelprovider.Tool{
+					Type: twr.Type,
+					Function: &libmodelprovider.FunctionTool{
+						Name:        twr.Function.Name,
+						Description: twr.Function.Description,
+						Parameters:  twr.Function.Parameters,
+					},
+				})
 			}
 		}
 	}

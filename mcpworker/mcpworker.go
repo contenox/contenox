@@ -22,6 +22,7 @@ import (
 	"github.com/contenox/contenox/libbus"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/localhooks"
+	"github.com/contenox/contenox/localhooks/mcpoauth"
 	"github.com/contenox/contenox/runtimetypes"
 )
 
@@ -194,7 +195,7 @@ func (m *Manager) StartWorker(ctx context.Context, srv *runtimetypes.MCPServer) 
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	w := &worker{
 		serverName: srv.Name,
-		cfg:        mcpServerToConfig(srv),
+	cfg:        mcpServerToConfig(srv, m.db),
 		pools:      make(map[string]*poolEntry),
 		cancelFn:   workerCancel,
 	}
@@ -382,7 +383,7 @@ func (m *Manager) WatchEvents(ctx context.Context) error {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func mcpServerToConfig(srv *runtimetypes.MCPServer) localhooks.MCPServerConfig {
+func mcpServerToConfig(srv *runtimetypes.MCPServer, store runtimetypes.Store) localhooks.MCPServerConfig {
 	cfg := localhooks.MCPServerConfig{
 		Name:           srv.Name,
 		Transport:      localhooks.MCPTransport(srv.Transport),
@@ -396,6 +397,11 @@ func mcpServerToConfig(srv *runtimetypes.MCPServer) localhooks.MCPServerConfig {
 			Type:          localhooks.MCPAuthType(srv.AuthType),
 			Token:         srv.AuthToken,
 			APIKeyFromEnv: srv.AuthEnvKey,
+		}
+	}
+	if localhooks.MCPAuthType(srv.AuthType) == localhooks.MCPAuthOAuth && store != nil {
+		cfg.OAuth = &localhooks.MCPOAuthConfig{
+			TokenStore: mcpoauth.NewKVTokenStore(store),
 		}
 	}
 	return cfg

@@ -8,9 +8,12 @@ import (
 
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/localhooks"
+	"github.com/contenox/contenox/localhooks/mcpoauth"
 	"github.com/contenox/contenox/mcpserverservice"
 	"github.com/contenox/contenox/runtimetypes"
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
 )
 
 var mcpCmd = &cobra.Command{
@@ -43,7 +46,7 @@ Examples:
 }
 
 var mcpAddCmd = &cobra.Command{
-	Use:   "add <name>",
+	Use:   "add <name> [url]",
 	Short: "Register an MCP server.",
 	Long: `Register a named MCP server in the local SQLite database.
 
@@ -52,10 +55,16 @@ Transport types:
   sse     Connect to a remote server via Server-Sent Events (--url required)
   http    Connect to a remote server via HTTP streaming (--url required)
 
+You can pass the URL directly as a second positional argument. The transport
+defaults to "http" when a URL is provided this way.
+
 For authentication, use:
   --auth-type bearer  with --auth-token <token>  or  --auth-env <ENV_VAR>
 
 Examples:
+  # Shorthand: name + URL (transport defaults to http)
+  contenox mcp add notion https://mcp.notion.com/mcp
+
   # Stdio: spawn a local filesystem MCP server
   contenox mcp add fs --transport stdio \
     --command npx --args "-y,@modelcontextprotocol/server-filesystem,/tmp"
@@ -63,7 +72,7 @@ Examples:
   # SSE: connect to a remote MCP endpoint
   contenox mcp add remote --transport sse --url https://mcp.example.com/sse \
     --auth-type bearer --auth-env MCP_TOKEN`,
-	Args: cobra.ExactArgs(1),
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		name := args[0]
@@ -81,6 +90,18 @@ Examples:
 		rawHeaders, _ := flags.GetStringArray("header")
 		rawInjects, _ := flags.GetStringArray("inject")
 
+		// Positional shorthand: contenox mcp add <name> <url>
+		// If a second positional arg is provided, treat it as --url and default
+		// transport to "http" unless the user explicitly set --transport.
+		if len(args) == 2 {
+			if url == "" {
+				url = args[1]
+			}
+			if !flags.Changed("transport") {
+				transport = "http"
+			}
+		}
+
 		headers, err := parseHeaders(rawHeaders)
 		if err != nil {
 			return err
@@ -91,13 +112,32 @@ Examples:
 		}
 
 		if transport == "" {
-			return fmt.Errorf("--transport is required (stdio, sse, http)")
+			return fmt.Errorf(
+				"--transport is required (stdio, sse, http)\n\n"+
+					"  For a remote HTTP server:\n"+
+					"    contenox mcp add %s https://<url>\n"+
+					"  For a local stdio server:\n"+
+					"    contenox mcp add %s --transport stdio --command <cmd>",
+				name, name,
+			)
 		}
 		if transport == "stdio" && command == "" {
-			return fmt.Errorf("--command is required for stdio transport")
+			return fmt.Errorf(
+				"--command is required for stdio transport\n\n"+
+					"  Example:\n"+
+					"    contenox mcp add %s --transport stdio --command npx --args \"-y,@modelcontextprotocol/server-filesystem,/tmp\"",
+				name,
+			)
 		}
 		if (transport == "sse" || transport == "http") && url == "" {
-			return fmt.Errorf("--url is required for sse/http transport")
+			return fmt.Errorf(
+				"--url is required for %s transport\n\n"+
+					"  Example:\n"+
+					"    contenox mcp add %s --transport %s --url https://<host>/mcp\n"+
+					"  Or use the shorthand:\n"+
+					"    contenox mcp add %s https://<host>/mcp",
+				transport, name, transport, name,
+			)
 		}
 
 		db, svc, err := openMCPService(cmd)
@@ -303,14 +343,100 @@ var mcpUpdateCmd = &cobra.Command{
 	},
 }
 
+var mcpAuthCmd = &cobra.Command{
+	Use:   "auth <name>",
+	Short: "Authenticate an OAuth MCP server (opens browser).",
+	Long: `Run the OAuth 2.1 PKCE authorization flow for a registered MCP server.
+
+Opens your browser at the server's authorization page.
+After you approve access, the token is stored locally and used for all
+subsequent connections — no re-authentication needed until it expires.
+
+Example:
+  contenox mcp auth notion`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := libtracker.WithNewRequestID(context.Background())
+		name := args[0]
+
+		db, svc, err := openMCPService(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		srv, err := svc.GetByName(ctx, name)
+		if err != nil {
+			return fmt.Errorf("mcp server %q not found: %w", name, err)
+		}
+		if srv.AuthType != string(localhooks.MCPAuthOAuth) {
+			return fmt.Errorf("mcp server %q does not use oauth auth (auth_type=%q)\n\nRe-register with:\n  contenox mcp remove %s\n  contenox mcp add %s %s --auth-type oauth",
+				name, srv.AuthType, name, name, srv.URL)
+		}
+
+		// Build the KV-backed token store using the same DB.
+		store := runtimetypes.New(db.WithoutTransaction())
+		tokenStore := mcpoauth.NewKVTokenStore(store)
+
+		// Discover auth server + do registration if needed.
+		meta, err := mcpoauth.DiscoverAuthServer(ctx, srv.URL)
+		if err != nil {
+			return fmt.Errorf("discover auth server: %w", err)
+		}
+
+		oauthCfg := &localhooks.MCPOAuthConfig{
+			TokenStore: tokenStore,
+		}
+
+		// Resolve client ID.
+		clientID := ""
+		reg, _ := tokenStore.GetClientRegistration(ctx, name)
+		if reg != nil {
+			clientID = reg.ClientID
+		} else if meta.RegistrationEndpoint != "" {
+			_, redirectURI, _, portErr := mcpoauth.StartCallbackServer(oauthCfg.ResolveCallbackPort())
+			if portErr != nil {
+				return fmt.Errorf("probe callback port: %w", portErr)
+			}
+			reg, err = mcpoauth.RegisterClient(ctx, meta.RegistrationEndpoint, "contenox", redirectURI)
+			if err != nil {
+				return fmt.Errorf("register client: %w", err)
+			}
+			_ = tokenStore.SetClientRegistration(ctx, name, reg)
+			clientID = reg.ClientID
+		}
+		if clientID == "" {
+			return fmt.Errorf("could not obtain client_id — server may not support dynamic registration")
+		}
+
+		o2cfg := &oauth2.Config{
+			ClientID: clientID,
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  meta.AuthorizationEndpoint,
+				TokenURL: meta.TokenEndpoint,
+			},
+		}
+
+		tok, err := localhooks.RunOAuthFlow(ctx, o2cfg, oauthCfg, meta)
+		if err != nil {
+			return fmt.Errorf("oauth flow: %w", err)
+		}
+		if err := tokenStore.SetOAuthToken(ctx, name, tok); err != nil {
+			return fmt.Errorf("save token: %w", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s: authenticated successfully.\n", name)
+		return nil
+	},
+}
+
 func init() {
-	mcpAddCmd.Flags().String("transport", "stdio", "Transport type: stdio (local process), sse, or http (remote server)")
+	mcpAddCmd.Flags().String("transport", "", "Transport type: stdio (local process), sse, or http (remote server)")
 	mcpAddCmd.Flags().String("command", "", "Command to execute (required for stdio transport)")
 	mcpAddCmd.Flags().StringSlice("args", nil, "Arguments for the command, comma-separated (for stdio transport)")
 	mcpAddCmd.Flags().String("url", "", "URL of the remote MCP server (required for sse/http transport)")
 	mcpAddCmd.Flags().Int("timeout", 0, "Connection timeout in seconds (0 = no timeout)")
 
-	mcpAddCmd.Flags().String("auth-type", "", "Authentication type (e.g. bearer)")
+	mcpAddCmd.Flags().String("auth-type", "", "Authentication type: bearer or oauth")
 	mcpAddCmd.Flags().String("auth-token", "", "Authentication token literal (prefer --auth-env)")
 	mcpAddCmd.Flags().String("auth-env", "", "Environment variable containing the authentication token")
 	mcpAddCmd.Flags().StringArray("header", nil, `Additional HTTP header for SSE/HTTP transport, e.g. "X-Tenant: acme" (repeatable)`)
@@ -328,4 +454,6 @@ func init() {
 	mcpCmd.AddCommand(mcpShowCmd)
 	mcpCmd.AddCommand(mcpRemoveCmd)
 	mcpCmd.AddCommand(mcpUpdateCmd)
+	mcpCmd.AddCommand(mcpAuthCmd)
 }
+

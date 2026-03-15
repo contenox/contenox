@@ -45,6 +45,7 @@ type State struct {
 	dwQueue              dwqueue
 	withgroups           bool
 	skipDeleteUndeclared bool // when true, do not delete Ollama models that are not declared (for pre-pulled models)
+	autoDiscoverModels   bool // when true, expose all live backend models without requiring declaration
 	providerCache        sync.Map
 }
 
@@ -61,6 +62,16 @@ func WithGroups() Option {
 func WithSkipDeleteUndeclaredModels() Option {
 	return func(s *State) {
 		s.skipDeleteUndeclared = true
+	}
+}
+
+// WithAutoDiscoverModels exposes all models returned by live backends without requiring manual
+// declaration via 'model add'. Capability inference is name-based for providers (e.g. OpenAI)
+// whose APIs do not return capability metadata. The fleet-management declare-to-pull
+// behaviour for Ollama is preserved; only the PulledModels exposure is widened.
+func WithAutoDiscoverModels() Option {
+	return func(s *State) {
+		s.autoDiscoverModels = true
 	}
 }
 
@@ -539,7 +550,16 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	}
 
 	stateservice.PulledModels = pulledModels
-	stateservice.Models = models
+	if s.autoDiscoverModels {
+		// Expose all currently-pulled Ollama models by name, not just declared ones.
+		allPulledNames := make([]string, 0, len(pulledModels))
+		for _, pm := range pulledModels {
+			allPulledNames = append(allPulledNames, pm.Model)
+		}
+		stateservice.Models = allPulledNames
+	} else {
+		stateservice.Models = models
+	}
 	s.state.Store(backend.ID, stateservice)
 	// log.Printf("Stored updated state for backend %s", backend.ID)
 
@@ -693,8 +713,22 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 		}
 	}
 	if !found {
-		res.Error = fmt.Sprintf("backend has model %s, yet it's not declared in the configuration", servedModel)
+		if s.autoDiscoverModels {
+			pulledModels[0] = statetype.ModelPullStatus{
+				Name:          servedModel,
+				Model:         servedModel,
+				ModifiedAt:    time.Now().UTC(),
+				ContextLength: modelResp.Data[0].MaxModelLen,
+				CanChat:       true,
+				CanEmbed:      false,
+				CanPrompt:     true,
+				CanStream:     true,
+			}
+		} else {
+			res.Error = fmt.Sprintf("backend has model %s, yet it's not declared in the configuration", servedModel)
+		}
 	}
+	res.PulledModels = pulledModels
 	s.state.Store(backend.ID, res)
 }
 
@@ -849,11 +883,10 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 					allModelNames = append(allModelNames, m.Model)
 				}
 
-				// Filter pulledModels to only include declared ones
+				// Filter pulledModels: always include declared ones; also include all when autoDiscover.
 				pulledModels := make([]statetype.ModelPullStatus, 0, len(entry.models))
 				for _, m := range entry.models {
 					if declaredModel, exists := declaredModels[m.Name]; exists {
-						// Enhance with current declared model data
 						enhancedModel := m
 						enhancedModel.Name = declaredModel.ID
 						enhancedModel.Model = declaredModel.Model
@@ -862,15 +895,16 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 						enhancedModel.CanEmbed = declaredModel.CanEmbed
 						enhancedModel.CanPrompt = declaredModel.CanPrompt
 						enhancedModel.CanStream = declaredModel.CanStream
-
 						pulledModels = append(pulledModels, enhancedModel)
+					} else if s.autoDiscoverModels {
+						pulledModels = append(pulledModels, inferOpenAICapabilities(m.Model))
 					}
 				}
 
 				stateInstance.Models = allModelNames
 				stateInstance.PulledModels = pulledModels
 				stateInstance.SetAPIKey(entry.apiKey)
-				if len(declaredModels) > 0 && len(pulledModels) == 0 {
+				if len(declaredModels) > 0 && len(pulledModels) == 0 && !s.autoDiscoverModels {
 					declaredMap := []string{}
 					for k, n := range declaredModels {
 						p := "model-data==nil"
@@ -949,7 +983,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 			Name:  m.ID,
 		})
 
-		// Only include declared models in pulledModels with enhanced info
+		// Include declared models (enhanced) or auto-discovered models (inferred caps).
 		if declaredModel, exists := declaredModels[m.ID]; exists {
 			modelResp := statetype.ModelPullStatus{
 				Name:          declaredModel.ID,
@@ -960,8 +994,9 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 				CanPrompt:     declaredModel.CanPrompt,
 				CanStream:     declaredModel.CanStream,
 			}
-
 			pulledModels = append(pulledModels, modelResp)
+		} else if s.autoDiscoverModels {
+			pulledModels = append(pulledModels, inferOpenAICapabilities(m.ID))
 		}
 	}
 
@@ -969,7 +1004,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 	stateInstance.Models = allModelNames
 	stateInstance.PulledModels = pulledModels
 	stateInstance.SetAPIKey(cfg.APIKey)
-	if len(declaredModels) > 0 && len(pulledModels) == 0 {
+	if len(declaredModels) > 0 && len(pulledModels) == 0 && !s.autoDiscoverModels {
 		declaredMap := []string{}
 		for k, n := range declaredModels {
 			p := "model-data==nil"
@@ -1040,4 +1075,86 @@ func fetchGeminiModelInfo(ctx context.Context, baseURL, modelName, apiKey string
 		CanStream:     canStream,
 	}, nil
 
+}
+
+// inferOpenAICapabilities assigns capabilities to an auto-discovered OpenAI model using
+// name-based heuristics. The OpenAI /v1/models endpoint returns only id/created/owned_by —
+// no capability metadata — so classification is done by model family prefix/suffix.
+//
+// Classification table (derived from the live OpenAI model list):
+//
+//	text-embedding-*                → CanEmbed only
+//	*-instruct*, davinci-*, babbage-*  → CanPrompt only (completion, not chat)
+//	dall-e-*, *-image-*, sora-*,
+//	chatgpt-image-*                 → image generation, none of our caps
+//	tts-*, *-tts*, whisper-*,
+//	*-audio-*, *-realtime-*,
+//	*-transcribe*, omni-moderation-* → audio/moderation, none of our caps
+//	o1-*, o3-*, o4-*, gpt-* (chat)  → CanChat + CanPrompt + CanStream
+//	everything else                 → CanChat=true (safe default, better than silent fail)
+func inferOpenAICapabilities(id string) statetype.ModelPullStatus {
+	lower := strings.ToLower(id)
+
+	canChat, canEmbed, canPrompt, canStream := false, false, false, false
+
+	switch {
+	// Embed-only
+	case strings.HasPrefix(lower, "text-embedding-"):
+		canEmbed = true
+
+	// Completion-only (prompt, not chat)
+	case strings.Contains(lower, "-instruct"),
+		strings.HasPrefix(lower, "davinci-"),
+		strings.HasPrefix(lower, "babbage-"):
+		canPrompt = true
+
+	// Image / video generation — none of our caps
+	case strings.HasPrefix(lower, "dall-e-"),
+		strings.HasPrefix(lower, "sora-"),
+		strings.HasPrefix(lower, "chatgpt-image-"),
+		strings.Contains(lower, "-image-") && !strings.HasPrefix(lower, "gpt-image-"):
+		// no caps
+
+	// gpt-image-* lines (e.g. gpt-image-1, gpt-image-1-mini, gpt-image-1.5)
+	case strings.HasPrefix(lower, "gpt-image-"):
+		// no caps
+
+	// Audio / TTS / realtime / transcription / moderation
+	case strings.HasPrefix(lower, "tts-"),
+		strings.HasSuffix(lower, "-tts"),
+		strings.Contains(lower, "-tts-"),
+		strings.HasPrefix(lower, "whisper-"),
+		strings.Contains(lower, "-audio-"),
+		strings.HasPrefix(lower, "gpt-audio"),
+		strings.HasPrefix(lower, "gpt-realtime"),
+		strings.Contains(lower, "-realtime-"),
+		strings.Contains(lower, "-transcribe"),
+		strings.HasPrefix(lower, "omni-"):
+		// no caps
+
+	// Chat models: gpt-* (general), o1/o3/o4 reasoning, gpt-5* families
+	case strings.HasPrefix(lower, "gpt-"),
+		strings.HasPrefix(lower, "o1"),
+		strings.HasPrefix(lower, "o3"),
+		strings.HasPrefix(lower, "o4"):
+		canChat = true
+		canPrompt = true
+		canStream = true
+
+	default:
+		// Unknown model: default to chat so it doesn't silently disappear.
+		canChat = true
+		canPrompt = true
+		canStream = true
+	}
+
+	return statetype.ModelPullStatus{
+		Name:          id,
+		Model:         id,
+		ContextLength: 0, // unknown; llmresolver treats 0 as "don't filter on context"
+		CanChat:       canChat,
+		CanEmbed:      canEmbed,
+		CanPrompt:     canPrompt,
+		CanStream:     canStream,
+	}
 }

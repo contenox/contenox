@@ -1,6 +1,6 @@
 module github.com/contenox/contenox
 
-go 1.24.5
+go 1.25.0
 
 require (
 	github.com/PaesslerAG/jsonpath v0.1.1
@@ -115,7 +115,7 @@ require (
 	golang.org/x/image v0.25.0 // indirect
 	golang.org/x/mod v0.30.0 // indirect
 	golang.org/x/net v0.46.0 // indirect
-	golang.org/x/oauth2 v0.34.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
