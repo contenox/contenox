@@ -252,9 +252,9 @@ website-clean:
 
 commit-docs: docs-markdown docs-html
 	git add $(PROJECT_ROOT)/docs $(PROJECT_ROOT)/website/docs
-	-git commit -Ss -m "chore: update api docs"
+	-git commit -S -m "chore: update api docs"
 
 release: docs-markdown docs-html
 	git add $(PROJECT_ROOT)/docs $(PROJECT_ROOT)/website/docs
-	-git commit -Ss -m "chore: update api docs for release"
+	-git commit -S -m "chore: update api docs for release"
 	@echo "Release assets prepared. Next.js site deploys via CI — no local build needed."
