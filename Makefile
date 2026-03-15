@@ -29,9 +29,9 @@ COMPOSE_CMD ?= docker compose -f compose.yaml -f compose.local.yaml
         test test-unit test-system test-contenoxcli \
         test-api test-api-full test-api-init wait-for-server \
         docs-gen docs-markdown docs-html \
-        website-dev website-build website-install website-clean \
+        website-dev site-build website-install website-clean \
         set-version bump-major bump-minor bump-patch \
-        commit-docs release vitepress-build enterprise-clean
+        commit-docs release enterprise-clean
 
 
 # --------------------------------------------------------------------
@@ -233,25 +233,26 @@ bump-minor:
 bump-major:
 	go run $(PROJECT_ROOT)/tools/version/main.go bump major
 
-vitepress-build: website-install
-	cd $(PROJECT_ROOT)/website-docs && npm run docs:build
+## Build the Next.js site (enterprise/site) — primarily for local validation.
+## The live site deploys automatically via CI on push to main.
+site-build: website-install
+	cd $(PROJECT_ROOT)/enterprise/site && npm run build
 
-## Local development server for the docs site (hot-reload)
+## Local dev server for the docs/marketing site (hot-reload)
 website-dev: website-install
-	cd $(PROJECT_ROOT)/website-docs && npm run docs:dev
+	cd $(PROJECT_ROOT)/enterprise/site && npm run dev
 
-## Install npm deps for website-docs (idempotent)
+## Install npm deps for enterprise/site (idempotent)
 website-install:
-	cd $(PROJECT_ROOT)/website-docs && npm install
+	cd $(PROJECT_ROOT)/enterprise/site && npm install
 
-## Wipe the VitePress build output (website/docs/)
+## Wipe the Next.js build cache
 website-clean:
-	rm -rf $(PROJECT_ROOT)/website/docs
+	rm -rf $(PROJECT_ROOT)/enterprise/site/.next
 
-commit-docs: docs-markdown vitepress-build docs-html
+commit-docs: docs-markdown docs-html
 	git add $(PROJECT_ROOT)/docs
-	git add $(PROJECT_ROOT)/website
 	git commit -m "chore: update docs"
 
-release: docs-markdown vitepress-build docs-html set-version
-	@echo "Release assets prepared."
+release: docs-markdown docs-html set-version
+	@echo "Release assets prepared. Next.js site deploys via CI — no local build needed."
