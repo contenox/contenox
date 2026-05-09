@@ -19,7 +19,7 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	h := localtools.NewLocalFSTools(tempDir)
+	h := localtools.NewLocalFSTools(tempDir, nil)
 	ctx := context.Background()
 	now := time.Now()
 

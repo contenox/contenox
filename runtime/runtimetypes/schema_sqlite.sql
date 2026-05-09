@@ -174,6 +174,13 @@ CREATE TABLE IF NOT EXISTS llm_model_registry (
 );
 CREATE INDEX IF NOT EXISTS idx_llm_model_registry_created_at ON llm_model_registry(created_at);
 
+CREATE TABLE IF NOT EXISTS local_fs_reads (
+    session_id    VARCHAR(255) NOT NULL DEFAULT '',
+    path          TEXT NOT NULL,
+    last_read_at  TIMESTAMP NOT NULL,
+    PRIMARY KEY (session_id, path)
+);
+
 -- libbus.SQLiteBus tables -----------------------------------------------
 
 CREATE TABLE IF NOT EXISTS bus_events (

@@ -2,6 +2,7 @@ package localtools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,21 +14,37 @@ import (
 	"strings"
 	"time"
 
+	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
 const LocalFSToolsName = "local_fs"
 
+// readBeforeWriteDenial is the LLM-facing message returned when the model tries
+// to mutate an existing file it has not read in this session. The model treats
+// it as a normal tool result and is expected to call read_file then retry.
+const readBeforeWriteDenial = "local_fs: cannot modify existing file %s without reading it first. Call local_fs.read_file(%q) to confirm the current contents, then retry."
+
 // LocalFSTools provides direct filesystem access tools.
+//
+// The tool tracks its own per-session read history in the local_fs_reads table
+// so that write_file / sed against an existing file can be blocked unless that
+// file has been read first this session. State ownership lives entirely with
+// this tool — the engine never sees the rule.
 type LocalFSTools struct {
 	allowedDir string
+	db         libdb.DBManager
 }
 
-// NewLocalFSTools creates a new instance of LocalFSTools.
-func NewLocalFSTools(allowedDir string) taskengine.ToolsRepo {
+// NewLocalFSTools creates a new instance of LocalFSTools. db may be nil; when
+// nil, the read-before-write guard degrades to a no-op (used by tests and
+// callers without a DB).
+func NewLocalFSTools(allowedDir string, db libdb.DBManager) taskengine.ToolsRepo {
 	return &LocalFSTools{
 		allowedDir: filepath.Clean(allowedDir),
+		db:         db,
 	}
 }
 
@@ -348,6 +365,7 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 	if err := h.checkToolOutputLimit(ctx, "read_file", out); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
+	h.recordRead(ctx, absPath)
 	return out, taskengine.DataTypeString, nil
 }
 
@@ -367,6 +385,10 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 	}
 	if err := h.checkDeniedSubstrings(ctx, absPath); err != nil {
 		return nil, taskengine.DataTypeAny, err
+	}
+
+	if denial, deny := h.requireReadBeforeMutation(ctx, absPath); deny {
+		return denial, taskengine.DataTypeString, nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
@@ -589,6 +611,10 @@ func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taske
 		return nil, taskengine.DataTypeAny, err
 	}
 
+	if denial, deny := h.requireReadBeforeMutation(ctx, absPath); deny {
+		return denial, taskengine.DataTypeString, nil
+	}
+
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
@@ -692,6 +718,7 @@ func (h *LocalFSTools) readFileRange(ctx context.Context, args map[string]any) (
 	if err := h.checkToolOutputLimit(ctx, "read_file_range", out); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
+	h.recordRead(ctx, absPath)
 	return out, taskengine.DataTypeString, nil
 }
 
@@ -746,7 +773,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "read_file",
-				Description: "Read the full content of a text file under the project root. For large files use read_file_range instead.",
+				Description: "Read the full content of a text file under the project root. For large files use read_file_range instead. Calling this is also a prerequisite for write_file or sed against an existing file — the path you read here unlocks subsequent mutations of that same path in this session.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -760,7 +787,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "write_file",
-				Description: "Write content to a file. Overwrites existing content. Creates directories if needed.",
+				Description: "Write content to a file. Overwrites existing content. Creates directories if needed. Modifying an existing file requires that you have first called read_file or read_file_range against the same path in this session — this guards against overwriting files you have not actually seen. Creating a brand-new file (path does not yet exist) needs no prior read.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -826,7 +853,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "sed",
-				Description: "Replace occurrences of a pattern with a replacement in a file",
+				Description: "Replace occurrences of a pattern with a replacement in a file. Requires that you have first called read_file or read_file_range against the same path in this session — modifying a file you have not seen is blocked.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -856,7 +883,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "read_file_range",
-				Description: "Read a contiguous range of lines from a file (1-based, inclusive end_line optional)",
+				Description: "Read a contiguous range of lines from a file (1-based, inclusive end_line optional). Like read_file, calling this satisfies the read-before-mutate prerequisite for write_file and sed against the same path in this session.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -898,3 +925,79 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 }
 
 var _ taskengine.ToolsRepo = (*LocalFSTools)(nil)
+
+// sessionIDFromContext returns the active session ID set by the chat command,
+// or "" when running outside a session (e.g. one-shot contenox run).
+func sessionIDFromContext(ctx context.Context) string {
+	v := ctx.Value(runtimetypes.SessionIDContextKey)
+	if v == nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+// recordRead persists that this session has read absPath. Errors are silent —
+// the read itself already succeeded; failing the tool call because of a tracker
+// glitch would be worse than letting the next write proceed unguarded.
+func (h *LocalFSTools) recordRead(ctx context.Context, absPath string) {
+	if h.db == nil {
+		return
+	}
+	sessionID := sessionIDFromContext(ctx)
+	if sessionID == "" {
+		return
+	}
+	exec := h.db.WithoutTransaction()
+	_, _ = exec.ExecContext(ctx,
+		`INSERT INTO local_fs_reads (session_id, path, last_read_at) VALUES (?, ?, ?)
+		 ON CONFLICT (session_id, path) DO UPDATE SET last_read_at = excluded.last_read_at`,
+		sessionID, absPath, time.Now().UTC(),
+	)
+}
+
+// hasPriorRead reports whether the current session has called read_file or
+// read_file_range against absPath. Returns true (fail-open) when no DB is
+// configured or no session ID is in scope, since the guard only applies when
+// the tool can scope its check.
+func (h *LocalFSTools) hasPriorRead(ctx context.Context, absPath string) bool {
+	if h.db == nil {
+		return true
+	}
+	sessionID := sessionIDFromContext(ctx)
+	if sessionID == "" {
+		return true
+	}
+	exec := h.db.WithoutTransaction()
+	var dummy string
+	err := exec.QueryRowContext(ctx,
+		`SELECT path FROM local_fs_reads WHERE session_id = ? AND path = ?`,
+		sessionID, absPath,
+	).Scan(&dummy)
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return false
+	}
+	// Any other DB error: fail open. A tracker outage shouldn't block the model.
+	return true
+}
+
+// requireReadBeforeMutation enforces the read-before-write contract for an
+// existing file. Returns (denialMessage, true) when the call should be denied
+// with a soft tool-result message; ("", false) when the call may proceed.
+// New files (not yet on disk) always pass through.
+func (h *LocalFSTools) requireReadBeforeMutation(ctx context.Context, absPath string) (string, bool) {
+	if _, err := os.Stat(absPath); err != nil {
+		if os.IsNotExist(err) {
+			return "", false
+		}
+		// Permission/IO error: let the actual write attempt surface it.
+		return "", false
+	}
+	if h.hasPriorRead(ctx, absPath) {
+		return "", false
+	}
+	return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
+}

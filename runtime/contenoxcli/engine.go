@@ -200,34 +200,19 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts, vfs
 }
 
 func buildTools(engineCtx context.Context, opts chatOpts, db libdbexec.DBManager, workspaceID string, tracker libtracker.ActivityTracker, bus libbus.Messenger, vfs vfsservice.Service) (*mcpworker.Manager, []string, taskengine.ToolsRepo, error) {
-	// LocalTools maps are separated for security and context boundaries:
-	// - localTools: Available directly to the native LLM context (e.g. executing tasks).
-	// - jsTools: Exposed specifically to the JS sandbox environment (macro executions).
-	//   Includes sandbox-safe tools and those needed by scripts (e.g. ssh, webtools),
-	//   preventing JS from accessing privileged host tools unless explicitly allowed.
 	localTools := map[string]taskengine.ToolsRepo{
 		"echo":     localtools.NewEchoTools(),
 		"print":    localtools.NewPrint(tracker),
 		"webtools": localtools.NewWebCaller(),
-		"local_fs": localtools.NewLocalFSTools(opts.EffectiveLocalExecAllowedDir),
+		"local_fs": localtools.NewLocalFSTools(opts.EffectiveLocalExecAllowedDir, db),
 	}
-	jsTools := map[string]taskengine.ToolsRepo{
-		"echo":     localtools.NewEchoTools(),
-		"print":    localtools.NewPrint(tracker),
-		"webtools": localtools.NewWebCaller(),
-	}
-	if sshTools, err := localtools.NewSSHTools(); err != nil {
-		slog.Debug("SSH tools not registered", "error", err)
-	} else {
-		jsTools["ssh"] = sshTools
-	}
+
 	if opts.EffectiveEnableLocalExec {
 		toolsOpts := []localtools.LocalExecOption{}
 		if opts.EffectiveLocalExecAllowedDir != "" {
 			toolsOpts = append(toolsOpts, localtools.WithLocalExecAllowedDir(opts.EffectiveLocalExecAllowedDir))
 		}
 		localExecTools := localtools.NewLocalExecTools(toolsOpts...)
-		jsTools["local_shell"] = localExecTools
 		localTools["local_shell"] = localExecTools
 	}
 
@@ -261,4 +246,3 @@ func buildTools(engineCtx context.Context, opts chatOpts, db libdbexec.DBManager
 
 	return mgr, localToolNames, toolsRepo, nil
 }
-
