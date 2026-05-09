@@ -203,7 +203,7 @@ func buildTools(engineCtx context.Context, opts chatOpts, db libdbexec.DBManager
 	localTools := map[string]taskengine.ToolsRepo{
 		"echo":     localtools.NewEchoTools(),
 		"print":    localtools.NewPrint(tracker),
-		"webtools": localtools.NewWebCaller(),
+		"webtools": localtools.NewWebCaller(tracker),
 		"local_fs": localtools.NewLocalFSTools(opts.EffectiveLocalExecAllowedDir, db),
 	}
 

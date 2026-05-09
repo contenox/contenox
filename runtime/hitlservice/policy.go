@@ -247,13 +247,19 @@ func validatePolicy(p *Policy) error {
 }
 
 // defaultPolicy returns the built-in policy used when hitl-policy.json is absent.
-// It mirrors the legacy defaultHITLTools set: write_file, sed, and local_shell require approval.
+// Mutating actions require approval: file writes, shell commands, and the
+// non-idempotent HTTP verbs from webtools. GET / HEAD remain default-allow
+// (the unmatched-default action is ActionAllow per evaluate()).
 func defaultPolicy() *Policy {
 	return &Policy{
 		Rules: []Rule{
 			{Tools: "local_fs", Tool: "write_file", Action: ActionApprove},
 			{Tools: "local_fs", Tool: "sed", Action: ActionApprove},
 			{Tools: "local_shell", Tool: "local_shell", Action: ActionApprove},
+			{Tools: "webtools", Tool: "web_post", Action: ActionApprove},
+			{Tools: "webtools", Tool: "web_put", Action: ActionApprove},
+			{Tools: "webtools", Tool: "web_patch", Action: ActionApprove},
+			{Tools: "webtools", Tool: "web_delete", Action: ActionApprove},
 		},
 	}
 }

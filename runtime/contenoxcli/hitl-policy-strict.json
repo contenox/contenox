@@ -5,6 +5,12 @@
     {"tools": "local_fs",    "tool": "list_files",  "action": "allow"},
     {"tools": "local_fs",    "tool": "write_file",  "action": "approve"},
     {"tools": "local_fs",    "tool": "sed",         "action": "approve"},
-    {"tools": "local_shell", "tool": "local_shell", "action": "approve"}
+    {"tools": "local_shell", "tool": "local_shell", "action": "approve"},
+    {"tools": "webtools",    "tool": "web_get",     "action": "allow"},
+    {"tools": "webtools",    "tool": "web_head",    "action": "allow"},
+    {"tools": "webtools",    "tool": "web_post",    "action": "approve"},
+    {"tools": "webtools",    "tool": "web_put",     "action": "approve"},
+    {"tools": "webtools",    "tool": "web_patch",   "action": "approve"},
+    {"tools": "webtools",    "tool": "web_delete",  "action": "approve"}
   ]
 }
