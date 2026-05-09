@@ -367,7 +367,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 		return nil, fmt.Errorf("unknown tools: %s", name)
 	}
 	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
-	desc := "Run a terminal command on the local host. Input is passed as stdin."
+	desc := "Run a terminal command on the local host. Input is passed as stdin. For inspecting or modifying files within the project, prefer the local_fs.* tools — they enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for genuine shell operations: running tests, builds, git, environment inspection, etc."
 	if len(allowedCommands) > 0 {
 		desc += " Allowed commands: " + strings.Join(allowedCommands, ", ") + "."
 	}

@@ -220,3 +220,83 @@ func keys(m map[string][]string) []string {
 	}
 	return ks
 }
+
+// ── auto-injected TOOL PREFERENCE ──────────────────────────────────────────────
+
+// sysInstrEnv captures the expanded system_instruction from the first task.
+type sysInstrEnv struct{}
+
+func (n *sysInstrEnv) ExecEnv(_ context.Context, chain *taskengine.TaskChainDefinition, input any, _ taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
+	if len(chain.Tasks) > 0 {
+		return chain.Tasks[0].SystemInstruction, taskengine.DataTypeString, nil, nil
+	}
+	return input, taskengine.DataTypeString, nil, nil
+}
+
+func runSysInstrExpand(t *testing.T, repo taskengine.ToolsRepo, sysInstruction string, tools []string) string {
+	t.Helper()
+	env, err := taskengine.NewMacroEnv(&sysInstrEnv{}, repo)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := &taskengine.TaskChainDefinition{
+		ID: "test-chain",
+		Tasks: []taskengine.TaskDefinition{
+			{
+				ID:                "task1",
+				Handler:           taskengine.HandleChatCompletion,
+				SystemInstruction: sysInstruction,
+				ExecuteConfig:     &taskengine.LLMExecutionConfig{Model: "test", Tools: tools},
+				Transition:        taskengine.TaskTransition{Branches: []taskengine.TransitionBranch{{Operator: "default", Goto: "end"}}},
+			},
+		},
+	}
+	raw, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "", taskengine.DataTypeChatHistory)
+	if err != nil {
+		t.Fatalf("ExecEnv: %v", err)
+	}
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", raw)
+	}
+	return s
+}
+
+func fsAndShellRepo() *stubToolsRepo {
+	return &stubToolsRepo{names: map[string][]taskengine.Tool{
+		"local_fs":    {tool("read_file"), tool("write_file"), tool("sed")},
+		"local_shell": {tool("local_shell")},
+		"webtools":    {tool("webtools")},
+	}}
+}
+
+func TestUnit_MacroEnv_ToolPreference_InjectedWhenBothPresent(t *testing.T) {
+	out := runSysInstrExpand(t, fsAndShellRepo(), "You are an agent.", []string{"*"})
+	if !strings.Contains(out, "TOOL PREFERENCE") {
+		t.Fatalf("expected TOOL PREFERENCE injection when both local_fs and local_shell are allowed, got:\n%s", out)
+	}
+	if !strings.Contains(out, "local_fs") || !strings.Contains(out, "local_shell") {
+		t.Errorf("preference paragraph must reference both groups: %s", out)
+	}
+}
+
+func TestUnit_MacroEnv_ToolPreference_SkippedWhenLocalShellAbsent(t *testing.T) {
+	out := runSysInstrExpand(t, fsAndShellRepo(), "You are an agent.", []string{"local_fs", "webtools"})
+	if strings.Contains(out, "TOOL PREFERENCE") {
+		t.Errorf("preference must not be injected when local_shell is excluded: %s", out)
+	}
+}
+
+func TestUnit_MacroEnv_ToolPreference_SkippedWhenLocalFSAbsent(t *testing.T) {
+	out := runSysInstrExpand(t, fsAndShellRepo(), "You are an agent.", []string{"local_shell", "webtools"})
+	if strings.Contains(out, "TOOL PREFERENCE") {
+		t.Errorf("preference must not be injected when local_fs is excluded: %s", out)
+	}
+}
+
+func TestUnit_MacroEnv_ToolPreference_SkippedWhenNoTools(t *testing.T) {
+	out := runSysInstrExpand(t, fsAndShellRepo(), "You are an agent.", []string{})
+	if strings.Contains(out, "TOOL PREFERENCE") {
+		t.Errorf("preference must not be injected when allowlist is empty: %s", out)
+	}
+}

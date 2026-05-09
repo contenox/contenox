@@ -100,15 +100,28 @@ func (m *MacroEnv) ExecEnv(
 				return nil, DataTypeAny, nil, fmt.Errorf("task %s: system_instruction macro error: %w", t.ID, err)
 			}
 
+			// Resolve the allowlist once — both auto-injections below need it.
+			var allowed []string
+			if len(allowlist) > 0 {
+				allowed, _ = resolveToolsNames(ctx, allowlist, m.toolsProvider)
+			}
+
 			// Auto-append tools summary if tools are available and not already mentioned
-			if len(allowlist) > 0 && !strings.Contains(t.SystemInstruction, "Available tools") && !strings.Contains(t.SystemInstruction, "tool") {
-				allowed, _ := resolveToolsNames(ctx, allowlist, m.toolsProvider)
-				if len(allowed) > 0 {
-					summary, _ := m.renderToolsAndToolsJSON(ctx, allowed)
-					if summary != "" {
-						t.SystemInstruction += "\n\nAvailable tools (tools -> function names):\n" + summary
-					}
+			if len(allowed) > 0 && !strings.Contains(t.SystemInstruction, "Available tools") && !strings.Contains(t.SystemInstruction, "tool") {
+				summary, _ := m.renderToolsAndToolsJSON(ctx, allowed)
+				if summary != "" {
+					t.SystemInstruction += "\n\nAvailable tools (tools -> function names):\n" + summary
 				}
+			}
+
+			// Auto-append a preference nudge when both file-touching tool groups
+			// are available. local_fs enforces a read-before-write contract,
+			// sandbox boundaries, and size limits that local_shell does not, so
+			// when both are exposed we steer the model toward local_fs for file
+			// ops. Chain authors who want different behaviour exclude one of the
+			// groups from the task's tools allowlist.
+			if containsAll(allowed, "local_fs", "local_shell") {
+				t.SystemInstruction += "\n\nTOOL PREFERENCE: For inspecting or modifying files in the project, prefer the local_fs.* tools over their local_shell equivalents (cat / head / tail / grep / sed against files). local_fs enforces sandbox boundaries, output-size limits, denied-path policies, and a read-before-write contract that local_shell does not. Use local_shell only for genuine shell operations: running tests, builds, git, environment inspection."
 			}
 		}
 
@@ -226,6 +239,23 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, al
 	default:
 		return original, nil
 	}
+}
+
+// containsAll reports whether names contains every required entry.
+func containsAll(names []string, required ...string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	have := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		have[n] = struct{}{}
+	}
+	for _, r := range required {
+		if _, ok := have[r]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *MacroEnv) renderToolsNamesJSON(names []string) (string, error) {
