@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCatalogProvider_ListModels(t *testing.T) {
+func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "test-key", r.Header.Get("X-Goog-Api-Key"))
 		w.Header().Set("Content-Type", "application/json")
@@ -25,7 +25,7 @@ func TestCatalogProvider_ListModels(t *testing.T) {
 			})
 		case "/v1beta/models/gemini-2.5-flash":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"name": "models/gemini-2.5-flash",
+				"name":            "models/gemini-2.5-flash",
 				"inputTokenLimit": 8192,
 				"supportedGenerationMethods": []string{
 					"generateContent",

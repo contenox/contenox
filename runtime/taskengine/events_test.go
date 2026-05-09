@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/contenox/runtime/internal/tools"
-	"github.com/contenox/contenox/runtime/internal/llmrepo"
-	libmodelprovider "github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/contenox/contenox/libbus"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/llmrepo"
+	libmodelprovider "github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/contenox/runtime/internal/tools"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,7 +58,7 @@ func (m *mockModelRepo) Stream(ctx context.Context, req llmrepo.Request, message
 	return m.streamFunc(ctx, req, messages, opts...)
 }
 
-func TestTaskEvents_ExecEnvLifecycle(t *testing.T) {
+func TestUnit_TaskEvents_ExecEnvLifecycle(t *testing.T) {
 	sink := &captureTaskEventSink{}
 	constructorCtx := taskengine.WithTaskEventSink(context.Background(), sink)
 
@@ -81,7 +81,7 @@ func TestTaskEvents_ExecEnvLifecycle(t *testing.T) {
 		},
 	}
 
-	_, _, _, err = env.ExecEnv(context.Background(), chain, "input", taskengine.DataTypeString)
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "input", taskengine.DataTypeString)
 	require.NoError(t, err)
 	require.Len(t, sink.events, 4)
 	assert.Equal(t, []taskengine.TaskEventKind{
@@ -101,7 +101,7 @@ func TestTaskEvents_ExecEnvLifecycle(t *testing.T) {
 	assert.Equal(t, "string", sink.events[2].OutputType)
 }
 
-func TestTaskEvents_ExecEnvFailureLifecycle(t *testing.T) {
+func TestUnit_TaskEvents_ExecEnvFailureLifecycle(t *testing.T) {
 	sink := &captureTaskEventSink{}
 	constructorCtx := taskengine.WithTaskEventSink(context.Background(), sink)
 
@@ -120,7 +120,7 @@ func TestTaskEvents_ExecEnvFailureLifecycle(t *testing.T) {
 		},
 	}
 
-	_, _, _, err = env.ExecEnv(context.Background(), chain, "input", taskengine.DataTypeString)
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "input", taskengine.DataTypeString)
 	require.Error(t, err)
 	require.Len(t, sink.events, 4)
 	assert.Equal(t, taskengine.TaskEventStepFailed, sink.events[2].Kind)
@@ -128,7 +128,7 @@ func TestTaskEvents_ExecEnvFailureLifecycle(t *testing.T) {
 	assert.Contains(t, sink.events[3].Error, "failed after")
 }
 
-func TestTaskEvents_PromptStreamingPublishesChunks(t *testing.T) {
+func TestUnit_TaskEvents_PromptStreamingPublishesChunks(t *testing.T) {
 	sink := &captureTaskEventSink{}
 	constructorCtx := taskengine.WithTaskEventSink(context.Background(), sink)
 
@@ -173,7 +173,7 @@ func TestTaskEvents_PromptStreamingPublishesChunks(t *testing.T) {
 		},
 	}
 
-	result, _, _, err := env.ExecEnv(context.Background(), chain, "world", taskengine.DataTypeString)
+	result, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "world", taskengine.DataTypeString)
 	require.NoError(t, err)
 	assert.Equal(t, "hello world", result)
 
@@ -201,7 +201,7 @@ func TestTaskEvents_PromptStreamingPublishesChunks(t *testing.T) {
 	assert.Equal(t, "test-model", chunks[2].ModelName)
 }
 
-func TestBusTaskEventSink_PublishesBroadAndRequestSubjects(t *testing.T) {
+func TestUnit_BusTaskEventSink_PublishesBroadAndRequestSubjects(t *testing.T) {
 	bus := libbus.NewInMem()
 	defer bus.Close()
 
@@ -238,7 +238,7 @@ func TestBusTaskEventSink_PublishesBroadAndRequestSubjects(t *testing.T) {
 	}
 }
 
-func TestBusTaskEventSink_BoundsPublishTime(t *testing.T) {
+func TestUnit_BusTaskEventSink_BoundsPublishTime(t *testing.T) {
 	bus := libbus.NewInMem()
 	defer bus.Close()
 
@@ -262,3 +262,101 @@ func TestBusTaskEventSink_BoundsPublishTime(t *testing.T) {
 
 var _ llmrepo.ModelRepo = (*mockModelRepo)(nil)
 var _ taskengine.TaskEventSink = (*captureTaskEventSink)(nil)
+
+func TestUnit_TaskEvents_StepStartedCarriesModelAndProvider(t *testing.T) {
+	sink := &captureTaskEventSink{}
+	constructorCtx := taskengine.WithTaskEventSink(context.Background(), sink)
+
+	env, err := taskengine.NewEnv(constructorCtx, libtracker.NoopTracker{}, &taskengine.MockTaskExecutor{
+		MockOutput:          "done",
+		MockTransitionValue: "done",
+	}, taskengine.NewSimpleInspector(), tools.NewMockToolsRegistry())
+	require.NoError(t, err)
+
+	chain := &taskengine.TaskChainDefinition{
+		ID: "chain.model-scope",
+		Tasks: []taskengine.TaskDefinition{
+			{
+				ID:      "task1",
+				Handler: taskengine.HandleNoop,
+				ExecuteConfig: &taskengine.LLMExecutionConfig{
+					Model:    "gemini-2.5-flash",
+					Provider: "gemini",
+				},
+				Transition: taskengine.TaskTransition{
+					Branches: []taskengine.TransitionBranch{{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd}},
+				},
+			},
+		},
+	}
+
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "input", taskengine.DataTypeString)
+	require.NoError(t, err)
+
+	// Find StepStarted event
+	var stepStarted *taskengine.TaskEvent
+	for i := range sink.events {
+		if sink.events[i].Kind == taskengine.TaskEventStepStarted {
+			stepStarted = &sink.events[i]
+			break
+		}
+	}
+	require.NotNil(t, stepStarted, "expected a StepStarted event")
+	assert.Equal(t, "gemini-2.5-flash", stepStarted.ModelName)
+	assert.Equal(t, "gemini", stepStarted.ProviderType)
+}
+
+func TestUnit_TaskEvents_StepCompletedToolNamesForExecuteToolCalls(t *testing.T) {
+	sink := &captureTaskEventSink{}
+	constructorCtx := taskengine.WithTaskEventSink(context.Background(), sink)
+
+	// Mock executor that returns a ChatHistory with tool calls + tool results
+	// simulating what execute_tool_calls produces.
+	toolCallHistory := taskengine.ChatHistory{
+		Messages: []taskengine.Message{
+			{Role: "user", Content: "do something"},
+			{
+				Role: "assistant",
+				CallTools: []taskengine.ToolCall{
+					{ID: "call_1", Function: taskengine.FunctionCall{Name: "local_fs.read_file", Arguments: `{"path":"foo.go"}`}},
+					{ID: "call_2", Function: taskengine.FunctionCall{Name: "local_shell.exec", Arguments: `{"command":"ls"}`}},
+				},
+			},
+			{Role: "tool", Content: "file contents", ToolCallID: "call_1"},
+			{Role: "tool", Content: "file list", ToolCallID: "call_2"},
+		},
+	}
+
+	env, err := taskengine.NewEnv(constructorCtx, libtracker.NoopTracker{}, &taskengine.MockTaskExecutor{
+		MockOutput:          toolCallHistory,
+		MockTransitionValue: "tools_executed",
+	}, taskengine.NewSimpleInspector(), tools.NewMockToolsRegistry())
+	require.NoError(t, err)
+
+	chain := &taskengine.TaskChainDefinition{
+		ID: "chain.tool-names",
+		Tasks: []taskengine.TaskDefinition{
+			{
+				ID:      "run_tools",
+				Handler: taskengine.HandleExecuteToolCalls,
+				Transition: taskengine.TaskTransition{
+					Branches: []taskengine.TransitionBranch{{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd}},
+				},
+			},
+		},
+	}
+
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, toolCallHistory, taskengine.DataTypeChatHistory)
+	require.NoError(t, err)
+
+	// Find StepCompleted event
+	var stepCompleted *taskengine.TaskEvent
+	for i := range sink.events {
+		if sink.events[i].Kind == taskengine.TaskEventStepCompleted {
+			stepCompleted = &sink.events[i]
+			break
+		}
+	}
+	require.NotNil(t, stepCompleted, "expected a StepCompleted event")
+	assert.Equal(t, []string{"local_fs.read_file", "local_shell.exec"}, stepCompleted.ToolNames)
+}

@@ -17,7 +17,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
-const localFSToolsName = "local_fs"
+const LocalFSToolsName = "local_fs"
 
 // LocalFSTools provides direct filesystem access tools.
 type LocalFSTools struct {
@@ -142,7 +142,7 @@ func argFloat(args map[string]any, key string) (v float64, ok bool) {
 // maxListDepthFromPolicy caps recursion depth for list_dir(recursive). tools_policies.local_fs: _max_list_depth — default 6.
 func (h *LocalFSTools) maxListDepthFromPolicy(ctx context.Context) int {
 	const defaultDepth = 6
-	args := taskengine.ToolsArgsFromContext(ctx, localFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
 	if args == nil {
 		return defaultDepth
 	}
@@ -163,7 +163,7 @@ func (h *LocalFSTools) maxListDepthFromPolicy(ctx context.Context) int {
 // maxGrepMatchesFromPolicy stops grep after this many lines (error: narrow pattern/range). tools_policies.local_fs: _max_grep_matches — default 5000.
 func (h *LocalFSTools) maxGrepMatchesFromPolicy(ctx context.Context) int {
 	const defaultMax = 5000
-	args := taskengine.ToolsArgsFromContext(ctx, localFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
 	if args == nil {
 		return defaultMax
 	}
@@ -216,7 +216,7 @@ func grepLineRange(args map[string]any, numLines int) (start, end int) {
 // Chain policy keys (tools_policies.local_fs): _max_output_bytes — default 524288 (512 KiB) when unset.
 // Non-positive means unlimited.
 func (h *LocalFSTools) maxOutputBytesFromPolicy(ctx context.Context) (limit int64, unlimited bool) {
-	args := taskengine.ToolsArgsFromContext(ctx, localFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
 	if args == nil {
 		return 512 * 1024, false
 	}
@@ -251,7 +251,7 @@ func (h *LocalFSTools) checkToolOutputLimit(ctx context.Context, tool string, pa
 // maxReadBytesFromPolicy returns the max bytes for a full-file read. Non-positive means unlimited.
 // Chain policy keys (tools_policies.local_fs): _max_read_bytes — default 1048576 (1 MiB) when unset.
 func (h *LocalFSTools) maxReadBytesFromPolicy(ctx context.Context) (limit int64, unlimited bool) {
-	args := taskengine.ToolsArgsFromContext(ctx, localFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
 	if args == nil {
 		return 1024 * 1024, false
 	}
@@ -279,7 +279,7 @@ func (h *LocalFSTools) checkDeniedSubstrings(ctx context.Context, absPath string
 		return fmt.Errorf("local_fs: rel path: %w", err)
 	}
 	rel = filepath.ToSlash(rel)
-	args := taskengine.ToolsArgsFromContext(ctx, localFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
 	if args == nil {
 		return nil
 	}
@@ -350,10 +350,8 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 	}
 	// Emit a file_excerpt widget hint so the Beam UI renders an inline
 	// FileView card adjacent to the assistant message that triggered this
-	// read. Hints reuse the artifact-kind vocabulary (see
-	// chatsessionmodes/artifact_kinds.go); the UI maps file_excerpt → a
-	// file_view InlineAttachment via artifactsToInlineAttachments. Missing
-	// sink (non-Beam caller) makes this a no-op. See taskengine/widget_hint.go.
+	// read. Missing sink (non-Beam caller) makes this a no-op.
+	// See taskengine/widget_hint.go.
 	taskengine.AppendWidgetHintTyped(ctx, "file_excerpt", map[string]any{
 		"path":      path,
 		"text":      out,
@@ -741,7 +739,7 @@ func (h *LocalFSTools) statFile(ctx context.Context, args map[string]any) (any, 
 }
 
 func (h *LocalFSTools) Supports(ctx context.Context) ([]string, error) {
-	return []string{localFSToolsName, "read_file", "write_file", "list_dir", "grep", "sed", "count_stats", "read_file_range", "stat_file"}, nil
+	return []string{LocalFSToolsName, "read_file", "write_file", "list_dir", "grep", "sed", "count_stats", "read_file_range", "stat_file"}, nil
 }
 
 func (h *LocalFSTools) GetSchemasForSupportedTools(ctx context.Context) (map[string]*openapi3.T, error) {
@@ -895,7 +893,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 		},
 	}
 
-	if name == localFSToolsName {
+	if name == LocalFSToolsName {
 		return allTools, nil
 	}
 

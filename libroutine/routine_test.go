@@ -27,7 +27,7 @@ func quiet() func() {
 	}
 }
 
-func TestCircuitBreaker_ClosedState_AllowsExecution(t *testing.T) {
+func TestUnit_CircuitBreaker_ClosedState_AllowsExecution(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(3, time.Second)
 
@@ -44,7 +44,7 @@ func TestCircuitBreaker_ClosedState_AllowsExecution(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
+func TestUnit_CircuitBreaker_OpensAfterFailures(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(1, 500*time.Millisecond)
 
@@ -61,7 +61,7 @@ func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
+func TestUnit_CircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(1, 200*time.Millisecond)
 
@@ -90,7 +90,7 @@ func TestCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_RecoversFromHalfOpenOnSuccess(t *testing.T) {
+func TestUnit_CircuitBreaker_RecoversFromHalfOpenOnSuccess(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(1, 200*time.Millisecond)
 
@@ -117,7 +117,7 @@ func TestCircuitBreaker_RecoversFromHalfOpenOnSuccess(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_ReopensAfterFailureInHalfOpen(t *testing.T) {
+func TestUnit_CircuitBreaker_ReopensAfterFailureInHalfOpen(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(1, 200*time.Millisecond)
 
@@ -140,7 +140,7 @@ func TestCircuitBreaker_ReopensAfterFailureInHalfOpen(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_LoopExecutesFunction(t *testing.T) {
+func TestUnit_CircuitBreaker_LoopExecutesFunction(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(1, time.Second)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -167,7 +167,7 @@ func TestCircuitBreaker_LoopExecutesFunction(t *testing.T) {
 		t.Errorf("expected loop to execute at least 2 calls, got %d", callCount)
 	}
 }
-func TestCircuitBreaker_GetState(t *testing.T) {
+func TestUnit_CircuitBreaker_GetState(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(2, time.Second)
 
@@ -188,7 +188,7 @@ func TestCircuitBreaker_GetState(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_GetThreshold(t *testing.T) {
+func TestUnit_CircuitBreaker_GetThreshold(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(3, time.Second)
 
@@ -197,7 +197,7 @@ func TestCircuitBreaker_GetThreshold(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_GetResetTimeout(t *testing.T) {
+func TestUnit_CircuitBreaker_GetResetTimeout(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(3, 2*time.Second)
 
@@ -205,7 +205,7 @@ func TestCircuitBreaker_GetResetTimeout(t *testing.T) {
 		t.Errorf("expected reset timeout to be 2 seconds, got %v", rm.GetResetTimeout())
 	}
 }
-func TestCircuitBreaker_ForceOpen(t *testing.T) {
+func TestUnit_CircuitBreaker_ForceOpen(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(2, time.Second)
 
@@ -219,7 +219,7 @@ func TestCircuitBreaker_ForceOpen(t *testing.T) {
 	}
 }
 
-func TestCircuitBreaker_ForceClose(t *testing.T) {
+func TestUnit_CircuitBreaker_ForceClose(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(2, time.Second)
 
@@ -238,7 +238,7 @@ func TestCircuitBreaker_ForceClose(t *testing.T) {
 
 // TestRoutine_Execute_ReturnsErrCircuitOpen specifically verifies that Execute
 // returns the correct error type when the circuit is open.
-func TestRoutine_Execute_ReturnsErrCircuitOpen(t *testing.T) {
+func TestUnit_CircuitBreaker_ExecuteReturnsErrCircuitOpen(t *testing.T) {
 	defer quiet()()
 	rm := libroutine.NewRoutine(1, time.Minute) // Long timeout
 
@@ -256,7 +256,7 @@ func TestRoutine_Execute_ReturnsErrCircuitOpen(t *testing.T) {
 }
 
 // TestSuite for ExecuteWithRetry
-func TestRoutine_ExecuteWithRetry(t *testing.T) {
+func TestUnit_CircuitBreaker_ExecuteWithRetry(t *testing.T) {
 	defer quiet()()
 	t.Run("SuccessFirstTry", func(t *testing.T) {
 		rm := libroutine.NewRoutine(1, time.Minute)
@@ -415,7 +415,7 @@ func TestRoutine_Loop_Trigger(t *testing.T) {
 	}
 }
 
-func TestRoutine_Loop_ErrHandling(t *testing.T) {
+func TestUnit_CircuitBreaker_Loop_ErrHandling(t *testing.T) {
 	defer quiet()()
 	resetTimeout := 200 * time.Millisecond // Short reset timeout
 	interval := 20 * time.Millisecond      // Short interval for trigger sleep

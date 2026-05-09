@@ -1,8 +1,12 @@
-package taskengine
+package taskengine_test
 
-import "testing"
+import (
+	"testing"
 
-func TestExtractJSONObject(t *testing.T) {
+	"github.com/contenox/contenox/runtime/taskengine"
+)
+
+func TestUnit_ExtractJSONObject(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		in, want string
@@ -12,7 +16,7 @@ func TestExtractJSONObject(t *testing.T) {
 		{"```json\n{\"x\":1}\n```", `{"x":1}`},
 	}
 	for _, tc := range cases {
-		got := ExtractJSONObject(tc.in)
+		got := taskengine.ExtractJSONObject(tc.in)
 		if got != tc.want {
 			t.Errorf("ExtractJSONObject(%q) = %q want %q", tc.in, got, tc.want)
 		}

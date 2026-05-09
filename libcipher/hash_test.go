@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestNewHash(t *testing.T) {
+func TestUnit_NewHash(t *testing.T) {
 	data := []byte("hello world")
 	key := []byte("secret-key")
 	salt := []byte(uuid.NewString())
@@ -26,7 +26,7 @@ func TestNewHash(t *testing.T) {
 	}
 }
 
-func TestEqual_SameHash(t *testing.T) {
+func TestUnit_Equal_SameHash(t *testing.T) {
 	data := []byte("test message")
 	key := []byte("another-secret")
 	salt := []byte(uuid.NewString())
@@ -46,7 +46,7 @@ func TestEqual_SameHash(t *testing.T) {
 	}
 }
 
-func TestEqual_DifferentHashes(t *testing.T) {
+func TestUnit_Equal_DifferentHashes(t *testing.T) {
 	data := []byte("test message")
 	key := []byte("another-secret")
 	salt := []byte(uuid.NewString())
@@ -74,7 +74,7 @@ func TestEqual_DifferentHashes(t *testing.T) {
 	}
 }
 
-func TestEqual_ModifiedSalt(t *testing.T) {
+func TestUnit_Equal_ModifiedSalt(t *testing.T) {
 	data := []byte("sensitive data")
 	key := []byte("my-signing-key")
 	salt := []byte(uuid.NewString())

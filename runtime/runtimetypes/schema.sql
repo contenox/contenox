@@ -157,45 +157,9 @@ ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS headers_json JSONB DEFAULT '{}'
 ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS inject_params_json JSONB DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);
 
-CREATE TABLE IF NOT EXISTS plans (
-    id         VARCHAR(255) PRIMARY KEY,
-    name       VARCHAR(255) NOT NULL,
-    workspace_id VARCHAR(255) NOT NULL DEFAULT '',
-    goal       TEXT         NOT NULL,
-    status     VARCHAR(50)  NOT NULL DEFAULT 'active',
-    session_id VARCHAR(255),
-    compiled_chain_json          TEXT,
-    compiled_chain_id            VARCHAR(255),
-    compile_executor_chain_id    VARCHAR(255),
-    created_at TIMESTAMP    NOT NULL,
-    updated_at TIMESTAMP    NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_name_workspace ON plans (name, workspace_id);
-ALTER TABLE plans ADD COLUMN IF NOT EXISTS compiled_chain_json TEXT;
-ALTER TABLE plans ADD COLUMN IF NOT EXISTS compiled_chain_id VARCHAR(255);
-ALTER TABLE plans ADD COLUMN IF NOT EXISTS compile_executor_chain_id VARCHAR(255);
-
-CREATE TABLE IF NOT EXISTS plan_steps (
-    id                    VARCHAR(255) PRIMARY KEY,
-    plan_id               VARCHAR(255) NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
-    ordinal               INT          NOT NULL,
-    description           TEXT         NOT NULL,
-    status                VARCHAR(50)  NOT NULL DEFAULT 'pending',
-    execution_result      TEXT         NOT NULL DEFAULT '',
-    executed_at           TIMESTAMP,
-    summary               TEXT,
-    chat_history_json     TEXT,
-    summary_error         TEXT,
-    last_failure_summary  TEXT,
-    UNIQUE (plan_id, ordinal)
-);
-CREATE INDEX IF NOT EXISTS idx_plan_steps_plan_id ON plan_steps(plan_id);
-
--- plan_steps: typed-handover columns for existing DBs (see planstore/summary.go).
-ALTER TABLE plan_steps ADD COLUMN IF NOT EXISTS summary              TEXT;
-ALTER TABLE plan_steps ADD COLUMN IF NOT EXISTS chat_history_json    TEXT;
-ALTER TABLE plan_steps ADD COLUMN IF NOT EXISTS summary_error        TEXT;
-ALTER TABLE plan_steps ADD COLUMN IF NOT EXISTS last_failure_summary TEXT;
+-- plan-review feature removed: drop orphaned tables on upgraded databases.
+DROP TABLE IF EXISTS plan_steps CASCADE;
+DROP TABLE IF EXISTS plans CASCADE;
 
 CREATE TABLE IF NOT EXISTS llm_model_registry (
     id          VARCHAR(255) PRIMARY KEY,

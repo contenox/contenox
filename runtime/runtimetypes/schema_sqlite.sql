@@ -146,36 +146,6 @@ CREATE INDEX IF NOT EXISTS idx_event_triggers_created_at ON event_triggers(creat
 CREATE INDEX IF NOT EXISTS idx_event_triggers_listen_for_type ON event_triggers(listen_for_type);
 CREATE INDEX IF NOT EXISTS idx_event_triggers_function_name ON event_triggers(function_name);
 
-CREATE TABLE IF NOT EXISTS plans (
-    id VARCHAR(255) PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    workspace_id VARCHAR(255) NOT NULL DEFAULT '',
-    goal TEXT NOT NULL,
-    status VARCHAR(50) DEFAULT 'active',
-    session_id VARCHAR(255),
-    compiled_chain_json          TEXT,
-    compiled_chain_id            VARCHAR(255),
-    compile_executor_chain_id    VARCHAR(255),
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
-);
-CREATE TABLE IF NOT EXISTS plan_steps (
-    id VARCHAR(255) PRIMARY KEY,
-    plan_id VARCHAR(255) REFERENCES plans(id) ON DELETE CASCADE,
-    ordinal INTEGER NOT NULL,
-    description TEXT NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending', -- pending | completed | failed | skipped
-    execution_result TEXT,                -- legacy single-string fallback; superseded by summary JSON
-    executed_at TIMESTAMP,
-    summary TEXT,                         -- planstore.SummaryDoc JSON; written by plan_summary persist tools
-    chat_history_json TEXT,               -- raw executor ChatHistory (debug + Retry context)
-    summary_error TEXT,                   -- populated by plan_summary fallback when both validation attempts failed
-    last_failure_summary TEXT,            -- prior attempt's Summary/ExecutionResult, moved here by Retry
-    UNIQUE(plan_id, ordinal)
-);
-
-CREATE INDEX IF NOT EXISTS idx_plan_steps_plan ON plan_steps(plan_id, ordinal);
-
 CREATE TABLE IF NOT EXISTS mcp_servers (
     id                      VARCHAR(255) PRIMARY KEY,
     name                    VARCHAR(255) NOT NULL UNIQUE,
@@ -242,27 +212,9 @@ ALTER TABLE remote_tools ADD COLUMN spec_url           TEXT;
 ALTER TABLE mcp_servers ADD COLUMN headers_json        TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE mcp_servers ADD COLUMN inject_params_json  TEXT NOT NULL DEFAULT '{}';
 
--- plans: workspace_id added after initial release
-ALTER TABLE plans ADD COLUMN workspace_id VARCHAR(255) NOT NULL DEFAULT '';
-CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_name_workspace ON plans (name, workspace_id);
-
--- plans: cached plancompile output (must match planstore + planstore/store queries)
-ALTER TABLE plans ADD COLUMN compiled_chain_json TEXT;
-ALTER TABLE plans ADD COLUMN compiled_chain_id VARCHAR(255);
-ALTER TABLE plans ADD COLUMN compile_executor_chain_id VARCHAR(255);
--- plans: typed repo_context_json produced by chain-plan-explorer.json and
--- rendered into every step seed as {{var:repo_context}}.
-ALTER TABLE plans ADD COLUMN repo_context_json TEXT;
-
--- plan_steps: typed-handover columns (planstore.SummaryDoc JSON + debug + Retry context).
--- See planstore/summary.go for the schema and localtools.PlanSummaryTools for the writers.
-ALTER TABLE plan_steps ADD COLUMN summary              TEXT;
-ALTER TABLE plan_steps ADD COLUMN chat_history_json    TEXT;
-ALTER TABLE plan_steps ADD COLUMN summary_error        TEXT;
-ALTER TABLE plan_steps ADD COLUMN last_failure_summary TEXT;
--- plan_steps: failure classification used by 'plan next --auto' to decide
--- whether to auto-replan a failed step. See planstore.FailureClass.
-ALTER TABLE plan_steps ADD COLUMN failure_class        VARCHAR(50);
+-- plan-review feature removed: drop orphaned tables on upgraded databases.
+DROP TABLE IF EXISTS plan_steps;
+DROP TABLE IF EXISTS plans;
 
 -- kv: workspace_id added after initial release (required for workspace-scoped config
 -- and the ON CONFLICT (key, workspace_id) upsert used by SetKV / SetWorkspaceKV).

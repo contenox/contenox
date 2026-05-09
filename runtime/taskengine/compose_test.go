@@ -53,7 +53,7 @@ func TestUnit_BranchComposeOverride(t *testing.T) {
 	}
 
 	// Execute chain
-	output, _, _, err := env.ExecEnv(context.Background(), chain, map[string]any{"a": 1, "b": 2}, taskengine.DataTypeJSON)
+	output, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, map[string]any{"a": 1, "b": 2}, taskengine.DataTypeJSON)
 	require.NoError(t, err)
 
 	// Verify composition
@@ -107,7 +107,7 @@ func TestUnit_BranchComposeAppendStringToChatHistory(t *testing.T) {
 	}
 
 	// Execute chain
-	output, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+	output, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, nil, taskengine.DataTypeAny)
 	require.NoError(t, err)
 
 	// Verify composition: append_string_to_chat_history appends the string as assistant to the end of the history
@@ -177,7 +177,7 @@ func TestUnit_BranchComposeMergeChatHistories(t *testing.T) {
 	}
 
 	// Execute chain
-	output, dt, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeChatHistory)
+	output, dt, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, nil, taskengine.DataTypeChatHistory)
 	require.NoError(t, err)
 	require.Equal(t, taskengine.DataTypeChatHistory, dt)
 	// Verify composition
@@ -234,7 +234,7 @@ func TestUnit_BranchComposeAutoStrategy(t *testing.T) {
 		}
 
 		// Execute chain
-		output, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+		output, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, nil, taskengine.DataTypeAny)
 		require.NoError(t, err)
 
 		// Verify auto-selected override strategy
@@ -299,7 +299,7 @@ func TestUnit_BranchComposeMergeChatHistories_MessageOrder(t *testing.T) {
 	}
 
 	// Execute chain
-	output, dt, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeChatHistory)
+	output, dt, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, nil, taskengine.DataTypeChatHistory)
 	require.NoError(t, err)
 	require.Equal(t, taskengine.DataTypeChatHistory, dt)
 
@@ -355,7 +355,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 		}
 
 		// Execute chain
-		_, _, _, err := env.ExecEnv(context.Background(), chain, "input", taskengine.DataTypeString)
+		_, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "input", taskengine.DataTypeString)
 
 		// Verify error
 		assert.ErrorContains(t, err, "unsupported compose strategy")
@@ -388,7 +388,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 		}
 
 		// Execute chain
-		_, _, _, err := env.ExecEnv(context.Background(), chain, "input", taskengine.DataTypeString)
+		_, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "input", taskengine.DataTypeString)
 
 		// Verify error
 		assert.ErrorContains(t, err, "compose right_var \"nonexistent\" not found")
@@ -436,7 +436,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 		}
 
 		// Execute chain
-		_, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+		_, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, nil, taskengine.DataTypeAny)
 
 		// Verify error
 		assert.ErrorContains(t, err, "invalid types for append_string_to_chat_history")
@@ -484,7 +484,7 @@ func TestUnit_BranchComposeErrors(t *testing.T) {
 		}
 
 		// Execute chain
-		_, _, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+		_, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, nil, taskengine.DataTypeAny)
 		assert.ErrorContains(t, err, "both values must be ChatHistory for merge")
 	})
 }
@@ -562,7 +562,7 @@ func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
 
 		// Execute chain with initial input
 		initialInput := map[string]any{"original": "data"}
-		output, _, _, err := env.ExecEnv(context.Background(), chain, initialInput, taskengine.DataTypeJSON)
+		output, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, initialInput, taskengine.DataTypeJSON)
 		require.NoError(t, err)
 
 		// Verify that the approve branch was taken and composed with process_data
@@ -619,7 +619,7 @@ func TestUnit_BranchComposeConditionalPaths(t *testing.T) {
 		}
 
 		initialInput := "original input"
-		output, _, _, err := env.ExecEnv(context.Background(), chain, initialInput, taskengine.DataTypeString)
+		output, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, initialInput, taskengine.DataTypeString)
 		require.NoError(t, err)
 
 		// Should pass through the original input since no compose was applied
@@ -668,7 +668,7 @@ func TestUnit_BranchComposeVariableTracking(t *testing.T) {
 			},
 		}
 
-		_, _, capturedState, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+		_, _, capturedState, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, nil, taskengine.DataTypeAny)
 		require.NoError(t, err)
 
 		// Verify that the execution completed successfully

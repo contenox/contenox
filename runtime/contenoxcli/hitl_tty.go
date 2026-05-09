@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/contenox/contenox/runtime/hitlservice"
 	"github.com/contenox/contenox/runtime/localtools"
@@ -23,6 +24,13 @@ import (
 // (including blank input and EOF) denies.
 func NewCLIAskApproval(w io.Writer) localtools.AskApproval {
 	return func(ctx context.Context, req hitlservice.ApprovalRequest) (bool, error) {
+		// Yield briefly to let the task engine's asynchronous event bus (SQLite
+		// poll interval is 200ms) flush the 'step_started' log to stderr before we
+		// draw the interactive prompt.
+		time.Sleep(250 * time.Millisecond)
+
+
+
 		// Try to open the controlling terminal directly so we can prompt even
 		// when stdin is a pipe.
 		tty, err := os.Open("/dev/tty")

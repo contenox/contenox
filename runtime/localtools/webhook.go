@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/contenox/contenox/runtime/taskengine"
@@ -58,21 +59,38 @@ func WithDefaultHeader(key, value string) WebtoolsOption {
 
 // Exec implements the ToolsRepo interface
 func (h *WebCaller) Exec(ctx context.Context, startTime time.Time, input any, debug bool, tools *taskengine.ToolsCall) (any, taskengine.DataType, error) {
-	// Get URL from args
-	rawURL, ok := tools.Args["url"]
+	dynArgs, _ := input.(map[string]any)
+
+	getArg := func(key string) (string, bool) {
+		if v, ok := dynArgs[key]; ok {
+			switch x := v.(type) {
+			case string:
+				return x, true
+			case nil:
+				return "", false
+			default:
+				return fmt.Sprintf("%v", x), true
+			}
+		}
+		if tools != nil && tools.Args != nil {
+			if v, ok := tools.Args[key]; ok {
+				return v, true
+			}
+		}
+		return "", false
+	}
+
+	rawURL, ok := getArg("url")
 	if !ok {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("missing 'url' argument")
 	}
 
-	// Parse URL
 	baseURL, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// Handle query parameters — merge with any params already on the URL
-	// (e.g. pre-configured auth tokens) instead of overwriting them.
-	if queryParams, ok := tools.Args["query"]; ok {
+	if queryParams, ok := getArg("query"); ok {
 		extra, err := url.ParseQuery(queryParams)
 		if err != nil {
 			return nil, taskengine.DataTypeAny, fmt.Errorf("invalid query parameters: %w", err)
@@ -86,56 +104,46 @@ func (h *WebCaller) Exec(ctx context.Context, startTime time.Time, input any, de
 		baseURL.RawQuery = existing.Encode()
 	}
 
-	// Determine HTTP method
-	method := "POST"
-	if m, ok := tools.Args["method"]; ok {
-		method = m
-	}
-	if method == "POST" && input == nil {
-		return nil, taskengine.DataTypeAny, fmt.Errorf("missing input for POST request")
+	method := "GET"
+	if m, ok := getArg("method"); ok {
+		method = strings.ToUpper(m)
 	}
 
-	// Prepare request body
 	var body io.Reader
-	if method == "POST" {
-		switch v := input.(type) {
-		case string:
-			// If input is JSON, send as-is
-			if json.Valid([]byte(v)) {
-				body = bytes.NewBufferString(v)
-			} else {
-				// Otherwise wrap in JSON
-				payload := map[string]interface{}{
-					"message": v,
-					"data":    tools.Args,
+	if method != "GET" && method != "HEAD" {
+		var bodyData any
+		if v, ok := dynArgs["body"]; ok {
+			bodyData = v
+		} else if dynArgs == nil {
+			bodyData = input
+		}
+		if bodyData != nil {
+			switch v := bodyData.(type) {
+			case string:
+				if json.Valid([]byte(v)) {
+					body = bytes.NewBufferString(v)
+				} else {
+					body = bytes.NewBufferString(v)
 				}
-				jsonData, err := json.Marshal(payload)
+			default:
+				jsonData, err := json.Marshal(v)
 				if err != nil {
-					return nil, taskengine.DataTypeAny, fmt.Errorf("failed to marshal payload: %w", err)
+					return nil, taskengine.DataTypeAny, fmt.Errorf("failed to marshal body: %w", err)
 				}
 				body = bytes.NewBuffer(jsonData)
 			}
-		default:
-			// For non-string input, marshal to JSON
-			jsonData, err := json.Marshal(input)
-			if err != nil {
-				return nil, taskengine.DataTypeAny, fmt.Errorf("failed to marshal input: %w", err)
-			}
-			body = bytes.NewBuffer(jsonData)
 		}
 	}
 
-	// Create request
 	req, err := http.NewRequestWithContext(ctx, method, baseURL.String(), body)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers
 	for k, v := range h.defaultHeaders {
 		req.Header.Set(k, v)
 	}
-	if headers, ok := tools.Args["headers"]; ok {
+	if headers, ok := getArg("headers"); ok {
 		var headerMap map[string]string
 		if err := json.Unmarshal([]byte(headers), &headerMap); err == nil {
 			for k, v := range headerMap {

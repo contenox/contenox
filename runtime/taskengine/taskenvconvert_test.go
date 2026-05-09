@@ -98,7 +98,7 @@ Second repo name: {{(index .get_data.repos 1).name}}`,
 		},
 	}
 
-	result, resultType, _, err := env.ExecEnv(context.Background(), chain, nil, taskengine.DataTypeAny)
+	result, resultType, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, nil, taskengine.DataTypeAny)
 	require.NoError(t, err)
 	require.Equal(t, taskengine.DataTypeString, resultType)
 

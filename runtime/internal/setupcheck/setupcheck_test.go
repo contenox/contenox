@@ -8,14 +8,14 @@ import (
 	"github.com/contenox/contenox/runtime/statetype"
 )
 
-func TestEvaluate_missingDefaults(t *testing.T) {
+func TestSystem_Evaluate_missingDefaults(t *testing.T) {
 	r := Evaluate(Input{States: []statetype.BackendRuntimeState{{}}})
 	if len(r.Issues) < 2 {
 		t.Fatalf("expected at least 2 issues, got %v", r.Issues)
 	}
 }
 
-func TestEvaluate_noBackends(t *testing.T) {
+func TestSystem_Evaluate_noBackends(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "m",
 		DefaultProvider: "ollama",
@@ -32,7 +32,7 @@ func TestEvaluate_noBackends(t *testing.T) {
 	}
 }
 
-func TestEvaluate_allUnreachable(t *testing.T) {
+func TestSystem_Evaluate_allUnreachable(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "m",
 		DefaultProvider: "ollama",
@@ -52,7 +52,7 @@ func TestEvaluate_allUnreachable(t *testing.T) {
 	}
 }
 
-func TestEvaluate_doctorSkipsUnreachableWhenNoState(t *testing.T) {
+func TestSystem_Evaluate_doctorSkipsUnreachableWhenNoState(t *testing.T) {
 	n := 2
 	r := Evaluate(Input{
 		DefaultModel:           "m",
@@ -79,7 +79,7 @@ func TestEvaluate_doctorSkipsUnreachableWhenNoState(t *testing.T) {
 	}
 }
 
-func TestEvaluate_noBackendsSkippedWhenRegisteredInDB(t *testing.T) {
+func TestSystem_Evaluate_noBackendsSkippedWhenRegisteredInDB(t *testing.T) {
 	n := 1
 	r := Evaluate(Input{
 		DefaultModel:           "m",
@@ -103,7 +103,7 @@ func TestEvaluate_noBackendsSkippedWhenRegisteredInDB(t *testing.T) {
 	}
 }
 
-func TestEvaluate_noBackends_openaiHint(t *testing.T) {
+func TestSystem_Evaluate_noBackends_openaiHint(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "gpt-4o",
 		DefaultProvider: "openai",
@@ -121,7 +121,7 @@ func TestEvaluate_noBackends_openaiHint(t *testing.T) {
 	}
 }
 
-func TestEvaluate_noChatModels_ollama(t *testing.T) {
+func TestSystem_Evaluate_noChatModels_ollama(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "llama3",
 		DefaultProvider: "ollama",
@@ -148,7 +148,7 @@ func TestEvaluate_noChatModels_ollama(t *testing.T) {
 	}
 }
 
-func TestEvaluate_noChatModels_openaiHint(t *testing.T) {
+func TestSystem_Evaluate_noChatModels_openaiHint(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "gpt-4o",
 		DefaultProvider: "openai",
@@ -168,7 +168,7 @@ func TestEvaluate_noChatModels_openaiHint(t *testing.T) {
 	}
 }
 
-func TestEvaluate_noChatModels_skippedWhenChatModelExists(t *testing.T) {
+func TestSystem_Evaluate_noChatModels_skippedWhenChatModelExists(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "m",
 		DefaultProvider: "ollama",
@@ -188,7 +188,7 @@ func TestEvaluate_noChatModels_skippedWhenChatModelExists(t *testing.T) {
 	}
 }
 
-func TestEvaluate_noChatModels_skippedWhenAllUnreachable(t *testing.T) {
+func TestSystem_Evaluate_noChatModels_skippedWhenAllUnreachable(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "m",
 		DefaultProvider: "ollama",
@@ -203,7 +203,7 @@ func TestEvaluate_noChatModels_skippedWhenAllUnreachable(t *testing.T) {
 	}
 }
 
-func TestEvaluate_noChatModels_skippedWhenStatesEmpty(t *testing.T) {
+func TestSystem_Evaluate_noChatModels_skippedWhenStatesEmpty(t *testing.T) {
 	n := 1
 	r := Evaluate(Input{
 		DefaultModel:           "m",
@@ -227,7 +227,7 @@ func TestEvaluate_noChatModels_skippedWhenStatesEmpty(t *testing.T) {
 	}
 }
 
-func TestEvaluate_defaultProviderBackendMissing(t *testing.T) {
+func TestSystem_Evaluate_defaultProviderBackendMissing(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "gpt-5",
 		DefaultProvider: "openai",
@@ -251,7 +251,7 @@ func TestEvaluate_defaultProviderBackendMissing(t *testing.T) {
 	}
 }
 
-func TestEvaluate_defaultProviderAPIKeyMissing(t *testing.T) {
+func TestSystem_Evaluate_defaultProviderAPIKeyMissing(t *testing.T) {
 	backend := runtimetypes.Backend{ID: "b-openai", Name: "openai", Type: "openai", BaseURL: "https://api.openai.com/v1"}
 	r := Evaluate(Input{
 		DefaultModel:       "gpt-5",
@@ -277,7 +277,7 @@ func TestEvaluate_defaultProviderAPIKeyMissing(t *testing.T) {
 	}
 }
 
-func TestEvaluate_defaultProviderAPIKeyMissing_hostedOllama(t *testing.T) {
+func TestSystem_Evaluate_defaultProviderAPIKeyMissing_hostedOllama(t *testing.T) {
 	backend := runtimetypes.Backend{
 		ID:      "b-ollama-cloud",
 		Name:    "ollama-cloud",
@@ -314,7 +314,7 @@ func TestEvaluate_defaultProviderAPIKeyMissing_hostedOllama(t *testing.T) {
 	}
 }
 
-func TestEvaluate_defaultModelNotAvailable(t *testing.T) {
+func TestSystem_Evaluate_defaultModelNotAvailable(t *testing.T) {
 	backend := runtimetypes.Backend{ID: "b-openai", Name: "openai", Type: "openai", BaseURL: "https://api.openai.com/v1"}
 	r := Evaluate(Input{
 		DefaultModel:       "gpt-5",

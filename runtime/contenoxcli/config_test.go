@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -30,16 +30,16 @@ func openTestDB(t *testing.T) (context.Context, libdbexec.DBManager, runtimetype
 // getConfigKV / config cmd helpers
 // ---------------------------------------------------------------------------
 
-func Test_getConfigKV_unset_returnsEmpty(t *testing.T) {
+func TestUnit_getConfigKV_unset_returnsEmpty(t *testing.T) {
 	ctx, _, store := openTestDB(t)
-	for _, key := range []string{"default-model", "default-provider", "default-chain"} {
+	for _, key := range []string{"default-model", "default-provider", "default-alt-model", "default-alt-provider", "default-chain"} {
 		val, err := getConfigKV(ctx, store, key)
 		require.NoError(t, err, "key=%s", key)
 		assert.Equal(t, "", val, "key=%s should be empty when not set", key)
 	}
 }
 
-func Test_getConfigKV_setAndGet(t *testing.T) {
+func TestUnit_getConfigKV_setAndGet(t *testing.T) {
 	ctx, _, store := openTestDB(t)
 
 	data, err := json.Marshal("qwen2.5:7b")
@@ -51,13 +51,15 @@ func Test_getConfigKV_setAndGet(t *testing.T) {
 	assert.Equal(t, "qwen2.5:7b", val)
 }
 
-func Test_getConfigKV_allConfigKeys(t *testing.T) {
+func TestUnit_getConfigKV_allConfigKeys(t *testing.T) {
 	ctx, _, store := openTestDB(t)
 
 	pairs := map[string]string{
-		"default-model":    "phi3:3.8b",
-		"default-provider": "ollama",
-		"default-chain":    "default-chain.json",
+		"default-model":        "phi3:3.8b",
+		"default-provider":     "ollama",
+		"default-alt-model":    "granite-3.2-2b",
+		"default-alt-provider": "local",
+		"default-chain":        "default-chain.json",
 	}
 	for k, v := range pairs {
 		data, _ := json.Marshal(v)
@@ -70,7 +72,7 @@ func Test_getConfigKV_allConfigKeys(t *testing.T) {
 	}
 }
 
-func Test_getConfigKV_overwrite(t *testing.T) {
+func TestUnit_getConfigKV_overwrite(t *testing.T) {
 	ctx, _, store := openTestDB(t)
 
 	for _, v := range []string{"first", "second", "third"} {
@@ -87,7 +89,7 @@ func Test_getConfigKV_overwrite(t *testing.T) {
 // resolveDBPath
 // ---------------------------------------------------------------------------
 
-func Test_resolveDBPath_defaultsToGlobalDB(t *testing.T) {
+func TestUnit_resolveDBPath_defaultsToGlobalDB(t *testing.T) {
 	home, err := os.UserHomeDir()
 	require.NoError(t, err)
 	expected := filepath.Join(home, ".contenox", "local.db")
@@ -98,7 +100,7 @@ func Test_resolveDBPath_defaultsToGlobalDB(t *testing.T) {
 	assert.Equal(t, expected, dbPath)
 }
 
-func Test_resolveDBPath_flagOverridesDefault(t *testing.T) {
+func TestUnit_resolveDBPath_flagOverridesDefault(t *testing.T) {
 	dir := t.TempDir()
 	customDB := filepath.Join(dir, "custom.db")
 

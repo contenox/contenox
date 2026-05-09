@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStartupNATSCluster(t *testing.T) {
+func TestUnit_StartupNATSCluster(t *testing.T) {
 	ctx := context.TODO()
 	url, container, cleanup, err := libbus.SetupNatsInstance(ctx)
 	defer cleanup()

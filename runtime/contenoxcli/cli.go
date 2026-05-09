@@ -3,6 +3,7 @@ package contenoxcli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/version"
+	"github.com/contenox/contenox/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +48,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "plan": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -84,8 +86,8 @@ func firstNonFlagIsReserved(args []string) bool {
 	// value of --trace and then forward it to the chat command as text input.
 	boolFlags := map[string]bool{
 		"--shell": true, "--trace": true, "--steps": true, "--raw": true,
-		"--think": true, "--no-delete-models": true,
-		"-h": true, "--help": true, "-v": true, "--version": true,
+		"--think": true, "--no-delete-models": true, "--editor": true,
+		"-e": true, "-h": true, "--help": true, "-v": true, "--version": true,
 	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -119,16 +121,14 @@ func firstNonFlagIsReserved(args []string) bool {
 
 var rootCmd = &cobra.Command{
 	Use:   "contenox",
-	Short: "AI agent CLI: plan and execute tasks using your LLM of choice.",
-	Long: `Contenox is a local AI agent CLI that plans and executes multi-step tasks on your
-machine using filesystem and shell tools — driven by your LLM of choice.
+	Short: "AI agent CLI: execute tasks using your LLM of choice.",
+	Long: `Contenox is a local AI agent CLI that executes tasks on your machine using
+filesystem and shell tools — driven by your LLM of choice.
 No daemon, no cloud required. State is stored in SQLite.
 
   Quickstart:
     contenox init                          # scaffold .contenox/ with default chains
     contenox "list files in my home dir"   # one-shot natural language → shell
-    contenox plan new "some multi-step goal"  # create an autonomous multi-step plan
-    contenox plan next --auto              # execute plan steps until done
 
   Register an LLM backend:
     # Fully embedded (no external server, no network, no API key):
@@ -160,9 +160,7 @@ No daemon, no cloud required. State is stored in SQLite.
   Scope note:
     Backends and config are GLOBAL (stored in ~/.contenox/local.db).
     Chain files (.contenox/) are LOCAL to each project directory — like .git/.
-    Run 'contenox init' once per project to create the local chain files.
-
-  Note: contenox plan requires a model that supports tool calling.`,
+    Run 'contenox init' once per project to create the local chain files.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
@@ -186,13 +184,22 @@ The first run auto-creates a "default" session. Manage sessions with:
   contenox session switch <name>     switch to a different session
   contenox session show              print the active session's full history
   contenox session delete <name>     delete a session and all its messages
+  contenox session fork --summary    compact older history into a summary and continue
+                                     in a new session (useful when context fills up)
 
 Giving the model tools (file system and shell access):
 
   --local-exec-allowed-dir <dir>     allow local_fs tools inside <dir>
   --shell                            enable local_shell (command policy is defined in the chain)
-  --hitl                             pause before write_file, sed, and local_shell calls;
-                                     require y/n approval at the terminal (human-in-the-loop)
+
+Human-in-the-loop is on by default. The agent pauses for terminal approval before
+write_file, sed, and local_shell calls. The active policy is defined in
+~/.contenox/hitl-policy-default.json (override per workspace via
+.contenox/hitl-policy-*.json or via 'contenox config set hitl-policy-name').
+
+  --auto                             autonomous mode: disable approval prompts
+                                     entirely. Use only in trusted environments
+                                     or for non-interactive scripts.
 
 Examples:
   # Chat with file system access to the current project:
@@ -201,8 +208,8 @@ Examples:
   # Shell access (policy comes from the chain's tools_policies; default chains allow common dev tools):
   contenox chat --shell "suggest a commit message from git diff"
 
-  # Shell access with human approval before every write or shell call:
-  contenox chat --shell --local-exec-allowed-dir . --hitl "refactor main.go to use slog"
+  # Autonomous shell run — no approvals, runs everything (USE WITH CARE):
+  contenox chat --shell --local-exec-allowed-dir . --auto "refactor main.go to use slog"
 
   # Trim context: only send last 10 messages from session history to the model:
   contenox chat --trim 10 "let's continue where we left off"
@@ -218,10 +225,7 @@ var initCmd = &cobra.Command{
 	Short: "Scaffold .contenox/ with default chain files.",
 	Long: `Create the .contenox/ directory and populate it with default chain files.
 
-This writes default-chain.json, default-run-chain.json, chain-planner.json, chain-step-executor.json,
-chain-step-executor-gated.json, chain-plan-explorer.json, and chain-step-summarizer.json
-(the same embedded planner and step-executor chains used by 'contenox plan'). Plan subcommands
-still refresh those JSON files from the binary when you run them.
+This writes default-chain.json and default-run-chain.json.
 
 After init, register a backend, make sure the runtime can see a model, then set your defaults:
 
@@ -259,7 +263,7 @@ var versionCmd = &cobra.Command{
 func init() {
 	v := cliVersion()
 	rootCmd.Version = v
-	rootCmd.Short = fmt.Sprintf("AI agent CLI v%s: plan and execute tasks using your LLM of choice.", v)
+	rootCmd.Short = fmt.Sprintf("AI agent CLI v%s: execute tasks using your LLM of choice.", v)
 	// Cobra prints Long for --help when set; include version so it matches runtime/version/version.txt.
 	rootCmd.Long = fmt.Sprintf("Version: %s\n\n%s", v, rootCmd.Long)
 
@@ -270,6 +274,8 @@ func init() {
 	f.String("ollama", defaultOllama, "Ollama base URL")
 	f.String("model", defaultModel, "Model name (task/chat/embed)")
 	f.String("provider", "", "Provider type override (ollama, openai, vllm, gemini). Overrides config default_provider.")
+	f.String("alt-model", "", "Alt model name (chains referencing {{var:alt_model}}). Overrides config default-alt-model.")
+	f.String("alt-provider", "", "Alt provider type (chains referencing {{var:alt_provider}}). Overrides config default-alt-provider.")
 	f.Int("context", defaultContext, "Context length")
 	f.Bool("no-delete-models", true, "Legacy compatibility flag; OSS runtime model deletion is disabled.")
 	f.String("chain", "", "Path to a task chain JSON file. Chains define the LLM workflow: which model, which tools, how to branch. Falls back to default_chain in config, then .contenox/default-chain.json")
@@ -282,8 +288,9 @@ func init() {
 	f.Bool("steps", false, "Print execution steps after the result")
 	f.Bool("raw", false, "Print full output (e.g. entire chat JSON)")
 	f.Bool("think", false, "Print model reasoning trace to stderr (for thinking models)")
+	f.BoolP("editor", "e", false, "Open $EDITOR (or $VISUAL, fallback nano) to compose the prompt; piped stdin is preloaded as reference")
 
-	rootCmd.AddCommand(initCmd, chatCmd, sessionCmd, planCmd, runCmd, toolsCmd, doctorCmd, versionCmd)
+	rootCmd.AddCommand(initCmd, chatCmd, sessionCmd, runCmd, toolsCmd, doctorCmd, versionCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(backendCmd)
 	rootCmd.AddCommand(configCmd)
@@ -295,7 +302,8 @@ func init() {
 	// Chat-specific local flags (not exposed globally).
 	chatCmd.Flags().Int("trim", 0, "Only send the last N messages from session history to the model (0 = send all)")
 	chatCmd.Flags().Int("last", 0, "Print last N user/assistant turns after the reply (0 = only print new reply)")
-	chatCmd.Flags().Bool("hitl", false, "Pause before write_file, sed, and local_shell calls; require y/n approval in the terminal")
+	chatCmd.Flags().Bool("auto", false, "Autonomous mode: disable HITL approval prompts. Default is HITL on; tools route through the active hitl-policy. Use --auto only in trusted/scripted contexts.")
+
 }
 
 // ResolveContenoxDir finds the closest .contenox directory by walking up from the
@@ -320,7 +328,12 @@ func ResolveContenoxDir(cmd *cobra.Command) (string, error) {
 	for {
 		candidate := filepath.Join(dir, ".contenox")
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
+			// Require workspace.id to be present — a .contenox/ without it is
+			// not a valid workspace (e.g. a backup or pre-init directory).
+			// Keep walking up so callers get a proper workspace or the cwd fallback.
+			if _, werr := os.Stat(filepath.Join(candidate, "workspace.id")); werr == nil {
+				return candidate, nil
+			}
 		}
 
 		parent := filepath.Dir(dir)
@@ -358,11 +371,18 @@ func runInitCmd(cmd *cobra.Command, args []string) error {
 }
 
 func runChat(cmd *cobra.Command, args []string) error {
-	// No subcommand, no input, and no piped stdin: show help and exit 0.
 	flags := cmd.Root().Flags()
-	if len(args) == 0 && !flags.Changed("input") {
+	useEditor, _ := flags.GetBool("editor")
+
+	if len(args) == 1 && args[0] == "help" && !flags.Changed("input") && !useEditor {
+		_ = cmd.Help()
+		return nil
+	}
+
+	// No subcommand, no input, no editor, and no piped stdin: show help and exit 0.
+	if len(args) == 0 && !flags.Changed("input") && !useEditor {
 		if stat, err := os.Stdin.Stat(); err != nil || (stat.Mode()&os.ModeCharDevice) != 0 {
-			_ = cmd.Root().Usage()
+			_ = cmd.Usage()
 			return nil
 		}
 	}
@@ -383,7 +403,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer db.Close()
-
+	vfs := vfsservice.NewLocalFS(contenoxDir)
 	store := runtimetypes.New(db.WithoutTransaction())
 
 	changed := func(name string) bool { return flags.Changed(name) }
@@ -404,29 +424,46 @@ func runChat(cmd *cobra.Command, args []string) error {
 		effectiveDefaultProvider, _ = flags.GetString("provider")
 	}
 
+	effectiveAltModel := ""
+	if kv, _ := getConfigKV(dbCtx, store, "default-alt-model"); kv != "" {
+		effectiveAltModel = kv
+	}
+	if changed("alt-model") {
+		effectiveAltModel, _ = flags.GetString("alt-model")
+	}
+
+	effectiveAltProvider := ""
+	if kv, _ := getConfigKV(dbCtx, store, "default-alt-provider"); kv != "" {
+		effectiveAltProvider = kv
+	}
+	if changed("alt-provider") {
+		effectiveAltProvider, _ = flags.GetString("alt-provider")
+	}
+
 	effectiveContext, _ := flags.GetInt("context")
 	effectiveNoDeleteModels, _ := flags.GetBool("no-delete-models")
 
-	// Resolve chain: flag > SQLite KV default-chain > well-known file.
 	effectiveChain, _ := flags.GetString("chain")
 	if effectiveChain == "" && !changed("chain") {
 		if kv, _ := getConfigKV(dbCtx, store, "default-chain"); kv != "" {
 			effectiveChain = kv
 			if !filepath.IsAbs(effectiveChain) {
-				effectiveChain = filepath.Join(contenoxDir, effectiveChain)
+				if resolved, rerr := lookupSystemFile(contenoxDir, effectiveChain); rerr == nil {
+					effectiveChain = resolved
+				} else {
+					effectiveChain = filepath.Join(contenoxDir, effectiveChain)
+				}
 			}
 		}
 	}
 	if effectiveChain == "" && !changed("chain") {
-		wellKnown := filepath.Join(contenoxDir, "default-chain.json")
-		if _, err := os.Stat(wellKnown); err == nil {
-			effectiveChain = wellKnown
+		if resolved, rerr := lookupSystemFile(contenoxDir, "default-chain.json"); rerr == nil {
+			effectiveChain = resolved
 		}
 	}
 	if effectiveChain == "" {
-		// No chain found anywhere in the directory tree — guide the user.
-		fmt.Fprintln(os.Stderr, "No .contenox/ project found in this directory or any parent directory.")
-		fmt.Fprintln(os.Stderr, "Run 'contenox init' to get started, or pass --chain explicitly.")
+		fmt.Fprintln(os.Stderr, "No default chain found in .contenox/ (workspace) or ~/.contenox/.")
+		fmt.Fprintln(os.Stderr, "Run 'contenox init' to scaffold one, or pass --chain explicitly.")
 		return errChainRequired
 	}
 
@@ -439,7 +476,24 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 	var inputValue string
 	var inputPassed bool
-	if changed("input") {
+	if useEditor {
+		var seed []byte
+		if data, ok, err := readStdinIfAvailable(maxCLIStdinBytes); err != nil {
+			return err
+		} else if ok {
+			seed = []byte(data)
+		}
+		prompt, err := captureFromEditor(seed, effectiveModel)
+		if err != nil {
+			if errors.Is(err, errEmptyPrompt) {
+				fmt.Fprintln(cmd.ErrOrStderr(), "aborted due to empty prompt")
+				return errPromptAborted
+			}
+			return err
+		}
+		inputValue = prompt
+		inputPassed = true
+	} else if changed("input") {
 		inputValue, _ = flags.GetString("input")
 		inputPassed = true
 	} else if len(args) > 0 {
@@ -456,7 +510,8 @@ func runChat(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	effectiveThink, _ := flags.GetBool("think")
-	effectiveHITL, _ := cmd.Flags().GetBool("hitl")
+	autoMode, _ := cmd.Flags().GetBool("auto")
+	effectiveHITL := !autoMode
 	historyTrim, _ := cmd.Flags().GetInt("trim")
 	lastN, _ := cmd.Flags().GetInt("last")
 
@@ -465,6 +520,8 @@ func runChat(cmd *cobra.Command, args []string) error {
 		EffectiveChain:               effectiveChain,
 		EffectiveDefaultModel:        effectiveModel,
 		EffectiveDefaultProvider:     effectiveDefaultProvider,
+		EffectiveAltDefaultModel:     effectiveAltModel,
+		EffectiveAltDefaultProvider:  effectiveAltProvider,
 		EffectiveContext:             effectiveContext,
 		EffectiveNoDeleteModels:      effectiveNoDeleteModels,
 		EffectiveEnableLocalExec:     effectiveEnableLocalExec,
@@ -480,12 +537,13 @@ func runChat(cmd *cobra.Command, args []string) error {
 		InputFlagPassed:              inputPassed,
 		ContenoxDir:                  contenoxDir,
 	}
-	return execChat(ctx, db, opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
+	return execChat(ctx, db, opts, vfs, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 // Sentinel errors so RunE can return and main can os.Exit(1).
 var (
 	errChainRequired = &exitError{1}
+	errPromptAborted = &exitError{1}
 )
 
 type exitError struct{ code int }

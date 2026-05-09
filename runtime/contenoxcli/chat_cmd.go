@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/contenox/runtime/chatservice"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtime/chatservice"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/contenox/runtime/vfsservice"
 )
 
 // chatOpts carries all effective config and flags needed by the run pipeline.
@@ -24,6 +25,8 @@ type chatOpts struct {
 	EffectiveChain               string
 	EffectiveDefaultModel        string
 	EffectiveDefaultProvider     string
+	EffectiveAltDefaultModel     string
+	EffectiveAltDefaultProvider  string
 	EffectiveContext             int
 	EffectiveNoDeleteModels      bool
 	EffectiveEnableLocalExec     bool
@@ -44,11 +47,11 @@ type chatOpts struct {
 
 // execChat runs the full chat pipeline and returns any error encountered.
 // db is already opened by the caller (runChat in cli.go) so we share it here.
-func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW io.Writer) error {
+func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsservice.Service, out, errW io.Writer) error {
 	// Component 1: use BuildEngine instead of the 150-line duplicate scaffold.
 	// This fixes MCP being broken for `contenox-runtime chat` (the old code used
 	// libbus.NewInMem() and never initialised mcpworker.Manager).
-	engine, err := BuildEngine(ctx, db, opts)
+	engine, err := BuildEngine(ctx, db, opts, vfs)
 	if err != nil {
 		return fmt.Errorf("failed to build engine: %w", err)
 	}
@@ -102,6 +105,12 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 		"provider": opts.EffectiveDefaultProvider,
 		"chain":    chain.ID,
 	}
+	if opts.EffectiveAltDefaultModel != "" {
+		templateVars["alt_model"] = opts.EffectiveAltDefaultModel
+	}
+	if opts.EffectiveAltDefaultProvider != "" {
+		templateVars["alt_provider"] = opts.EffectiveAltDefaultProvider
+	}
 	ctx = taskengine.WithTemplateVars(ctx, templateVars)
 
 	// Persistent Session Management
@@ -145,6 +154,7 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 	} else {
 		fmt.Fprintln(errW, "Thinking...")
 	}
+
 	output, outputType, stateUnits, err := engine.TaskService.Execute(ctx, &chain, chainInput, taskengine.DataTypeChatHistory)
 	if err != nil {
 		if isModelResolverFailure(err) {

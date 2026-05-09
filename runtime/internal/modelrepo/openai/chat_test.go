@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestOpenAIChatCompletionResponseReasoningContent(t *testing.T) {
+func TestUnit_OpenAIChatCompletionResponseReasoningContent(t *testing.T) {
 	t.Parallel()
 	const raw = `{
   "choices": [{

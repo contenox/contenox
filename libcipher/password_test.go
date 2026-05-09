@@ -7,7 +7,7 @@ import (
 	"github.com/contenox/contenox/libcipher"
 )
 
-func TestCheckPasswordHash_Incorrect(t *testing.T) {
+func TestUnit_CheckPasswordHash_Incorrect(t *testing.T) {
 	hash, _ := libcipher.NewHash(libcipher.GenerateHashArgs{
 		Payload:    []byte("password"),
 		SigningKey: []byte("key"),

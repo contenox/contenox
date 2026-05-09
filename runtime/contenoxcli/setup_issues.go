@@ -14,7 +14,7 @@ import (
 // ErrPreflightBlocked is returned when LLM setup is not ready; instructions are already printed to w.
 var ErrPreflightBlocked = errors.New("LLM setup is not ready")
 
-// PreflightLLMSetup checks setup status before running chat, run, or plan. If the user must fix
+// PreflightLLMSetup checks setup status before running chat or run. If the user must fix
 // configuration first, it prints instructions and returns ErrPreflightBlocked. Otherwise it returns nil.
 func PreflightLLMSetup(w io.Writer, res setupcheck.Result) error {
 	if !llmSetupNeedsAttention(res) {

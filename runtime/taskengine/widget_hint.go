@@ -10,18 +10,12 @@ import (
 // the execution path) that the UI should render adjacent to an assistant
 // message in the chat thread.
 //
-// The shape mirrors [ContextArtifact] in chatsessionmodes — kind + opaque
-// payload — so the frontend can reuse the same artifact→inline-attachment
-// mapping for both directions of state flow:
-//
-//   - User → LLM:   ChatContextPayload.artifacts[]   (Phase 1)
-//   - LLM → user:   TaskEvent.Attachments[]          (Phase 5, this file)
-//
-// First-party kinds that the Beam UI knows how to render today: file_view,
-// terminal_excerpt, plan_summary, dag, state_unit. The kind string is
-// deliberately untyped here so a tools can emit experimental kinds without a
-// coordinated taskengine release; the UI falls back to a JSON dump for
-// unknown kinds.
+// The shape is kind + opaque payload, so the frontend can map a kind to an
+// inline attachment renderer. First-party kinds that the Beam UI knows how
+// to render today include file_view, terminal_excerpt, dag, and state_unit.
+// The kind string is deliberately untyped here so a tools can emit
+// experimental kinds without a coordinated taskengine release; the UI falls
+// back to a JSON dump for unknown kinds.
 type WidgetHint struct {
 	Kind    string          `json:"kind"`
 	Payload json.RawMessage `json:"payload,omitempty"`

@@ -1,4 +1,4 @@
-package localtools
+package localtools_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/runtime/hitlservice"
+	"github.com/contenox/contenox/runtime/localtools"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -72,9 +73,9 @@ func alwaysDeny(_ context.Context, _ hitlservice.ApprovalRequest) (bool, error) 
 
 // ── HITLWrapper.Exec ──────────────────────────────────────────────────────────
 
-func TestHITLWrapper_Allow_PassesThrough(t *testing.T) {
+func TestUnit_HITLWrapper_Allow_PassesThrough(t *testing.T) {
 	inner := &mockInnerTools{}
-	w := NewHITLWrapper(inner, alwaysApprove, allowPolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, alwaysApprove, allowPolicy(), nil)
 
 	res, dt, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{"path": "a.txt"}, false,
@@ -91,9 +92,9 @@ func TestHITLWrapper_Allow_PassesThrough(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_Deny_BlocksInner(t *testing.T) {
+func TestUnit_HITLWrapper_Deny_BlocksInner(t *testing.T) {
 	inner := &mockInnerTools{}
-	w := NewHITLWrapper(inner, alwaysApprove, denyPolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, alwaysApprove, denyPolicy(), nil)
 
 	res, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{}, false,
@@ -102,7 +103,7 @@ func TestHITLWrapper_Deny_BlocksInner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if res != denyMessage {
+	if res != localtools.DenyMessage {
 		t.Errorf("expected deny message, got %v", res)
 	}
 	if len(inner.calls) != 0 {
@@ -110,9 +111,9 @@ func TestHITLWrapper_Deny_BlocksInner(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_Approve_HumanApproves_CallsInner(t *testing.T) {
+func TestUnit_HITLWrapper_Approve_HumanApproves_CallsInner(t *testing.T) {
 	inner := &mockInnerTools{}
-	w := NewHITLWrapper(inner, alwaysApprove, approvePolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, alwaysApprove, approvePolicy(), nil)
 
 	res, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{"path": "a.txt", "content": "new"}, false,
@@ -130,9 +131,9 @@ func TestHITLWrapper_Approve_HumanApproves_CallsInner(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_Approve_HumanDenies_BlocksInner(t *testing.T) {
+func TestUnit_HITLWrapper_Approve_HumanDenies_BlocksInner(t *testing.T) {
 	inner := &mockInnerTools{}
-	w := NewHITLWrapper(inner, alwaysDeny, approvePolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, alwaysDeny, approvePolicy(), nil)
 
 	res, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{"path": "a.txt", "content": "new"}, false,
@@ -141,7 +142,7 @@ func TestHITLWrapper_Approve_HumanDenies_BlocksInner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if res != denyMessage {
+	if res != localtools.DenyMessage {
 		t.Errorf("expected deny message, got %v", res)
 	}
 	// inner may have been called for read_file (diff) but not for write_file
@@ -152,10 +153,10 @@ func TestHITLWrapper_Approve_HumanDenies_BlocksInner(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_PolicyError_FailsClosed(t *testing.T) {
+func TestUnit_HITLWrapper_PolicyError_FailsClosed(t *testing.T) {
 	inner := &mockInnerTools{}
 	policy := &mockPolicyEval{err: errors.New("policy unavailable")}
-	w := NewHITLWrapper(inner, alwaysApprove, policy, nil)
+	w := localtools.NewHITLWrapper(inner, alwaysApprove, policy, nil)
 
 	res, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{}, false,
@@ -164,7 +165,7 @@ func TestHITLWrapper_PolicyError_FailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if res != denyMessage {
+	if res != localtools.DenyMessage {
 		t.Errorf("expected deny on policy error, got %v", res)
 	}
 	if len(inner.calls) != 0 {
@@ -172,9 +173,9 @@ func TestHITLWrapper_PolicyError_FailsClosed(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_NonMapInput_ReportsAndContinues(t *testing.T) {
+func TestUnit_HITLWrapper_NonMapInput_ReportsAndContinues(t *testing.T) {
 	inner := &mockInnerTools{}
-	w := NewHITLWrapper(inner, alwaysApprove, allowPolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, alwaysApprove, allowPolicy(), nil)
 
 	// non-map input: policy evaluates with empty args, allow passes through
 	_, _, err := w.Exec(context.Background(), time.Now(),
@@ -189,7 +190,7 @@ func TestHITLWrapper_NonMapInput_ReportsAndContinues(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_HITLTimeout_DeniesOnTimeout(t *testing.T) {
+func TestUnit_HITLWrapper_HITLTimeout_DeniesOnTimeout(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping timeout test in short mode")
 	}
@@ -203,7 +204,7 @@ func TestHITLWrapper_HITLTimeout_DeniesOnTimeout(t *testing.T) {
 		<-ctx.Done()
 		return false, ctx.Err()
 	}
-	w := NewHITLWrapper(inner, ask, policy, nil)
+	w := localtools.NewHITLWrapper(inner, ask, policy, nil)
 
 	res, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{"path": "a.txt", "content": "x"}, false,
@@ -222,7 +223,7 @@ func TestHITLWrapper_HITLTimeout_DeniesOnTimeout(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_ParentCancellation_ReturnsError(t *testing.T) {
+func TestUnit_HITLWrapper_ParentCancellation_ReturnsError(t *testing.T) {
 	inner := &mockInnerTools{}
 	policy := &mockPolicyEval{result: hitlservice.EvaluationResult{
 		Action:    hitlservice.ActionApprove,
@@ -233,7 +234,7 @@ func TestHITLWrapper_ParentCancellation_ReturnsError(t *testing.T) {
 		<-ctx.Done()
 		return false, ctx.Err()
 	}
-	w := NewHITLWrapper(inner, ask, policy, nil)
+	w := localtools.NewHITLWrapper(inner, ask, policy, nil)
 
 	parent, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
@@ -262,7 +263,7 @@ func TestHITLWrapper_ParentCancellation_ReturnsError(t *testing.T) {
 
 // ── diff via inner tools ────────────────────────────────────────────────────────
 
-func TestHITLWrapper_DiffWriteFile_ExistingFile(t *testing.T) {
+func TestUnit_HITLWrapper_DiffWriteFile_ExistingFile(t *testing.T) {
 	oldContent := "line1\nline2\nline3\n"
 	newContent := "line1\nchanged\nline3\n"
 
@@ -284,7 +285,7 @@ func TestHITLWrapper_DiffWriteFile_ExistingFile(t *testing.T) {
 			return "ok", taskengine.DataTypeString, nil
 		},
 	}
-	w := NewHITLWrapper(inner, ask, approvePolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, ask, approvePolicy(), nil)
 
 	_, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{"path": "test.txt", "content": newContent}, false,
@@ -304,7 +305,7 @@ func TestHITLWrapper_DiffWriteFile_ExistingFile(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_DiffWriteFile_NewFile(t *testing.T) {
+func TestUnit_HITLWrapper_DiffWriteFile_NewFile(t *testing.T) {
 	newContent := "hello\nworld\n"
 
 	var capturedReq hitlservice.ApprovalRequest
@@ -326,7 +327,7 @@ func TestHITLWrapper_DiffWriteFile_NewFile(t *testing.T) {
 			return "ok", taskengine.DataTypeString, nil
 		},
 	}
-	w := NewHITLWrapper(inner, ask, approvePolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, ask, approvePolicy(), nil)
 
 	_, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{"path": "new.txt", "content": newContent}, false,
@@ -343,7 +344,7 @@ func TestHITLWrapper_DiffWriteFile_NewFile(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_DiffSed(t *testing.T) {
+func TestUnit_HITLWrapper_DiffSed(t *testing.T) {
 	oldContent := "foo bar baz\n"
 
 	var capturedReq hitlservice.ApprovalRequest
@@ -360,7 +361,7 @@ func TestHITLWrapper_DiffSed(t *testing.T) {
 			return "ok", taskengine.DataTypeString, nil
 		},
 	}
-	w := NewHITLWrapper(inner, ask, approvePolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, ask, approvePolicy(), nil)
 
 	_, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{"path": "f.txt", "pattern": "bar", "replacement": "qux"}, false,
@@ -374,7 +375,7 @@ func TestHITLWrapper_DiffSed(t *testing.T) {
 	}
 }
 
-func TestHITLWrapper_DiffReadError_ApprovalStillShown(t *testing.T) {
+func TestUnit_HITLWrapper_DiffReadError_ApprovalStillShown(t *testing.T) {
 	var capturedReq hitlservice.ApprovalRequest
 	ask := func(_ context.Context, req hitlservice.ApprovalRequest) (bool, error) {
 		capturedReq = req
@@ -389,7 +390,7 @@ func TestHITLWrapper_DiffReadError_ApprovalStillShown(t *testing.T) {
 			return "ok", taskengine.DataTypeString, nil
 		},
 	}
-	w := NewHITLWrapper(inner, ask, approvePolicy(), nil)
+	w := localtools.NewHITLWrapper(inner, ask, approvePolicy(), nil)
 
 	_, _, err := w.Exec(context.Background(), time.Now(),
 		map[string]any{"path": "secret.txt", "content": "new"}, false,
@@ -401,154 +402,5 @@ func TestHITLWrapper_DiffReadError_ApprovalStillShown(t *testing.T) {
 	// Diff is empty but the approval request was still sent.
 	if capturedReq.ToolsName != "local_fs" {
 		t.Errorf("approval request was not sent, got toolsName=%q", capturedReq.ToolsName)
-	}
-}
-
-// ── lcsEditScript unit tests ──────────────────────────────────────────────────
-
-func TestLCSEditScript_NoChange(t *testing.T) {
-	ops := lcsEditScript([]string{"a", "b", "c"}, []string{"a", "b", "c"})
-	for _, op := range ops {
-		if op.kind != ' ' {
-			t.Errorf("expected all ops to be unchanged, got %q for %q", op.kind, op.text)
-		}
-	}
-}
-
-func TestLCSEditScript_InsertLine(t *testing.T) {
-	ops := lcsEditScript([]string{"a", "c"}, []string{"a", "b", "c"})
-	kinds := extractKinds(ops)
-	if kinds != " + " {
-		t.Errorf("expected ' + ', got %q", kinds)
-	}
-}
-
-func TestLCSEditScript_DeleteLine(t *testing.T) {
-	ops := lcsEditScript([]string{"a", "b", "c"}, []string{"a", "c"})
-	kinds := extractKinds(ops)
-	if kinds != " - " {
-		t.Errorf("expected ' - ', got %q (ops: %v)", kinds, ops)
-	}
-}
-
-func TestLCSEditScript_ChangeLine(t *testing.T) {
-	// Change "b" to "x": delete b, insert x.
-	ops := lcsEditScript([]string{"a", "b", "c"}, []string{"a", "x", "c"})
-	kinds := extractKinds(ops)
-	if kinds != " -+  " {
-		// a(eq), b(del), x(ins), c(eq)
-		// " - + " with spaces → let me re-check
-		t.Logf("ops: %v, kinds: %q", ops, kinds)
-		// expected: ' '(a), '-'(b), '+'(x), ' '(c)
-		if kinds != " -+ " {
-			t.Errorf("expected ' -+ ', got %q", kinds)
-		}
-	}
-}
-
-func TestLCSEditScript_EmptyOld(t *testing.T) {
-	ops := lcsEditScript(nil, []string{"a", "b"})
-	kinds := extractKinds(ops)
-	for _, k := range kinds {
-		if k != '+' {
-			t.Errorf("all ops should be additions, got %q", kinds)
-			break
-		}
-	}
-}
-
-func TestLCSEditScript_EmptyNew(t *testing.T) {
-	ops := lcsEditScript([]string{"a", "b"}, nil)
-	kinds := extractKinds(ops)
-	for _, k := range kinds {
-		if k != '-' {
-			t.Errorf("all ops should be deletions, got %q", kinds)
-			break
-		}
-	}
-}
-
-func extractKinds(ops []editOp) string {
-	var b strings.Builder
-	for _, op := range ops {
-		b.WriteByte(op.kind)
-	}
-	return b.String()
-}
-
-// ── unifiedDiff unit tests ────────────────────────────────────────────────────
-
-func TestUnifiedDiff_NoChange(t *testing.T) {
-	result := unifiedDiff("f.txt", "same\n", "same\n")
-	if result != "(no changes)" {
-		t.Errorf("expected '(no changes)', got %q", result)
-	}
-}
-
-func TestUnifiedDiff_NewFile(t *testing.T) {
-	result := unifiedDiff("f.txt", "", "hello\nworld\n")
-	if !strings.Contains(result, "+hello") || !strings.Contains(result, "+world") {
-		t.Errorf("expected additions for new file, got:\n%s", result)
-	}
-	if strings.Contains(result, "\n-") {
-		t.Errorf("unexpected deletions for new file:\n%s", result)
-	}
-}
-
-func TestUnifiedDiff_DeleteFile(t *testing.T) {
-	result := unifiedDiff("f.txt", "bye\n", "")
-	if !strings.Contains(result, "-bye") {
-		t.Errorf("expected deletion, got:\n%s", result)
-	}
-}
-
-func TestUnifiedDiff_InsertionCorrect(t *testing.T) {
-	// Inserting a line in the middle must not mark subsequent unchanged lines as changed.
-	old := "a\nb\nc\nd\ne\n"
-	new := "a\nb\nINSERTED\nc\nd\ne\n"
-	result := unifiedDiff("f.txt", old, new)
-	if strings.Contains(result, "-c") || strings.Contains(result, "-d") || strings.Contains(result, "-e") {
-		t.Errorf("insertion must not mark subsequent lines as deleted:\n%s", result)
-	}
-	if !strings.Contains(result, "+INSERTED") {
-		t.Errorf("expected +INSERTED in diff:\n%s", result)
-	}
-}
-
-func TestUnifiedDiff_ContextLines(t *testing.T) {
-	// Change only line 5 in a 10-line file; lines 2-4 and 6-8 should appear as context.
-	lines := []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
-	old := strings.Join(lines, "\n") + "\n"
-	newLines := make([]string, len(lines))
-	copy(newLines, lines)
-	newLines[4] = "FIVE"
-	new := strings.Join(newLines, "\n") + "\n"
-
-	result := unifiedDiff("f.txt", old, new)
-	if !strings.Contains(result, " 2") {
-		t.Errorf("expected line '2' as context, got:\n%s", result)
-	}
-	if strings.Contains(result, " 1\n") {
-		t.Errorf("line '1' is outside ±3 context and should not appear:\n%s", result)
-	}
-}
-
-func TestUnifiedDiff_HunkHeader(t *testing.T) {
-	result := unifiedDiff("f.txt", "a\nb\nc\n", "a\nX\nc\n")
-	if !strings.Contains(result, "@@") {
-		t.Errorf("expected @@ hunk header, got:\n%s", result)
-	}
-}
-
-func TestUnifiedDiff_LargeFileTruncated(t *testing.T) {
-	// Build a file larger than diffMaxFileLines.
-	var sb strings.Builder
-	for i := range diffMaxFileLines + 100 {
-		fmt.Fprintf(&sb, "line%d\n", i)
-	}
-	big := sb.String()
-	result := unifiedDiff("f.txt", big, big+"extra\n")
-	if !strings.Contains(result, "truncated") {
-		t.Errorf("expected truncation notice for large file:\n%s", result)
 	}
 }

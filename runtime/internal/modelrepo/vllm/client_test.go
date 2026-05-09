@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +50,7 @@ func (t *captureTracker) change(id string) (any, bool) {
 
 var _ libtracker.ActivityTracker = (*captureTracker)(nil)
 
-func TestBuildChatRequest_MapsThinkingLevels(t *testing.T) {
+func TestUnit_BuildChatRequest_MapsThinkingLevels(t *testing.T) {
 	t.Parallel()
 
 	tool := modelrepo.Tool{
@@ -75,7 +75,7 @@ func TestBuildChatRequest_MapsThinkingLevels(t *testing.T) {
 	assert.Equal(t, false, req.ExtraBody["chat_template_kwargs"].(map[string]any)["enable_thinking"])
 }
 
-func TestVLLMChat_AllowsToolCallsFinishReason(t *testing.T) {
+func TestUnit_VLLMChat_AllowsToolCallsFinishReason(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,7 +118,7 @@ func TestVLLMChat_AllowsToolCallsFinishReason(t *testing.T) {
 	assert.Equal(t, "{\"city\":\"Berlin\"}", resp.ToolCalls[0].Function.Arguments)
 }
 
-func TestVLLMPrompt_TracksReasoningAlias(t *testing.T) {
+func TestUnit_VLLMPrompt_TracksReasoningAlias(t *testing.T) {
 	t.Parallel()
 
 	tracker := &captureTracker{}
@@ -165,7 +165,7 @@ func TestVLLMPrompt_TracksReasoningAlias(t *testing.T) {
 	assert.Equal(t, 5, changeMap["thinking_length"])
 }
 
-func TestVLLMStreamClient_UsesChatRequestParityAndStreamsThinking(t *testing.T) {
+func TestUnit_VLLMStreamClient_UsesChatRequestParityAndStreamsThinking(t *testing.T) {
 	t.Parallel()
 
 	tool := modelrepo.Tool{

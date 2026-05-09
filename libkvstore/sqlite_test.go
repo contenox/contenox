@@ -25,7 +25,7 @@ func openSQLiteKV(t *testing.T) libkvstore.KVExecutor {
 	return exec
 }
 
-func TestSQLiteKVSetGet(t *testing.T) {
+func TestUnit_SQLiteKVSetGet(t *testing.T) {
 	ctx := context.Background()
 	exec := openSQLiteKV(t)
 
@@ -44,7 +44,7 @@ func TestSQLiteKVSetGet(t *testing.T) {
 	}
 }
 
-func TestSQLiteKVNotFound(t *testing.T) {
+func TestUnit_SQLiteKVNotFound(t *testing.T) {
 	exec := openSQLiteKV(t)
 	_, err := exec.Get(context.Background(), "nonexistent")
 	if err != libkvstore.ErrNotFound {
@@ -52,7 +52,7 @@ func TestSQLiteKVNotFound(t *testing.T) {
 	}
 }
 
-func TestSQLiteKVTTLExpiry(t *testing.T) {
+func TestUnit_SQLiteKVTTLExpiry(t *testing.T) {
 	ctx := context.Background()
 	exec := openSQLiteKV(t)
 
@@ -80,7 +80,7 @@ func TestSQLiteKVTTLExpiry(t *testing.T) {
 	}
 }
 
-func TestSQLiteKVExists(t *testing.T) {
+func TestUnit_SQLiteKVExists(t *testing.T) {
 	ctx := context.Background()
 	exec := openSQLiteKV(t)
 
@@ -96,7 +96,7 @@ func TestSQLiteKVExists(t *testing.T) {
 	}
 }
 
-func TestSQLiteKVDelete(t *testing.T) {
+func TestUnit_SQLiteKVDelete(t *testing.T) {
 	ctx := context.Background()
 	exec := openSQLiteKV(t)
 
@@ -110,7 +110,7 @@ func TestSQLiteKVDelete(t *testing.T) {
 	}
 }
 
-func TestSQLiteKVKeys(t *testing.T) {
+func TestUnit_SQLiteKVKeys(t *testing.T) {
 	ctx := context.Background()
 	exec := openSQLiteKV(t)
 
@@ -126,7 +126,7 @@ func TestSQLiteKVKeys(t *testing.T) {
 	}
 }
 
-func TestSQLiteKVListPushRange(t *testing.T) {
+func TestUnit_SQLiteKVListPushRange(t *testing.T) {
 	ctx := context.Background()
 	exec := openSQLiteKV(t)
 
@@ -148,7 +148,7 @@ func TestSQLiteKVListPushRange(t *testing.T) {
 	}
 }
 
-func TestSQLiteKVSetAddMembers(t *testing.T) {
+func TestUnit_SQLiteKVSetAddMembers(t *testing.T) {
 	ctx := context.Background()
 	exec := openSQLiteKV(t)
 
@@ -165,7 +165,7 @@ func TestSQLiteKVSetAddMembers(t *testing.T) {
 	}
 }
 
-func TestSQLiteKVOverwrite(t *testing.T) {
+func TestUnit_SQLiteKVOverwrite(t *testing.T) {
 	ctx := context.Background()
 	exec := openSQLiteKV(t)
 

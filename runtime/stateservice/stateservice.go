@@ -25,19 +25,23 @@ type Service interface {
 
 // CLIConfigPatch selects which CLI default keys to write; empty strings mean "do not change".
 type CLIConfigPatch struct {
-	DefaultModel    string
-	DefaultProvider string
-	DefaultChain    string
-	HITLPolicyName  string
+	DefaultModel       string
+	DefaultProvider    string
+	DefaultAltModel    string
+	DefaultAltProvider string
+	DefaultChain       string
+	HITLPolicyName     string
 }
 
 // CLIConfigSnapshot is the resolved KV values after an update.
 type CLIConfigSnapshot struct {
-	DefaultModel    string
-	DefaultProvider string
-	DefaultChain    string
-	HITLPolicyName  string
-	ResolvedFrom    map[string]string
+	DefaultModel       string
+	DefaultProvider    string
+	DefaultAltModel    string
+	DefaultAltProvider string
+	DefaultChain       string
+	HITLPolicyName     string
+	ResolvedFrom       map[string]string
 }
 
 type service struct {
@@ -73,9 +77,11 @@ func (s *service) SetupStatus(ctx context.Context) (setupcheck.Result, error) {
 func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLIConfigSnapshot, error) {
 	if strings.TrimSpace(patch.DefaultModel) == "" &&
 		strings.TrimSpace(patch.DefaultProvider) == "" &&
+		strings.TrimSpace(patch.DefaultAltModel) == "" &&
+		strings.TrimSpace(patch.DefaultAltProvider) == "" &&
 		strings.TrimSpace(patch.DefaultChain) == "" &&
 		strings.TrimSpace(patch.HITLPolicyName) == "" {
-		return CLIConfigSnapshot{}, fmt.Errorf("provide at least one of default-model, default-provider, default-chain, or hitl-policy-name")
+		return CLIConfigSnapshot{}, fmt.Errorf("provide at least one of default-model, default-provider, default-alt-model, default-alt-provider, default-chain, or hitl-policy-name")
 	}
 	store := runtimetypes.New(s.db.WithoutTransaction())
 	if strings.TrimSpace(patch.DefaultModel) != "" {
@@ -86,6 +92,16 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 	if strings.TrimSpace(patch.DefaultProvider) != "" {
 		if err := clikv.SetString(ctx, store, "default-provider", patch.DefaultProvider); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-provider: %w", err)
+		}
+	}
+	if strings.TrimSpace(patch.DefaultAltModel) != "" {
+		if err := clikv.SetString(ctx, store, "default-alt-model", patch.DefaultAltModel); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set default-alt-model: %w", err)
+		}
+	}
+	if strings.TrimSpace(patch.DefaultAltProvider) != "" {
+		if err := clikv.SetString(ctx, store, "default-alt-provider", patch.DefaultAltProvider); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set default-alt-provider: %w", err)
 		}
 	}
 	if strings.TrimSpace(patch.DefaultChain) != "" {
@@ -101,10 +117,12 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 	defaultChain, chainFrom := clikv.ReadConfig(ctx, store, s.workspaceID, "default-chain")
 	hitlPolicy, policyFrom := clikv.ReadConfig(ctx, store, s.workspaceID, "hitl-policy-name")
 	return CLIConfigSnapshot{
-		DefaultModel:    clikv.Read(ctx, store, "default-model"),
-		DefaultProvider: clikv.Read(ctx, store, "default-provider"),
-		DefaultChain:    defaultChain,
-		HITLPolicyName:  hitlPolicy,
+		DefaultModel:       clikv.Read(ctx, store, "default-model"),
+		DefaultProvider:    clikv.Read(ctx, store, "default-provider"),
+		DefaultAltModel:    clikv.Read(ctx, store, "default-alt-model"),
+		DefaultAltProvider: clikv.Read(ctx, store, "default-alt-provider"),
+		DefaultChain:       defaultChain,
+		HITLPolicyName:     hitlPolicy,
 		ResolvedFrom: map[string]string{
 			"defaultChain":   chainFrom,
 			"hitlPolicyName": policyFrom,

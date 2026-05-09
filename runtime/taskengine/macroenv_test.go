@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
@@ -46,8 +47,8 @@ func tool(name string) taskengine.Tool {
 
 func newMacroChain(template string, tools []string) *taskengine.TaskChainDefinition {
 	cfg := &taskengine.LLMExecutionConfig{
-		Model:  "test",
-		Tools:  tools,
+		Model: "test",
+		Tools: tools,
 	}
 	return &taskengine.TaskChainDefinition{
 		ID: "test-chain",
@@ -73,7 +74,7 @@ func runMacroExpand(t *testing.T, repo taskengine.ToolsRepo, sysInstruction stri
 	}
 	chain := newMacroChain(sysInstruction, tools)
 	// ExecEnv expands macros then delegates to noopEnv which returns the expanded system_instruction.
-	raw, _, _, err := env.ExecEnv(context.Background(), chain, "", taskengine.DataTypeString)
+	raw, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "", taskengine.DataTypeString)
 	if err != nil {
 		t.Fatalf("ExecEnv: %v", err)
 	}
@@ -104,7 +105,7 @@ func stubRepo() *stubToolsRepo {
 
 // ── toolservice:tools ──────────────────────────────────────────────────────────
 
-func TestMacroEnv_Tools_NoAllowlist(t *testing.T) {
+func TestUnit_MacroEnv_Tools_NoAllowlist(t *testing.T) {
 	// nil allowlist = field absent = all tools (backward compat)
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools}}", nil)
 	var names []string
@@ -116,7 +117,7 @@ func TestMacroEnv_Tools_NoAllowlist(t *testing.T) {
 	}
 }
 
-func TestMacroEnv_Tools_StarAllowlist(t *testing.T) {
+func TestUnit_MacroEnv_Tools_StarAllowlist(t *testing.T) {
 	// ["*"] = explicit all
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools}}", []string{"*"})
 	var names []string
@@ -128,7 +129,7 @@ func TestMacroEnv_Tools_StarAllowlist(t *testing.T) {
 	}
 }
 
-func TestMacroEnv_Tools_EmptyAllowlist(t *testing.T) {
+func TestUnit_MacroEnv_Tools_EmptyAllowlist(t *testing.T) {
 	// [] = explicitly no tools
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools}}", []string{})
 	var names []string
@@ -140,7 +141,7 @@ func TestMacroEnv_Tools_EmptyAllowlist(t *testing.T) {
 	}
 }
 
-func TestMacroEnv_Tools_WithAllowlist(t *testing.T) {
+func TestUnit_MacroEnv_Tools_WithAllowlist(t *testing.T) {
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools}}", []string{"tools_a"})
 	var names []string
 	if err := json.Unmarshal([]byte(out), &names); err != nil {
@@ -151,7 +152,7 @@ func TestMacroEnv_Tools_WithAllowlist(t *testing.T) {
 	}
 }
 
-func TestMacroEnv_Tools_AllowlistMiss(t *testing.T) {
+func TestUnit_MacroEnv_Tools_AllowlistMiss(t *testing.T) {
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools}}", []string{"tools_x"})
 	var names []string
 	if err := json.Unmarshal([]byte(out), &names); err != nil {
@@ -164,7 +165,7 @@ func TestMacroEnv_Tools_AllowlistMiss(t *testing.T) {
 
 // ── toolservice:list ───────────────────────────────────────────────────────────
 
-func TestMacroEnv_List_WithAllowlist(t *testing.T) {
+func TestUnit_MacroEnv_List_WithAllowlist(t *testing.T) {
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:list}}", []string{"tools_a"})
 	var m map[string][]string
 	if err := json.Unmarshal([]byte(out), &m); err != nil {
@@ -180,7 +181,7 @@ func TestMacroEnv_List_WithAllowlist(t *testing.T) {
 
 // ── toolservice:tools ──────────────────────────────────────────────────────────
 
-func TestMacroEnv_Tools_Allowed(t *testing.T) {
+func TestUnit_MacroEnv_Tools_Allowed(t *testing.T) {
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools tools_a}}", []string{"tools_a"})
 	var names []string
 	if err := json.Unmarshal([]byte(out), &names); err != nil {
@@ -191,7 +192,7 @@ func TestMacroEnv_Tools_Allowed(t *testing.T) {
 	}
 }
 
-func TestMacroEnv_Tools_NotAllowed(t *testing.T) {
+func TestUnit_MacroEnv_Tools_NotAllowed(t *testing.T) {
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools tools_b}}", []string{"tools_a"})
 	// tools_b is not in allowlist → should return empty array
 	var names []string
@@ -203,7 +204,7 @@ func TestMacroEnv_Tools_NotAllowed(t *testing.T) {
 	}
 }
 
-func TestMacroEnv_Tools_NoAllowlist_Allowed(t *testing.T) {
+func TestUnit_MacroEnv_Tools_NoAllowlist_Allowed(t *testing.T) {
 	// nil = no allowlist = all tools accessible
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools tools_b}}", nil)
 	if strings.Contains(out, "tool_b1") {

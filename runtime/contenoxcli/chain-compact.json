@@ -1,0 +1,36 @@
+{
+    "id": "chain-compact",
+    "description": "System chain to summarize conversation history for compaction.",
+    "tasks": [
+        {
+            "id": "compact_history",
+            "description": "Summarize the conversation history.",
+            "handler": "chat_completion",
+            "system_instruction": "You are a specialized conversation summarizer. Read the following messages between a user and an AI assistant. Write a dense, factual summary of what happened. Include:\n- Key decisions made\n- Important findings (e.g., from file reads or shell commands)\n- The current state of the task\nDo not editorialize or write a narrative. Use bullet points.",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}",
+                "shift": true,
+                "pass_clients_tools": false,
+                "tools": [],
+                "retry_policy": {
+                    "max_attempts": 3,
+                    "initial_backoff": "1s",
+                    "max_backoff": "10s",
+                    "jitter": 0.25
+                }
+            },
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "end"
+                    }
+                ]
+            }
+        }
+    ],
+    "token_limit": 128000
+}

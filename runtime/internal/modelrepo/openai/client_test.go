@@ -8,7 +8,7 @@ import (
 	"github.com/contenox/contenox/runtime/internal/modelrepo"
 )
 
-func TestOpenAIReasoningEffort(t *testing.T) {
+func TestUnit_OpenAIReasoningEffort(t *testing.T) {
 	t.Parallel()
 
 	ptr := func(s string) *string { return &s }
@@ -37,7 +37,7 @@ func TestOpenAIReasoningEffort(t *testing.T) {
 	}
 }
 
-func TestOpenAIGPT5AllowsSamplingParams(t *testing.T) {
+func TestUnit_OpenAIGPT5AllowsSamplingParams(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		model     string
@@ -59,7 +59,7 @@ func TestOpenAIGPT5AllowsSamplingParams(t *testing.T) {
 	}
 }
 
-func TestBuildOpenAIRequest_GPT5OmitsTemperature(t *testing.T) {
+func TestUnit_BuildOpenAIRequest_GPT5OmitsTemperature(t *testing.T) {
 	t.Parallel()
 	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
 	req, _ := buildOpenAIRequest("gpt-5", msgs, []modelrepo.ChatArgument{
@@ -70,7 +70,7 @@ func TestBuildOpenAIRequest_GPT5OmitsTemperature(t *testing.T) {
 	}
 }
 
-func TestBuildOpenAIRequest_GPT5NamespacedOmitsTemperature(t *testing.T) {
+func TestUnit_BuildOpenAIRequest_GPT5NamespacedOmitsTemperature(t *testing.T) {
 	t.Parallel()
 	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
 	req, _ := buildOpenAIRequest("openai/gpt-5", msgs, []modelrepo.ChatArgument{
@@ -81,7 +81,7 @@ func TestBuildOpenAIRequest_GPT5NamespacedOmitsTemperature(t *testing.T) {
 	}
 }
 
-func TestBuildOpenAIRequest_GPT54NoneKeepsTemperature(t *testing.T) {
+func TestUnit_BuildOpenAIRequest_GPT54NoneKeepsTemperature(t *testing.T) {
 	t.Parallel()
 	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
 	req, _ := buildOpenAIRequest("gpt-5.4", msgs, []modelrepo.ChatArgument{
@@ -96,7 +96,7 @@ func TestBuildOpenAIRequest_GPT54NoneKeepsTemperature(t *testing.T) {
 	}
 }
 
-func TestBuildOpenAIRequest_GPT54HighOmitsTemperature(t *testing.T) {
+func TestUnit_BuildOpenAIRequest_GPT54HighOmitsTemperature(t *testing.T) {
 	t.Parallel()
 	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
 	req, _ := buildOpenAIRequest("gpt-5.4", msgs, []modelrepo.ChatArgument{
@@ -111,7 +111,7 @@ func TestBuildOpenAIRequest_GPT54HighOmitsTemperature(t *testing.T) {
 	}
 }
 
-func TestBuildOpenAIRequest_UsesMaxCompletionTokensJSON(t *testing.T) {
+func TestUnit_BuildOpenAIRequest_UsesMaxCompletionTokensJSON(t *testing.T) {
 	t.Parallel()
 	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
 	req, _ := buildOpenAIRequest("gpt-4o", msgs, []modelrepo.ChatArgument{
@@ -130,7 +130,7 @@ func TestBuildOpenAIRequest_UsesMaxCompletionTokensJSON(t *testing.T) {
 	}
 }
 
-func TestBuildOpenAIRequest_GPT4KeepsTemperature(t *testing.T) {
+func TestUnit_BuildOpenAIRequest_GPT4KeepsTemperature(t *testing.T) {
 	t.Parallel()
 	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
 	req, _ := buildOpenAIRequest("gpt-4o", msgs, []modelrepo.ChatArgument{

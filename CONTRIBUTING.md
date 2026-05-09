@@ -23,7 +23,7 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 
 ### Abstraction layers
 
-**Service Layer** — each domain gets its own interface + implementation package (`planservice`, `execservice`, `backendservice`, `mcpserverservice`, `stateservice`, `hitlservice`, `terminalservice`, `vfsservice`, etc.). Services don't call each other directly; they communicate through the shared `runtimetypes.Store` interface and bus events.
+**Service Layer** — each domain gets its own interface + implementation package (`execservice`, `backendservice`, `mcpserverservice`, `stateservice`, `hitlservice`, `terminalservice`, `vfsservice`, etc.). Services don't call each other directly; they communicate through the shared `runtimetypes.Store` interface and bus events.
 
 **Task Engine** (`runtime/taskengine/`) — the core execution model. Chains are JSON DAGs with typed I/O (`DataType`: String, Int, JSON, ChatHistory). Task handlers (`prompt_to_string`, `chat_completion`, `execute_tool_calls`, `hook`, `noop`, etc.) are an enum. Branch conditions (`equals`, `contains`, `in_range`, `>`, `<`) are declarative — no Go code lives inside chain definitions.
 
@@ -38,7 +38,6 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 | File | What it shows |
 |------|---------------|
 | `runtime/taskengine/tasktype.go` | Task types, handlers, branch operators |
-| `runtime/planservice/planservice.go` | Plan orchestration interface |
 | `runtime/internal/runtimestate/state.go` | Backend state sync |
 | `runtime/contenoxcli/cli.go` | CLI dispatch |
 | `runtime/contenoxcli/engine.go` | CLI-local engine bootstrap |
@@ -46,12 +45,12 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 
 ## Repository structure
 
-The **`contenox`** binary is the main (only) entrypoint: `init`, `plan`, `chat`, `run`, `hook`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`.
+The **`contenox`** binary is the main (only) entrypoint: `init`, `chat`, `run`, `hook`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`.
 
 All AI/LLM orchestration packages live under **`runtime/`**. Infrastructure libraries (`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libroutine`, `libtracker`) stay at the module root.
 
 ```
-runtime/              ← AI/LLM orchestration (taskengine, planservice, runtimetypes, …)
+runtime/              ← AI/LLM orchestration (taskengine, execservice, runtimetypes, …)
   internal/           ← model repo drivers, hooks, state reconciler
 runtime/contenoxcli/  ← CLI command implementations
 runtime/errdefs/      ← shared error sentinels

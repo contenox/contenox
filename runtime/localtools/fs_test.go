@@ -1,4 +1,4 @@
-package localtools
+package localtools_test
 
 import (
 	"context"
@@ -8,17 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/contenox/contenox/runtime/localtools"
 	"github.com/contenox/contenox/runtime/taskengine"
 )
 
-func TestLocalFSTools(t *testing.T) {
+func TestUnit_LocalFSTools_Exec(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "contenox-fs-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	h := NewLocalFSTools(tempDir)
+	h := localtools.NewLocalFSTools(tempDir)
 	ctx := context.Background()
 	now := time.Now()
 
@@ -185,7 +186,7 @@ func TestLocalFSTools(t *testing.T) {
 	})
 
 	t.Run("maxReadBytesUnlimited", func(t *testing.T) {
-		ctxUnlimited := taskengine.WithToolsArgs(ctx, localFSToolsName, map[string]string{
+		ctxUnlimited := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_read_bytes":   "-1",
 			"_max_output_bytes": "-1",
 		})
@@ -198,7 +199,7 @@ func TestLocalFSTools(t *testing.T) {
 	})
 
 	t.Run("maxOutputBytesRejectsOversizedResult", func(t *testing.T) {
-		ctxSmallOut := taskengine.WithToolsArgs(ctx, localFSToolsName, map[string]string{
+		ctxSmallOut := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_read_bytes":   "-1",
 			"_max_output_bytes": "64",
 		})
@@ -214,7 +215,7 @@ func TestLocalFSTools(t *testing.T) {
 	})
 
 	t.Run("maxOutputBytesUnlimited", func(t *testing.T) {
-		ctxBoth := taskengine.WithToolsArgs(ctx, localFSToolsName, map[string]string{
+		ctxBoth := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_read_bytes":   "-1",
 			"_max_output_bytes": "-1",
 		})
@@ -227,7 +228,7 @@ func TestLocalFSTools(t *testing.T) {
 	})
 
 	t.Run("deniedPathSubstrings", func(t *testing.T) {
-		ctxDeny := taskengine.WithToolsArgs(ctx, localFSToolsName, map[string]string{
+		ctxDeny := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_denied_path_substrings": "node_modules,secret",
 		})
 		args := map[string]any{"path": "pkg/node_modules/foo.txt"}
@@ -263,10 +264,10 @@ func TestLocalFSTools(t *testing.T) {
 
 	t.Run("grepLineRange", func(t *testing.T) {
 		args := map[string]any{
-			"path":        "test.txt",
-			"pattern":     "line",
-			"start_line":  float64(2),
-			"end_line":    float64(2),
+			"path":       "test.txt",
+			"pattern":    "line",
+			"start_line": float64(2),
+			"end_line":   float64(2),
 		}
 		toolsCall := &taskengine.ToolsCall{ToolName: "grep"}
 		res, _, err := h.Exec(ctx, now, args, false, toolsCall)
@@ -309,7 +310,7 @@ func TestLocalFSTools(t *testing.T) {
 	})
 
 	t.Run("grepMaxMatches", func(t *testing.T) {
-		ctxLim := taskengine.WithToolsArgs(ctx, localFSToolsName, map[string]string{
+		ctxLim := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
 			"_max_grep_matches": "1",
 		})
 		args := map[string]any{
@@ -332,9 +333,9 @@ func TestLocalFSTools(t *testing.T) {
 			t.Fatal(err)
 		}
 		args := map[string]any{
-			"path":        "walktree",
-			"recursive":   true,
-			"max_depth":   float64(3),
+			"path":      "walktree",
+			"recursive": true,
+			"max_depth": float64(3),
 		}
 		toolsCall := &taskengine.ToolsCall{ToolName: "list_dir"}
 		res, _, err := h.Exec(ctx, now, args, false, toolsCall)

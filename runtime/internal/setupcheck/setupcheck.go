@@ -21,11 +21,13 @@ const (
 
 // Input is everything needed to compute readiness; callers gather from DB + runtime state.
 type Input struct {
-	DefaultModel    string
-	DefaultProvider string
-	DefaultChain    string
-	HITLPolicyName  string
-	States          []statetype.BackendRuntimeState
+	DefaultModel       string
+	DefaultProvider    string
+	DefaultAltModel    string
+	DefaultAltProvider string
+	DefaultChain       string
+	HITLPolicyName     string
+	States             []statetype.BackendRuntimeState
 	// RegisteredBackendCount, if non-nil, overrides len(RegisteredBackends) / len(States)
 	// for BackendCount. CLI doctor sets this from ListBackends when runtime state sync is unavailable.
 	RegisteredBackendCount *int

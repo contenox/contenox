@@ -1,4 +1,4 @@
-// Package localtools provides tools that fire around chain execution: approval gates, plan summaries, and step transitions.
+// Package localtools provides tools that fire around chain execution: approval gates and host-side helpers.
 package localtools
 
 import (
@@ -7,13 +7,26 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	"github.com/contenox/contenox/runtime/hitlservice"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/hitlservice"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
+
+// approvalPending counts in-flight HITL approval prompts. Set by HITLWrapper.Exec
+// before invoking the ask callback and cleared after it returns. Read by UI
+// renderers (e.g. the CLI idle-hint suppressor) so they don't print noise while
+// the user is being asked to decide.
+var approvalPending atomic.Int32
+
+// IsApprovalPending reports whether at least one HITL approval is awaiting a
+// human response. UI layers can poll this to suppress activity indicators.
+func IsApprovalPending() bool {
+	return approvalPending.Load() > 0
+}
 
 // AskApproval is the callback the HITLWrapper calls to request human review.
 // Implementations must block until the human decides, then return (true, nil) to
@@ -45,7 +58,7 @@ func NewHITLWrapper(inner taskengine.ToolsRepo, ask AskApproval, policy hitlserv
 	}
 }
 
-const denyMessage = "User denied the operation. Please ask for clarification or try a different, less destructive approach."
+const DenyMessage = "User denied the operation. Please ask for clarification or try a different, less destructive approach."
 
 // Exec implements taskengine.ToolsRepo.
 func (h *HITLWrapper) Exec(
@@ -75,7 +88,7 @@ func (h *HITLWrapper) Exec(
 	result, err := h.policy.Evaluate(ctx, tools.Name, toolName, args)
 	if err != nil {
 		reportErr(fmt.Errorf("hitl: policy evaluation failed, denying: %w", err))
-		return denyMessage, taskengine.DataTypeString, nil
+		return DenyMessage, taskengine.DataTypeString, nil
 	}
 
 	switch result.Action {
@@ -83,7 +96,7 @@ func (h *HITLWrapper) Exec(
 		return h.inner.Exec(ctx, startTime, input, debug, tools)
 
 	case hitlservice.ActionDeny:
-		return denyMessage, taskengine.DataTypeString, nil
+		return DenyMessage, taskengine.DataTypeString, nil
 
 	case hitlservice.ActionApprove:
 		diff, diffErr := h.buildDiff(ctx, tools, toolName, args)
@@ -92,9 +105,9 @@ func (h *HITLWrapper) Exec(
 		}
 		req := hitlservice.ApprovalRequest{
 			ToolsName: tools.Name,
-			ToolName: toolName,
-			Args:     args,
-			Diff:     diff,
+			ToolName:  toolName,
+			Args:      args,
+			Diff:      diff,
 		}
 
 		askCtx := ctx
@@ -104,7 +117,9 @@ func (h *HITLWrapper) Exec(
 			defer askCancel()
 		}
 
+		approvalPending.Add(1)
 		approved, err := h.ask(askCtx, req)
+		approvalPending.Add(-1)
 		if err != nil {
 			// Only treat as HITL timeout when our deadline fired, not when the parent
 			// context was already cancelled (which also surfaces as DeadlineExceeded).
@@ -126,8 +141,8 @@ func (h *HITLWrapper) Exec(
 			return nil, taskengine.DataTypeAny, err
 		}
 		if !approved {
-			reportChange("denied", denyMessage)
-			return denyMessage, taskengine.DataTypeString, nil
+			reportChange("denied", DenyMessage)
+			return DenyMessage, taskengine.DataTypeString, nil
 		}
 		return h.inner.Exec(ctx, startTime, input, debug, tools)
 

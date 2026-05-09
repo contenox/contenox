@@ -1,16 +1,18 @@
-package taskengine
+package taskengine_test
 
 import (
 	"context"
 	"encoding/json"
 	"sync"
 	"testing"
+
+	"github.com/contenox/contenox/runtime/taskengine"
 )
 
-func TestWidgetHintSink_AppendDrain(t *testing.T) {
-	s := &WidgetHintSink{}
-	s.Append(WidgetHint{Kind: "file_view", Payload: json.RawMessage(`{"a":1}`)})
-	s.Append(WidgetHint{Kind: "terminal_excerpt"})
+func TestUnit_WidgetHintSink_AppendDrain(t *testing.T) {
+	s := &taskengine.WidgetHintSink{}
+	s.Append(taskengine.WidgetHint{Kind: "file_view", Payload: json.RawMessage(`{"a":1}`)})
+	s.Append(taskengine.WidgetHint{Kind: "terminal_excerpt"})
 	got := s.Drain()
 	if len(got) != 2 {
 		t.Fatalf("drain returned %d hints, want 2", len(got))
@@ -24,9 +26,9 @@ func TestWidgetHintSink_AppendDrain(t *testing.T) {
 	}
 }
 
-func TestWidgetHintSink_NilSafe(t *testing.T) {
-	var s *WidgetHintSink
-	s.Append(WidgetHint{Kind: "x"})
+func TestUnit_WidgetHintSink_NilSafe(t *testing.T) {
+	var s *taskengine.WidgetHintSink
+	s.Append(taskengine.WidgetHint{Kind: "x"})
 	if got := s.Drain(); got != nil {
 		t.Fatalf("nil sink Drain should return nil")
 	}
@@ -35,17 +37,17 @@ func TestWidgetHintSink_NilSafe(t *testing.T) {
 	}
 }
 
-func TestAppendWidgetHint_NoSinkIsNoOp(t *testing.T) {
+func TestUnit_AppendWidgetHint_NoSinkIsNoOp(t *testing.T) {
 	// No sink in context — must not panic, must not cost anything observable.
-	AppendWidgetHint(context.Background(), WidgetHint{Kind: "x"})
-	AppendWidgetHintTyped(context.Background(), "x", map[string]any{"a": 1})
+	taskengine.AppendWidgetHint(context.Background(), taskengine.WidgetHint{Kind: "x"})
+	taskengine.AppendWidgetHintTyped(context.Background(), "x", map[string]any{"a": 1})
 }
 
-func TestAppendWidgetHint_WithSink(t *testing.T) {
-	s := &WidgetHintSink{}
-	ctx := WithWidgetHintSink(context.Background(), s)
-	AppendWidgetHint(ctx, WidgetHint{Kind: "file_view"})
-	AppendWidgetHintTyped(ctx, "terminal_excerpt", map[string]any{"output": "hi"})
+func TestUnit_AppendWidgetHint_WithSink(t *testing.T) {
+	s := &taskengine.WidgetHintSink{}
+	ctx := taskengine.WithWidgetHintSink(context.Background(), s)
+	taskengine.AppendWidgetHint(ctx, taskengine.WidgetHint{Kind: "file_view"})
+	taskengine.AppendWidgetHintTyped(ctx, "terminal_excerpt", map[string]any{"output": "hi"})
 	got := s.Snapshot()
 	if len(got) != 2 {
 		t.Fatalf("got %d hints, want 2", len(got))
@@ -64,16 +66,16 @@ func TestAppendWidgetHint_WithSink(t *testing.T) {
 	}
 }
 
-func TestAppendWidgetHint_ConcurrentAppend(t *testing.T) {
-	s := &WidgetHintSink{}
-	ctx := WithWidgetHintSink(context.Background(), s)
+func TestUnit_AppendWidgetHint_ConcurrentAppend(t *testing.T) {
+	s := &taskengine.WidgetHintSink{}
+	ctx := taskengine.WithWidgetHintSink(context.Background(), s)
 	const N = 100
 	var wg sync.WaitGroup
 	for i := 0; i < N; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			AppendWidgetHint(ctx, WidgetHint{Kind: "x"})
+			taskengine.AppendWidgetHint(ctx, taskengine.WidgetHint{Kind: "x"})
 		}()
 	}
 	wg.Wait()
@@ -82,8 +84,8 @@ func TestAppendWidgetHint_ConcurrentAppend(t *testing.T) {
 	}
 }
 
-func TestWithWidgetHintSink_NilNoop(t *testing.T) {
-	ctx := WithWidgetHintSink(context.Background(), nil)
+func TestUnit_WithWidgetHintSink_NilNoop(t *testing.T) {
+	ctx := taskengine.WithWidgetHintSink(context.Background(), nil)
 	// Should round-trip the original ctx, so AppendWidgetHint is a no-op.
-	AppendWidgetHint(ctx, WidgetHint{Kind: "x"})
+	taskengine.AppendWidgetHint(ctx, taskengine.WidgetHint{Kind: "x"})
 }

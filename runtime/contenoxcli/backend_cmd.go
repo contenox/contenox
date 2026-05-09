@@ -269,6 +269,14 @@ func resolveDBPath(cmd *cobra.Command) (string, error) {
 }
 
 func globalDBPath() (string, error) {
+	dir, err := globalContenoxDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "local.db"), nil
+}
+
+func globalContenoxDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("cannot determine home directory: %w", err)
@@ -277,7 +285,7 @@ func globalDBPath() (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create ~/.contenox: %w", err)
 	}
-	return filepath.Join(dir, "local.db"), nil
+	return dir, nil
 }
 
 func init() {

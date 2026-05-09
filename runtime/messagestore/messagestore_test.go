@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/contenox/runtime/chatservice"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtime/chatservice"
 	"github.com/contenox/contenox/runtime/messagestore"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/taskengine"
@@ -28,7 +28,7 @@ func setupDB(t *testing.T) (context.Context, libdb.DBManager) {
 	return ctx, db
 }
 
-func TestMessageStore_CreateAndListIndices(t *testing.T) {
+func TestUnit_MessageStore_CreateAndListIndices(t *testing.T) {
 	ctx, db := setupDB(t)
 	store := messagestore.New(db.WithoutTransaction(), "")
 
@@ -47,7 +47,7 @@ func TestMessageStore_CreateAndListIndices(t *testing.T) {
 	require.Empty(t, ids)
 }
 
-func TestMessageStore_AppendAndList(t *testing.T) {
+func TestUnit_MessageStore_AppendAndList(t *testing.T) {
 	ctx, db := setupDB(t)
 	store := messagestore.New(db.WithoutTransaction(), "")
 
@@ -67,7 +67,7 @@ func TestMessageStore_AppendAndList(t *testing.T) {
 	require.Equal(t, "m2", listed[1].ID)
 }
 
-func TestMessageStore_LastMessage(t *testing.T) {
+func TestUnit_MessageStore_LastMessage(t *testing.T) {
 	ctx, db := setupDB(t)
 	store := messagestore.New(db.WithoutTransaction(), "")
 
@@ -84,7 +84,7 @@ func TestMessageStore_LastMessage(t *testing.T) {
 	require.Equal(t, "last", msg.ID)
 }
 
-func TestMessageStore_DeleteMessages(t *testing.T) {
+func TestUnit_MessageStore_DeleteMessages(t *testing.T) {
 	ctx, db := setupDB(t)
 	store := messagestore.New(db.WithoutTransaction(), "")
 
@@ -100,7 +100,7 @@ func TestMessageStore_DeleteMessages(t *testing.T) {
 	require.Empty(t, listed)
 }
 
-func TestChatService_PersistDiff(t *testing.T) {
+func TestUnit_ChatService_PersistDiff(t *testing.T) {
 	ctx, db := setupDB(t)
 	store := messagestore.New(db.WithoutTransaction(), "")
 	mgr := chatservice.NewManager("")
@@ -144,7 +144,7 @@ func TestChatService_PersistDiff(t *testing.T) {
 	})
 }
 
-func TestMessageStore_WithTransaction(t *testing.T) {
+func TestUnit_MessageStore_WithTransaction(t *testing.T) {
 	ctx, db := setupDB(t)
 	store := messagestore.New(db.WithoutTransaction(), "")
 

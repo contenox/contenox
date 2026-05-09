@@ -10,7 +10,7 @@ import (
 	"github.com/ollama/ollama/api"
 )
 
-func TestOllamaHTTPClient_ListUsesBearerAuthAndNormalizesAPIPath(t *testing.T) {
+func TestUnit_OllamaHTTPClient_ListUsesBearerAuthAndNormalizesAPIPath(t *testing.T) {
 	t.Parallel()
 
 	var (
@@ -42,7 +42,7 @@ func TestOllamaHTTPClient_ListUsesBearerAuthAndNormalizesAPIPath(t *testing.T) {
 	}
 }
 
-func TestOllamaHTTPClient_GenerateStreamsNDJSON(t *testing.T) {
+func TestUnit_OllamaHTTPClient_GenerateStreamsNDJSON(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

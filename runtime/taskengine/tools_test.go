@@ -18,7 +18,7 @@ func sortedNames(names []string) []string {
 	return cp
 }
 
-func TestResolveToolsNames_Nil_ReturnsAll(t *testing.T) {
+func TestUnit_ResolveToolsNames_Nil_ReturnsAll(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), nil, repo)
 	if err != nil {
@@ -29,7 +29,7 @@ func TestResolveToolsNames_Nil_ReturnsAll(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Empty_ReturnsNothing(t *testing.T) {
+func TestUnit_ResolveToolsNames_Empty_ReturnsNothing(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), []string{}, repo)
 	if err != nil {
@@ -40,7 +40,7 @@ func TestResolveToolsNames_Empty_ReturnsNothing(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Star_ReturnsAll(t *testing.T) {
+func TestUnit_ResolveToolsNames_Star_ReturnsAll(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), []string{"*"}, repo)
 	if err != nil {
@@ -51,7 +51,7 @@ func TestResolveToolsNames_Star_ReturnsAll(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Exact_Match(t *testing.T) {
+func TestUnit_ResolveToolsNames_Exact_Match(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), []string{"tools_a"}, repo)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestResolveToolsNames_Exact_Match(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Exact_Miss(t *testing.T) {
+func TestUnit_ResolveToolsNames_Exact_Miss(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), []string{"unknown"}, repo)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestResolveToolsNames_Exact_Miss(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_StarExclude_RemovesEntry(t *testing.T) {
+func TestUnit_ResolveToolsNames_StarExclude_RemovesEntry(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), []string{"*", "!tools_b"}, repo)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestResolveToolsNames_StarExclude_RemovesEntry(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_StarExcludeMiss_ReturnsAll(t *testing.T) {
+func TestUnit_ResolveToolsNames_StarExcludeMiss_ReturnsAll(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), []string{"*", "!tools_x"}, repo)
 	if err != nil {
@@ -99,7 +99,7 @@ func TestResolveToolsNames_StarExcludeMiss_ReturnsAll(t *testing.T) {
 // Runtime allowlist intersection (WithRuntimeToolsAllowlist) — caller can further
 // restrict but never expand what a task allowlist permits.
 
-func TestResolveToolsNames_Runtime_Absent_TaskUnchanged(t *testing.T) {
+func TestUnit_ResolveToolsNames_Runtime_Absent_TaskUnchanged(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), []string{"*"}, repo)
 	if err != nil {
@@ -110,7 +110,7 @@ func TestResolveToolsNames_Runtime_Absent_TaskUnchanged(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Runtime_StarExclude_RemovesEntry(t *testing.T) {
+func TestUnit_ResolveToolsNames_Runtime_StarExclude_RemovesEntry(t *testing.T) {
 	repo := stubRepo()
 	ctx := taskengine.WithRuntimeToolsAllowlist(context.Background(), []string{"*", "!tools_b"})
 	names, err := taskengine.ExportedResolveToolsNames(ctx, []string{"*"}, repo)
@@ -123,7 +123,7 @@ func TestResolveToolsNames_Runtime_StarExclude_RemovesEntry(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Runtime_Empty_DeniesAll(t *testing.T) {
+func TestUnit_ResolveToolsNames_Runtime_Empty_DeniesAll(t *testing.T) {
 	repo := stubRepo()
 	ctx := taskengine.WithRuntimeToolsAllowlist(context.Background(), []string{})
 	names, err := taskengine.ExportedResolveToolsNames(ctx, []string{"*"}, repo)
@@ -135,7 +135,7 @@ func TestResolveToolsNames_Runtime_Empty_DeniesAll(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Runtime_NilSlice_NoRestriction(t *testing.T) {
+func TestUnit_ResolveToolsNames_Runtime_NilSlice_NoRestriction(t *testing.T) {
 	repo := stubRepo()
 	ctx := taskengine.WithRuntimeToolsAllowlist(context.Background(), nil)
 	names, err := taskengine.ExportedResolveToolsNames(ctx, []string{"tools_a"}, repo)
@@ -147,7 +147,7 @@ func TestResolveToolsNames_Runtime_NilSlice_NoRestriction(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Runtime_CannotExpandTaskAllowlist(t *testing.T) {
+func TestUnit_ResolveToolsNames_Runtime_CannotExpandTaskAllowlist(t *testing.T) {
 	repo := stubRepo()
 	ctx := taskengine.WithRuntimeToolsAllowlist(context.Background(), []string{"*"})
 	names, err := taskengine.ExportedResolveToolsNames(ctx, []string{"tools_a"}, repo)
@@ -159,7 +159,7 @@ func TestResolveToolsNames_Runtime_CannotExpandTaskAllowlist(t *testing.T) {
 	}
 }
 
-func TestResolveToolsNames_Runtime_StricterWins(t *testing.T) {
+func TestUnit_ResolveToolsNames_Runtime_StricterWins(t *testing.T) {
 	repo := stubRepo()
 	ctx := taskengine.WithRuntimeToolsAllowlist(context.Background(), []string{"tools_a"})
 	names, err := taskengine.ExportedResolveToolsNames(ctx, []string{"*"}, repo)

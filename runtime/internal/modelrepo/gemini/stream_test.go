@@ -7,13 +7,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGeminiStreamClient_StreamsThinkingDeltas(t *testing.T) {
+func TestUnit_GeminiStreamClient_StreamsThinkingDeltas(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

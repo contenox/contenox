@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/localtools"
 	"github.com/contenox/contenox/runtime/taskengine"
 )
 
@@ -123,9 +124,20 @@ func (r *cliTaskEventRenderer) Render(event taskengine.TaskEvent) {
 		r.lastStreamAt = time.Now()
 		r.streamMu.Unlock()
 		if r.trace {
-			fmt.Fprintf(r.w, "[step %d: %s] started\n", step, event.TaskHandler)
+			detail := event.TaskHandler
+			if event.ModelName != "" {
+				detail += " model=" + event.ModelName
+			}
+			if event.ProviderType != "" {
+				detail += " provider=" + event.ProviderType
+			}
+			fmt.Fprintf(r.w, "[step %d: %s] %s\n", step, event.TaskID, detail)
 		} else {
-			fmt.Fprintf(r.w, "[step %d] %s\n", step, event.TaskHandler)
+			if event.ModelName != "" {
+				fmt.Fprintf(r.w, "[step %d] %s (%s)\n", step, event.TaskHandler, event.ModelName)
+			} else {
+				fmt.Fprintf(r.w, "[step %d] %s\n", step, event.TaskHandler)
+			}
 		}
 	case taskengine.TaskEventStepChunk:
 		if event.Thinking != "" && r.showThinking {
@@ -156,14 +168,15 @@ func (r *cliTaskEventRenderer) Render(event taskengine.TaskEvent) {
 		}
 	case taskengine.TaskEventStepCompleted:
 		r.finishChunkLine()
+		if len(event.ToolNames) > 0 {
+			fmt.Fprintf(r.w, "  → %s\n", strings.Join(event.ToolNames, ", "))
+		}
 		if r.trace {
-			fmt.Fprintf(r.w, "[step:%s] completed\n", event.TaskID)
+			fmt.Fprintf(r.w, "[step:%s] completed (%s)\n", event.TaskID, event.Transition)
 		}
 	case taskengine.TaskEventStepFailed:
 		r.finishChunkLine()
-		if r.trace {
-			fmt.Fprintf(r.w, "[step:%s] failed: %s\n", event.TaskID, event.Error)
-		}
+		fmt.Fprintf(r.w, "[step:%s] failed: %s\n", event.TaskID, event.Error)
 	case taskengine.TaskEventChainCompleted:
 		r.finishChunkLine()
 		if r.trace {
@@ -192,7 +205,7 @@ func (r *cliTaskEventRenderer) printIdleHintIfStale() {
 	}
 	r.streamMu.Lock()
 	defer r.streamMu.Unlock()
-	if r.lastStreamAt.IsZero() {
+	if r.lastStreamAt.IsZero() || localtools.IsApprovalPending() {
 		return
 	}
 	since := time.Since(r.lastStreamAt)
@@ -200,8 +213,8 @@ func (r *cliTaskEventRenderer) printIdleHintIfStale() {
 		return
 	}
 	r.finishChunkLineUnlocked()
-	fmt.Fprintf(r.w, "[… still working — quiet for %s; ~%d bytes streamed this step]\n",
-		since.Round(time.Second), r.streamApproxBytes)
+	fmt.Fprintf(r.w, "[… still working — quiet for %s]\n",
+		since.Round(time.Second))
 	r.lastStreamAt = time.Now()
 	r.contentActive = false
 	r.thinkingActive = false

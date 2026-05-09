@@ -49,7 +49,7 @@ func userMsg(content string) modelrepo.Message {
 	return modelrepo.Message{Role: "user", Content: content}
 }
 
-func TestIntegration_Local_Chat(t *testing.T) {
+func TestSystem_Local_Chat(t *testing.T) {
 	path := tinyModelPath(t)
 	client := &localChatClient{modelPath: path}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -62,7 +62,7 @@ func TestIntegration_Local_Chat(t *testing.T) {
 	t.Logf("Chat response: %q", result.Message.Content)
 }
 
-func TestIntegration_Local_Prompt(t *testing.T) {
+func TestSystem_Local_Prompt(t *testing.T) {
 	path := tinyModelPath(t)
 	client := &localPromptClient{modelPath: path}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -74,7 +74,7 @@ func TestIntegration_Local_Prompt(t *testing.T) {
 	t.Logf("Prompt response: %q", out)
 }
 
-func TestIntegration_Local_Stream(t *testing.T) {
+func TestSystem_Local_Stream(t *testing.T) {
 	path := tinyModelPath(t)
 	client := &localStreamClient{modelPath: path}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -93,7 +93,7 @@ func TestIntegration_Local_Stream(t *testing.T) {
 	t.Logf("Stream response: %q", sb.String())
 }
 
-func TestIntegration_Local_Embed(t *testing.T) {
+func TestSystem_Local_Embed(t *testing.T) {
 	path := tinyModelPath(t)
 	client := &localEmbedClient{modelPath: path}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

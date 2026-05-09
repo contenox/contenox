@@ -30,6 +30,8 @@ func GatherInput(ctx context.Context, db libdbexec.DBManager, states []statetype
 	return Input{
 		DefaultModel:           clikv.Read(ctx, store, "default-model"),
 		DefaultProvider:        clikv.Read(ctx, store, "default-provider"),
+		DefaultAltModel:        clikv.Read(ctx, store, "default-alt-model"),
+		DefaultAltProvider:     clikv.Read(ctx, store, "default-alt-provider"),
 		DefaultChain:           defaultChain,
 		HITLPolicyName:         hitlPolicy,
 		States:                 states,

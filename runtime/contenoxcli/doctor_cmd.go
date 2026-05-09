@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/contenox/contenox/runtime/internal/setupcheck"
+	"github.com/contenox/contenox/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -16,7 +17,7 @@ var doctorCmd = &cobra.Command{
 	Long: `Shows whether your default model and provider are set, lists every registered backend
 (local embedded llama.cpp, Ollama, OpenAI, Gemini, vLLM, Vertex AI), and reports reachability
 and setup issues for each. Use it after contenox init, after contenox backend add, or when
-chat/plan cannot resolve a model.
+chat/run cannot resolve a model.
 
 Additionally, if you use local Ollama: when no Ollama backend is ready yet, doctor may probe
 your Ollama URL (OLLAMA_HOST, or http://127.0.0.1:11434) and suggest commands to pull a model
@@ -61,8 +62,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	o := buildRunOpts(cmd, db, contenoxDir)
 	o.EffectiveDB = dbPath
 	o.EffectiveSkipBackendCycle, _ = cmd.Flags().GetBool("skip-cycle")
+	vfs := vfsservice.NewLocalFS(o.ContenoxDir)
 
-	engine, err := BuildEngine(ctx, db, o)
+	engine, err := BuildEngine(ctx, db, o, vfs)
 	if err != nil {
 		return fmt.Errorf("failed to build engine: %w", err)
 	}

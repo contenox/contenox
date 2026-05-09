@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCatalogProvider_ListModels(t *testing.T) {
+func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	tagsHit := false
 	showHit := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,12 +24,12 @@ func TestCatalogProvider_ListModels(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"models": []map[string]any{
 					{
-						"name":       "smollm2:135m",
-						"model":      "smollm2:135m",
+						"name":        "smollm2:135m",
+						"model":       "smollm2:135m",
 						"modified_at": time.Date(2026, 4, 4, 0, 0, 0, 0, time.UTC),
-						"size":       12345,
-						"digest":     "sha256:test",
-						"details":    map[string]any{},
+						"size":        12345,
+						"digest":      "sha256:test",
+						"details":     map[string]any{},
 					},
 				},
 			})

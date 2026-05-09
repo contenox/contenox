@@ -1,6 +1,6 @@
 # Contenox CLI
 
-**Contenox CLI** is the local CLI layer over the Contenox task engine. It runs without Postgres, NATS, or a tokenizer service — just SQLite and an in-memory bus. Point it at local Ollama, Ollama Cloud, OpenAI, vLLM, or Gemini, and run AI workflows from the terminal: interactive chat, multi-step autonomous plans, or arbitrary chain pipelines.
+**Contenox CLI** is the local CLI layer over the Contenox task engine. It runs without Postgres, NATS, or a tokenizer service — just SQLite and an in-memory bus. Point it at local Ollama, Ollama Cloud, OpenAI, vLLM, or Gemini, and run AI workflows from the terminal: interactive chat or arbitrary chain pipelines.
 
 ---
 
@@ -32,7 +32,7 @@ For hosted providers instead, use `contenox backend add ...` with `--api-key-env
 
 ### Bare `contenox …` — stateless run (injected `run`)
 
-When the first argument is **not** a reserved subcommand (`chat`, `init`, `run`, `plan`, …), the CLI prepends `run`. That is the same as `contenox run …`: **no chat session**; input is passed to the **default run chain** if present.
+When the first argument is **not** a reserved subcommand (`chat`, `init`, `run`, …), the CLI prepends `run`. That is the same as `contenox run …`: **no chat session**; input is passed to the **default run chain** if present.
 
 - Chain file: `<resolved .contenox>/default-run-chain.json`, where `.contenox` is discovered by walking up from the current directory (see `contenox run --help`). Override with `--chain`.
 - Global settings and backends still live in `~/.contenox/local.db`; chain JSON files are project-local under `.contenox/`.
@@ -50,39 +50,6 @@ contenox chat "hello"
 ```
 
 Input comes from positional args, `--input`, or stdin. History is stored in SQLite. Uses the configured default chain (KV `default-chain` or `.contenox/default-chain.json`); override with `--chain`.
-
----
-
-### `contenox plan` — autonomous multi-step execution
-
-Break a goal into an ordered plan of steps, then execute them one at a time (or all at once). State is persisted in SQLite so you can pause, inspect, retry, or replan at any point.
-
-```bash
-# Create a plan
-contenox plan new "set up a git pre-commit hook that blocks commits when go build fails"
-
-# Inspect
-contenox plan list          # all plans  (* = active)
-contenox plan show          # steps of the active plan
-
-# Execute
-contenox plan next          # run one step, then stop
-contenox plan next --auto   # run all pending steps
-contenox plan next --shell  # enable shell execution for this step
-
-# Control
-contenox plan retry <N>     # reset step N to pending and re-run
-contenox plan skip <N>      # mark step N skipped
-contenox plan replan        # regenerate remaining steps from current state
-
-# Cleanup
-contenox plan delete <name> # remove a plan (DB + .contenox/plans/<name>.md)
-contenox plan clean         # remove all completed and archived plans
-```
-
-Plan names are derived from the goal text (`fix-auth-token-expiry-a3f9e12b`), so they're readable in `plan list` and in the markdown snapshot written to `.contenox/plans/`.
-
-> **Human-in-the-loop by default.** `contenox plan next` executes exactly one step and stops. Use `--auto` only when you trust the plan. Use `--shell` only in trusted environments.
 
 ---
 
@@ -167,7 +134,7 @@ The `hooks` array is an **allowlist** with pattern support:
 | `[]`                     | No hooks exposed to the model                  |
 | `["*"]`                  | All registered hooks (explicit)                |
 | `["nws", "local_shell"]` | Only the named hooks                           |
-| `["*", "!plan_manager"]` | All except `plan_manager`                      |
+| `["*", "!local_shell"]`  | All except `local_shell`                       |
 
 Unknown names in an exact list are silently ignored (e.g. if `local_shell` is disabled the chain still runs).
 
@@ -259,7 +226,7 @@ Enable with `--shell`. Policy (which commands are allowed or denied) is declared
 
 ```bash
 contenox chat --shell "run the tests"
-contenox plan next --shell
+contenox run --shell --chain .contenox/my-chain.json "build the project"
 ```
 
 The default chains (`default-chain.json`, `default-run-chain.json`) ship with a sensible baseline:
@@ -317,12 +284,6 @@ Chain fields like `system_instruction` and `prompt_template` support macros expa
 | `{{hookservice:list}}`         | All **allowed** hooks + tools as JSON, filtered by this task's `hooks` allowlist |
 | `{{hookservice:hooks}}`        | Allowed hook names only                                                          |
 | `{{hookservice:tools <hook>}}` | Tool names for a specific hook (empty if hook not in allowlist)                  |
-
-### `--chain` and `contenox plan`
-
-`--chain` selects which chain `contenox chat`/`contenox run` uses. It does **not** apply to `contenox plan` subcommands — the planner and executor chains for `contenox plan` are built-in and live in `.contenox/chain-planner.json` and `.contenox/chain-executor.json` (written by `contenox init`). These chains have a specific contract (input/output types, handler sequence) and are validated on use.
-
----
 
 ## Build from source
 

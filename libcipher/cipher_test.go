@@ -10,7 +10,7 @@ import (
 	"github.com/contenox/contenox/libcipher"
 )
 
-func TestAESCBCHMAC_EncryptDecrypt(t *testing.T) {
+func TestUnit_AESCBCHMAC_EncryptDecrypt(t *testing.T) {
 	key, err := libcipher.GenerateKey(64)
 	if err != nil {
 		t.Fatalf("%s", err)
@@ -103,7 +103,7 @@ func TestAESCBCHMAC_EncryptDecrypt(t *testing.T) {
 	}
 }
 
-func TestGCM_EncryptDecrypt(t *testing.T) {
+func TestUnit_GCM_EncryptDecrypt(t *testing.T) {
 	var testCases = []struct {
 		name          string
 		plaintext     []byte
@@ -169,7 +169,7 @@ func TestGCM_EncryptDecrypt(t *testing.T) {
 	}
 }
 
-func TestAESCBCHMAC_Ciphertext(t *testing.T) {
+func TestUnit_AESCBCHMAC_Ciphertext(t *testing.T) {
 	var testCases = []struct {
 		name          string
 		cypher        []byte
@@ -211,7 +211,7 @@ func TestAESCBCHMAC_Ciphertext(t *testing.T) {
 	}
 }
 
-func TestAESCBCHMAC_CiphertextIsRandomized(t *testing.T) {
+func TestUnit_AESCBCHMAC_CiphertextIsRandomized(t *testing.T) {
 	var testCases = []struct {
 		name          string
 		plaintext     []byte

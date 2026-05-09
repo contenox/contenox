@@ -20,10 +20,19 @@ func NewEchoTools() taskengine.ToolsRepo {
 // Exec handles execution by echoing the input arguments.
 func (e *EchoTools) Exec(ctx context.Context, startTime time.Time, input any, debug bool, toolsCall *taskengine.ToolsCall) (any, taskengine.DataType, error) {
 	switch v := input.(type) {
+	case map[string]any:
+		if raw, ok := v["input"]; ok {
+			switch x := raw.(type) {
+			case string:
+				return x, taskengine.DataTypeString, nil
+			default:
+				return fmt.Sprintf("%v", x), taskengine.DataTypeString, nil
+			}
+		}
+		return "nothing to echo", taskengine.DataTypeString, nil
 	case string:
 		return v, taskengine.DataTypeString, nil
 	case taskengine.ChatHistory:
-		// Create assistant response echoing the last USER message
 		var echoContent string
 		for i := len(v.Messages) - 1; i >= 0; i-- {
 			if v.Messages[i].Role == "user" {
@@ -31,24 +40,16 @@ func (e *EchoTools) Exec(ctx context.Context, startTime time.Time, input any, de
 				break
 			}
 		}
-
 		if echoContent == "" {
 			echoContent = "nothing to echo"
 		}
-
-		// Add new assistant message
-		echoMsg := taskengine.Message{
+		v.Messages = append(v.Messages, taskengine.Message{
 			Role:      "assistant",
 			Content:   "Echo: " + echoContent,
 			Timestamp: time.Now().UTC(),
-		}
-
-		v.Messages = append(v.Messages, echoMsg)
-		v.OutputTokens += 0 // Will be calculated later
-
+		})
 		return v, taskengine.DataTypeChatHistory, nil
 	default:
-		// For any other type, convert to string representation
 		return fmt.Sprintf("%v", input), taskengine.DataTypeString, nil
 	}
 }

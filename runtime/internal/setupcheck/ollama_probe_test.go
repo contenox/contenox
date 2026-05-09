@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestNeedsNonDefaultOllamaBackendURL(t *testing.T) {
+func TestSystem_NeedsNonDefaultOllamaBackendURL(t *testing.T) {
 	t.Parallel()
 	if needsNonDefaultOllamaBackendURL("http://127.0.0.1:11434") {
 		t.Fatal("expected default loopback:11434 to use inferred URL")
@@ -24,7 +24,7 @@ func TestNeedsNonDefaultOllamaBackendURL(t *testing.T) {
 	}
 }
 
-func TestEnrichResultWithOllamaAt_noBackends(t *testing.T) {
+func TestSystem_EnrichResultWithOllamaAt_noBackends(t *testing.T) {
 	t.Parallel()
 	r := Evaluate(Input{
 		DefaultModel:    "m",
@@ -55,7 +55,7 @@ func TestEnrichResultWithOllamaAt_noBackends(t *testing.T) {
 	}
 }
 
-func TestEnrichResultWithOllamaAt_skipsWhenOllamaReady(t *testing.T) {
+func TestSystem_EnrichResultWithOllamaAt_skipsWhenOllamaReady(t *testing.T) {
 	t.Parallel()
 	r := Result{
 		BackendChecks: []BackendCheck{
@@ -69,7 +69,7 @@ func TestEnrichResultWithOllamaAt_skipsWhenOllamaReady(t *testing.T) {
 	}
 }
 
-func TestProbeLocalOllamaAPI_httptest(t *testing.T) {
+func TestSystem_ProbeLocalOllamaAPI_httptest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
 			w.WriteHeader(http.StatusOK)
@@ -88,14 +88,14 @@ func TestProbeLocalOllamaAPI_httptest(t *testing.T) {
 	}
 }
 
-func TestResolveOllamaProbeBaseURL_default(t *testing.T) {
+func TestSystem_ResolveOllamaProbeBaseURL_default(t *testing.T) {
 	t.Setenv("OLLAMA_HOST", "")
 	if got := resolveOllamaProbeBaseURL(); got != "http://127.0.0.1:11434" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestOllamaRegistrationCommand_customPort(t *testing.T) {
+func TestSystem_OllamaRegistrationCommand_customPort(t *testing.T) {
 	cmd := ollamaRegistrationCommand("http://127.0.0.1:11435")
 	if !strings.Contains(cmd, "--url") || !strings.Contains(cmd, "11435") {
 		t.Fatalf("expected --url for custom port, got %q", cmd)

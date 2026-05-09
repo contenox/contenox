@@ -191,12 +191,10 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, al
 		case "list":
 			return m.renderToolsAndToolsJSON(ctx, allowed)
 		case "tools":
-			return m.renderToolsNamesJSON(allowed)
-		case "tool":
-			if arg == "" {
-				return "", fmt.Errorf("toolsservice:tool requires a tools name argument")
+			if arg != "" {
+				return m.renderToolsForToolsJSON(ctx, allowed, arg)
 			}
-			return m.renderToolsForToolsJSON(ctx, allowed, arg)
+			return m.renderToolsNamesJSON(allowed)
 		default:
 			return original, nil
 		}

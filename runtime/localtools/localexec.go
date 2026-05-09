@@ -233,11 +233,8 @@ func (h *LocalExecTools) checkAllowlist(command string, useShell bool, allowedCo
 			}
 		}
 	}
-	// 2. Sensitive default: no allow list configured = deny all
-	if allowedDir == "" && len(allowedCommands) == 0 {
-		return fmt.Errorf("local_shell: no allow list configured; define tools_policies in your chain JSON to allow commands or directories")
-	}
-	// 3. Allowlist checks
+	// 2. Allowlist checks (only enforced when configured; otherwise authorization
+	// is the responsibility of upstream layers — typically the HITL wrapper).
 	if allowedDir != "" {
 		absDir, err := filepath.Abs(allowedDir)
 		if err != nil {

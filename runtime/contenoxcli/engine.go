@@ -10,20 +10,19 @@ import (
 	"os"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/execservice"
-	"github.com/contenox/contenox/runtime/hitlservice"
-	"github.com/contenox/contenox/runtime/internal/tools"
-	"github.com/contenox/contenox/runtime/internal/llmrepo"
-	"github.com/contenox/contenox/runtime/internal/ollamatokenizer"
-	"github.com/contenox/contenox/runtime/internal/runtimestate"
-	"github.com/contenox/contenox/runtime/internal/setupcheck"
 	libbus "github.com/contenox/contenox/libbus"
 	"github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libkvstore"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/execservice"
+	"github.com/contenox/contenox/runtime/hitlservice"
+	"github.com/contenox/contenox/runtime/internal/llmrepo"
+	"github.com/contenox/contenox/runtime/internal/ollamatokenizer"
+	"github.com/contenox/contenox/runtime/internal/runtimestate"
+	"github.com/contenox/contenox/runtime/internal/setupcheck"
+	"github.com/contenox/contenox/runtime/internal/tools"
 	"github.com/contenox/contenox/runtime/localtools"
 	"github.com/contenox/contenox/runtime/mcpworker"
-	"github.com/contenox/contenox/runtime/planstore"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/stateservice"
 	"github.com/contenox/contenox/runtime/taskengine"
@@ -43,7 +42,7 @@ type Engine struct {
 }
 
 // BuildEngine scaffolds the complex dependency graph needed to run task chains.
-func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*Engine, error) {
+func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts, vfs vfsservice.Service) (*Engine, error) {
 	// Derive a cancellable context owned by this engine instance.
 	// Cancelling it unblocks all goroutines (WatchEvents, bus streams, etc.)
 	// before bus.Close() is called, preventing the process from hanging.
@@ -147,10 +146,9 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	ss := stateservice.New(state, db, ResolveWorkspaceID(opts.ContenoxDir))
 	res, err := ss.SetupStatus(ctx)
 	if err != nil {
-		slog.Debug("setup status failed", "error", err)
-	} else {
-		engine.SetupCheck = res
+		return nil, fmt.Errorf("setup status failed: %w", err)
 	}
+	engine.SetupCheck = res
 
 	// 7. Tokenizer and model manager
 	tokenizer := ollamatokenizer.NewEstimateTokenizer()
@@ -168,63 +166,11 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	if err != nil {
 		return nil, fmt.Errorf("failed to create model manager: %w", err)
 	}
-
-	// 8. Local tools
-	localTools := map[string]taskengine.ToolsRepo{
-		"echo":         localtools.NewEchoTools(),
-		"print":        localtools.NewPrint(tracker),
-		"webtools":      localtools.NewWebCaller(),
-		"local_fs":     localtools.NewLocalFSTools(opts.EffectiveLocalExecAllowedDir),
-		"plan_summary": localtools.NewPlanSummaryTools(planstore.New(db.WithoutTransaction(), ResolveWorkspaceID(opts.ContenoxDir))),
-	}
-	jsTools := map[string]taskengine.ToolsRepo{
-		"echo":    localtools.NewEchoTools(),
-		"print":   localtools.NewPrint(tracker),
-		"webtools": localtools.NewWebCaller(),
-	}
-	if sshTools, err := localtools.NewSSHTools(); err != nil {
-		slog.Debug("SSH tools not registered", "error", err)
-	} else {
-		jsTools["ssh"] = sshTools
-	}
-	if opts.EffectiveEnableLocalExec {
-		toolsOpts := []localtools.LocalExecOption{}
-		if opts.EffectiveLocalExecAllowedDir != "" {
-			toolsOpts = append(toolsOpts, localtools.WithLocalExecAllowedDir(opts.EffectiveLocalExecAllowedDir))
-		}
-		localExecTools := localtools.NewLocalExecTools(toolsOpts...)
-		jsTools["local_shell"] = localExecTools
-		localTools["local_shell"] = localExecTools
-	}
-	// Start mcpworker.Manager — loads MCP servers from SQLite and serves them
-	// via the SQLite bus. This is the same code path as the runtime-API (which uses NATS).
-	store := runtimetypes.New(db.WithoutTransaction())
-	mgr, err := mcpworker.New(engineCtx, store, bus, tracker)
+	mgr, localToolNames, toolsRepo, err := buildTools(engineCtx, opts, db, ResolveWorkspaceID(opts.ContenoxDir), tracker, bus, vfs)
 	if err != nil {
-		bus.Close()
-		return nil, fmt.Errorf("failed to create mcp worker manager: %w", err)
-	}
-	if err := mgr.WatchEvents(engineCtx); err != nil {
-		bus.Close()
-		return nil, fmt.Errorf("failed to start mcp event watcher: %w", err)
-	}
-	engine.MCPManager = mgr
-	for name := range localTools {
-		engine.LocalTools = append(engine.LocalTools, name)
-	}
-	toolsRepo := tools.NewPersistentRepo(localTools, db, http.DefaultClient, bus)
-
-	// Wrap with HITL interceptor when --hitl is requested.
-	if opts.EffectiveHITL {
-		hitlVFS := vfsservice.NewLocalFS(opts.ContenoxDir)
-		if err := ensureHITLPolicies(opts.ContenoxDir); err != nil {
-			slog.Warn("hitl: failed to write embedded policy presets", "error", err)
-		}
-		hitlSvc := hitlservice.New(hitlVFS, store, tracker)
-		toolsRepo = localtools.NewHITLWrapper(toolsRepo, NewCLIAskApproval(os.Stderr), hitlSvc, tracker)
+		return nil, err
 	}
 
-	// 9. Task engine
 	taskEngineCtx := taskengine.WithTaskEventSink(engineCtx, taskengine.NewBusTaskEventSink(bus))
 	exec, err := taskengine.NewExec(taskEngineCtx, repo, toolsRepo, tracker)
 	if err != nil {
@@ -242,6 +188,8 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 
 	engine.TaskService = taskService
 	engine.Tracker = tracker
+	engine.MCPManager = mgr
+	engine.LocalTools = localToolNames
 
 	oldStop := engine.Stop
 	engine.Stop = func() {
@@ -250,6 +198,69 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 	}
 	success = true
 	return engine, nil
+}
+
+func buildTools(engineCtx context.Context, opts chatOpts, db libdbexec.DBManager, workspaceID string, tracker libtracker.ActivityTracker, bus libbus.Messenger, vfs vfsservice.Service) (*mcpworker.Manager, []string, taskengine.ToolsRepo, error) {
+	// LocalTools maps are separated for security and context boundaries:
+	// - localTools: Available directly to the native LLM context (e.g. executing tasks).
+	// - jsTools: Exposed specifically to the JS sandbox environment (macro executions).
+	//   Includes sandbox-safe tools and those needed by scripts (e.g. ssh, webtools),
+	//   preventing JS from accessing privileged host tools unless explicitly allowed.
+	localTools := map[string]taskengine.ToolsRepo{
+		"echo":     localtools.NewEchoTools(),
+		"print":    localtools.NewPrint(tracker),
+		"webtools": localtools.NewWebCaller(),
+		"local_fs": localtools.NewLocalFSTools(opts.EffectiveLocalExecAllowedDir),
+	}
+	jsTools := map[string]taskengine.ToolsRepo{
+		"echo":     localtools.NewEchoTools(),
+		"print":    localtools.NewPrint(tracker),
+		"webtools": localtools.NewWebCaller(),
+	}
+	if sshTools, err := localtools.NewSSHTools(); err != nil {
+		slog.Debug("SSH tools not registered", "error", err)
+	} else {
+		jsTools["ssh"] = sshTools
+	}
+	if opts.EffectiveEnableLocalExec {
+		toolsOpts := []localtools.LocalExecOption{}
+		if opts.EffectiveLocalExecAllowedDir != "" {
+			toolsOpts = append(toolsOpts, localtools.WithLocalExecAllowedDir(opts.EffectiveLocalExecAllowedDir))
+		}
+		localExecTools := localtools.NewLocalExecTools(toolsOpts...)
+		jsTools["local_shell"] = localExecTools
+		localTools["local_shell"] = localExecTools
+	}
+
+	// Start mcpworker.Manager — loads MCP servers from SQLite and serves them
+	// via the SQLite bus. This is the same code path as the runtime-API (which uses NATS).
+	store := runtimetypes.New(db.WithoutTransaction())
+	mgr, err := mcpworker.New(engineCtx, store, bus, tracker)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create mcp worker manager: %w", err)
+	}
+	if err := mgr.WatchEvents(engineCtx); err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to start mcp event watcher: %w", err)
+	}
+
+	var localToolNames []string
+	for name := range localTools {
+		localToolNames = append(localToolNames, name)
+	}
+	toolsRepo := tools.NewPersistentRepo(localTools, db, http.DefaultClient, bus)
+
+	if opts.EffectiveHITL {
+		hitlVFS := newLayeredHITLVFS(vfs)
+		hitlSvc := hitlservice.New(hitlVFS, store, tracker)
+		toolsRepo = localtools.NewHITLWrapper(toolsRepo, NewCLIAskApproval(os.Stderr), hitlSvc, tracker)
+	} else if opts.EffectiveEnableLocalExec && opts.EffectiveLocalExecAllowedDir == "" {
+		// local_shell is wired without HITL and without a static allowed-dir.
+		// Chain JSON tools_policies (allowlist) is the only remaining gate; if
+		// the active chain doesn't define one, every shell command runs unchecked.
+		slog.Warn("local_shell is enabled with no HITL and no allowed-dir; chain-level tools_policies is the only safety gate — confirm your chain JSON sets local_shell._allowed_commands or _allowed_dir")
+	}
+
+	return mgr, localToolNames, toolsRepo, nil
 }
 
 var errTaskEventsRequireRequestID = errors.New("request id is required for task event subscriptions")
@@ -272,6 +283,7 @@ func (e *Engine) WatchTaskEvents(ctx context.Context, requestID string, ch chan<
 	}
 
 	go func() {
+		defer sub.Unsubscribe()
 		for {
 			select {
 			case <-ctx.Done():

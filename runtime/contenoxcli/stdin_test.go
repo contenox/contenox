@@ -16,7 +16,7 @@ func withTestStdin(t *testing.T, stdin *os.File) {
 	})
 }
 
-func TestReadStdinIfAvailableSkipsIdlePipe(t *testing.T) {
+func TestUnit_ReadStdinIfAvailableSkipsIdlePipe(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
@@ -39,7 +39,7 @@ func TestReadStdinIfAvailableSkipsIdlePipe(t *testing.T) {
 	}
 }
 
-func TestResolveRunInputCombinesArgsAndReadyStdin(t *testing.T) {
+func TestUnit_ResolveRunInputCombinesArgsAndReadyStdin(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)

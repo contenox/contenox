@@ -5,9 +5,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/contenox/contenox?label=version&logo=github)](https://github.com/contenox/contenox/releases)
 
-Most AI tools make your workflow dependent on systems you don't control. Contenox doesn't. Context persists. Execution stays local. You own the copilot.
-
-Not another chat. A system that executes.
+For anyone whose job touches a terminal. Describe what you want in plain English; Contenox figures out which of your tools to call — your shell, your MCP servers, your APIs — and pauses to ask before each step runs. You approve, skip, or stop. Nothing runs past you.
 
 📖 **[contenox.com](https://contenox.com)**
 
@@ -24,49 +22,58 @@ curl -fsSL https://contenox.com/install.sh | sh
 
 ---
 
-## What it is
+## Quick Start
 
-Contenox is an AI copilot you own. Any model, any provider — the workflow stays yours.
+You can use Contenox in one-shot commands, or drop into an interactive chat:
 
 ```bash
-contenox plan new "install a git pre-commit hook that prevents commits when go build fails"
-contenox plan next --auto  # runs all steps without pausing — skips human approval
-```
+# One-shot command
+contenox run "say hello world in python"
 
-```
-Executing Step 1: Install necessary tools...              ✓
-Executing Step 2: Create .git/hooks/pre-commit...         ✓
-Executing Step 3: Edit the hook script with the check...  ✓
-Executing Step 4: Write bash content to the hook file...  ✓
-Executing Step 5: chmod +x .git/hooks/pre-commit...       ✓
-```
+# Interactive session
+contenox chat
 
-Plans are stored in SQLite. They don't evaporate when the session ends.
+# Resume a previous session
+contenox session list
+contenox chat --session <session-id>
+```
 
 ---
 
-## Plans that stick
+## What it does
+
+The connective tissue between the systems you already use, done in plain English with a human pause at every step.
 
 ```bash
-contenox plan new "migrate all TODO comments to TODOS.md"
-contenox plan show         # review before touching anything
-contenox plan next         # one step at a time
-contenox plan next --auto  # or all at once
-contenox plan retry 3      # step went wrong? retry it
+# Someone yelled at you on Teams about a bug
+cat teams-bug.txt | contenox "check the issue tracker for a duplicate; if none, file it and assign to dev group"
+
+# Friday and you forgot the timesheet
+contenox "use my git log to fill the timesheet, round to 9-5"
+
+# New app on localhost:3000, you promised someone documentation
+contenox "drive localhost:3000 with playwright, write the doc into Notion"
 ```
+
+Useful day-to-day for the work above. Also a workbench for testing new chains and MCP servers, and a primitive other agents can shell out to.
+
+State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Gemini, vLLM, Vertex, or in-process llama.cpp.
 
 ---
 
 ## Connect your stack
 
-```bash
-# Any MCP-compatible tool
-contenox mcp add filesystem --transport stdio \
-  --command npx --args "-y,@modelcontextprotocol/server-filesystem,/"
+Anything you can reach over MCP, an OpenAPI spec, or a shell command is a tool Contenox can call:
 
-# Any HTTP API
-contenox hook add my-api --url http://localhost:8000
-contenox run "fetch the latest metrics and summarize them"
+```bash
+# Any MCP-compatible server (Notion, Linear, Playwright, GitHub, Postgres, …)
+contenox mcp add notion https://mcp.notion.com/mcp --auth-type oauth
+
+# Any HTTP API with an OpenAPI spec
+contenox tools add my-api --url http://localhost:8000
+
+# The shell, with your own command policy declared in the chain
+contenox --shell "check Proxmox and flag anything red"
 ```
 
 ---
@@ -76,10 +83,17 @@ contenox run "fetch the latest metrics and summarize them"
 Switch providers in one config line:
 
 ```bash
-contenox backend add local   --type ollama
-contenox backend add openai  --type openai  --api-key-env OPENAI_API_KEY
-contenox backend add gemini  --type gemini  --api-key-env GEMINI_API_KEY
+# Local providers
+contenox backend add ollama    --type ollama
+contenox backend add embedded  --type local  --url <path-to-gguf-or-hf-url> # In-process llama.cpp
+contenox backend add myvllm    --type vllm   --url http://gpu-host:8000
 
+# Cloud providers
+contenox backend add openai    --type openai --api-key-env OPENAI_API_KEY
+contenox backend add gemini    --type gemini --api-key-env GEMINI_API_KEY
+contenox backend add vertex    --type vertex-google
+
+# Set your defaults
 contenox config set default-model qwen2.5:7b
 contenox config set default-provider ollama
 ```
@@ -87,6 +101,8 @@ contenox config set default-provider ollama
 ---
 
 ## Build from source
+
+Requires Go 1.25+.
 
 ```bash
 git clone https://github.com/contenox/contenox

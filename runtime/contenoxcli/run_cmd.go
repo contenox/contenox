@@ -3,6 +3,7 @@ package contenoxcli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/contenox/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -52,8 +54,9 @@ Examples:
   contenox-runtime run --chain .contenox/parse-chain.json --input-type json '{"key":"value"}'
   git diff | contenox-runtime run "suggest a commit message"  # uses default-run-chain.json
 
-  # Run with human approval before any write_file, sed, or local_shell tool call:
-  contenox-runtime run --shell --hitl --chain .contenox/my-chain.json "fix the bug"
+  # HITL is on by default (write_file, sed, and local_shell prompt for approval).
+  # Run unattended (no prompts) by passing --auto:
+  contenox-runtime run --shell --auto --chain .contenox/my-chain.json "fix the bug"
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -69,23 +72,25 @@ Examples:
 			return fmt.Errorf("failed to resolve .contenox dir: %w", err)
 		}
 
-		// Resolve chain path (fallback to default chain if not specified)
 		chainPath, _ := flags.GetString("chain")
 		if chainPath == "" && !flags.Changed("chain") {
-			wellKnown := filepath.Join(contenoxDir, "default-run-chain.json")
-			if _, err := os.Stat(wellKnown); err == nil {
-				chainPath = wellKnown
+			if resolved, rerr := lookupSystemFile(contenoxDir, "default-run-chain.json"); rerr == nil {
+				chainPath = resolved
 			}
 		}
 		if chainPath == "" {
-			fmt.Fprintln(os.Stderr, "No .contenox/ project found in this directory or any parent directory.")
-			fmt.Fprintln(os.Stderr, "Run 'contenox-runtime init' to get started, or pass --chain explicitly.")
+			fmt.Fprintln(os.Stderr, "No default-run-chain.json found in .contenox/ (workspace) or ~/.contenox/.")
+			fmt.Fprintln(os.Stderr, "Run 'contenox init' to scaffold it, or pass --chain explicitly.")
 			return errChainRequired
 		}
 
 		// Resolve input
 		rawInput, err := resolveRunInput(cmd, args)
 		if err != nil {
+			if errors.Is(err, errEmptyPrompt) {
+				fmt.Fprintln(cmd.ErrOrStderr(), "aborted due to empty prompt")
+				return errPromptAborted
+			}
 			return err
 		}
 		if rawInput == "" {
@@ -120,8 +125,8 @@ Examples:
 		// Build chatOpts from flags and SQLite KV defaults.
 		o := buildRunOpts(cmd, db, contenoxDir)
 		o.EffectiveDB = dbPathAbs
-
-		engine, err := BuildEngine(ctx, db, o)
+		vfs := vfsservice.NewLocalFS(o.ContenoxDir)
+		engine, err := BuildEngine(ctx, db, o, vfs)
 		if err != nil {
 			return fmt.Errorf("failed to build engine: %w", err)
 		}
@@ -151,6 +156,12 @@ Examples:
 			"model":    o.EffectiveDefaultModel,
 			"provider": o.EffectiveDefaultProvider,
 			"chain":    chain.ID,
+		}
+		if o.EffectiveAltDefaultModel != "" {
+			templateVars["alt_model"] = o.EffectiveAltDefaultModel
+		}
+		if o.EffectiveAltDefaultProvider != "" {
+			templateVars["alt_provider"] = o.EffectiveAltDefaultProvider
 		}
 		execCtx := taskengine.WithTemplateVars(
 			libtracker.WithNewRequestID(ctx),
@@ -213,9 +224,20 @@ Examples:
 	},
 }
 
-// resolveRunInput returns the raw input string from --input, @file, positional args, or stdin.
+// resolveRunInput returns the raw input string from --editor, --input, @file, positional args, or stdin.
 func resolveRunInput(cmd *cobra.Command, args []string) (string, error) {
 	flags := cmd.Flags()
+
+	if useEditor, _ := cmd.Root().PersistentFlags().GetBool("editor"); useEditor {
+		var seed []byte
+		if data, ok, err := readStdinIfAvailable(maxCLIStdinBytes); err != nil {
+			return "", err
+		} else if ok {
+			seed = []byte(data)
+		}
+		modelHint, _ := cmd.Root().PersistentFlags().GetString("model")
+		return captureFromEditor(seed, modelHint)
+	}
 
 	if flags.Changed("input") {
 		val, _ := flags.GetString("input")
@@ -296,6 +318,8 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 	// Read persistent defaults from SQLite KV; flags always override.
 	kvModel, _ := getConfigKV(ctx, store, "default-model")
 	kvProvider, _ := getConfigKV(ctx, store, "default-provider")
+	kvAltModel, _ := getConfigKV(ctx, store, "default-alt-model")
+	kvAltProvider, _ := getConfigKV(ctx, store, "default-alt-provider")
 
 	effectiveModel, _ := flags.GetString("model")
 	if !flags.Changed("model") && (effectiveModel == "" || effectiveModel == defaultModel) {
@@ -313,12 +337,27 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 		}
 	}
 
+	effectiveAltModel := kvAltModel
+	if flags.Changed("alt-model") {
+		if v, _ := flags.GetString("alt-model"); v != "" {
+			effectiveAltModel = v
+		}
+	}
+
+	effectiveAltProvider := kvAltProvider
+	if flags.Changed("alt-provider") {
+		if v, _ := flags.GetString("alt-provider"); v != "" {
+			effectiveAltProvider = v
+		}
+	}
+
 	effectiveContext, _ := flags.GetInt("context")
 	effectiveTracing, _ := flags.GetBool("trace")
 
 	effectiveEnableLocalExec, _ := flags.GetBool("shell")
 	effectiveLocalExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
-	effectiveHITL, _ := cmd.Flags().GetBool("hitl")
+	autoMode, _ := cmd.Flags().GetBool("auto")
+	effectiveHITL := !autoMode
 
 	return chatOpts{
 		EffectiveDB:                  "", // resolved separately in RunE
@@ -326,6 +365,8 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 		EffectiveContext:             effectiveContext,
 		EffectiveDefaultModel:        effectiveModel,
 		EffectiveDefaultProvider:     effectiveDefaultProvider,
+		EffectiveAltDefaultModel:     effectiveAltModel,
+		EffectiveAltDefaultProvider:  effectiveAltProvider,
 		EffectiveNoDeleteModels:      true,
 		EffectiveEnableLocalExec:     effectiveEnableLocalExec,
 		EffectiveLocalExecAllowedDir: effectiveLocalExecAllowedDir,
@@ -340,5 +381,5 @@ func init() {
 	f.String("chain", "", "Path to a task chain JSON file (falls back to .contenox/default-run-chain.json if present)")
 	f.String("input", "", "Input value or @path to read from a file (e.g. --input @main.go)")
 	f.String("input-type", "string", "Input data type: string, chat, json, int")
-	f.Bool("hitl", false, "Pause before write_file, sed, and local_shell calls; require y/n approval in the terminal")
+	f.Bool("auto", false, "Autonomous mode: disable HITL approval prompts. Default is HITL on; tools route through the active hitl-policy. Use --auto only in trusted/scripted contexts.")
 }

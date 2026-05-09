@@ -24,6 +24,9 @@ var initChain string
 //go:embed chain-run.json
 var initRunChain string
 
+//go:embed chain-compact.json
+var initCompactChain string
+
 // providerConfig holds the provider-specific values used during init.
 type providerConfig struct {
 	name         string
@@ -134,8 +137,6 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 	if _, err := os.Stat(wsPath); os.IsNotExist(err) {
 		_ = os.WriteFile(wsPath, []byte(uuid.NewString()), 0o644)
 	}
-	chainPath := filepath.Join(contenoxDir, "default-chain.json")
-	runChainPath := filepath.Join(contenoxDir, "default-run-chain.json")
 	writeFile := func(path, content string) error {
 		if !force {
 			if _, err := os.Stat(path); err == nil {
@@ -150,38 +151,22 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 		return nil
 	}
 
-	if err := writeFile(chainPath, initChain); err != nil {
+	homeDir, hdErr := globalContenoxDir()
+	if hdErr != nil {
+		return fmt.Errorf("could not resolve ~/.contenox: %w", hdErr)
+	}
+	if err := writeFile(filepath.Join(homeDir, "default-chain.json"), initChain); err != nil {
 		return err
 	}
-	if err := writeFile(runChainPath, initRunChain); err != nil {
+	if err := writeFile(filepath.Join(homeDir, "default-run-chain.json"), initRunChain); err != nil {
 		return err
 	}
-
-	if err := writeEmbeddedHITLPolicies(contenoxDir, force); err != nil {
+	if err := writeFile(filepath.Join(homeDir, "chain-compact.json"), initCompactChain); err != nil {
 		return err
 	}
-
-	plannerPath, executorPath, summarizerPath, wrotePlanner, wroteExecutor, wroteSummarizer, err := writeEmbeddedPlanChains(contenoxDir, force)
-	if err != nil {
+	if err := writeEmbeddedHITLPolicies(homeDir, force); err != nil {
 		return err
 	}
-	if !wrotePlanner {
-		fmt.Fprintf(out, "  %s already exists (use --force to overwrite)\n", plannerPath)
-	} else {
-		fmt.Fprintf(out, "  Created %s\n", plannerPath)
-	}
-	if !wroteExecutor {
-		fmt.Fprintf(out, "  %s already exists (use --force to overwrite)\n", executorPath)
-	} else {
-		fmt.Fprintf(out, "  Created %s\n", executorPath)
-	}
-	if !wroteSummarizer {
-		fmt.Fprintf(out, "  %s already exists (use --force to overwrite)\n", summarizerPath)
-	} else {
-		fmt.Fprintf(out, "  Created %s\n", summarizerPath)
-	}
-	fmt.Fprintln(out, "  Plan commands use these chains; running 'contenox plan new' or 'plan next' refreshes them from the binary.")
-	fmt.Fprintln(out, "  After registering a backend, run 'contenox doctor' to verify setup before planning.")
 
 	fmt.Fprintln(out, "Done.")
 	fmt.Fprintln(out, "")
@@ -344,10 +329,6 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 	fmt.Fprintf(out, "  %d. Chat with your model:\n", chatStep)
 	fmt.Fprintln(out, "       contenox hey, what can you do?")
 	fmt.Fprintln(out, "       echo 'fix the typos in README.md' | contenox")
-	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "  Plan and execute a multi-step task:")
-	fmt.Fprintln(out, "       contenox plan new \"create a TODOS.md from all TODO comments in the codebase\"")
-	fmt.Fprintln(out, "       contenox plan next --auto")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  To enable shell and filesystem tools pass --shell to any command, e.g.:")
 	fmt.Fprintln(out, "       contenox --shell \"run the tests\"")

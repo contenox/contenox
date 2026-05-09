@@ -27,27 +27,33 @@ func (h *Print) Exec(ctx context.Context, startTime time.Time, input any, debug 
 	_, _, end := h.tracker.Start(ctx, "exec", "print_tools")
 	defer end()
 
-	message, ok := toolsCall.Args["message"]
-	if !ok {
+	var message string
+	if dynArgs, ok := input.(map[string]any); ok {
+		if v, ok := dynArgs["message"]; ok {
+			switch x := v.(type) {
+			case string:
+				message = x
+			default:
+				message = fmt.Sprintf("%v", x)
+			}
+		}
+	}
+	if message == "" && toolsCall != nil && toolsCall.Args != nil {
+		message = toolsCall.Args["message"]
+	}
+	if message == "" {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("missing 'message' argument in print tools")
 	}
 
-	switch v := input.(type) {
-	case string:
-		// For string input, return the message as string
-		return message, taskengine.DataTypeString, nil
-	case taskengine.ChatHistory:
-		// For chat history, append the message as a system message
-		v.Messages = append(v.Messages, taskengine.Message{
+	if hist, ok := input.(taskengine.ChatHistory); ok {
+		hist.Messages = append(hist.Messages, taskengine.Message{
 			Role:      "system",
 			Content:   message,
 			Timestamp: time.Now().UTC(),
 		})
-		return v, taskengine.DataTypeChatHistory, nil
-	default:
-		// For any other type, return the message as string
-		return message, taskengine.DataTypeString, nil
+		return hist, taskengine.DataTypeChatHistory, nil
 	}
+	return message, taskengine.DataTypeString, nil
 }
 
 func (h *Print) Supports(ctx context.Context) ([]string, error) {

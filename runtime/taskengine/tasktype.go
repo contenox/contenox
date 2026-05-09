@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/contenox/runtime/taskengine/compact"
 	"github.com/contenox/contenox/runtime/taskengine/llmretry"
 	"gopkg.in/yaml.v3"
 )
@@ -103,11 +102,17 @@ type TransitionBranch struct {
 	// Format depends on the task type:
 	// - For condition_key: exact string match
 	// - For prompt_to_int: numeric comparison (using Operator)
+	// - For edge_traversed_at_least: integer threshold
 	When string `yaml:"when" json:"when" example:"yes"`
 
 	// Goto specifies the target task ID if this branch is taken.
 	// Leave empty or use taskengine.TermEnd to end the chain.
 	Goto string `yaml:"goto" json:"goto" example:"positive_response"`
+
+	// Edge identifies a graph edge "fromTaskID->toTaskID" whose traversal
+	// count is consulted by edge-state operators (e.g. edge_traversed_at_least).
+	// Required when Operator is one of those; ignored otherwise.
+	Edge string `yaml:"edge,omitempty" json:"edge,omitempty" example:"chat->run_tools"`
 
 	// Compose defines how to transform data when taking this branch.
 	// Optional - if not specified, the current task output is passed as-is.
@@ -128,6 +133,17 @@ const (
 	OpLt          OperatorTerm = "lt"
 	OpInRange     OperatorTerm = "in_range"
 	OpDefault     OperatorTerm = "default"
+	// OpEdgeTraversedAtLeast fires when the edge specified by TransitionBranch.Edge
+	// (formatted "fromTaskID->toTaskID") has been traversed at least the integer
+	// in TransitionBranch.When times during the current chain run. Reads engine
+	// state, not task output. Use it to bound agentic loops:
+	//
+	//   { "operator": "edge_traversed_at_least",
+	//     "edge": "chat->run_tools", "when": "20", "goto": "summarise_failure" }
+	//
+	// Place this branch ahead of the normal loop branch so it intercepts before
+	// the next loop iteration fires.
+	OpEdgeTraversedAtLeast OperatorTerm = "edge_traversed_at_least"
 )
 
 func (t OperatorTerm) String() string {
@@ -146,6 +162,7 @@ func SupportedOperators() []string {
 		string(OpLt),
 		string(OpInRange),
 		string(OpDefault),
+		string(OpEdgeTraversedAtLeast),
 	}
 }
 
@@ -171,6 +188,8 @@ func ToOperatorTerm(s string) (OperatorTerm, error) {
 		return OpInRange, nil
 	case string(OpDefault):
 		return OpDefault, nil
+	case string(OpEdgeTraversedAtLeast):
+		return OpEdgeTraversedAtLeast, nil
 	default:
 		return "", fmt.Errorf("unsupported operator: %s", s)
 	}
@@ -216,12 +235,6 @@ type LLMExecutionConfig struct {
 	// (rate-limit / server-error / timeout) and an optional model fallback.
 	// Nil or zero-value disables retry — current default. See [llmretry.Do].
 	RetryPolicy *llmretry.RetryPolicy `yaml:"retry_policy,omitempty" json:"retry_policy,omitempty"`
-	// CompactPolicy enables mid-run conversation compaction at the head of a
-	// chat_completion task: when the running ChatHistory exceeds
-	// TriggerFraction * token_limit, older messages are summarized and replaced
-	// with a single synthetic <compact-summary> user message. Nil disables
-	// compaction (current default). See [compact.Maybe].
-	CompactPolicy *compact.Policy `yaml:"compact_policy,omitempty" json:"compact_policy,omitempty"`
 }
 
 // ToolsCall represents an external integration or side-effect triggered during a task.

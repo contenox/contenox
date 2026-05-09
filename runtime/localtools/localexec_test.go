@@ -1,4 +1,4 @@
-package localtools
+package localtools_test
 
 import (
 	"context"
@@ -7,23 +7,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/contenox/contenox/runtime/localtools"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestLocalExecTools_Supports(t *testing.T) {
+func TestUnit_LocalExecTools_Supports(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	names, err := h.Supports(ctx)
 	require.NoError(t, err)
 	require.Len(t, names, 1)
 	assert.Equal(t, "local_shell", names[0])
 }
 
-func TestLocalExecTools_GetSchemasForSupportedTools(t *testing.T) {
+func TestUnit_LocalExecTools_GetSchemasForSupportedTools(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	schemas, err := h.GetSchemasForSupportedTools(ctx)
 	require.NoError(t, err)
 	require.NotNil(t, schemas)
@@ -31,9 +32,9 @@ func TestLocalExecTools_GetSchemasForSupportedTools(t *testing.T) {
 	assert.NotNil(t, schemas["local_shell"])
 }
 
-func TestLocalExecTools_GetToolsForToolsByName_OK(t *testing.T) {
+func TestUnit_LocalExecTools_GetToolsForToolsByName_OK(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	tools, err := h.GetToolsForToolsByName(ctx, "local_shell")
 	require.NoError(t, err)
 	require.Len(t, tools, 1)
@@ -42,18 +43,18 @@ func TestLocalExecTools_GetToolsForToolsByName_OK(t *testing.T) {
 	assert.Contains(t, tools[0].Function.Description, "Run a terminal command")
 }
 
-func TestLocalExecTools_GetToolsForToolsByName_Unknown(t *testing.T) {
+func TestUnit_LocalExecTools_GetToolsForToolsByName_Unknown(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	tools, err := h.GetToolsForToolsByName(ctx, "other")
 	assert.Error(t, err)
 	assert.Nil(t, tools)
 }
 
-func TestLocalExecTools_GetToolsForToolsByName_ContextPolicy_Description(t *testing.T) {
+func TestUnit_LocalExecTools_GetToolsForToolsByName_ContextPolicy_Description(t *testing.T) {
 	// Tools constructed with NO static policy.
 	// Context carries chain-level policy — description must reflect it.
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	ctx := taskengine.WithToolsArgs(context.Background(), "local_shell", map[string]string{
 		"_allowed_commands": "git, ls",
 		"_denied_commands":  "rm",
@@ -67,9 +68,9 @@ func TestLocalExecTools_GetToolsForToolsByName_ContextPolicy_Description(t *test
 	assert.Contains(t, desc, "rm")
 }
 
-func TestLocalExecTools_Exec_ContextPolicy_Enforced(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_ContextPolicy_Enforced(t *testing.T) {
 	// No static allowlist — context injects one. Command not in list must be rejected.
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	ctx := taskengine.WithToolsArgs(context.Background(), "local_shell", map[string]string{
 		"_allowed_commands": "ls",
 	})
@@ -82,9 +83,9 @@ func TestLocalExecTools_Exec_ContextPolicy_Enforced(t *testing.T) {
 	assert.Contains(t, err.Error(), "not in allowlist")
 }
 
-func TestLocalExecTools_Exec_ContextPolicy_Allows(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_ContextPolicy_Allows(t *testing.T) {
 	// No static allowlist — context injects one that includes the command.
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	ctx := taskengine.WithToolsArgs(context.Background(), "local_shell", map[string]string{
 		"_allowed_commands": "echo",
 	})
@@ -95,7 +96,7 @@ func TestLocalExecTools_Exec_ContextPolicy_Allows(t *testing.T) {
 	out, dt, err := h.Exec(ctx, time.Now().UTC(), nil, false, toolsCall)
 	require.NoError(t, err)
 	assert.Equal(t, taskengine.DataTypeJSON, dt)
-	res, ok := out.(*LocalExecResult)
+	res, ok := out.(*localtools.LocalExecResult)
 	require.True(t, ok)
 	assert.True(t, res.Success)
 	assert.Equal(t, "ctx policy works", res.Stdout)
@@ -104,9 +105,9 @@ func TestLocalExecTools_Exec_ContextPolicy_Allows(t *testing.T) {
 // testAllowedCommands allows the commands used by Exec tests (echo, cat, sleep, shell, exit for shell mode).
 var testAllowedCommands = []string{"echo", "cat", "sleep", "/bin/sh", "exit"}
 
-func TestLocalExecTools_Exec_Success(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_Success(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools(WithLocalExecAllowedCommands(testAllowedCommands)).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
 	start := time.Now().UTC()
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
@@ -118,7 +119,7 @@ func TestLocalExecTools_Exec_Success(t *testing.T) {
 	out, dt, err := h.Exec(ctx, start, nil, false, toolsCall)
 	require.NoError(t, err)
 	assert.Equal(t, taskengine.DataTypeJSON, dt)
-	res, ok := out.(*LocalExecResult)
+	res, ok := out.(*localtools.LocalExecResult)
 	require.True(t, ok)
 	assert.True(t, res.Success)
 	assert.Equal(t, 0, res.ExitCode)
@@ -126,9 +127,9 @@ func TestLocalExecTools_Exec_Success(t *testing.T) {
 	assert.GreaterOrEqual(t, res.DurationSeconds, 0.0)
 }
 
-func TestLocalExecTools_Exec_Success_InputAsStdin(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_Success_InputAsStdin(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools(WithLocalExecAllowedCommands(testAllowedCommands)).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
 	start := time.Now().UTC()
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
@@ -138,17 +139,38 @@ func TestLocalExecTools_Exec_Success_InputAsStdin(t *testing.T) {
 	}
 	out, _, err := h.Exec(ctx, start, "stdin content here", false, toolsCall)
 	require.NoError(t, err)
-	res, ok := out.(*LocalExecResult)
+	res, ok := out.(*localtools.LocalExecResult)
 	require.True(t, ok)
 	assert.True(t, res.Success)
 	assert.Equal(t, "stdin content here", res.Stdout)
 }
 
-func TestLocalExecTools_Exec_ShellMode_NoPolicy_Rejected(t *testing.T) {
-	// With no policy configured, the default-deny guard fires before shell mode
-	// is even attempted. shell:true without an allowlist is never safe.
+func TestUnit_LocalExecTools_Exec_NoPolicy_Allowed(t *testing.T) {
+	// Authorization is the responsibility of upstream layers (e.g. HITLWrapper);
+	// LocalExecTools without policy must not fail-close.
 	ctx := context.Background()
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
+	start := time.Now().UTC()
+	toolsCall := &taskengine.ToolsCall{
+		Name: "local_shell",
+		Args: map[string]string{
+			"command": "echo",
+			"args":    "open posture",
+		},
+	}
+	out, _, err := h.Exec(ctx, start, nil, false, toolsCall)
+	require.NoError(t, err)
+	res, ok := out.(*localtools.LocalExecResult)
+	require.True(t, ok)
+	assert.True(t, res.Success)
+	assert.Equal(t, "open posture", res.Stdout)
+}
+
+func TestUnit_LocalExecTools_Exec_ShellMode_NoPolicy_Allowed(t *testing.T) {
+	// shell:true is allowed when no allowlist exists: the injection guard only
+	// triggers when there is a policy for shell mode to bypass.
+	ctx := context.Background()
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	start := time.Now().UTC()
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
@@ -157,17 +179,19 @@ func TestLocalExecTools_Exec_ShellMode_NoPolicy_Rejected(t *testing.T) {
 			"shell":   "true",
 		},
 	}
-	_, _, err := h.Exec(ctx, start, nil, false, toolsCall)
-	require.Error(t, err)
-	// Default-deny guard fires (no allowlist configured).
-	assert.Contains(t, err.Error(), "no allow list configured")
+	out, _, err := h.Exec(ctx, start, nil, false, toolsCall)
+	require.NoError(t, err)
+	res, ok := out.(*localtools.LocalExecResult)
+	require.True(t, ok)
+	assert.True(t, res.Success)
+	assert.Equal(t, "shell test", res.Stdout)
 }
 
-func TestLocalExecTools_Exec_ShellMode_WithPolicyRejected(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_ShellMode_WithPolicyRejected(t *testing.T) {
 	// shell:true must be REJECTED when an allowlist policy is active to prevent
 	// command injection (e.g. "git status; rm -rf /" bypassing allowlist checks).
 	ctx := context.Background()
-	h := NewLocalExecTools(WithLocalExecAllowedCommands(testAllowedCommands)).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
 	start := time.Now().UTC()
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
@@ -181,12 +205,10 @@ func TestLocalExecTools_Exec_ShellMode_WithPolicyRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "strictly forbidden")
 }
 
-func TestLocalExecTools_Exec_AllowlistReject(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_AllowlistReject(t *testing.T) {
 	ctx := context.Background()
 	// Only allow /usr/bin/env; echo should be rejected when we use allowedCommands.
-	h := NewLocalExecTools(
-		WithLocalExecAllowedCommands([]string{"/usr/bin/env"}),
-	).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands([]string{"/usr/bin/env"})).(*localtools.LocalExecTools)
 	start := time.Now().UTC()
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
@@ -200,12 +222,10 @@ func TestLocalExecTools_Exec_AllowlistReject(t *testing.T) {
 	assert.Contains(t, err.Error(), "not in allowlist")
 }
 
-func TestLocalExecTools_Exec_AllowlistDirReject(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_AllowlistDirReject(t *testing.T) {
 	dir := t.TempDir()
 	// allowedDir is dir; echo is typically /usr/bin/echo or /bin/echo, not under dir
-	h := NewLocalExecTools(
-		WithLocalExecAllowedDir(dir),
-	).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedDir(dir)).(*localtools.LocalExecTools)
 	ctx := context.Background()
 	start := time.Now().UTC()
 	toolsCall := &taskengine.ToolsCall{
@@ -217,14 +237,12 @@ func TestLocalExecTools_Exec_AllowlistDirReject(t *testing.T) {
 	assert.Contains(t, err.Error(), "not under allowed dir")
 }
 
-func TestLocalExecTools_Exec_AllowlistDirAllow(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_AllowlistDirAllow(t *testing.T) {
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "script.sh")
 	err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho ok\n"), 0755)
 	require.NoError(t, err)
-	h := NewLocalExecTools(
-		WithLocalExecAllowedDir(dir),
-	).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedDir(dir)).(*localtools.LocalExecTools)
 	ctx := context.Background()
 	start := time.Now().UTC()
 	toolsCall := &taskengine.ToolsCall{
@@ -233,18 +251,15 @@ func TestLocalExecTools_Exec_AllowlistDirAllow(t *testing.T) {
 	}
 	out, _, err := h.Exec(ctx, start, nil, false, toolsCall)
 	require.NoError(t, err)
-	res, ok := out.(*LocalExecResult)
+	res, ok := out.(*localtools.LocalExecResult)
 	require.True(t, ok)
 	assert.True(t, res.Success)
 	assert.Equal(t, "ok", res.Stdout)
 }
 
-func TestLocalExecTools_Exec_Timeout(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_Timeout(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools(
-		WithLocalExecAllowedCommands(testAllowedCommands),
-		WithLocalExecTimeout(50*time.Millisecond),
-	).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands), localtools.WithLocalExecTimeout(50*time.Millisecond)).(*localtools.LocalExecTools)
 	start := time.Now().UTC()
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
@@ -256,16 +271,16 @@ func TestLocalExecTools_Exec_Timeout(t *testing.T) {
 	}
 	out, _, err := h.Exec(ctx, start, nil, false, toolsCall)
 	require.NoError(t, err)
-	res, ok := out.(*LocalExecResult)
+	res, ok := out.(*localtools.LocalExecResult)
 	require.True(t, ok)
 	assert.False(t, res.Success)
 	// Process is killed on timeout; error may be "context deadline exceeded" or "signal: killed"
 	assert.NotEmpty(t, res.Error, "expected some error on timeout")
 }
 
-func TestLocalExecTools_Exec_MissingCommand(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_MissingCommand(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools(WithLocalExecAllowedCommands(testAllowedCommands)).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
 		Args: map[string]string{},
@@ -275,37 +290,37 @@ func TestLocalExecTools_Exec_MissingCommand(t *testing.T) {
 	assert.Contains(t, err.Error(), "command is required")
 }
 
-func TestLocalExecTools_Exec_NilTools(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_NilTools(t *testing.T) {
 	ctx := context.Background()
-	h := NewLocalExecTools().(*LocalExecTools)
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
 	_, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, nil)
 	require.Error(t, err)
 }
 
-func TestLocalExecTools_Exec_NonZeroExit(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_NonZeroExit(t *testing.T) {
 	// Run a script under allowedDir WITHOUT shell mode to capture a non-zero exit.
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "fail.sh")
 	err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 3\n"), 0755)
 	require.NoError(t, err)
 	ctx := context.Background()
-	h := NewLocalExecTools(WithLocalExecAllowedDir(dir)).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedDir(dir)).(*localtools.LocalExecTools)
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
 		Args: map[string]string{"command": scriptPath},
 	}
 	out, _, err := h.Exec(ctx, time.Now().UTC(), nil, false, toolsCall)
 	require.NoError(t, err)
-	res, ok := out.(*LocalExecResult)
+	res, ok := out.(*localtools.LocalExecResult)
 	require.True(t, ok)
 	assert.False(t, res.Success)
 	assert.Equal(t, 3, res.ExitCode)
 }
 
-func TestLocalExecTools_Exec_NonZeroExit_WithPolicy_Rejected(t *testing.T) {
+func TestUnit_LocalExecTools_Exec_NonZeroExit_WithPolicy_Rejected(t *testing.T) {
 	// shell:true + allowlist must be rejected (security fix).
 	ctx := context.Background()
-	h := NewLocalExecTools(WithLocalExecAllowedCommands(testAllowedCommands)).(*LocalExecTools)
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
 	toolsCall := &taskengine.ToolsCall{
 		Name: "local_shell",
 		Args: map[string]string{

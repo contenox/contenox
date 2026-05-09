@@ -18,8 +18,6 @@ run_help() {
 run_help
 run_help run
 run_help chat
-run_help plan
-run_help plan next
 run_help session
 run_help init
 run_help hook

@@ -14,10 +14,12 @@ import (
 
 // validConfigKeys lists the keys users can set via `contenox config set`.
 var validConfigKeys = map[string]string{
-	"default-model":    "Default LLM model name (e.g. qwen2.5:7b)",
-	"default-provider": "Default LLM provider type (e.g. ollama, openai, gemini)",
-	"default-chain":    "Default chain file path (relative to .contenox/ or absolute)",
-	"hitl-policy-name": "Active HITL policy file name (e.g. hitl-policy-strict.json). Empty = use hitl-policy-default.json.",
+	"default-model":        "Default LLM model name (e.g. qwen2.5:7b)",
+	"default-provider":     "Default LLM provider type (e.g. ollama, openai, gemini)",
+	"default-alt-model":    "Optional alt LLM model name. Used by chains referencing {{var:alt_model}}.",
+	"default-alt-provider": "Optional alt LLM provider type. Used by chains referencing {{var:alt_provider}}.",
+	"default-chain":        "Default chain file path (relative to .contenox/ or absolute)",
+	"hitl-policy-name":     "Active HITL policy file name (e.g. hitl-policy-strict.json). Empty = use hitl-policy-default.json.",
 }
 
 var configCmd = &cobra.Command{
@@ -25,14 +27,16 @@ var configCmd = &cobra.Command{
 	Short: "Manage persistent CLI settings (default model, provider, chain, HITL policy).",
 	Long: `Store and retrieve persistent CLI defaults backed by SQLite.
 
-Global keys (shared across all projects): default-model, default-provider
+Global keys (shared across all projects): default-model, default-provider, default-alt-model, default-alt-provider
 Workspace keys (scoped to current project): default-chain, hitl-policy-name
 
 Supported keys:
-  default-model      Default LLM model name (e.g. qwen2.5:7b)
-  default-provider   Default LLM provider type (e.g. ollama, openai, gemini)
-  default-chain      Default chain file path
-  hitl-policy-name   Active HITL policy file name (e.g. hitl-policy-strict.json)`,
+  default-model         Default LLM model name (e.g. qwen2.5:7b)
+  default-provider      Default LLM provider type (e.g. ollama, openai, gemini)
+  default-alt-model     Optional alt LLM model name (chains using {{var:alt_model}})
+  default-alt-provider  Optional alt LLM provider (chains using {{var:alt_provider}})
+  default-chain         Default chain file path
+  hitl-policy-name      Active HITL policy file name (e.g. hitl-policy-strict.json)`,
 }
 
 var configSetCmd = &cobra.Command{
@@ -53,7 +57,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key, value := args[0], args[1]
 		if _, ok := validConfigKeys[key]; !ok {
-			return fmt.Errorf("unknown key %q — valid keys: default-model, default-provider, default-chain, hitl-policy-name", key)
+			return fmt.Errorf("unknown key %q — valid keys: default-model, default-provider, default-alt-model, default-alt-provider, default-chain, hitl-policy-name", key)
 		}
 		db, store, workspaceID, err := openConfigDBWithWorkspace(cmd)
 		if err != nil {

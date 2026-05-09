@@ -37,8 +37,7 @@ const (
 	ClassTimeout ErrorClass = "timeout"
 	// ClassAuth is HTTP 401/403 or "invalid api key". Never retried.
 	ClassAuth ErrorClass = "auth"
-	// ClassCapacity is a context-length / token-overflow error. Never retried;
-	// the caller (e.g. planservice) may treat this as a signal to replan.
+	// ClassCapacity is a context-length / token-overflow error. Never retried.
 	ClassCapacity ErrorClass = "capacity"
 	// ClassCanceled is context.Canceled. Never retried.
 	ClassCanceled ErrorClass = "canceled"
@@ -78,7 +77,8 @@ func ClassifyError(err error) ErrorClass {
 		return ClassAuth
 	case containsAny(s, "context length", "context window", "maximum context", "exceeds context", "tokens exceed", "token count "):
 		return ClassCapacity
-	case containsAny(s, "500", "502", "503", "504", "internal server error", "bad gateway", "service unavailable", "gateway timeout"):
+	case containsAny(s, "500", "502", "503", "504", "internal server error", "bad gateway", "service unavailable", "gateway timeout",
+		"empty content from model", "empty content from vertex", "empty candidate parts"):
 		return ClassServerError
 	case containsAny(s, "i/o timeout", "deadline exceeded", "timed out"):
 		return ClassTimeout
@@ -161,7 +161,7 @@ type RetryPolicy struct {
 }
 
 // Outcome reports what happened during Do. It is set even on error so callers
-// can record retry/fallback usage in caveats or for later replan decisions.
+// can record retry/fallback usage in caveats or telemetry.
 type Outcome struct {
 	Attempts       int
 	UsedFallback   bool

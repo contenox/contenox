@@ -9,7 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func TestAuthClaims_Valid(t *testing.T) {
+func TestUnit_AuthClaims_Valid(t *testing.T) {
 	now := time.Now().UTC()
 	future := now.Add(2 * time.Hour)
 	past := now.Add(-2 * time.Hour)
@@ -90,7 +90,7 @@ func TestAuthClaims_Valid(t *testing.T) {
 	}
 }
 
-func TestCreateToken_Success(t *testing.T) {
+func TestUnit_CreateToken_Success(t *testing.T) {
 	cfg := authz.CreateTokenArgs{
 		JWTSecret: "testsecret",
 		JWTExpiry: time.Hour,
@@ -119,7 +119,7 @@ func TestCreateToken_Success(t *testing.T) {
 	}
 }
 
-func TestValidateToken_Valid(t *testing.T) {
+func TestUnit_ValidateToken_Valid(t *testing.T) {
 	cfg := authz.CreateTokenArgs{
 		JWTSecret: "valid_secret",
 		JWTExpiry: time.Hour,
@@ -135,7 +135,7 @@ func TestValidateToken_Valid(t *testing.T) {
 	}
 }
 
-func TestValidateToken_InvalidSignature(t *testing.T) {
+func TestUnit_ValidateToken_InvalidSignature(t *testing.T) {
 	cfg := authz.CreateTokenArgs{
 		JWTSecret: "valid_secret",
 		JWTExpiry: time.Hour,
@@ -147,7 +147,7 @@ func TestValidateToken_InvalidSignature(t *testing.T) {
 		t.Error("Expected error for invalid signature")
 	}
 }
-func TestRefreshToken_Success(t *testing.T) {
+func TestUnit_RefreshToken_Success(t *testing.T) {
 	cfg := authz.CreateTokenArgs{
 		JWTSecret: "refresh_secret",
 		JWTExpiry: time.Hour,

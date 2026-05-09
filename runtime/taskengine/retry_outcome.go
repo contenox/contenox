@@ -10,10 +10,9 @@ import (
 // RetryOutcomeSink collects per-call retry outcomes from chat_completion tasks
 // running inside one chain invocation. It is safe for concurrent appenders.
 //
-// planservice attaches a sink via [WithRetryOutcomeSink] before running a
-// compiled plan chain so it can observe whether any chat call retried, used
-// fallback, or hit a non-retryable class (e.g. capacity) — used to decide
-// auto-replan in §3.
+// A host attaches a sink via [WithRetryOutcomeSink] before running a chain so
+// it can observe whether any chat call retried, used fallback, or hit a
+// non-retryable class (e.g. capacity).
 type RetryOutcomeSink struct {
 	mu       sync.Mutex
 	outcomes []llmretry.Outcome

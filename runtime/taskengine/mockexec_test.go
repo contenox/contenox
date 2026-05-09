@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
@@ -95,6 +96,24 @@ func TestUnit_MacroEnv_Var_NoVarsInContext(t *testing.T) {
 	require.NoError(t, err)
 
 	// Deliberately use a plain context with no vars attached.
-	_, _, _, err = env.ExecEnv(context.Background(), singleTaskChain("{{var:anything}}"), "in", taskengine.DataTypeString)
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), singleTaskChain("{{var:anything}}"), "in", taskengine.DataTypeString)
 	require.Error(t, err)
+}
+
+// TestUnit_MacroEnv_Var_AltSlot verifies that the alt_model / alt_provider vars
+// resolve via the same mechanism as primary model/provider — they're plain
+// template vars, no special handling.
+func TestUnit_MacroEnv_Var_AltSlot(t *testing.T) {
+	inner := &stubEnvExecutor{}
+	env, err := taskengine.NewMacroEnv(inner, nil)
+	require.NoError(t, err)
+
+	ctx := taskengine.WithTemplateVars(context.Background(), map[string]string{
+		"alt_model":    "granite-3.2-2b",
+		"alt_provider": "local",
+	})
+
+	_, _, _, err = env.ExecEnv(ctx, singleTaskChain("use {{var:alt_provider}}/{{var:alt_model}}"), "in", taskengine.DataTypeString)
+	require.NoError(t, err)
+	require.Equal(t, "use local/granite-3.2-2b", inner.receivedPrompt)
 }

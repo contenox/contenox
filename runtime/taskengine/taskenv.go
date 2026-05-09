@@ -218,6 +218,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	var taskErr error
 	var inputVar string
 
+	// edgeCounts tracks how many times each edge "fromTaskID->toTaskID" has been
+	// traversed during this chain run. Consulted by OpEdgeTraversedAtLeast to
+	// bound agentic loops and other cyclic chains. Per-Execute, no DB.
+	edgeCounts := map[string]int{}
+
 	chainContext := &ChainContext{
 		Tools:       map[string]ToolWithResolution{},
 		ClientTools: []Tool{},
@@ -323,12 +328,17 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				}
 				taskCtx, cancel = context.WithTimeout(taskCtx, timeout)
 			}
-			taskCtx = WithTaskEventScope(taskCtx, TaskEventScope{
+			scope := TaskEventScope{
 				ChainID:     chain.ID,
 				TaskID:      currentTask.ID,
 				TaskHandler: currentTask.Handler.String(),
 				Retry:       retry,
-			})
+			}
+			if currentTask.ExecuteConfig != nil {
+				scope.ModelName = GetPrimaryModel(currentTask.ExecuteConfig)
+				scope.ProviderType = currentTask.ExecuteConfig.Provider
+			}
+			taskCtx = WithTaskEventScope(taskCtx, scope)
 			stepStarted := NewTaskEvent(taskCtx, TaskEventStepStarted)
 			publishTaskEventBestEffort(taskCtx, env.eventSink, stepStarted)
 			reportErrAttempt, reportChangeAttempt, endAttempt := env.tracker.Start(
@@ -381,6 +391,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			stepEvent := NewTaskEvent(taskCtx, TaskEventStepCompleted)
 			stepEvent.OutputType = outputType.String()
 			stepEvent.Transition = transitionEval
+			// For execute_tool_calls steps, extract the tool names from the output
+			// ChatHistory so the CLI can show what tools were invoked.
+			if currentTask.Handler == HandleExecuteToolCalls {
+				stepEvent.ToolNames = extractToolNamesFromOutput(output, outputType)
+			}
 			// Drain any UI hints emitted by tools during this step (Phase 5
 			// of the canvas-vision plan). Hints go out exactly once per
 			// publish — Drain() also clears them so the next step starts
@@ -409,6 +424,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		if taskErr != nil {
 			if currentTask.Transition.OnFailure != "" {
 				previousTaskID := currentTask.ID
+				edgeCounts[previousTaskID+"->"+currentTask.Transition.OnFailure]++
 				currentTask, err = findTaskByID(chain.Tasks, currentTask.Transition.OnFailure)
 				if err != nil {
 					return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("error transition target not found: %v", err)
@@ -438,7 +454,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		}
 
 		// Evaluate transitions and get chosen branch
-		nextTaskID, chosenBranch, err := env.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval)
+		nextTaskID, chosenBranch, err := env.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval, edgeCounts)
 		if err != nil {
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: transition error: %v", currentTask.ID, err)
 		}
@@ -505,6 +521,9 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		)
 		reportChangeTransition(nextTaskID, transitionEval)
 		endTransition() // Fix 2: direct call, not defer
+
+		// Count this traversal before reassigning currentTask.
+		edgeCounts[currentTask.ID+"->"+nextTaskID]++
 
 		// Find next task
 		currentTask, err = findTaskByID(chain.Tasks, nextTaskID)
@@ -654,10 +673,23 @@ func renderTemplate(tmplStr string, vars any) (string, error) {
 	return buf.String(), nil
 }
 
-func (exe SimpleEnv) evaluateTransitions(_ context.Context, _ string, transition TaskTransition, eval string) (string, *TransitionBranch, error) {
+func (exe SimpleEnv) evaluateTransitions(_ context.Context, _ string, transition TaskTransition, eval string, edgeCounts map[string]int) (string, *TransitionBranch, error) {
 	// First check explicit matches
 	for _, branch := range transition.Branches {
 		if branch.Operator == OpDefault {
+			continue
+		}
+
+		// Edge-state operators read engine state, not task output.
+		if branch.Operator == OpEdgeTraversedAtLeast {
+			threshold, err := strconv.Atoi(strings.TrimSpace(branch.When))
+			if err != nil {
+				// Treat as non-match so OpDefault can still fire.
+				continue
+			}
+			if edgeCounts[branch.Edge] >= threshold {
+				return branch.Goto, &branch, nil
+			}
 			continue
 		}
 
@@ -784,6 +816,7 @@ func validateChain(tasks []TaskDefinition) error {
 	if len(tasks) == 0 {
 		return fmt.Errorf("chain has no tasks %w", errdefs.ErrBadRequest)
 	}
+	taskIDs := make(map[string]struct{}, len(tasks))
 	for _, ct := range tasks {
 		if ct.ID == "" || ct.ID == TermEnd {
 			if ct.ID == "" {
@@ -791,6 +824,30 @@ func validateChain(tasks []TaskDefinition) error {
 			}
 			if ct.ID == TermEnd {
 				return fmt.Errorf("task ID cannot be '%s' %w", TermEnd, errdefs.ErrBadRequest)
+			}
+		}
+		taskIDs[ct.ID] = struct{}{}
+	}
+	for _, ct := range tasks {
+		for _, br := range ct.Transition.Branches {
+			if br.Operator != OpEdgeTraversedAtLeast {
+				continue
+			}
+			if br.Edge == "" {
+				return fmt.Errorf("task %q: branch with operator %q requires 'edge' field %w", ct.ID, OpEdgeTraversedAtLeast, errdefs.ErrBadRequest)
+			}
+			parts := strings.SplitN(br.Edge, "->", 2)
+			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+				return fmt.Errorf("task %q: branch edge %q must be of the form 'fromTaskID->toTaskID' %w", ct.ID, br.Edge, errdefs.ErrBadRequest)
+			}
+			if _, ok := taskIDs[parts[0]]; !ok {
+				return fmt.Errorf("task %q: branch edge %q references unknown source task %q %w", ct.ID, br.Edge, parts[0], errdefs.ErrBadRequest)
+			}
+			if _, ok := taskIDs[parts[1]]; !ok && parts[1] != TermEnd {
+				return fmt.Errorf("task %q: branch edge %q references unknown target task %q %w", ct.ID, br.Edge, parts[1], errdefs.ErrBadRequest)
+			}
+			if _, err := strconv.Atoi(strings.TrimSpace(br.When)); err != nil {
+				return fmt.Errorf("task %q: branch with operator %q requires integer 'when' threshold, got %q %w", ct.ID, OpEdgeTraversedAtLeast, br.When, errdefs.ErrBadRequest)
 			}
 		}
 	}
@@ -802,4 +859,29 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// extractToolNamesFromOutput extracts the tool function names from the output
+// ChatHistory of an execute_tool_calls step. It finds the last assistant
+// message with CallTools and returns the function names.
+func extractToolNamesFromOutput(output any, outputType DataType) []string {
+	if outputType != DataTypeChatHistory {
+		return nil
+	}
+	hist, ok := output.(ChatHistory)
+	if !ok || len(hist.Messages) == 0 {
+		return nil
+	}
+	// Walk backwards to find the last assistant message with tool calls.
+	for i := len(hist.Messages) - 1; i >= 0; i-- {
+		msg := hist.Messages[i]
+		if msg.Role == "assistant" && len(msg.CallTools) > 0 {
+			names := make([]string, 0, len(msg.CallTools))
+			for _, tc := range msg.CallTools {
+				names = append(names, tc.Function.Name)
+			}
+			return names
+		}
+	}
+	return nil
 }

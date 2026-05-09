@@ -23,11 +23,13 @@ var sessionCmd = &cobra.Command{
 	Long: `Create and switch named chat sessions.
 Each session maintains its own persistent conversation history.
 
-  contenox session new [name]     create a session and make it active
-  contenox session list           list all sessions (* = active)
-  contenox session switch <name>  switch the active session
-  contenox session delete <name>  delete a session and its messages
-  contenox session show           print the active session's conversation`,
+  contenox session new [name]            create a session and make it active
+  contenox session list                  list all sessions (* = active)
+  contenox session switch <name>         switch the active session
+  contenox session delete <name>         delete a session and its messages
+  contenox session show                  print the active session's conversation
+  contenox session fork [name]           copy active session to a new one
+  contenox session fork --summary        compact older history before forking`,
 	SilenceUsage: true,
 }
 

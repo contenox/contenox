@@ -47,7 +47,3 @@ func writeEmbeddedHITLPolicies(contenoxDir string, overwrite bool) error {
 	return nil
 }
 
-// ensureHITLPolicies writes all embedded policy presets to contenoxDir, always overwriting.
-func ensureHITLPolicies(contenoxDir string) error {
-	return writeEmbeddedHITLPolicies(contenoxDir, true)
-}

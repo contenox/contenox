@@ -1,18 +1,18 @@
 {
     "id": "chain-run",
-    "description": "Stateless one-shot chain for `contenox run`. Designed for scripted / pipeline use (`git diff | contenox run \"suggest a commit\"`). Includes classified retry so transient provider errors don't kill a CI step. Compaction is intentionally omitted — one-shot calls don't grow long enough to benefit. Plan-management tools excluded by default.",
+    "description": "Stateless one-shot chain for `contenox run`. Designed for scripted / pipeline use (`git diff | contenox run \"suggest a commit\"`). Includes classified retry so transient provider errors don't kill a CI step. Two-stage agentic loop: main (10 rounds) → recovery (10 rounds) → summarise_failure.",
     "tasks": [
         {
             "id": "contenox_run",
             "description": "Stateless agentic chat. Model may call tools (transition tool-call) or respond directly (transition default → end).",
             "handler": "chat_completion",
-            "system_instruction": "You are Contenox, a task-execution assistant invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nSCOPE: Only registered tools exist; there is no separate UI. If the user / caller asks for something that cannot be done with available tools, say so briefly.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess — say briefly what is missing and stop. A non-interactive caller cannot answer a clarifying question, so just refuse cleanly.\n\nNo ===STEP_DONE=== marker — that is plan-execution semantics, not one-shot run.",
+            "system_instruction": "You are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess — say briefly what is missing and stop. A non-interactive caller cannot answer a clarifying question, so just refuse cleanly.",
             "execute_config": {
                 "model": "{{var:model}}",
                 "provider": "{{var:provider}}",
                 "shift": true,
                 "pass_clients_tools": false,
-                "tools": ["*", "!plan_manager"],
+                "tools": ["*"],
                 "tools_policies": {
                     "local_shell": {
                         "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
@@ -36,8 +36,14 @@
                 }
             },
             "transition": {
-                "on_failure": "",
+                "on_failure": "recovery_run",
                 "branches": [
+                    {
+                        "operator": "edge_traversed_at_least",
+                        "edge": "contenox_run->run_tools",
+                        "when": "10",
+                        "goto": "recovery_run"
+                    },
                     {
                         "operator": "equals",
                         "when": "tool-call",
@@ -56,6 +62,22 @@
             "description": "Execute tool calls from the last message and append results to chat history.",
             "handler": "execute_tool_calls",
             "input_var": "contenox_run",
+            "execute_config": {
+                "tools_policies": {
+                    "local_shell": {
+                        "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
+                        "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+                    },
+                    "local_fs": {
+                        "_allowed_dir": ".",
+                        "_max_read_bytes": "1048576",
+                        "_max_output_bytes": "524288",
+                        "_max_list_depth": "6",
+                        "_max_grep_matches": "5000",
+                        "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+                    }
+                }
+            },
             "transition": {
                 "on_failure": "",
                 "branches": [
@@ -63,6 +85,124 @@
                         "operator": "default",
                         "when": "",
                         "goto": "contenox_run"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "recovery_run",
+            "description": "Recovery agentic loop — picks up the full chat history from the main loop with a fresh system instruction noting the prior agent got stuck. Has its own tool access and 10-round budget.",
+            "handler": "chat_completion",
+            "input_var": "contenox_run",
+            "system_instruction": "You are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess — say briefly what is missing and stop. A non-interactive caller cannot answer a clarifying question, so just refuse cleanly.\n\nBUDGET: You have already used 10 of 20 tool-call rounds on this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}",
+                "shift": true,
+                "pass_clients_tools": false,
+                "tools": ["*"],
+                "tools_policies": {
+                    "local_shell": {
+                        "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
+                        "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+                    },
+                    "local_fs": {
+                        "_allowed_dir": ".",
+                        "_max_read_bytes": "1048576",
+                        "_max_output_bytes": "524288",
+                        "_max_list_depth": "6",
+                        "_max_grep_matches": "5000",
+                        "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+                    }
+                },
+                "retry_policy": {
+                    "max_attempts": 4,
+                    "initial_backoff": "1s",
+                    "max_backoff": "30s",
+                    "jitter": 0.25,
+                    "rate_limit_min_wait": "10s"
+                }
+            },
+            "transition": {
+                "on_failure": "summarise_failure",
+                "branches": [
+                    {
+                        "operator": "edge_traversed_at_least",
+                        "edge": "recovery_run->recovery_run_tools",
+                        "when": "10",
+                        "goto": "summarise_failure"
+                    },
+                    {
+                        "operator": "equals",
+                        "when": "tool-call",
+                        "goto": "recovery_run_tools"
+                    },
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "end"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "recovery_run_tools",
+            "description": "Execute tool calls from the recovery agent and append results to chat history.",
+            "handler": "execute_tool_calls",
+            "input_var": "recovery_run",
+            "execute_config": {
+                "tools_policies": {
+                    "local_shell": {
+                        "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
+                        "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+                    },
+                    "local_fs": {
+                        "_allowed_dir": ".",
+                        "_max_read_bytes": "1048576",
+                        "_max_output_bytes": "524288",
+                        "_max_list_depth": "6",
+                        "_max_grep_matches": "5000",
+                        "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+                    }
+                }
+            },
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "recovery_run"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "summarise_failure",
+            "description": "Final safety net. Reached when both the main and recovery agentic loops exceeded their budgets. No tools — tells the user what was tried and what would unblock the work.",
+            "handler": "chat_completion",
+            "system_instruction": "You are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.",
+            "input_var": "recovery_run",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}",
+                "shift": true,
+                "pass_clients_tools": false,
+                "tools": [],
+                "retry_policy": {
+                    "max_attempts": 3,
+                    "initial_backoff": "1s",
+                    "max_backoff": "10s",
+                    "jitter": 0.25
+                }
+            },
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "end"
                     }
                 ]
             }

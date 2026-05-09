@@ -1,4 +1,4 @@
-package llmretry
+package llmretry_test
 
 import (
 	"context"
@@ -7,29 +7,31 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/contenox/contenox/runtime/taskengine/llmretry"
 )
 
-func TestClassifyError(t *testing.T) {
+func TestUnit_ClassifyError(t *testing.T) {
 	cases := []struct {
 		name string
 		err  error
-		want ErrorClass
+		want llmretry.ErrorClass
 	}{
-		{"nil", nil, ClassNone},
-		{"canceled", context.Canceled, ClassCanceled},
-		{"deadline", context.DeadlineExceeded, ClassTimeout},
-		{"openai 429", fmt.Errorf("OpenAI API returned non-200 status: 429, body: rate limited for model gpt-4"), ClassRateLimit},
-		{"anthropic 529", fmt.Errorf("anthropic 529 overloaded"), ClassRateLimit},
-		{"openai 503", fmt.Errorf("OpenAI API returned non-200 status: 503 service unavailable"), ClassServerError},
-		{"401 unauthorized", fmt.Errorf("status: 401 unauthorized"), ClassAuth},
-		{"invalid api key", fmt.Errorf("invalid api key supplied"), ClassAuth},
-		{"capacity exceeded", fmt.Errorf("input token count 200000 exceeds context length 128000"), ClassCapacity},
-		{"timeout", fmt.Errorf("Post \"https://api/x\": net/http: request canceled (i/o timeout)"), ClassTimeout},
-		{"unknown", fmt.Errorf("totally unexpected provider error"), ClassPermanent},
+		{"nil", nil, llmretry.ClassNone},
+		{"canceled", context.Canceled, llmretry.ClassCanceled},
+		{"deadline", context.DeadlineExceeded, llmretry.ClassTimeout},
+		{"openai 429", fmt.Errorf("OpenAI API returned non-200 status: 429, body: rate limited for model gpt-4"), llmretry.ClassRateLimit},
+		{"anthropic 529", fmt.Errorf("anthropic 529 overloaded"), llmretry.ClassRateLimit},
+		{"openai 503", fmt.Errorf("OpenAI API returned non-200 status: 503 service unavailable"), llmretry.ClassServerError},
+		{"401 unauthorized", fmt.Errorf("status: 401 unauthorized"), llmretry.ClassAuth},
+		{"invalid api key", fmt.Errorf("invalid api key supplied"), llmretry.ClassAuth},
+		{"capacity exceeded", fmt.Errorf("input token count 200000 exceeds context length 128000"), llmretry.ClassCapacity},
+		{"timeout", fmt.Errorf("Post \"https://api/x\": net/http: request canceled (i/o timeout)"), llmretry.ClassTimeout},
+		{"unknown", fmt.Errorf("totally unexpected provider error"), llmretry.ClassPermanent},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ClassifyError(tc.err)
+			got := llmretry.ClassifyError(tc.err)
 			if got != tc.want {
 				t.Fatalf("ClassifyError(%v) = %q, want %q", tc.err, got, tc.want)
 			}
@@ -37,14 +39,14 @@ func TestClassifyError(t *testing.T) {
 	}
 }
 
-func TestErrorClass_IsRetryable(t *testing.T) {
-	retryable := []ErrorClass{ClassRateLimit, ClassServerError, ClassTimeout}
+func TestUnit_ErrorClass_IsRetryable(t *testing.T) {
+	retryable := []llmretry.ErrorClass{llmretry.ClassRateLimit, llmretry.ClassServerError, llmretry.ClassTimeout}
 	for _, c := range retryable {
 		if !c.IsRetryable() {
 			t.Errorf("expected %q retryable", c)
 		}
 	}
-	notRetryable := []ErrorClass{ClassNone, ClassAuth, ClassCapacity, ClassCanceled, ClassPermanent}
+	notRetryable := []llmretry.ErrorClass{llmretry.ClassNone, llmretry.ClassAuth, llmretry.ClassCapacity, llmretry.ClassCanceled, llmretry.ClassPermanent}
 	for _, c := range notRetryable {
 		if c.IsRetryable() {
 			t.Errorf("expected %q not retryable", c)
@@ -52,19 +54,19 @@ func TestErrorClass_IsRetryable(t *testing.T) {
 	}
 }
 
-func fastPolicy(p RetryPolicy) RetryPolicy {
+func fastPolicy(p llmretry.RetryPolicy) llmretry.RetryPolicy {
 	if p.InitialBackoff == 0 {
-		p.InitialBackoff = Duration(time.Millisecond)
+		p.InitialBackoff = llmretry.Duration(time.Millisecond)
 	}
 	if p.MaxBackoff == 0 {
-		p.MaxBackoff = Duration(2 * time.Millisecond)
+		p.MaxBackoff = llmretry.Duration(2 * time.Millisecond)
 	}
 	return p
 }
 
-func TestDo_NoRetryOnAuth(t *testing.T) {
+func TestUnit_Do_NoRetryOnAuth(t *testing.T) {
 	calls := 0
-	_, out, err := Do(context.Background(), fastPolicy(RetryPolicy{MaxAttempts: 5}), "primary", func(model string) (any, error) {
+	_, out, err := llmretry.Do(context.Background(), fastPolicy(llmretry.RetryPolicy{MaxAttempts: 5}), "primary", func(model string) (any, error) {
 		calls++
 		return nil, fmt.Errorf("status: 401 unauthorized")
 	})
@@ -74,7 +76,7 @@ func TestDo_NoRetryOnAuth(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("expected single call, got %d", calls)
 	}
-	if out.LastErrorClass != ClassAuth {
+	if out.LastErrorClass != llmretry.ClassAuth {
 		t.Fatalf("class = %s", out.LastErrorClass)
 	}
 	if out.UsedFallback {
@@ -82,25 +84,25 @@ func TestDo_NoRetryOnAuth(t *testing.T) {
 	}
 }
 
-func TestDo_NoRetryOnCapacity(t *testing.T) {
+func TestUnit_Do_NoRetryOnCapacity(t *testing.T) {
 	calls := 0
-	_, out, err := Do(context.Background(), fastPolicy(RetryPolicy{MaxAttempts: 5}), "primary", func(model string) (any, error) {
+	_, out, err := llmretry.Do(context.Background(), fastPolicy(llmretry.RetryPolicy{MaxAttempts: 5}), "primary", func(model string) (any, error) {
 		calls++
 		return nil, fmt.Errorf("input token count 200000 exceeds context length 128000")
 	})
-	if err == nil || calls != 1 || out.LastErrorClass != ClassCapacity {
+	if err == nil || calls != 1 || out.LastErrorClass != llmretry.ClassCapacity {
 		t.Fatalf("calls=%d class=%s err=%v", calls, out.LastErrorClass, err)
 	}
 }
 
-func TestDo_RetriesOnRateLimitThenSucceeds(t *testing.T) {
+func TestUnit_Do_RetriesOnRateLimitThenSucceeds(t *testing.T) {
 	seq := []error{
 		fmt.Errorf("status: 429 too many requests"),
 		fmt.Errorf("status: 429 too many requests"),
 		nil,
 	}
 	calls := 0
-	res, out, err := Do(context.Background(), fastPolicy(RetryPolicy{MaxAttempts: 5}), "primary", func(model string) (any, error) {
+	res, out, err := llmretry.Do(context.Background(), fastPolicy(llmretry.RetryPolicy{MaxAttempts: 5}), "primary", func(model string) (any, error) {
 		defer func() { calls++ }()
 		if e := seq[calls]; e != nil {
 			return nil, e
@@ -121,10 +123,10 @@ func TestDo_RetriesOnRateLimitThenSucceeds(t *testing.T) {
 	}
 }
 
-func TestDo_FallbackAfterThreshold(t *testing.T) {
+func TestUnit_Do_FallbackAfterThreshold(t *testing.T) {
 	calls := 0
 	models := []string{}
-	_, out, err := Do(context.Background(), fastPolicy(RetryPolicy{
+	_, out, err := llmretry.Do(context.Background(), fastPolicy(llmretry.RetryPolicy{
 		MaxAttempts:     5,
 		FallbackModelID: "fallback",
 		FallbackAfter:   2,
@@ -148,9 +150,9 @@ func TestDo_FallbackAfterThreshold(t *testing.T) {
 	}
 }
 
-func TestDo_ExhaustsAttempts(t *testing.T) {
+func TestUnit_Do_ExhaustsAttempts(t *testing.T) {
 	calls := 0
-	_, out, err := Do(context.Background(), fastPolicy(RetryPolicy{MaxAttempts: 3}), "primary", func(model string) (any, error) {
+	_, out, err := llmretry.Do(context.Background(), fastPolicy(llmretry.RetryPolicy{MaxAttempts: 3}), "primary", func(model string) (any, error) {
 		calls++
 		return nil, fmt.Errorf("status: 503")
 	})
@@ -160,15 +162,15 @@ func TestDo_ExhaustsAttempts(t *testing.T) {
 	if calls != 3 || out.Attempts != 3 {
 		t.Fatalf("calls=%d attempts=%d", calls, out.Attempts)
 	}
-	if out.LastErrorClass != ClassServerError {
+	if out.LastErrorClass != llmretry.ClassServerError {
 		t.Fatalf("class = %s", out.LastErrorClass)
 	}
 }
 
-func TestDo_ContextCanceledBeforeFirstCall(t *testing.T) {
+func TestUnit_Do_ContextCanceledBeforeFirstCall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, _, err := Do(ctx, RetryPolicy{MaxAttempts: 5}, "primary", func(model string) (any, error) {
+	_, _, err := llmretry.Do(ctx, llmretry.RetryPolicy{MaxAttempts: 5}, "primary", func(model string) (any, error) {
 		t.Fatalf("call should not run after cancel")
 		return nil, nil
 	})
@@ -177,10 +179,10 @@ func TestDo_ContextCanceledBeforeFirstCall(t *testing.T) {
 	}
 }
 
-func TestDo_ContextCanceledDuringBackoff(t *testing.T) {
+func TestUnit_Do_ContextCanceledDuringBackoff(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
-	_, _, err := Do(ctx, RetryPolicy{MaxAttempts: 5, InitialBackoff: Duration(50 * time.Millisecond), MaxBackoff: Duration(50 * time.Millisecond)}, "primary", func(model string) (any, error) {
+	_, _, err := llmretry.Do(ctx, llmretry.RetryPolicy{MaxAttempts: 5, InitialBackoff: llmretry.Duration(50 * time.Millisecond), MaxBackoff: llmretry.Duration(50 * time.Millisecond)}, "primary", func(model string) (any, error) {
 		calls++
 		// Cancel after first attempt; sleep should observe cancel.
 		go func() {
@@ -194,25 +196,9 @@ func TestDo_ContextCanceledDuringBackoff(t *testing.T) {
 	}
 }
 
-func TestBackoffFor_RateLimitFloor(t *testing.T) {
-	p := RetryPolicy{
-		InitialBackoff:   Duration(1 * time.Millisecond),
-		MaxBackoff:       Duration(2 * time.Millisecond),
-		RateLimitMinWait: Duration(100 * time.Millisecond),
-	}
-	got := backoffFor(p, 1, ClassRateLimit)
-	if got < 100*time.Millisecond {
-		t.Fatalf("rate-limit floor not applied: %v", got)
-	}
-	got = backoffFor(p, 1, ClassServerError)
-	if got > 2*time.Millisecond {
-		t.Fatalf("server-error should respect MaxBackoff, got %v", got)
-	}
-}
-
-func TestDuration_JSON(t *testing.T) {
+func TestUnit_Duration_JSON(t *testing.T) {
 	type wrap struct {
-		B Duration `json:"b"`
+		B llmretry.Duration `json:"b"`
 	}
 	cases := []struct {
 		in   string
@@ -235,18 +221,18 @@ func TestDuration_JSON(t *testing.T) {
 		}
 	}
 	// Round-trip a policy using string form.
-	pin := RetryPolicy{
+	pin := llmretry.RetryPolicy{
 		MaxAttempts:      3,
-		InitialBackoff:   Duration(500 * time.Millisecond),
-		MaxBackoff:       Duration(30 * time.Second),
+		InitialBackoff:   llmretry.Duration(500 * time.Millisecond),
+		MaxBackoff:       llmretry.Duration(30 * time.Second),
 		Jitter:           0.25,
-		RateLimitMinWait: Duration(10 * time.Second),
+		RateLimitMinWait: llmretry.Duration(10 * time.Second),
 	}
 	b, err := json.Marshal(pin)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	var pout RetryPolicy
+	var pout llmretry.RetryPolicy
 	if err := json.Unmarshal(b, &pout); err != nil {
 		t.Fatalf("unmarshal: %v (raw: %s)", err, string(b))
 	}
@@ -255,16 +241,16 @@ func TestDuration_JSON(t *testing.T) {
 	}
 }
 
-func TestDuration_InvalidString(t *testing.T) {
-	var d Duration
+func TestUnit_Duration_InvalidString(t *testing.T) {
+	var d llmretry.Duration
 	if err := json.Unmarshal([]byte(`"not-a-duration"`), &d); err == nil {
 		t.Fatalf("expected error for invalid duration string")
 	}
 }
 
-func TestDo_ZeroPolicyMakesOneAttempt(t *testing.T) {
+func TestUnit_Do_ZeroPolicyMakesOneAttempt(t *testing.T) {
 	calls := 0
-	_, out, err := Do(context.Background(), RetryPolicy{}, "primary", func(model string) (any, error) {
+	_, out, err := llmretry.Do(context.Background(), llmretry.RetryPolicy{}, "primary", func(model string) (any, error) {
 		calls++
 		return nil, fmt.Errorf("status: 503")
 	})

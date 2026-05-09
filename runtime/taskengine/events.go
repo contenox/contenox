@@ -27,11 +27,6 @@ const (
 	TaskEventChainCompleted TaskEventKind = "chain_completed"
 	TaskEventChainFailed    TaskEventKind = "chain_failed"
 
-	// Plan run lifecycle (load/compile before chain execution); same bus + SSE as other task events.
-	TaskEventPlanRunStarted  TaskEventKind = "plan_run_started"
-	TaskEventPlanRunCompiled TaskEventKind = "plan_run_compiled"
-	TaskEventPlanRunFailed   TaskEventKind = "plan_run_failed"
-
 	// TaskEventApprovalRequested is emitted by the HITLWrapper before executing a
 	// gated tool call. The execution goroutine blocks until the human responds via
 	// POST /api/approvals/{approval_id}. The Beam UI renders an approval card.
@@ -51,6 +46,7 @@ type TaskEvent struct {
 	BackendID    string        `json:"backend_id,omitempty"`
 	OutputType   string        `json:"output_type,omitempty"`
 	Transition   string        `json:"transition,omitempty"`
+	ToolNames    []string      `json:"tool_names,omitempty"`
 	Content      string        `json:"content,omitempty"`
 	Thinking     string        `json:"thinking,omitempty"`
 	Error        string        `json:"error,omitempty"`
@@ -65,17 +61,19 @@ type TaskEvent struct {
 	// Approval fields — populated only for TaskEventApprovalRequested events.
 	// ApprovalID is the unique key used to resume or cancel via POST /api/approvals/{id}.
 	ApprovalID   string         `json:"approval_id,omitempty"`
-	ToolsName     string         `json:"tools_name,omitempty"`
+	ToolsName    string         `json:"tools_name,omitempty"`
 	ToolName     string         `json:"tool_name,omitempty"`
 	ApprovalArgs map[string]any `json:"approval_args,omitempty"`
 	ApprovalDiff string         `json:"approval_diff,omitempty"`
 }
 
 type TaskEventScope struct {
-	ChainID     string
-	TaskID      string
-	TaskHandler string
-	Retry       int
+	ChainID      string
+	TaskID       string
+	TaskHandler  string
+	Retry        int
+	ModelName    string
+	ProviderType string
 }
 
 type TaskEventSink interface {
@@ -185,6 +183,8 @@ func NewTaskEvent(ctx context.Context, kind TaskEventKind) TaskEvent {
 		event.TaskID = scope.TaskID
 		event.TaskHandler = scope.TaskHandler
 		event.Retry = scope.Retry
+		event.ModelName = scope.ModelName
+		event.ProviderType = scope.ProviderType
 	}
 	return event
 }
@@ -196,25 +196,4 @@ func publishTaskEventBestEffort(ctx context.Context, sink TaskEventSink, event T
 	if err := sink.PublishTaskEvent(ctx, event); err != nil {
 		log.Printf("task event publish failed: %v", err)
 	}
-}
-
-// PublishPlanRunEvent emits a plan run lifecycle event on the given sink (e.g. NewBusTaskEventSink).
-// No-op when sink is nil or disabled. Uses request ID from ctx when present for per-request SSE subjects.
-func PublishPlanRunEvent(ctx context.Context, sink TaskEventSink, kind TaskEventKind, content string) {
-	if sink == nil || !sink.Enabled() {
-		return
-	}
-	ev := NewTaskEvent(ctx, kind)
-	ev.Content = content
-	publishTaskEventBestEffort(ctx, sink, ev)
-}
-
-// PublishPlanRunFailed emits plan_run_failed with err.Error() on the Error field.
-func PublishPlanRunFailed(ctx context.Context, sink TaskEventSink, err error) {
-	if err == nil || sink == nil || !sink.Enabled() {
-		return
-	}
-	ev := NewTaskEvent(ctx, TaskEventPlanRunFailed)
-	ev.Error = err.Error()
-	publishTaskEventBestEffort(ctx, sink, ev)
 }

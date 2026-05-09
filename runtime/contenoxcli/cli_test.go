@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestFirstNonFlagIsReserved_version(t *testing.T) {
+func TestUnit_firstNonFlagIsReserved_version(t *testing.T) {
 	if !firstNonFlagIsReserved([]string{"version"}) {
 		t.Fatal(`expected "version" to be reserved so it is not passed to run/chat`)
 	}
@@ -15,7 +15,7 @@ func TestFirstNonFlagIsReserved_version(t *testing.T) {
 	}
 }
 
-func TestResolveContenoxDir(t *testing.T) {
+func TestUnit_resolveContenoxDir(t *testing.T) {
 	// Create a temporary directory structure for testing.
 	tempDir, err := os.MkdirTemp("", "contenox-test-*")
 	if err != nil {
@@ -35,6 +35,11 @@ func TestResolveContenoxDir(t *testing.T) {
 	contenoxDir := filepath.Join(projectDir, ".contenox")
 	if err := os.MkdirAll(contenoxDir, 0755); err != nil {
 		t.Fatalf("Failed to create .contenox dir: %v", err)
+	}
+	// ResolveContenoxDir requires a workspace.id file to recognize a directory
+	// as a valid workspace (so backups / pre-init dirs don't shadow the real one).
+	if err := os.WriteFile(filepath.Join(contenoxDir, "workspace.id"), []byte("test"), 0644); err != nil {
+		t.Fatalf("Failed to write workspace.id: %v", err)
 	}
 
 	// 1. Test from sub2Dir. It should walk up and find it in projectDir.

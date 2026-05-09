@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/runtime/backendservice"
 	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/runtime/internal/runtimestate"
-	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -30,7 +30,7 @@ func setupSQLiteStore(t *testing.T) (context.Context, libdb.DBManager, runtimety
 // setProviderConfigKV
 // ---------------------------------------------------------------------------
 
-func Test_setProviderConfigKV(t *testing.T) {
+func TestUnit_setProviderConfigKV(t *testing.T) {
 	ctx, _, store := setupSQLiteStore(t)
 
 	err := setProviderConfigKV(ctx, store, "openai", "sk-test-key")
@@ -43,7 +43,7 @@ func Test_setProviderConfigKV(t *testing.T) {
 	require.Equal(t, "sk-test-key", pc.APIKey)
 }
 
-func Test_setProviderConfigKV_gemini_keyFormat(t *testing.T) {
+func TestUnit_setProviderConfigKV_gemini_keyFormat(t *testing.T) {
 	ctx, _, store := setupSQLiteStore(t)
 
 	err := setProviderConfigKV(ctx, store, "Gemini", "gemini-secret")
@@ -57,7 +57,7 @@ func Test_setProviderConfigKV_gemini_keyFormat(t *testing.T) {
 	require.Equal(t, "gemini-secret", pc.APIKey)
 }
 
-func Test_setProviderConfigKV_valueRoundTrip(t *testing.T) {
+func TestUnit_setProviderConfigKV_valueRoundTrip(t *testing.T) {
 	ctx, _, store := setupSQLiteStore(t)
 
 	key := runtimestate.ProviderKeyPrefix + "openai"
@@ -76,7 +76,7 @@ func Test_setProviderConfigKV_valueRoundTrip(t *testing.T) {
 // backendservice CRUD (replaces the old ensureBackendsFromConfig tests)
 // ---------------------------------------------------------------------------
 
-func Test_backendService_create(t *testing.T) {
+func TestUnit_backendService_create(t *testing.T) {
 	ctx, db, _ := setupSQLiteStore(t)
 	svc := backendservice.New(db)
 
@@ -96,7 +96,7 @@ func Test_backendService_create(t *testing.T) {
 	require.Equal(t, "http://127.0.0.1:11434", list[0].BaseURL)
 }
 
-func Test_backendService_update(t *testing.T) {
+func TestUnit_backendService_update(t *testing.T) {
 	ctx, db, _ := setupSQLiteStore(t)
 	svc := backendservice.New(db)
 
@@ -117,7 +117,7 @@ func Test_backendService_update(t *testing.T) {
 	require.Equal(t, "http://new:11434", list[0].BaseURL)
 }
 
-func Test_backendService_delete(t *testing.T) {
+func TestUnit_backendService_delete(t *testing.T) {
 	ctx, db, _ := setupSQLiteStore(t)
 	svc := backendservice.New(db)
 
@@ -135,7 +135,7 @@ func Test_backendService_delete(t *testing.T) {
 	require.Empty(t, list)
 }
 
-func Test_backendService_sameTypeAndURL_rejected(t *testing.T) {
+func TestUnit_backendService_sameTypeAndURL_rejected(t *testing.T) {
 	ctx, db, _ := setupSQLiteStore(t)
 	svc := backendservice.New(db)
 
@@ -147,7 +147,7 @@ func Test_backendService_sameTypeAndURL_rejected(t *testing.T) {
 	require.Error(t, err)
 }
 
-func Test_backendService_differentType_sameURL_allowed(t *testing.T) {
+func TestUnit_backendService_differentType_sameURL_allowed(t *testing.T) {
 	ctx, db, _ := setupSQLiteStore(t)
 	svc := backendservice.New(db)
 
@@ -163,14 +163,14 @@ func Test_backendService_differentType_sameURL_allowed(t *testing.T) {
 // getConfigKV / clikv.Prefix (new config cmd helpers)
 // ---------------------------------------------------------------------------
 
-func Test_getConfigKV_emptyIfNotSet(t *testing.T) {
+func TestUnit_getConfigKV_emptyIfNotSet(t *testing.T) {
 	ctx, _, store := setupSQLiteStore(t)
 	val, err := getConfigKV(ctx, store, "default-model")
 	require.NoError(t, err)
 	require.Equal(t, "", val)
 }
 
-func Test_getConfigKV_roundTrip(t *testing.T) {
+func TestUnit_getConfigKV_roundTrip(t *testing.T) {
 	ctx, _, store := setupSQLiteStore(t)
 
 	// Simulate what `contenox config set` does.
@@ -182,7 +182,7 @@ func Test_getConfigKV_roundTrip(t *testing.T) {
 	require.Equal(t, "qwen2.5:7b", val)
 }
 
-func Test_getConfigKV_multipleKeys(t *testing.T) {
+func TestUnit_getConfigKV_multipleKeys(t *testing.T) {
 	ctx, _, store := setupSQLiteStore(t)
 
 	for k, v := range map[string]string{

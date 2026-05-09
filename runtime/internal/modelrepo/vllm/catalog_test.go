@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCatalogProvider_ListModels(t *testing.T) {
+func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/v1/models", r.URL.Path)
 		require.Equal(t, http.MethodGet, r.Method)
