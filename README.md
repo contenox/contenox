@@ -14,7 +14,7 @@ For anyone whose job touches a terminal. Describe what you want in plain English
 ## Install
 
 <!-- Release tooling: keep next line in sync with runtime/version/version.txt (updated by `make -f Makefile.version bump-*`). -->
-<!-- TAG=v0.11.0 -->
+<!-- TAG=v0.12.0 -->
 
 ```bash
 curl -fsSL https://contenox.com/install.sh | sh
