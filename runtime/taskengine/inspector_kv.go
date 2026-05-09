@@ -3,7 +3,7 @@ package taskengine
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"fmt"
 	"time"
 
 	libkv "github.com/contenox/contenox/libkvstore"
@@ -17,12 +17,16 @@ const (
 )
 
 type KVInspector struct {
-	inner Inspector
-	kv    libkv.KVManager
+	inner   Inspector
+	kv      libkv.KVManager
+	tracker libtracker.ActivityTracker
 }
 
-func NewKVInspector(inner Inspector, kv libkv.KVManager) *KVInspector {
-	return &KVInspector{inner: inner, kv: kv}
+func NewKVInspector(inner Inspector, kv libkv.KVManager, tracker libtracker.ActivityTracker) *KVInspector {
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
+	return &KVInspector{inner: inner, kv: kv, tracker: tracker}
 }
 
 func (i *KVInspector) Start(ctx context.Context) StackTrace {
@@ -32,20 +36,30 @@ func (i *KVInspector) Start(ctx context.Context) StackTrace {
 		return inner
 	}
 
+	reportErr, _, end := i.tracker.Start(ctx, "register_request", "state_kv", "request_id", reqID)
+	defer end()
+
 	op, err := i.kv.Executor(ctx)
 	if err != nil {
-		log.Printf("inspector(kv): executor on Start: %v", err)
+		reportErr(err)
 		return inner
 	}
-	if err := op.SetAdd(ctx, kvStateRequestsSet, []byte(reqID)); err != nil {
-		log.Printf("inspector(kv): track requestID: %v", err)
+	reqIDJSON, err := json.Marshal(reqID)
+	if err != nil {
+		reportErr(err)
+		return inner
+	}
+	if err := op.SetAdd(ctx, kvStateRequestsSet, reqIDJSON); err != nil {
+		reportErr(err)
+		return inner
 	}
 
 	return &kvStackTrace{
-		inner: inner,
-		kv:    i.kv,
-		reqID: reqID,
-		ctx:   ctx,
+		inner:   inner,
+		kv:      i.kv,
+		reqID:   reqID,
+		ctx:     ctx,
+		tracker: i.tracker,
 	}
 }
 
@@ -53,19 +67,24 @@ func (i *KVInspector) GetExecutionStateByRequestID(ctx context.Context, reqID st
 	if reqID == "" {
 		return nil, nil
 	}
+	reportErr, _, end := i.tracker.Start(ctx, "get_state", "state_kv", "request_id", reqID)
+	defer end()
+
 	op, err := i.kv.Executor(ctx)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
 	raw, err := op.ListRange(ctx, kvStatePrefix+reqID, 0, -1)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
 	out := make([]CapturedStateUnit, 0, len(raw))
-	for _, b := range raw {
+	for idx, b := range raw {
 		var u CapturedStateUnit
 		if err := json.Unmarshal(b, &u); err != nil {
-			log.Printf("inspector(kv): unmarshal step: %v", err)
+			reportErr(fmt.Errorf("unmarshal step %d: %w", idx, err))
 			continue
 		}
 		out = append(out, u)
@@ -74,34 +93,49 @@ func (i *KVInspector) GetExecutionStateByRequestID(ctx context.Context, reqID st
 }
 
 func (i *KVInspector) GetStatefulRequests(ctx context.Context) ([]string, error) {
+	reportErr, _, end := i.tracker.Start(ctx, "list_requests", "state_kv")
+	defer end()
+
 	op, err := i.kv.Executor(ctx)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
 	raw, err := op.SetMembers(ctx, kvStateRequestsSet)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
 	out := make([]string, 0, len(raw))
 	for _, b := range raw {
-		out = append(out, string(b))
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			reportErr(err)
+			continue
+		}
+		out = append(out, s)
 	}
 	return out, nil
 }
 
 type kvStackTrace struct {
-	inner StackTrace
-	kv    libkv.KVManager
-	reqID string
-	ctx   context.Context
+	inner   StackTrace
+	kv      libkv.KVManager
+	reqID   string
+	ctx     context.Context
+	tracker libtracker.ActivityTracker
 }
 
 func (s *kvStackTrace) RecordStep(step CapturedStateUnit) {
 	s.inner.RecordStep(step)
 
+	reportErr, _, end := s.tracker.Start(s.ctx, "persist_step", "state_kv",
+		"request_id", s.reqID, "task_id", step.TaskID)
+	defer end()
+
 	data, err := json.Marshal(step)
 	if err != nil {
-		log.Printf("inspector(kv): marshal step: %v", err)
+		reportErr(err)
 		return
 	}
 
@@ -110,23 +144,23 @@ func (s *kvStackTrace) RecordStep(step CapturedStateUnit) {
 
 	op, err := s.kv.Executor(writeCtx)
 	if err != nil {
-		log.Printf("inspector(kv): executor on RecordStep: %v", err)
+		reportErr(err)
 		return
 	}
 
 	key := kvStatePrefix + s.reqID
 	if err := op.ListPush(writeCtx, key, data); err != nil {
-		log.Printf("inspector(kv): list push: %v", err)
+		reportErr(err)
 		return
 	}
 	n, err := op.ListLength(writeCtx, key)
 	if err != nil {
-		log.Printf("inspector(kv): list length: %v", err)
+		reportErr(err)
 		return
 	}
 	if n > kvStateMaxEntries {
 		if err := op.ListTrim(writeCtx, key, 0, kvStateMaxEntries-1); err != nil {
-			log.Printf("inspector(kv): list trim: %v", err)
+			reportErr(err)
 		}
 	}
 }

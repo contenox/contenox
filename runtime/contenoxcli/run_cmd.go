@@ -188,6 +188,9 @@ Examples:
 			fmt.Fprintln(cmd.ErrOrStderr(), "Thinking...")
 		}
 
+		stopTrace := startTraceStream(execCtx, o, engine, cmd.ErrOrStderr())
+		defer stopTrace()
+
 		output, outputType, stateUnits, err := engine.TaskService.Execute(execCtx, &chain, inputVal, inputType)
 		if err != nil {
 			if isModelResolverFailure(err) {

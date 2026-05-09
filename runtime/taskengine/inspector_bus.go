@@ -3,7 +3,6 @@ package taskengine
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"time"
 
 	"github.com/contenox/contenox/libbus"
@@ -15,12 +14,16 @@ func StateSubject(reqID string) string {
 }
 
 type BusInspector struct {
-	inner Inspector
-	bus   libbus.Messenger
+	inner   Inspector
+	bus     libbus.Messenger
+	tracker libtracker.ActivityTracker
 }
 
-func NewBusInspector(inner Inspector, bus libbus.Messenger) *BusInspector {
-	return &BusInspector{inner: inner, bus: bus}
+func NewBusInspector(inner Inspector, bus libbus.Messenger, tracker libtracker.ActivityTracker) *BusInspector {
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
+	return &BusInspector{inner: inner, bus: bus, tracker: tracker}
 }
 
 func (i *BusInspector) Start(ctx context.Context) StackTrace {
@@ -34,6 +37,7 @@ func (i *BusInspector) Start(ctx context.Context) StackTrace {
 		bus:     i.bus,
 		subject: StateSubject(reqID),
 		ctx:     ctx,
+		tracker: i.tracker,
 	}
 }
 
@@ -42,14 +46,19 @@ type busStackTrace struct {
 	bus     libbus.Messenger
 	subject string
 	ctx     context.Context
+	tracker libtracker.ActivityTracker
 }
 
 func (s *busStackTrace) RecordStep(step CapturedStateUnit) {
 	s.inner.RecordStep(step)
 
+	reportErr, _, end := s.tracker.Start(s.ctx, "publish_step", "state_bus",
+		"subject", s.subject, "task_id", step.TaskID)
+	defer end()
+
 	data, err := json.Marshal(step)
 	if err != nil {
-		log.Printf("inspector(bus): marshal step: %v", err)
+		reportErr(err)
 		return
 	}
 
@@ -57,7 +66,7 @@ func (s *busStackTrace) RecordStep(step CapturedStateUnit) {
 	defer cancel()
 
 	if err := s.bus.Publish(pubCtx, s.subject, data); err != nil {
-		log.Printf("inspector(bus): publish %s: %v", s.subject, err)
+		reportErr(err)
 	}
 }
 

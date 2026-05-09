@@ -149,35 +149,32 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 		fmt.Fprintln(errW, "Thinking...")
 	}
 
+	stopTrace := startTraceStream(ctx, opts, engine, errW)
+	defer stopTrace()
+
 	output, outputType, stateUnits, err := engine.TaskService.Execute(ctx, &chain, chainInput, taskengine.DataTypeChatHistory)
+
+	if sessionID != "" {
+		synthesized := taskengine.SynthesizeHistory(chainInput.Messages, stateUnits, err)
+		cleanCtx := context.WithoutCancel(ctx)
+		exec, commit, release, txErr := db.WithTransaction(cleanCtx)
+		if txErr != nil {
+			slog.Error("Failed to start transaction for chat persistence", "error", txErr)
+		} else {
+			defer release()
+			if persistErr := chatMgr.PersistDiff(cleanCtx, exec, sessionID, synthesized); persistErr != nil {
+				slog.Error("Failed to persist synthesized chat history", "sessionID", sessionID, "error", persistErr)
+			} else if commitErr := commit(cleanCtx); commitErr != nil {
+				slog.Error("Failed to commit chat persistence transaction", "error", commitErr)
+			}
+		}
+	}
+
 	if err != nil {
 		if isModelResolverFailure(err) {
 			PrintSetupIssues(errW, engine.SetupCheck)
 		}
 		return fmt.Errorf("chain execution failed: %w", err)
-	}
-
-	// Persist Results Surgically.
-	// Use context.WithoutCancel so a --timeout expiry doesn't lose the final message.
-	if sessionID != "" && outputType == taskengine.DataTypeChatHistory {
-		if updatedHistory, ok := output.(taskengine.ChatHistory); ok {
-			cleanCtx := context.WithoutCancel(ctx)
-			exec, commit, release, txErr := db.WithTransaction(cleanCtx)
-			if txErr == nil {
-				defer release()
-				if err := chatMgr.PersistDiff(cleanCtx, exec, sessionID, updatedHistory.Messages); err != nil {
-					slog.Error("Failed to persist chat diff", "sessionID", sessionID, "error", err)
-				} else {
-					if err := commit(cleanCtx); err != nil {
-						slog.Error("Failed to commit chat persistence transaction", "error", err)
-					}
-				}
-			} else {
-				slog.Error("Failed to start transaction for chat persistence", "error", txErr)
-			}
-		} else {
-			return fmt.Errorf("BUG: chain returned DataTypeChatHistory but output is not ChatHistory (type=%T)", output)
-		}
 	}
 
 	// ------------------------------------------------------------------------

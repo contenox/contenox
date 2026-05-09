@@ -48,7 +48,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -283,7 +283,7 @@ func init() {
 	f.Bool("shell", false, "Enable the local_shell tools (use only in trusted environments)")
 	f.String("local-exec-allowed-dir", "", "If set, local_shell may only run scripts/binaries under this directory")
 	f.Duration("timeout", defaultTimeout, "Maximum execution time (e.g., 5m, 1h)")
-	f.Bool("trace", false, "Enable operation telemetry on stderr")
+	f.Bool("trace", false, "Stream task-step events to stderr in real time")
 
 	f.Bool("steps", false, "Print execution steps after the result")
 	f.Bool("raw", false, "Print full output (e.g. entire chat JSON)")
@@ -295,6 +295,7 @@ func init() {
 	rootCmd.AddCommand(backendCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(modelCmd)
+	rootCmd.AddCommand(stateCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")

@@ -173,8 +173,8 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts, vfs
 		return nil, fmt.Errorf("failed to create task executor: %w", err)
 	}
 	var inspector taskengine.Inspector = taskengine.NewSimpleInspector()
-	inspector = taskengine.NewKVInspector(inspector, kvMgr)
-	inspector = taskengine.NewBusInspector(inspector, bus)
+	inspector = taskengine.NewKVInspector(inspector, kvMgr, tracker)
+	inspector = taskengine.NewBusInspector(inspector, bus, tracker)
 	envExec, err := taskengine.NewEnv(engineCtx, tracker, exec, inspector, toolsRepo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create environment executor: %w", err)
