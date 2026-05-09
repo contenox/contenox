@@ -43,7 +43,6 @@ type SimpleExec struct {
 	repo          llmrepo.ModelRepo
 	toolsProvider ToolsRepo
 	tracker       libtracker.ActivityTracker
-	eventSink     TaskEventSink
 }
 
 // NewExec creates a new SimpleExec instance
@@ -63,21 +62,7 @@ func NewExec(
 		toolsProvider: toolsProvider,
 		repo:          repo,
 		tracker:       tracker,
-		eventSink:     taskEventSinkFromContext(ctx),
 	}, nil
-}
-
-func (exe *SimpleExec) publishStepChunk(ctx context.Context, meta llmrepo.Meta, content, thinking string) {
-	if content == "" && thinking == "" {
-		return
-	}
-	event := NewTaskEvent(ctx, TaskEventStepChunk)
-	event.ModelName = meta.ModelName
-	event.ProviderType = meta.ProviderType
-	event.BackendID = meta.BackendID
-	event.Content = content
-	event.Thinking = thinking
-	publishTaskEventBestEffort(ctx, exe.eventSink, event)
 }
 
 // countTokensAndCheckLimit counts tokens for text and checks against context limit
@@ -196,42 +181,12 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 		streamArgs = append(streamArgs, libmodelprovider.WithShift{})
 	}
 
-	if exe.eventSink.Enabled() {
-		messages := make([]libmodelprovider.Message, 0, 2)
-		if systemInstruction != "" {
-			messages = append(messages, libmodelprovider.Message{
-				Role:    "system",
-				Content: systemInstruction,
-			})
-		}
-		messages = append(messages, libmodelprovider.Message{
-			Role:    "user",
-			Content: prompt,
-		})
-
-		stream, meta, err := exe.repo.Stream(ctx, req, messages, streamArgs...)
-		if err == nil {
-			var fullResponse strings.Builder
-			for parcel := range stream {
-				if parcel.Error != nil {
-					err := fmt.Errorf("prompt stream failed: %w", parcel.Error)
-					reportErr(err)
-					return "", err
-				}
-				fullResponse.WriteString(parcel.Data)
-				exe.publishStepChunk(ctx, meta, parcel.Data, parcel.Thinking)
-			}
-			return strings.TrimSpace(fullResponse.String()), nil
-		}
-	}
-
-	response, meta, err := exe.promptWithRetry(ctx, &llmCall, req, systemInstruction, prompt)
+	response, _, err := exe.promptWithRetry(ctx, &llmCall, req, systemInstruction, prompt)
 	if err != nil {
 		err = fmt.Errorf("prompt execution failed: %w", err)
 		reportErr(err)
 		return "", err
 	}
-	exe.publishStepChunk(ctx, meta, strings.TrimSpace(response), "")
 
 	return strings.TrimSpace(response), nil
 }
@@ -755,53 +710,10 @@ func (exe *SimpleExec) executeLLM(
 		Tracker:       exe.tracker,
 	}
 
-	// When no tools are exposed, we can stream the assistant turn and still
-	// preserve task semantics by buffering the final content locally.
-	if exe.eventSink.Enabled() && len(tools) == 0 {
-		stream, meta, err := exe.repo.Stream(ctx, req, messagesC, chatArgs...)
-		if err == nil {
-			var streamedContent strings.Builder
-			var streamedThinking strings.Builder
-			for parcel := range stream {
-				if parcel.Error != nil {
-					return nil, DataTypeAny, "", fmt.Errorf("chat stream failed: %w", parcel.Error)
-				}
-				streamedContent.WriteString(parcel.Data)
-				streamedThinking.WriteString(parcel.Thinking)
-				exe.publishStepChunk(ctx, meta, parcel.Data, parcel.Thinking)
-			}
-
-			respMessage := libmodelprovider.Message{
-				Role:     "assistant",
-				Content:  streamedContent.String(),
-				Thinking: streamedThinking.String(),
-			}
-			input.Messages = append(input.Messages, Message{
-				Role:      respMessage.Role,
-				Content:   respMessage.Content,
-				Thinking:  respMessage.Thinking,
-				Timestamp: time.Now().UTC(),
-			})
-
-			var outputTokensCount int
-			if respMessage.Content != "" {
-				outputTokensCount, err = exe.repo.CountTokens(ctx, meta.ModelName, respMessage.Content)
-				if err != nil {
-					err = fmt.Errorf("tokenizer failed: %w", err)
-					reportErr(err)
-					return nil, DataTypeAny, "", err
-				}
-			}
-			input.OutputTokens = outputTokensCount
-			return input, DataTypeChatHistory, "executed", nil
-		}
-	}
-
 	resp, meta, err := exe.chatWithRetry(ctx, llmCall, req, messagesC, chatArgs)
 	if err != nil {
 		return nil, DataTypeAny, "", fmt.Errorf("chat failed: %w", err)
 	}
-	exe.publishStepChunk(ctx, meta, resp.Message.Content, resp.Message.Thinking)
 
 	// Process response
 	callTools := make([]ToolCall, len(resp.ToolCalls))

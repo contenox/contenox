@@ -348,15 +348,6 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 	if err := h.checkToolOutputLimit(ctx, "read_file", out); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	// Emit a file_excerpt widget hint so the Beam UI renders an inline
-	// FileView card adjacent to the assistant message that triggered this
-	// read. Missing sink (non-Beam caller) makes this a no-op.
-	// See taskengine/widget_hint.go.
-	taskengine.AppendWidgetHintTyped(ctx, "file_excerpt", map[string]any{
-		"path":      path,
-		"text":      out,
-		"truncated": false,
-	})
 	return out, taskengine.DataTypeString, nil
 }
 

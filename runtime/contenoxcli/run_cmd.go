@@ -181,11 +181,6 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("failed to get think flag: %w", err)
 		}
-		stopTaskEvents := startCLITaskEventStream(execCtx, engine, cmd.ErrOrStderr(), cliTaskEventRenderOptions{
-			Trace:        o.EffectiveTracing,
-			ShowThinking: effectiveThink,
-		})
-		defer stopTaskEvents()
 
 		if o.EffectiveTracing {
 			slog.Info("Executing chain", "chain", chainPathAbs, "input_type", inputTypeName)

@@ -39,10 +39,8 @@ func MergeTemplateVars(ctx context.Context, overlay map[string]string) context.C
 			base[k] = v
 		}
 	}
-	if overlay != nil {
-		for k, v := range overlay {
-			base[k] = v
-		}
+	for k, v := range overlay {
+		base[k] = v
 	}
 	return WithTemplateVars(ctx, base)
 }

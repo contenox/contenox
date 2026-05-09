@@ -3,7 +3,6 @@ package taskengine
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -12,8 +11,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/contenox/contenox/runtime/errdefs"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/errdefs"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
@@ -87,7 +86,7 @@ var ErrToolsToolsUnavailable = errors.New("tools tools unavailable")
 
 type toolsToolsUnavailableError struct {
 	toolsName string
-	cause    error
+	cause     error
 }
 
 func (e *toolsToolsUnavailableError) Error() string {
@@ -108,7 +107,7 @@ func ToolsToolsUnavailable(toolsName string, cause error) error {
 	}
 	return &toolsToolsUnavailableError{
 		toolsName: toolsName,
-		cause:    cause,
+		cause:     cause,
 	}
 }
 
@@ -135,11 +134,10 @@ type ToolsWithSchema interface {
 
 // SimpleEnv is the default implementation of EnvExecutor.
 type SimpleEnv struct {
-	exec         TaskExecutor
-	tracker      libtracker.ActivityTracker
-	inspector    Inspector
+	exec          TaskExecutor
+	tracker       libtracker.ActivityTracker
+	inspector     Inspector
 	toolsProvider ToolsRepo
-	eventSink    TaskEventSink
 }
 
 // NewEnv creates a new SimpleEnv with the given tracker and task executor.
@@ -154,11 +152,10 @@ func NewEnv(
 		tracker = libtracker.NoopTracker{}
 	}
 	return &SimpleEnv{
-		exec:         exec,
-		tracker:      tracker,
-		inspector:    inspector,
+		exec:          exec,
+		tracker:       tracker,
+		inspector:     inspector,
 		toolsProvider: toolsProvider,
-		eventSink:    taskEventSinkFromContext(ctx),
 	}, nil
 }
 
@@ -179,21 +176,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	defer endChain()
 
 	stack := env.inspector.Start(ctx)
-	defer func() {
-		history = stack.GetExecutionHistory()
-		chainEvent := NewTaskEvent(ctx, TaskEventChainCompleted)
-		chainEvent.ChainID = chain.ID
-		chainEvent.OutputType = resultType.String()
-		if retErr != nil {
-			chainEvent.Kind = TaskEventChainFailed
-			chainEvent.Error = retErr.Error()
-			chainEvent.OutputType = ""
-		}
-		publishTaskEventBestEffort(ctx, env.eventSink, chainEvent)
-	}()
-	chainStarted := NewTaskEvent(ctx, TaskEventChainStarted)
-	chainStarted.ChainID = chain.ID
-	publishTaskEventBestEffort(ctx, env.eventSink, chainStarted)
 
 	vars := map[string]any{
 		"input": input,
@@ -312,10 +294,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		maxRetries := max(currentTask.RetryOnFailure, 0)
 
 		for retry := 0; retry <= maxRetries; retry++ {
-			if stack.HasBreakpoint(currentTask.ID) {
-				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: breakpoint set", currentTask.ID)
-			}
-
 			// Keep task execution attached to the caller so cancellation from
 			// Ctrl+C, request shutdown, or parent timeouts stops in-flight work.
 			taskCtx := ctx
@@ -328,19 +306,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				}
 				taskCtx, cancel = context.WithTimeout(taskCtx, timeout)
 			}
-			scope := TaskEventScope{
-				ChainID:     chain.ID,
-				TaskID:      currentTask.ID,
-				TaskHandler: currentTask.Handler.String(),
-				Retry:       retry,
-			}
-			if currentTask.ExecuteConfig != nil {
-				scope.ModelName = GetPrimaryModel(currentTask.ExecuteConfig)
-				scope.ProviderType = currentTask.ExecuteConfig.Provider
-			}
-			taskCtx = WithTaskEventScope(taskCtx, scope)
-			stepStarted := NewTaskEvent(taskCtx, TaskEventStepStarted)
-			publishTaskEventBestEffort(taskCtx, env.eventSink, stepStarted)
 			reportErrAttempt, reportChangeAttempt, endAttempt := env.tracker.Start(
 				taskCtx,
 				"task_attempt",
@@ -367,7 +332,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			if taskErr != nil {
 				errState.Error = taskErr.Error()
 			}
-			// Record execution step
 			step := CapturedStateUnit{
 				TaskID:      currentTask.ID,
 				TaskHandler: currentTask.Handler.String(),
@@ -377,44 +341,39 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				Transition:  transitionEval,
 				Duration:    duration,
 				Error:       errState,
+				Input:       taskInput,
+				Output:      output,
+				RetryIndex:  retry,
 			}
-			if chain.Debug {
-				step.Input = fmt.Sprintf("%v", taskInput)
-				outputBytes, err := json.Marshal(output)
-				if err == nil {
-					step.Output = string(outputBytes)
-				} else {
-					step.Output = fmt.Sprintf("%v", output)
+			if taskErr != nil {
+				if errors.Is(taskCtx.Err(), context.DeadlineExceeded) {
+					step.TimedOut = true
+				} else if errors.Is(taskCtx.Err(), context.Canceled) {
+					step.Cancelled = true
+				}
+			}
+			if currentTask.ExecuteConfig != nil {
+				step.ProviderType = currentTask.ExecuteConfig.Provider
+				step.ModelName = GetPrimaryModel(currentTask.ExecuteConfig)
+			}
+			if currentTask.Handler == HandleExecuteToolCalls {
+				if names := extractToolNamesFromOutput(output, outputType); len(names) > 0 {
+					step.ToolNames = names
+				}
+			}
+			if hist, ok := output.(ChatHistory); ok && (hist.InputTokens > 0 || hist.OutputTokens > 0) {
+				step.TokenUsage = &TokenUsage{
+					Prompt:     hist.InputTokens,
+					Completion: hist.OutputTokens,
+					Total:      hist.InputTokens + hist.OutputTokens,
 				}
 			}
 			stack.RecordStep(step)
-			stepEvent := NewTaskEvent(taskCtx, TaskEventStepCompleted)
-			stepEvent.OutputType = outputType.String()
-			stepEvent.Transition = transitionEval
-			// For execute_tool_calls steps, extract the tool names from the output
-			// ChatHistory so the CLI can show what tools were invoked.
-			if currentTask.Handler == HandleExecuteToolCalls {
-				stepEvent.ToolNames = extractToolNamesFromOutput(output, outputType)
-			}
-			// Drain any UI hints emitted by tools during this step (Phase 5
-			// of the canvas-vision plan). Hints go out exactly once per
-			// publish — Drain() also clears them so the next step starts
-			// clean. Failed steps still publish hints because a tools may
-			// have produced a useful widget before the step's terminal
-			// error (e.g. a partial file_view before a downstream parse fail).
-			if hints := drainWidgetHints(taskCtx); len(hints) > 0 {
-				stepEvent.Attachments = hints
-			}
 
 			if taskErr != nil {
-				stepEvent.Kind = TaskEventStepFailed
-				stepEvent.Error = taskErr.Error()
-				stepEvent.OutputType = ""
-				publishTaskEventBestEffort(taskCtx, env.eventSink, stepEvent)
 				reportErrAttempt(taskErr)
 				continue
 			}
-			publishTaskEventBestEffort(taskCtx, env.eventSink, stepEvent)
 
 			// Report successful attempt
 			reportChangeAttempt(currentTask.ID, output)
@@ -854,32 +813,33 @@ func validateChain(tasks []TaskDefinition) error {
 	return nil
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// extractToolNamesFromOutput extracts the tool function names from the output
-// ChatHistory of an execute_tool_calls step. It finds the last assistant
-// message with CallTools and returns the function names.
 func extractToolNamesFromOutput(output any, outputType DataType) []string {
 	if outputType != DataTypeChatHistory {
 		return nil
 	}
 	hist, ok := output.(ChatHistory)
-	if !ok || len(hist.Messages) == 0 {
+	if !ok {
 		return nil
 	}
-	// Walk backwards to find the last assistant message with tool calls.
 	for i := len(hist.Messages) - 1; i >= 0; i-- {
-		msg := hist.Messages[i]
-		if msg.Role == "assistant" && len(msg.CallTools) > 0 {
-			names := make([]string, 0, len(msg.CallTools))
-			for _, tc := range msg.CallTools {
-				names = append(names, tc.Function.Name)
+		m := hist.Messages[i]
+		if m.Role != "assistant" || len(m.CallTools) == 0 {
+			continue
+		}
+		seen := make(map[string]struct{}, len(m.CallTools))
+		names := make([]string, 0, len(m.CallTools))
+		for _, tc := range m.CallTools {
+			name := tc.Function.Name
+			if name == "" {
+				continue
 			}
+			if _, dup := seen[name]; dup {
+				continue
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+		if len(names) > 0 {
 			return names
 		}
 	}

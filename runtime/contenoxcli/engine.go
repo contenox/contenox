@@ -2,13 +2,10 @@ package contenoxcli
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 
 	libbus "github.com/contenox/contenox/libbus"
 	"github.com/contenox/contenox/libdbexec"
@@ -171,12 +168,14 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts, vfs
 		return nil, err
 	}
 
-	taskEngineCtx := taskengine.WithTaskEventSink(engineCtx, taskengine.NewBusTaskEventSink(bus))
-	exec, err := taskengine.NewExec(taskEngineCtx, repo, toolsRepo, tracker)
+	exec, err := taskengine.NewExec(engineCtx, repo, toolsRepo, tracker)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task executor: %w", err)
 	}
-	envExec, err := taskengine.NewEnv(taskEngineCtx, tracker, exec, taskengine.NewSimpleInspector(), toolsRepo)
+	var inspector taskengine.Inspector = taskengine.NewSimpleInspector()
+	inspector = taskengine.NewKVInspector(inspector, kvMgr)
+	inspector = taskengine.NewBusInspector(inspector, bus)
+	envExec, err := taskengine.NewEnv(engineCtx, tracker, exec, inspector, toolsRepo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create environment executor: %w", err)
 	}
@@ -263,48 +262,3 @@ func buildTools(engineCtx context.Context, opts chatOpts, db libdbexec.DBManager
 	return mgr, localToolNames, toolsRepo, nil
 }
 
-var errTaskEventsRequireRequestID = errors.New("request id is required for task event subscriptions")
-
-// WatchTaskEvents subscribes to request-scoped taskengine events and decodes them
-// into structured TaskEvent values for CLI consumers.
-func (e *Engine) WatchTaskEvents(ctx context.Context, requestID string, ch chan<- taskengine.TaskEvent) (libbus.Subscription, error) {
-	if e == nil || e.Bus == nil {
-		return nil, fmt.Errorf("task event bus unavailable")
-	}
-	requestID = strings.TrimSpace(requestID)
-	if requestID == "" {
-		return nil, errTaskEventsRequireRequestID
-	}
-
-	rawCh := make(chan []byte, 32)
-	sub, err := e.Bus.Stream(ctx, taskengine.TaskEventRequestSubject(requestID), rawCh)
-	if err != nil {
-		return nil, err
-	}
-
-	go func() {
-		defer sub.Unsubscribe()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case payload, ok := <-rawCh:
-				if !ok {
-					return
-				}
-				var event taskengine.TaskEvent
-				if err := json.Unmarshal(payload, &event); err != nil {
-					slog.Warn("failed to decode task event", "error", err)
-					continue
-				}
-				select {
-				case ch <- event:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-
-	return sub, nil
-}

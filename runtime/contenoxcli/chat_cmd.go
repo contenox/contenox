@@ -124,12 +124,6 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 	}
 	chatMgr := chatservice.NewManager(ResolveWorkspaceID(opts.ContenoxDir))
 
-	stopTaskEvents := startCLITaskEventStream(ctx, engine, errW, cliTaskEventRenderOptions{
-		Trace:        opts.EffectiveTracing,
-		ShowThinking: opts.EffectiveThink,
-	})
-	defer stopTaskEvents()
-
 	var history []taskengine.Message
 	if sessionID != "" {
 		history, err = chatMgr.ListMessages(ctx, db.WithoutTransaction(), sessionID)

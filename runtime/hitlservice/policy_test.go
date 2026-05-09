@@ -85,15 +85,6 @@ func TestUnit_Evaluate_WhenConditionFromVFS(t *testing.T) {
 	assert.Equal(t, hitlservice.ActionDeny, result.OnTimeout)
 }
 
-func TestUnit_Respond_UnknownID_ReturnsFalse(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
-	svc := hitlservice.New(vfs, nopKVReader{}, libtracker.NoopTracker{})
-	ok := svc.Respond("nonexistent-id", true)
-	assert.False(t, ok)
-}
-
 func TestUnit_Evaluate_ResolvesFromKV(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
