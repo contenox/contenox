@@ -282,8 +282,14 @@ func parseRunInput(raw, typeName string) (any, taskengine.DataType, error) {
 		return raw, taskengine.DataTypeString, nil
 
 	case "chat":
-		msg := taskengine.Message{Role: "user", Content: raw, Timestamp: time.Now().UTC()}
-		return taskengine.ChatHistory{Messages: []taskengine.Message{msg}}, taskengine.DataTypeChatHistory, nil
+		msgs := []taskengine.Message{}
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			if content, path, ok := LoadAgentsMD(cwd); ok {
+				msgs = append(msgs, AgentsMDMessage(content, path))
+			}
+		}
+		msgs = append(msgs, taskengine.Message{Role: "user", Content: raw, Timestamp: time.Now().UTC()})
+		return taskengine.ChatHistory{Messages: msgs}, taskengine.DataTypeChatHistory, nil
 
 	case "json":
 		var v any

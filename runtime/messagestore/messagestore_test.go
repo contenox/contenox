@@ -144,6 +144,33 @@ func TestUnit_ChatService_PersistDiff(t *testing.T) {
 	})
 }
 
+// Regression: SynthesizeHistory may emit overlapping prefixes (the same
+// message twice in one batch — e.g. when system_instruction prepending in
+// taskexec causes outHist[startIdx:] to re-include the last prior message).
+// PersistDiff must dedup within the batch; otherwise the SQLite UNIQUE
+// constraint on (id, idx_id) trips and the whole append fails.
+func TestUnit_ChatService_PersistDiff_WithinBatchDedup(t *testing.T) {
+	ctx, db := setupDB(t)
+	store := messagestore.New(db.WithoutTransaction(), "")
+	mgr := chatservice.NewManager("")
+
+	require.NoError(t, store.CreateMessageIndex(ctx, "idx-dup", "alice"))
+
+	now := time.Now().UTC()
+	dup := taskengine.Message{Role: "user", Content: "same message", Timestamp: now}
+	history := []taskengine.Message{
+		dup,
+		dup, // identical role+ts+content — same generated ID
+		{Role: "assistant", Content: "different", Timestamp: now.Add(time.Millisecond)},
+	}
+
+	require.NoError(t, mgr.PersistDiff(ctx, db.WithoutTransaction(), "idx-dup", history))
+
+	msgs, err := store.ListMessages(ctx, "idx-dup")
+	require.NoError(t, err)
+	require.Len(t, msgs, 2, "duplicate user message must be deduped within the batch; only 2 distinct rows expected")
+}
+
 func TestUnit_MessageStore_WithTransaction(t *testing.T) {
 	ctx, db := setupDB(t)
 	store := messagestore.New(db.WithoutTransaction(), "")

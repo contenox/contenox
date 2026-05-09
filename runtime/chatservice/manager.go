@@ -94,9 +94,16 @@ func (m *Manager) PersistDiff(ctx context.Context, tx libdb.Exec, subjectID stri
 		if msg.ID == "" {
 			msg.ID = generateMessageID(subjectID, &msg)
 		}
+		// Dedup against both DB-stored rows AND messages already queued for
+		// this batch. The synthesizer is documented as free to emit
+		// overlapping prefixes (e.g. system_instruction prepending in
+		// taskexec causes outHist[startIdx:] to re-include the last prior
+		// message); PersistDiff is the boundary that must guarantee
+		// uniqueness before the INSERT batch.
 		if existingIDs[msg.ID] {
 			continue
 		}
+		existingIDs[msg.ID] = true
 		if msg.Timestamp.IsZero() {
 			msg.Timestamp = time.Now().UTC()
 		}

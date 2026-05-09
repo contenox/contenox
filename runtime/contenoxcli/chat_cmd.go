@@ -143,6 +143,20 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 		history = history[len(history)-opts.HistoryTrim:]
 	}
 
+	// Inject AGENTS.md once at session start. Subsequent turns see it as a
+	// persisted message in history and don't reload it. If the user updates
+	// AGENTS.md, they start a new session to pick up the change.
+	if len(history) == 0 {
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			if content, path, ok := LoadAgentsMD(cwd); ok {
+				history = append([]taskengine.Message{AgentsMDMessage(content, path)}, history...)
+				if opts.EffectiveTracing {
+					slog.Info("Loaded AGENTS.md into session", "path", path, "bytes", len(content))
+				}
+			}
+		}
+	}
+
 	// Prepare Input
 	userMsg := taskengine.Message{Role: "user", Content: in, Timestamp: time.Now().UTC()}
 	chainInput := taskengine.ChatHistory{
