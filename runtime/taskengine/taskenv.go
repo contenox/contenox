@@ -382,6 +382,17 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 		if taskErr != nil {
 			if currentTask.Transition.OnFailure != "" {
+				failedOutput := output
+				failedOutputType := outputType
+				if failedOutput == nil {
+					failedOutput = taskInput
+					failedOutputType = taskInputType
+				}
+				vars[currentTask.ID] = failedOutput
+				varTypes[currentTask.ID] = failedOutputType
+				vars["previous_output"] = failedOutput
+				varTypes["previous_output"] = failedOutputType
+
 				previousTaskID := currentTask.ID
 				edgeCounts[previousTaskID+"->"+currentTask.Transition.OnFailure]++
 				currentTask, err = findTaskByID(chain.Tasks, currentTask.Transition.OnFailure)
@@ -493,9 +504,9 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 	normOut, normDT, normErr := NormalizeFinalChainOutput(finalOutput, outputType)
 	if normErr != nil {
-		return nil, DataTypeAny, nil, normErr
+		return nil, DataTypeAny, stack.GetExecutionHistory(), normErr
 	}
-	return normOut, normDT, nil, nil
+	return normOut, normDT, stack.GetExecutionHistory(), nil
 }
 
 // Helper methods for compose operations

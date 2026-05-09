@@ -229,6 +229,11 @@ type LLMExecutionConfig struct {
 	// Think enables reasoning mode for supported models.
 	// Accepts "true"/"false" or "high"/"medium"/"low". Empty = provider default (off).
 	Think string `yaml:"think,omitempty" json:"think,omitempty" example:"high"`
+	// MaxTokens caps the model's output tokens for this task.
+	// When unset, the engine falls back to the chain's TokenLimit so providers
+	// (notably Gemini thinking models) don't burn their entire output budget on
+	// hidden reasoning and emit empty content.
+	MaxTokens *int `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty" example:"8192"`
 	// Shift allows the context window to slide on overflow instead of erroring.
 	Shift bool `yaml:"shift,omitempty" json:"shift,omitempty"`
 	// RetryPolicy wraps the underlying chat/prompt call with classified retry

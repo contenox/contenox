@@ -685,6 +685,15 @@ func (exe *SimpleExec) executeLLM(
 	if llmCall.Think != "" {
 		chatArgs = append(chatArgs, libmodelprovider.WithThink(llmCall.Think))
 	}
+	maxOutputTokens := 0
+	if llmCall.MaxTokens != nil && *llmCall.MaxTokens > 0 {
+		maxOutputTokens = *llmCall.MaxTokens
+	} else if ctxLength > 0 {
+		maxOutputTokens = ctxLength
+	}
+	if maxOutputTokens > 0 {
+		chatArgs = append(chatArgs, libmodelprovider.WithMaxTokens(maxOutputTokens))
+	}
 	if llmCall.Shift {
 		chatArgs = append(chatArgs, libmodelprovider.WithShift{})
 	}

@@ -114,22 +114,28 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 	ctx = taskengine.WithTemplateVars(ctx, templateVars)
 
 	// Persistent Session Management
+	sessionReportErr, _, sessionEnd := engine.Tracker.Start(ctx, "resolve", "active_session")
 	sessionID, err := ensureDefaultSession(ctx, db, ResolveWorkspaceID(opts.ContenoxDir))
 	if err != nil {
-		slog.Warn("Failed to resolve active session — history will not be persisted", "error", err)
+		sessionReportErr(err)
+		fmt.Fprintf(errW, "warning: failed to resolve active session — history will not be persisted: %v\n", err)
 		sessionID = ""
 	} else if sessionID != "" {
 		// INJECT: Tunnel the session ID down the call stack so MCP workers can multiplex connections
 		ctx = context.WithValue(ctx, runtimetypes.SessionIDContextKey, sessionID)
 	}
+	sessionEnd()
 	chatMgr := chatservice.NewManager(ResolveWorkspaceID(opts.ContenoxDir))
 
 	var history []taskengine.Message
 	if sessionID != "" {
+		loadReportErr, _, loadEnd := engine.Tracker.Start(ctx, "load", "chat_history", "sessionID", sessionID)
 		history, err = chatMgr.ListMessages(ctx, db.WithoutTransaction(), sessionID)
 		if err != nil {
-			slog.Warn("Failed to load chat history", "sessionID", sessionID, "error", err)
+			loadReportErr(err)
+			fmt.Fprintf(errW, "warning: failed to load chat history for session %s — continuing without prior context: %v\n", sessionID, err)
 		}
+		loadEnd()
 	}
 
 	// Apply --trim: cap history sent to model to last N messages.
@@ -157,17 +163,24 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 	if sessionID != "" {
 		synthesized := taskengine.SynthesizeHistory(chainInput.Messages, stateUnits, err)
 		cleanCtx := context.WithoutCancel(ctx)
+		persistReportErr, persistReportChange, persistEnd := engine.Tracker.Start(cleanCtx, "persist", "chat_history", "sessionID", sessionID)
 		exec, commit, release, txErr := db.WithTransaction(cleanCtx)
 		if txErr != nil {
-			slog.Error("Failed to start transaction for chat persistence", "error", txErr)
+			persistReportErr(fmt.Errorf("start transaction: %w", txErr))
+			fmt.Fprintf(errW, "warning: chat history not saved (transaction failed): %v\n", txErr)
 		} else {
 			defer release()
 			if persistErr := chatMgr.PersistDiff(cleanCtx, exec, sessionID, synthesized); persistErr != nil {
-				slog.Error("Failed to persist synthesized chat history", "sessionID", sessionID, "error", persistErr)
+				persistReportErr(fmt.Errorf("persist diff: %w", persistErr))
+				fmt.Fprintf(errW, "warning: chat history not saved: %v\n", persistErr)
 			} else if commitErr := commit(cleanCtx); commitErr != nil {
-				slog.Error("Failed to commit chat persistence transaction", "error", commitErr)
+				persistReportErr(fmt.Errorf("commit: %w", commitErr))
+				fmt.Fprintf(errW, "warning: chat history not saved (commit failed): %v\n", commitErr)
+			} else {
+				persistReportChange(sessionID, len(synthesized))
 			}
 		}
+		persistEnd()
 	}
 
 	if err != nil {

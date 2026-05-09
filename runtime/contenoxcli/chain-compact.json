@@ -13,6 +13,7 @@
                 "shift": true,
                 "pass_clients_tools": false,
                 "tools": [],
+                "max_tokens": 32768,
                 "retry_policy": {
                     "max_attempts": 3,
                     "initial_backoff": "1s",
