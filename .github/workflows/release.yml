@@ -82,6 +82,10 @@ jobs:
           sudo apt-get install -y gcc g++ nlohmann-json3-dev
           ${{ matrix.cross && 'sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu' || 'true' }}
 
+      - name: Install CGo dependencies (macOS only)
+        if: runner.os == 'macOS'
+        run: brew install nlohmann-json
+
       - name: Fetch missing llama.cpp headers
         run: |
           OLLAMA_VERSION="$(go list -m -f '{{.Version}}' github.com/ollama/ollama)"
@@ -102,6 +106,8 @@ jobs:
           CGO_ENABLED: "1"
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
+          # On macOS, Homebrew headers live under $(brew --prefix)/include
+          CGO_CFLAGS: ${{ runner.os == 'macOS' && '-I/opt/homebrew/include -I/usr/local/include' || '' }}
         run: |
           TAG="${{ needs.verify.outputs.tag }}"
           LDFLAGS="-X github.com/contenox/contenox/runtime/contenoxcli.Version=${TAG}"
