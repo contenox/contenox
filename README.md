@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/contenox/contenox?label=version&logo=github)](https://github.com/contenox/contenox/releases)
 
-For operators who want to define how the AI behaves, not just use it. You describe what you want in plain English. *How* the agent behaves — system prompt, model selection, tool policy, retries, when to pause, when to branch — is a chain file you wrote, not a binary the vendor compiled. Edit it, version it in git, port it anywhere the engine runs.
+You describe what you want in plain English. *How* the agent behaves — system prompt, model selection, tool policy, retries, when to pause, when to branch — is a chain file you wrote, not a binary the vendor compiled. Edit it, version it in git, port it anywhere the engine runs.
 
 📖 **[contenox.com](https://contenox.com)**
 
@@ -25,7 +25,7 @@ curl -fsSL https://contenox.com/install.sh | sh
 ## Quick Start
 
 ```bash
-# Scaffold a workspace and register the always-on local backend
+# Scaffold a workspace and register the local backend
 contenox init
 
 # Pull a model — first pull becomes the default-model automatically
@@ -33,7 +33,7 @@ contenox model pull granite-3.2-2b
 
 # Use it
 contenox "say hello world in python"
-contenox chat
+contenox chat -e                        # open $EDITOR to compose a prompt
 ```
 
 That's it. No API key, no external server, no `backend add` ceremony — `init` registers the local llama.cpp backend pointed at `~/.contenox/models/`, `model pull` populates it. Resume past sessions with `contenox session list && contenox chat --session <id>`. To use a cloud provider instead, see [Backends](#backends) below.
@@ -46,26 +46,45 @@ The agent's behavior is a chain file. Every decision is a JSON key:
 
 ```json
 {
-  "id": "triage",
-  "tasks": [{
-    "id": "classify",
-    "handler": "prompt_to_int",
-    "system_instruction": "Rate urgency 0-10. Respond with one integer.",
-    "execute_config": { "model": "qwen2.5:7b", "provider": "ollama" },
-    "transition": {
-      "branches": [
-        { "operator": ">", "when": "7", "goto": "page_oncall" },
-        { "operator": "default", "goto": "respond" }
-      ]
+  "id": "review",
+  "tasks": [
+    {
+      "id": "review",
+      "handler": "chat_completion",
+      "system_instruction": "You are a code reviewer. Analyze the diff, run the tests if tools are available, then give a concise review.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "tools": ["local_shell", "local_fs"],
+        "tools_policies": {
+          "local_shell": { "_allowed_commands": "go,make,npm,cargo,grep,cat" }
+        }
+      },
+      "transition": {
+        "branches": [
+          { "operator": "equals", "when": "tool-call", "goto": "run_tools" },
+          { "operator": "default", "goto": "end" }
+        ]
+      }
+    },
+    {
+      "id": "run_tools",
+      "handler": "execute_tool_calls",
+      "input_var": "review",
+      "transition": {
+        "branches": [
+          { "operator": "default", "goto": "review" }
+        ]
+      }
     }
-  }]
+  ]
 }
 ```
 
-System prompt, model, branch operator, threshold — all yours. Save it and run:
+System prompt, model, tool policy, allowed commands — all yours. Save it and pipe in a diff:
 
 ```bash
-contenox run --chain ./triage.json "ticket: prod database is on fire"
+git diff | contenox run --chain ./review.json
 ```
 
 Walk through your first chain step by step: **[contenox.com/docs/guide/first-chain](https://contenox.com/docs/guide/first-chain/)**.
@@ -78,13 +97,13 @@ The connective tissue between the systems you already use, done in plain English
 
 ```bash
 # Someone yelled at you on Teams about a bug
-cat teams-bug.txt | contenox "check the issue tracker for a duplicate; if none, file it and assign to dev group"
+cat teams-bug.txt | contenox --shell "check the issue tracker for a duplicate; if none, file it and assign to dev group"
 
 # Friday and you forgot the timesheet
-contenox "use my git log to fill the timesheet, round to 9-5"
+contenox --shell "use my git log to fill the timesheet, round to 9-5"
 
 # New app on localhost:3000, you promised someone documentation
-contenox "drive localhost:3000 with playwright, write the doc into Notion"
+contenox --shell "drive localhost:3000 with playwright, write the doc into Notion"
 ```
 
 Useful day-to-day for the work above. Also a workbench for testing new chains and MCP servers, and a primitive other agents can shell out to.
