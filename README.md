@@ -108,7 +108,7 @@ contenox --shell "drive localhost:3000 with playwright, write the doc into Notio
 
 Useful day-to-day for the work above. Also a workbench for testing new chains and MCP servers, and a primitive other agents can shell out to.
 
-State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Gemini, vLLM, Vertex, or in-process llama.cpp.
+State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Gemini, vLLM, Vertex, or in-process llama.cpp. Any model, any vendor — or no vendor at all if you serve your own.
 
 ---
 
