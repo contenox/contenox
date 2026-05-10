@@ -14,7 +14,7 @@ You describe what you want in plain English. *How* the agent behaves — system 
 ## Install
 
 <!-- Release tooling: keep next line in sync with runtime/version/version.txt (updated by `make -f Makefile.version bump-*`). -->
-<!-- TAG=v0.13.0 -->
+<!-- TAG=v0.14.0 -->
 
 ```bash
 curl -fsSL https://contenox.com/install.sh | sh
