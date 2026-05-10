@@ -120,8 +120,9 @@ Anything you can reach over MCP, an OpenAPI spec, or a shell command is a tool C
 # Any MCP-compatible server (Notion, Linear, Playwright, GitHub, Postgres, …)
 contenox mcp add notion https://mcp.notion.com/mcp --auth-type oauth
 
-# Any HTTP API with an OpenAPI spec
-contenox tools add my-api --url http://localhost:8000
+# Any HTTP API with an OpenAPI spec (no glue code required)
+# Slice a monolithic API into safe subsets by pointing --spec at a curated local file
+contenox tools add erp_billing --url https://erp.internal.example.com --spec ./billing-subset.yaml
 
 # The shell, with your own command policy declared in the chain
 contenox --shell "check Proxmox and flag anything red"
