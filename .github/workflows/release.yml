@@ -38,17 +38,33 @@ jobs:
 
   build:
     needs: verify
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - goarch: amd64
+          # ── Linux ──────────────────────────────────────────────────────────
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
             cc: gcc
             cxx: g++
-          - goarch: arm64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
             cc: aarch64-linux-gnu-gcc
             cxx: aarch64-linux-gnu-g++
             cross: true
+          # ── macOS ──────────────────────────────────────────────────────────
+          - os: macos-15
+            goos: darwin
+            goarch: arm64
+            cc: clang
+            cxx: clang++
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            cc: clang
+            cxx: clang++
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout source
@@ -59,7 +75,8 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Install CGo dependencies
+      - name: Install CGo dependencies (Linux only)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y gcc g++ nlohmann-json3-dev
@@ -80,7 +97,7 @@ jobs:
 
       - name: Build contenox binary
         env:
-          GOOS: linux
+          GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "1"
           CC: ${{ matrix.cc }}
@@ -89,13 +106,13 @@ jobs:
           TAG="${{ needs.verify.outputs.tag }}"
           LDFLAGS="-X github.com/contenox/contenox/runtime/contenoxcli.Version=${TAG}"
           mkdir -p bin
-          go build -ldflags="${LDFLAGS}" -o bin/contenox-linux-${{ matrix.goarch }} ./cmd/contenox
+          go build -ldflags="${LDFLAGS}" -o bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/contenox
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: contenox-linux-${{ matrix.goarch }}
-          path: bin/contenox-linux-${{ matrix.goarch }}
+          name: contenox-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}
 
   release:
     needs: [verify, build]
@@ -114,7 +131,7 @@ jobs:
       - name: Create GitHub Release and upload assets
         run: |
           TAG="${{ needs.verify.outputs.tag }}"
-          gh release create "$TAG" contenox-* \
+          gh release create "$TAG" contenox-linux-* contenox-darwin-* \
             --title "$TAG" \
             --notes "" \
             --latest \
