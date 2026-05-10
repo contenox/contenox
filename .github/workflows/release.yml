@@ -90,6 +90,7 @@ jobs:
           # Export the correct include path so CGo finds them in the build step.
           NLOHMANN_PREFIX="$(brew --prefix nlohmann-json)"
           echo "CGO_CFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
+          echo "CGO_CXXFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
 
       - name: Fetch missing llama.cpp headers
         run: |
