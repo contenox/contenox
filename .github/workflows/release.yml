@@ -84,7 +84,12 @@ jobs:
 
       - name: Install CGo dependencies (macOS only)
         if: runner.os == 'macOS'
-        run: brew install nlohmann-json
+        run: |
+          brew install nlohmann-json
+          # nlohmann-json is keg-only — headers live under its own prefix, not /opt/homebrew/include.
+          # Export the correct include path so CGo finds them in the build step.
+          NLOHMANN_PREFIX="$(brew --prefix nlohmann-json)"
+          echo "CGO_CFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
 
       - name: Fetch missing llama.cpp headers
         run: |
@@ -106,8 +111,6 @@ jobs:
           CGO_ENABLED: "1"
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
-          # On macOS, Homebrew headers live under $(brew --prefix)/include
-          CGO_CFLAGS: ${{ runner.os == 'macOS' && '-I/opt/homebrew/include -I/usr/local/include' || '' }}
         run: |
           TAG="${{ needs.verify.outputs.tag }}"
           LDFLAGS="-X github.com/contenox/contenox/runtime/contenoxcli.Version=${TAG}"
