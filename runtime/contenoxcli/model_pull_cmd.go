@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/runtime/modelregistry"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/google/uuid"
@@ -41,8 +42,8 @@ Curated models — run 'contenox model registry-list' to see full list with size
 Or provide an explicit URL:
   contenox model pull my-model --url https://huggingface.co/.../model.gguf
 
-After downloading, register a local backend and start using the model:
-  contenox backend add local --type local --url ~/.contenox/models/
+After downloading, the model is ready to use immediately. The local backend is
+registered by 'contenox init' and the first pulled model becomes the default:
   contenox model list
   contenox "hello, what can you do?"`,
 	Args: cobra.MaximumNArgs(1),
@@ -87,23 +88,23 @@ After downloading, register a local backend and start using the model:
 		}
 
 		destPath := filepath.Join(modelDir, "model.gguf")
+		alreadyPresent := false
 		if _, err := os.Stat(destPath); err == nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "Model %q already downloaded at %s\n", name, destPath)
-			fmt.Fprintf(cmd.OutOrStdout(), "Register with: contenox backend add local --type local --url %s\n",
-				filepath.Join(homeDir, ".contenox", "models"))
-			return nil
+			alreadyPresent = true
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Downloading %s...\n  → %s\n", name, destPath)
-		if err := downloadGGUF(downloadURL, destPath, cmd.OutOrStdout()); err != nil {
-			_ = os.Remove(destPath)
-			return fmt.Errorf("download failed: %w", err)
+		if !alreadyPresent {
+			fmt.Fprintf(cmd.OutOrStdout(), "Downloading %s...\n  → %s\n", name, destPath)
+			if err := downloadGGUF(downloadURL, destPath, cmd.OutOrStdout()); err != nil {
+				_ = os.Remove(destPath)
+				return fmt.Errorf("download failed: %w", err)
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "\nDone.")
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "\nDone. Register with:\n  contenox backend add local --type local --url %s\n",
-			filepath.Join(homeDir, ".contenox", "models"))
-
-		// Persist to local model registry (non-fatal).
+		// Persist to local model registry and, on a fresh install, claim
+		// default-model so the user can use the model immediately.
 		if db, svc, _, dbErr := openModelRegistryDB(cmd); dbErr == nil {
 			defer db.Close()
 			_ = svc.Create(ctx, &runtimetypes.ModelRegistryEntry{
@@ -111,6 +112,14 @@ After downloading, register a local backend and start using the model:
 				Name:      name,
 				SourceURL: downloadURL,
 			})
+			store := runtimetypes.New(db.WithoutTransaction())
+			if cur, _ := getConfigKV(ctx, store, "default-model"); cur == "" {
+				contenoxDir, _ := ResolveContenoxDir(cmd)
+				workspaceID := ResolveWorkspaceID(contenoxDir)
+				if err := clikv.WriteConfig(ctx, store, workspaceID, "default-model", name); err == nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "✓  default-model = %s\n", name)
+				}
+			}
 		}
 		return nil
 	},

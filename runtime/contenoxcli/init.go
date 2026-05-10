@@ -12,6 +12,7 @@ import (
 
 	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/backendservice"
+	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/runtime/internal/runtimestate"
 	"github.com/contenox/contenox/runtime/internal/setupcheck"
 	"github.com/contenox/contenox/runtime/runtimetypes"
@@ -75,6 +76,44 @@ var providerConfigs = map[string]providerConfig{
 		defaultModel: "mistral-large-2411",
 		envKey:       "",
 	},
+}
+
+// ensureLocalBackend creates the implicit local-type backend if none exists.
+// The local backend is always-present infrastructure pointed at ~/.contenox/models/;
+// the user only needs to populate it via `contenox model pull`. Idempotent.
+func ensureLocalBackend(out io.Writer) error {
+	if hasBackendOfType("local") {
+		return nil
+	}
+	homeDir, err := globalContenoxDir()
+	if err != nil {
+		return err
+	}
+	modelsDir := filepath.Join(homeDir, "models")
+	if err := os.MkdirAll(modelsDir, 0o755); err != nil {
+		return fmt.Errorf("create models dir: %w", err)
+	}
+	dbPath, err := globalDBPath()
+	if err != nil {
+		return err
+	}
+	ctx := libtracker.WithNewRequestID(context.Background())
+	db, err := OpenDBAt(ctx, dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	svc := backendservice.New(db)
+	if err := svc.Create(ctx, &runtimetypes.Backend{
+		ID:      uuid.NewString(),
+		Name:    "local",
+		BaseURL: modelsDir,
+		Type:    "local",
+	}); err != nil {
+		return fmt.Errorf("create local backend: %w", err)
+	}
+	fmt.Fprintf(out, "  Registered local backend → %s\n", modelsDir)
+	return nil
 }
 
 // hasBackendOfType returns true when the local DB already contains at least one
@@ -166,6 +205,26 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 	}
 	if err := writeEmbeddedHITLPolicies(homeDir, force); err != nil {
 		return err
+	}
+
+	// The local backend is always-present infrastructure. Create it if missing
+	// so the user only ever needs to pull a model — never wire up a backend.
+	if err := ensureLocalBackend(out); err != nil {
+		fmt.Fprintf(errOut, "  warning: could not register local backend: %v\n", err)
+	}
+
+	// Make local the default provider when nothing else is configured.
+	// User-set values are not overwritten.
+	if dbPath, gpErr := globalDBPath(); gpErr == nil {
+		if db, openErr := OpenDBAt(libtracker.WithNewRequestID(context.Background()), dbPath); openErr == nil {
+			ctx := libtracker.WithNewRequestID(context.Background())
+			store := runtimetypes.New(db.WithoutTransaction())
+			if cur, _ := getConfigKV(ctx, store, "default-provider"); cur == "" && provider == "local" {
+				workspaceID := ResolveWorkspaceID(contenoxDir)
+				_ = clikv.WriteConfig(ctx, store, workspaceID, "default-provider", "local")
+			}
+			db.Close()
+		}
 	}
 
 	fmt.Fprintln(out, "Done.")
@@ -266,13 +325,10 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 		fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")
 		fmt.Fprintln(out, "       contenox model pull granite-3.2-2b")
 		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "  2. Register the local backend and set defaults:")
-		fmt.Fprintln(out, "       contenox backend add local --type local --url ~/.contenox/models/")
-		fmt.Fprintln(out, "       contenox config set default-provider local")
-		fmt.Fprintln(out, "       contenox config set default-model granite-3.2-2b")
-		fmt.Fprintln(out, "       contenox doctor")
+		fmt.Fprintln(out, "  The local backend is already registered and set as default.")
+		fmt.Fprintln(out, "  The first model you pull becomes the default-model automatically.")
 		fmt.Fprintln(out, "")
-		chatStep = 3
+		chatStep = 2
 	case "ollama":
 		if base, ok := setupcheck.ProbeLocalOllamaAPI(context.Background()); ok {
 			fmt.Fprintf(out, "  Local Ollama is already reachable at %s. Skip steps 1-2 on this machine if install, ollama serve, and ollama pull (e.g. qwen2.5:7b) are already done.\n\n", base)

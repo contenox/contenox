@@ -77,18 +77,18 @@ contenox run --chain .contenox/parse.json --input-type json '{"key":"value"}'
 
 ---
 
-### `contenox hook` — manage remote hooks
+### `contenox tools` — manage remote tools
 
-Register external HTTP services as LLM tools. The runtime fetches the service's `/openapi.json`, discovers every operation, and exposes them as callable tools in chains.
+Register external HTTP services as callable tools. The runtime fetches the service's `/openapi.json`, discovers every operation, and exposes them as named tools in chains.
 
 **Real example: US National Weather Service** — free, no API key, OpenAPI spec at `https://api.weather.gov/openapi.json`.
 
 ```bash
 # Register
-contenox hook add nws --url https://api.weather.gov --timeout 15000
+contenox tools add nws --url https://api.weather.gov --timeout 15000
 
 # Inspect — lists all discovered tools live from the schema
-contenox hook show nws
+contenox tools show nws
 # Name:    nws
 # URL:     https://api.weather.gov
 # Timeout: 15000ms
@@ -107,38 +107,38 @@ contenox run --chain .contenox/chain-nws.json --input-type chat \
   "how many active weather alerts are there right now?"
 ```
 
-Manage hooks:
+Manage tools:
 
 ```bash
-contenox hook list                                    # NAME  URL  TIMEOUT
-contenox hook update nws --timeout 30000              # update timeout
-contenox hook update nws --header "X-App: myapp"      # add a header
-contenox hook remove nws                              # remove
+contenox tools list                                    # NAME  URL  TIMEOUT
+contenox tools update nws --timeout 30000              # update timeout
+contenox tools update nws --header "X-App: myapp"      # add a header
+contenox tools remove nws                              # remove
 ```
 
-**Use in any chain** — reference by name in `execute_config.hooks`:
+**Use in any chain** — reference by name in `execute_config.tools`:
 
 ```json
 "execute_config": {
   "model": "qwen2.5:7b",
   "provider": "ollama",
-  "hooks": ["nws"]
+  "tools": ["nws"]
 }
 ```
 
-The `hooks` array is an **allowlist** with pattern support:
+The `tools` array is an **allowlist** with pattern support:
 
 | Value                    | Meaning                                        |
 | ------------------------ | ---------------------------------------------- |
-| field absent (`null`)    | All registered hooks (backward compat default) |
-| `[]`                     | No hooks exposed to the model                  |
-| `["*"]`                  | All registered hooks (explicit)                |
-| `["nws", "local_shell"]` | Only the named hooks                           |
+| field absent (`null`)    | All registered tools (backward compat default) |
+| `[]`                     | No tools exposed to the model                  |
+| `["*"]`                  | All registered tools (explicit)                |
+| `["nws", "local_shell"]` | Only the named tools                           |
 | `["*", "!local_shell"]`  | All except `local_shell`                       |
 
 Unknown names in an exact list are silently ignored (e.g. if `local_shell` is disabled the chain still runs).
 
-Header values are never echoed back (`hook show` prints header keys only). If the service is unreachable at registration time, the hook is still saved and validated at execution time.
+Header values are never echoed back (`tools show` prints header keys only). If the service is unreachable at registration time, the tool is still saved and validated at execution time.
 
 > **NWS note:** Forecast lookups require two calls — the model first calls `point` with lat/lon to get the grid reference, then `gridpoint_forecast` with that reference. The included `chain-nws.json` explains this in its system prompt.
 
@@ -210,7 +210,7 @@ OSS no longer exposes model CRUD. The runtime discovers models from registered b
 | `--provider`               | Provider type override                                                                           |
 | `--model`                  | Model name override                                                                              |
 | `--context`                | Context length in tokens — bare int or shorthand (`12k`, `128k`, `1m`)                           |
-| `--shell`                  | Enable `local_shell` hook (opt-in; policy is set in the chain, not here)                         |
+| `--shell`                  | Enable `local_shell` tool (opt-in; policy is set in the chain, not here)                         |
 | `--local-exec-allowed-dir` | Restrict `local_fs` to this directory                                                            |
 | `--trace`                  | Emit structured operation telemetry to stderr                                                    |
 | `--steps`                  | Print execution steps after result                                                               |
@@ -218,7 +218,7 @@ OSS no longer exposes model CRUD. The runtime discovers models from registered b
 
 ---
 
-## The `local_shell` hook
+## The `local_shell` tool
 
 Runs commands on your local machine — real side effects. **Opt-in only.**
 
@@ -234,12 +234,12 @@ The default chains (`default-chain.json`, `default-run-chain.json`) ship with a 
 - **Allowed:** `ls`, `cat`, `echo`, `git`, `go`, `python3`, `node`, `npm`, `make`, `cargo`, `curl`, `wget`, `jq`, and common read-only tools
 - **Denied:** `sudo`, `su`, `dd`, `mkfs`, `fdisk`, `parted`, `shred`
 
-To customise for a chain, add a `hook_policies` block to `execute_config`:
+To customise for a chain, add a `tools_policies` block to `execute_config`:
 
 ```json
 "execute_config": {
-  "hooks": ["local_shell"],
-  "hook_policies": {
+  "tools": ["local_shell"],
+  "tools_policies": {
     "local_shell": {
       "_allowed_commands": "git,go,make",
       "_denied_commands": "sudo,su,dd"
@@ -250,7 +250,7 @@ To customise for a chain, add a `hook_policies` block to `execute_config`:
 
 `--local-exec-allowed-dir` still restricts `local_fs` to a directory; it does **not** affect `local_shell` command policy.
 
-When `--shell` is not passed, the `local_shell` hook is simply not registered — chains that reference it will run without it.
+When `--shell` is not passed, the `local_shell` tool is simply not registered — chains that reference it will run without it.
 
 ---
 
@@ -267,7 +267,7 @@ When `--shell` is not passed, the `local_shell` hook is simply not registered �
 
 ## Chains
 
-Chains are JSON files that define the LLM workflow: which model, which hooks, how to branch based on output. Place them in `.contenox/` and reference by path.
+Chains are JSON files that define the LLM workflow: which model, which tools, how to branch based on output. Place them in `.contenox/` and reference by path.
 
 ### Macros in chains
 
@@ -281,9 +281,9 @@ Chain fields like `system_instruction` and `prompt_template` support macros expa
 | `{{var:NAME}}`                 | Value from `template_vars_from_env` config (contenox only)                       |
 | `{{now}}` / `{{now:layout}}`   | Current time                                                                     |
 | `{{chain:id}}`                 | Chain ID (same as `{{var:chain}}`)                                               |
-| `{{hookservice:list}}`         | All **allowed** hooks + tools as JSON, filtered by this task's `hooks` allowlist |
-| `{{hookservice:hooks}}`        | Allowed hook names only                                                          |
-| `{{hookservice:tools <hook>}}` | Tool names for a specific hook (empty if hook not in allowlist)                  |
+| `{{toolservice:list}}`         | All **allowed** tools + their function names as JSON, filtered by this task's `tools` allowlist |
+| `{{toolservice:tools}}`        | Allowed tool group names only                                                          |
+| `{{toolservice:tools <name>}}` | Tool names for a specific tool group (empty if not in allowlist)                  |
 
 ## Build from source
 

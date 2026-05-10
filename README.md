@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/contenox/contenox?label=version&logo=github)](https://github.com/contenox/contenox/releases)
 
-For anyone whose job touches a terminal. Describe what you want in plain English; Contenox figures out which of your tools to call — your shell, your MCP servers, your APIs — and pauses to ask before each step runs. You approve, skip, or stop. Nothing runs past you.
+For operators who want to define how the AI behaves, not just use it. You describe what you want in plain English. *How* the agent behaves — system prompt, model selection, tool policy, retries, when to pause, when to branch — is a chain file you wrote, not a binary the vendor compiled. Edit it, version it in git, port it anywhere the engine runs.
 
 📖 **[contenox.com](https://contenox.com)**
 
@@ -24,19 +24,51 @@ curl -fsSL https://contenox.com/install.sh | sh
 
 ## Quick Start
 
-You can use Contenox in one-shot commands, or drop into an interactive chat:
+```bash
+# Scaffold a workspace and register the always-on local backend
+contenox init
+
+# Pull a model — first pull becomes the default-model automatically
+contenox model pull granite-3.2-2b
+
+# Use it
+contenox "say hello world in python"
+contenox chat
+```
+
+That's it. No API key, no external server, no `backend add` ceremony — `init` registers the local llama.cpp backend pointed at `~/.contenox/models/`, `model pull` populates it. Resume past sessions with `contenox session list && contenox chat --session <id>`. To use a cloud provider instead, see [Backends](#backends) below.
+
+---
+
+## What you author
+
+The agent's behavior is a chain file. Every decision is a JSON key:
+
+```json
+{
+  "id": "triage",
+  "tasks": [{
+    "id": "classify",
+    "handler": "prompt_to_int",
+    "system_instruction": "Rate urgency 0-10. Respond with one integer.",
+    "execute_config": { "model": "qwen2.5:7b", "provider": "ollama" },
+    "transition": {
+      "branches": [
+        { "operator": ">", "when": "7", "goto": "page_oncall" },
+        { "operator": "default", "goto": "respond" }
+      ]
+    }
+  }]
+}
+```
+
+System prompt, model, branch operator, threshold — all yours. Save it and run:
 
 ```bash
-# One-shot command
-contenox run "say hello world in python"
-
-# Interactive session
-contenox chat
-
-# Resume a previous session
-contenox session list
-contenox chat --session <session-id>
+contenox run --chain ./triage.json "ticket: prod database is on fire"
 ```
+
+Walk through your first chain step by step: **[contenox.com/docs/guide/first-chain](https://contenox.com/docs/guide/first-chain/)**.
 
 ---
 
@@ -80,12 +112,11 @@ contenox --shell "check Proxmox and flag anything red"
 
 ## Backends
 
-Switch providers in one config line:
+The `local` backend (in-process llama.cpp) is registered automatically by `contenox init` and lives at `~/.contenox/models/`. Populate it with `contenox model pull <name>` — never type `backend add local` yourself. To add anything else:
 
 ```bash
-# Local providers
+# Other local servers
 contenox backend add ollama    --type ollama
-contenox backend add embedded  --type local  --url <path-to-gguf-or-hf-url> # In-process llama.cpp
 contenox backend add myvllm    --type vllm   --url http://gpu-host:8000
 
 # Cloud providers
