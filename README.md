@@ -36,7 +36,7 @@ contenox "say hello world in python"
 contenox chat -e                        # open $EDITOR to compose a prompt
 ```
 
-That's it. No API key, no external server, no `backend add` ceremony — `init` registers the local llama.cpp backend pointed at `~/.contenox/models/`, `model pull` populates it. Resume past sessions with `contenox session list && contenox chat --session <id>`. To use a cloud provider instead, see [Backends](#backends) below.
+That's it. No API key, no external server, no `backend add` ceremony — `init` registers the local llama.cpp backend pointed at `~/.contenox/models/`, `model pull` populates it. Resume past sessions with `contenox session list` and `contenox session switch <name>`. To use a cloud provider instead, see [Backends](#backends) below.
 
 ---
 
