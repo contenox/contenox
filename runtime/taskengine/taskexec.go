@@ -129,7 +129,7 @@ func GetPrimaryModel(llmCall *LLMExecutionConfig) string {
 // Prompt resolves a model client using the resolver policy and sends the prompt
 // to be executed. Returns the trimmed response string or an error.
 func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string, ctxLength int) (string, error) {
-	reportErr, _, end := exe.tracker.Start(ctx, "SimpleExec", "prompt_model",
+	reportErr, reportChange, end := exe.tracker.Start(ctx, "SimpleExec", "prompt_model",
 		"model_name", llmCall.Model,
 		"model_names", llmCall.Models,
 		"provider_types", llmCall.Providers,
@@ -181,7 +181,7 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 		streamArgs = append(streamArgs, libmodelprovider.WithShift{})
 	}
 
-	response, _, err := exe.promptWithRetry(ctx, &llmCall, req, systemInstruction, prompt)
+	response, _, err := exe.promptWithRetry(ctx, reportChange, &llmCall, req, systemInstruction, prompt)
 	if err != nil {
 		err = fmt.Errorf("prompt execution failed: %w", err)
 		reportErr(err)
@@ -202,6 +202,7 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 // dispatch.
 func (exe *SimpleExec) promptWithRetry(
 	ctx context.Context,
+	reportChange func(id string, data any),
 	llmCall *LLMExecutionConfig,
 	req llmrepo.Request,
 	systemInstruction, prompt string,
@@ -215,18 +216,38 @@ func (exe *SimpleExec) promptWithRetry(
 		response string
 		meta     llmrepo.Meta
 	}
+	attempt := 0
+	var prevErr error
 	result, outcome, err := llmretry.Do(ctx, policy, primary, func(modelID string) (any, error) {
+		attempt++
+		if attempt > 1 && reportChange != nil {
+			reportChange("retry_attempt", map[string]any{
+				"attempt":          attempt,
+				"model":            modelID,
+				"prev_error_class": string(llmretry.ClassifyError(prevErr)),
+				"prev_error":       prevErr.Error(),
+			})
+		}
 		callReq := req
 		if modelID != "" && modelID != primary {
 			callReq.ModelNames = []string{modelID}
 		}
 		r, m, e := exe.repo.PromptExecute(ctx, callReq, systemInstruction, float32(llmCall.Temperature), prompt)
+		prevErr = e
 		if e != nil {
 			return nil, e
 		}
 		return promptResult{response: r, meta: m}, nil
 	})
 	appendRetryOutcome(ctx, outcome)
+	if reportChange != nil {
+		reportChange("retry_outcome", map[string]any{
+			"attempts":         outcome.Attempts,
+			"used_fallback":    outcome.UsedFallback,
+			"last_error_class": string(outcome.LastErrorClass),
+			"elapsed":          outcome.Elapsed.String(),
+		})
+	}
 	if err != nil {
 		return "", llmrepo.Meta{}, err
 	}
@@ -747,7 +768,7 @@ func (exe *SimpleExec) executeLLM(
 		Tracker:       exe.tracker,
 	}
 
-	resp, meta, err := exe.chatWithRetry(ctx, llmCall, req, messagesC, chatArgs)
+	resp, meta, err := exe.chatWithRetry(ctx, reportChange, llmCall, req, messagesC, chatArgs)
 	if err != nil {
 		return nil, DataTypeAny, "", fmt.Errorf("chat failed: %w", err)
 	}
@@ -870,6 +891,7 @@ func resolveToolWithResolution(chainContext *ChainContext, toolName string) (Too
 // (see [WithRetryOutcomeSink]) so callers can inspect what happened.
 func (exe *SimpleExec) chatWithRetry(
 	ctx context.Context,
+	reportChange func(id string, data any),
 	llmCall *LLMExecutionConfig,
 	req llmrepo.Request,
 	messages []libmodelprovider.Message,
@@ -884,19 +906,39 @@ func (exe *SimpleExec) chatWithRetry(
 		resp libmodelprovider.ChatResult
 		meta llmrepo.Meta
 	}
+	attempt := 0
+	var prevErr error
 	result, outcome, err := llmretry.Do(ctx, policy, primary, func(modelID string) (any, error) {
+		attempt++
+		if attempt > 1 && reportChange != nil {
+			data := map[string]any{
+				"attempt":          attempt,
+				"model":            modelID,
+				"prev_error_class": string(llmretry.ClassifyError(prevErr)),
+				"prev_error":       prevErr.Error(),
+			}
+			reportChange("retry_attempt", data)
+		}
 		callReq := req
 		if modelID != "" && modelID != primary {
-			// Fallback path: target the fallback model exclusively.
 			callReq.ModelNames = []string{modelID}
 		}
 		r, m, e := exe.repo.Chat(ctx, callReq, messages, chatArgs...)
+		prevErr = e
 		if e != nil {
 			return nil, e
 		}
 		return chatResult{resp: r, meta: m}, nil
 	})
 	appendRetryOutcome(ctx, outcome)
+	if reportChange != nil {
+		reportChange("retry_outcome", map[string]any{
+			"attempts":         outcome.Attempts,
+			"used_fallback":    outcome.UsedFallback,
+			"last_error_class": string(outcome.LastErrorClass),
+			"elapsed":          outcome.Elapsed.String(),
+		})
+	}
 	if err != nil {
 		return libmodelprovider.ChatResult{}, llmrepo.Meta{}, err
 	}

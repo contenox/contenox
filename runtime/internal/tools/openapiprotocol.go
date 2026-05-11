@@ -188,7 +188,6 @@ func (p *OpenAPIToolProtocol) ExecuteTool(
 		finalURL += "?" + queryParams.Encode()
 	}
 
-	// Any remaining arguments are treated as the request body.
 	var reqBody io.Reader
 	if details.Operation.RequestBody != nil && slices.Contains([]string{"POST", "PUT", "PATCH"}, strings.ToUpper(details.Method)) {
 		if len(finalArgs) > 0 {

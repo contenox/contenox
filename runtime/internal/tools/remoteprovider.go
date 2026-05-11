@@ -196,8 +196,14 @@ func (p *PersistentRepo) execRemoteTools(
 		},
 	}
 
-	// Merge input into arguments
-	argumentsMap := map[string]any{"input": input}
+	argumentsMap := map[string]any{}
+	if m, ok := input.(map[string]any); ok {
+		for k, v := range m {
+			argumentsMap[k] = v
+		}
+	} else if input != nil {
+		argumentsMap["input"] = input
+	}
 	for k, v := range args.Args {
 		argumentsMap[k] = v
 	}
