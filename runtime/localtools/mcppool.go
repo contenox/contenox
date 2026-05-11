@@ -93,6 +93,12 @@ type MCPOAuthConfig struct {
 	// (RFC 7591) is attempted using the server's registration endpoint.
 	ClientID string
 
+	// ClientSecret is the pre-registered client secret, used for confidential-client
+	// flows (token_endpoint_auth_methods_supported includes client_secret_post).
+	// Resolved by the caller from an env var; never persisted in clear text outside
+	// the caller's environment.
+	ClientSecret string
+
 	// Scopes to request during authorization.
 	Scopes []string
 
@@ -728,9 +734,10 @@ func (p *MCPSessionPool) buildOAuthRoundTripper(base http.RoundTripper) (http.Ro
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", cfg.ResolveCallbackPort())
 
 	o2cfg := &oauth2.Config{
-		ClientID:    clientID,
-		Scopes:      cfg.Scopes,
-		RedirectURL: redirectURI,
+		ClientID:     clientID,
+		ClientSecret: cfg.ClientSecret,
+		Scopes:       cfg.Scopes,
+		RedirectURL:  redirectURI,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  meta.AuthorizationEndpoint,
 			TokenURL: meta.TokenEndpoint,

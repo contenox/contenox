@@ -155,6 +155,8 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 );
 ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS headers_json JSONB DEFAULT '{}';
 ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS inject_params_json JSONB DEFAULT '{}';
+ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS oauth_client_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS oauth_client_secret_env TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_created_at ON mcp_servers(created_at);
 
 -- plan-review feature removed: drop orphaned tables on upgraded databases.

@@ -41,6 +41,7 @@ type pendingOAuth struct {
 	ServerName   string
 	RedirectBase string
 	ClientID     string
+	ClientSecret string
 	AuthURL      string
 	TokenURL     string
 	CreatedAt    time.Time
@@ -63,12 +64,20 @@ func (s *service) AuthenticateOAuth(ctx context.Context, name string, oauthCfg *
 		oauthCfg.TokenStore = tokenStore
 	}
 
+	if oauthCfg.ClientID == "" {
+		oauthCfg.ClientID = srv.OAuthClientID
+	}
+	if oauthCfg.ClientSecret == "" {
+		oauthCfg.ClientSecret = srv.ResolveOAuthClientSecret()
+	}
+
 	redirectURI := fmt.Sprintf("http://127.0.0.1:%d/callback", oauthCfg.ResolveCallbackPort())
 	o2cfg, meta, err := s.resolveOAuthConfig(
 		ctx,
 		srv,
 		oauthCfg.ResolveClientName(),
 		strings.TrimSpace(oauthCfg.ClientID),
+		oauthCfg.ClientSecret,
 		redirectURI,
 		oauthCfg.Scopes,
 	)
@@ -105,7 +114,7 @@ func (s *service) StartOAuth(ctx context.Context, id, redirectBase string) (*OAu
 	redirectBase = strings.TrimRight(redirectBase, "/")
 	redirectURI := redirectBase + "/api/mcp/oauth/callback"
 
-	o2cfg, meta, err := s.resolveOAuthConfig(ctx, srv, "contenox-beam", "", redirectURI, nil)
+	o2cfg, meta, err := s.resolveOAuthConfig(ctx, srv, "contenox-beam", srv.OAuthClientID, srv.ResolveOAuthClientSecret(), redirectURI, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +131,7 @@ func (s *service) StartOAuth(ctx context.Context, id, redirectBase string) (*OAu
 		ServerName:   srv.Name,
 		RedirectBase: redirectBase,
 		ClientID:     o2cfg.ClientID,
+		ClientSecret: o2cfg.ClientSecret,
 		AuthURL:      meta.AuthorizationEndpoint,
 		TokenURL:     meta.TokenEndpoint,
 		CreatedAt:    time.Now(),
@@ -169,7 +179,8 @@ func (s *service) CompleteOAuth(ctx context.Context, req OAuthCallbackRequest) (
 	}
 
 	o2cfg := oauth2.Config{
-		ClientID: entry.ClientID,
+		ClientID:     entry.ClientID,
+		ClientSecret: entry.ClientSecret,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  entry.AuthURL,
 			TokenURL: entry.TokenURL,
@@ -196,6 +207,7 @@ func (s *service) resolveOAuthConfig(
 	srv *runtimetypes.MCPServer,
 	clientName string,
 	clientID string,
+	clientSecret string,
 	redirectURI string,
 	scopes []string,
 ) (*oauth2.Config, *mcpoauth.ServerMetadata, error) {
@@ -206,9 +218,13 @@ func (s *service) resolveOAuthConfig(
 
 	tokenStore := s.oauthTokenStore()
 	resolvedClientID := strings.TrimSpace(clientID)
+	resolvedClientSecret := clientSecret
 	if resolvedClientID == "" {
 		if reg, err := tokenStore.GetClientRegistration(ctx, srv.Name); err == nil && reg != nil {
 			resolvedClientID = reg.ClientID
+			if resolvedClientSecret == "" {
+				resolvedClientSecret = reg.ClientSecret
+			}
 		}
 	}
 	if resolvedClientID == "" && meta.RegistrationEndpoint != "" {
@@ -220,14 +236,18 @@ func (s *service) resolveOAuthConfig(
 			return nil, nil, fmt.Errorf("save client registration: %w", err)
 		}
 		resolvedClientID = reg.ClientID
+		if resolvedClientSecret == "" {
+			resolvedClientSecret = reg.ClientSecret
+		}
 	}
 	if resolvedClientID == "" {
-		return nil, nil, fmt.Errorf("could not obtain OAuth client_id (dynamic registration required)")
+		return nil, nil, fmt.Errorf("could not obtain OAuth client_id (server does not advertise registration_endpoint; pass --oauth-client-id and --oauth-client-secret-env)")
 	}
 
 	return &oauth2.Config{
-		ClientID: resolvedClientID,
-		Scopes:   scopes,
+		ClientID:     resolvedClientID,
+		ClientSecret: resolvedClientSecret,
+		Scopes:       scopes,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  meta.AuthorizationEndpoint,
 			TokenURL: meta.TokenEndpoint,

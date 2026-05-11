@@ -58,6 +58,12 @@ defaults to "http" when a URL is provided this way.
 
 For authentication, use:
   --auth-type bearer  with --auth-token <token>  or  --auth-env <ENV_VAR>
+  --auth-type oauth   for OAuth 2.1 + PKCE (run 'contenox mcp auth <name>' next)
+                      For servers that support dynamic client registration
+                      (RFC 7591) the client is created automatically.
+                      For servers without DCR (e.g. HubSpot, Salesforce),
+                      add --oauth-client-id and --oauth-client-secret-env
+                      with credentials from the vendor's app-registration UI.
 
 Examples:
   # Shorthand: name + URL (transport defaults to http)
@@ -69,7 +75,13 @@ Examples:
 
   # SSE: connect to a remote MCP endpoint
   contenox mcp add remote --transport sse --url https://mcp.example.com/sse \
-    --auth-type bearer --auth-env MCP_TOKEN`,
+    --auth-type bearer --auth-env MCP_TOKEN
+
+  # OAuth + pre-issued credentials (HubSpot-style: no dynamic registration)
+  contenox mcp add hubspot --transport http --url https://mcp.hubspot.com/ \
+    --auth-type oauth \
+    --oauth-client-id <client_id from vendor UI> \
+    --oauth-client-secret-env HUBSPOT_MCP_CLIENT_SECRET`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
@@ -85,6 +97,8 @@ Examples:
 		authType, _ := flags.GetString("auth-type")
 		authToken, _ := flags.GetString("auth-token")
 		authEnv, _ := flags.GetString("auth-env")
+		oauthClientID, _ := flags.GetString("oauth-client-id")
+		oauthClientSecretEnv, _ := flags.GetString("oauth-client-secret-env")
 		rawHeaders, _ := flags.GetStringArray("header")
 		rawInjects, _ := flags.GetStringArray("inject")
 
@@ -154,6 +168,8 @@ Examples:
 			AuthType:              authType,
 			AuthToken:             authToken,
 			AuthEnvKey:            authEnv,
+			OAuthClientID:         oauthClientID,
+			OAuthClientSecretEnv:  oauthClientSecretEnv,
 			Headers:               headers,
 			InjectParams:          injectParams,
 		}
@@ -316,6 +332,12 @@ var mcpUpdateCmd = &cobra.Command{
 		if flags.Changed("auth-env") {
 			srv.AuthEnvKey, _ = flags.GetString("auth-env")
 		}
+		if flags.Changed("oauth-client-id") {
+			srv.OAuthClientID, _ = flags.GetString("oauth-client-id")
+		}
+		if flags.Changed("oauth-client-secret-env") {
+			srv.OAuthClientSecretEnv, _ = flags.GetString("oauth-client-secret-env")
+		}
 		if flags.Changed("header") {
 			rawHeaders, _ := flags.GetStringArray("header")
 			headers, err := parseHeaders(rawHeaders)
@@ -381,6 +403,8 @@ func init() {
 	mcpAddCmd.Flags().String("auth-type", "", "Authentication type: bearer or oauth")
 	mcpAddCmd.Flags().String("auth-token", "", "Authentication token literal (prefer --auth-env)")
 	mcpAddCmd.Flags().String("auth-env", "", "Environment variable containing the authentication token")
+	mcpAddCmd.Flags().String("oauth-client-id", "", "Pre-issued OAuth client_id (for MCP servers without RFC 7591 dynamic registration, e.g. HubSpot, Salesforce)")
+	mcpAddCmd.Flags().String("oauth-client-secret-env", "", "Environment variable holding the pre-issued OAuth client_secret")
 	mcpAddCmd.Flags().StringArray("header", nil, `Additional HTTP header for SSE/HTTP transport, e.g. "X-Tenant: acme" (repeatable)`)
 	mcpAddCmd.Flags().StringArray("inject", nil, `Tool call param to inject and hide from model, e.g. "tenant_id=acme" (repeatable)`)
 
@@ -388,6 +412,8 @@ func init() {
 	mcpUpdateCmd.Flags().String("auth-type", "", "New authentication type")
 	mcpUpdateCmd.Flags().String("auth-token", "", "New authentication token literal")
 	mcpUpdateCmd.Flags().String("auth-env", "", "New environment variable for auth token")
+	mcpUpdateCmd.Flags().String("oauth-client-id", "", "Pre-issued OAuth client_id")
+	mcpUpdateCmd.Flags().String("oauth-client-secret-env", "", "Environment variable holding the OAuth client_secret")
 	mcpUpdateCmd.Flags().StringArray("header", nil, `Additional HTTP headers (replaces all existing headers)`)
 	mcpUpdateCmd.Flags().StringArray("inject", nil, `Injected tool call params (replaces all existing inject params)`)
 

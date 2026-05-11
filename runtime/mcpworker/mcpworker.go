@@ -389,7 +389,9 @@ func mcpServerToConfig(srv *runtimetypes.MCPServer, store runtimetypes.Store) lo
 	}
 	if localtools.MCPAuthType(srv.AuthType) == localtools.MCPAuthOAuth && store != nil {
 		cfg.OAuth = &localtools.MCPOAuthConfig{
-			TokenStore: mcpoauth.NewKVTokenStore(store),
+			TokenStore:   mcpoauth.NewKVTokenStore(store),
+			ClientID:     srv.OAuthClientID,
+			ClientSecret: srv.ResolveOAuthClientSecret(),
 		}
 	}
 	return cfg
