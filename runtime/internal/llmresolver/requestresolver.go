@@ -11,43 +11,6 @@ import (
 	"github.com/contenox/contenox/libtracker"
 )
 
-type RequestResolver struct {
-	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error)
-	resolver  func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error)
-}
-
-// ResolveChat implements Resolver by using the struct's getModels and resolver fields.
-func (r *RequestResolver) ResolveChat(ctx context.Context, req Request) (libmodelprovider.LLMChatClient, libmodelprovider.Provider, string, error) {
-	return Chat(ctx, req, r.getModels, r.resolver)
-}
-
-// ResolvePromptExecute implements Resolver by using the struct's getModels and resolver fields.
-func (r *RequestResolver) ResolvePromptExecute(ctx context.Context, req Request) (libmodelprovider.LLMPromptExecClient, libmodelprovider.Provider, string, error) {
-	return PromptExecute(ctx, req, r.getModels, r.resolver)
-}
-
-// ResolveEmbed implements Resolver by using the struct's getModels and resolver fields.
-func (r *RequestResolver) ResolveEmbed(ctx context.Context, req EmbedRequest) (libmodelprovider.LLMEmbedClient, libmodelprovider.Provider, string, error) {
-	return Embed(ctx, req, r.getModels, r.resolver)
-}
-
-// ResolveStream implements Resolver by using the struct's getModels and resolver fields.
-func (r *RequestResolver) ResolveStream(ctx context.Context, req Request) (libmodelprovider.LLMStreamClient, libmodelprovider.Provider, string, error) {
-	return Stream(ctx, req, r.getModels, r.resolver)
-}
-
-// NewRequestResolver creates a new Resolver implementation with the specified dependencies.
-// This is the preferred way to instantiate a resolver.
-func NewRequestResolver(
-	getModels func(ctx context.Context, backendTypes ...string) ([]libmodelprovider.Provider, error),
-	resolver func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error),
-) Resolver {
-	return &RequestResolver{
-		getModels: getModels,
-		resolver:  resolver,
-	}
-}
-
 func filterCandidates(
 	ctx context.Context,
 	req Request,
@@ -382,39 +345,6 @@ var ErrNoAvailableModels = errors.New("no models found in runtime state")
 // ErrNoSatisfactoryModel is returned when providers exist but none match requirements.
 var ErrNoSatisfactoryModel = errors.New("no model matched the requirements")
 
-// HighestContext is a policy that selects the provider with the largest context window.
-//
-// When multiple providers have the same context length, one is chosen randomly.
-// This is useful for tasks requiring long context windows.
-func HighestContext(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error) {
-	if len(candidates) == 0 {
-		return nil, "", ErrNoSatisfactoryModel
-	}
-
-	var bestProvider libmodelprovider.Provider = nil
-	maxContextLength := -1
-
-	for _, p := range candidates {
-		currentContextLength := p.GetContextLength()
-		if currentContextLength > maxContextLength {
-			maxContextLength = currentContextLength
-			bestProvider = p
-		}
-	}
-
-	if bestProvider == nil {
-		return nil, "", errors.New("failed to select a provider based on context length") // Should never happen
-	}
-
-	// Once the best provider is selected, choose a backend randomly for it
-	backend, err := selectRandomBackend(bestProvider)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return bestProvider, backend, nil
-}
-
 func selectRandomBackend(provider libmodelprovider.Provider) (string, error) {
 	if provider == nil {
 		return "", ErrNoSatisfactoryModel
@@ -436,23 +366,3 @@ func selectRandomProvider(candidates []libmodelprovider.Provider) (libmodelprovi
 	return candidates[rand.Intn(len(candidates))], nil
 }
 
-const (
-	StrategyRandom      = "random"
-	StrategyAuto        = "auto"
-	StrategyLowLatency  = "low-latency"
-	StrategyLowPriority = "low-prio"
-)
-
-// PolicyFromString maps string names to resolver policies
-func PolicyFromString(name string) (func(candidates []libmodelprovider.Provider) (libmodelprovider.Provider, string, error), error) {
-	switch strings.ToLower(name) {
-	case StrategyRandom:
-		return Randomly, nil
-	case StrategyLowLatency, StrategyAuto:
-		return HighestContext, nil
-	// case StrategyLowPriority:
-	// 	return ResolveLowestPriority, nil
-	default:
-		return nil, fmt.Errorf("unknown resolver strategy: %s", name)
-	}
-}
