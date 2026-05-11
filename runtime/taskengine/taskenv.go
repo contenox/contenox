@@ -3,6 +3,7 @@ package taskengine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -160,9 +161,47 @@ func NewEnv(
 }
 
 type ChainContext struct {
-	Tools       map[string]ToolWithResolution
-	ClientTools []Tool
-	Debug       bool
+	Tools                     map[string]ToolWithResolution
+	ClientTools               []Tool
+	UnavailableToolsProviders []UnavailableToolsProvider
+	Debug                     bool
+}
+
+type UnavailableToolsProvider struct {
+	Name   string
+	Reason string
+}
+
+func buildUnavailableToolsPrelude(unavail []UnavailableToolsProvider) []Message {
+	if len(unavail) == 0 {
+		return nil
+	}
+	type entry struct {
+		Name  string `json:"name"`
+		Error string `json:"error"`
+	}
+	entries := make([]entry, len(unavail))
+	for i, u := range unavail {
+		entries[i] = entry{Name: u.Name, Error: u.Reason}
+	}
+	payload, err := json.Marshal(map[string]any{"unavailable_tools_providers": entries})
+	if err != nil {
+		return nil
+	}
+	return []Message{{Role: "system", Content: string(payload), Timestamp: time.Now().UTC()}}
+}
+
+func shortenChainErr(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	msg = strings.ReplaceAll(msg, "\n", " ")
+	const max = 200
+	if len(msg) > max {
+		return msg[:max-3] + "..."
+	}
+	return msg
 }
 
 type ToolWithResolution struct {
@@ -244,6 +283,19 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				}
 				if errors.Is(err, ErrToolsToolsUnavailable) {
 					reportErrChain(err)
+					already := false
+					for _, u := range chainContext.UnavailableToolsProviders {
+						if u.Name == toolsName {
+							already = true
+							break
+						}
+					}
+					if !already {
+						chainContext.UnavailableToolsProviders = append(chainContext.UnavailableToolsProviders, UnavailableToolsProvider{
+							Name:   toolsName,
+							Reason: shortenChainErr(err),
+						})
+					}
 					continue
 				}
 				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: failed to get tools for tools %s: %w", currentTask.ID, toolsName, err)

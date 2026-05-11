@@ -389,6 +389,8 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 		}
 
+		prelude := buildUnavailableToolsPrelude(chainContext.UnavailableToolsProviders)
+
 		output, outputType, transitionEval, taskErr = exe.executeLLM(
 			taskCtx,
 			chatHistory,
@@ -396,6 +398,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			finalExecConfig,
 			chainContext.ClientTools,
 			chainContext.Tools,
+			prelude,
 		)
 
 	case HandleExecuteToolCalls:
@@ -552,6 +555,7 @@ func (exe *SimpleExec) executeLLM(
 	llmCall *LLMExecutionConfig,
 	clientTools []Tool,
 	toolsResolution map[string]ToolWithResolution,
+	prelude []Message,
 ) (any, DataType, string, error) {
 	reportErr, reportChange, end := exe.tracker.Start(ctx, "SimpleExec", "prompt_model",
 		"model_name", llmCall.Model,
@@ -629,6 +633,15 @@ func (exe *SimpleExec) executeLLM(
 		messagesTokens = total
 	}
 
+	for _, m := range prelude {
+		cnt, err := exe.repo.CountTokens(ctx, modelName, m.Content)
+		if err != nil {
+			reportErr(fmt.Errorf("token count failed: %w", err))
+			return nil, DataTypeAny, "", fmt.Errorf("token count failed: %w", err)
+		}
+		messagesTokens += cnt
+	}
+
 	// Count tool tokens
 	toolTokens, err := exe.countToolTokens(ctx, modelName, tools)
 	if err != nil {
@@ -654,8 +667,13 @@ func (exe *SimpleExec) executeLLM(
 		return nil, DataTypeAny, "", err
 	}
 
-	// Convert chat history to model repo messages
-	messagesC := make([]libmodelprovider.Message, 0, len(input.Messages))
+	messagesC := make([]libmodelprovider.Message, 0, len(prelude)+len(input.Messages))
+	for _, m := range prelude {
+		messagesC = append(messagesC, libmodelprovider.Message{
+			Role:    m.Role,
+			Content: m.Content,
+		})
+	}
 	for _, m := range input.Messages {
 		var toolCalls []libmodelprovider.ToolCall
 		if len(m.CallTools) > 0 {
@@ -682,6 +700,16 @@ func (exe *SimpleExec) executeLLM(
 		"count": len(tools),
 		"model": llmCall.Model,
 	})
+	if len(prelude) > 0 {
+		preludeContents := make([]string, 0, len(prelude))
+		for _, m := range prelude {
+			preludeContents = append(preludeContents, m.Content)
+		}
+		reportChange("prelude_injected", map[string]any{
+			"count":    len(prelude),
+			"messages": preludeContents,
+		})
+	}
 	if llmCall.Think != "" {
 		chatArgs = append(chatArgs, libmodelprovider.WithThink(llmCall.Think))
 	}
