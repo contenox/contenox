@@ -2,6 +2,7 @@ package acpsvc
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/contenox/contenox/libacp"
@@ -33,7 +34,7 @@ func TestUnit_ToolCallUpdate_FsWriteResultProducesDiff(t *testing.T) {
 
 	require.Equal(t, libacp.SessionUpdateToolCallUpdate, upd.SessionUpdate)
 	require.Equal(t, "call-1", upd.ToolCallID)
-	require.Equal(t, "local_fs.write_file", upd.Title)
+	require.Equal(t, "local_fs.write_file: /tmp/abc.txt", upd.Title)
 	require.Equal(t, libacp.ToolKindEdit, upd.Kind)
 	require.Equal(t, libacp.ToolCallStatusCompleted, upd.Status)
 	require.Len(t, upd.ToolContent, 1)
@@ -85,4 +86,103 @@ func TestUnit_IsToolBearingHandler(t *testing.T) {
 	require.True(t, isToolBearingHandler(string(taskengine.HandleTools)))
 	require.False(t, isToolBearingHandler(string(taskengine.HandleNoop)))
 	require.False(t, isToolBearingHandler(string(taskengine.HandlePromptToString)))
+}
+
+func TestUnit_ReplayToolCall_FromAssistantMessage(t *testing.T) {
+	tc := taskengine.ToolCall{
+		ID:   "call-xyz",
+		Type: "function",
+		Function: taskengine.FunctionCall{
+			Name:      "local_fs.read_file",
+			Arguments: `{"path":"/tmp/foo.txt"}`,
+		},
+	}
+	upd := toolCallUpdateFromCall(tc)
+
+	require.Equal(t, libacp.SessionUpdateToolCall, upd.SessionUpdate)
+	require.Equal(t, "call-xyz", upd.ToolCallID)
+	require.Equal(t, "local_fs.read_file: /tmp/foo.txt", upd.Title)
+	require.Equal(t, libacp.ToolKindRead, upd.Kind)
+	require.Equal(t, libacp.ToolCallStatusCompleted, upd.Status)
+	require.JSONEq(t, `{"path":"/tmp/foo.txt"}`, string(upd.RawInput))
+}
+
+func TestUnit_ReplayToolCall_InvalidArgumentsOmitsRawInput(t *testing.T) {
+	tc := taskengine.ToolCall{
+		ID: "call-1",
+		Function: taskengine.FunctionCall{
+			Name:      "local_shell.exec",
+			Arguments: "not-json",
+		},
+	}
+	upd := toolCallUpdateFromCall(tc)
+	require.Empty(t, upd.RawInput, "malformed Arguments must not be forwarded as RawInput")
+	require.Equal(t, libacp.ToolKindExecute, upd.Kind)
+}
+
+func TestUnit_ReplayToolResult_FromToolMessage(t *testing.T) {
+	m := taskengine.Message{
+		Role:       "tool",
+		ToolCallID: "call-xyz",
+		Content:    "hello world",
+	}
+	upd := toolCallUpdateFromResult(m)
+
+	require.Equal(t, libacp.SessionUpdateToolCallUpdate, upd.SessionUpdate)
+	require.Equal(t, "call-xyz", upd.ToolCallID)
+	require.Equal(t, libacp.ToolCallStatusCompleted, upd.Status)
+	require.JSONEq(t, `"hello world"`, string(upd.RawOutput))
+	require.Empty(t, upd.ToolContent)
+}
+
+func TestUnit_SummarizeToolCallArgs(t *testing.T) {
+	cases := []struct {
+		name     string
+		tool     string
+		args     map[string]any
+		expected string
+	}{
+		{"exec without args", "acp_terminal.exec", map[string]any{"command": "ls"}, "ls"},
+		{"exec with args slice", "acp_terminal.exec", map[string]any{"command": "git", "args": []any{"status", "--short"}}, "git status --short"},
+		{"read_file path", "acp_fs.read_file", map[string]any{"path": "/tmp/foo.txt"}, "/tmp/foo.txt"},
+		{"local grep pattern+path", "local_fs.grep", map[string]any{"pattern": "TODO", "path": "src/"}, "TODO in src/"},
+		{"grep pattern only", "grep", map[string]any{"pattern": "TODO"}, "TODO"},
+		{"fetch_url", "webtools.fetch_url", map[string]any{"url": "https://example.com"}, "https://example.com"},
+		{"unknown tool returns empty", "foo.bar", map[string]any{"x": "y"}, ""},
+		{"missing main arg returns empty", "acp_terminal.exec", map[string]any{}, ""},
+		{"newlines collapsed", "acp_terminal.exec", map[string]any{"command": "echo", "args": []any{"a\nb"}}, "echo a b"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.expected, summarizeToolCallArgs(c.tool, c.args))
+		})
+	}
+}
+
+func TestUnit_SummarizeToolCallArgs_LongCommandTruncates(t *testing.T) {
+	long := strings.Repeat("x", 200)
+	got := summarizeToolCallArgs("acp_terminal.exec", map[string]any{"command": long})
+	require.LessOrEqual(t, len([]rune(got)), 80)
+	require.Contains(t, got, "…")
+}
+
+func TestUnit_ReplayToolResult_FsWriteProducesDiff(t *testing.T) {
+	fw := localtools.FsWriteResult{
+		Path:    "/tmp/a.txt",
+		OldText: "old",
+		NewText: "new",
+		Written: true,
+	}
+	raw, err := json.Marshal(fw)
+	require.NoError(t, err)
+
+	m := taskengine.Message{
+		Role:       "tool",
+		ToolCallID: "call-w",
+		Content:    string(raw),
+	}
+	upd := toolCallUpdateFromResult(m)
+	require.Len(t, upd.ToolContent, 1)
+	require.Equal(t, libacp.ToolCallContentDiff, upd.ToolContent[0].Type)
+	require.Equal(t, "/tmp/a.txt", upd.ToolContent[0].Path)
 }

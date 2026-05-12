@@ -2,6 +2,7 @@ package acpsvc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -20,14 +21,20 @@ func mcpNameFor(sessionID libacp.SessionID, original string) string {
 }
 
 func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionRequest) (libacp.LoadSessionResponse, error) {
+	reportErr, reportChange, end := t.tracker().Start(ctx, "load", "acp_session", "session_id", string(req.SessionID))
+	defer end()
+
 	if req.SessionID == "" {
-		return libacp.LoadSessionResponse{}, libacp.NewError(libacp.ErrInvalidParams, "sessionId is required")
+		err := libacp.NewError(libacp.ErrInvalidParams, "sessionId is required")
+		reportErr(err)
+		return libacp.LoadSessionResponse{}, err
 	}
 	workspaceID := deriveWorkspaceID(req.SessionID, t.clientIdentity())
 
 	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
 	registered, err := t.registerMcpServers(ctx, store, req.SessionID, req.McpServers)
 	if err != nil {
+		reportErr(err)
 		return libacp.LoadSessionResponse{}, err
 	}
 
@@ -41,7 +48,9 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	contenoxSessionID, messages, err := ag.SessionLoad(ctx, string(req.SessionID))
 	if err != nil {
 		t.cleanupMcpServers(ctx, store, registered)
-		return libacp.LoadSessionResponse{}, libacp.NewErrorf(libacp.ErrInvalidParams, "load session %q: %v", req.SessionID, err)
+		wrapped := libacp.NewErrorf(libacp.ErrInvalidParams, "load session %q: %v", req.SessionID, err)
+		reportErr(wrapped)
+		return libacp.LoadSessionResponse{}, wrapped
 	}
 
 	entry := &sessionEntry{
@@ -56,48 +65,118 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.contenoxToACPID[contenoxSessionID] = req.SessionID
 	t.sessionMu.Unlock()
 
-	t.replayMessages(req.SessionID, messages)
+	t.replayMessages(ctx, req.SessionID, messages)
 
+	reportChange(string(req.SessionID), map[string]any{
+		"contenox_session_id": contenoxSessionID,
+		"message_count":       len(messages),
+	})
 	return libacp.LoadSessionResponse{}, nil
 }
 
-func (t *Transport) replayMessages(sessionID libacp.SessionID, messages []taskengine.Message) {
+func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.SessionID, messages []taskengine.Message) {
+	_, reportChange, end := t.tracker().Start(ctx, "replay", "acp_session", "session_id", string(sessionID), "message_count", len(messages))
+	defer end()
+
+	var users, assistantText, toolCalls, toolResults int
 	for _, m := range messages {
 		switch m.Role {
 		case "user":
 			if m.Content == "" {
 				continue
 			}
-			_ = t.conn.SessionUpdate(libacp.SessionNotification{
+			t.sendUpdate(ctx, libacp.SessionNotification{
 				SessionID: sessionID,
 				Update:    libacp.NewUserMessageChunk(m.Content),
 			})
+			users++
 		case "assistant":
 			if m.Thinking != "" {
-				_ = t.conn.SessionUpdate(libacp.SessionNotification{
+				t.sendUpdate(ctx, libacp.SessionNotification{
 					SessionID: sessionID,
 					Update:    libacp.NewAgentThoughtChunk(m.Thinking),
 				})
 			}
 			if m.Content != "" {
-				_ = t.conn.SessionUpdate(libacp.SessionNotification{
+				t.sendUpdate(ctx, libacp.SessionNotification{
 					SessionID: sessionID,
 					Update:    libacp.NewAgentMessageChunk(m.Content),
 				})
+				assistantText++
 			}
+			for _, tc := range m.CallTools {
+				t.sendUpdate(ctx, libacp.SessionNotification{
+					SessionID: sessionID,
+					Update:    toolCallUpdateFromCall(tc),
+				})
+				toolCalls++
+			}
+		case "tool":
+			t.sendUpdate(ctx, libacp.SessionNotification{
+				SessionID: sessionID,
+				Update:    toolCallUpdateFromResult(m),
+			})
+			toolResults++
 		}
 	}
+	reportChange(string(sessionID), map[string]any{
+		"user":          users,
+		"assistant":     assistantText,
+		"tool_calls":    toolCalls,
+		"tool_results":  toolResults,
+	})
+}
+
+func toolCallUpdateFromCall(tc taskengine.ToolCall) libacp.SessionUpdate {
+	title := tc.Function.Name
+	var argsMap map[string]any
+	if tc.Function.Arguments != "" && json.Valid([]byte(tc.Function.Arguments)) {
+		_ = json.Unmarshal([]byte(tc.Function.Arguments), &argsMap)
+	}
+	if summary := summarizeToolCallArgs(tc.Function.Name, argsMap); summary != "" {
+		title = tc.Function.Name + ": " + summary
+	}
+	update := libacp.SessionUpdate{
+		SessionUpdate: libacp.SessionUpdateToolCall,
+		ToolCallID:    tc.ID,
+		Title:         title,
+		Kind:          toolKindFor(tc.Function.Name),
+		Status:        libacp.ToolCallStatusCompleted,
+	}
+	if tc.Function.Arguments != "" && json.Valid([]byte(tc.Function.Arguments)) {
+		update.RawInput = json.RawMessage(tc.Function.Arguments)
+	}
+	return update
+}
+
+func toolCallUpdateFromResult(m taskengine.Message) libacp.SessionUpdate {
+	update := libacp.SessionUpdate{
+		SessionUpdate: libacp.SessionUpdateToolCallUpdate,
+		ToolCallID:    m.ToolCallID,
+		Status:        libacp.ToolCallStatusCompleted,
+	}
+	if m.Content != "" {
+		update.RawOutput = json.RawMessage(jsonString(m.Content))
+		if diff := diffContentFromResult(m.Content); diff != nil {
+			update.ToolContent = []libacp.ToolCallContent{*diff}
+		}
+	}
+	return update
 }
 
 func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest) (libacp.NewSessionResponse, error) {
 	internalID := newSessionID()
 	sessionID := libacp.SessionID(internalID)
 
+	reportErr, reportChange, end := t.tracker().Start(ctx, "new", "acp_session", "session_id", string(sessionID), "cwd", req.Cwd, "mcp_servers", len(req.McpServers))
+	defer end()
+
 	workspaceID := deriveWorkspaceID(sessionID, t.clientIdentity())
 
 	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
 	registered, err := t.registerMcpServers(ctx, store, sessionID, req.McpServers)
 	if err != nil {
+		reportErr(err)
 		return libacp.NewSessionResponse{}, err
 	}
 
@@ -111,7 +190,9 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	contenoxSessionID, err := ag.SessionNew(ctx, internalID)
 	if err != nil {
 		t.cleanupMcpServers(ctx, store, registered)
-		return libacp.NewSessionResponse{}, fmt.Errorf("acpsvc: agent.SessionNew: %w", err)
+		wrapped := fmt.Errorf("acpsvc: agent.SessionNew: %w", err)
+		reportErr(wrapped)
+		return libacp.NewSessionResponse{}, wrapped
 	}
 
 	entry := &sessionEntry{
@@ -126,6 +207,10 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	t.contenoxToACPID[contenoxSessionID] = sessionID
 	t.sessionMu.Unlock()
 
+	reportChange(string(sessionID), map[string]any{
+		"contenox_session_id": contenoxSessionID,
+		"workspace_id":        workspaceID,
+	})
 	return libacp.NewSessionResponse{SessionID: sessionID}, nil
 }
 

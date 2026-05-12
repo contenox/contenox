@@ -71,6 +71,12 @@ func (exe *SimpleExec) publishStepChunk(ctx context.Context, meta llmrepo.Meta, 
 	if content == "" && thinking == "" {
 		return
 	}
+	_, _, end := exe.tracker.Start(ctx, "publish_step_chunk", "task_event",
+		"content_len", len(content),
+		"thinking_len", len(thinking),
+		"model", meta.ModelName,
+	)
+	defer end()
 	event := NewTaskEvent(ctx, TaskEventStepChunk)
 	event.ModelName = meta.ModelName
 	event.ProviderType = meta.ProviderType
@@ -982,6 +988,7 @@ func (exe *SimpleExec) executeLLM(
 		CallTools: callTools,
 		Timestamp: time.Now().UTC(),
 	})
+	exe.publishStepChunk(ctx, meta, respMessage.Content, respMessage.Thinking)
 
 	// Count output tokens (only for the response content, not tool calls)
 	var outputTokensCount int

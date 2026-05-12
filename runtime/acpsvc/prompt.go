@@ -10,17 +10,26 @@ import (
 )
 
 func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libacp.PromptResponse, error) {
+	reportErr, reportChange, end := t.tracker().Start(ctx, "prompt", "acp_session", "session_id", string(req.SessionID), "prompt_blocks", len(req.Prompt))
+	defer end()
+
 	sess, ok := t.sessionFor(req.SessionID)
 	if !ok {
-		return libacp.PromptResponse{}, libacp.NewErrorf(libacp.ErrInvalidParams, "unknown session %q", req.SessionID)
+		err := libacp.NewErrorf(libacp.ErrInvalidParams, "unknown session %q", req.SessionID)
+		reportErr(err)
+		return libacp.PromptResponse{}, err
 	}
 	if t.deps.ChainRegistry == nil || t.deps.ChainRegistry.Default() == nil {
-		return libacp.PromptResponse{}, libacp.InternalError("no chain configured")
+		err := libacp.InternalError("no chain configured")
+		reportErr(err)
+		return libacp.PromptResponse{}, err
 	}
 
 	input := flattenPromptBlocks(req.Prompt)
 	if input == "" {
-		return libacp.PromptResponse{}, libacp.NewError(libacp.ErrInvalidParams, "empty prompt")
+		err := libacp.NewError(libacp.ErrInvalidParams, "empty prompt")
+		reportErr(err)
+		return libacp.PromptResponse{}, err
 	}
 
 	promptCtx := libtracker.WithNewRequestID(ctx)
@@ -48,12 +57,18 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		TemplateVars: templateVars,
 	})
 	if err != nil {
+		reportErr(err)
 		if resp != nil {
 			return libacp.PromptResponse{StopReason: mapStopReason(resp.StopReason)}, libacp.InternalError(err.Error())
 		}
 		return libacp.PromptResponse{}, libacp.InternalError(err.Error())
 	}
-	return libacp.PromptResponse{StopReason: mapStopReason(resp.StopReason)}, nil
+	stopReason := mapStopReason(resp.StopReason)
+	reportChange(string(req.SessionID), map[string]any{
+		"stop_reason": string(stopReason),
+		"request_id":  reqID,
+	})
+	return libacp.PromptResponse{StopReason: stopReason}, nil
 }
 
 func (t *Transport) defaultProvider() string {

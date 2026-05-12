@@ -191,6 +191,35 @@ func TestUnit_SQLiteBus_Close_Idempotent(t *testing.T) {
 
 // ── TestUnit_SQLiteBus_Unsubscribe ────────────────────────────────────────
 
+func TestUnit_SQLiteBus_Stream_UnsubscribeDrainsPendingEvents(t *testing.T) {
+	ctx := t.Context()
+
+	// Poll interval longer than the publish→unsubscribe window so the ticker
+	// cannot rescue the event mid-flight. Without drain-on-unsubscribe, the
+	// row inserted by Publish below would be left in bus_events when the
+	// subscriber goroutine is cancelled, and the channel would never see it.
+	b := libbus.NewSQLiteWithOptions(newTestDB(t), libbus.SQLiteBusOptions{
+		EventPoll:   500 * time.Millisecond,
+		RequestPoll: 500 * time.Millisecond,
+	})
+	t.Cleanup(func() { _ = b.Close() })
+
+	ch := make(chan []byte, 4)
+	sub, err := b.Stream(ctx, "race.subject", ch)
+	require.NoError(t, err)
+
+	require.NoError(t, b.Publish(ctx, "race.subject", []byte("last-event")))
+
+	require.NoError(t, sub.Unsubscribe())
+
+	select {
+	case msg := <-ch:
+		assert.Equal(t, "last-event", string(msg))
+	default:
+		t.Fatal("drain-on-unsubscribe lost the pending event")
+	}
+}
+
 func TestUnit_SQLiteBus_Stream_UnsubscribeStopsDelivery(t *testing.T) {
 	ctx := t.Context()
 

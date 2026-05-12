@@ -126,12 +126,42 @@ func (b *SQLiteBus) Stream(ctx context.Context, subject string, ch chan<- []byte
 	}
 
 	subCtx, subCancel := context.WithCancel(ctx)
-	sub := &sqliteSubscription{cancel: subCancel}
+	sub := &sqliteSubscription{
+		cancel: subCancel,
+		drain:  make(chan struct{}),
+		done:   make(chan struct{}),
+	}
 
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
 		defer subCancel()
+		defer close(sub.done)
+
+		drainOnce := func(qCtx context.Context) bool {
+			rows, err := b.db.QueryContext(qCtx,
+				`SELECT id, data FROM bus_events WHERE subject = ? AND id > ? ORDER BY id`,
+				subject, cursor,
+			)
+			if err != nil {
+				return false
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id int64
+				var payload []byte
+				if err := rows.Scan(&id, &payload); err != nil {
+					continue
+				}
+				cursor = id
+				select {
+				case ch <- payload:
+				case <-qCtx.Done():
+					return false
+				}
+			}
+			return true
+		}
 
 		ticker := time.NewTicker(b.eventPoll)
 		defer ticker.Stop()
@@ -139,29 +169,11 @@ func (b *SQLiteBus) Stream(ctx context.Context, subject string, ch chan<- []byte
 			select {
 			case <-subCtx.Done():
 				return
+			case <-sub.drain:
+				drainOnce(context.Background())
+				return
 			case <-ticker.C:
-				rows, err := b.db.QueryContext(subCtx,
-					`SELECT id, data FROM bus_events WHERE subject = ? AND id > ? ORDER BY id`,
-					subject, cursor,
-				)
-				if err != nil {
-					continue
-				}
-				for rows.Next() {
-					var id int64
-					var payload []byte
-					if err := rows.Scan(&id, &payload); err != nil {
-						continue
-					}
-					cursor = id
-					select {
-					case ch <- payload:
-					case <-subCtx.Done():
-						_ = rows.Close()
-						return
-					}
-				}
-				_ = rows.Close()
+				drainOnce(subCtx)
 			}
 		}
 	}()
@@ -344,11 +356,27 @@ func (b *SQLiteBus) runCleanup(ctx context.Context) {
 // ── subscription ──────────────────────────────────────────────────────────
 
 type sqliteSubscription struct {
-	cancel context.CancelFunc
+	cancel   context.CancelFunc
+	drain    chan struct{}
+	done     chan struct{}
+	closeMu  sync.Mutex
+	drained  bool
 }
 
 func (s *sqliteSubscription) Unsubscribe() error {
-	s.cancel()
+	if s.drain == nil || s.done == nil {
+		s.cancel()
+		return nil
+	}
+	s.closeMu.Lock()
+	if s.drained {
+		s.closeMu.Unlock()
+		return nil
+	}
+	s.drained = true
+	close(s.drain)
+	s.closeMu.Unlock()
+	<-s.done
 	return nil
 }
 

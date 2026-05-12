@@ -9,6 +9,7 @@ import (
 
 	libacp "github.com/contenox/contenox/libacp"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/agentservice"
 	"github.com/contenox/contenox/runtime/enginesvc"
 	"github.com/contenox/contenox/runtime/internal/clikv"
@@ -89,6 +90,29 @@ func deriveWorkspaceID(sessionID libacp.SessionID, clientInfo *libacp.Implementa
 		return "acp-client-" + hex.EncodeToString(sum[:8])
 	}
 	return "acp-sess-" + string(sessionID)
+}
+
+func (t *Transport) sendUpdate(ctx context.Context, notif libacp.SessionNotification) {
+	kind := string(notif.Update.SessionUpdate)
+	kv := []any{"kind", kind, "session_id", string(notif.SessionID)}
+	if notif.Update.ToolCallID != "" {
+		kv = append(kv, "tool_call_id", notif.Update.ToolCallID)
+	}
+	if notif.Update.Status != "" {
+		kv = append(kv, "status", string(notif.Update.Status))
+	}
+	reportErr, _, end := t.tracker().Start(ctx, "send", "acp_session_update", kv...)
+	defer end()
+	if err := t.conn.SessionUpdate(notif); err != nil {
+		reportErr(err)
+	}
+}
+
+func (t *Transport) tracker() libtracker.ActivityTracker {
+	if t.deps.Engine != nil && t.deps.Engine.Tracker != nil {
+		return t.deps.Engine.Tracker
+	}
+	return libtracker.NoopTracker{}
 }
 
 func ReadConfigValue(ctx context.Context, db libdb.DBManager, key string) string {

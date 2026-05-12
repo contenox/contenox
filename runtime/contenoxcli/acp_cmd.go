@@ -93,7 +93,7 @@ func runACP(cmd *cobra.Command, _ []string) error {
 	}
 	slog.Info("loaded ACP chain", "source", chains.Source(), "id", chains.Default().ID)
 
-	tracker := libtracker.NoopTracker{}
+	var tracker libtracker.ActivityTracker = libtracker.NewLogActivityTracker(slog.Default())
 	var transport *acpsvc.Transport
 
 	tools := map[string]taskengine.ToolsRepo{

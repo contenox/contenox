@@ -19,12 +19,12 @@ func (t *Transport) translateEvents(ctx context.Context, sid libacp.SessionID, c
 			if !ok {
 				return
 			}
-			t.publishEvent(sid, payload)
+			t.publishEvent(ctx, sid, payload)
 		}
 	}
 }
 
-func (t *Transport) publishEvent(sid libacp.SessionID, payload []byte) {
+func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payload []byte) {
 	var ev taskengine.TaskEvent
 	if err := json.Unmarshal(payload, &ev); err != nil {
 		return
@@ -32,13 +32,13 @@ func (t *Transport) publishEvent(sid libacp.SessionID, payload []byte) {
 	switch ev.Kind {
 	case taskengine.TaskEventStepChunk:
 		if ev.Content != "" {
-			_ = t.conn.SessionUpdate(libacp.SessionNotification{
+			t.sendUpdate(ctx, libacp.SessionNotification{
 				SessionID: sid,
 				Update:    libacp.NewAgentMessageChunk(ev.Content),
 			})
 		}
 		if ev.Thinking != "" {
-			_ = t.conn.SessionUpdate(libacp.SessionNotification{
+			t.sendUpdate(ctx, libacp.SessionNotification{
 				SessionID: sid,
 				Update:    libacp.NewAgentThoughtChunk(ev.Thinking),
 			})
@@ -47,21 +47,21 @@ func (t *Transport) publishEvent(sid libacp.SessionID, payload []byte) {
 		if isToolBearingHandler(ev.TaskHandler) {
 			return
 		}
-		_ = t.conn.SessionUpdate(toolCallNotification(sid, ev, libacp.ToolCallStatusInProgress))
+		t.sendUpdate(ctx, toolCallNotification(sid, ev, libacp.ToolCallStatusInProgress))
 	case taskengine.TaskEventStepCompleted:
 		if isToolBearingHandler(ev.TaskHandler) {
 			return
 		}
-		_ = t.conn.SessionUpdate(toolCallNotification(sid, ev, libacp.ToolCallStatusCompleted))
+		t.sendUpdate(ctx, toolCallNotification(sid, ev, libacp.ToolCallStatusCompleted))
 	case taskengine.TaskEventStepFailed:
 		if isToolBearingHandler(ev.TaskHandler) {
 			return
 		}
-		_ = t.conn.SessionUpdate(toolCallNotification(sid, ev, libacp.ToolCallStatusFailed))
+		t.sendUpdate(ctx, toolCallNotification(sid, ev, libacp.ToolCallStatusFailed))
 	case taskengine.TaskEventToolCallPending:
-		_ = t.conn.SessionUpdate(toolCallPendingNotification(sid, ev))
+		t.sendUpdate(ctx, toolCallPendingNotification(sid, ev))
 	case taskengine.TaskEventToolCall:
-		_ = t.conn.SessionUpdate(toolCallUpdateNotification(sid, ev))
+		t.sendUpdate(ctx, toolCallUpdateNotification(sid, ev))
 	}
 }
 
@@ -145,9 +145,89 @@ func toolCallID(ev taskengine.TaskEvent) string {
 
 func toolCallTitle(ev taskengine.TaskEvent) string {
 	if ev.ToolName != "" {
+		if summary := summarizeToolCallArgs(ev.ToolName, ev.ApprovalArgs); summary != "" {
+			return ev.ToolName + ": " + summary
+		}
 		return ev.ToolName
 	}
 	return taskTitle(ev)
+}
+
+func summarizeToolCallArgs(toolName string, args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	base := toolName
+	if idx := strings.LastIndex(toolName, "."); idx >= 0 {
+		base = toolName[idx+1:]
+	}
+
+	asString := func(key string) string {
+		if v, ok := args[key]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		return ""
+	}
+	asStringSlice := func(key string) []string {
+		v, ok := args[key]
+		if !ok {
+			return nil
+		}
+		arr, ok := v.([]any)
+		if !ok {
+			return nil
+		}
+		out := make([]string, 0, len(arr))
+		for _, x := range arr {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+
+	var summary string
+	switch base {
+	case "exec", "run", "execute":
+		cmd := asString("command")
+		if cmd == "" {
+			break
+		}
+		parts := append([]string{cmd}, asStringSlice("args")...)
+		summary = strings.Join(parts, " ")
+	case "read_file", "read_file_range", "write_file", "stat_file", "list_dir", "delete_file":
+		summary = asString("path")
+	case "grep":
+		if p := asString("pattern"); p != "" {
+			if path := asString("path"); path != "" {
+				summary = p + " in " + path
+			} else {
+				summary = p
+			}
+		}
+	case "sed":
+		if path := asString("path"); path != "" {
+			if pat := asString("pattern"); pat != "" {
+				summary = pat + " in " + path
+			} else {
+				summary = path
+			}
+		}
+	case "fetch_url", "fetch", "http_get":
+		summary = asString("url")
+	}
+
+	if summary == "" {
+		return ""
+	}
+	summary = strings.TrimSpace(strings.ReplaceAll(summary, "\n", " "))
+	const maxRunes = 80
+	if r := []rune(summary); len(r) > maxRunes {
+		summary = string(r[:maxRunes-1]) + "…"
+	}
+	return summary
 }
 
 func toolKindFor(toolName string) libacp.ToolKind {
