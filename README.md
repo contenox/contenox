@@ -130,6 +130,26 @@ contenox --shell "check Proxmox and flag anything red"
 
 ---
 
+## Use it from Zed (or any ACP client)
+
+Contenox speaks the [Agent Client Protocol](https://github.com/zed-industries/agent-client-protocol) over stdio. Drop this into `~/.config/zed/settings.json`:
+
+```json
+{
+  "agent_servers": {
+    "Contenox": {
+      "type": "custom",
+      "command": "contenox",
+      "args": ["acp"]
+    }
+  }
+}
+```
+
+Open Zed's agent panel and pick **Contenox**. Your chain runs inside the editor: tool calls render as cards with the actual command/path, HITL prompts route through Zed's permission UI, and session history replays when you reopen the project. Chain selection lives at `~/.contenox/default-acp-chain.json` (or set `CONTENOX_ACP_CHAIN_PATH`). Full guide → **[contenox.com/docs/guide/zed](https://contenox.com/docs/guide/zed/)**.
+
+---
+
 ## Backends
 
 The `local` backend (in-process llama.cpp) is registered automatically by `contenox init` and lives at `~/.contenox/models/`. Populate it with `contenox model pull <name>` — never type `backend add local` yourself. To add anything else:
