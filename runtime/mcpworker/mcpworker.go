@@ -183,7 +183,7 @@ func (m *Manager) StartWorker(ctx context.Context, srv *runtimetypes.MCPServer) 
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	w := &worker{
 		serverName: srv.Name,
-	cfg:        mcpServerToConfig(srv, m.db),
+		cfg:        mcpServerToConfig(srv, m.db),
 		pools:      make(map[string]*poolEntry),
 		cancelFn:   workerCancel,
 	}

@@ -139,6 +139,7 @@ type SimpleEnv struct {
 	tracker       libtracker.ActivityTracker
 	inspector     Inspector
 	toolsProvider ToolsRepo
+	eventSink     TaskEventSink
 }
 
 // NewEnv creates a new SimpleEnv with the given tracker and task executor.
@@ -157,6 +158,7 @@ func NewEnv(
 		tracker:       tracker,
 		inspector:     inspector,
 		toolsProvider: toolsProvider,
+		eventSink:     taskEventSinkFromContext(ctx),
 	}, nil
 }
 
@@ -215,6 +217,21 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 	defer endChain()
 
 	stack := env.inspector.Start(ctx)
+
+	defer func() {
+		chainEvent := NewTaskEvent(ctx, TaskEventChainCompleted)
+		chainEvent.ChainID = chain.ID
+		chainEvent.OutputType = resultType.String()
+		if retErr != nil {
+			chainEvent.Kind = TaskEventChainFailed
+			chainEvent.Error = retErr.Error()
+			chainEvent.OutputType = ""
+		}
+		publishTaskEventBestEffort(ctx, env.eventSink, chainEvent)
+	}()
+	chainStarted := NewTaskEvent(ctx, TaskEventChainStarted)
+	chainStarted.ChainID = chain.ID
+	publishTaskEventBestEffort(ctx, env.eventSink, chainStarted)
 
 	vars := map[string]any{
 		"input": input,
@@ -358,6 +375,14 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				}
 				taskCtx, cancel = context.WithTimeout(taskCtx, timeout)
 			}
+			taskCtx = WithTaskEventScope(taskCtx, TaskEventScope{
+				ChainID:     chain.ID,
+				TaskID:      currentTask.ID,
+				TaskHandler: currentTask.Handler.String(),
+				Retry:       retry,
+			})
+			stepStarted := NewTaskEvent(taskCtx, TaskEventStepStarted)
+			publishTaskEventBestEffort(taskCtx, env.eventSink, stepStarted)
 			reportErrAttempt, reportChangeAttempt, endAttempt := env.tracker.Start(
 				taskCtx,
 				"task_attempt",
@@ -422,10 +447,18 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			}
 			stack.RecordStep(step)
 
+			stepEvent := NewTaskEvent(taskCtx, TaskEventStepCompleted)
+			stepEvent.OutputType = outputType.String()
+			stepEvent.Transition = transitionEval
 			if taskErr != nil {
+				stepEvent.Kind = TaskEventStepFailed
+				stepEvent.Error = taskErr.Error()
+				stepEvent.OutputType = ""
+				publishTaskEventBestEffort(taskCtx, env.eventSink, stepEvent)
 				reportErrAttempt(taskErr)
 				continue
 			}
+			publishTaskEventBestEffort(taskCtx, env.eventSink, stepEvent)
 
 			// Report successful attempt
 			reportChangeAttempt(currentTask.ID, output)

@@ -7,8 +7,8 @@ import (
 	"math/rand"
 	"strings"
 
-	libmodelprovider "github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/contenox/contenox/libtracker"
+	libmodelprovider "github.com/contenox/contenox/runtime/internal/modelrepo"
 )
 
 func filterCandidates(
@@ -365,4 +365,3 @@ func selectRandomProvider(candidates []libmodelprovider.Provider) (libmodelprovi
 
 	return candidates[rand.Intn(len(candidates))], nil
 }
-

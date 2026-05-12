@@ -295,7 +295,7 @@ make build-contenox
 contenox init
 ```
 
-The release version string is **`runtime/version/version.txt`**, embedded at compile time through `version.Get()` and shown in `contenox --help`, `contenox --version`, and the root command `Short` line. Optional link-time override: `-ldflags "-X github.com/contenox/contenox/runtime/contenoxcli.Version=…"`.
+The release version string is **`runtime/version/version.txt`**, embedded at compile time through `version.Get()` and shown in `contenox --help`, `contenox --version`, and the root command `Short` line. Optional link-time override: `-ldflags "-X github.com/contenox/contenox/contenoxcli.Version=…"`.
 
 ### Check that CLI help still works
 

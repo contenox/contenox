@@ -28,6 +28,9 @@ var initRunChain string
 //go:embed chain-compact.json
 var initCompactChain string
 
+//go:embed chain-acp.json
+var initACPChain string
+
 // providerConfig holds the provider-specific values used during init.
 type providerConfig struct {
 	name         string
@@ -201,6 +204,9 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 		return err
 	}
 	if err := writeFile(filepath.Join(homeDir, "chain-compact.json"), initCompactChain); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(homeDir, "default-acp-chain.json"), initACPChain); err != nil {
 		return err
 	}
 	if err := writeEmbeddedHITLPolicies(homeDir, force); err != nil {

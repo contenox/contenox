@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"text/tabwriter"
 
-	"github.com/contenox/contenox/runtime/internal/clikv"
 	libdb "github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 )
@@ -20,6 +20,7 @@ var validConfigKeys = map[string]string{
 	"default-alt-provider": "Optional alt LLM provider type. Used by chains referencing {{var:alt_provider}}.",
 	"default-chain":        "Default chain file path (relative to .contenox/ or absolute)",
 	"hitl-policy-name":     "Active HITL policy file name (e.g. hitl-policy-strict.json). Empty = use hitl-policy-default.json.",
+	"telemetry-enabled":    "Enable writing telemetry logs to <data-dir>/telemetry.log (true/false)",
 }
 
 var configCmd = &cobra.Command{

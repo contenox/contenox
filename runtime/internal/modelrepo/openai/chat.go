@@ -20,9 +20,9 @@ type openAIChatCompletionResponse struct {
 }
 
 type openAIChatCompletionChoice struct {
-	Index        int                      `json:"index"`
-	Message      openAIChatCompletionMsg  `json:"message"`
-	FinishReason string                   `json:"finish_reason"`
+	Index        int                     `json:"index"`
+	Message      openAIChatCompletionMsg `json:"message"`
+	FinishReason string                  `json:"finish_reason"`
 }
 
 type openAIChatCompletionMsg struct {

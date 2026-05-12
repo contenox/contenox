@@ -43,6 +43,7 @@ type SimpleExec struct {
 	repo          llmrepo.ModelRepo
 	toolsProvider ToolsRepo
 	tracker       libtracker.ActivityTracker
+	eventSink     TaskEventSink
 }
 
 // NewExec creates a new SimpleExec instance
@@ -62,7 +63,21 @@ func NewExec(
 		toolsProvider: toolsProvider,
 		repo:          repo,
 		tracker:       tracker,
+		eventSink:     taskEventSinkFromContext(ctx),
 	}, nil
+}
+
+func (exe *SimpleExec) publishStepChunk(ctx context.Context, meta llmrepo.Meta, content, thinking string) {
+	if content == "" && thinking == "" {
+		return
+	}
+	event := NewTaskEvent(ctx, TaskEventStepChunk)
+	event.ModelName = meta.ModelName
+	event.ProviderType = meta.ProviderType
+	event.BackendID = meta.BackendID
+	event.Content = content
+	event.Thinking = thinking
+	publishTaskEventBestEffort(ctx, exe.eventSink, event)
 }
 
 // countTokensAndCheckLimit counts tokens for text and checks against context limit
@@ -179,6 +194,29 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 	}
 	if llmCall.Shift {
 		streamArgs = append(streamArgs, libmodelprovider.WithShift{})
+	}
+
+	if exe.eventSink.Enabled() {
+		messages := []libmodelprovider.Message{}
+		if systemInstruction != "" {
+			messages = append(messages, libmodelprovider.Message{Role: "system", Content: systemInstruction})
+		}
+		messages = append(messages, libmodelprovider.Message{Role: "user", Content: prompt})
+
+		stream, meta, err := exe.repo.Stream(ctx, req, messages, streamArgs...)
+		if err == nil {
+			var fullResponse strings.Builder
+			for parcel := range stream {
+				if parcel.Error != nil {
+					err := fmt.Errorf("prompt stream failed: %w", parcel.Error)
+					reportErr(err)
+					return "", err
+				}
+				fullResponse.WriteString(parcel.Data)
+				exe.publishStepChunk(ctx, meta, parcel.Data, parcel.Thinking)
+			}
+			return strings.TrimSpace(fullResponse.String()), nil
+		}
 	}
 
 	response, _, err := exe.promptWithRetry(ctx, reportChange, &llmCall, req, systemInstruction, prompt)
@@ -452,7 +490,22 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			// robust resolution: try direct key, then scan by Function.Name / ToolsName
 			resolutionInfo, found := resolveToolWithResolution(chainContext, toolCall.Function.Name)
 			if !found {
-				// No matching tool wiring for this call; skip it
+				errStr := fmt.Sprintf("tool %s not found", toolCall.Function.Name)
+				toolResultMessage := Message{
+					Role:       "tool",
+					Content:    fmt.Sprintf(`{"error": "%s"}`, errStr),
+					ToolCallID: toolCall.ID,
+					Timestamp:  time.Now().UTC(),
+				}
+				chatHistory.Messages = append(chatHistory.Messages, toolResultMessage)
+
+				if exe.eventSink.Enabled() {
+					toolEvent := NewTaskEvent(taskCtx, TaskEventToolCall)
+					toolEvent.ToolName = toolCall.Function.Name
+					toolEvent.ApprovalID = toolCall.ID
+					toolEvent.Error = errStr
+					publishTaskEventBestEffort(taskCtx, exe.eventSink, toolEvent)
+				}
 				continue
 			}
 
@@ -466,6 +519,23 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
 				taskErr = fmt.Errorf("failed to unmarshal tool arguments for %s: %w",
 					toolCall.Function.Name, err)
+
+				errStr := taskErr.Error()
+				toolResultMessage := Message{
+					Role:       "tool",
+					Content:    fmt.Sprintf(`{"error": "%s"}`, errStr),
+					ToolCallID: toolCall.ID,
+					Timestamp:  time.Now().UTC(),
+				}
+				chatHistory.Messages = append(chatHistory.Messages, toolResultMessage)
+
+				if exe.eventSink.Enabled() {
+					toolEvent := NewTaskEvent(taskCtx, TaskEventToolCall)
+					toolEvent.ToolName = toolCall.Function.Name
+					toolEvent.ApprovalID = toolCall.ID
+					toolEvent.Error = errStr
+					publishTaskEventBestEffort(taskCtx, exe.eventSink, toolEvent)
+				}
 				break
 			}
 
@@ -490,30 +560,54 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				}
 			}
 
+			toolReportErr, toolReportChange, toolEnd := exe.tracker.Start(
+				callCtx, "tool_call", toolCall.Function.Name,
+				"tools_name", resolutionInfo.ToolsName,
+				"call_id", toolCall.ID,
+			)
+
+			// Emit a "pending" event so ACP clients can show the tool card
+			// before execution starts (spec: pending → in_progress → completed).
+			if exe.eventSink.Enabled() {
+				pendingEvent := NewTaskEvent(callCtx, TaskEventToolCallPending)
+				pendingEvent.ToolName = toolCall.Function.Name
+				pendingEvent.ApprovalID = toolCall.ID
+				pendingEvent.ApprovalArgs = args
+				publishTaskEventBestEffort(callCtx, exe.eventSink, pendingEvent)
+			}
+
 			// `args` are the per-call dynamic tool arguments
 			result, resultType, err := exe.toolsProvider.Exec(callCtx, startingTime, args, chainContext.Debug, toolsCall)
 
+			toolExecErr := err
 			if err != nil {
+				toolReportErr(fmt.Errorf("tool %s execution failed: %w", toolCall.Function.Name, err))
 				result = fmt.Sprintf("tool %s execution failed: %s", toolCall.Function.Name, err)
 				err = nil
 				// Soft error instead! taskErr = fmt.Errorf("tool %s execution failed: %w", toolCall.Function.Name, err)
 				// break
+			} else {
+				toolReportChange("result_type", resultType.String())
 			}
+			toolEnd()
 
 			executedAny = true
 
 			// Normalize result to a string for the tool message content (if/else so `break` exits the for-loop, not a switch).
 			var content string
-			if resultType == DataTypeNil {
+			switch resultType {
+			case DataTypeNil:
 				content = "null"
-			} else if resultType == DataTypeAny || resultType == DataTypeJSON {
+			case DataTypeAny, DataTypeJSON:
 				b, marshalErr := json.Marshal(result)
 				if marshalErr != nil {
 					taskErr = fmt.Errorf("failed to marshal tool %s result: %w", toolCall.Function.Name, marshalErr)
-					break
+					toolExecErr = taskErr
+					content = fmt.Sprintf(`{"error": "%s"}`, taskErr.Error())
+				} else {
+					content = string(b)
 				}
-				content = string(b)
-			} else {
+			default:
 				content = fmt.Sprintf("%v", result)
 			}
 
@@ -524,6 +618,22 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				Timestamp:  time.Now().UTC(),
 			}
 			chatHistory.Messages = append(chatHistory.Messages, toolResultMessage)
+
+			if exe.eventSink.Enabled() {
+				toolEvent := NewTaskEvent(callCtx, TaskEventToolCall)
+				toolEvent.ToolName = toolCall.Function.Name
+				toolEvent.ApprovalID = toolCall.ID
+				toolEvent.ApprovalArgs = args
+				toolEvent.Content = content
+				if toolExecErr != nil {
+					toolEvent.Error = toolExecErr.Error()
+				}
+				publishTaskEventBestEffort(callCtx, exe.eventSink, toolEvent)
+			}
+
+			if taskErr != nil {
+				break
+			}
 		}
 
 		output = chatHistory
@@ -552,6 +662,12 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 					toolsCtx = WithToolsArgs(toolsCtx, currentTask.Tools.Name, policy)
 				}
 			}
+
+			toolReportErr, toolReportChange, toolEnd := exe.tracker.Start(
+				toolsCtx, "tool_call", currentTask.Tools.ToolName,
+				"tools_name", currentTask.Tools.Name,
+			)
+
 			output, outputType, transitionEval, taskErr = exe.toolsengine(
 				toolsCtx,
 				startingTime,
@@ -560,6 +676,54 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				chainContext.Debug,
 				currentTask.OutputTemplate,
 			)
+
+			toolExecErr := taskErr
+			if taskErr != nil {
+				toolReportErr(fmt.Errorf("tools task execution failed: %w", taskErr))
+			} else {
+				toolReportChange("result_type", outputType.String())
+			}
+			toolEnd()
+
+			if exe.eventSink.Enabled() {
+				toolEvent := NewTaskEvent(toolsCtx, TaskEventToolCall)
+
+				toolName := currentTask.Tools.Name
+				if currentTask.Tools.ToolName != "" {
+					toolName += "." + currentTask.Tools.ToolName
+				}
+				toolEvent.ToolName = toolName
+
+				if m, ok := input.(map[string]any); ok {
+					toolEvent.ApprovalArgs = m
+				} else if s, ok := input.(string); ok {
+					toolEvent.ApprovalArgs = map[string]any{"input": s}
+				}
+
+				var content string
+				switch outputType {
+				case DataTypeNil:
+					content = "null"
+				case DataTypeAny, DataTypeJSON:
+					if b, marshalErr := json.Marshal(output); marshalErr == nil {
+						content = string(b)
+					} else {
+						content = fmt.Sprintf("error: failed to marshal output: %v", marshalErr)
+						if toolExecErr == nil {
+							toolExecErr = marshalErr
+						}
+					}
+				default:
+					content = fmt.Sprintf("%v", output)
+				}
+
+				toolEvent.Content = content
+				if toolExecErr != nil {
+					toolEvent.Error = toolExecErr.Error()
+				}
+
+				publishTaskEventBestEffort(toolsCtx, exe.eventSink, toolEvent)
+			}
 		}
 
 	default:
@@ -766,6 +930,29 @@ func (exe *SimpleExec) executeLLM(
 		ModelNames:    modelNames,
 		ContextLength: totalTokens,
 		Tracker:       exe.tracker,
+	}
+
+	if exe.eventSink.Enabled() && len(tools) == 0 {
+		stream, meta, err := exe.repo.Stream(ctx, req, messagesC, chatArgs...)
+		if err == nil {
+			var streamedContent strings.Builder
+			var streamedThinking strings.Builder
+			for parcel := range stream {
+				if parcel.Error != nil {
+					return nil, DataTypeAny, "", fmt.Errorf("chat stream failed: %w", parcel.Error)
+				}
+				streamedContent.WriteString(parcel.Data)
+				streamedThinking.WriteString(parcel.Thinking)
+				exe.publishStepChunk(ctx, meta, parcel.Data, parcel.Thinking)
+			}
+			input.Messages = append(input.Messages, Message{
+				Role:      "assistant",
+				Content:   streamedContent.String(),
+				Thinking:  streamedThinking.String(),
+				Timestamp: time.Now().UTC(),
+			})
+			return input, DataTypeChatHistory, "", nil
+		}
 	}
 
 	resp, meta, err := exe.chatWithRetry(ctx, reportChange, llmCall, req, messagesC, chatArgs)

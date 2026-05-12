@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/modelrepo"
 )
 
 const defaultBaseURL = "https://api.openai.com/v1"

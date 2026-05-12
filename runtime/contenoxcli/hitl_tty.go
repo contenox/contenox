@@ -29,8 +29,6 @@ func NewCLIAskApproval(w io.Writer) localtools.AskApproval {
 		// draw the interactive prompt.
 		time.Sleep(250 * time.Millisecond)
 
-
-
 		// Try to open the controlling terminal directly so we can prompt even
 		// when stdin is a pipe.
 		tty, err := os.Open("/dev/tty")

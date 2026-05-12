@@ -3,18 +3,14 @@ package contenoxcli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/chatservice"
-	"github.com/contenox/contenox/runtime/runtimetypes"
+	"github.com/contenox/contenox/runtime/agentservice"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/contenox/contenox/runtime/vfsservice"
 )
@@ -48,9 +44,6 @@ type chatOpts struct {
 // execChat runs the full chat pipeline and returns any error encountered.
 // db is already opened by the caller (runChat in cli.go) so we share it here.
 func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsservice.Service, out, errW io.Writer) error {
-	// Component 1: use BuildEngine instead of the 150-line duplicate scaffold.
-	// This fixes MCP being broken for `contenox-runtime chat` (the old code used
-	// libbus.NewInMem() and never initialised mcpworker.Manager).
 	engine, err := BuildEngine(ctx, db, opts, vfs)
 	if err != nil {
 		return fmt.Errorf("failed to build engine: %w", err)
@@ -68,13 +61,9 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 	if err != nil {
 		return fmt.Errorf("invalid chain path: %w", err)
 	}
-	chainData, err := os.ReadFile(chainPathAbs)
+	chain, err := loadChainFromFile(chainPathAbs)
 	if err != nil {
-		return fmt.Errorf("failed to read chain file %q: %w", chainPathAbs, err)
-	}
-	var chain taskengine.TaskChainDefinition
-	if err := json.Unmarshal(chainData, &chain); err != nil {
-		return fmt.Errorf("failed to parse chain JSON: %w", err)
+		return err
 	}
 
 	// Determine input: from flag, positional args (+optional stdin), or stdin alone.
@@ -98,12 +87,23 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 	}
 
 	// ------------------------------------------------------------------------
-	// 11. Execute chain
+	// 11. Build agent and execute via service layer
 	// ------------------------------------------------------------------------
+	workspaceID := ResolveWorkspaceID(opts.ContenoxDir)
+
+	// Resolve session
+	sessionReportErr, _, sessionEnd := engine.Tracker.Start(ctx, "resolve", "active_session")
+	sessionID, err := ensureDefaultSession(ctx, db, workspaceID)
+	if err != nil {
+		sessionReportErr(err)
+		fmt.Fprintf(errW, "warning: failed to resolve active session — history will not be persisted: %v\n", err)
+		sessionID = ""
+	}
+	sessionEnd()
+
 	templateVars := map[string]string{
 		"model":    opts.EffectiveDefaultModel,
 		"provider": opts.EffectiveDefaultProvider,
-		"chain":    chain.ID,
 	}
 	if opts.EffectiveAltDefaultModel != "" {
 		templateVars["alt_model"] = opts.EffectiveAltDefaultModel
@@ -111,57 +111,13 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 	if opts.EffectiveAltDefaultProvider != "" {
 		templateVars["alt_provider"] = opts.EffectiveAltDefaultProvider
 	}
-	ctx = taskengine.WithTemplateVars(ctx, templateVars)
 
-	// Persistent Session Management
-	sessionReportErr, _, sessionEnd := engine.Tracker.Start(ctx, "resolve", "active_session")
-	sessionID, err := ensureDefaultSession(ctx, db, ResolveWorkspaceID(opts.ContenoxDir))
-	if err != nil {
-		sessionReportErr(err)
-		fmt.Fprintf(errW, "warning: failed to resolve active session — history will not be persisted: %v\n", err)
-		sessionID = ""
-	} else if sessionID != "" {
-		// INJECT: Tunnel the session ID down the call stack so MCP workers can multiplex connections
-		ctx = context.WithValue(ctx, runtimetypes.SessionIDContextKey, sessionID)
-	}
-	sessionEnd()
-	chatMgr := chatservice.NewManager(ResolveWorkspaceID(opts.ContenoxDir))
-
-	var history []taskengine.Message
-	if sessionID != "" {
-		loadReportErr, _, loadEnd := engine.Tracker.Start(ctx, "load", "chat_history", "sessionID", sessionID)
-		history, err = chatMgr.ListMessages(ctx, db.WithoutTransaction(), sessionID)
-		if err != nil {
-			loadReportErr(err)
-			fmt.Fprintf(errW, "warning: failed to load chat history for session %s — continuing without prior context: %v\n", sessionID, err)
-		}
-		loadEnd()
-	}
-
-	// Apply --trim: cap history sent to model to last N messages.
-	if opts.HistoryTrim > 0 && len(history) > opts.HistoryTrim {
-		history = history[len(history)-opts.HistoryTrim:]
-	}
-
-	// Inject AGENTS.md once at session start. Subsequent turns see it as a
-	// persisted message in history and don't reload it. If the user updates
-	// AGENTS.md, they start a new session to pick up the change.
-	if len(history) == 0 {
-		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
-			if content, path, ok := LoadAgentsMD(cwd); ok {
-				history = append([]taskengine.Message{AgentsMDMessage(content, path)}, history...)
-				if opts.EffectiveTracing {
-					slog.Info("Loaded AGENTS.md into session", "path", path, "bytes", len(content))
-				}
-			}
-		}
-	}
-
-	// Prepare Input
-	userMsg := taskengine.Message{Role: "user", Content: in, Timestamp: time.Now().UTC()}
-	chainInput := taskengine.ChatHistory{
-		Messages: append(history, userMsg),
-	}
+	// Create agent using new Engine-based Deps.
+	ag := agentservice.New(agentservice.Deps{
+		Engine:      engine,
+		DB:          db,
+		WorkspaceID: workspaceID,
+	})
 
 	if opts.EffectiveTracing {
 		slog.Info("Executing chain", "chain", chainPathAbs)
@@ -172,31 +128,17 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 	stopTrace := startTraceStream(ctx, opts, engine, errW)
 	defer stopTrace()
 
-	output, outputType, stateUnits, err := engine.TaskService.Execute(ctx, &chain, chainInput, taskengine.DataTypeChatHistory)
+	agentsMD, agentsMDSource := loadAgentsMDFromCwd()
 
-	if sessionID != "" {
-		synthesized := taskengine.SynthesizeHistory(chainInput.Messages, stateUnits, err)
-		cleanCtx := context.WithoutCancel(ctx)
-		persistReportErr, persistReportChange, persistEnd := engine.Tracker.Start(cleanCtx, "persist", "chat_history", "sessionID", sessionID)
-		exec, commit, release, txErr := db.WithTransaction(cleanCtx)
-		if txErr != nil {
-			persistReportErr(fmt.Errorf("start transaction: %w", txErr))
-			fmt.Fprintf(errW, "warning: chat history not saved (transaction failed): %v\n", txErr)
-		} else {
-			defer release()
-			if persistErr := chatMgr.PersistDiff(cleanCtx, exec, sessionID, synthesized); persistErr != nil {
-				persistReportErr(fmt.Errorf("persist diff: %w", persistErr))
-				fmt.Fprintf(errW, "warning: chat history not saved: %v\n", persistErr)
-			} else if commitErr := commit(cleanCtx); commitErr != nil {
-				persistReportErr(fmt.Errorf("commit: %w", commitErr))
-				fmt.Fprintf(errW, "warning: chat history not saved (commit failed): %v\n", commitErr)
-			} else {
-				persistReportChange(sessionID, len(synthesized))
-			}
-		}
-		persistEnd()
-	}
-
+	resp, err := ag.Prompt(ctx, agentservice.PromptRequest{
+		SessionID:      sessionID,
+		Input:          in,
+		Chain:          chain,
+		TemplateVars:   templateVars,
+		HistoryTrim:    opts.HistoryTrim,
+		AgentsMD:       agentsMD,
+		AgentsMDSource: agentsMDSource,
+	})
 	if err != nil {
 		if isModelResolverFailure(err) {
 			PrintSetupIssues(errW, engine.SetupCheck)
@@ -205,10 +147,10 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 	}
 
 	// ------------------------------------------------------------------------
-	// 12. Print results
+	// 12. Print results (CLI-specific output formatting)
 	// ------------------------------------------------------------------------
 	if opts.EffectiveThink {
-		if hist, ok := output.(taskengine.ChatHistory); ok {
+		if hist, ok := resp.Output.(taskengine.ChatHistory); ok {
 			for _, msg := range hist.Messages {
 				if msg.Role == "assistant" && msg.Thinking != "" {
 					fmt.Fprintln(errW, "\n💭 Reasoning:")
@@ -217,11 +159,11 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 			}
 		}
 	}
-	printRelevantOutput(out, output, outputType, opts.EffectiveRaw)
+	printRelevantOutput(out, resp.Output, resp.OutputType, opts.EffectiveRaw)
 
 	// --last N: print last N non-system messages from the updated history.
 	if opts.LastN > 0 {
-		if hist, ok := output.(taskengine.ChatHistory); ok {
+		if hist, ok := resp.Output.(taskengine.ChatHistory); ok {
 			var visible []taskengine.Message
 			for _, m := range hist.Messages {
 				if m.Role != "system" && m.Role != "tool" && len(m.CallTools) == 0 {
@@ -240,9 +182,9 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsser
 			}
 		}
 	}
-	if opts.EffectiveSteps && len(stateUnits) > 0 {
+	if opts.EffectiveSteps && len(resp.Steps) > 0 {
 		fmt.Fprintln(errW, "\n📋 Steps:")
-		for i, u := range stateUnits {
+		for i, u := range resp.Steps {
 			fmt.Fprintf(errW, "  %d. %s (%s) %s %s\n", i+1, u.TaskID, u.TaskHandler, formatDuration(u.Duration), u.Transition)
 		}
 	}

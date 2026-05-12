@@ -3,8 +3,8 @@ package setupcheck
 import (
 	"context"
 
-	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/statetype"
 )

@@ -16,6 +16,7 @@ import (
 
 	"github.com/contenox/contenox/libdbexec"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/agentservice"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/taskengine"
 	"github.com/contenox/contenox/runtime/vfsservice"
@@ -122,6 +123,12 @@ Examples:
 		}
 		defer db.Close()
 
+		closeLogs, err := setupTelemetryLogging(dbCtx, runtimetypes.New(db.WithoutTransaction()), contenoxDir)
+		if err != nil {
+			slog.Warn("Failed to setup telemetry logging", "error", err)
+		}
+		defer closeLogs()
+
 		// Build chatOpts from flags and SQLite KV defaults.
 		o := buildRunOpts(cmd, db, contenoxDir)
 		o.EffectiveDB = dbPathAbs
@@ -136,26 +143,20 @@ Examples:
 			return err
 		}
 
-		// Load chain
+		// Resolve chain path
 		chainPathAbs, err := filepath.Abs(chainPath)
 		if err != nil {
 			return fmt.Errorf("invalid chain path: %w", err)
 		}
-		chainData, err := os.ReadFile(chainPathAbs)
+		chain, err := loadChainFromFile(chainPathAbs)
 		if err != nil {
-			return fmt.Errorf("failed to read chain %q: %w", chainPathAbs, err)
+			return err
 		}
 
-		var chain taskengine.TaskChainDefinition
-		if err := json.Unmarshal(chainData, &chain); err != nil {
-			return fmt.Errorf("failed to parse chain JSON: %w", err)
-		}
-
-		// Set template vars
+		// Template vars
 		templateVars := map[string]string{
 			"model":    o.EffectiveDefaultModel,
 			"provider": o.EffectiveDefaultProvider,
-			"chain":    chain.ID,
 		}
 		if o.EffectiveAltDefaultModel != "" {
 			templateVars["alt_model"] = o.EffectiveAltDefaultModel
@@ -163,13 +164,10 @@ Examples:
 		if o.EffectiveAltDefaultProvider != "" {
 			templateVars["alt_provider"] = o.EffectiveAltDefaultProvider
 		}
-		execCtx := taskengine.WithTemplateVars(
-			libtracker.WithNewRequestID(ctx),
-			templateVars,
-		)
 
 		// Set timeout
 		timeout, _ := flags.GetDuration("timeout")
+		execCtx := libtracker.WithNewRequestID(ctx)
 		timeoutCtx, timeoutCancel := context.WithTimeout(execCtx, timeout)
 		defer timeoutCancel()
 
@@ -191,7 +189,21 @@ Examples:
 		stopTrace := startTraceStream(execCtx, o, engine, cmd.ErrOrStderr())
 		defer stopTrace()
 
-		output, outputType, stateUnits, err := engine.TaskService.Execute(execCtx, &chain, inputVal, inputType)
+		// Create agent and execute via service layer (stateless — no session).
+		workspaceID := ResolveWorkspaceID(o.ContenoxDir)
+		ag := agentservice.New(agentservice.Deps{
+			Engine:      engine,
+			DB:          db,
+			WorkspaceID: workspaceID,
+		})
+
+		resp, err := ag.Prompt(execCtx, agentservice.PromptRequest{
+			Input:        rawInput,
+			InputValue:   inputVal,
+			InputType:    inputType,
+			Chain:        chain,
+			TemplateVars: templateVars,
+		})
 		if err != nil {
 			if isModelResolverFailure(err) {
 				PrintSetupIssues(cmd.ErrOrStderr(), engine.SetupCheck)
@@ -202,7 +214,7 @@ Examples:
 		effectiveRaw, _ := flags.GetBool("raw")
 		effectiveSteps, _ := flags.GetBool("steps")
 		if effectiveThink {
-			if hist, ok := output.(taskengine.ChatHistory); ok {
+			if hist, ok := resp.Output.(taskengine.ChatHistory); ok {
 				for _, msg := range hist.Messages {
 					if msg.Role == "assistant" && msg.Thinking != "" {
 						fmt.Fprintln(cmd.ErrOrStderr(), "\n💭 Reasoning:")
@@ -211,10 +223,10 @@ Examples:
 				}
 			}
 		}
-		printRelevantOutput(cmd.OutOrStdout(), output, outputType, effectiveRaw)
-		if effectiveSteps && len(stateUnits) > 0 {
+		printRelevantOutput(cmd.OutOrStdout(), resp.Output, resp.OutputType, effectiveRaw)
+		if effectiveSteps && len(resp.Steps) > 0 {
 			fmt.Fprintln(cmd.ErrOrStderr(), "\n📋 Steps:")
-			for i, u := range stateUnits {
+			for i, u := range resp.Steps {
 				fmt.Fprintf(cmd.ErrOrStderr(), "  %d. %s (%s) %s %s\n", i+1, u.TaskID, u.TaskHandler, formatDuration(u.Duration), u.Transition)
 			}
 		}

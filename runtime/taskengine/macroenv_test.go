@@ -103,8 +103,6 @@ func stubRepo() *stubToolsRepo {
 	}}
 }
 
-// ── toolservice:tools ──────────────────────────────────────────────────────────
-
 func TestUnit_MacroEnv_Tools_NoAllowlist(t *testing.T) {
 	// nil allowlist = field absent = all tools (backward compat)
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools}}", nil)
@@ -163,8 +161,6 @@ func TestUnit_MacroEnv_Tools_AllowlistMiss(t *testing.T) {
 	}
 }
 
-// ── toolservice:list ───────────────────────────────────────────────────────────
-
 func TestUnit_MacroEnv_List_WithAllowlist(t *testing.T) {
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:list}}", []string{"tools_a"})
 	var m map[string][]string
@@ -178,8 +174,6 @@ func TestUnit_MacroEnv_List_WithAllowlist(t *testing.T) {
 		t.Errorf("tools_b should NOT be in map")
 	}
 }
-
-// ── toolservice:tools ──────────────────────────────────────────────────────────
 
 func TestUnit_MacroEnv_Tools_Allowed(t *testing.T) {
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools tools_a}}", []string{"tools_a"})
@@ -220,8 +214,6 @@ func keys(m map[string][]string) []string {
 	}
 	return ks
 }
-
-// ── auto-injected TOOL PREFERENCE ──────────────────────────────────────────────
 
 // sysInstrEnv captures the expanded system_instruction from the first task.
 type sysInstrEnv struct{}

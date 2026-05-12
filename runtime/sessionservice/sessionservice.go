@@ -63,7 +63,6 @@ func New(db libdb.DBManager, workspaceID string) Service {
 	return &service{db: db, workspaceID: workspaceID}
 }
 
-
 func (s *service) New(ctx context.Context, identity, name string) (string, error) {
 	if name == "" {
 		name = "session-" + uuid.New().String()[:8]

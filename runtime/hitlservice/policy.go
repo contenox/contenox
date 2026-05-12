@@ -27,9 +27,9 @@ const (
 // unified diff of what would change.
 type ApprovalRequest struct {
 	ToolsName string
-	ToolName string
-	Args     map[string]any
-	Diff     string
+	ToolName  string
+	Args      map[string]any
+	Diff      string
 }
 
 // ConditionOp is the comparison operator for a rule condition.
@@ -56,13 +56,13 @@ type Condition struct {
 // When contains zero conditions the name match alone is sufficient.
 // All conditions in When must hold for the rule to match (AND semantics).
 type Rule struct {
-	Tools      string      `json:"tools"`
-	Tool      string      `json:"tool"`
-	When      []Condition `json:"when,omitempty"`
-	Action    Action      `json:"action"`
+	Tools  string      `json:"tools"`
+	Tool   string      `json:"tool"`
+	When   []Condition `json:"when,omitempty"`
+	Action Action      `json:"action"`
 	// TimeoutS is the number of seconds to wait for a human response when Action is
 	// ActionApprove. Zero means no timeout (block indefinitely until ctx is cancelled).
-	TimeoutS  int    `json:"timeout_s,omitempty"`
+	TimeoutS int `json:"timeout_s,omitempty"`
 	// OnTimeout is the fallback action when the approval window expires.
 	// Only "deny" and "approve" are valid (allow would silently bypass approval).
 	OnTimeout Action `json:"on_timeout,omitempty"`
@@ -256,6 +256,8 @@ func defaultPolicy() *Policy {
 			{Tools: "local_fs", Tool: "write_file", Action: ActionApprove},
 			{Tools: "local_fs", Tool: "sed", Action: ActionApprove},
 			{Tools: "local_shell", Tool: "local_shell", Action: ActionApprove},
+			{Tools: "acp_fs", Tool: "write_file", Action: ActionApprove},
+			{Tools: "acp_terminal", Tool: "exec", Action: ActionApprove},
 			{Tools: "webtools", Tool: "web_post", Action: ActionApprove},
 			{Tools: "webtools", Tool: "web_put", Action: ActionApprove},
 			{Tools: "webtools", Tool: "web_patch", Action: ActionApprove},

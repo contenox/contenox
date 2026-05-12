@@ -369,6 +369,13 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 	return out, taskengine.DataTypeString, nil
 }
 
+type FsWriteResult struct {
+	Path    string `json:"path"`
+	OldText string `json:"old_text"`
+	NewText string `json:"new_text"`
+	Written bool   `json:"written"`
+}
+
 func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -391,6 +398,11 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 		return denial, taskengine.DataTypeString, nil
 	}
 
+	oldBytes, readErr := os.ReadFile(absPath)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read existing file before write: %w", readErr)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(absPath), 0755); err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to create directories: %w", err)
 	}
@@ -399,7 +411,12 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to write file: %w", err)
 	}
 
-	return "ok", taskengine.DataTypeString, nil
+	return FsWriteResult{
+		Path:    absPath,
+		OldText: string(oldBytes),
+		NewText: content,
+		Written: true,
+	}, taskengine.DataTypeJSON, nil
 }
 
 func (h *LocalFSTools) listDir(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {

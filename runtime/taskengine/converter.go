@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-
 // ConvertToType converts a value to the specified DataType
 func ConvertToType(value interface{}, dataType DataType) (interface{}, error) {
 	switch dataType {
@@ -162,4 +161,8 @@ func convertToJSON(value interface{}) (interface{}, error) {
 		}
 		return result, nil
 	}
+}
+
+func NormalizeFinalChainOutput(value any, dt DataType) (any, DataType, error) {
+	return NormalizeDataType(value, dt)
 }

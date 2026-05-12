@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/contenox/contenox/libtracker"
-	ollamamodel "github.com/ollama/ollama/types/model"
+	"github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/ollama/ollama/api"
+	ollamamodel "github.com/ollama/ollama/types/model"
 )
 
 const displayNameMetaKey = "display_name"

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/clikv"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/version"
 	"github.com/contenox/contenox/runtime/vfsservice"
@@ -20,7 +23,7 @@ import (
 )
 
 // Version is an optional link-time override via
-// -ldflags "-X github.com/contenox/contenox/runtime/contenoxcli.Version=…"
+// -ldflags "-X github.com/contenox/contenox/contenoxcli.Version=…"
 // (e.g. distro packagers). When empty, CLIVersion uses runtime/version/version.txt.
 var Version string
 
@@ -36,8 +39,6 @@ func cliVersion() string {
 	return version.Get()
 }
 
-const localTenantID = "00000000-0000-0000-0000-000000000001"
-
 const DefaultWorkspaceID = "00000000-0000-0000-0000-000000000002"
 
 const (
@@ -48,7 +49,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -296,6 +297,7 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(modelCmd)
 	rootCmd.AddCommand(stateCmd)
+	rootCmd.AddCommand(acpCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
@@ -305,6 +307,26 @@ func init() {
 	chatCmd.Flags().Int("last", 0, "Print last N user/assistant turns after the reply (0 = only print new reply)")
 	chatCmd.Flags().Bool("auto", false, "Autonomous mode: disable HITL approval prompts. Default is HITL on; tools route through the active hitl-policy. Use --auto only in trusted/scripted contexts.")
 
+}
+
+// setupTelemetryLogging checks if the user has enabled file logging.
+// If enabled, it sets up slog to write to both os.Stderr and ~/.contenox/telemetry.log.
+// Returns a cleanup function to close the file.
+func setupTelemetryLogging(ctx context.Context, store runtimetypes.Store, contenoxDir string) (func(), error) {
+	enabledStr := clikv.Read(ctx, store, "telemetry-enabled")
+	if enabledStr != "true" {
+		return func() {}, nil
+	}
+
+	logPath := filepath.Join(contenoxDir, "telemetry.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return func() {}, fmt.Errorf("failed to open telemetry log: %w", err)
+	}
+
+	mw := io.MultiWriter(os.Stderr, f)
+	slog.SetDefault(slog.New(slog.NewTextHandler(mw, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	return func() { f.Close() }, nil
 }
 
 // ResolveContenoxDir finds the closest .contenox directory by walking up from the
@@ -404,6 +426,13 @@ func runChat(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer db.Close()
+
+	closeLogs, err := setupTelemetryLogging(dbCtx, runtimetypes.New(db.WithoutTransaction()), contenoxDir)
+	if err != nil {
+		slog.Warn("Failed to setup telemetry logging", "error", err)
+	}
+	defer closeLogs()
+
 	vfs := vfsservice.NewLocalFS(contenoxDir)
 	store := runtimetypes.New(db.WithoutTransaction())
 

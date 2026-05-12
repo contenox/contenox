@@ -33,8 +33,12 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res != "ok" || dataType != taskengine.DataTypeString {
-			t.Errorf("unexpected result: %v, %v", res, dataType)
+		fw, ok := res.(localtools.FsWriteResult)
+		if !ok || dataType != taskengine.DataTypeJSON {
+			t.Errorf("unexpected result: %v (%T), %v", res, res, dataType)
+		}
+		if !fw.Written || fw.NewText != "hello world\nline 2\nline 3" {
+			t.Errorf("unexpected FsWriteResult: %+v", fw)
 		}
 	})
 

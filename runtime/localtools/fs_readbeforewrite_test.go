@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -51,7 +50,11 @@ func TestUnit_ReadBeforeWrite_AllowedAfterRead(t *testing.T) {
 
 	res, err := execTool(t, ctx, tools, "write_file", map[string]any{"path": "a.txt", "content": "updated"})
 	require.NoError(t, err)
-	require.Equal(t, "ok", res)
+	fw, ok := res.(localtools.FsWriteResult)
+	require.True(t, ok, "expected FsWriteResult, got %T", res)
+	require.True(t, fw.Written)
+	require.Equal(t, "original", fw.OldText)
+	require.Equal(t, "updated", fw.NewText)
 
 	got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
 	require.NoError(t, err)
@@ -79,7 +82,11 @@ func TestUnit_ReadBeforeWrite_NewFileAllowed(t *testing.T) {
 
 	res, err := execTool(t, ctx, tools, "write_file", map[string]any{"path": "new.txt", "content": "fresh"})
 	require.NoError(t, err)
-	require.Equal(t, "ok", res, "creating a new file should not require a prior read")
+	fw, ok := res.(localtools.FsWriteResult)
+	require.True(t, ok, "creating a new file should not require a prior read; got %T", res)
+	require.True(t, fw.Written)
+	require.Empty(t, fw.OldText)
+	require.Equal(t, "fresh", fw.NewText)
 
 	got, err := os.ReadFile(filepath.Join(dir, "new.txt"))
 	require.NoError(t, err)
@@ -143,7 +150,9 @@ func TestUnit_ReadBeforeWrite_BypassWithoutSession(t *testing.T) {
 
 	res, err := execTool(t, ctx, tools, "write_file", map[string]any{"path": "a.txt", "content": "updated"})
 	require.NoError(t, err)
-	require.Equal(t, "ok", res, "without a session ID the guard must fall open")
+	fw, ok := res.(localtools.FsWriteResult)
+	require.True(t, ok, "without a session ID the guard must fall open; got %T", res)
+	require.True(t, fw.Written)
 }
 
 func TestUnit_ReadBeforeWrite_NilDBBypasses(t *testing.T) {
@@ -155,7 +164,9 @@ func TestUnit_ReadBeforeWrite_NilDBBypasses(t *testing.T) {
 
 	res, err := execTool(t, ctx, tools, "write_file", map[string]any{"path": "a.txt", "content": "updated"})
 	require.NoError(t, err)
-	require.Equal(t, "ok", res, "nil db must disable the guard so existing tests / callers still work")
+	fw, ok := res.(localtools.FsWriteResult)
+	require.True(t, ok, "nil db must disable the guard; got %T", res)
+	require.True(t, fw.Written)
 }
 
 func TestUnit_ReadBeforeWrite_PathNormalization(t *testing.T) {
@@ -168,13 +179,9 @@ func TestUnit_ReadBeforeWrite_PathNormalization(t *testing.T) {
 	absPath := filepath.Join(dir, "a.txt")
 	res, err := execTool(t, ctx, tools, "write_file", map[string]any{"path": absPath, "content": "updated"})
 	require.NoError(t, err)
-	require.Equal(t, "ok", res, "absolute and relative paths must canonicalize to the same key")
-	require.False(t, strings.Contains(asString(res), "without reading it first"))
-}
-
-func asString(v any) string {
-	s, _ := v.(string)
-	return s
+	fw, ok := res.(localtools.FsWriteResult)
+	require.True(t, ok, "absolute and relative paths must canonicalize to the same key; got %T", res)
+	require.True(t, fw.Written)
 }
 
 func TestUnit_ReadBeforeWrite_SessionScoping(t *testing.T) {

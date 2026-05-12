@@ -10,18 +10,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-
 // TaskHandler defines how task outputs are processed and interpreted.
 type TaskHandler string
 
 const (
-	HandlePromptToString TaskHandler = "prompt_to_string"
-	HandlePromptToInt    TaskHandler = "prompt_to_int"
-	HandleRaiseError     TaskHandler = "raise_error"
-	HandleChatCompletion TaskHandler = "chat_completion"
+	HandlePromptToString   TaskHandler = "prompt_to_string"
+	HandlePromptToInt      TaskHandler = "prompt_to_int"
+	HandleRaiseError       TaskHandler = "raise_error"
+	HandleChatCompletion   TaskHandler = "chat_completion"
 	HandleExecuteToolCalls TaskHandler = "execute_tool_calls"
-	HandleNoop TaskHandler = "noop"
-	HandleTools TaskHandler = "tools"
+	HandleNoop             TaskHandler = "noop"
+	HandleTools            TaskHandler = "tools"
 )
 
 func (t TaskHandler) String() string {
@@ -197,11 +196,11 @@ func ToOperatorTerm(s string) (OperatorTerm, error) {
 
 // LLMExecutionConfig represents configuration for executing tasks using Large Language Models (LLMs).
 type LLMExecutionConfig struct {
-	Model            string   `yaml:"model" json:"model" example:"mistral:instruct"`
-	Models           []string `yaml:"models,omitempty" json:"models,omitempty" example:"[\"gpt-4\", \"gpt-3.5-turbo\"]"`
-	Provider         string   `yaml:"provider,omitempty" json:"provider,omitempty" example:"ollama"`
-	Providers        []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
-	Temperature      float32  `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
+	Model       string   `yaml:"model" json:"model" example:"mistral:instruct"`
+	Models      []string `yaml:"models,omitempty" json:"models,omitempty" example:"[\"gpt-4\", \"gpt-3.5-turbo\"]"`
+	Provider    string   `yaml:"provider,omitempty" json:"provider,omitempty" example:"ollama"`
+	Providers   []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
+	Temperature float32  `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
 	// Tools is the allowlist of tools names this task may invoke.
 	//
 	// Patterns supported:
@@ -224,7 +223,7 @@ type LLMExecutionConfig struct {
 	//     local_shell:
 	//       _allowed_commands: "git,go,ls,cat,grep"
 	//       _denied_commands:  "sudo,su,dd,mkfs"
-	ToolsPolicies     map[string]map[string]string `yaml:"tools_policies,omitempty" json:"tools_policies,omitempty"`
+	ToolsPolicies    map[string]map[string]string `yaml:"tools_policies,omitempty" json:"tools_policies,omitempty"`
 	PassClientsTools bool                         `yaml:"pass_clients_tools" json:"pass_clients_tools"`
 	// Think enables reasoning mode for supported models.
 	// Accepts "true"/"false" or "high"/"medium"/"low". Empty = provider default (off).
@@ -426,4 +425,3 @@ type FunctionCallObject struct {
 	Name      string `json:"name" example:"get_current_weather"`
 	Arguments any    `json:"arguments"`
 }
-

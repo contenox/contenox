@@ -3,8 +3,8 @@ package stateservice
 import (
 	"context"
 
-	"github.com/contenox/contenox/runtime/internal/setupcheck"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/setupcheck"
 	"github.com/contenox/contenox/runtime/statetype"
 )
 

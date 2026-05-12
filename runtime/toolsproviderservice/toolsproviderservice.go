@@ -242,4 +242,3 @@ func isValidSpecSource(s string) bool {
 		strings.HasPrefix(s, "https://") ||
 		strings.HasPrefix(s, "file://")
 }
-

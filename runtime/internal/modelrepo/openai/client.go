@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
 	"github.com/contenox/contenox/libtracker"
+	"github.com/contenox/contenox/runtime/internal/modelrepo"
 )
 
 type openAIClient struct {

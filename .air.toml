@@ -11,7 +11,7 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-cmd = "go build -ldflags \"-X github.com/contenox/contenox/runtime/contenoxcli.Version=dev\" -o ./bin/contenox ./cmd/contenox && mkdir -p $HOME/.local/bin && ln -sf $(pwd)/bin/contenox $HOME/.local/bin/contenox"
+cmd = "go build -ldflags \"-X github.com/contenox/contenox/contenoxcli.Version=dev\" -o ./bin/contenox ./cmd/contenox && mkdir -p $HOME/.local/bin && ln -sf $(pwd)/bin/contenox $HOME/.local/bin/contenox"
 entrypoint = ["true"]
 include_ext = ["go", "json"]
 exclude_dir = [

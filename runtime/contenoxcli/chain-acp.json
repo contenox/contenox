@@ -1,0 +1,157 @@
+{
+    "id": "chain-acp",
+    "description": "Default ACP chain for editor integration (Zed, etc). Tools are provided by the editor via MCP servers registered at session setup. Two-stage agentic loop: main (10 rounds) → recovery (10 rounds) → summarise_failure.",
+    "tasks": [
+        {
+            "id": "acp_chat",
+            "description": "Agentic chat loop — model may call editor-provided tools (transition tool-call) or finish the turn (transition default → end).",
+            "handler": "chat_completion",
+            "system_instruction": "You are Contenox, a coding assistant running inside the user's editor.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}",
+                "shift": true,
+                "pass_clients_tools": false,
+                "tools": [
+                    "*"
+                ],
+                "retry_policy": {
+                    "max_attempts": 4,
+                    "initial_backoff": "1s",
+                    "max_backoff": "30s",
+                    "jitter": 0.25,
+                    "rate_limit_min_wait": "10s"
+                }
+            },
+            "transition": {
+                "on_failure": "recovery_chat",
+                "branches": [
+                    {
+                        "operator": "edge_traversed_at_least",
+                        "edge": "acp_chat->run_tools",
+                        "when": "10",
+                        "goto": "recovery_chat"
+                    },
+                    {
+                        "operator": "equals",
+                        "when": "tool-call",
+                        "goto": "run_tools"
+                    },
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "end"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "run_tools",
+            "description": "Execute tool calls from the last message and append results to chat history.",
+            "handler": "execute_tool_calls",
+            "input_var": "acp_chat",
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "acp_chat"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "recovery_chat",
+            "description": "Recovery agentic loop — picks up the full chat history from the main loop with a fresh system instruction noting the prior agent got stuck. Has its own tool access and 10-round budget.",
+            "handler": "chat_completion",
+            "input_var": "acp_chat",
+            "system_instruction": "You are Contenox, a coding assistant running inside the user's editor.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used 10 of 20 tool-call rounds on this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}",
+                "shift": true,
+                "pass_clients_tools": false,
+                "tools": [
+                    "*"
+                ],
+                "retry_policy": {
+                    "max_attempts": 4,
+                    "initial_backoff": "1s",
+                    "max_backoff": "30s",
+                    "jitter": 0.25,
+                    "rate_limit_min_wait": "10s"
+                }
+            },
+            "transition": {
+                "on_failure": "summarise_failure",
+                "branches": [
+                    {
+                        "operator": "edge_traversed_at_least",
+                        "edge": "recovery_chat->recovery_tools",
+                        "when": "10",
+                        "goto": "summarise_failure"
+                    },
+                    {
+                        "operator": "equals",
+                        "when": "tool-call",
+                        "goto": "recovery_tools"
+                    },
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "end"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "recovery_tools",
+            "description": "Execute tool calls from the recovery agent and append results to chat history.",
+            "handler": "execute_tool_calls",
+            "input_var": "recovery_chat",
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "recovery_chat"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "summarise_failure",
+            "description": "Final safety net. Reached when both the main and recovery agentic loops exceeded their budgets. No tools — tells the user what was tried and what would unblock the work.",
+            "handler": "chat_completion",
+            "system_instruction": "You are Contenox, a coding assistant running inside the user's editor.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.",
+            "input_var": "recovery_chat",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}",
+                "shift": true,
+                "pass_clients_tools": false,
+                "tools": [],
+                "max_tokens": 16384,
+                "retry_policy": {
+                    "max_attempts": 3,
+                    "initial_backoff": "1s",
+                    "max_backoff": "10s",
+                    "jitter": 0.25
+                }
+            },
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    {
+                        "operator": "default",
+                        "when": "",
+                        "goto": "end"
+                    }
+                ]
+            }
+        }
+    ],
+    "token_limit": 131072
+}

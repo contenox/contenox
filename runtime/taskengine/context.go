@@ -3,6 +3,7 @@ package taskengine
 import (
 	"context"
 	"fmt"
+	"maps"
 )
 
 type templateVarsKey struct{}
@@ -35,13 +36,9 @@ func TemplateVarsFromContext(ctx context.Context) (map[string]string, error) {
 func MergeTemplateVars(ctx context.Context, overlay map[string]string) context.Context {
 	base := make(map[string]string)
 	if existing, err := TemplateVarsFromContext(ctx); err == nil && existing != nil {
-		for k, v := range existing {
-			base[k] = v
-		}
+		maps.Copy(base, existing)
 	}
-	for k, v := range overlay {
-		base[k] = v
-	}
+	maps.Copy(base, overlay)
 	return WithTemplateVars(ctx, base)
 }
 

@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	defaultNumCtx   = 4096
-	defaultBatch    = 512
+	defaultNumCtx    = 4096
+	defaultBatch     = 512
 	defaultMaxTokens = 2048
 )
 
@@ -115,10 +115,10 @@ func generate(ctx context.Context, modelPath, prompt string, cfg *modelrepo.Chat
 	}
 
 	samplerParams := llama.SamplingParams{
-		TopK:  40,
-		TopP:  0.9,
-		MinP:  0.05,
-		Temp:  0.8,
+		TopK: 40,
+		TopP: 0.9,
+		MinP: 0.05,
+		Temp: 0.8,
 	}
 	if cfg != nil && cfg.Temperature != nil {
 		samplerParams.Temp = float32(*cfg.Temperature)

@@ -13,13 +13,13 @@ type TasksEnvService interface {
 
 type tasksEnvService struct {
 	environmentExec taskengine.EnvExecutor
-	toolsRegistry    taskengine.ToolsRegistry
+	toolsRegistry   taskengine.ToolsRegistry
 }
 
 func NewTasksEnv(ctx context.Context, environmentExec taskengine.EnvExecutor, toolsRegistry taskengine.ToolsRegistry) TasksEnvService {
 	return &tasksEnvService{
 		environmentExec: environmentExec,
-		toolsRegistry:    toolsRegistry,
+		toolsRegistry:   toolsRegistry,
 	}
 }
 
