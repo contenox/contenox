@@ -63,10 +63,6 @@ func (t *Transport) acpSessionForContenoxID(contenoxSessionID string) (libacp.Se
 	return sid, ok
 }
 
-func (t *Transport) Authenticate(_ context.Context, _ libacp.AuthenticateRequest) (libacp.AuthenticateResponse, error) {
-	return libacp.AuthenticateResponse{}, libacp.MethodNotFound(libacp.MethodAuthenticate)
-}
-
 func (t *Transport) Cancel(_ context.Context, _ libacp.CancelNotification) error {
 	return nil
 }

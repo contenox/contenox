@@ -13,9 +13,14 @@ type FileSystemCapabilities struct {
 	WriteTextFile bool `json:"writeTextFile,omitempty"`
 }
 
+type AuthCapabilities struct {
+	Terminal bool `json:"terminal,omitempty"`
+}
+
 type ClientCapabilities struct {
 	FS       FileSystemCapabilities `json:"fs,omitempty"`
 	Terminal bool                   `json:"terminal,omitempty"`
+	Auth     AuthCapabilities       `json:"auth,omitempty"`
 	Meta     json.RawMessage        `json:"_meta,omitempty"`
 }
 
@@ -44,10 +49,13 @@ type AgentCapabilities struct {
 }
 
 type AuthMethod struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Meta        json.RawMessage `json:"_meta,omitempty"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Type        string            `json:"type,omitempty"`
+	Args        []string          `json:"args,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	Meta        json.RawMessage   `json:"_meta,omitempty"`
 }
 
 type InitializeRequest struct {

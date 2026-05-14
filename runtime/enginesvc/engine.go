@@ -214,11 +214,14 @@ func buildTools(engineCtx context.Context, cfg Config, db libdbexec.DBManager, t
 		if cfg.AskApproval == nil {
 			return nil, nil, nil, fmt.Errorf("enginesvc: EnableHITL is true but AskApproval callback is nil")
 		}
-		hitlVFS := cfg.VFS
-		if cfg.FallbackVFS != nil {
-			hitlVFS = newLayered(cfg.VFS, cfg.FallbackVFS)
+		hitlSvc := cfg.HITLService
+		if hitlSvc == nil {
+			hitlVFS := cfg.VFS
+			if cfg.FallbackVFS != nil {
+				hitlVFS = newLayered(cfg.VFS, cfg.FallbackVFS)
+			}
+			hitlSvc = hitlservice.New(hitlVFS, store, tracker)
 		}
-		hitlSvc := hitlservice.New(hitlVFS, store, tracker)
 		toolsRepo = localtools.NewHITLWrapper(toolsRepo, cfg.AskApproval, hitlSvc, tracker)
 	}
 

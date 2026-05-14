@@ -144,6 +144,47 @@ func hasBackendOfType(providerType string) bool {
 	return false
 }
 
+// RunGlobalInit ensures ~/.contenox/ has chain files, HITL policies, and a local backend.
+// Unlike RunInit it does NOT create a workspace-scoped .contenox/ directory.
+func RunGlobalInit(out io.Writer) error {
+	homeDir, err := globalContenoxDir()
+	if err != nil {
+		return fmt.Errorf("could not resolve ~/.contenox: %w", err)
+	}
+	if err := os.MkdirAll(homeDir, 0o750); err != nil {
+		return fmt.Errorf("create ~/.contenox: %w", err)
+	}
+	writeFile := func(path, content string) error {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", path, err)
+		}
+		fmt.Fprintf(out, "  Created %s\n", path)
+		return nil
+	}
+	if err := writeFile(filepath.Join(homeDir, "default-chain.json"), initChain); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(homeDir, "default-run-chain.json"), initRunChain); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(homeDir, "chain-compact.json"), initCompactChain); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(homeDir, "default-acp-chain.json"), initACPChain); err != nil {
+		return err
+	}
+	if err := writeEmbeddedHITLPolicies(homeDir, false); err != nil {
+		return err
+	}
+	if err := ensureLocalBackend(out); err != nil {
+		fmt.Fprintf(out, "  warning: could not register local backend: %v\n", err)
+	}
+	return nil
+}
+
 // RunInit scaffolds .contenox/ with default chain files.
 // provider is "" (defaults to the already-configured provider or "local"), "ollama", "gemini", "openai", or "local".
 // contenoxDir is the target data directory (e.g. from --data-dir or the default .contenox/).

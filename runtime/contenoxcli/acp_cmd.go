@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/contenox/contenox/libacp"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/acpsvc"
 	"github.com/contenox/contenox/runtime/enginesvc"
 	"github.com/contenox/contenox/runtime/hitlservice"
-	"github.com/contenox/contenox/libacp"
 	"github.com/contenox/contenox/runtime/localtools"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 	"github.com/contenox/contenox/runtime/taskengine"
@@ -42,6 +42,7 @@ flow so the editor's UI controls approval. Pass --auto to disable (unattended/te
 
 func init() {
 	acpCmd.Flags().Bool("auto", false, "Autonomous mode: disable HITL permission prompts (gated tools run unattended)")
+	acpCmd.Flags().Bool("setup", false, "Run interactive setup wizard to configure provider and model, then exit.")
 }
 
 type acpStdio struct{}
@@ -51,6 +52,10 @@ func (acpStdio) Write(p []byte) (int, error) { return os.Stdout.Write(p) }
 func (acpStdio) Close() error                { return os.Stdin.Close() }
 
 func runACP(cmd *cobra.Command, _ []string) error {
+	if setup, _ := cmd.Flags().GetBool("setup"); setup {
+		return runSetup(cmd.OutOrStdout(), cmd.ErrOrStderr())
+	}
+
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	parentCtx := cmd.Context()
@@ -97,9 +102,9 @@ func runACP(cmd *cobra.Command, _ []string) error {
 	var transport *acpsvc.Transport
 
 	tools := map[string]taskengine.ToolsRepo{
-		"echo":     localtools.NewEchoTools(),
-		"print":    localtools.NewPrint(tracker),
-		"webtools": localtools.NewWebCaller(tracker),
+		"echo":                      localtools.NewEchoTools(),
+		"print":                     localtools.NewPrint(tracker),
+		"webtools":                  localtools.NewWebCaller(tracker),
 		acpsvc.ACPFSToolsName:       acpsvc.NewACPFSTools(func() *acpsvc.Transport { return transport }),
 		acpsvc.ACPTerminalToolsName: acpsvc.NewACPTerminalTools(func() *acpsvc.Transport { return transport }),
 	}

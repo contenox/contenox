@@ -71,3 +71,9 @@ func RuntimeToolsAllowlistFromContext(ctx context.Context) ([]string, bool) {
 	}
 	return v.list, true
 }
+
+type contextKey string
+
+const (
+	ContextKeyOutputByteLimit contextKey = "output_byte_limit"
+)

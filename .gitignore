@@ -58,6 +58,8 @@ Thumbs.db
 *.local
 tmp/
 temp/
+node_modules/
+.air.serve.toml
 
 # ==============================
 # Project-specific
@@ -66,6 +68,13 @@ temp/
 # Contenox CLI build output and local config
 bin/
 .contenox/
+
+# Beam UI build output (embedded into Go binary via //go:embed at build time)
+runtime/internal/web/beam/dist/*
+!runtime/internal/web/beam/dist/.gitkeep
+
+# Storybook build output
+packages/ui/storybook-static/
 
 # Local AI context control (Cursor)
 .cursorignore

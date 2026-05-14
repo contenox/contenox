@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -269,11 +270,43 @@ func (h *LocalExecTools) checkAllowlist(command string, useShell bool, allowedCo
 	return nil
 }
 
+type capWriter struct {
+	buf       bytes.Buffer
+	limit     int64
+	written   int64
+	truncated bool
+}
+
+func (cw *capWriter) Write(p []byte) (n int, err error) {
+	if cw.limit > 0 {
+		if cw.written >= cw.limit {
+			cw.truncated = true
+			return 0, io.ErrShortWrite
+		}
+		writeLen := int64(len(p))
+		if cw.written+writeLen > cw.limit {
+			writeLen = cw.limit - cw.written
+			cw.buf.Write(p[:writeLen])
+			cw.written += writeLen
+			cw.truncated = true
+			return int(writeLen), io.ErrShortWrite
+		}
+	}
+	n, err = cw.buf.Write(p)
+	cw.written += int64(n)
+	return n, err
+}
+
 func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []string, cwd string, timeout time.Duration, useShell bool, stdinStr string) (*LocalExecResult, error) {
 	start := time.Now()
 	result := &LocalExecResult{Command: command}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	limit := int64(2 * 1024 * 1024) // 2MB default fallback if no budget is provided
+	if val, ok := ctx.Value(taskengine.ContextKeyOutputByteLimit).(int64); ok {
+		limit = val
+	}
 
 	var cmd *exec.Cmd
 	if useShell {
@@ -288,16 +321,33 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+
+	stdout := &capWriter{limit: limit}
+	stderr := &capWriter{limit: limit}
+
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if stdinStr != "" {
 		cmd.Stdin = strings.NewReader(stdinStr)
 	}
 	err := cmd.Run()
 	result.DurationSeconds = time.Since(start).Seconds()
-	result.Stdout = strings.TrimSpace(stdout.String())
-	result.Stderr = strings.TrimSpace(stderr.String())
+
+	outStr := strings.TrimSpace(stdout.buf.String())
+	errStr := strings.TrimSpace(stderr.buf.String())
+
+	if stdout.truncated || stderr.truncated {
+		result.Success = false
+		result.ExitCode = -1
+		result.Error = "Error: tool execution terminated: output exceeded the remaining context budget."
+		result.Stdout = ""
+		result.Stderr = ""
+		return result, nil
+	}
+
+	result.Stdout = outStr
+	result.Stderr = errStr
+
 	if err != nil {
 		result.Error = err.Error()
 		result.Success = false

@@ -45,7 +45,7 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 
 ## Repository structure
 
-The **`contenox`** binary is the main (only) entrypoint: `init`, `chat`, `run`, `hook`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`.
+The **`contenox`** binary is the main (only) entrypoint: `setup`, `init`, `chat`, `run`, `hook`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`, `acp`.
 
 All AI/LLM orchestration packages live under **`runtime/`**. Infrastructure libraries (`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libroutine`, `libtracker`) stay at the module root.
 

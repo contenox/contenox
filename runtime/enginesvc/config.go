@@ -5,6 +5,7 @@ import (
 	"github.com/contenox/contenox/libkvstore"
 	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/execservice"
+	"github.com/contenox/contenox/runtime/hitlservice"
 	"github.com/contenox/contenox/runtime/internal/setupcheck"
 	"github.com/contenox/contenox/runtime/localtools"
 	"github.com/contenox/contenox/runtime/mcpworker"
@@ -26,6 +27,7 @@ type Config struct {
 
 	EnableHITL  bool
 	AskApproval localtools.AskApproval
+	HITLService hitlservice.Service
 
 	Bus             libbus.Messenger
 	KVStore         libkvstore.KVManager

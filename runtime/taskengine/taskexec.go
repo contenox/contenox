@@ -566,6 +566,23 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				}
 			}
 
+			// Calculate a safe byte limit for the tool output to prevent context overflow
+			currentTokens := chatHistory.InputTokens + chatHistory.OutputTokens
+			if currentTokens == 0 && currentTask.ExecuteConfig != nil {
+				modelName := GetPrimaryModel(currentTask.ExecuteConfig)
+				var err error
+				currentTokens, err = exe.countChatHistoryTokens(taskCtx, modelName, chatHistory, ctxLength)
+				if err != nil {
+					return nil, DataTypeAny, "", fmt.Errorf("failed to count chat history tokens: %w", err)
+				}
+			}
+			remainingTokens := max(ctxLength-currentTokens, 0)
+			budgetBytes := int64(remainingTokens-500) * 3
+			if budgetBytes < 0 {
+				budgetBytes = 0
+			}
+			callCtx = context.WithValue(callCtx, ContextKeyOutputByteLimit, budgetBytes)
+
 			toolReportErr, toolReportChange, toolEnd := exe.tracker.Start(
 				callCtx, "tool_call", toolCall.Function.Name,
 				"tools_name", resolutionInfo.ToolsName,
