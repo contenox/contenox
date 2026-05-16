@@ -7,7 +7,6 @@ package hitlservice
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -99,7 +98,7 @@ func (s *service) Evaluate(ctx context.Context, toolsName, toolName string, args
 func (s *service) RequestApproval(ctx context.Context, req ApprovalRequest, sink taskengine.TaskEventSink) (bool, error) {
 	approvalID := uuid.NewString()
 
-	ch := make(chan bool, 1)
+	ch := make(chan bool)
 	s.mu.Lock()
 	s.pending[approvalID] = ch
 	s.mu.Unlock()
@@ -116,7 +115,7 @@ func (s *service) RequestApproval(ctx context.Context, req ApprovalRequest, sink
 	ev.ApprovalArgs = req.Args
 	ev.ApprovalDiff = req.Diff
 	if err := sink.PublishTaskEvent(ctx, ev); err != nil {
-		slog.Warn("hitl: failed to publish approval_requested event", "error", err)
+		return false, fmt.Errorf("hitl: publish approval request: %w", err)
 	}
 
 	select {

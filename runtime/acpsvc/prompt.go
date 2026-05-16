@@ -41,8 +41,16 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	if bus != nil && reqID != "" {
 		sub, err := bus.Stream(promptCtx, taskengine.TaskEventRequestSubject(reqID), rawCh)
 		if err == nil {
-			defer func() { _ = sub.Unsubscribe() }()
-			go t.translateEvents(promptCtx, req.SessionID, rawCh)
+			translateDone := make(chan struct{})
+			go func() {
+				defer close(translateDone)
+				t.translateEvents(promptCtx, req.SessionID, rawCh)
+			}()
+			defer func() {
+				_ = sub.Unsubscribe()
+				close(rawCh)
+				<-translateDone
+			}()
 		}
 	}
 

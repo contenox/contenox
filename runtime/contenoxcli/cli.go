@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -68,15 +69,46 @@ func Main() {
 		}
 		onlyHelp = allRootFlags
 	}
-	if !onlyHelp && !firstNonFlagIsReserved(args) {
+	switch {
+	case containsExperimentalACPFlag(args) && !firstNonFlagIsReserved(args):
+		rootCmd.SetArgs(append([]string{"acp"}, args...))
+	case !onlyHelp && !firstNonFlagIsReserved(args):
 		rootCmd.SetArgs(append([]string{"run"}, args...))
 	}
 	if err := rootCmd.Execute(); err != nil {
-		// SilenceErrors is set, so cobra suppresses its own error printing.
-		// We always print it here.
+		recordStartupFailure(err)
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 		os.Exit(1)
 	}
+}
+
+func containsExperimentalACPFlag(args []string) bool {
+	return slices.Contains(args, "--experimental-acp")
+}
+
+func recordStartupFailure(execErr error) {
+	defer func() { _ = recover() }()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return
+	}
+	dir := filepath.Join(home, ".contenox")
+	if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
+		return
+	}
+	f, openErr := os.OpenFile(filepath.Join(dir, "telemetry.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if openErr != nil {
+		return
+	}
+	defer f.Close()
+	logger := slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	tr := libtracker.NewLogActivityTracker(logger)
+	reportErr, _, end := tr.Start(context.Background(), "exec", "cli",
+		"argv", strings.Join(os.Args[1:], " "),
+		"version", CLIVersion(),
+	)
+	reportErr(execErr)
+	end()
 }
 
 // firstNonFlagIsReserved scans args, skipping flags and their values, and returns

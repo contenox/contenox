@@ -11,16 +11,8 @@ import (
 )
 
 func (t *Transport) translateEvents(ctx context.Context, sid libacp.SessionID, ch <-chan []byte) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case payload, ok := <-ch:
-			if !ok {
-				return
-			}
-			t.publishEvent(ctx, sid, payload)
-		}
+	for payload := range ch {
+		t.publishEvent(ctx, sid, payload)
 	}
 }
 
@@ -236,12 +228,17 @@ func summarizeToolCallArgs(toolName string, args map[string]any) string {
 
 	var summary string
 	switch base {
-	case "exec", "run", "execute":
+	case "exec", "run", "execute", "local_shell":
 		cmd := asString("command")
 		if cmd == "" {
 			break
 		}
-		parts := append([]string{cmd}, asStringSlice("args")...)
+		parts := []string{cmd}
+		if a := asString("args"); a != "" {
+			parts = append(parts, a)
+		} else {
+			parts = append(parts, asStringSlice("args")...)
+		}
 		summary = strings.Join(parts, " ")
 	case "read_file", "read_file_range", "write_file", "stat_file", "list_dir", "delete_file":
 		summary = asString("path")

@@ -44,6 +44,8 @@ func init() {
 	acpCmd.Flags().Bool("auto", false, "Autonomous mode: disable HITL permission prompts (gated tools run unattended)")
 	acpCmd.Flags().Bool("setup", false, "Run interactive setup wizard to configure provider and model, then exit.")
 	acpCmd.Flags().String("workspace-id", "", "Workspace ID for new ACP sessions (default: the stable workspace from ~/.contenox/workspace.id, same as the CLI). Existing sessions are always located by their session ID regardless of workspace.")
+	acpCmd.Flags().Bool("experimental-acp", false, "Accepted for compatibility with ACP clients that hardcode this launch flag (e.g. AionUi); no effect.")
+	_ = acpCmd.Flags().MarkHidden("experimental-acp")
 }
 
 type acpStdio struct{}

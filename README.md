@@ -106,7 +106,7 @@ contenox --shell "use my git log to fill the timesheet, round to 9-5"
 contenox --shell "drive localhost:3000 with playwright, write the doc into Notion"
 ```
 
-Useful day-to-day for the work above. Also a workbench for testing new chains and MCP servers, and a primitive other agents can shell out to.
+Useful day-to-day for the work above. Also, a workbench for testing new chains and MCP servers, and a primitive other agents can shell out to.
 
 State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Gemini, vLLM, Vertex, or in-process llama.cpp. Any model, any vendor — or no vendor at all if you serve your own.
 
@@ -147,6 +147,24 @@ Contenox speaks the [Agent Client Protocol](https://github.com/zed-industries/ag
 ```
 
 Open Zed's agent panel and pick **Contenox**. Your chain runs inside the editor: tool calls render as cards with the actual command/path, HITL prompts route through Zed's permission UI, and session history replays when you reopen the project. Chain selection lives at `~/.contenox/default-acp-chain.json` (or set `CONTENOX_ACP_CHAIN_PATH`). Full guide → **[contenox.com/docs/guide/zed](https://contenox.com/docs/guide/zed/)**.
+
+**JetBrains** (GoLand, IntelliJ IDEA, …) reads agent servers from `~/.jetbrains/acp.json` — same binary, different schema (no `"type"` field):
+
+```json
+{
+  "default_mcp_settings": { "use_custom_mcp": true, "use_idea_mcp": false },
+  "agent_servers": {
+    "Contenox": {
+      "command": "contenox",
+      "args": ["acp"]
+    }
+  }
+}
+```
+
+Verified with GoLand 2026.1.2. Full guide → **[contenox.com/docs/guide/jetbrains](https://contenox.com/docs/guide/jetbrains/)**.
+
+**AionUi** — a free, local, open-source desktop chat UI for ACP agents. Add a Custom Agent: command `contenox`, args `["acp"]`. Verified with AionUi 2.0.0. Full guide → **[contenox.com/docs/guide/aionui](https://contenox.com/docs/guide/aionui/)**.
 
 ---
 

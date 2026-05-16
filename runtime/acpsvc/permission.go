@@ -27,11 +27,16 @@ func (t *Transport) AskApproval(ctx context.Context, req hitlservice.ApprovalReq
 		toolCallID = req.ToolsName + "." + req.ToolName
 	}
 
+	title := req.ToolsName + "." + req.ToolName
+	if summary := summarizeToolCallArgs(req.ToolName, req.Args); summary != "" {
+		title += ": " + summary
+	}
+
 	rpcReq := libacp.RequestPermissionRequest{
 		SessionID: acpSessionID,
 		ToolCall: libacp.PermissionToolCall{
 			ToolCallID: toolCallID,
-			Title:      req.ToolsName + "." + req.ToolName,
+			Title:      title,
 			Kind:       permissionKindFor(req.ToolsName, req.ToolName),
 			Status:     libacp.ToolCallStatusPending,
 			RawInput:   marshalArgs(req.Args),

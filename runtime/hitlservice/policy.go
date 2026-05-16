@@ -136,14 +136,39 @@ func conditionMatches(c Condition, args map[string]any) bool {
 	if !ok {
 		return false
 	}
-	valStr := fmt.Sprintf("%v", val)
-	switch c.Op {
-	case OpEq:
-		return valStr == c.Value
-	case OpGlob:
-		return globMatch(c.Value, valStr)
+	for _, s := range conditionValues(val) {
+		switch c.Op {
+		case OpEq:
+			if s == c.Value {
+				return true
+			}
+		case OpGlob:
+			if globMatch(c.Value, s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// conditionValues flattens an argument value into the strings a condition is
+// tested against. A slice argument (e.g. {"path": ["a","/etc/passwd"]}) is
+// tested element-wise so a single stringified "[a /etc/passwd]" cannot slip a
+// restricted entry past a glob.
+func conditionValues(v any) []string {
+	switch t := v.(type) {
+	case string:
+		return []string{t}
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			out = append(out, fmt.Sprintf("%v", e))
+		}
+		return out
 	default:
-		return false
+		return []string{fmt.Sprintf("%v", v)}
 	}
 }
 
@@ -151,10 +176,18 @@ func conditionMatches(c Condition, args map[string]any) bool {
 // Both pattern and s are normalized with path.Clean before comparison to prevent
 // path-traversal bypasses. Supports *, ?, and ** (which matches across path separators).
 func globMatch(pattern, s string) bool {
-	pattern = path.Clean(pattern)
 	s = path.Clean(s)
+	for _, expanded := range expandGlobBraces(pattern) {
+		if globMatchOne(expanded, s) {
+			return true
+		}
+	}
+	return false
+}
 
-	if !strings.ContainsAny(pattern, "*?") {
+func globMatchOne(pattern, s string) bool {
+	pattern = path.Clean(pattern)
+	if !strings.ContainsAny(pattern, "*?[") {
 		return pattern == s
 	}
 	if !strings.Contains(pattern, "**") {
@@ -162,6 +195,89 @@ func globMatch(pattern, s string) bool {
 		return err == nil && matched
 	}
 	return matchDoubleGlob(pattern, s)
+}
+
+// expandGlobBraces expands {a,b,c} alternations into the cross product of
+// concrete patterns, supporting nesting and slashes inside an alternative.
+// Go's path.Match has no brace support, so "**/{.ssh,.gnupg}/**" would
+// otherwise match a literal "{" and silently never fire. Unbalanced braces
+// are treated literally. Expansion is bounded; past the cap the original
+// pattern is returned unexpanded.
+const maxGlobExpansions = 4096
+
+func expandGlobBraces(pattern string) []string {
+	const maxExpansions = maxGlobExpansions
+	out := []string{pattern}
+	for {
+		next := make([]string, 0, len(out))
+		changed := false
+		for _, p := range out {
+			open, closeIdx, ok := firstBracePair(p)
+			if !ok {
+				next = append(next, p)
+				continue
+			}
+			changed = true
+			prefix, suffix := p[:open], p[closeIdx+1:]
+			for _, alt := range splitTopLevelCommas(p[open+1 : closeIdx]) {
+				next = append(next, prefix+alt+suffix)
+			}
+		}
+		if !changed {
+			return next
+		}
+		if len(next) > maxExpansions {
+			return next[:maxExpansions]
+		}
+		out = next
+	}
+}
+
+func firstBracePair(p string) (open, closeIdx int, ok bool) {
+	for i := 0; i < len(p); i++ {
+		if p[i] != '{' {
+			continue
+		}
+		if c, found := matchingBrace(p, i); found {
+			return i, c, true
+		}
+	}
+	return 0, 0, false
+}
+
+func matchingBrace(s string, open int) (int, bool) {
+	depth := 0
+	for i := open; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i, true
+			}
+		}
+	}
+	return -1, false
+}
+
+func splitTopLevelCommas(s string) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(parts, s[start:])
 }
 
 // matchDoubleGlob handles patterns that contain **.
@@ -242,15 +358,82 @@ func validatePolicy(p *Policy) error {
 			if c.Op != OpEq && c.Op != OpGlob {
 				return fmt.Errorf("rule %d, condition %d: unknown op %q", i, j, c.Op)
 			}
+			if c.Op == OpGlob {
+				if err := validateGlobValue(c.Value); err != nil {
+					return fmt.Errorf("rule %d, condition %d: %w", i, j, err)
+				}
+			}
 		}
 	}
 	return nil
 }
 
+// validateGlobValue rejects glob patterns that would silently fail to match at
+// runtime: unbalanced braces (path.Match would treat "{" literally) and brace
+// expressions that explode past the expansion cap. A rejected policy fails to
+// load, so evaluation falls back to the built-in default rather than running
+// with a deny rule that never fires.
+func validateGlobValue(value string) error {
+	depth := 0
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth < 0 {
+				return fmt.Errorf("unbalanced '}' in glob %q", value)
+			}
+		}
+	}
+	if depth != 0 {
+		return fmt.Errorf("unbalanced '{' in glob %q", value)
+	}
+	if len(expandGlobBraces(value)) >= maxGlobExpansions {
+		return fmt.Errorf("glob %q expands past the %d-pattern limit", value, maxGlobExpansions)
+	}
+	return nil
+}
+
+// secretDenyRules is the universal known-bad prefix: paths that never belong
+// in any agent workflow on any machine (credential stores, key material,
+// shell/persistence init, system dirs). It is kept in sync with
+// hitl-policy-acp.json by TestSeededACPPolicySecretInvariant.
+func secretDenyRules() []Rule {
+	const allTools = "*"
+	q := func(g string) Rule {
+		return Rule{Tools: "local_fs", Tool: allTools, Action: ActionDeny, When: []Condition{{Key: "path", Op: OpGlob, Value: g}}}
+	}
+	w := func(g string) []Rule {
+		return []Rule{
+			{Tools: "local_fs", Tool: "write_file", Action: ActionDeny, When: []Condition{{Key: "path", Op: OpGlob, Value: g}}},
+			{Tools: "local_fs", Tool: "sed", Action: ActionDeny, When: []Condition{{Key: "path", Op: OpGlob, Value: g}}},
+		}
+	}
+	rules := []Rule{
+		q("**/{.ssh,.gnupg,.aws,.azure,.kube,.config/gcloud,.config/doctl,.oci}/**"),
+		q("**/{.password-store,.local/share/keyrings,Library/Keychains,.config/1Password,.config/Bitwarden,.config/keepassxc}/**"),
+		q("**/{.electrum,.bitcoin,.ethereum/keystore}/**"),
+		q("**/{wallet.dat,*.kdbx}"),
+		q("**/{.mozilla,.config/google-chrome,.config/chromium,.config/BraveSoftware}/**"),
+		q("**/Library/Application Support/{Google/Chrome,Firefox,BraveSoftware}/**"),
+		q("**/{.bash_history,.zsh_history,.python_history,.netrc,.git-credentials,.npmrc,.pypirc}"),
+		q("**/.docker/config.json"),
+		q("**/{id_rsa,id_dsa,id_ecdsa,id_ed25519}*"),
+	}
+	rules = append(rules, w("**/{.ssh,.gnupg}/**")...)
+	rules = append(rules, w("**/{.config/autostart,.config/systemd/user,Library/LaunchAgents,Library/LaunchDaemons}/**")...)
+	rules = append(rules, w("**/{.bashrc,.zshrc,.profile,.bash_profile,.zprofile,.bash_login,.zshenv,.kshrc,crontab,.crontab}")...)
+	rules = append(rules, w("**/.config/fish/config.fish")...)
+	rules = append(rules, w("/{etc,usr,bin,sbin,boot,lib,lib64,opt,System}/**")...)
+	rules = append(rules, w("**/hitl-policy*.json")...)
+	return rules
+}
+
 func defaultPolicy() *Policy {
 	return &Policy{
 		DefaultAction: ActionApprove,
-		Rules: []Rule{
+		Rules: append(secretDenyRules(), []Rule{
 			{Tools: "local_fs", Tool: "read_file", Action: ActionAllow},
 			{Tools: "local_fs", Tool: "read_file_range", Action: ActionAllow},
 			{Tools: "local_fs", Tool: "list_dir", Action: ActionAllow},
@@ -268,6 +451,6 @@ func defaultPolicy() *Policy {
 			{Tools: "webtools", Tool: "web_delete", Action: ActionApprove},
 			{Tools: "echo", Action: ActionAllow},
 			{Tools: "print", Action: ActionAllow},
-		},
+		}...),
 	}
 }
