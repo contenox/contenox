@@ -1,7 +1,6 @@
 package localtools
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -535,9 +534,14 @@ func (h *SSHTools) executeCommand(ctx context.Context, config *SSHConfig, comman
 	defer session.Close()
 
 	// Capture stdout and stderr
-	var stdout, stderr bytes.Buffer
-	session.Stdout = &stdout
-	session.Stderr = &stderr
+	limit := int64(2 * 1024 * 1024) // 2MB default fallback if no budget is provided
+	if val, ok := ctx.Value(taskengine.ContextKeyOutputByteLimit).(int64); ok {
+		limit = val
+	}
+	stdout := &capWriter{limit: limit}
+	stderr := &capWriter{limit: limit}
+	session.Stdout = stdout
+	session.Stderr = stderr
 
 	// Execute command with timeout
 	cmdCtx, cancel := context.WithTimeout(ctx, config.Timeout)
@@ -562,8 +566,17 @@ func (h *SSHTools) executeCommand(ctx context.Context, config *SSHConfig, comman
 	result.Duration = duration
 
 	// Capture output
-	result.Stdout = strings.TrimSpace(stdout.String())
-	result.Stderr = strings.TrimSpace(stderr.String())
+	outStr := strings.TrimSpace(stdout.buf.String())
+	errStr := strings.TrimSpace(stderr.buf.String())
+
+	if stdout.truncated || stderr.truncated {
+		result.Success = false
+		result.ExitCode = -1
+		result.Error = "Error: tool execution terminated: output exceeded the remaining context budget."
+		return result, nil
+	}
+	result.Stdout = outStr
+	result.Stderr = errStr
 
 	// Handle command results
 	if cmdErr != nil {

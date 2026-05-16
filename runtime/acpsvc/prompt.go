@@ -2,6 +2,7 @@ package acpsvc
 
 import (
 	"context"
+	"errors"
 
 	"github.com/contenox/contenox/libacp"
 	"github.com/contenox/contenox/libtracker"
@@ -25,7 +26,7 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		return libacp.PromptResponse{}, err
 	}
 
-	input := flattenPromptBlocks(req.Prompt)
+	input, droppedContentKinds := flattenPromptBlocks(req.Prompt)
 	if input == "" {
 		err := libacp.NewError(libacp.ErrInvalidParams, "empty prompt")
 		reportErr(err)
@@ -57,6 +58,17 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		TemplateVars: templateVars,
 	})
 	if err != nil {
+		cancelled := (resp != nil && resp.StopReason == agentservice.StopCancelled) ||
+			promptCtx.Err() != nil ||
+			errors.Is(err, context.Canceled)
+		if cancelled {
+			reportChange(string(req.SessionID), map[string]any{
+				"stop_reason":           string(libacp.StopReasonCancelled),
+				"request_id":            reqID,
+				"dropped_content_kinds": droppedContentKinds,
+			})
+			return libacp.PromptResponse{StopReason: libacp.StopReasonCancelled}, nil
+		}
 		reportErr(err)
 		if resp != nil {
 			return libacp.PromptResponse{StopReason: mapStopReason(resp.StopReason)}, libacp.InternalError(err.Error())
@@ -65,8 +77,9 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	}
 	stopReason := mapStopReason(resp.StopReason)
 	reportChange(string(req.SessionID), map[string]any{
-		"stop_reason": string(stopReason),
-		"request_id":  reqID,
+		"stop_reason":           string(stopReason),
+		"request_id":            reqID,
+		"dropped_content_kinds": droppedContentKinds,
 	})
 	return libacp.PromptResponse{StopReason: stopReason}, nil
 }

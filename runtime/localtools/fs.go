@@ -34,17 +34,37 @@ const readBeforeWriteDenial = "local_fs: cannot modify existing file %s without 
 // file has been read first this session. State ownership lives entirely with
 // this tool — the engine never sees the rule.
 type LocalFSTools struct {
-	allowedDir string
-	db         libdb.DBManager
+	allowedDir  string
+	db          libdb.DBManager
+	fileIO      FileIO
+	name        string
+	cwdResolver func(context.Context) string
 }
 
 // NewLocalFSTools creates a new instance of LocalFSTools. db may be nil; when
 // nil, the read-before-write guard degrades to a no-op (used by tests and
 // callers without a DB).
 func NewLocalFSTools(allowedDir string, db libdb.DBManager) taskengine.ToolsRepo {
+	return NewLocalFSToolsWith(allowedDir, db, nil, LocalFSToolsName, nil)
+}
+
+func NewLocalFSToolsWith(allowedDir string, db libdb.DBManager, io FileIO, name string, cwdResolver func(context.Context) string) taskengine.ToolsRepo {
+	if io == nil {
+		io = osFileIO{}
+	}
+	if name == "" {
+		name = LocalFSToolsName
+	}
+	cleaned := allowedDir
+	if cleaned != "" {
+		cleaned = filepath.Clean(cleaned)
+	}
 	return &LocalFSTools{
-		allowedDir: filepath.Clean(allowedDir),
-		db:         db,
+		allowedDir:  cleaned,
+		db:          db,
+		fileIO:      io,
+		name:        name,
+		cwdResolver: cwdResolver,
 	}
 }
 
@@ -89,12 +109,18 @@ func (h *LocalFSTools) Exec(ctx context.Context, startTime time.Time, input any,
 // checkPath verifies if a path is within the allowed directory.
 // It resolves symlinks so that a symlink inside the sandbox pointing outside it
 // (e.g. ln -s /etc /allowed/link) is caught before any I/O is performed.
-func (h *LocalFSTools) checkPath(path string) (string, error) {
-	if h.allowedDir == "" {
+func (h *LocalFSTools) checkPath(ctx context.Context, path string) (string, error) {
+	base := h.allowedDir
+	if base == "" && h.cwdResolver != nil {
+		if r := h.cwdResolver(ctx); r != "" {
+			base = filepath.Clean(r)
+		}
+	}
+	if base == "" {
 		return "", errors.New("local_fs: no allowed directory configured")
 	}
 
-	absBase, err := filepath.Abs(h.allowedDir)
+	absBase, err := filepath.Abs(base)
 	if err != nil {
 		return "", fmt.Errorf("local_fs: invalid allowed dir: %w", err)
 	}
@@ -122,7 +148,7 @@ func (h *LocalFSTools) checkPath(path string) (string, error) {
 	sep := string(filepath.Separator)
 	rel, err := filepath.Rel(absBase, absPath)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+sep) {
-		return "", fmt.Errorf("local_fs: path %s escapes allowed directory %s", path, h.allowedDir)
+		return "", fmt.Errorf("local_fs: path %s escapes allowed directory %s", path, base)
 	}
 
 	return absPath, nil
@@ -159,7 +185,7 @@ func argFloat(args map[string]any, key string) (v float64, ok bool) {
 // maxListDepthFromPolicy caps recursion depth for list_dir(recursive). tools_policies.local_fs: _max_list_depth — default 6.
 func (h *LocalFSTools) maxListDepthFromPolicy(ctx context.Context) int {
 	const defaultDepth = 6
-	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, h.name)
 	if args == nil {
 		return defaultDepth
 	}
@@ -180,7 +206,7 @@ func (h *LocalFSTools) maxListDepthFromPolicy(ctx context.Context) int {
 // maxGrepMatchesFromPolicy stops grep after this many lines (error: narrow pattern/range). tools_policies.local_fs: _max_grep_matches — default 5000.
 func (h *LocalFSTools) maxGrepMatchesFromPolicy(ctx context.Context) int {
 	const defaultMax = 5000
-	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, h.name)
 	if args == nil {
 		return defaultMax
 	}
@@ -233,7 +259,7 @@ func grepLineRange(args map[string]any, numLines int) (start, end int) {
 // Chain policy keys (tools_policies.local_fs): _max_output_bytes — default 524288 (512 KiB) when unset.
 // Non-positive means unlimited.
 func (h *LocalFSTools) maxOutputBytesFromPolicy(ctx context.Context) (limit int64, unlimited bool) {
-	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, h.name)
 	if args == nil {
 		return 512 * 1024, false
 	}
@@ -268,7 +294,7 @@ func (h *LocalFSTools) checkToolOutputLimit(ctx context.Context, tool string, pa
 // maxReadBytesFromPolicy returns the max bytes for a full-file read. Non-positive means unlimited.
 // Chain policy keys (tools_policies.local_fs): _max_read_bytes — default 1048576 (1 MiB) when unset.
 func (h *LocalFSTools) maxReadBytesFromPolicy(ctx context.Context) (limit int64, unlimited bool) {
-	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, h.name)
 	if args == nil {
 		return 1024 * 1024, false
 	}
@@ -296,7 +322,7 @@ func (h *LocalFSTools) checkDeniedSubstrings(ctx context.Context, absPath string
 		return fmt.Errorf("local_fs: rel path: %w", err)
 	}
 	rel = filepath.ToSlash(rel)
-	args := taskengine.ToolsArgsFromContext(ctx, LocalFSToolsName)
+	args := taskengine.ToolsArgsFromContext(ctx, h.name)
 	if args == nil {
 		return nil
 	}
@@ -348,7 +374,7 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 		return nil, taskengine.DataTypeAny, errors.New("local_fs: path required for read_file")
 	}
 
-	absPath, err := h.checkPath(path)
+	absPath, err := h.checkPath(ctx, path)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -356,7 +382,7 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 		return nil, taskengine.DataTypeAny, err
 	}
 
-	content, err := os.ReadFile(absPath)
+	content, err := h.fileIO.ReadFile(ctx, absPath)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
 	}
@@ -386,7 +412,7 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 		return nil, taskengine.DataTypeAny, errors.New("local_fs: content required for write_file")
 	}
 
-	absPath, err := h.checkPath(path)
+	absPath, err := h.checkPath(ctx, path)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -398,7 +424,7 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 		return denial, taskengine.DataTypeString, nil
 	}
 
-	oldBytes, readErr := os.ReadFile(absPath)
+	oldBytes, readErr := h.fileIO.ReadFile(ctx, absPath)
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read existing file before write: %w", readErr)
 	}
@@ -407,7 +433,7 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to create directories: %w", err)
 	}
 
-	if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
+	if err := h.fileIO.WriteFile(ctx, absPath, []byte(content)); err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to write file: %w", err)
 	}
 
@@ -426,7 +452,7 @@ func (h *LocalFSTools) listDir(ctx context.Context, args map[string]any) (any, t
 	}
 	listRootArg := filepath.Clean(path)
 
-	absRoot, err := h.checkPath(listRootArg)
+	absRoot, err := h.checkPath(ctx, listRootArg)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -507,7 +533,7 @@ func (h *LocalFSTools) walkListDir(ctx context.Context, listRootArg string, curA
 			userPath = filepath.ToSlash(filepath.Join(listRootArg, rel))
 		}
 
-		absEntry, err := h.checkPath(userPath)
+		absEntry, err := h.checkPath(ctx, userPath)
 		if err != nil {
 			continue
 		}
@@ -558,7 +584,7 @@ func (h *LocalFSTools) grep(ctx context.Context, args map[string]any) (any, task
 		}
 	}
 
-	absPath, err := h.checkPath(path)
+	absPath, err := h.checkPath(ctx, path)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -566,7 +592,7 @@ func (h *LocalFSTools) grep(ctx context.Context, args map[string]any) (any, task
 		return nil, taskengine.DataTypeAny, err
 	}
 
-	content, err := os.ReadFile(absPath)
+	content, err := h.fileIO.ReadFile(ctx, absPath)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
 	}
@@ -620,7 +646,7 @@ func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taske
 		return nil, taskengine.DataTypeAny, errors.New("local_fs: replacement required for sed")
 	}
 
-	absPath, err := h.checkPath(path)
+	absPath, err := h.checkPath(ctx, path)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -632,14 +658,14 @@ func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taske
 		return denial, taskengine.DataTypeString, nil
 	}
 
-	content, err := os.ReadFile(absPath)
+	content, err := h.fileIO.ReadFile(ctx, absPath)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
 	}
 
 	newContent := strings.ReplaceAll(string(content), pattern, replacement)
 
-	if err := os.WriteFile(absPath, []byte(newContent), 0644); err != nil {
+	if err := h.fileIO.WriteFile(ctx, absPath, []byte(newContent)); err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to write file: %w", err)
 	}
 
@@ -652,7 +678,7 @@ func (h *LocalFSTools) countStats(ctx context.Context, args map[string]any) (any
 		return nil, taskengine.DataTypeAny, errors.New("local_fs: path required for count_stats")
 	}
 
-	absPath, err := h.checkPath(path)
+	absPath, err := h.checkPath(ctx, path)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -660,7 +686,7 @@ func (h *LocalFSTools) countStats(ctx context.Context, args map[string]any) (any
 		return nil, taskengine.DataTypeAny, err
 	}
 
-	content, err := os.ReadFile(absPath)
+	content, err := h.fileIO.ReadFile(ctx, absPath)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
 	}
@@ -691,7 +717,7 @@ func (h *LocalFSTools) readFileRange(ctx context.Context, args map[string]any) (
 	}
 	endLine, ok := args["end_line"].(float64)
 
-	absPath, err := h.checkPath(path)
+	absPath, err := h.checkPath(ctx, path)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -703,7 +729,7 @@ func (h *LocalFSTools) readFileRange(ctx context.Context, args map[string]any) (
 		return nil, taskengine.DataTypeAny, err
 	}
 
-	content, err := os.ReadFile(absPath)
+	content, err := h.fileIO.ReadFile(ctx, absPath)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
 	}
@@ -745,7 +771,7 @@ func (h *LocalFSTools) statFile(ctx context.Context, args map[string]any) (any, 
 		return nil, taskengine.DataTypeAny, errors.New("local_fs: path required for stat_file")
 	}
 
-	absPath, err := h.checkPath(path)
+	absPath, err := h.checkPath(ctx, path)
 	if err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
@@ -774,7 +800,7 @@ func (h *LocalFSTools) statFile(ctx context.Context, args map[string]any) (any, 
 }
 
 func (h *LocalFSTools) Supports(ctx context.Context) ([]string, error) {
-	return []string{LocalFSToolsName, "read_file", "write_file", "list_dir", "grep", "sed", "count_stats", "read_file_range", "stat_file"}, nil
+	return []string{h.name, "read_file", "write_file", "list_dir", "grep", "sed", "count_stats", "read_file_range", "stat_file"}, nil
 }
 
 func (h *LocalFSTools) GetSchemasForSupportedTools(ctx context.Context) (map[string]*openapi3.T, error) {
@@ -928,7 +954,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 		},
 	}
 
-	if name == LocalFSToolsName {
+	if name == h.name {
 		return allTools, nil
 	}
 

@@ -28,6 +28,7 @@ const (
 	TaskEventApprovalRequested TaskEventKind = "approval_requested"
 	TaskEventToolCallPending   TaskEventKind = "tool_call_pending"
 	TaskEventToolCall          TaskEventKind = "tool_call"
+	TaskEventPrint             TaskEventKind = "print"
 )
 
 type TaskEvent struct {

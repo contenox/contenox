@@ -2,8 +2,6 @@ package acpsvc
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 	"sync"
 
@@ -22,6 +20,7 @@ type Deps struct {
 	ChainRegistry   *ChainRegistry
 	DefaultModel    string
 	DefaultProvider string
+	WorkspaceID     string
 }
 
 type sessionEntry struct {
@@ -43,6 +42,37 @@ type Transport struct {
 	sessionMu       sync.Mutex
 	sessions        map[libacp.SessionID]*sessionEntry
 	contenoxToACPID map[string]libacp.SessionID
+
+	permMu      sync.Mutex
+	permPending map[string]struct{}
+}
+
+func permKey(sid libacp.SessionID, toolCallID string) string {
+	return string(sid) + "\x00" + toolCallID
+}
+
+func (t *Transport) markPermissionPending(sid libacp.SessionID, toolCallID string) {
+	t.permMu.Lock()
+	if t.permPending == nil {
+		t.permPending = make(map[string]struct{})
+	}
+	t.permPending[permKey(sid, toolCallID)] = struct{}{}
+	t.permMu.Unlock()
+}
+
+func (t *Transport) clearPermissionPending(sid libacp.SessionID, toolCallID string) {
+	t.permMu.Lock()
+	delete(t.permPending, permKey(sid, toolCallID))
+	t.permMu.Unlock()
+}
+
+func (t *Transport) sendToolCallUpdateGuarded(ctx context.Context, sid libacp.SessionID, toolCallID string, notif libacp.SessionNotification) {
+	t.permMu.Lock()
+	defer t.permMu.Unlock()
+	if _, pending := t.permPending[permKey(sid, toolCallID)]; pending {
+		return
+	}
+	t.sendUpdate(ctx, notif)
 }
 
 func New(deps Deps) libacp.AgentFactory {
@@ -79,13 +109,8 @@ func (t *Transport) getClientCaps() libacp.ClientCapabilities {
 	return t.clientCaps
 }
 
-func deriveWorkspaceID(sessionID libacp.SessionID, clientInfo *libacp.Implementation) string {
-	if clientInfo != nil && clientInfo.Name != "" {
-		key := clientInfo.Name + "/" + clientInfo.Version
-		sum := sha256.Sum256([]byte(key))
-		return "acp-client-" + hex.EncodeToString(sum[:8])
-	}
-	return "acp-sess-" + string(sessionID)
+func (t *Transport) workspaceID() string {
+	return t.deps.WorkspaceID
 }
 
 func (t *Transport) sendUpdate(ctx context.Context, notif libacp.SessionNotification) {
@@ -114,4 +139,18 @@ func (t *Transport) tracker() libtracker.ActivityTracker {
 func ReadConfigValue(ctx context.Context, db libdb.DBManager, key string) string {
 	store := runtimetypes.New(db.WithoutTransaction())
 	return strings.TrimSpace(clikv.Read(ctx, store, key))
+}
+
+func resolveACPSessionID(ctx context.Context, t *Transport) libacp.SessionID {
+	contenoxSessionID := sessionIDFromCtx(ctx)
+	if contenoxSessionID == "" {
+		return ""
+	}
+	acpSID, _ := t.acpSessionForContenoxID(contenoxSessionID)
+	return acpSID
+}
+
+func sessionIDFromCtx(ctx context.Context) string {
+	v, _ := ctx.Value(runtimetypes.SessionIDContextKey).(string)
+	return v
 }

@@ -8,10 +8,6 @@ import (
 	"github.com/contenox/contenox/runtime/taskengine"
 )
 
-// resolveToolsNames is tested indirectly via the exported behaviour through
-// MacroEnv and SimpleEnv, but we also exercise it directly by constructing a
-// minimal ToolsProvider stub.
-
 func sortedNames(names []string) []string {
 	cp := append([]string(nil), names...)
 	sort.Strings(cp)

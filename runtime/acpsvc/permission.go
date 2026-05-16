@@ -22,10 +22,15 @@ func (t *Transport) AskApproval(ctx context.Context, req hitlservice.ApprovalReq
 		return false, libacp.InternalError("acpsvc: no ACP session bound to contenox session " + contenoxSessionID)
 	}
 
+	toolCallID := req.ToolCallID
+	if toolCallID == "" {
+		toolCallID = req.ToolsName + "." + req.ToolName
+	}
+
 	rpcReq := libacp.RequestPermissionRequest{
 		SessionID: acpSessionID,
 		ToolCall: libacp.PermissionToolCall{
-			ToolCallID: req.ToolsName + "." + req.ToolName,
+			ToolCallID: toolCallID,
 			Title:      req.ToolsName + "." + req.ToolName,
 			Kind:       permissionKindFor(req.ToolsName, req.ToolName),
 			Status:     libacp.ToolCallStatusPending,
@@ -38,10 +43,25 @@ func (t *Transport) AskApproval(ctx context.Context, req hitlservice.ApprovalReq
 		},
 	}
 
+	t.markPermissionPending(acpSessionID, toolCallID)
+	defer t.clearPermissionPending(acpSessionID, toolCallID)
+
+	reportErr, reportChange, end := t.tracker().Start(ctx, "hitl", "acp_permission", "tool_call_id", toolCallID)
+	defer end()
+
 	resp, err := t.conn.RequestPermission(ctx, rpcReq)
 	if err != nil {
+		ctxErr := ""
+		if e := ctx.Err(); e != nil {
+			ctxErr = e.Error()
+		}
+		reportChange("rpc_error", err.Error())
+		reportChange("ctx_err", ctxErr)
+		reportErr(err)
 		return false, err
 	}
+	reportChange("outcome", string(resp.Outcome.Outcome))
+	reportChange("option_id", resp.Outcome.OptionID)
 	switch resp.Outcome.Outcome {
 	case libacp.PermissionOutcomeCancelled:
 		return false, context.Canceled
@@ -52,10 +72,10 @@ func (t *Transport) AskApproval(ctx context.Context, req hitlservice.ApprovalReq
 }
 
 func permissionKindFor(toolsName, toolName string) libacp.ToolKind {
-	switch {
-	case toolsName == "local_shell":
+	switch toolsName {
+	case "local_shell":
 		return libacp.ToolKindExecute
-	case toolsName == "local_fs":
+	case "local_fs":
 		switch {
 		case strings.Contains(toolName, "read"), strings.Contains(toolName, "list"), strings.Contains(toolName, "grep"), strings.Contains(toolName, "find"):
 			return libacp.ToolKindRead
@@ -67,7 +87,7 @@ func permissionKindFor(toolsName, toolName string) libacp.ToolKind {
 			return libacp.ToolKindDelete
 		}
 		return libacp.ToolKindEdit
-	case toolsName == "webtools":
+	case "webtools":
 		return libacp.ToolKindFetch
 	}
 	return libacp.ToolKindOther

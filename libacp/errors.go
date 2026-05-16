@@ -12,7 +12,8 @@ const (
 	ErrInvalidParams  = -32602
 	ErrInternalError  = -32603
 
-	ErrAuthRequired = -32000
+	ErrAuthRequired     = -32000
+	ErrResourceNotFound = -32002
 )
 
 type Error struct {

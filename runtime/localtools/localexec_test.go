@@ -2,6 +2,7 @@ package localtools_test
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,52 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type bigOutputRunner struct{ n int }
+
+func (b bigOutputRunner) Run(_ context.Context, _ localtools.CommandSpec, stdout, _ io.Writer) (int, error) {
+	_, _ = stdout.Write(make([]byte, b.n))
+	return 0, nil
+}
+
+func TestUnit_LocalExecTools_CapWriterAppliesRegardlessOfRunner(t *testing.T) {
+	h := localtools.NewLocalExecToolsWith(bigOutputRunner{n: 100}).(*localtools.LocalExecTools)
+	ctx := context.WithValue(context.Background(), taskengine.ContextKeyOutputByteLimit, int64(10))
+	toolsCall := &taskengine.ToolsCall{Name: "local_shell", Args: map[string]string{"command": "anything"}}
+
+	out, dt, err := h.Exec(ctx, time.Now().UTC(), nil, false, toolsCall)
+	require.NoError(t, err)
+	assert.Equal(t, taskengine.DataTypeJSON, dt)
+	res, ok := out.(*localtools.LocalExecResult)
+	require.True(t, ok)
+	assert.False(t, res.Success, "output over budget must fail regardless of which backend produced it")
+	assert.Equal(t, -1, res.ExitCode)
+	assert.Contains(t, res.Error, "context budget")
+	assert.Empty(t, res.Stdout)
+}
+
+type budgetSignalRunner struct{}
+
+func (budgetSignalRunner) Run(_ context.Context, _ localtools.CommandSpec, stdout, _ io.Writer) (int, error) {
+	_, _ = io.WriteString(stdout, "partial output before the backend truncated")
+	return -1, localtools.ErrOutputBudgetExceeded
+}
+
+func TestUnit_LocalExecTools_BackendSignaledBudgetExceededCircuitBreaks(t *testing.T) {
+	h := localtools.NewLocalExecToolsWith(budgetSignalRunner{}).(*localtools.LocalExecTools)
+	ctx := context.Background()
+	toolsCall := &taskengine.ToolsCall{Name: "local_shell", Args: map[string]string{"command": "anything"}}
+
+	out, dt, err := h.Exec(ctx, time.Now().UTC(), nil, false, toolsCall)
+	require.NoError(t, err)
+	assert.Equal(t, taskengine.DataTypeJSON, dt)
+	res, ok := out.(*localtools.LocalExecResult)
+	require.True(t, ok)
+	assert.False(t, res.Success, "a backend that truncated server-side must circuit-break exactly like the in-process capWriter")
+	assert.Equal(t, -1, res.ExitCode)
+	assert.Contains(t, res.Error, "context budget")
+	assert.Empty(t, res.Stdout, "partial pre-truncation output must not poison the context window")
+}
 
 func TestUnit_LocalExecTools_Supports(t *testing.T) {
 	ctx := context.Background()

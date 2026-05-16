@@ -58,10 +58,17 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 			return
 		}
 		t.sendUpdate(ctx, toolCallNotification(sid, ev, libacp.ToolCallStatusFailed))
+	case taskengine.TaskEventPrint:
+		if ev.Content != "" {
+			t.sendUpdate(ctx, libacp.SessionNotification{
+				SessionID: sid,
+				Update:    libacp.NewAgentMessageChunk(ev.Content),
+			})
+		}
 	case taskengine.TaskEventToolCallPending:
-		t.sendUpdate(ctx, toolCallPendingNotification(sid, ev))
+		t.sendToolCallUpdateGuarded(ctx, sid, toolCallID(ev), toolCallPendingNotification(sid, ev))
 	case taskengine.TaskEventToolCall:
-		t.sendUpdate(ctx, toolCallUpdateNotification(sid, ev))
+		t.sendToolCallUpdateGuarded(ctx, sid, toolCallID(ev), toolCallUpdateNotification(sid, ev))
 	}
 }
 
@@ -71,6 +78,18 @@ func isToolBearingHandler(handler string) bool {
 		return true
 	}
 	return false
+}
+
+func toolCallInProgressNotification(sid libacp.SessionID, ev taskengine.TaskEvent) libacp.SessionNotification {
+	return libacp.SessionNotification{
+		SessionID: sid,
+		Update: libacp.SessionUpdate{
+			SessionUpdate: libacp.SessionUpdateToolCallUpdate,
+			ToolCallID:    toolCallID(ev),
+			Kind:          toolKindFor(ev.ToolName),
+			Status:        libacp.ToolCallStatusInProgress,
+		},
+	}
 }
 
 func toolCallNotification(sid libacp.SessionID, ev taskengine.TaskEvent, status libacp.ToolCallStatus) libacp.SessionNotification {
@@ -97,6 +116,9 @@ func toolCallPendingNotification(sid libacp.SessionID, ev taskengine.TaskEvent) 
 	}
 	if raw, err := json.Marshal(ev.ApprovalArgs); err == nil && len(ev.ApprovalArgs) > 0 {
 		update.RawInput = raw
+	}
+	if locs := toolCallLocations(ev); len(locs) > 0 {
+		update.Locations = locs
 	}
 	return libacp.SessionNotification{SessionID: sid, Update: update}
 }
@@ -126,11 +148,35 @@ func toolCallUpdateNotification(sid libacp.SessionID, ev taskengine.TaskEvent) l
 		update.ToolContent = []libacp.ToolCallContent{*diff}
 	}
 
+	if locs := toolCallLocations(ev); len(locs) > 0 {
+		update.Locations = locs
+	}
+
 	if ev.Error != "" {
 		update.Meta = json.RawMessage(`{"error":` + jsonString(ev.Error) + `}`)
 	}
 
 	return libacp.SessionNotification{SessionID: sid, Update: update}
+}
+
+func toolCallIDFromCtx(ctx context.Context) string {
+	v, _ := ctx.Value(taskengine.ContextKeyToolCallID).(string)
+	return v
+}
+
+func terminalAttachNotification(sid libacp.SessionID, toolCallID, terminalID string) libacp.SessionNotification {
+	return libacp.SessionNotification{
+		SessionID: sid,
+		Update: libacp.SessionUpdate{
+			SessionUpdate: libacp.SessionUpdateToolCall,
+			ToolCallID:    toolCallID,
+			Kind:          libacp.ToolKindExecute,
+			Status:        libacp.ToolCallStatusInProgress,
+			ToolContent: []libacp.ToolCallContent{
+				{Type: libacp.ToolCallContentTerminal, TerminalID: terminalID},
+			},
+		},
+	}
 }
 
 func toolCallID(ev taskengine.TaskEvent) string {
@@ -253,6 +299,19 @@ func toolKindFor(toolName string) libacp.ToolKind {
 		return libacp.ToolKindExecute
 	}
 	return libacp.ToolKindOther
+}
+
+func toolCallLocations(ev taskengine.TaskEvent) []libacp.ToolCallLocation {
+	path := ""
+	if diff := diffContentFromResult(ev.Content); diff != nil && diff.Path != "" {
+		path = diff.Path
+	} else if p, ok := ev.ApprovalArgs["path"].(string); ok {
+		path = strings.TrimSpace(p)
+	}
+	if path == "" {
+		return nil
+	}
+	return []libacp.ToolCallLocation{{Path: path}}
 }
 
 func diffContentFromResult(content string) *libacp.ToolCallContent {

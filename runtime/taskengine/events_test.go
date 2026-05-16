@@ -100,6 +100,44 @@ func TestTaskEvents_ExecEnvLifecycle(t *testing.T) {
 	assert.Equal(t, "noop", sink.events[1].TaskHandler)
 }
 
+func TestTaskEvents_PrintTaskEmitsEventNotStdout(t *testing.T) {
+	sink := &captureTaskEventSink{}
+	cctx := taskengine.WithTaskEventSink(context.Background(), sink)
+
+	env, err := taskengine.NewEnv(cctx, libtracker.NoopTracker{}, &taskengine.MockTaskExecutor{
+		MockOutput:          "ok",
+		MockTransitionValue: "ok",
+	}, taskengine.NewSimpleInspector(), tools.NewMockToolsRegistry())
+	require.NoError(t, err)
+
+	chain := &taskengine.TaskChainDefinition{
+		ID: "chain.print",
+		Tasks: []taskengine.TaskDefinition{
+			{
+				ID:      "t1",
+				Handler: taskengine.HandleNoop,
+				Print:   "chain says hi",
+				Transition: taskengine.TaskTransition{
+					Branches: []taskengine.TransitionBranch{{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd}},
+				},
+			},
+		},
+	}
+
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "in", taskengine.DataTypeString)
+	require.NoError(t, err)
+
+	var prints []taskengine.TaskEvent
+	for _, e := range sink.events {
+		if e.Kind == taskengine.TaskEventPrint {
+			prints = append(prints, e)
+		}
+	}
+	require.Len(t, prints, 1,
+		"the chain `print` task MUST publish exactly one TaskEventPrint; a direct fmt.Println would corrupt the ACP stdio transport (stdout is the JSON-RPC channel)")
+	require.Equal(t, "chain says hi", prints[0].Content)
+}
+
 func TestTaskEvents_ExecEnvFailureLifecycle(t *testing.T) {
 	sink := &captureTaskEventSink{}
 	constructorCtx := taskengine.WithTaskEventSink(context.Background(), sink)

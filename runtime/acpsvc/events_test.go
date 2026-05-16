@@ -144,7 +144,7 @@ func TestUnit_SummarizeToolCallArgs(t *testing.T) {
 	}{
 		{"exec without args", "acp_terminal.exec", map[string]any{"command": "ls"}, "ls"},
 		{"exec with args slice", "acp_terminal.exec", map[string]any{"command": "git", "args": []any{"status", "--short"}}, "git status --short"},
-		{"read_file path", "acp_fs.read_file", map[string]any{"path": "/tmp/foo.txt"}, "/tmp/foo.txt"},
+		{"read_file path", "local_fs.read_file", map[string]any{"path": "/tmp/foo.txt"}, "/tmp/foo.txt"},
 		{"local grep pattern+path", "local_fs.grep", map[string]any{"pattern": "TODO", "path": "src/"}, "TODO in src/"},
 		{"grep pattern only", "grep", map[string]any{"pattern": "TODO"}, "TODO"},
 		{"fetch_url", "webtools.fetch_url", map[string]any{"url": "https://example.com"}, "https://example.com"},

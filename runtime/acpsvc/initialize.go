@@ -19,7 +19,7 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 	if clientSupportsTerminalAuth(req.ClientCapabilities) {
 		command := os.Args[0]
 		authMethods = append(authMethods, libacp.AuthMethod{
-			ID:          "terminal",
+			ID:          terminalAuthMethodID,
 			Name:        "Setup Contenox",
 			Description: "Opens an interactive terminal to configure your LLM provider and model.",
 			Type:        "terminal",
@@ -34,7 +34,7 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 	}
 
 	return libacp.InitializeResponse{
-		ProtocolVersion: libacp.ProtocolVersion,
+		ProtocolVersion: negotiateProtocolVersion(req.ProtocolVersion),
 		AgentInfo: &libacp.Implementation{
 			Name:    "contenox",
 			Title:   "Contenox ACP Agent",
@@ -45,7 +45,7 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 			PromptCapabilities: libacp.PromptCapabilities{
 				Image:           false,
 				Audio:           false,
-				EmbeddedContext: req.ClientCapabilities.FS.ReadTextFile,
+				EmbeddedContext: true,
 			},
 			McpCapabilities: libacp.McpCapabilities{
 				HTTP: true,
@@ -57,6 +57,13 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 		},
 		AuthMethods: authMethods,
 	}, nil
+}
+
+func negotiateProtocolVersion(client int) int {
+	if client >= 1 && client <= libacp.ProtocolVersion {
+		return client
+	}
+	return libacp.ProtocolVersion
 }
 
 func clientSupportsTerminalAuth(caps libacp.ClientCapabilities) bool {

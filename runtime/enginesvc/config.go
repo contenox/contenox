@@ -25,9 +25,10 @@ type Config struct {
 
 	LocalTools map[string]taskengine.ToolsRepo
 
-	EnableHITL  bool
-	AskApproval localtools.AskApproval
-	HITLService hitlservice.Service
+	EnableHITL            bool
+	AskApproval           localtools.AskApproval
+	HITLService           hitlservice.Service
+	HITLDefaultPolicyName string
 
 	Bus             libbus.Messenger
 	KVStore         libkvstore.KVManager

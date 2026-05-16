@@ -43,6 +43,7 @@ flow so the editor's UI controls approval. Pass --auto to disable (unattended/te
 func init() {
 	acpCmd.Flags().Bool("auto", false, "Autonomous mode: disable HITL permission prompts (gated tools run unattended)")
 	acpCmd.Flags().Bool("setup", false, "Run interactive setup wizard to configure provider and model, then exit.")
+	acpCmd.Flags().String("workspace-id", "", "Workspace ID for new ACP sessions (default: the stable workspace from ~/.contenox/workspace.id, same as the CLI). Existing sessions are always located by their session ID regardless of workspace.")
 }
 
 type acpStdio struct{}
@@ -68,6 +69,8 @@ func runACP(cmd *cobra.Command, _ []string) error {
 	autoMode, _ := cmd.Flags().GetBool("auto")
 	enableHITL := !autoMode
 
+	workspaceFlag, _ := cmd.Flags().GetString("workspace-id")
+
 	dbPath, err := resolveDBPath(cmd)
 	if err != nil {
 		return err
@@ -80,6 +83,14 @@ func runACP(cmd *cobra.Command, _ []string) error {
 	defer db.Close()
 
 	contenoxDir, _ := ResolveContenoxDir(cmd)
+	workspaceID := workspaceFlag
+	if workspaceID == "" {
+		workspaceID = ResolveWorkspaceID(contenoxDir)
+	}
+	if err := writeEmbeddedHITLPolicies(contenoxDir, false); err != nil {
+		slog.Warn("Failed to seed HITL policy presets", "error", err)
+	}
+
 	closeLogs, err := setupTelemetryLogging(ctx, runtimetypes.New(db.WithoutTransaction()), contenoxDir)
 	if err != nil {
 		slog.Warn("Failed to setup telemetry logging", "error", err)
@@ -102,11 +113,19 @@ func runACP(cmd *cobra.Command, _ []string) error {
 	var transport *acpsvc.Transport
 
 	tools := map[string]taskengine.ToolsRepo{
-		"echo":                      localtools.NewEchoTools(),
-		"print":                     localtools.NewPrint(tracker),
-		"webtools":                  localtools.NewWebCaller(tracker),
-		acpsvc.ACPFSToolsName:       acpsvc.NewACPFSTools(func() *acpsvc.Transport { return transport }),
-		acpsvc.ACPTerminalToolsName: acpsvc.NewACPTerminalTools(func() *acpsvc.Transport { return transport }),
+		"echo":     localtools.NewEchoTools(),
+		"print":    localtools.NewPrint(tracker),
+		"webtools": localtools.NewWebCaller(tracker),
+		"local_fs": localtools.NewLocalFSToolsWith(
+			"",
+			db,
+			acpsvc.NewACPFileIO(func() *acpsvc.Transport { return transport }),
+			"local_fs",
+			acpsvc.NewACPCwdResolver(func() *acpsvc.Transport { return transport }),
+		),
+		"local_shell": localtools.NewLocalExecToolsWith(
+			acpsvc.NewACPCommandRunner(func() *acpsvc.Transport { return transport }),
+		),
 	}
 
 	var askApproval localtools.AskApproval
@@ -124,12 +143,13 @@ func runACP(cmd *cobra.Command, _ []string) error {
 		DefaultProvider: defaultProvider,
 		LocalTools:      tools,
 		Tracker:         tracker,
-		WorkspaceID:     "acp",
+		WorkspaceID:     workspaceID,
 	}
 	if enableHITL {
 		cfg.EnableHITL = true
 		cfg.AskApproval = askApproval
 		cfg.VFS = acpGlobalVFS()
+		cfg.HITLDefaultPolicyName = "hitl-policy-acp.json"
 	}
 
 	engine, err := enginesvc.Build(ctx, db, cfg)
@@ -144,6 +164,7 @@ func runACP(cmd *cobra.Command, _ []string) error {
 		ChainRegistry:   chains,
 		DefaultModel:    defaultModel,
 		DefaultProvider: defaultProvider,
+		WorkspaceID:     workspaceID,
 	})
 
 	conn := libacp.NewAgentSideConnection(acpStdio{}, func(c *libacp.AgentSideConnection) libacp.Agent {

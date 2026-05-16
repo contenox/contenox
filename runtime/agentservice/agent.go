@@ -3,6 +3,7 @@ package agentservice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -109,8 +110,13 @@ func (a *agent) tracker() libtracker.ActivityTracker {
 }
 
 func (a *agent) Prompt(ctx context.Context, req PromptRequest) (*PromptResponse, error) {
+	promptReportErr, _, promptEnd := a.tracker().Start(ctx, "execute", "prompt", "sessionID", req.SessionID)
+	defer promptEnd()
+
 	if req.Chain == nil {
-		return nil, fmt.Errorf("PromptRequest.Chain is required")
+		err := fmt.Errorf("PromptRequest.Chain is required")
+		promptReportErr(err)
+		return nil, err
 	}
 	chain := req.Chain
 
@@ -130,6 +136,7 @@ func (a *agent) Prompt(ctx context.Context, req PromptRequest) (*PromptResponse,
 	} else {
 		inputVal, inputType, err = a.buildChatInput(ctx, req)
 		if err != nil {
+			promptReportErr(err)
 			return nil, err
 		}
 	}
@@ -148,7 +155,21 @@ func (a *agent) Prompt(ctx context.Context, req PromptRequest) (*PromptResponse,
 	output, outputType, stateUnits, execErr := a.deps.Engine.TaskService.Execute(ctx, chain, inputVal, inputType)
 
 	if req.SessionID != "" {
-		a.persistHistory(ctx, req.SessionID, inputVal, stateUnits, execErr)
+		// Pre-flight Guard: If the input immediately triggers a context length overflow,
+		// do not save it to the session history. This prevents the "poison pill" effect
+		// where a massive input permanently bricks the session.
+		isPoisonPill := false
+		if execErr != nil && errors.Is(execErr, taskengine.ErrContextLengthExceeded) {
+			// If it failed before any real LLM steps could execute, it's an input failure
+			if len(stateUnits) <= 1 {
+				isPoisonPill = true
+				promptReportErr(fmt.Errorf("input rejected to protect session: %w", execErr))
+			}
+		}
+
+		if !isPoisonPill {
+			a.persistHistory(ctx, req.SessionID, inputVal, stateUnits, execErr)
+		}
 	}
 
 	resp := &PromptResponse{

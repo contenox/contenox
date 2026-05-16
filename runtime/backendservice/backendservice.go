@@ -40,9 +40,7 @@ func (s *service) Create(ctx context.Context, backend *runtimetypes.Backend) err
 		return err
 	}
 	if err := storeInstance.EnforceMaxRowCount(ctx, count); err != nil {
-		err := fmt.Errorf("too many rows in the system: %w", err)
-		fmt.Printf("SERVER ERROR: creation blocked: limit reached current %d %v", count, err)
-		return err
+		return fmt.Errorf("too many rows in the system (current %d): %w", count, err)
 	}
 
 	return storeInstance.CreateBackend(ctx, backend)

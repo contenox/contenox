@@ -26,10 +26,11 @@ const (
 // Diff is populated for file-mutation tools (write_file, sed) to show the
 // unified diff of what would change.
 type ApprovalRequest struct {
-	ToolsName string
-	ToolName  string
-	Args      map[string]any
-	Diff      string
+	ToolCallID string
+	ToolsName  string
+	ToolName   string
+	Args       map[string]any
+	Diff       string
 }
 
 // ConditionOp is the comparison operator for a rule condition.
@@ -70,8 +71,8 @@ type Rule struct {
 
 // Policy is the top-level document stored as hitl-policy.json in the VFS.
 // Rules are evaluated in order; the first matching rule wins.
-// DefaultAction is applied when no rule matches; it defaults to "allow" when absent
-// so existing deployments without a policy file keep the original behaviour.
+// DefaultAction is applied when no rule matches; it is fail-closed to "approve"
+// when absent so an unaccounted-for tool pauses for a human.
 type Policy struct {
 	DefaultAction Action `json:"default_action,omitempty"`
 	Rules         []Rule `json:"rules"`
@@ -108,7 +109,7 @@ func evaluate(p *Policy, toolsName, toolName string, args map[string]any) Evalua
 	}
 	defaultAction := p.DefaultAction
 	if defaultAction == "" {
-		defaultAction = ActionAllow
+		defaultAction = ActionApprove
 	}
 	return EvaluationResult{
 		Action: defaultAction,
@@ -246,22 +247,27 @@ func validatePolicy(p *Policy) error {
 	return nil
 }
 
-// defaultPolicy returns the built-in policy used when hitl-policy.json is absent.
-// Mutating actions require approval: file writes, shell commands, and the
-// non-idempotent HTTP verbs from webtools. GET / HEAD remain default-allow
-// (the unmatched-default action is ActionAllow per evaluate()).
 func defaultPolicy() *Policy {
 	return &Policy{
+		DefaultAction: ActionApprove,
 		Rules: []Rule{
+			{Tools: "local_fs", Tool: "read_file", Action: ActionAllow},
+			{Tools: "local_fs", Tool: "read_file_range", Action: ActionAllow},
+			{Tools: "local_fs", Tool: "list_dir", Action: ActionAllow},
+			{Tools: "local_fs", Tool: "grep", Action: ActionAllow},
+			{Tools: "local_fs", Tool: "stat_file", Action: ActionAllow},
+			{Tools: "local_fs", Tool: "count_stats", Action: ActionAllow},
 			{Tools: "local_fs", Tool: "write_file", Action: ActionApprove},
 			{Tools: "local_fs", Tool: "sed", Action: ActionApprove},
 			{Tools: "local_shell", Tool: "local_shell", Action: ActionApprove},
-			{Tools: "acp_fs", Tool: "write_file", Action: ActionApprove},
-			{Tools: "acp_terminal", Tool: "exec", Action: ActionApprove},
+			{Tools: "webtools", Tool: "web_get", Action: ActionAllow},
+			{Tools: "webtools", Tool: "web_head", Action: ActionAllow},
 			{Tools: "webtools", Tool: "web_post", Action: ActionApprove},
 			{Tools: "webtools", Tool: "web_put", Action: ActionApprove},
 			{Tools: "webtools", Tool: "web_patch", Action: ActionApprove},
 			{Tools: "webtools", Tool: "web_delete", Action: ActionApprove},
+			{Tools: "echo", Action: ActionAllow},
+			{Tools: "print", Action: ActionAllow},
 		},
 	}
 }

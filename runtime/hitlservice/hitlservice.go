@@ -33,24 +33,35 @@ type Service interface {
 	Respond(approvalID string, approved bool) bool
 }
 
+const defaultPolicyName = "hitl-policy-default.json"
+
 type service struct {
-	vfs     vfsservice.Service
-	store   KVReader
-	tracker libtracker.ActivityTracker
+	vfs            vfsservice.Service
+	store          KVReader
+	tracker        libtracker.ActivityTracker
+	fallbackPolicy string
 
 	mu      sync.Mutex
 	pending map[string]chan bool
 }
 
 func New(vfs vfsservice.Service, store KVReader, tracker libtracker.ActivityTracker) Service {
+	return NewWithDefaultPolicy(vfs, store, tracker, defaultPolicyName)
+}
+
+func NewWithDefaultPolicy(vfs vfsservice.Service, store KVReader, tracker libtracker.ActivityTracker, fallbackPolicy string) Service {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
 	}
+	if strings.TrimSpace(fallbackPolicy) == "" {
+		fallbackPolicy = defaultPolicyName
+	}
 	return &service{
-		vfs:     vfs,
-		store:   store,
-		tracker: tracker,
-		pending: make(map[string]chan bool),
+		vfs:            vfs,
+		store:          store,
+		tracker:        tracker,
+		fallbackPolicy: fallbackPolicy,
+		pending:        make(map[string]chan bool),
 	}
 }
 
@@ -71,7 +82,10 @@ func (s *service) Evaluate(ctx context.Context, toolsName, toolName string, args
 	defer end()
 	policyPath := s.readActivePolicyName(ctx)
 	if policyPath == "" {
-		policyPath = "hitl-policy-default.json"
+		policyPath = s.fallbackPolicy
+	}
+	if policyPath == "" {
+		policyPath = defaultPolicyName
 	}
 	p, err := loadPolicy(ctx, s.vfs, policyPath)
 	if err != nil {

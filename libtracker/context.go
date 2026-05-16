@@ -10,6 +10,7 @@ var ContextKeyRequestID = contextKey("request_id")
 var ContextKeyTraceID = contextKey("trace_id")
 var ContextKeySpanID = contextKey("span_id")
 
+// CopyTrackingValues copies the tracking values from src to dst.
 func CopyTrackingValues(src context.Context, dst context.Context) context.Context {
 	requestID := src.Value(ContextKeyRequestID)
 	traceID := src.Value(ContextKeyTraceID)
@@ -21,7 +22,7 @@ func CopyTrackingValues(src context.Context, dst context.Context) context.Contex
 }
 
 // WithNewRequestID stamps a fresh random request ID into ctx.
-// Call this at the top of any CLI command or goroutine entry-point that
+// Call this at the top of any command or goroutine entry-point that
 // doesn't already have a request ID so the tracker never logs SERVERBUG.
 func WithNewRequestID(ctx context.Context) context.Context {
 	id := fmt.Sprintf("cli-%016x", rand.Uint64())

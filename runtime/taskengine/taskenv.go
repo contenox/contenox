@@ -330,7 +330,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 	for {
 		if ctx.Err() != nil {
-			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: context canceled", currentTask.ID)
+			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: %w", currentTask.ID, ctx.Err())
 		}
 
 		// Determine task input
@@ -496,7 +496,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				endErrTransition() // Fix 2: direct call, not defer — defers inside loops leak
 				continue
 			}
-			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s failed after %d retries: %v", currentTask.ID, maxRetries, taskErr)
+			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s failed after %d retries: %w", currentTask.ID, maxRetries, taskErr)
 		}
 
 		// Handle print statement
@@ -505,7 +505,9 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			if err != nil {
 				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: print template error: %v", currentTask.ID, err)
 			}
-			fmt.Println(printMsg)
+			printEvent := NewTaskEvent(ctx, TaskEventPrint)
+			printEvent.Content = printMsg
+			publishTaskEventBestEffort(ctx, env.eventSink, printEvent)
 		}
 
 		// Evaluate transitions and get chosen branch

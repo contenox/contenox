@@ -16,6 +16,9 @@ var hitlPolicyStrict string
 //go:embed hitl-policy-dev.json
 var hitlPolicyDev string
 
+//go:embed hitl-policy-acp.json
+var hitlPolicyACP string
+
 // HITLPolicyPresets lists the names and content of all embedded HITL policy presets
 // in the order they should be written to disk.
 var HITLPolicyPresets = []struct {
@@ -25,6 +28,7 @@ var HITLPolicyPresets = []struct {
 	{"hitl-policy-default.json", hitlPolicyDefault},
 	{"hitl-policy-strict.json", hitlPolicyStrict},
 	{"hitl-policy-dev.json", hitlPolicyDev},
+	{"hitl-policy-acp.json", hitlPolicyACP},
 }
 
 // writeEmbeddedHITLPolicies writes the embedded policy presets to contenoxDir.

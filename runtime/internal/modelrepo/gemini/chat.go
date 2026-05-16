@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 
 	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/google/uuid"
 )
 
 type GeminiChatClient struct {
@@ -87,7 +87,7 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 			if err != nil {
 				continue
 			}
-			id := fmt.Sprintf("%x", rand.Int63())
+			id := uuid.NewString()
 			tc := modelrepo.ToolCall{
 				ID:   id,
 				Type: "function",
@@ -118,9 +118,11 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	if outText == "" && len(toolCalls) == 0 {
-		err := fmt.Errorf("empty content from model %s", c.modelName)
-		reportErr(err)
-		return modelrepo.ChatResult{}, err
+		empty := modelrepo.ChatResult{
+			Message: modelrepo.Message{Role: "assistant", Content: "", Thinking: thinkingText},
+		}
+		reportChange("chat_completed_empty", empty)
+		return empty, nil
 	}
 
 	result := modelrepo.ChatResult{

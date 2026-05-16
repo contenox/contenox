@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 
 	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/google/uuid"
 )
 
 type vertexChatClient struct {
@@ -65,7 +65,7 @@ func (c *vertexChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 				continue
 			}
 			toolCalls = append(toolCalls, modelrepo.ToolCall{
-				ID:   fmt.Sprintf("%x", rand.Int63()),
+				ID:   uuid.NewString(),
 				Type: "function",
 				Function: struct {
 					Name      string `json:"name"`

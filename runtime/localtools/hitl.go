@@ -103,11 +103,13 @@ func (h *HITLWrapper) Exec(
 		if diffErr != nil {
 			reportErr(fmt.Errorf("hitl: diff generation failed: %w", diffErr))
 		}
+		toolCallID, _ := ctx.Value(taskengine.ContextKeyToolCallID).(string)
 		req := hitlservice.ApprovalRequest{
-			ToolsName: tools.Name,
-			ToolName:  toolName,
-			Args:      args,
-			Diff:      diff,
+			ToolCallID: toolCallID,
+			ToolsName:  tools.Name,
+			ToolName:   toolName,
+			Args:       args,
+			Diff:       diff,
 		}
 
 		askCtx := ctx

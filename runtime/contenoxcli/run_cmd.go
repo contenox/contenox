@@ -188,6 +188,8 @@ Examples:
 
 		stopTrace := startTraceStream(execCtx, o, engine, cmd.ErrOrStderr())
 		defer stopTrace()
+		stopPrint := startPrintStream(execCtx, engine, cmd.ErrOrStderr())
+		defer stopPrint()
 
 		// Create agent and execute via service layer (stateless — no session).
 		workspaceID := ResolveWorkspaceID(o.ContenoxDir)

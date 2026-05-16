@@ -76,4 +76,5 @@ type contextKey string
 
 const (
 	ContextKeyOutputByteLimit contextKey = "output_byte_limit"
+	ContextKeyToolCallID      contextKey = "tool_call_id"
 )

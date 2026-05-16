@@ -98,7 +98,7 @@ func (exe *SimpleExec) countTokensAndCheckLimit(ctx context.Context, modelName s
 	}
 
 	if tokenCount > ctxLength {
-		return fmt.Errorf("input token count %d exceeds context length %d", tokenCount, ctxLength)
+		return fmt.Errorf("%w: input token count %d > %d", ErrContextLengthExceeded, tokenCount, ctxLength)
 	}
 
 	return nil
@@ -114,7 +114,7 @@ func (exe *SimpleExec) countChatHistoryTokens(ctx context.Context, modelName str
 	if history.InputTokens > 0 && history.OutputTokens > 0 {
 		totalTokens := history.InputTokens + history.OutputTokens
 		if totalTokens > ctxLength {
-			return totalTokens, fmt.Errorf("chat history token count %d exceeds context length %d", totalTokens, ctxLength)
+			return totalTokens, fmt.Errorf("%w: chat history token count %d > %d", ErrContextLengthExceeded, totalTokens, ctxLength)
 		}
 		return totalTokens, nil
 	}
@@ -130,10 +130,155 @@ func (exe *SimpleExec) countChatHistoryTokens(ctx context.Context, modelName str
 	}
 
 	if totalTokens > ctxLength {
-		return totalTokens, fmt.Errorf("chat history token count %d exceeds context length %d", totalTokens, ctxLength)
+		return totalTokens, fmt.Errorf("%w: chat history token count %d > %d", ErrContextLengthExceeded, totalTokens, ctxLength)
 	}
 
 	return totalTokens, nil
+}
+
+func reserveOutputTokens(llmCall *LLMExecutionConfig, ctxLength int) int {
+	if llmCall.MaxTokens != nil && *llmCall.MaxTokens > 0 {
+		return *llmCall.MaxTokens
+	}
+	if ctxLength >= 8 {
+		return ctxLength / 8
+	}
+	return 0
+}
+
+func pruneDanglingToolLinks(msgs []Message) []Message {
+	resultIDs := map[string]bool{}
+	callIDs := map[string]bool{}
+	for _, m := range msgs {
+		if m.Role == "tool" && m.ToolCallID != "" {
+			resultIDs[m.ToolCallID] = true
+		}
+		if m.Role == "assistant" {
+			for _, tc := range m.CallTools {
+				if tc.ID != "" {
+					callIDs[tc.ID] = true
+				}
+			}
+		}
+	}
+	out := make([]Message, 0, len(msgs))
+	for _, m := range msgs {
+		switch {
+		case m.Role == "tool":
+			if m.ToolCallID == "" || !callIDs[m.ToolCallID] {
+				continue
+			}
+			out = append(out, m)
+		case m.Role == "assistant" && len(m.CallTools) > 0:
+			answered := make([]ToolCall, 0, len(m.CallTools))
+			for _, tc := range m.CallTools {
+				if tc.ID != "" && resultIDs[tc.ID] {
+					answered = append(answered, tc)
+				}
+			}
+			if len(answered) == 0 && strings.TrimSpace(m.Content) == "" {
+				continue
+			}
+			m.CallTools = answered
+			out = append(out, m)
+		default:
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func (exe *SimpleExec) shiftMessagesToFit(ctx context.Context, modelName string, msgs []Message, budget int) ([]Message, int, error) {
+	toks := make([]int, len(msgs))
+	for i, m := range msgs {
+		n, err := exe.repo.CountTokens(ctx, modelName, m.Content)
+		if err != nil {
+			return nil, 0, fmt.Errorf("token count failed: %w", err)
+		}
+		toks[i] = n
+	}
+
+	type unit struct {
+		idx    []int
+		tokens int
+		system bool
+	}
+	var units []unit
+	for i := 0; i < len(msgs); i++ {
+		switch {
+		case msgs[i].Role == "system":
+			units = append(units, unit{idx: []int{i}, tokens: toks[i], system: true})
+		case msgs[i].Role == "tool":
+		case msgs[i].Role == "assistant" && len(msgs[i].CallTools) > 0:
+			u := unit{idx: []int{i}, tokens: toks[i]}
+			for j := i + 1; j < len(msgs) && msgs[j].Role == "tool"; j++ {
+				u.idx = append(u.idx, j)
+				u.tokens += toks[j]
+				i = j
+			}
+			units = append(units, u)
+		default:
+			units = append(units, unit{idx: []int{i}, tokens: toks[i]})
+		}
+	}
+
+	systemTokens := 0
+	for _, u := range units {
+		if u.system {
+			systemTokens += u.tokens
+		}
+	}
+	if systemTokens > budget {
+		return nil, 0, ErrContextLengthExceeded
+	}
+
+	keepUnit := make([]bool, len(units))
+	used := systemTokens
+	for k := range units {
+		if units[k].system {
+			keepUnit[k] = true
+		}
+	}
+	for k := len(units) - 1; k >= 0; k-- {
+		if units[k].system {
+			continue
+		}
+		if used+units[k].tokens > budget {
+			break
+		}
+		keepUnit[k] = true
+		used += units[k].tokens
+	}
+
+	keepIdx := make([]bool, len(msgs))
+	for k, u := range units {
+		if keepUnit[k] {
+			for _, ix := range u.idx {
+				keepIdx[ix] = true
+			}
+		}
+	}
+	out := make([]Message, 0, len(msgs))
+	for i := range msgs {
+		if keepIdx[i] {
+			out = append(out, msgs[i])
+		}
+	}
+
+	out = pruneDanglingToolLinks(out)
+	if len(out) == 0 {
+		return nil, 0, ErrContextLengthExceeded
+	}
+
+	total := 0
+	for _, m := range out {
+		n, err := exe.repo.CountTokens(ctx, modelName, m.Content)
+		if err != nil {
+			return nil, 0, fmt.Errorf("token count failed: %w", err)
+		}
+		total += n
+	}
+	return out, total, nil
 }
 
 // getPrimaryModel extracts the primary model name from execution config
@@ -433,8 +578,10 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 
 		// Count tokens and check limits for chat completion
 		modelName := GetPrimaryModel(finalExecConfig)
-		if _, err := exe.countChatHistoryTokens(taskCtx, modelName, chatHistory, ctxLength); err != nil {
-			return nil, DataTypeAny, "", err
+		if !finalExecConfig.Shift {
+			if _, err := exe.countChatHistoryTokens(taskCtx, modelName, chatHistory, ctxLength); err != nil {
+				return nil, DataTypeAny, "", err
+			}
 		}
 
 		if currentTask.SystemInstruction != "" {
@@ -577,11 +724,9 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				}
 			}
 			remainingTokens := max(ctxLength-currentTokens, 0)
-			budgetBytes := int64(remainingTokens-500) * 3
-			if budgetBytes < 0 {
-				budgetBytes = 0
-			}
+			budgetBytes := max(int64(remainingTokens-500)*3, 0)
 			callCtx = context.WithValue(callCtx, ContextKeyOutputByteLimit, budgetBytes)
+			callCtx = context.WithValue(callCtx, ContextKeyToolCallID, toolCall.ID)
 
 			toolReportErr, toolReportChange, toolEnd := exe.tracker.Start(
 				callCtx, "tool_call", toolCall.Function.Name,
@@ -603,13 +748,15 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			result, resultType, err := exe.toolsProvider.Exec(callCtx, startingTime, args, chainContext.Debug, toolsCall)
 
 			toolExecErr := err
-			if err != nil {
+			switch {
+			case err != nil && (errors.Is(err, context.Canceled) || callCtx.Err() != nil):
+				toolReportErr(err)
+				taskErr = err
+			case err != nil:
 				toolReportErr(fmt.Errorf("tool %s execution failed: %w", toolCall.Function.Name, err))
 				result = fmt.Sprintf("tool %s execution failed: %s", toolCall.Function.Name, err)
 				err = nil
-				// Soft error instead! taskErr = fmt.Errorf("tool %s execution failed: %w", toolCall.Function.Name, err)
-				// break
-			} else {
+			default:
 				toolReportChange("result_type", resultType.String())
 			}
 			toolEnd()
@@ -679,7 +826,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			if currentTask.Tools.Args == nil {
 				currentTask.Tools.Args = make(map[string]string)
 			}
-			toolsCtx := taskCtx
+			toolsCtx := context.WithValue(taskCtx, ContextKeyToolCallID, currentTask.ID)
 			if currentTask.ExecuteConfig != nil {
 				if policy, ok := currentTask.ExecuteConfig.ToolsPolicies[currentTask.Tools.Name]; ok && len(policy) > 0 {
 					toolsCtx = WithToolsArgs(toolsCtx, currentTask.Tools.Name, policy)
@@ -841,14 +988,16 @@ func (exe *SimpleExec) executeLLM(
 		messagesTokens = total
 	}
 
+	preludeTokens := 0
 	for _, m := range prelude {
 		cnt, err := exe.repo.CountTokens(ctx, modelName, m.Content)
 		if err != nil {
 			reportErr(fmt.Errorf("token count failed: %w", err))
 			return nil, DataTypeAny, "", fmt.Errorf("token count failed: %w", err)
 		}
-		messagesTokens += cnt
+		preludeTokens += cnt
 	}
+	messagesTokens += preludeTokens
 
 	// Count tool tokens
 	toolTokens, err := exe.countToolTokens(ctx, modelName, tools)
@@ -869,10 +1018,31 @@ func (exe *SimpleExec) executeLLM(
 
 	// Check limit
 	if ctxLength > 0 && totalTokens > ctxLength {
-		err := fmt.Errorf("total token count %d (messages: %d, tools: %d) exceeds context length %d",
-			totalTokens, messagesTokens, toolTokens, ctxLength)
-		reportErr(err)
-		return nil, DataTypeAny, "", err
+		if !llmCall.Shift {
+			err := fmt.Errorf("%w: total token count %d (messages: %d, tools: %d) > %d", ErrContextLengthExceeded,
+				totalTokens, messagesTokens, toolTokens, ctxLength)
+			reportErr(err)
+			return nil, DataTypeAny, "", err
+		}
+		reserve := reserveOutputTokens(llmCall, ctxLength)
+		budget := ctxLength - toolTokens - preludeTokens - reserve
+		slid, slidTokens, err := exe.shiftMessagesToFit(ctx, modelName, input.Messages, budget)
+		if err != nil {
+			wrapped := fmt.Errorf("%w: irreducible context after shift (tools: %d, prelude: %d, reserve: %d, limit: %d)",
+				ErrContextLengthExceeded, toolTokens, preludeTokens, reserve, ctxLength)
+			reportErr(wrapped)
+			return nil, DataTypeAny, "", wrapped
+		}
+		input.Messages = slid
+		messagesTokens = slidTokens + preludeTokens
+		totalTokens = messagesTokens + toolTokens
+		reportChange("token_usage_post_shift", map[string]any{
+			"messages_tokens": messagesTokens,
+			"tool_tokens":     toolTokens,
+			"total_tokens":    totalTokens,
+			"limit":           ctxLength,
+			"kept_messages":   len(slid),
+		})
 	}
 
 	messagesC := make([]libmodelprovider.Message, 0, len(prelude)+len(input.Messages))

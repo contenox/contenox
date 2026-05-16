@@ -64,6 +64,68 @@ func startTraceStream(ctx context.Context, opts chatOpts, engine *Engine, w io.W
 	}
 }
 
+func startPrintStream(ctx context.Context, engine *Engine, w io.Writer) func() {
+	if engine == nil || engine.Bus == nil {
+		return func() {}
+	}
+	reqID, ok := ctx.Value(libtracker.ContextKeyRequestID).(string)
+	if !ok || reqID == "" {
+		return func() {}
+	}
+	subject := taskengine.TaskEventRequestSubject(reqID)
+
+	tracker := engine.Tracker
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
+	reportErr, _, end := tracker.Start(ctx, "subscribe", "task_event_bus", "subject", subject)
+	defer end()
+
+	streamCtx, cancel := context.WithCancel(ctx)
+	rawCh := make(chan []byte, 32)
+	sub, err := engine.Bus.Stream(streamCtx, subject, rawCh)
+	if err != nil {
+		cancel()
+		reportErr(err)
+		return func() {}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		renderPrintEvents(streamCtx, rawCh, w)
+		close(done)
+	}()
+
+	return func() {
+		time.Sleep(traceDrainGrace)
+		cancel()
+		_ = sub.Unsubscribe()
+		<-done
+	}
+}
+
+func renderPrintEvents(ctx context.Context, ch <-chan []byte, w io.Writer) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case payload, ok := <-ch:
+			if !ok {
+				return
+			}
+			var ev taskengine.TaskEvent
+			if err := json.Unmarshal(payload, &ev); err != nil {
+				continue
+			}
+			if ev.Kind == taskengine.TaskEventPrint && ev.Content != "" {
+				if _, err := fmt.Fprintln(w, ev.Content); err != nil {
+					return
+				}
+			}
+		}
+	}
+}
+
 func renderTraceUnits(ctx context.Context, ch <-chan []byte, w io.Writer) {
 	for {
 		select {

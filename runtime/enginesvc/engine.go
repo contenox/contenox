@@ -220,7 +220,7 @@ func buildTools(engineCtx context.Context, cfg Config, db libdbexec.DBManager, t
 			if cfg.FallbackVFS != nil {
 				hitlVFS = newLayered(cfg.VFS, cfg.FallbackVFS)
 			}
-			hitlSvc = hitlservice.New(hitlVFS, store, tracker)
+			hitlSvc = hitlservice.NewWithDefaultPolicy(hitlVFS, store, tracker, cfg.HITLDefaultPolicyName)
 		}
 		toolsRepo = localtools.NewHITLWrapper(toolsRepo, cfg.AskApproval, hitlSvc, tracker)
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/contenox/contenox/libtracker"
 	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/google/uuid"
 	"github.com/ollama/ollama/api"
 )
 
@@ -145,11 +146,11 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	//   type ToolCallFunctionArguments map[string]any
 	//   func (t *ToolCallFunctionArguments) String() string { ... }
 	var toolCalls []modelrepo.ToolCall
-	for i, tc := range finalResponse.Message.ToolCalls {
+	for _, tc := range finalResponse.Message.ToolCalls {
 		argsJSON := tc.Function.Arguments.String()
 
 		toolCalls = append(toolCalls, modelrepo.ToolCall{
-			ID:   fmt.Sprintf("ollama-tool-%d", i),
+			ID:   uuid.NewString(),
 			Type: "function",
 			Function: struct {
 				Name      string `json:"name"`

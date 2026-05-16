@@ -145,15 +145,16 @@ func runSetup(out, errOut io.Writer) error {
 	}
 
 	model := sp.defaultModel
-	if sp.key == "ollama" {
+	switch sp.key {
+	case "ollama":
 		model = promptOllamaModel(out, scanner, model)
-	} else if sp.key == "local" {
+	case "local":
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  Pull a model after setup:")
 		fmt.Fprintln(out, "    contenox model pull granite-3.2-2b")
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  The first model you pull becomes the default automatically.")
-	} else {
+	default:
 		model = promptLine(out, scanner, fmt.Sprintf("  Model [%s]", model), model)
 	}
 

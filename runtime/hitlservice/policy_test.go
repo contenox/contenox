@@ -110,3 +110,49 @@ func TestUnit_Evaluate_FallsBackToBuiltinWhenKVEmptyAndFileMissing(t *testing.T)
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionApprove, result.Action, "built-in default requires approval for write_file")
 }
+
+func TestUnit_Evaluate_BuiltinDefaultIsFailClosedForUnaccountedTool(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	vfs := vfsservice.NewLocalFS(dir)
+	svc := hitlservice.New(vfs, nopKVReader{}, libtracker.NoopTracker{})
+
+	r, err := svc.Evaluate(context.Background(), "some_mcp_server", "arbitrary_tool", nil)
+	require.NoError(t, err)
+	assert.Equal(t, hitlservice.ActionApprove, r.Action, "a tool no policy rule accounts for must fail closed to approve, not silently allow")
+
+	r, err = svc.Evaluate(context.Background(), "local_shell", "local_shell", nil)
+	require.NoError(t, err)
+	assert.Equal(t, hitlservice.ActionApprove, r.Action, "the editor shell must require approval; it is the model's preferred and most powerful tool")
+
+	r, err = svc.Evaluate(context.Background(), "local_fs", "read_file", nil)
+	require.NoError(t, err)
+	assert.Equal(t, hitlservice.ActionAllow, r.Action, "read-only tools stay allowed so fail-closed HITL remains usable")
+}
+
+func TestUnit_Evaluate_DefaultPolicyOverrideSelectsACPPolicyWhenKVUnset(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	vfs := vfsservice.NewLocalFS(dir)
+	ctx := context.Background()
+
+	acp := []byte(`{"default_action":"approve","rules":[{"tools":"local_fs","tool":"read_file","action":"allow"},{"tools":"local_shell","tool":"local_shell","action":"approve"}]}`)
+	_, err := vfs.CreateFile(ctx, &vfsservice.File{Name: "hitl-policy-acp.json", Data: acp})
+	require.NoError(t, err)
+	other := []byte(`{"default_action":"allow"}`)
+	_, err = vfs.CreateFile(ctx, &vfsservice.File{Name: "hitl-policy.json", Data: other})
+	require.NoError(t, err)
+
+	svc := hitlservice.NewWithDefaultPolicy(vfs, nopKVReader{}, libtracker.NoopTracker{}, "hitl-policy-acp.json")
+	r, err := svc.Evaluate(ctx, "local_shell", "local_shell", nil)
+	require.NoError(t, err)
+	assert.Equal(t, hitlservice.ActionApprove, r.Action, "with no KV set, the ACP entrypoint must fall back to hitl-policy-acp.json, not the generic default")
+	r, err = svc.Evaluate(ctx, "local_fs", "read_file", nil)
+	require.NoError(t, err)
+	assert.Equal(t, hitlservice.ActionAllow, r.Action)
+
+	explicit := hitlservice.NewWithDefaultPolicy(vfs, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{}, "hitl-policy-acp.json")
+	r, err = explicit.Evaluate(ctx, "local_shell", "local_shell", nil)
+	require.NoError(t, err)
+	assert.Equal(t, hitlservice.ActionAllow, r.Action, "an explicit hitl-policy-name KV must still override the per-process ACP default")
+}

@@ -361,3 +361,37 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 		}
 	})
 }
+
+func TestUnit_LocalFSTools_InjectedNamePlumbsThrough(t *testing.T) {
+	ctx := context.Background()
+	h := localtools.NewLocalFSToolsWith(t.TempDir(), nil, nil, "scoped_fs", nil)
+
+	names, err := h.Supports(ctx)
+	if err != nil {
+		t.Fatalf("Supports: %v", err)
+	}
+	if len(names) == 0 || names[0] != "scoped_fs" {
+		t.Fatalf("Supports must lead with the injected name, got %v", names)
+	}
+
+	tools, err := h.GetToolsForToolsByName(ctx, "scoped_fs")
+	if err != nil {
+		t.Fatalf("GetToolsForToolsByName(scoped_fs): %v", err)
+	}
+	want := map[string]bool{
+		"read_file": true, "write_file": true, "list_dir": true, "grep": true,
+		"sed": true, "count_stats": true, "read_file_range": true, "stat_file": true,
+	}
+	if len(tools) != len(want) {
+		t.Fatalf("expected %d tools, got %d", len(want), len(tools))
+	}
+	for _, tl := range tools {
+		if !want[tl.Function.Name] {
+			t.Fatalf("unexpected tool %q advertised under scoped_fs", tl.Function.Name)
+		}
+	}
+
+	if _, err := h.GetToolsForToolsByName(ctx, "local_fs"); err == nil {
+		t.Fatalf("a renamed instance must not answer to the old name local_fs")
+	}
+}

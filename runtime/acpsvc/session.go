@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
+	"path/filepath"
+	"strings"
+
+	"github.com/google/uuid"
 
 	libacp "github.com/contenox/contenox/libacp"
 	libdb "github.com/contenox/contenox/libdbexec"
@@ -29,7 +32,15 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 		reportErr(err)
 		return libacp.LoadSessionResponse{}, err
 	}
-	workspaceID := deriveWorkspaceID(req.SessionID, t.clientIdentity())
+	if !filepath.IsAbs(req.Cwd) {
+		err := libacp.NewErrorf(libacp.ErrInvalidParams, "cwd must be an absolute path, got %q", req.Cwd)
+		reportErr(err)
+		return libacp.LoadSessionResponse{}, err
+	}
+	workspaceID := t.workspaceID()
+	if resolved, ok := t.resolveSessionWorkspace(ctx, string(req.SessionID)); ok {
+		workspaceID = resolved
+	}
 
 	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
 	registered, err := t.registerMcpServers(ctx, store, req.SessionID, req.McpServers)
@@ -120,10 +131,10 @@ func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.Session
 		}
 	}
 	reportChange(string(sessionID), map[string]any{
-		"user":          users,
-		"assistant":     assistantText,
-		"tool_calls":    toolCalls,
-		"tool_results":  toolResults,
+		"user":         users,
+		"assistant":    assistantText,
+		"tool_calls":   toolCalls,
+		"tool_results": toolResults,
 	})
 }
 
@@ -165,13 +176,19 @@ func toolCallUpdateFromResult(m taskengine.Message) libacp.SessionUpdate {
 }
 
 func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest) (libacp.NewSessionResponse, error) {
-	internalID := newSessionID()
+	internalID := newSessionID(sessionNamespace(t))
 	sessionID := libacp.SessionID(internalID)
 
 	reportErr, reportChange, end := t.tracker().Start(ctx, "new", "acp_session", "session_id", string(sessionID), "cwd", req.Cwd, "mcp_servers", len(req.McpServers))
 	defer end()
 
-	workspaceID := deriveWorkspaceID(sessionID, t.clientIdentity())
+	if !filepath.IsAbs(req.Cwd) {
+		err := libacp.NewErrorf(libacp.ErrInvalidParams, "cwd must be an absolute path, got %q", req.Cwd)
+		reportErr(err)
+		return libacp.NewSessionResponse{}, err
+	}
+
+	workspaceID := t.workspaceID()
 
 	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
 	registered, err := t.registerMcpServers(ctx, store, sessionID, req.McpServers)
@@ -271,8 +288,28 @@ func mcpRowFromLibacp(name string, srv libacp.McpServer) *runtimetypes.MCPServer
 	return row
 }
 
-func newSessionID() string {
-	return fmt.Sprintf("sess-%d", time.Now().UnixNano())
+func newSessionID(namespace string) string {
+	return namespace + "-" + uuid.NewString()
+}
+
+func sessionNamespace(t *Transport) string {
+	id := t.clientIdentity()
+	if id == nil {
+		return "acp"
+	}
+	var sb strings.Builder
+	for _, r := range strings.ToLower(id.Name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		}
+		if sb.Len() >= 16 {
+			break
+		}
+	}
+	if sb.Len() == 0 {
+		return "acp"
+	}
+	return sb.String()
 }
 
 func (t *Transport) Close(ctx context.Context) error {
@@ -300,11 +337,26 @@ func (t *Transport) sessionFor(id libacp.SessionID) (*sessionEntry, bool) {
 	return e, ok
 }
 
+func (t *Transport) resolveSessionWorkspace(ctx context.Context, name string) (string, bool) {
+	if name == "" {
+		return "", false
+	}
+	row := t.deps.DB.WithoutTransaction().QueryRowContext(ctx, `
+		SELECT mi.workspace_id
+		FROM message_indices mi
+		WHERE mi.name = $1 AND mi.identity = 'acp-client'
+		ORDER BY (SELECT COUNT(*) FROM messages m WHERE m.idx_id = mi.id) DESC, mi.id DESC
+		LIMIT 1`, name)
+	var workspaceID string
+	if err := row.Scan(&workspaceID); err != nil || workspaceID == "" {
+		return "", false
+	}
+	return workspaceID, true
+}
+
 func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsRequest) (libacp.ListSessionsResponse, error) {
 	exec := t.deps.DB.WithoutTransaction()
 
-	// Query all sessions from ACP-derived workspaces.
-	// ACP workspaces are prefixed with "acp-" (see deriveWorkspaceID).
 	rows, err := exec.QueryContext(ctx, `
 		SELECT mi.id, mi.workspace_id, COALESCE(mi.name, ''),
 		       COALESCE(
@@ -312,9 +364,9 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 		         ''
 		       )
 		FROM message_indices mi
-		WHERE mi.workspace_id LIKE 'acp-%'
+		WHERE mi.workspace_id = $1
 		  AND mi.identity = 'acp-client'
-		ORDER BY mi.id DESC`)
+		ORDER BY mi.id DESC`, t.workspaceID())
 	if err != nil {
 		return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: list sessions: %w", err)
 	}

@@ -16,7 +16,6 @@ type activityTrackerDecorator struct {
 	tracker libtracker.ActivityTracker
 }
 
-// NEW: Add tracking for ListLocalTools
 func (d *activityTrackerDecorator) ListLocalTools(ctx context.Context) ([]LocalTools, error) {
 	_, _, endFn := d.tracker.Start(
 		ctx,
@@ -28,7 +27,6 @@ func (d *activityTrackerDecorator) ListLocalTools(ctx context.Context) ([]LocalT
 	return d.service.ListLocalTools(ctx)
 }
 
-// GetSchemasForSupportedTools wraps the underlying service call with activity tracking.
 func (d *activityTrackerDecorator) GetSchemasForSupportedTools(ctx context.Context) (map[string]*openapi3.T, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,

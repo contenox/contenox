@@ -5,13 +5,37 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sync"
+	"time"
 )
 
 const (
 	defaultScanBuf = 64 * 1024
 	maxScanBuf     = 16 * 1024 * 1024
 )
+
+var (
+	wireMu  sync.Mutex
+	wireOut io.Writer
+)
+
+func init() {
+	if p := os.Getenv("CONTENOX_ACP_WIRE_LOG"); p != "" {
+		if f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644); err == nil {
+			wireOut = f
+		}
+	}
+}
+
+func wireDump(dir string, b []byte) {
+	if wireOut == nil {
+		return
+	}
+	wireMu.Lock()
+	defer wireMu.Unlock()
+	fmt.Fprintf(wireOut, "%s %s %s\n", time.Now().Format(time.RFC3339Nano), dir, b)
+}
 
 type ndjsonReader struct {
 	scanner *bufio.Scanner
@@ -37,6 +61,7 @@ func (r *ndjsonReader) Next() ([]byte, error) {
 		}
 		out := make([]byte, len(line))
 		copy(out, line)
+		wireDump("<-", out)
 		return out, nil
 	}
 }
@@ -55,6 +80,7 @@ func (w *ndjsonWriter) Write(v any) error {
 	if err != nil {
 		return fmt.Errorf("libacp: marshal: %w", err)
 	}
+	wireDump("->", data)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if _, err := w.w.Write(data); err != nil {

@@ -35,6 +35,7 @@ type LocalExecTools struct {
 	allowedDir      string   // if set, command path must be under this dir (after resolving)
 	allowedCommands []string // if set, executable must be in this list (exact or resolved path)
 	deniedCommands  []string // if set, executable basename or path must not be in this list (checked first)
+	runner          CommandRunner
 }
 
 // LocalExecOption configures LocalExecTools.
@@ -70,8 +71,16 @@ func WithLocalExecDeniedCommands(commands []string) LocalExecOption {
 
 // NewLocalExecTools creates a new LocalExecTools with the given options.
 func NewLocalExecTools(opts ...LocalExecOption) taskengine.ToolsRepo {
+	return NewLocalExecToolsWith(nil, opts...)
+}
+
+func NewLocalExecToolsWith(runner CommandRunner, opts ...LocalExecOption) taskengine.ToolsRepo {
+	if runner == nil {
+		runner = osCommandRunner{}
+	}
 	h := &LocalExecTools{
 		defaultTimeout: 60 * time.Second,
+		runner:         runner,
 	}
 	for _, opt := range opts {
 		opt(h)
@@ -308,35 +317,24 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 		limit = val
 	}
 
-	var cmd *exec.Cmd
-	if useShell {
-		fullCmd := command
-		if len(argsSlice) > 0 {
-			fullCmd += " " + strings.Join(argsSlice, " ")
-		}
-		cmd = exec.CommandContext(runCtx, "/bin/sh", "-c", fullCmd)
-	} else {
-		cmd = exec.CommandContext(runCtx, command, argsSlice...)
-	}
-	if cwd != "" {
-		cmd.Dir = cwd
-	}
-
 	stdout := &capWriter{limit: limit}
 	stderr := &capWriter{limit: limit}
 
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	if stdinStr != "" {
-		cmd.Stdin = strings.NewReader(stdinStr)
+	spec := CommandSpec{
+		Command:  command,
+		Args:     argsSlice,
+		Cwd:      cwd,
+		Timeout:  timeout,
+		UseShell: useShell,
+		Stdin:    stdinStr,
 	}
-	err := cmd.Run()
+	exitCode, runErr := h.runner.Run(runCtx, spec, stdout, stderr)
 	result.DurationSeconds = time.Since(start).Seconds()
 
 	outStr := strings.TrimSpace(stdout.buf.String())
 	errStr := strings.TrimSpace(stderr.buf.String())
 
-	if stdout.truncated || stderr.truncated {
+	if stdout.truncated || stderr.truncated || errors.Is(runErr, ErrOutputBudgetExceeded) {
 		result.Success = false
 		result.ExitCode = -1
 		result.Error = "Error: tool execution terminated: output exceeded the remaining context budget."
@@ -348,17 +346,13 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 	result.Stdout = outStr
 	result.Stderr = errStr
 
-	if err != nil {
-		result.Error = err.Error()
+	if runErr != nil {
+		result.Error = runErr.Error()
 		result.Success = false
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			result.ExitCode = exitErr.ExitCode()
-		} else {
-			result.ExitCode = -1
-		}
+		result.ExitCode = exitCode
 		return result, nil
 	}
-	result.ExitCode = 0
+	result.ExitCode = exitCode
 	result.Success = true
 	return result, nil
 }
