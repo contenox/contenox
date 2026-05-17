@@ -19,17 +19,21 @@ import (
 // sessionCmd is the parent "contenox session" command.
 var sessionCmd = &cobra.Command{
 	Use:   "session",
-	Short: "Manage chat sessions (new, list, switch, delete, show).",
+	Short: "Manage chat sessions (new, list, switch, delete, show, fork, workspaces).",
 	Long: `Create and switch named chat sessions.
 Each session maintains its own persistent conversation history.
 
   contenox session new [name]            create a session and make it active
-  contenox session list                  list all sessions (* = active)
+  contenox session list                  list active-scope sessions (* = active)
+  contenox session list --workspace W    list sessions in a workspace (whole DB)
+  contenox session list --namespace NS   list sessions in a namespace (whole DB)
+  contenox session list --all            list every session (whole DB)
   contenox session switch <name>         switch the active session
   contenox session delete <name>         delete a session and its messages
-  contenox session show                  print the active session's conversation
+  contenox session show [name|id]        print a session (active, by name, or id)
   contenox session fork [name]           copy active session to a new one
-  contenox session fork --summary        compact older history before forking`,
+  contenox session fork --summary        compact older history before forking
+  contenox session workspaces            list workspaces and namespaces (whole DB)`,
 	SilenceUsage: true,
 }
 
@@ -42,7 +46,7 @@ var sessionNewCmd = &cobra.Command{
 
 var sessionListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all sessions (* = active).",
+	Short: "List sessions: active-scope by default, or whole-DB with --workspace/--namespace/--all.",
 	Args:  cobra.NoArgs,
 	RunE:  runSessionList,
 }
@@ -62,19 +66,23 @@ var sessionDeleteCmd = &cobra.Command{
 }
 
 var sessionShowCmd = &cobra.Command{
-	Use:   "show [name]",
-	Short: "Print a session's conversation (default: active session).",
+	Use:   "show [name|id]",
+	Short: "Print a session's conversation (active by default; by name or session id).",
 	Long: `Print the full conversation history for a session.
 
-Defaults to the currently active session. Pass a session name to view another.
+Defaults to the active session. Pass a session name (active scope) or a
+session id, which is resolved across any workspace/identity. Use
+'contenox session list --all' or 'contenox session workspaces' to find ids.
 
 Flags:
   --tail N    Show only the last N messages
   --head N    Show only the first N messages
+  --ns NS     Namespace hint when resolving by id (advisory)
 
 Examples:
   contenox session show
   contenox session show my-session
+  contenox session show 6644fc61-fbc6-4e55-9006-b46178625de3
   contenox session show --tail 10`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runSessionShow,
@@ -83,7 +91,11 @@ Examples:
 func init() {
 	sessionShowCmd.Flags().Int("tail", 0, "Show last N messages (0 = all)")
 	sessionShowCmd.Flags().Int("head", 0, "Show first N messages (0 = all)")
-	sessionCmd.AddCommand(sessionNewCmd, sessionListCmd, sessionSwitchCmd, sessionDeleteCmd, sessionShowCmd)
+	sessionShowCmd.Flags().String("ns", "", "Namespace hint when resolving by id (advisory)")
+	sessionListCmd.Flags().String("workspace", "", "List sessions in this workspace id (scans whole DB)")
+	sessionListCmd.Flags().String("namespace", "", "List sessions in this namespace (scans whole DB)")
+	sessionListCmd.Flags().Bool("all", false, "List every session across all workspaces and namespaces")
+	sessionCmd.AddCommand(sessionNewCmd, sessionListCmd, sessionSwitchCmd, sessionDeleteCmd, sessionShowCmd, sessionWorkspacesCmd)
 }
 
 // openSessionService resolves the DB path and returns a sessionservice.Service.
@@ -126,11 +138,18 @@ func runSessionNew(cmd *cobra.Command, args []string) error {
 }
 
 func runSessionList(cmd *cobra.Command, _ []string) error {
-	ctx, _, svc, cleanup, err := openSessionService(cmd)
+	ctx, db, svc, cleanup, err := openSessionService(cmd)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
+
+	ws, _ := cmd.Flags().GetString("workspace")
+	ns, _ := cmd.Flags().GetString("namespace")
+	all, _ := cmd.Flags().GetBool("all")
+	if ws != "" || ns != "" || all {
+		return runSessionListFiltered(cmd, ctx, db, ws, ns, all)
+	}
 
 	sessions, err := svc.List(ctx, localIdentity)
 	if err != nil {
@@ -202,20 +221,27 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 	// Resolve which session to show.
 	var sessionID, sessionName string
 	if len(args) > 0 {
-		// Resolve name → ID via raw messagestore (read-only, presentation path).
-		sessions, err := svc.List(ctx, localIdentity)
-		if err != nil {
-			return err
-		}
-		for _, s := range sessions {
-			if s.Name == args[0] {
-				sessionID = s.ID
-				sessionName = s.Name
-				break
+		if nm, ok := resolveSessionByID(ctx, db, args[0]); ok {
+			sessionID = args[0]
+			sessionName = nm
+			if sessionName == "" {
+				sessionName = sessionID[:8] + "…"
 			}
-		}
-		if sessionID == "" {
-			return fmt.Errorf("session %q not found; run 'contenox session list'", args[0])
+		} else {
+			sessions, err := svc.List(ctx, localIdentity)
+			if err != nil {
+				return err
+			}
+			for _, s := range sessions {
+				if s.Name == args[0] {
+					sessionID = s.ID
+					sessionName = s.Name
+					break
+				}
+			}
+			if sessionID == "" {
+				return fmt.Errorf("session %q not found; run 'contenox session list' or 'contenox session workspaces'", args[0])
+			}
 		}
 	} else {
 		activeID, err := svc.GetActiveID(ctx)

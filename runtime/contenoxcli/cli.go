@@ -213,11 +213,13 @@ Sessions persist conversation history across invocations (stored in SQLite).
 Each session remembers previous messages so the model has context.
 The first run auto-creates a "default" session. Manage sessions with:
 
-  contenox session list              list all sessions (* = active)
+  contenox session list              list active-scope sessions (* = active)
+  contenox session list --all        list every session across the whole DB
   contenox session new <name>        create a new named session (becomes active)
   contenox session switch <name>     switch to a different session
-  contenox session show              print the active session's full history
+  contenox session show [name|id]    print a session (active, by name, or by id)
   contenox session delete <name>     delete a session and all its messages
+  contenox session workspaces        list workspaces and namespaces (whole DB)
   contenox session fork --summary    compact older history into a summary and continue
                                      in a new session (useful when context fills up)
 
