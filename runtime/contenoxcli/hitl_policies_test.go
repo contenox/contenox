@@ -76,7 +76,7 @@ func assertSeededSecretInvariant(t *testing.T, name, content string) {
 	for _, path := range []string{"deploy/server.pem", "config/tls.key", "proj/.env", "proj/.env.production"} {
 		r, err := svc.Evaluate(ctx, "local_fs", "read_file", map[string]any{"path": path})
 		require.NoError(t, err)
-		assert.Equal(t, hitlservice.ActionApprove, r.Action, "%s: sensitive project file %q must pause for approval", name, path)
+		assert.NotEqual(t, hitlservice.ActionAllow, r.Action, "%s: sensitive project file %q must never be auto-allowed (approve on interactive policies, deny on untrusted-driver acpx)", name, path)
 	}
 }
 
@@ -97,27 +97,37 @@ func TestUnit_SeededACPXPolicy_SecretInvariantAndHeavyDeltas(t *testing.T) {
 	svc := seededPolicyService(t, "hitl-policy-acpx.json", hitlPolicyACPX)
 	ctx := context.Background()
 
+	// acpx is the untrusted-driver profile. There is no interactive operator on
+	// a non-interactive channel (e.g. OpenClaw's Telegram bridge), so "approve"
+	// is not a valid action class here: it would only ever degrade to deny or
+	// allow at the host. The policy is therefore pure allow/deny — every
+	// mutating capability is an explicit deny, not an unhonorable "approve".
 	deny := map[string][2]string{
 		"shell":      {"local_shell", "local_shell"},
 		"web_post":   {"webtools", "web_post"},
 		"web_put":    {"webtools", "web_put"},
 		"web_patch":  {"webtools", "web_patch"},
 		"web_delete": {"webtools", "web_delete"},
+		"web_get":    {"webtools", "web_get"},
+		"web_head":   {"webtools", "web_head"},
+		"write_file": {"local_fs", "write_file"},
+		"sed":        {"local_fs", "sed"},
 	}
 	for label, tt := range deny {
 		r, err := svc.Evaluate(ctx, tt[0], tt[1], nil)
 		require.NoError(t, err)
-		assert.Equal(t, hitlservice.ActionDeny, r.Action, "acpx must deny %s", label)
+		assert.Equal(t, hitlservice.ActionDeny, r.Action, "acpx must deny %s (no approve tier on an untrusted driver)", label)
 	}
 
-	r, err := svc.Evaluate(ctx, "webtools", "web_get", nil)
+	// Reads still pass (containment, not lockout).
+	r, err := svc.Evaluate(ctx, "local_fs", "read_file", nil)
 	require.NoError(t, err)
-	assert.Equal(t, hitlservice.ActionApprove, r.Action, "acpx must gate web_get (GET is an exfil vector for an untrusted driver)")
+	assert.Equal(t, hitlservice.ActionAllow, r.Action, "acpx must allow plain reads")
 
-	// Floor must stay approve, never deny: a deny floor is terminal and would
-	// brick OpenClaw, whose permissionMode could otherwise grant the call.
+	// Floor is deny: an untrusted driver gets least privilege. An unaccounted
+	// tool is denied, never silently approved.
 	r, err = svc.Evaluate(ctx, "some_unaccounted_mcp", "arbitrary_tool", nil)
 	require.NoError(t, err)
-	assert.Equal(t, hitlservice.ActionApprove, r.Action, "acpx default_action must be approve, not deny")
+	assert.Equal(t, hitlservice.ActionDeny, r.Action, "acpx default_action must be deny (untrusted driver, least privilege)")
 }
 
