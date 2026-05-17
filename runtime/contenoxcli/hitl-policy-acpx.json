@@ -1,0 +1,51 @@
+{
+  "default_action": "approve",
+  "rules": [
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.ssh,.gnupg,.aws,.azure,.kube,.config/gcloud,.config/doctl,.oci}/**"}]},
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.password-store,.local/share/keyrings,Library/Keychains,.config/1Password,.config/Bitwarden,.config/keepassxc}/**"}]},
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.electrum,.bitcoin,.ethereum/keystore}/**"}]},
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{wallet.dat,*.kdbx}"}]},
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.mozilla,.config/google-chrome,.config/chromium,.config/BraveSoftware}/**"}]},
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/Library/Application Support/{Google/Chrome,Firefox,BraveSoftware}/**"}]},
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.bash_history,.zsh_history,.python_history,.netrc,.git-credentials,.npmrc,.pypirc}"}]},
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/.docker/config.json"}]},
+    {"tools": "local_fs", "tool": "*", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{id_rsa,id_dsa,id_ecdsa,id_ed25519}*"}]},
+
+    {"tools": "local_fs", "tool": "write_file", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.ssh,.gnupg}/**"}]},
+    {"tools": "local_fs", "tool": "sed", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.ssh,.gnupg}/**"}]},
+    {"tools": "local_fs", "tool": "write_file", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.config/autostart,.config/systemd/user,Library/LaunchAgents,Library/LaunchDaemons}/**"}]},
+    {"tools": "local_fs", "tool": "sed", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.config/autostart,.config/systemd/user,Library/LaunchAgents,Library/LaunchDaemons}/**"}]},
+    {"tools": "local_fs", "tool": "write_file", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.bashrc,.zshrc,.profile,.bash_profile,.zprofile,.bash_login,.zshenv,.kshrc,crontab,.crontab}"}]},
+    {"tools": "local_fs", "tool": "sed", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{.bashrc,.zshrc,.profile,.bash_profile,.zprofile,.bash_login,.zshenv,.kshrc,crontab,.crontab}"}]},
+    {"tools": "local_fs", "tool": "write_file", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/.config/fish/config.fish"}]},
+    {"tools": "local_fs", "tool": "sed", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/.config/fish/config.fish"}]},
+    {"tools": "local_fs", "tool": "write_file", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "/{etc,usr,bin,sbin,boot,lib,lib64,opt,System}/**"}]},
+    {"tools": "local_fs", "tool": "sed", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "/{etc,usr,bin,sbin,boot,lib,lib64,opt,System}/**"}]},
+    {"tools": "local_fs", "tool": "write_file", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/hitl-policy*.json"}]},
+    {"tools": "local_fs", "tool": "sed", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/hitl-policy*.json"}]},
+
+    {"tools": "local_fs", "tool": "read_file", "action": "approve", "when": [{"key": "path", "op": "glob", "value": "**/{*.pem,*.key,.env,.env.*}"}]},
+    {"tools": "local_fs", "tool": "read_file_range", "action": "approve", "when": [{"key": "path", "op": "glob", "value": "**/{*.pem,*.key,.env,.env.*}"}]},
+    {"tools": "local_fs", "tool": "grep", "action": "approve", "when": [{"key": "path", "op": "glob", "value": "**/{*.pem,*.key,.env,.env.*}"}]},
+
+    {"tools": "local_shell",  "tool": "local_shell",     "action": "deny"},
+
+    {"tools": "webtools",     "tool": "web_post",        "action": "deny"},
+    {"tools": "webtools",     "tool": "web_put",         "action": "deny"},
+    {"tools": "webtools",     "tool": "web_patch",       "action": "deny"},
+    {"tools": "webtools",     "tool": "web_delete",      "action": "deny"},
+
+    {"tools": "local_fs",     "tool": "read_file",       "action": "allow"},
+    {"tools": "local_fs",     "tool": "read_file_range", "action": "allow"},
+    {"tools": "local_fs",     "tool": "list_dir",        "action": "allow"},
+    {"tools": "local_fs",     "tool": "grep",            "action": "allow"},
+    {"tools": "local_fs",     "tool": "stat_file",       "action": "allow"},
+    {"tools": "local_fs",     "tool": "count_stats",     "action": "allow"},
+    {"tools": "local_fs",     "tool": "write_file",      "action": "approve"},
+    {"tools": "local_fs",     "tool": "sed",             "action": "approve"},
+    {"tools": "webtools",     "tool": "web_get",         "action": "approve"},
+    {"tools": "webtools",     "tool": "web_head",        "action": "approve"},
+    {"tools": "echo",                                    "action": "allow"},
+    {"tools": "print",                                   "action": "allow"}
+  ]
+}

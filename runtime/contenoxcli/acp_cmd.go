@@ -40,8 +40,24 @@ flow so the editor's UI controls approval. Pass --auto to disable (unattended/te
 	RunE: runACP,
 }
 
+var acpxCmd = &cobra.Command{
+	Use:   "acpx",
+	Short: "Run as an ACP agent under the headless / untrusted-driver profile (OpenClaw).",
+	Long: `Same Agent Client Protocol server as 'acp', for drivers that are not the
+device owner — OpenClaw and other non-editor clients. It loads the hardened
+hitl-policy-acpx.json (local_shell denied, web mutations denied, web reads
+gated) and the chain at ~/.contenox/headless-acp-chain.json (override with
+CONTENOX_ACPX_CHAIN_PATH).
+
+Containment for the untrusted driver is the HITL policy, not an in-chain
+step. IDE clients (Zed, GoLand, AionUi) should keep using 'acp'. Selection
+is per-spawn: each ACP client launches its own contenox process, so the two
+profiles never share state.`,
+	RunE: runACPX,
+}
+
 func init() {
-	for _, c := range []*cobra.Command{acpCmd} {
+	for _, c := range []*cobra.Command{acpCmd, acpxCmd} {
 		c.Flags().Bool("auto", false, "Autonomous mode: disable HITL permission prompts (gated tools run unattended)")
 		c.Flags().Bool("setup", false, "Run interactive setup wizard to configure provider and model, then exit.")
 		c.Flags().String("workspace-id", "", "Workspace ID for new ACP sessions (default: the stable workspace from ~/.contenox/workspace.id, same as the CLI). Existing sessions are always located by their session ID regardless of workspace.")
@@ -60,6 +76,7 @@ type acpProfile struct {
 	hitlPolicy string
 	chainFile  string
 	chainEnv   string
+	seedChain  func(contenoxDir string) error
 }
 
 var acpProfileACP = acpProfile{
@@ -68,7 +85,15 @@ var acpProfileACP = acpProfile{
 	chainEnv:   "CONTENOX_ACP_CHAIN_PATH",
 }
 
-func runACP(cmd *cobra.Command, _ []string) error { return runACPProfile(cmd, acpProfileACP) }
+var acpProfileACPX = acpProfile{
+	hitlPolicy: "hitl-policy-acpx.json",
+	chainFile:  headlessACPChainFilename,
+	chainEnv:   "CONTENOX_ACPX_CHAIN_PATH",
+	seedChain:  seedHeadlessACPChainIfMissing,
+}
+
+func runACP(cmd *cobra.Command, _ []string) error  { return runACPProfile(cmd, acpProfileACP) }
+func runACPX(cmd *cobra.Command, _ []string) error { return runACPProfile(cmd, acpProfileACPX) }
 
 func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	if setup, _ := cmd.Flags().GetBool("setup"); setup {
@@ -107,6 +132,11 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	}
 	if err := writeEmbeddedHITLPolicies(contenoxDir, false); err != nil {
 		return fmt.Errorf("seed HITL policy presets: %w", err)
+	}
+	if profile.seedChain != nil {
+		if err := profile.seedChain(contenoxDir); err != nil {
+			return fmt.Errorf("seed ACP chain preset: %w", err)
+		}
 	}
 
 	closeLogs, err := setupTelemetryLogging(ctx, runtimetypes.New(db.WithoutTransaction()), contenoxDir)
