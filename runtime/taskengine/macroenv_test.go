@@ -3,6 +3,7 @@ package taskengine_test
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -290,5 +291,29 @@ func TestUnit_MacroEnv_ToolPreference_SkippedWhenNoTools(t *testing.T) {
 	out := runSysInstrExpand(t, fsAndShellRepo(), "You are an agent.", []string{})
 	if strings.Contains(out, "TOOL PREFERENCE") {
 		t.Errorf("preference must not be injected when allowlist is empty: %s", out)
+	}
+}
+
+func TestUnit_MacroEnv_HostMacro_ExpandsToRuntimeFacts(t *testing.T) {
+	out := runSysInstrExpand(t, fsAndShellRepo(), "os={{host:os}} arch={{host:arch}} all={{host}}", []string{"*"})
+	if !strings.Contains(out, "os="+runtime.GOOS) {
+		t.Fatalf("{{host:os}} not expanded to %q: %s", runtime.GOOS, out)
+	}
+	if !strings.Contains(out, "arch="+runtime.GOARCH) {
+		t.Fatalf("{{host:arch}} not expanded to %q: %s", runtime.GOARCH, out)
+	}
+	if !strings.Contains(out, `"os":"`+runtime.GOOS+`"`) {
+		t.Fatalf("{{host}} not expanded to JSON facts: %s", out)
+	}
+}
+
+func TestUnit_MacroEnv_HostFacts_AutoAppendedAndIdempotent(t *testing.T) {
+	out := runSysInstrExpand(t, fsAndShellRepo(), "You are an agent.", []string{"*"})
+	want := "Host: os=" + runtime.GOOS + " arch=" + runtime.GOARCH
+	if !strings.Contains(out, want) {
+		t.Fatalf("raw host facts not auto-appended, want %q in:\n%s", want, out)
+	}
+	if strings.Count(out, "Host: os=") != 1 {
+		t.Fatalf("host facts must be appended exactly once, got %d:\n%s", strings.Count(out, "Host: os="), out)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"github.com/Masterminds/sprig/v3"
 	"time"
 
 	"github.com/contenox/contenox/libtracker"
@@ -719,7 +720,7 @@ func sanitizeBranchName(branchName string) string {
 }
 
 func renderTemplate(tmplStr string, vars any) (string, error) {
-	tmpl, err := template.New("prompt").Parse(tmplStr)
+	tmpl, err := template.New("prompt").Funcs(sprig.TxtFuncMap()).Parse(tmplStr)
 	if err != nil {
 		return "", err
 	}

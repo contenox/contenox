@@ -99,9 +99,14 @@ func (h *HITLWrapper) Exec(
 		return DenyMessage, taskengine.DataTypeString, nil
 
 	case hitlservice.ActionApprove:
-		diff, diffErr := h.buildDiff(ctx, tools, toolName, args)
+		oldContent, newContent, diffErr := h.buildDiff(ctx, tools, toolName, args)
 		if diffErr != nil {
 			reportErr(fmt.Errorf("hitl: diff generation failed: %w", diffErr))
+		}
+		rendered := ""
+		if oldContent != newContent {
+			filePath, _ := args["path"].(string)
+			rendered = unifiedDiff(filePath, oldContent, newContent)
 		}
 		toolCallID, _ := ctx.Value(taskengine.ContextKeyToolCallID).(string)
 		req := hitlservice.ApprovalRequest{
@@ -109,7 +114,9 @@ func (h *HITLWrapper) Exec(
 			ToolsName:  tools.Name,
 			ToolName:   toolName,
 			Args:       args,
-			Diff:       diff,
+			Diff:       rendered,
+			DiffOld:    oldContent,
+			DiffNew:    newContent,
 		}
 
 		askCtx := ctx
@@ -173,38 +180,35 @@ var _ taskengine.ToolsRepo = (*HITLWrapper)(nil)
 
 // ─── diff helpers ─────────────────────────────────────────────────────────────
 
-// buildDiff fetches the current file content via the inner tools so that path
-// resolution and sandbox enforcement are applied by the tools that owns those
-// semantics, then returns a unified diff string.
-func (h *HITLWrapper) buildDiff(ctx context.Context, tools *taskengine.ToolsCall, toolName string, args map[string]any) (string, error) {
+func (h *HITLWrapper) buildDiff(ctx context.Context, tools *taskengine.ToolsCall, toolName string, args map[string]any) (string, string, error) {
 	switch {
 	case tools.Name == "local_fs" && toolName == "write_file":
 		path, _ := args["path"].(string)
 		newContent, _ := args["content"].(string)
 		if path == "" {
-			return "", nil
+			return "", "", nil
 		}
 		oldContent, err := h.readViaTools(ctx, tools, path)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		return unifiedDiff(path, oldContent, newContent), nil
+		return oldContent, newContent, nil
 
 	case tools.Name == "local_fs" && toolName == "sed":
 		path, _ := args["path"].(string)
 		pattern, _ := args["pattern"].(string)
 		replacement, _ := args["replacement"].(string)
 		if path == "" || pattern == "" {
-			return "", nil
+			return "", "", nil
 		}
 		oldContent, err := h.readViaTools(ctx, tools, path)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		newContent := strings.ReplaceAll(oldContent, pattern, replacement)
-		return unifiedDiff(path, oldContent, newContent), nil
+		return oldContent, newContent, nil
 	}
-	return "", nil
+	return "", "", nil
 }
 
 // readViaTools calls the inner tools's read_file tool so path resolution,

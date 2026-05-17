@@ -31,6 +31,28 @@ var initCompactChain string
 //go:embed chain-acp.json
 var initACPChain string
 
+//go:embed chain-acpx.json
+var initACPXChain string
+
+// headlessACPChainFilename is the on-disk name the acpx profile loads its chain
+// from (parallel to default-acp-chain.json for the acp profile).
+const headlessACPChainFilename = "headless-acp-chain.json"
+
+// seedHeadlessACPChainIfMissing writes the embedded acpx chain to contenoxDir
+// only when absent. It never overwrites a user-edited file, and a failure here
+// leaves the file absent so LoadChainRegistryFrom still fails closed rather
+// than the acpx profile silently running a different chain.
+func seedHeadlessACPChainIfMissing(contenoxDir string) error {
+	dst := filepath.Join(contenoxDir, headlessACPChainFilename)
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, []byte(initACPXChain), 0644)
+}
+
 // providerConfig holds the provider-specific values used during init.
 type providerConfig struct {
 	name         string
@@ -176,6 +198,9 @@ func RunGlobalInit(out io.Writer) error {
 	if err := writeFile(filepath.Join(homeDir, "default-acp-chain.json"), initACPChain); err != nil {
 		return err
 	}
+	if err := writeFile(filepath.Join(homeDir, headlessACPChainFilename), initACPXChain); err != nil {
+		return err
+	}
 	if err := writeEmbeddedHITLPolicies(homeDir, false); err != nil {
 		return err
 	}
@@ -248,6 +273,9 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 		return err
 	}
 	if err := writeFile(filepath.Join(homeDir, "default-acp-chain.json"), initACPChain); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(homeDir, headlessACPChainFilename), initACPXChain); err != nil {
 		return err
 	}
 	if err := writeEmbeddedHITLPolicies(homeDir, force); err != nil {

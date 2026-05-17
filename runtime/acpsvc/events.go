@@ -138,6 +138,11 @@ func toolCallUpdateNotification(sid libacp.SessionID, ev taskengine.TaskEvent) l
 
 	if diff := diffContentFromResult(ev.Content); diff != nil {
 		update.ToolContent = []libacp.ToolCallContent{*diff}
+	} else if summary := summarizeToolCallArgs(ev.ToolName, ev.ApprovalArgs); summary != "" {
+		cb := libacp.NewTextContent(summary)
+		update.ToolContent = []libacp.ToolCallContent{
+			{Type: libacp.ToolCallContentRegular, Content: &cb},
+		}
 	}
 
 	if locs := toolCallLocations(ev); len(locs) > 0 {

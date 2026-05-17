@@ -27,9 +27,18 @@ func (t *Transport) AskApproval(ctx context.Context, req hitlservice.ApprovalReq
 		toolCallID = req.ToolsName + "." + req.ToolName
 	}
 
+	summary := summarizeToolCallArgs(req.ToolName, req.Args)
 	title := req.ToolsName + "." + req.ToolName
-	if summary := summarizeToolCallArgs(req.ToolName, req.Args); summary != "" {
+	if summary != "" {
 		title += ": " + summary
+	}
+
+	content := diffContent(diffPath(req.Args), req.DiffOld, req.DiffNew)
+	if content == nil && summary != "" {
+		cb := libacp.NewTextContent(summary)
+		content = []libacp.ToolCallContent{
+			{Type: libacp.ToolCallContentRegular, Content: &cb},
+		}
 	}
 
 	rpcReq := libacp.RequestPermissionRequest{
@@ -40,7 +49,7 @@ func (t *Transport) AskApproval(ctx context.Context, req hitlservice.ApprovalReq
 			Kind:       permissionKindFor(req.ToolsName, req.ToolName),
 			Status:     libacp.ToolCallStatusPending,
 			RawInput:   marshalArgs(req.Args),
-			Content:    diffContent(req.Diff),
+			Content:    content,
 		},
 		Options: []libacp.PermissionOption{
 			{OptionID: permissionOptionAllow, Name: "Allow", Kind: libacp.PermissionAllowOnce},
@@ -109,12 +118,18 @@ func marshalArgs(args map[string]any) json.RawMessage {
 	return raw
 }
 
-func diffContent(diff string) []libacp.ToolCallContent {
-	diff = strings.TrimSpace(diff)
-	if diff == "" {
+func diffPath(args map[string]any) string {
+	if p, ok := args["path"].(string); ok {
+		return strings.TrimSpace(p)
+	}
+	return ""
+}
+
+func diffContent(path, oldText, newText string) []libacp.ToolCallContent {
+	if path == "" || oldText == newText {
 		return nil
 	}
 	return []libacp.ToolCallContent{
-		{Type: libacp.ToolCallContentDiff, NewText: diff},
+		{Type: libacp.ToolCallContentDiff, Path: path, OldText: oldText, NewText: newText},
 	}
 }

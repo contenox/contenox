@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -123,6 +124,10 @@ func (m *MacroEnv) ExecEnv(
 			if containsAll(allowed, "local_fs", "local_shell") {
 				t.SystemInstruction += "\n\nTOOL PREFERENCE: For inspecting or modifying files in the project, prefer the local_fs.* tools over their local_shell equivalents (cat / head / tail / grep / sed against files). local_fs enforces sandbox boundaries, output-size limits, denied-path policies, and a read-before-write contract that local_shell does not. Use local_shell only for genuine shell operations: running tests, builds, git, environment inspection."
 			}
+
+			if !strings.Contains(t.SystemInstruction, "Host: os=") {
+				t.SystemInstruction += fmt.Sprintf("\n\nHost: os=%s arch=%s", runtime.GOOS, runtime.GOARCH)
+			}
 		}
 
 		// Expand {{var:*}} in execute_config model/provider so chains can use
@@ -220,6 +225,18 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, al
 			return v, nil
 		}
 		return "", fmt.Errorf("template var %q is not set", payload)
+	case "host":
+		switch payload {
+		case "os":
+			return runtime.GOOS, nil
+		case "arch":
+			return runtime.GOARCH, nil
+		case "":
+			b, _ := json.Marshal(map[string]string{"os": runtime.GOOS, "arch": runtime.GOARCH})
+			return string(b), nil
+		default:
+			return original, nil
+		}
 	case "now":
 		layout := time.RFC3339
 		if payload != "" {

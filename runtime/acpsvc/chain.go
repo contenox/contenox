@@ -20,18 +20,26 @@ type ChainRegistry struct {
 }
 
 func LoadChainRegistry() (*ChainRegistry, error) {
-	path := os.Getenv(chainPathEnv)
+	return LoadChainRegistryFrom(defaultChainFilename, chainPathEnv)
+}
+
+// LoadChainRegistryFrom loads the ACP chain for a specific profile: filename is
+// the ~/.contenox/ file the chain is read from, envVar overrides that path.
+// A missing file is a hard error (fail closed) — callers must not fall back to
+// a different chain.
+func LoadChainRegistryFrom(filename, envVar string) (*ChainRegistry, error) {
+	path := os.Getenv(envVar)
 	if path == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return nil, fmt.Errorf("acpsvc: cannot determine home directory and %s is not set: %w", chainPathEnv, err)
+			return nil, fmt.Errorf("acpsvc: cannot determine home directory and %s is not set: %w", envVar, err)
 		}
-		path = filepath.Join(home, ".contenox", defaultChainFilename)
+		path = filepath.Join(home, ".contenox", filename)
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("acpsvc: chain file %q not found; populate it like any other contenox chain or set %s: %w", path, chainPathEnv, err)
+		return nil, fmt.Errorf("acpsvc: chain file %q not found; populate it like any other contenox chain or set %s: %w", path, envVar, err)
 	}
 	var chain taskengine.TaskChainDefinition
 	if err := json.Unmarshal(data, &chain); err != nil {

@@ -31,6 +31,8 @@ type ApprovalRequest struct {
 	ToolName   string
 	Args       map[string]any
 	Diff       string
+	DiffOld    string
+	DiffNew    string
 }
 
 // ConditionOp is the comparison operator for a rule condition.
