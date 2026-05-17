@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -615,34 +614,6 @@ func (exe SimpleEnv) evaluateTransitions(_ context.Context, _ string, transition
 	return "", nil, fmt.Errorf("no matching transition found for eval: %s", eval)
 }
 
-// parseNumber attempts to parse a string as either an integer or float.
-func parseNumber(s string) (float64, error) {
-	s = strings.TrimSpace(s)
-	s = strings.ReplaceAll(s, "\"", "")
-	s = strings.ReplaceAll(s, "'", "")
-	s = strings.ReplaceAll(s, " ", "")
-
-	if s == "" {
-		return 0, fmt.Errorf("cannot parse number from empty string")
-	}
-
-	if num, err := strconv.ParseFloat(s, 64); err == nil {
-		return num, nil
-	}
-
-	re := regexp.MustCompile(`[-+]?\d*\.?\d+`)
-	match := re.FindString(s)
-	if match == "" {
-		return 0, fmt.Errorf("no valid number found in %q", s)
-	}
-
-	num, err := strconv.ParseFloat(match, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse number from %q (extracted %q): %w", s, match, err)
-	}
-	return num, nil
-}
-
 // compare applies a logical operator to a model response and a target value.
 func compare(operator OperatorTerm, response, when string) (bool, error) {
 	switch operator {
@@ -654,50 +625,6 @@ func compare(operator OperatorTerm, response, when string) (bool, error) {
 		return strings.HasPrefix(response, when), nil
 	case OpEndsWith:
 		return strings.HasSuffix(response, when), nil
-	case OpGreaterThan, OpGt:
-		resNum, err := parseNumber(response)
-		if err != nil {
-			return false, err
-		}
-		targetNum, err := parseNumber(when)
-		if err != nil {
-			return false, err
-		}
-		return resNum > targetNum, nil
-	case OpLessThan, OpLt:
-		resNum, err := parseNumber(response)
-		if err != nil {
-			return false, err
-		}
-		targetNum, err := parseNumber(when)
-		if err != nil {
-			return false, err
-		}
-		return resNum < targetNum, nil
-	case OpInRange:
-		// Fix 11: use regex so negative bounds like "-10--2" or "-5-5" parse correctly.
-		// strings.Split(when, "-") breaks on any leading '-' in a negative number.
-		rangeRe := regexp.MustCompile(`^(-?\d+(?:\.\d+)?)-(-?\d+(?:\.\d+)?)$`)
-		m := rangeRe.FindStringSubmatch(strings.TrimSpace(when))
-		if m == nil {
-			return false, fmt.Errorf("invalid inrange format: %q (expected 'min-max')", when)
-		}
-		lower, err := parseNumber(m[1])
-		if err != nil {
-			return false, fmt.Errorf("invalid lower bound in range %q: %w", when, err)
-		}
-		upper, err := parseNumber(m[2])
-		if err != nil {
-			return false, fmt.Errorf("invalid upper bound in range %q: %w", when, err)
-		}
-		if lower > upper {
-			return false, fmt.Errorf("invalid range: lower bound %f > upper bound %f", lower, upper)
-		}
-		resNum, err := parseNumber(response)
-		if err != nil {
-			return false, fmt.Errorf("failed to parse response as number: %q: %w", response, err)
-		}
-		return resNum >= lower && resNum <= upper, nil
 	default:
 		return false, fmt.Errorf("unsupported operator: %s", operator)
 	}

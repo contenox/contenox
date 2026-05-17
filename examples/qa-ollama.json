@@ -6,7 +6,7 @@
     {
       "id": "generate_response",
       "description": "Generate answer",
-      "handler": "prompt_to_string",
+      "handler": "chat_completion",
       "system_instruction": "You are a helpful assistant. Reply concisely.",
       "prompt_template": "{{.input}}",
       "input_var": "input",

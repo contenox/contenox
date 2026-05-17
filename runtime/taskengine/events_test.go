@@ -164,7 +164,7 @@ func TestTaskEvents_ExecEnvFailureLifecycle(t *testing.T) {
 	assert.Equal(t, taskengine.TaskEventStepFailed, sink.events[len(sink.events)-2].Kind)
 }
 
-func TestTaskEvents_PromptStreamingPublishesChunks(t *testing.T) {
+func TestTaskEvents_ChatStreamingPublishesChunks(t *testing.T) {
 	sink := &captureTaskEventSink{}
 	constructorCtx := taskengine.WithTaskEventSink(context.Background(), sink)
 
@@ -193,7 +193,7 @@ func TestTaskEvents_PromptStreamingPublishesChunks(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleChatCompletion,
 				PromptTemplate: "Say hi to {{.input}}",
 				ExecuteConfig: &taskengine.LLMExecutionConfig{
 					Model: "test-model",
@@ -207,7 +207,10 @@ func TestTaskEvents_PromptStreamingPublishesChunks(t *testing.T) {
 
 	result, _, _, err := env.ExecEnv(context.Background(), chain, "world", taskengine.DataTypeString)
 	require.NoError(t, err)
-	assert.Equal(t, "hello world", result)
+	hist, ok := result.(taskengine.ChatHistory)
+	require.True(t, ok)
+	require.NotEmpty(t, hist.Messages)
+	assert.Equal(t, "hello world", hist.Messages[len(hist.Messages)-1].Content)
 
 	var kinds []taskengine.TaskEventKind
 	var chunks []taskengine.TaskEvent

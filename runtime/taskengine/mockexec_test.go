@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnit_TaskExec_PromptToString(t *testing.T) {
+func TestUnit_MockTaskExecutor_ReturnsMockOutput(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
 		MockOutput:          "mock-result",
 		MockTransitionValue: "mock-response",
@@ -18,7 +18,7 @@ func TestUnit_TaskExec_PromptToString(t *testing.T) {
 	}
 
 	task := &taskengine.TaskDefinition{
-		Handler: taskengine.HandlePromptToString,
+		Handler: taskengine.HandleNoop,
 	}
 
 	output, _, _, err := mockExec.TaskExec(context.Background(), time.Now(), 100, &taskengine.ChainContext{}, task, "What is 2+2?", taskengine.DataTypeString)
@@ -44,7 +44,7 @@ func singleTaskChain(prompt string) *taskengine.TaskChainDefinition {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "t1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: prompt,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{

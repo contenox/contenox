@@ -1,0 +1,50 @@
+{
+    "id": "route-demo",
+    "description": "Intent router: 'route' classifies the incoming message into exactly one declared branch label. Routing-only — the input passes through unchanged; only the transition label changes.",
+    "tasks": [
+        {
+            "id": "classify",
+            "handler": "route",
+            "system_instruction": "Classify the user's message. Use 'code' if it asks to write or modify code. Use 'question' for anything else.",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}"
+            },
+            "transition": {
+                "on_failure": "",
+                "branches": [
+                    { "operator": "equals", "when": "code", "goto": "do_code" },
+                    { "operator": "equals", "when": "question", "goto": "do_answer" },
+                    { "operator": "default", "when": "", "goto": "do_answer" }
+                ]
+            }
+        },
+        {
+            "id": "do_code",
+            "handler": "chat_completion",
+            "system_instruction": "You are a coding assistant. Help with the code task.",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}"
+            },
+            "transition": {
+                "on_failure": "",
+                "branches": [ { "operator": "default", "when": "", "goto": "end" } ]
+            }
+        },
+        {
+            "id": "do_answer",
+            "handler": "chat_completion",
+            "system_instruction": "You are a concise assistant. Answer the question directly.",
+            "execute_config": {
+                "model": "{{var:model}}",
+                "provider": "{{var:provider}}"
+            },
+            "transition": {
+                "on_failure": "",
+                "branches": [ { "operator": "default", "when": "", "goto": "end" } ]
+            }
+        }
+    ],
+    "token_limit": 8192
+}

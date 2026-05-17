@@ -36,8 +36,7 @@ type TaskExecutor interface {
 }
 
 // SimpleExec is a basic implementation of TaskExecutor.
-// It supports prompt-to-string, number, score, range, boolean condition evaluation,
-// and delegation to registered tools.
+// It executes chat completion, tools, route, raise_error, and noop tasks.
 type SimpleExec struct {
 	repo          llmrepo.ModelRepo
 	toolsProvider ToolsRepo
@@ -380,8 +379,8 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 }
 
 // promptWithRetry wraps repo.PromptExecute with [llmretry.Do] when the task's
-// LLMExecutionConfig declares a RetryPolicy. Used by every prompt_to_*
-// handler (prompt_to_int / float / range / string / condition / js).
+// LLMExecutionConfig declares a RetryPolicy. Used by the route handler's
+// single-shot classification call.
 // The streaming branch in [Prompt] is intentionally not retried because
 // parcels may already have been published to the user; only the
 // non-streaming fallback path is wrapped.
@@ -445,6 +444,31 @@ func (exe *SimpleExec) promptWithRetry(
 
 
 // TaskExec dispatches task execution based on the task type.
+func declaredRoutes(branches []TransitionBranch) []string {
+	routes := make([]string, 0, len(branches))
+	for _, b := range branches {
+		if b.Operator == OpEquals && strings.TrimSpace(b.When) != "" {
+			routes = append(routes, b.When)
+		}
+	}
+	return routes
+}
+
+func selectRoute(answer string, routes []string) string {
+	chosen := strings.TrimSpace(answer)
+	for _, r := range routes {
+		if strings.EqualFold(chosen, r) {
+			return r
+		}
+	}
+	for _, r := range routes {
+		if strings.Contains(strings.ToLower(chosen), strings.ToLower(r)) {
+			return r
+		}
+	}
+	return chosen
+}
+
 func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time, ctxLength int, chainContext *ChainContext, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error) {
 	var transitionEval string
 	var taskErr error
@@ -493,6 +517,29 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
 		}
 		return nil, DataTypeAny, "", errors.New(message)
+
+	case HandleRoute:
+		if currentTask.ExecuteConfig == nil {
+			currentTask.ExecuteConfig = &LLMExecutionConfig{}
+		}
+		prompt, err := getPrompt()
+		if err != nil {
+			return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
+		}
+		routes := declaredRoutes(currentTask.Transition.Branches)
+		if len(routes) == 0 {
+			return nil, DataTypeAny, "", fmt.Errorf("route task %s has no equals branches to route between", currentTask.ID)
+		}
+		sys := currentTask.SystemInstruction
+		if sys != "" {
+			sys += "\n\n"
+		}
+		sys += "Respond with exactly one of the following labels and nothing else: " + strings.Join(routes, ", ")
+		answer, err := exe.Prompt(taskCtx, sys, *currentTask.ExecuteConfig, prompt, ctxLength)
+		if err != nil {
+			return nil, DataTypeAny, "", fmt.Errorf("route task %s: %w", currentTask.ID, err)
+		}
+		return input, dataType, selectRoute(answer, routes), nil
 
 	case HandleChatCompletion:
 		if currentTask.ExecuteConfig == nil {

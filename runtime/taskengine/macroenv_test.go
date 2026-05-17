@@ -56,7 +56,7 @@ func newMacroChain(template string, tools []string) *taskengine.TaskChainDefinit
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: template,
 				ExecuteConfig:  cfg,
 				Transition:     taskengine.TaskTransition{Branches: []taskengine.TransitionBranch{{Operator: "default", Goto: "end"}}},

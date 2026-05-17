@@ -15,6 +15,7 @@ type TaskHandler string
 
 const (
 	HandleRaiseError       TaskHandler = "raise_error"
+	HandleRoute            TaskHandler = "route"
 	HandleChatCompletion   TaskHandler = "chat_completion"
 	HandleExecuteToolCalls TaskHandler = "execute_tool_calls"
 	HandleNoop             TaskHandler = "noop"
@@ -97,8 +98,7 @@ type TransitionBranch struct {
 
 	// When specifies the condition that must be met to follow this branch.
 	// Format depends on the task type:
-	// - For condition_key: exact string match
-	// - For prompt_to_int: numeric comparison (using Operator)
+	// - For most handlers: matched against the task's transition eval
 	// - For edge_traversed_at_least: integer threshold
 	When string `yaml:"when" json:"when" example:"yes"`
 
@@ -120,11 +120,6 @@ const (
 	OpContains    OperatorTerm = "contains"
 	OpStartsWith  OperatorTerm = "starts_with"
 	OpEndsWith    OperatorTerm = "ends_with"
-	OpGreaterThan OperatorTerm = ">"
-	OpGt          OperatorTerm = "gt"
-	OpLessThan    OperatorTerm = "<"
-	OpLt          OperatorTerm = "lt"
-	OpInRange     OperatorTerm = "in_range"
 	OpDefault     OperatorTerm = "default"
 	// OpEdgeTraversedAtLeast fires when the edge specified by TransitionBranch.Edge
 	// (formatted "fromTaskID->toTaskID") has been traversed at least the integer
@@ -149,11 +144,6 @@ func SupportedOperators() []string {
 		string(OpContains),
 		string(OpStartsWith),
 		string(OpEndsWith),
-		string(OpGreaterThan),
-		string(OpGt),
-		string(OpLessThan),
-		string(OpLt),
-		string(OpInRange),
 		string(OpDefault),
 		string(OpEdgeTraversedAtLeast),
 	}
@@ -169,16 +159,6 @@ func ToOperatorTerm(s string) (OperatorTerm, error) {
 		return OpStartsWith, nil
 	case string(OpEndsWith):
 		return OpEndsWith, nil
-	case string(OpGreaterThan):
-		return OpGreaterThan, nil
-	case string(OpGt):
-		return OpGt, nil
-	case string(OpLessThan):
-		return OpLessThan, nil
-	case string(OpLt):
-		return OpLt, nil
-	case string(OpInRange):
-		return OpInRange, nil
 	case string(OpDefault):
 		return OpDefault, nil
 	case string(OpEdgeTraversedAtLeast):
@@ -276,7 +256,7 @@ type TaskDefinition struct {
 	Print string `yaml:"print,omitempty" json:"print,omitempty" example:"Validation result: {{.validate_input}}"`
 
 	// PromptTemplate is the text prompt sent to the LLM.
-	// It's Required and only applicable for the prompt_to_string type.
+	// Optional; when set it overrides the resolved input as the prompt.
 	// Supports template variables from previous task outputs.
 	// Example: "Rate the quality from 1-10: {{.input}}"
 	PromptTemplate string `yaml:"prompt_template" json:"prompt_template" example:"Is this input valid? {{.input}}"`

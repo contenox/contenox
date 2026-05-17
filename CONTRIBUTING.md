@@ -25,7 +25,7 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 
 **Service Layer** — each domain gets its own interface + implementation package (`execservice`, `backendservice`, `mcpserverservice`, `stateservice`, `hitlservice`, `terminalservice`, `vfsservice`, etc.). Services don't call each other directly; they communicate through the shared `runtimetypes.Store` interface and bus events.
 
-**Task Engine** (`runtime/taskengine/`) — the core execution model. Chains are JSON DAGs with typed I/O (`DataType`: String, Int, JSON, ChatHistory). Task handlers (`prompt_to_string`, `chat_completion`, `execute_tool_calls`, `hook`, `noop`, etc.) are an enum. Branch conditions (`equals`, `contains`, `in_range`, `>`, `<`) are declarative — no Go code lives inside chain definitions.
+**Task Engine** (`runtime/taskengine/`) — the core execution model. Chains are JSON DAGs with typed I/O (`DataType`: String, Int, JSON, ChatHistory). Task handlers (`chat_completion`, `execute_tool_calls`, `tools`, `route`, `raise_error`, `noop`) are an enum. Branch conditions (`equals`, `contains`, `starts_with`, `ends_with`, `default`, `edge_traversed_at_least`) are declarative — no Go code lives inside chain definitions.
 
 **LLM Resolution** — two-level indirection: `llmrepo.ModelRepo` handles request-side selection (pick by capability or context length); `modelrepo.Provider` handles provider-side calls (Ollama, OpenAI, Gemini, Vertex, vLLM, local llama.cpp). `runtimestate` reconciles live backend capabilities every 10 s.
 
@@ -45,7 +45,7 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 
 ## Repository structure
 
-The **`contenox`** binary is the main (only) entrypoint: `setup`, `init`, `chat`, `run`, `hook`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`, `acp`.
+The **`contenox`** binary is the main (only) entrypoint: `setup`, `init`, `chat`, `run`, `tools`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`, `acp`.
 
 All AI/LLM orchestration packages live under **`runtime/`**. Infrastructure libraries (`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libroutine`, `libtracker`) stay at the module root.
 

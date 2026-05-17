@@ -44,7 +44,7 @@ func TestUnit_SimpleEnv_ExecEnv_SingleTask(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `What is {{.input}}?`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -73,7 +73,7 @@ func TestUnit_SimpleEnv_ExecEnv_UsesParentCancellation(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `What is {{.input}}?`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -105,7 +105,7 @@ func TestUnit_SimpleEnv_ExecEnv_FailsAfterRetries(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `Broken task`,
 				RetryOnFailure: 1,
 				Transition:     taskengine.TaskTransition{},
@@ -172,7 +172,7 @@ func TestUnit_SimpleEnv_ExecEnv_ErrorTransition(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `fail`,
 				Transition: taskengine.TaskTransition{
 					OnFailure: "task2",
@@ -180,7 +180,7 @@ func TestUnit_SimpleEnv_ExecEnv_ErrorTransition(t *testing.T) {
 			},
 			{
 				ID:             "task2",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `recover`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -210,7 +210,7 @@ func TestUnit_SimpleEnv_ExecEnv_PrintTemplate(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `hi {{.input}}`,
 				Print:          `Output: {{.task1}}`,
 				Transition: taskengine.TaskTransition{
@@ -242,7 +242,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_OriginalInput(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				InputVar:       "input", // Explicitly use original input
 				PromptTemplate: `Process this: {{.input}}`,
 				Transition: taskengine.TaskTransition{
@@ -273,7 +273,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "transform",
-				Handler:        taskengine.HandlePromptToInt,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `Convert to number: {{.input}}`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -283,7 +283,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 			},
 			{
 				ID:             "process",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				InputVar:       "transform", // Use output from previous task
 				PromptTemplate: `Process the number: {{.transform}}`,
 				Transition: taskengine.TaskTransition{
@@ -300,10 +300,10 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_PreviousTaskOutput(t *testing.T) {
 	require.Equal(t, "processed: 42", result)
 }
 
-func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
+func TestUnit_SimpleEnv_ExecEnv_InputVar_BranchRouting(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
 		MockOutputSequence:          []any{8, "user message stored"},
-		MockTransitionValueSequence: []string{"8", "user message stored"},
+		MockTransitionValueSequence: []string{"store", "user message stored"},
 	}
 
 	tracker := libtracker.NoopTracker{}
@@ -314,11 +314,11 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "moderate",
-				Handler:        taskengine.HandlePromptToInt,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `Rate safety of: {{.input}}`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
-						{Operator: taskengine.OpGreaterThan, When: "5", Goto: "store"},
+						{Operator: taskengine.OpEquals, When: "store", Goto: "store"},
 						{Operator: "default", Goto: "reject"},
 					},
 				},
@@ -338,7 +338,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_WithModeration(t *testing.T) {
 			},
 			{
 				ID:             "reject",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `Rejected: {{.input}}`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -365,7 +365,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_InvalidVariable(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				InputVar:       "nonexistent",
 				PromptTemplate: `Should fail`,
 				Transition: taskengine.TaskTransition{
@@ -396,7 +396,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_DefaultBehavior(t *testing.T) {
 		Tasks: []taskengine.TaskDefinition{
 			{
 				ID:             "task1",
-				Handler:        taskengine.HandlePromptToString,
+				Handler:        taskengine.HandleNoop,
 				PromptTemplate: `First: {{.input}}`,
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
@@ -406,7 +406,7 @@ func TestUnit_SimpleEnv_ExecEnv_InputVar_DefaultBehavior(t *testing.T) {
 			},
 			{
 				ID:      "task2",
-				Handler: taskengine.HandlePromptToString,
+				Handler: taskengine.HandleNoop,
 				// No InputVar specified - should use previous output
 				PromptTemplate: `Second: {{.task1}}`,
 				Transition: taskengine.TaskTransition{
