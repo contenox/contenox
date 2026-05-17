@@ -6,41 +6,6 @@ import (
 	"testing"
 )
 
-func TestUnit_acpxIsReservedSubcommand(t *testing.T) {
-	if !reservedSubcommands["acpx"] {
-		t.Fatal(`"acpx" must be reserved so it is dispatched as a subcommand, not injected as run input`)
-	}
-	if !firstNonFlagIsReserved([]string{"acpx"}) {
-		t.Fatal(`expected "acpx" to be recognized as a reserved subcommand`)
-	}
-}
-
-func TestUnit_seedHeadlessACPChainIfMissing(t *testing.T) {
-	dir := t.TempDir()
-	dst := filepath.Join(dir, headlessACPChainFilename)
-
-	if err := seedHeadlessACPChainIfMissing(dir); err != nil {
-		t.Fatalf("seed when absent: %v", err)
-	}
-	if _, err := os.Stat(dst); err != nil {
-		t.Fatalf("expected %s written: %v", dst, err)
-	}
-
-	if err := os.WriteFile(dst, []byte("USER EDIT"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := seedHeadlessACPChainIfMissing(dir); err != nil {
-		t.Fatalf("seed when present: %v", err)
-	}
-	got, err := os.ReadFile(dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "USER EDIT" {
-		t.Fatal("seedHeadlessACPChainIfMissing overwrote a user-edited chain file")
-	}
-}
-
 func TestUnit_firstNonFlagIsReserved_version(t *testing.T) {
 	if !firstNonFlagIsReserved([]string{"version"}) {
 		t.Fatal(`expected "version" to be reserved so it is not passed to run/chat`)

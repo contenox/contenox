@@ -14,8 +14,6 @@ import (
 type TaskHandler string
 
 const (
-	HandlePromptToString   TaskHandler = "prompt_to_string"
-	HandlePromptToInt      TaskHandler = "prompt_to_int"
 	HandleRaiseError       TaskHandler = "raise_error"
 	HandleChatCompletion   TaskHandler = "chat_completion"
 	HandleExecuteToolCalls TaskHandler = "execute_tool_calls"
@@ -112,10 +110,6 @@ type TransitionBranch struct {
 	// count is consulted by edge-state operators (e.g. edge_traversed_at_least).
 	// Required when Operator is one of those; ignored otherwise.
 	Edge string `yaml:"edge,omitempty" json:"edge,omitempty" example:"chat->run_tools"`
-
-	// Compose defines how to transform data when taking this branch.
-	// Optional - if not specified, the current task output is passed as-is.
-	Compose *BranchCompose `yaml:"compose,omitempty" json:"compose,omitempty" openapi_include_type:"taskengine.BranchCompose"`
 }
 
 // OperatorTerm represents logical operators used for task transition evaluation
@@ -312,24 +306,6 @@ type TaskDefinition struct {
 	RetryOnFailure int `yaml:"retry_on_failure,omitempty" json:"retry_on_failure,omitempty" example:"2"`
 }
 
-// BranchCompose is a task that composes multiple variables into a single output.
-// the composed output is stored in a variable named after the task ID with "_composed" suffix.
-// and is also directly mutating the task's output.
-// example:
-//
-// compose:
-//
-//	with_var: "chat2"
-//	strategy: "override"
-type BranchCompose struct {
-	// Selects the variable to compose the current input with.
-	WithVar string `yaml:"with_var,omitempty" json:"with_var,omitempty"`
-	// Strategy defines how values should be merged ("override", "merge_chat_histories", "append_string_to_chat_history").
-	// Optional; defaults to "override" or "merge_chat_histories" if both output and WithVar values are ChatHistory.
-	// "merge_chat_histories": If both output and WithVar values are ChatHistory,
-	// appends the WithVar's Messages to the output's Messages.
-	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
-}
 
 type ChainTerms string
 

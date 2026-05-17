@@ -512,46 +512,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		}
 
 		// Evaluate transitions and get chosen branch
-		nextTaskID, chosenBranch, err := env.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval, edgeCounts)
+		nextTaskID, _, err := env.evaluateTransitions(ctx, currentTask.ID, currentTask.Transition, transitionEval, edgeCounts)
 		if err != nil {
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: transition error: %v", currentTask.ID, err)
 		}
 
-		// Handle branch-specific compose
-		if chosenBranch.Compose != nil {
-			compose := chosenBranch.Compose
-
-			// Validate compose variables exist
-			rightVal, exists := vars[compose.WithVar]
-			if !exists {
-				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose right_var %q not found", compose.WithVar)
-			}
-			rightType, exists := varTypes[compose.WithVar]
-			if !exists {
-				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose right_var %q missing type info", compose.WithVar)
-			}
-
-			// Determine strategy with fallback
-			strategy := compose.Strategy
-			if strategy == "" {
-				strategy = env.determineDefaultComposeStrategy(outputType, rightType)
-			}
-
-			// Execute compose operation
-			composedOutput, composedType, err := env.executeCompose(strategy, output, outputType, rightVal, rightType)
-			if err != nil {
-				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("compose failed: %w", err)
-			}
-
-			// Update output for next task
-			output = composedOutput
-			outputType = composedType
-
-			// Store composed result in a branch-specific variable
-			branchVarName := fmt.Sprintf("%s_%s_composed", currentTask.ID, sanitizeBranchName(chosenBranch.When))
-			vars[branchVarName] = output
-			varTypes[branchVarName] = outputType
-		}
 		// Update execution variables with raw task output
 		vars["previous_output"] = output
 		vars[currentTask.ID] = output
@@ -595,128 +560,6 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		return nil, DataTypeAny, stack.GetExecutionHistory(), normErr
 	}
 	return normOut, normDT, stack.GetExecutionHistory(), nil
-}
-
-// Helper methods for compose operations
-func (env SimpleEnv) determineDefaultComposeStrategy(leftType, rightType DataType) string {
-	if leftType == DataTypeChatHistory && rightType == DataTypeChatHistory {
-		return "merge_chat_histories"
-	}
-	if (leftType == DataTypeString && rightType == DataTypeChatHistory) ||
-		(leftType == DataTypeChatHistory && rightType == DataTypeString) {
-		return "append_string_to_chat_history"
-	}
-	return "override"
-}
-
-func (env SimpleEnv) executeCompose(strategy string, leftVal any, leftType DataType, rightVal any, rightType DataType) (any, DataType, error) {
-	switch strategy {
-	case "override":
-		return env.composeOverride(leftVal, leftType, rightVal, rightType)
-	case "append_string_to_chat_history":
-		return env.composeAppendStringToChatHistory(leftVal, leftType, rightVal, rightType)
-	case "merge_chat_histories":
-		return env.composeMergeChatHistories(leftVal, leftType, rightVal, rightType)
-	default:
-		return nil, DataTypeAny, fmt.Errorf("unsupported compose strategy: %q", strategy)
-	}
-}
-
-func (env SimpleEnv) composeOverride(leftVal any, leftType DataType, rightVal any, rightType DataType) (any, DataType, error) {
-	// If both are maps, merge them with left overriding right
-	leftMap, okLeft := leftVal.(map[string]any)
-	rightMap, okRight := rightVal.(map[string]any)
-
-	if okLeft && okRight {
-		// Start with the "right" (older) and override with "left" (newer)
-		result := make(map[string]any, len(rightMap)+len(leftMap))
-		for k, v := range rightMap {
-			result[k] = v
-		}
-		for k, v := range leftMap {
-			result[k] = v
-		}
-		return result, DataTypeJSON, nil
-	}
-
-	// If only one is a map, prefer the map over non-map
-	if okLeft {
-		return leftVal, leftType, nil
-	}
-	if okRight {
-		return rightVal, rightType, nil
-	}
-
-	// Neither is a map, return the left value (current output)
-	return leftVal, leftType, nil
-}
-
-func (env SimpleEnv) composeAppendStringToChatHistory(leftVal any, leftType DataType, rightVal any, rightType DataType) (any, DataType, error) {
-	var strVal string
-	var chatHist ChatHistory
-
-	if leftType == DataTypeString && rightType == DataTypeChatHistory {
-		// left = new assistant text, right = existing history
-		strVal = leftVal.(string)
-		chatHist = rightVal.(ChatHistory)
-	} else if leftType == DataTypeChatHistory && rightType == DataTypeString {
-		// left = existing history, right = new assistant text
-		strVal = rightVal.(string)
-		chatHist = leftVal.(ChatHistory)
-	} else {
-		return nil, DataTypeAny, fmt.Errorf("invalid types for append_string_to_chat_history %s - %s", leftType.String(), rightType.String())
-	}
-
-	// Append assistant message to the END of the history
-	newMsg := Message{
-		Content:   strVal,
-		Role:      "assistant",
-		Timestamp: time.Now().UTC(),
-	}
-
-	// Fix 6: force reallocation so we never mutate the backing array of the
-	// original slice, which could corrupt shared state on branching/retries.
-	newMessages := append([]Message(nil), chatHist.Messages...)
-	result := ChatHistory{
-		Messages:     append(newMessages, newMsg),
-		Model:        chatHist.Model,
-		OutputTokens: chatHist.OutputTokens,
-		InputTokens:  chatHist.InputTokens,
-	}
-
-	return result, DataTypeChatHistory, nil
-}
-
-func (env SimpleEnv) composeMergeChatHistories(leftVal any, leftType DataType, rightVal any, rightType DataType) (any, DataType, error) {
-	if leftType != DataTypeChatHistory || rightType != DataTypeChatHistory {
-		return nil, DataTypeAny, fmt.Errorf("both values must be ChatHistory for merge")
-	}
-
-	leftHist := leftVal.(ChatHistory)   // current task output (task2)
-	rightHist := rightVal.(ChatHistory) // WithVar (task1)
-
-	// Right-first, then left (as tests expect)
-	merged := ChatHistory{
-		Messages:     append(append([]Message{}, rightHist.Messages...), leftHist.Messages...),
-		InputTokens:  rightHist.InputTokens + leftHist.InputTokens,
-		OutputTokens: rightHist.OutputTokens + leftHist.OutputTokens,
-	}
-
-	// Only keep model if identical; otherwise empty
-	if rightHist.Model == leftHist.Model {
-		merged.Model = leftHist.Model
-	} else {
-		merged.Model = ""
-	}
-
-	return merged, DataTypeChatHistory, nil
-}
-
-func sanitizeBranchName(branchName string) string {
-	safe := strings.ReplaceAll(branchName, " ", "_")
-	safe = strings.ReplaceAll(safe, "-", "_")
-	safe = strings.ToLower(safe)
-	return safe
 }
 
 func renderTemplate(tmplStr string, vars any) (string, error) {

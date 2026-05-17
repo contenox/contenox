@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -444,28 +443,6 @@ func (exe *SimpleExec) promptWithRetry(
 	return pr.response, pr.meta, nil
 }
 
-// Prompt resolves a model client and sends the prompt
-// to be executed. Returns the trimmed response string or an error.
-
-// number executes the prompt and parses the response as an integer.
-func (exe *SimpleExec) number(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string, ctxLength int) (int, error) {
-	response, err := exe.Prompt(ctx, systemInstruction, llmCall, prompt, ctxLength)
-	if err != nil {
-		return 0, fmt.Errorf("number: prompt execution failed: %w", err)
-	}
-
-	num, err := parseNumber(response)
-	if err != nil {
-		return 0, fmt.Errorf("invalid number format: prompt %s answer %s %w", prompt, response, err)
-	}
-
-	// Check if the float is actually a whole number
-	if num != float64(int(num)) {
-		return 0, fmt.Errorf("parsed number is not an integer: %g", num)
-	}
-
-	return int(num), nil
-}
 
 // TaskExec dispatches task execution based on the task type.
 func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time, ctxLength int, chainContext *ChainContext, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error) {
@@ -510,39 +487,12 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		return output, dataType, transitionEval, fmt.Errorf("%w: task-type is empty", ErrUnsupportedTaskType)
 	}
 	switch currentTask.Handler {
-	case HandlePromptToString,
-		HandlePromptToInt,
-		HandleRaiseError:
-		prompt, err := getPrompt()
+	case HandleRaiseError:
+		message, err := getPrompt()
 		if err != nil {
-			return nil, DataTypeAny, "", err
+			return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
 		}
-
-		if currentTask.ExecuteConfig == nil {
-			currentTask.ExecuteConfig = &LLMExecutionConfig{}
-		}
-
-		switch currentTask.Handler {
-		case HandlePromptToString:
-			transitionEval, taskErr = exe.Prompt(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
-			output = transitionEval
-			outputType = DataTypeString
-
-		case HandlePromptToInt:
-			var number int
-			number, taskErr = exe.number(taskCtx, currentTask.SystemInstruction, *currentTask.ExecuteConfig, prompt, ctxLength)
-			output = number
-			outputType = DataTypeInt
-			transitionEval = strconv.FormatInt(int64(number), 10)
-
-		case HandleRaiseError:
-			message, err := getPrompt()
-			if err != nil {
-				return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
-			}
-			return nil, DataTypeAny, "", errors.New(message)
-
-		}
+		return nil, DataTypeAny, "", errors.New(message)
 
 	case HandleChatCompletion:
 		if currentTask.ExecuteConfig == nil {

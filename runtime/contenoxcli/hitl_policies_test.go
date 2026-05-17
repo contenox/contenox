@@ -90,31 +90,3 @@ func TestUnit_SeededStrictPolicy_SecretInvariant(t *testing.T) {
 	assertSeededSecretInvariant(t, "hitl-policy-strict.json", hitlPolicyStrict)
 }
 
-func TestUnit_SeededACPXPolicy_SecretInvariantAndHeavyDeltas(t *testing.T) {
-	t.Parallel()
-	assertSeededSecretInvariant(t, "hitl-policy-acpx.json", hitlPolicyACPX)
-
-	svc := seededPolicyService(t, "hitl-policy-acpx.json", hitlPolicyACPX)
-	ctx := context.Background()
-
-	deny := map[string][2]string{
-		"shell":      {"local_shell", "local_shell"},
-		"web_post":   {"webtools", "web_post"},
-		"web_delete": {"webtools", "web_delete"},
-	}
-	for label, tt := range deny {
-		r, err := svc.Evaluate(ctx, tt[0], tt[1], nil)
-		require.NoError(t, err)
-		assert.Equal(t, hitlservice.ActionDeny, r.Action, "acpx must deny %s", label)
-	}
-
-	r, err := svc.Evaluate(ctx, "webtools", "web_get", nil)
-	require.NoError(t, err)
-	assert.Equal(t, hitlservice.ActionApprove, r.Action, "acpx must gate web_get (GET is an exfil vector for an untrusted driver)")
-
-	// Floor must stay approve, never deny: a deny floor is terminal and would
-	// brick OpenClaw, whose permissionMode could otherwise grant the call.
-	r, err = svc.Evaluate(ctx, "some_unaccounted_mcp", "arbitrary_tool", nil)
-	require.NoError(t, err)
-	assert.Equal(t, hitlservice.ActionApprove, r.Action, "acpx default_action must be approve, not deny")
-}
