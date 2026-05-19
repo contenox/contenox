@@ -384,7 +384,10 @@ func runToolsShow(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(out, "Tools (%d):\n", len(fetchedTools))
 	for _, t := range fetchedTools {
-		fmt.Fprintf(out, "  %-30s  %s\n", t.Function.Name, t.Function.Description)
+		// Use literal newline in string literals; previously rendered '\n' bug fix.
+		// TODO: is this the right place to fix this?
+		desc := strings.ReplaceAll(t.Function.Description, "\\n", "\n")
+		fmt.Fprintf(out, "  %-30s  %s\n", t.Function.Name, desc)
 	}
 	return nil
 }
