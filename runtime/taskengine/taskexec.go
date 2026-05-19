@@ -442,7 +442,6 @@ func (exe *SimpleExec) promptWithRetry(
 	return pr.response, pr.meta, nil
 }
 
-
 // TaskExec dispatches task execution based on the task type.
 func declaredRoutes(branches []TransitionBranch) []string {
 	routes := make([]string, 0, len(branches))

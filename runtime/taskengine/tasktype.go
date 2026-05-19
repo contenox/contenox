@@ -116,11 +116,11 @@ type TransitionBranch struct {
 type OperatorTerm string
 
 const (
-	OpEquals      OperatorTerm = "equals"
-	OpContains    OperatorTerm = "contains"
-	OpStartsWith  OperatorTerm = "starts_with"
-	OpEndsWith    OperatorTerm = "ends_with"
-	OpDefault     OperatorTerm = "default"
+	OpEquals     OperatorTerm = "equals"
+	OpContains   OperatorTerm = "contains"
+	OpStartsWith OperatorTerm = "starts_with"
+	OpEndsWith   OperatorTerm = "ends_with"
+	OpDefault    OperatorTerm = "default"
 	// OpEdgeTraversedAtLeast fires when the edge specified by TransitionBranch.Edge
 	// (formatted "fromTaskID->toTaskID") has been traversed at least the integer
 	// in TransitionBranch.When times during the current chain run. Reads engine
@@ -285,7 +285,6 @@ type TaskDefinition struct {
 	// Default: 0 (no retries)
 	RetryOnFailure int `yaml:"retry_on_failure,omitempty" json:"retry_on_failure,omitempty" example:"2"`
 }
-
 
 type ChainTerms string
 

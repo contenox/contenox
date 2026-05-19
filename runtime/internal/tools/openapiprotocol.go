@@ -218,6 +218,9 @@ func (p *OpenAPIToolProtocol) ExecuteTool(
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		responseBody, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+			return nil, taskengine.DataTypeAny, &AuthError{StatusCode: resp.StatusCode, Body: string(responseBody)}
+		}
 		return nil, taskengine.DataTypeAny, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(responseBody))
 	}
 

@@ -119,9 +119,9 @@ func RegisterClient(ctx context.Context, registrationEndpoint, clientName, redir
 
 // CallbackResult is the outcome of the local callback server.
 type CallbackResult struct {
-	Code  string
-	State string
-	Error string
+	Code             string
+	State            string
+	Error            string
 	ErrorDescription string
 }
 

@@ -123,6 +123,16 @@ func init() {
 	toolsAddCmd.Flags().Int("timeout", 10000, "Request timeout in milliseconds")
 	toolsAddCmd.Flags().String("spec", "", "Full URL or local file path to the OpenAPI v3 spec (e.g. https://host/openapi.yaml, ~/spec.yaml, ./spec.json)")
 
+	// Auth flow flags
+	toolsAddCmd.Flags().String("auth-login-url", "", "URL to POST credentials to before calling the API (triggers http_handshake auth flow)")
+	toolsAddCmd.Flags().String("auth-login-method", "POST", "HTTP method for the login request (default: POST)")
+	toolsAddCmd.Flags().String("auth-login-body", "", `JSON body for the login request, e.g. '{"usr":"${USER}","pwd":"${PASS}"}' (env vars expanded)`)
+	toolsAddCmd.Flags().String("auth-extract-cookie", "", "Name of the Set-Cookie cookie to extract from the login response")
+	toolsAddCmd.Flags().String("auth-extract-jsonpath", "", `JSONPath expression to extract a token from the login response body, e.g. "$.data.token"`)
+	toolsAddCmd.Flags().String("auth-inject-header", "", `HTTP header to inject the extracted token into, e.g. "Cookie" or "Authorization"`)
+	toolsAddCmd.Flags().String("auth-inject-format", "", `Printf format string for the injected value, e.g. "Bearer %s" or "sid=%s" (defaults to cookie "name=value" when extracting a cookie)`)
+	toolsAddCmd.Flags().Bool("insecure-skip-tls-verify", false, "Skip TLS certificate verification for this tools (use only for self-signed/internal services)")
+
 	toolsUpdateCmd.Flags().String("url", "", "New base URL")
 	toolsUpdateCmd.Flags().StringArray("header", nil, `Header to inject, e.g. "Authorization: Bearer $TOKEN" (repeatable; replaces all existing headers)`)
 	toolsUpdateCmd.Flags().StringArray("inject", nil, `Params to inject as tool call args (repeatable; replaces all existing injected params)`)
@@ -230,6 +240,30 @@ func runToolsAdd(cmd *cobra.Command, args []string) error {
 	rawInjects, _ := cmd.Flags().GetStringArray("inject")
 	timeoutMs, _ := cmd.Flags().GetInt("timeout")
 
+	// Auth and TLS flags
+	authLoginUrl, _ := cmd.Flags().GetString("auth-login-url")
+	authLoginMethod, _ := cmd.Flags().GetString("auth-login-method")
+	authLoginBody, _ := cmd.Flags().GetString("auth-login-body")
+	authExtractCookie, _ := cmd.Flags().GetString("auth-extract-cookie")
+	authExtractJsonPath, _ := cmd.Flags().GetString("auth-extract-jsonpath")
+	authInjectHeader, _ := cmd.Flags().GetString("auth-inject-header")
+	authInjectFormat, _ := cmd.Flags().GetString("auth-inject-format")
+	insecureSkipVerify, _ := cmd.Flags().GetBool("insecure-skip-tls-verify")
+
+	var authFlow *runtimetypes.AuthFlow
+	if authLoginUrl != "" {
+		authFlow = &runtimetypes.AuthFlow{
+			Type:            "http_handshake",
+			LoginURL:        authLoginUrl,
+			LoginMethod:     authLoginMethod,
+			LoginBody:       authLoginBody,
+			ExtractCookie:   authExtractCookie,
+			ExtractJSONPath: authExtractJsonPath,
+			InjectHeader:    authInjectHeader,
+			InjectFormat:    authInjectFormat,
+		}
+	}
+
 	headers, err := parseHeaders(rawHeaders)
 	if err != nil {
 		return err
@@ -265,12 +299,14 @@ func runToolsAdd(cmd *cobra.Command, args []string) error {
 	toolCount := probeTools(url, resolvedSpec)
 
 	remoteTools := &runtimetypes.RemoteTools{
-		Name:         name,
-		EndpointURL:  url,
-		SpecURL:      resolvedSpec,
-		TimeoutMs:    timeoutMs,
-		Headers:      headers,
-		InjectParams: injectParams,
+		Name:               name,
+		EndpointURL:        url,
+		SpecURL:            resolvedSpec,
+		TimeoutMs:          timeoutMs,
+		Headers:            headers,
+		InjectParams:       injectParams,
+		AuthFlow:           authFlow,
+		InsecureSkipVerify: insecureSkipVerify,
 	}
 	if err := svc.Create(ctx, remoteTools); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
@@ -347,6 +383,12 @@ func runToolsShow(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(out, "Spec URL:  %s\n", remoteTools.SpecURL)
 	}
 	fmt.Fprintf(out, "Timeout:   %dms\n", remoteTools.TimeoutMs)
+	if remoteTools.InsecureSkipVerify {
+		fmt.Fprintf(out, "TLS Verify:Skip\n")
+	}
+	if remoteTools.AuthFlow != nil {
+		fmt.Fprintf(out, "Auth Flow: %s %s\n", remoteTools.AuthFlow.LoginMethod, remoteTools.AuthFlow.LoginURL)
+	}
 	fmt.Fprintf(out, "Registered:%s\n", remoteTools.CreatedAt.Local().Format("2006-01-02 15:04:05"))
 
 	if len(remoteTools.Headers) > 0 {

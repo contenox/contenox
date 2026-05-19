@@ -46,6 +46,25 @@ func orEmptyStringMap(m map[string]string) map[string]string {
 	return m
 }
 
+func encodeAuthFlow(flow *AuthFlow) string {
+	if flow == nil {
+		return "{}"
+	}
+	b, _ := json.Marshal(flow)
+	return string(b)
+}
+
+func decodeAuthFlow(data string) (*AuthFlow, error) {
+	if data == "" || data == "{}" || data == "null" {
+		return nil, nil
+	}
+	var flow AuthFlow
+	if err := json.Unmarshal([]byte(data), &flow); err != nil {
+		return nil, err
+	}
+	return &flow, nil
+}
+
 func (s *store) CreateRemoteTools(ctx context.Context, tools *RemoteTools) error {
 	now := time.Now().UTC()
 	tools.CreatedAt = now
@@ -72,8 +91,8 @@ func (s *store) CreateRemoteTools(ctx context.Context, tools *RemoteTools) error
 
 	_, err = s.Exec.ExecContext(ctx, `
         INSERT INTO remote_tools
-        (id, name, endpoint_url, spec_url, timeout_ms, headers, properties, inject_params_json, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        (id, name, endpoint_url, spec_url, timeout_ms, headers, properties, inject_params_json, auth_flow_json, insecure_skip_verify, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
 		tools.ID,
 		tools.Name,
 		tools.EndpointURL,
@@ -82,6 +101,8 @@ func (s *store) CreateRemoteTools(ctx context.Context, tools *RemoteTools) error
 		headersJSON,
 		bodyPropsBytes,
 		string(injectJSON),
+		encodeAuthFlow(tools.AuthFlow),
+		tools.InsecureSkipVerify,
 		tools.CreatedAt,
 		tools.UpdatedAt,
 	)
@@ -91,10 +112,10 @@ func (s *store) CreateRemoteTools(ctx context.Context, tools *RemoteTools) error
 func (s *store) GetRemoteTools(ctx context.Context, id string) (*RemoteTools, error) {
 	var tools RemoteTools
 	var headersJSON, bodyPropsBytes []byte
-	var injectJSON string
+	var injectJSON, authFlowJSON string
 
 	err := s.Exec.QueryRowContext(ctx, `
-        SELECT id, name, endpoint_url, spec_url, timeout_ms, headers, properties, inject_params_json, created_at, updated_at
+        SELECT id, name, endpoint_url, spec_url, timeout_ms, headers, properties, inject_params_json, COALESCE(auth_flow_json, '{}'), COALESCE(insecure_skip_verify, false), created_at, updated_at
         FROM remote_tools
         WHERE id = $1`, id).Scan(
 		&tools.ID,
@@ -105,6 +126,8 @@ func (s *store) GetRemoteTools(ctx context.Context, id string) (*RemoteTools, er
 		&headersJSON,
 		&bodyPropsBytes,
 		&injectJSON,
+		&authFlowJSON,
+		&tools.InsecureSkipVerify,
 		&tools.CreatedAt,
 		&tools.UpdatedAt,
 	)
@@ -133,16 +156,22 @@ func (s *store) GetRemoteTools(ctx context.Context, id string) (*RemoteTools, er
 		}
 	}
 
+	flow, err := decodeAuthFlow(authFlowJSON)
+	if err != nil {
+		return nil, err
+	}
+	tools.AuthFlow = flow
+
 	return &tools, nil
 }
 
 func (s *store) GetRemoteToolsByName(ctx context.Context, name string) (*RemoteTools, error) {
 	var tools RemoteTools
 	var headersJSON, bodyPropsBytes []byte
-	var injectJSON string
+	var injectJSON, authFlowJSON string
 
 	err := s.Exec.QueryRowContext(ctx, `
-        SELECT id, name, endpoint_url, spec_url, timeout_ms, headers, properties, inject_params_json, created_at, updated_at
+        SELECT id, name, endpoint_url, spec_url, timeout_ms, headers, properties, inject_params_json, COALESCE(auth_flow_json, '{}'), COALESCE(insecure_skip_verify, false), created_at, updated_at
         FROM remote_tools
         WHERE name = $1`, name).Scan(
 		&tools.ID,
@@ -153,6 +182,8 @@ func (s *store) GetRemoteToolsByName(ctx context.Context, name string) (*RemoteT
 		&headersJSON,
 		&bodyPropsBytes,
 		&injectJSON,
+		&authFlowJSON,
+		&tools.InsecureSkipVerify,
 		&tools.CreatedAt,
 		&tools.UpdatedAt,
 	)
@@ -180,6 +211,12 @@ func (s *store) GetRemoteToolsByName(ctx context.Context, name string) (*RemoteT
 			tools.InjectParams = nil
 		}
 	}
+
+	flow, err := decodeAuthFlow(authFlowJSON)
+	if err != nil {
+		return nil, err
+	}
+	tools.AuthFlow = flow
 
 	return &tools, nil
 }
@@ -205,7 +242,7 @@ func (s *store) UpdateRemoteTools(ctx context.Context, tools *RemoteTools) error
 
 	result, err := s.Exec.ExecContext(ctx, `
 		UPDATE remote_tools
-		SET name = $2, endpoint_url = $3, spec_url = $4, timeout_ms = $5, headers = $6, properties = $7, inject_params_json = $8, updated_at = $9
+		SET name = $2, endpoint_url = $3, spec_url = $4, timeout_ms = $5, headers = $6, properties = $7, inject_params_json = $8, auth_flow_json = $9, insecure_skip_verify = $10, updated_at = $11
 		WHERE id = $1`,
 		tools.ID,
 		tools.Name,
@@ -215,6 +252,8 @@ func (s *store) UpdateRemoteTools(ctx context.Context, tools *RemoteTools) error
 		headersJSON,
 		bodyPropsBytes,
 		string(injectJSON),
+		encodeAuthFlow(tools.AuthFlow),
+		tools.InsecureSkipVerify,
 		tools.UpdatedAt,
 	)
 
@@ -234,7 +273,7 @@ func (s *store) ListRemoteTools(ctx context.Context, createdAtCursor *time.Time,
 	}
 
 	rows, err := s.Exec.QueryContext(ctx, `
-        SELECT id, name, endpoint_url, spec_url, timeout_ms, headers, properties, inject_params_json, created_at, updated_at
+        SELECT id, name, endpoint_url, spec_url, timeout_ms, headers, properties, inject_params_json, COALESCE(auth_flow_json, '{}'), COALESCE(insecure_skip_verify, false), created_at, updated_at
         FROM remote_tools
         WHERE created_at < $1
         ORDER BY created_at DESC, id DESC
@@ -250,6 +289,7 @@ func (s *store) ListRemoteTools(ctx context.Context, createdAtCursor *time.Time,
 		var tools RemoteTools
 		var headersJSON, bodyPropsBytes []byte
 		var injectJSON string
+		var authFlowJSON string
 		if err := rows.Scan(
 			&tools.ID,
 			&tools.Name,
@@ -259,6 +299,8 @@ func (s *store) ListRemoteTools(ctx context.Context, createdAtCursor *time.Time,
 			&headersJSON,
 			&bodyPropsBytes,
 			&injectJSON,
+			&authFlowJSON,
+			&tools.InsecureSkipVerify,
 			&tools.CreatedAt,
 			&tools.UpdatedAt,
 		); err != nil {
@@ -281,6 +323,12 @@ func (s *store) ListRemoteTools(ctx context.Context, createdAtCursor *time.Time,
 				tools.InjectParams = nil
 			}
 		}
+
+		flow, err := decodeAuthFlow(authFlowJSON)
+		if err != nil {
+			return nil, err
+		}
+		tools.AuthFlow = flow
 
 		allTools = append(allTools, &tools)
 	}

@@ -24,13 +24,13 @@ func sanitizeFile(f *File) *File {
 		return nil
 	}
 	return &File{
-		ID:            f.ID,
-		Path:          f.Path,
-		Name:          f.Name,
-		ParentID:      f.ParentID,
-		Size:          f.Size,
-		ContentType:   f.ContentType,
-		IsDirectory:   f.IsDirectory,
+		ID:          f.ID,
+		Path:        f.Path,
+		Name:        f.Name,
+		ParentID:    f.ParentID,
+		Size:        f.Size,
+		ContentType: f.ContentType,
+		IsDirectory: f.IsDirectory,
 	}
 }
 

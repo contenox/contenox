@@ -20,7 +20,7 @@ type RequestID struct {
 	String string
 }
 
-func NewRequestIDNull() RequestID         { return RequestID{Kind: RequestIDKindNull} }
+func NewRequestIDNull() RequestID          { return RequestID{Kind: RequestIDKindNull} }
 func NewRequestIDNumber(n int64) RequestID { return RequestID{Kind: RequestIDKindNumber, Number: n} }
 func NewRequestIDString(s string) RequestID {
 	return RequestID{Kind: RequestIDKindString, String: s}

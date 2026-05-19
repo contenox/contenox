@@ -89,7 +89,9 @@ CREATE TABLE IF NOT EXISTS remote_tools (
     properties BLOB,
     inject_params_json TEXT NOT NULL DEFAULT '{}',
     created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
+    updated_at TIMESTAMP NOT NULL,
+    auth_flow_json TEXT,
+    insecure_skip_verify BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- SQLite does not support ADD COLUMN IF NOT EXISTS in older versions; skip if already present
@@ -235,7 +237,9 @@ ALTER TABLE kv ADD COLUMN workspace_id VARCHAR(255) NOT NULL DEFAULT '';
 -- upgraded DBs whose PRIMARY KEY is still just (key). Idempotent: IF NOT EXISTS.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_kv_key_workspace ON kv(key, workspace_id);
 
-
+-- remote_tools: auth flow columns added after initial release
+ALTER TABLE remote_tools ADD COLUMN auth_flow_json TEXT;
+ALTER TABLE remote_tools ADD COLUMN insecure_skip_verify BOOLEAN NOT NULL DEFAULT FALSE;
 
 PRAGMA foreign_keys=off;
 BEGIN TRANSACTION;

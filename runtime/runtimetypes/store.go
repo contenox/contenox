@@ -109,17 +109,31 @@ type InjectionArg struct {
 }
 
 // RemoteTools represents a remote tools configuration
+type AuthFlow struct {
+	Type            string `json:"type" example:"http_handshake"`
+	LoginMethod     string `json:"loginMethod" example:"POST"`
+	LoginURL        string `json:"loginUrl" example:"https://erp.local/api/method/login"`
+	LoginBody       string `json:"loginBody" example:"{\"usr\":\"${FRAPPE_USER}\", \"pwd\":\"${FRAPPE_PASS}\"}"`
+	ExtractCookie   string `json:"extractCookie,omitempty" example:"sid"`
+	ExtractJSONPath string `json:"extractJsonPath,omitempty" example:"$.data.token"`
+	InjectHeader    string `json:"injectHeader,omitempty" example:"Cookie"`
+	InjectFormat    string `json:"injectFormat,omitempty" example:"sid=%s"`
+}
+
+// RemoteTools represents a remote tools configuration
 type RemoteTools struct {
-	ID           string            `json:"id" example:"h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
-	Name         string            `json:"name" example:"mailing-tools"`
-	EndpointURL  string            `json:"endpointUrl" example:"http://tools-endpoint:port"`
-	SpecURL      string            `json:"specUrl,omitempty"` // optional; file:///abs/path or https://... — when set, spec is loaded from here instead of EndpointURL+/openapi.json
-	TimeoutMs    int               `json:"timeoutMs" example:"5000"`
-	Headers      map[string]string `json:"headers,omitempty" example:"Authorization:Bearer token,Content-Type:application/json"`
-	Properties   InjectionArg      `json:"properties"`
-	InjectParams map[string]string `json:"injectParams,omitempty"` // injected as tool call args, hidden from model schema
-	CreatedAt    time.Time         `json:"createdAt" example:"2023-11-15T14:30:45Z"`
-	UpdatedAt    time.Time         `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
+	ID                 string            `json:"id" example:"h1a2b3c4-d5e6-f7g8-h9i0-j1k2l3m4n5o6"`
+	Name               string            `json:"name" example:"mailing-tools"`
+	EndpointURL        string            `json:"endpointUrl" example:"http://tools-endpoint:port"`
+	SpecURL            string            `json:"specUrl,omitempty"` // optional; file:///abs/path or https://... — when set, spec is loaded from here instead of EndpointURL+/openapi.json
+	TimeoutMs          int               `json:"timeoutMs" example:"5000"`
+	Headers            map[string]string `json:"headers,omitempty" example:"Authorization:Bearer token,Content-Type:application/json"`
+	Properties         InjectionArg      `json:"properties"`
+	InjectParams       map[string]string `json:"injectParams,omitempty"` // injected as tool call args, hidden from model schema
+	AuthFlow           *AuthFlow         `json:"authFlow,omitempty"`
+	InsecureSkipVerify bool              `json:"insecureSkipVerify"`
+	CreatedAt          time.Time         `json:"createdAt" example:"2023-11-15T14:30:45Z"`
+	UpdatedAt          time.Time         `json:"updatedAt" example:"2023-11-15T14:30:45Z"`
 }
 
 type Store interface {

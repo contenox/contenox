@@ -92,4 +92,3 @@ func applyAllowlist(allowlist []string, all []string) []string {
 func ExportedResolveToolsNames(ctx context.Context, allowlist []string, provider ToolsProvider) ([]string, error) {
 	return resolveToolsNames(ctx, allowlist, provider)
 }
-

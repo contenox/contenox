@@ -54,4 +54,3 @@ func writeEmbeddedHITLPolicies(contenoxDir string, overwrite bool) error {
 	}
 	return nil
 }
-

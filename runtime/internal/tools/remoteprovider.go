@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -42,6 +43,15 @@ func NewPersistentRepo(
 		httpClient:   httpClient,
 		toolProtocol: &OpenAPIToolProtocol{},
 		messenger:    messenger,
+	}
+}
+
+func (p *PersistentRepo) insecureClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	return &http.Client{
+		Timeout:   p.httpClient.Timeout,
+		Transport: transport,
 	}
 }
 
@@ -219,14 +229,55 @@ func (p *PersistentRepo) execRemoteTools(
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(tools.TimeoutMs)*time.Millisecond)
 	defer cancel()
 
+	client := p.httpClient
+	if tools.InsecureSkipVerify {
+		client = p.insecureClient()
+	}
+
 	// Execute via OpenAPI protocol; spec loaded from SpecURL when set.
 	result, dataType, err := p.protocolFor(tools.SpecURL).ExecuteTool(
 		timeoutCtx,
 		tools.EndpointURL,
-		p.httpClient,
+		client,
 		injectParams,
 		toolCall,
 	)
+
+	// Check for auth failure and attempt auto-login if AuthFlow is configured
+	if err != nil && tools.AuthFlow != nil && IsAuthError(err) {
+		newInjects, loginErr := PerformAuthFlow(timeoutCtx, tools, client)
+		if loginErr != nil {
+			return nil, dataType, fmt.Errorf("execution failed: auth retry failed: %w (original error: %v)", loginErr, err)
+		}
+
+		// Update injection params with the new auth token
+		var needsPersist bool
+		for k, v := range newInjects {
+			injectParams[k] = v
+			if v.In == ArgLocationHeader {
+				if tools.Headers == nil {
+					tools.Headers = make(map[string]string)
+				}
+				tools.Headers[v.Name] = v.Value
+				needsPersist = true
+			}
+		}
+
+		if needsPersist {
+			store := runtimetypes.New(p.dbInstance.WithoutTransaction())
+			_ = store.UpdateRemoteTools(ctx, tools)
+		}
+
+		// Retry execution
+		result, dataType, err = p.protocolFor(tools.SpecURL).ExecuteTool(
+			timeoutCtx,
+			tools.EndpointURL,
+			client,
+			injectParams,
+			toolCall,
+		)
+	}
+
 	if err != nil {
 		return nil, dataType, fmt.Errorf("execution failed for tools '%s': %w", tools.Name, err)
 	}

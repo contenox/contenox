@@ -23,7 +23,7 @@ import (
 //
 // The engine does not expand any env:VAR-style macro; var:* is populated only by the caller.
 type MacroEnv struct {
-	inner        EnvExecutor
+	inner         EnvExecutor
 	toolsProvider ToolsRepo
 }
 
@@ -33,7 +33,7 @@ func NewMacroEnv(inner EnvExecutor, toolsProvider ToolsRepo) (EnvExecutor, error
 		return nil, fmt.Errorf("NewMacroEnv: inner EnvExecutor is nil")
 	}
 	return &MacroEnv{
-		inner:        inner,
+		inner:         inner,
 		toolsProvider: toolsProvider,
 	}, nil
 }

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/contenox/runtime/internal/runtimestate"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtime/internal/runtimestate"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 )
 
@@ -20,13 +20,13 @@ type Encryptor interface {
 }
 
 const (
-	ProviderTypeOllama        = "ollama"
-	ProviderTypeOpenAI        = "openai"
-	ProviderTypeGemini        = "gemini"
-	ProviderTypeVertexGoogle   = "vertex-google"
+	ProviderTypeOllama          = "ollama"
+	ProviderTypeOpenAI          = "openai"
+	ProviderTypeGemini          = "gemini"
+	ProviderTypeVertexGoogle    = "vertex-google"
 	ProviderTypeVertexAnthropic = "vertex-anthropic"
-	ProviderTypeVertexMeta    = "vertex-meta"
-	ProviderTypeVertexMistral = "vertex-mistralai"
+	ProviderTypeVertexMeta      = "vertex-meta"
+	ProviderTypeVertexMistral   = "vertex-mistralai"
 )
 
 type Service interface {

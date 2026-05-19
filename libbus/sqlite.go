@@ -356,11 +356,11 @@ func (b *SQLiteBus) runCleanup(ctx context.Context) {
 // ── subscription ──────────────────────────────────────────────────────────
 
 type sqliteSubscription struct {
-	cancel   context.CancelFunc
-	drain    chan struct{}
-	done     chan struct{}
-	closeMu  sync.Mutex
-	drained  bool
+	cancel  context.CancelFunc
+	drain   chan struct{}
+	done    chan struct{}
+	closeMu sync.Mutex
+	drained bool
 }
 
 func (s *sqliteSubscription) Unsubscribe() error {

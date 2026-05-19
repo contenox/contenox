@@ -26,14 +26,14 @@ type PromptResponse struct {
 type SessionUpdateKind string
 
 const (
-	SessionUpdateUserMessageChunk   SessionUpdateKind = "user_message_chunk"
-	SessionUpdateAgentMessageChunk  SessionUpdateKind = "agent_message_chunk"
-	SessionUpdateAgentThoughtChunk  SessionUpdateKind = "agent_thought_chunk"
-	SessionUpdateToolCall           SessionUpdateKind = "tool_call"
-	SessionUpdateToolCallUpdate     SessionUpdateKind = "tool_call_update"
-	SessionUpdatePlan               SessionUpdateKind = "plan"
-	SessionUpdateAvailableCommands  SessionUpdateKind = "available_commands_update"
-	SessionUpdateCurrentMode        SessionUpdateKind = "current_mode_update"
+	SessionUpdateUserMessageChunk  SessionUpdateKind = "user_message_chunk"
+	SessionUpdateAgentMessageChunk SessionUpdateKind = "agent_message_chunk"
+	SessionUpdateAgentThoughtChunk SessionUpdateKind = "agent_thought_chunk"
+	SessionUpdateToolCall          SessionUpdateKind = "tool_call"
+	SessionUpdateToolCallUpdate    SessionUpdateKind = "tool_call_update"
+	SessionUpdatePlan              SessionUpdateKind = "plan"
+	SessionUpdateAvailableCommands SessionUpdateKind = "available_commands_update"
+	SessionUpdateCurrentMode       SessionUpdateKind = "current_mode_update"
 )
 
 type SessionUpdate struct {

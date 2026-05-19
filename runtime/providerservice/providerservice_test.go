@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/contenox/contenox/runtime/internal/runtimestate"
 	libdb "github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/contenox/runtime/internal/runtimestate"
 	"github.com/contenox/contenox/runtime/runtimetypes"
 )
 

@@ -97,6 +97,8 @@ ALTER TABLE remote_tools ADD COLUMN IF NOT EXISTS body_properties BYTEA;
 ALTER TABLE remote_tools ADD COLUMN IF NOT EXISTS headers JSONB;
 ALTER TABLE remote_tools ADD COLUMN IF NOT EXISTS inject_params_json JSONB DEFAULT '{}';
 ALTER TABLE remote_tools ADD COLUMN IF NOT EXISTS spec_url TEXT;
+ALTER TABLE remote_tools ADD COLUMN IF NOT EXISTS auth_flow_json JSONB;
+ALTER TABLE remote_tools ADD COLUMN IF NOT EXISTS insecure_skip_verify BOOLEAN NOT NULL DEFAULT FALSE;
 
 
 
@@ -179,4 +181,3 @@ CREATE TABLE IF NOT EXISTS local_fs_reads (
     last_read_at  TIMESTAMP NOT NULL,
     PRIMARY KEY (session_id, path)
 );
-

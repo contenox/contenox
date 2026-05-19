@@ -8,9 +8,9 @@ import (
 type PermissionOptionKind string
 
 const (
-	PermissionAllowOnce   PermissionOptionKind = "allow_once"
-	PermissionAllowAlways PermissionOptionKind = "allow_always"
-	PermissionRejectOnce  PermissionOptionKind = "reject_once"
+	PermissionAllowOnce    PermissionOptionKind = "allow_once"
+	PermissionAllowAlways  PermissionOptionKind = "allow_always"
+	PermissionRejectOnce   PermissionOptionKind = "reject_once"
 	PermissionRejectAlways PermissionOptionKind = "reject_always"
 )
 

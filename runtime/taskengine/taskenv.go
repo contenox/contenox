@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Masterminds/sprig/v3"
 	"strconv"
 	"strings"
 	"text/template"
-	"github.com/Masterminds/sprig/v3"
 	"time"
 
 	"github.com/contenox/contenox/libtracker"

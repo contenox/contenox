@@ -3,10 +3,10 @@ package vertex
 // vertexRequest is the wire format for generateContent / streamGenerateContent.
 // The schema is identical to the Gemini AI Studio API.
 type vertexRequest struct {
-	SystemInstruction *vertexContent        `json:"system_instruction,omitempty"`
-	Contents          []vertexContent       `json:"contents"`
+	SystemInstruction *vertexContent          `json:"system_instruction,omitempty"`
+	Contents          []vertexContent         `json:"contents"`
 	GenerationConfig  *vertexGenerationConfig `json:"generationConfig,omitempty"`
-	Tools             []vertexToolRequest   `json:"tools,omitempty"`
+	Tools             []vertexToolRequest     `json:"tools,omitempty"`
 }
 
 type vertexGenerationConfig struct {
@@ -21,9 +21,9 @@ type vertexToolRequest struct {
 }
 
 type vertexFunctionDeclaration struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Parameters  *vertexSchema  `json:"parameters,omitempty"`
+	Name        string        `json:"name"`
+	Description string        `json:"description,omitempty"`
+	Parameters  *vertexSchema `json:"parameters,omitempty"`
 }
 
 type vertexSchema struct {
@@ -37,8 +37,8 @@ type vertexSchema struct {
 }
 
 type vertexContent struct {
-	Role  string        `json:"role,omitempty"`
-	Parts []vertexPart  `json:"parts"`
+	Role  string       `json:"role,omitempty"`
+	Parts []vertexPart `json:"parts"`
 }
 
 type vertexPart struct {
