@@ -32,6 +32,10 @@ By default the spec is fetched from <url>/openapi.json. Use --spec to point at a
 different location: a full URL (https://...) or a local file (~/my-spec.yaml,
 ./spec.json, /abs/path/spec.yaml). Local paths are stored as file:// URIs.
 
+For APIs that require a login handshake (session-cookie or token-based auth),
+use the --auth-* flags on 'tools add'. Contenox will perform the login
+automatically on 401/403 and retry the call without any external refresh tooling.
+
 Examples:
   contenox tools add myapi --url http://localhost:8080
   contenox tools add myapi --url http://localhost:8080 --header "Authorization: Bearer $TOKEN"
@@ -56,20 +60,49 @@ lives at a different URL, or provide a local file path (~/path, ./path, /abs/pat
 Local paths are resolved to absolute paths and stored as file:// URIs — the file
 must exist at registration time.
 
-Headers are injected into every call to the service (e.g. for authentication).
-Specify each header as a separate --header flag in "Key: Value" format.
+Static auth: inject headers or hidden tool-call params on every request.
+  --header injects an HTTP header (e.g. Authorization, X-Tenant).
+  --inject injects a named parameter into every tool call, hidden from the model.
+
+Dynamic auth (http_handshake): for APIs that require a login step before each
+session (e.g. Frappe/ERPNext, legacy enterprise services with no API-key support).
+When set, Contenox performs the login automatically on 401/403 and retries:
+  --auth-login-url      URL to POST credentials to
+  --auth-login-body     JSON body; ${ENV_VAR} placeholders are expanded at runtime
+  --auth-extract-cookie Extract a named Set-Cookie value from the login response
+  --auth-extract-jsonpath Extract a value via JSONPath from the login response body
+  --auth-inject-header  HTTP header to carry the extracted token on API calls
+  --auth-inject-format  Printf format for the value, e.g. "Bearer %s" (optional)
+
+TLS: for services behind a private CA or self-signed certificate:
+  --insecure-skip-tls-verify  Disable TLS verification for this tools only.
 
 Examples:
-  contenox tools add myapi --url http://localhost:8080
+  # Public API — no auth
+  contenox tools add nws --url https://api.weather.gov --timeout 15000
+
+  # Static Bearer token
   contenox tools add myapi --url https://api.example.com \
     --header "Authorization: Bearer $TOKEN" \
     --header "X-Tenant: acme" \
     --timeout 5000
-  contenox tools add erpnext --url https://erp.example.com \
-    --spec ~/.contenox/erp-subset.yaml \
-    --header "Authorization: token $ERP_TOKEN"
-  contenox tools add legacy --url https://api.example.com \
-    --spec https://raw.githubusercontent.com/example/repo/main/openapi.yaml`,
+
+  # Frappe/ERPNext — session cookie login
+  contenox tools add erp --url https://erp.local \
+    --insecure-skip-tls-verify \
+    --auth-login-url https://erp.local/api/method/login \
+    --auth-login-body '{"usr":"${FRAPPE_USER}","pwd":"${FRAPPE_PASS}"}' \
+    --auth-extract-cookie sid \
+    --auth-inject-header Cookie
+
+  # Custom API — Bearer token from JSON response
+  contenox tools add myapi --url https://api.example.com \
+    --auth-login-url https://api.example.com/auth/token \
+    --auth-login-body '{"username":"${API_USER}","password":"${API_PASS}"}' \
+    --auth-extract-jsonpath '$.data.token' \
+    --auth-inject-header Authorization \
+    --auth-inject-format "Bearer %s"`,
+
 	Args: cobra.ExactArgs(1),
 	RunE: runToolsAdd,
 }
@@ -101,9 +134,15 @@ var toolsUpdateCmd = &cobra.Command{
 	Long: `Update one or more properties of a registered tools.
 
 Only flags that are explicitly provided are updated; others are left unchanged.
-Passing --header replaces ALL existing headers for that tools.
-Passing --spec replaces the spec source; pass an empty string to clear it
-(reverting to <url>/openapi.json discovery).
+
+  --header replaces ALL existing headers for that tools.
+  --inject replaces ALL existing inject params for that tools.
+  --spec   replaces the spec source; pass an empty string to clear it
+           (reverting to <url>/openapi.json discovery).
+
+Note: auth flow (--auth-*) and TLS settings (--insecure-skip-tls-verify) can
+only be set at registration time via 'tools add'. To change them, remove the
+tools and re-add it with the updated flags.
 
 Examples:
   contenox tools update myapi --url http://new-host:9090
@@ -111,6 +150,7 @@ Examples:
   contenox tools update myapi --header "Authorization: Bearer $NEW_TOKEN"
   contenox tools update myapi --spec ~/.contenox/new-spec.yaml
   contenox tools update myapi --spec ""`,
+
 	Args: cobra.ExactArgs(1),
 	RunE: runToolsUpdate,
 }
