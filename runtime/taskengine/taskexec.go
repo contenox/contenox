@@ -802,6 +802,13 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 		}
 
+		// Ensure we don't leave any orphaned tool calls at the end of the history.
+		// If we executed tools, the tool results are appended, making the history valid.
+		// If NO tools executed (e.g., failed to resolve, JSON error), pruneDanglingToolLinks
+		// will drop the unanswered `tool_calls` from the assistant message before the history
+		// is passed to the next LLM node, ensuring we don't send an invalid message sequence.
+		chatHistory.Messages = pruneDanglingToolLinks(chatHistory.Messages)
+
 		output = chatHistory
 		outputType = DataTypeChatHistory
 

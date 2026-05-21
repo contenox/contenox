@@ -1,229 +1,219 @@
 {
-    "id": "chain-contenox",
-    "description": "Default CLI chat chain (chat mode). Wires classified retry, sensible local_fs / local_shell policies. Two-stage agentic loop: main (10 rounds) → recovery (10 rounds) → summarise_failure.",
-    "tasks": [
-        {
-            "id": "contenox_chat",
-            "description": "Agentic chat loop — model may call tools (transition tool-call) or finish the turn (transition default → end).",
-            "handler": "chat_completion",
-            "system_instruction": "You are Contenox, a task-execution engine — not a chat-only product, a bit cheeky.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess, reask the user to clarify. Ask one focused clarifying question and take no destructive or speculative action until the user answers.",
-            "execute_config": {
-                "model": "{{var:model}}",
-                "provider": "{{var:provider}}",
-                "shift": true,
-                "pass_clients_tools": false,
-                "tools": [
-                    "*"
-                ],
-                "tools_policies": {
-                    "local_shell": {
-                        "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
-                        "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
-                    },
-                    "local_fs": {
-                        "_allowed_dir": ".",
-                        "_max_read_bytes": "1048576",
-                        "_max_output_bytes": "524288",
-                        "_max_list_depth": "6",
-                        "_max_grep_matches": "5000",
-                        "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
-                    },
-                    "webtools": {
-                        "_max_response_bytes": "1048576",
-                        "_max_request_body_bytes": "262144",
-                        "_request_timeout_seconds": "30",
-                        "_max_attempts": "3"
-                    }
-                },
-                "retry_policy": {
-                    "max_attempts": 4,
-                    "initial_backoff": "1s",
-                    "max_backoff": "30s",
-                    "jitter": 0.25,
-                    "rate_limit_min_wait": "10s"
-                }
-            },
-            "transition": {
-                "on_failure": "recovery_chat",
-                "branches": [
-                    {
-                        "operator": "edge_traversed_at_least",
-                        "edge": "contenox_chat->run_tools",
-                        "when": "10",
-                        "goto": "recovery_chat"
-                    },
-                    {
-                        "operator": "equals",
-                        "when": "tool-call",
-                        "goto": "run_tools"
-                    },
-                    {
-                        "operator": "default",
-                        "when": "",
-                        "goto": "end"
-                    }
-                ]
-            }
+  "id": "chain-contenox",
+  "description": "Default CLI chat chain (chat mode). Wires classified retry, sensible local_fs / local_shell policies. Two-stage agentic loop: main (10 rounds) → recovery (10 rounds) → summarise_failure.",
+  "tasks": [
+    {
+      "id": "contenox_chat",
+      "description": "Agentic chat loop — model may call tools (transition tool-call) or finish the turn (transition default → end).",
+      "handler": "chat_completion",
+      "system_instruction": "You are Contenox, a task-execution engine — not a chat-only product, a bit cheeky.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess, reask the user to clarify. Ask one focused clarifying question and take no destructive or speculative action until the user answers.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": ["*"],
+        "tools_policies": {
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+          },
+          "local_fs": {
+            "_allowed_dir": ".",
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+          },
+          "webtools": {
+            "_max_response_bytes": "1048576",
+            "_max_request_body_bytes": "262144",
+            "_request_timeout_seconds": "30",
+            "_max_attempts": "3"
+          }
         },
-        {
-            "id": "run_tools",
-            "description": "Execute tool calls from the last message and append results to chat history.",
-            "handler": "execute_tool_calls",
-            "input_var": "contenox_chat",
-            "execute_config": {
-                "tools_policies": {
-                    "local_shell": {
-                        "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
-                        "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
-                    },
-                    "local_fs": {
-                        "_allowed_dir": ".",
-                        "_max_read_bytes": "1048576",
-                        "_max_output_bytes": "524288",
-                        "_max_list_depth": "6",
-                        "_max_grep_matches": "5000",
-                        "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
-                    }
-                }
-            },
-            "transition": {
-                "on_failure": "",
-                "branches": [
-                    {
-                        "operator": "default",
-                        "when": "",
-                        "goto": "contenox_chat"
-                    }
-                ]
-            }
-        },
-        {
-            "id": "recovery_chat",
-            "description": "Recovery agentic loop — picks up the full chat history from the main loop with a fresh system instruction noting the prior agent got stuck. Has its own tool access and 10-round budget.",
-            "handler": "chat_completion",
-            "input_var": "contenox_chat",
-            "system_instruction": "You are Contenox, a task-execution engine — not a chat-only product, a bit cheeky.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess, reask the user to clarify. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used 10 of 20 tool-call rounds on this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.",
-            "execute_config": {
-                "model": "{{var:model}}",
-                "provider": "{{var:provider}}",
-                "shift": true,
-                "pass_clients_tools": false,
-                "tools": [
-                    "*"
-                ],
-                "tools_policies": {
-                    "local_shell": {
-                        "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
-                        "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
-                    },
-                    "local_fs": {
-                        "_allowed_dir": ".",
-                        "_max_read_bytes": "1048576",
-                        "_max_output_bytes": "524288",
-                        "_max_list_depth": "6",
-                        "_max_grep_matches": "5000",
-                        "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
-                    },
-                    "webtools": {
-                        "_max_response_bytes": "1048576",
-                        "_max_request_body_bytes": "262144",
-                        "_request_timeout_seconds": "30",
-                        "_max_attempts": "3"
-                    }
-                },
-                "retry_policy": {
-                    "max_attempts": 4,
-                    "initial_backoff": "1s",
-                    "max_backoff": "30s",
-                    "jitter": 0.25,
-                    "rate_limit_min_wait": "10s"
-                }
-            },
-            "transition": {
-                "on_failure": "summarise_failure",
-                "branches": [
-                    {
-                        "operator": "edge_traversed_at_least",
-                        "edge": "recovery_chat->recovery_tools",
-                        "when": "10",
-                        "goto": "summarise_failure"
-                    },
-                    {
-                        "operator": "equals",
-                        "when": "tool-call",
-                        "goto": "recovery_tools"
-                    },
-                    {
-                        "operator": "default",
-                        "when": "",
-                        "goto": "end"
-                    }
-                ]
-            }
-        },
-        {
-            "id": "recovery_tools",
-            "description": "Execute tool calls from the recovery agent and append results to chat history.",
-            "handler": "execute_tool_calls",
-            "input_var": "recovery_chat",
-            "execute_config": {
-                "tools_policies": {
-                    "local_shell": {
-                        "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
-                        "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
-                    },
-                    "local_fs": {
-                        "_allowed_dir": ".",
-                        "_max_read_bytes": "1048576",
-                        "_max_output_bytes": "524288",
-                        "_max_list_depth": "6",
-                        "_max_grep_matches": "5000",
-                        "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
-                    }
-                }
-            },
-            "transition": {
-                "on_failure": "",
-                "branches": [
-                    {
-                        "operator": "default",
-                        "when": "",
-                        "goto": "recovery_chat"
-                    }
-                ]
-            }
-        },
-        {
-            "id": "summarise_failure",
-            "description": "Final safety net. Reached when both the main and recovery agentic loops exceeded their budgets. No tools — tells the user what was tried and what would unblock the work.",
-            "handler": "chat_completion",
-            "system_instruction": "You are Contenox, a task-execution engine — not a chat-only product, a bit cheeky.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.",
-            "input_var": "recovery_chat",
-            "execute_config": {
-                "model": "{{var:model}}",
-                "provider": "{{var:provider}}",
-                "shift": true,
-                "pass_clients_tools": false,
-                "tools": [],
-                "max_tokens": 16384,
-                "retry_policy": {
-                    "max_attempts": 3,
-                    "initial_backoff": "1s",
-                    "max_backoff": "10s",
-                    "jitter": 0.25
-                }
-            },
-            "transition": {
-                "on_failure": "",
-                "branches": [
-                    {
-                        "operator": "default",
-                        "when": "",
-                        "goto": "end"
-                    }
-                ]
-            }
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
         }
-    ],
-    "token_limit": 131072
+      },
+      "transition": {
+        "on_failure": "recovery_chat",
+        "branches": [
+          {
+            "operator": "equals",
+            "when": "tool-call",
+            "goto": "run_tools"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "run_tools",
+      "description": "Execute tool calls from the last message and append results to chat history.",
+      "handler": "execute_tool_calls",
+      "input_var": "contenox_chat",
+      "execute_config": {
+        "tools_policies": {
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+          },
+          "local_fs": {
+            "_allowed_dir": ".",
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+          }
+        }
+      },
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "contenox_chat"
+          }
+        ]
+      }
+    },
+    {
+      "id": "recovery_chat",
+      "description": "Recovery agentic loop — picks up the full chat history from the main loop with a fresh system instruction noting the prior agent got stuck. Has its own tool access and 10-round budget.",
+      "handler": "chat_completion",
+      "input_var": "contenox_chat",
+      "system_instruction": "You are Contenox, a task-execution engine — not a chat-only product, a bit cheeky.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess, reask the user to clarify. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used 10 of 20 tool-call rounds on this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": ["*"],
+        "tools_policies": {
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+          },
+          "local_fs": {
+            "_allowed_dir": ".",
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+          },
+          "webtools": {
+            "_max_response_bytes": "1048576",
+            "_max_request_body_bytes": "262144",
+            "_request_timeout_seconds": "30",
+            "_max_attempts": "3"
+          }
+        },
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
+        }
+      },
+      "transition": {
+        "on_failure": "summarise_failure",
+        "branches": [
+          {
+            "operator": "edge_traversed_at_least",
+            "edge": "recovery_chat->recovery_tools",
+            "when": "10",
+            "goto": "summarise_failure"
+          },
+          {
+            "operator": "equals",
+            "when": "tool-call",
+            "goto": "recovery_tools"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "recovery_tools",
+      "description": "Execute tool calls from the recovery agent and append results to chat history.",
+      "handler": "execute_tool_calls",
+      "input_var": "recovery_chat",
+      "execute_config": {
+        "tools_policies": {
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
+          },
+          "local_fs": {
+            "_allowed_dir": ".",
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+          }
+        }
+      },
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "recovery_chat"
+          }
+        ]
+      }
+    },
+    {
+      "id": "summarise_failure",
+      "description": "Final safety net. Reached when both the main and recovery agentic loops exceeded their budgets. No tools — tells the user what was tried and what would unblock the work.",
+      "handler": "chat_completion",
+      "system_instruction": "You are Contenox, a task-execution engine — not a chat-only product, a bit cheeky.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.",
+      "input_var": "recovery_chat",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [],
+        "max_tokens": 16384,
+        "retry_policy": {
+          "max_attempts": 3,
+          "initial_backoff": "1s",
+          "max_backoff": "10s",
+          "jitter": 0.25
+        }
+      },
+      "transition": {
+        "on_failure": "",
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    }
+  ],
+  "token_limit": 131072
 }
