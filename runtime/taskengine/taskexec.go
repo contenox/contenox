@@ -556,6 +556,28 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				return nil, DataTypeAny, "", fmt.Errorf("input data for handler %s claimed to be %s but was %T", currentTask.Handler, dataType.String(), input)
 			}
 
+			// GUARD: If the last message is an unanswered tool call (e.g., from a state-machine
+			// budget handoff), flush those tools inline so we don't hand the provider a dangling
+			// tool_call. After flushing, fall through to the normal chat_completion path so this
+			// task's system_instruction is still applied and the LLM gets a turn with the fresh
+			// tool results in context.
+			if len(chatHistory.Messages) > 0 {
+				last := chatHistory.Messages[len(chatHistory.Messages)-1]
+				if last.Role == "assistant" && len(last.CallTools) > 0 {
+					savedHandler := currentTask.Handler
+					currentTask.Handler = HandleExecuteToolCalls
+					flushOut, _, _, flushErr := exe.TaskExec(taskCtx, startingTime, ctxLength, chainContext, currentTask, chatHistory, dataType)
+					currentTask.Handler = savedHandler
+					if flushErr != nil {
+						return nil, DataTypeAny, "", fmt.Errorf("guard: failed to flush pending tool calls: %w", flushErr)
+					}
+					if h, ok := flushOut.(ChatHistory); ok {
+						chatHistory = h
+						chatHistory.InputTokens = 0
+					}
+				}
+			}
+
 		case DataTypeString:
 			// Automatically coerce simple string input into a chat-compatible format
 			strInput, ok := input.(string)

@@ -78,3 +78,23 @@ const (
 	ContextKeyOutputByteLimit contextKey = "output_byte_limit"
 	ContextKeyToolCallID      contextKey = "tool_call_id"
 )
+
+type edgeCountsKey struct{}
+
+// WithEdgeCounts attaches the in-flight edge traversal counts for the current
+// chain run to ctx. SimpleEnv updates this between each task step so handlers
+// and step-time macros (e.g. {{edge_count:from->to}}) can read counts that
+// reflect the loop iteration they are in, not the chain-start zero.
+//
+// Layout of the map: keys are "<fromTaskID>-><toTaskID>", values are the number
+// of times that edge has been traversed in this run.
+func WithEdgeCounts(ctx context.Context, counts map[string]int) context.Context {
+	return context.WithValue(ctx, edgeCountsKey{}, counts)
+}
+
+// EdgeCountsFromContext returns the edge counts attached via WithEdgeCounts, or
+// nil if not set. A nil map is safe to read (lookup returns zero).
+func EdgeCountsFromContext(ctx context.Context) map[string]int {
+	v, _ := ctx.Value(edgeCountsKey{}).(map[string]int)
+	return v
+}

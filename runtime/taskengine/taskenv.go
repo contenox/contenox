@@ -393,7 +393,14 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 			startTime := time.Now().UTC()
 
-			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), chainContext, currentTask, taskInput, taskInputType)
+			stepTask := *currentTask
+			stepTask.SystemInstruction = expandStepMacros(currentTask.SystemInstruction, edgeCounts)
+			stepTask.PromptTemplate = expandStepMacros(currentTask.PromptTemplate, edgeCounts)
+			stepTask.OutputTemplate = expandStepMacros(currentTask.OutputTemplate, edgeCounts)
+			stepTask.Print = expandStepMacros(currentTask.Print, edgeCounts)
+			taskCtx = WithEdgeCounts(taskCtx, edgeCounts)
+
+			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), chainContext, &stepTask, taskInput, taskInputType)
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
 				reportErrAttempt(taskErr)

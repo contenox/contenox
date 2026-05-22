@@ -29,6 +29,7 @@ func (s *captureTaskEventSink) Enabled() bool { return true }
 
 type mockModelRepo struct {
 	streamFunc func(ctx context.Context, req llmrepo.Request, messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument) (<-chan *libmodelprovider.StreamParcel, llmrepo.Meta, error)
+	chatFunc   func(ctx context.Context, req llmrepo.Request, messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument) (libmodelprovider.ChatResult, llmrepo.Meta, error)
 }
 
 func (m *mockModelRepo) Tokenize(ctx context.Context, modelName string, prompt string) ([]int, error) {
@@ -44,7 +45,10 @@ func (m *mockModelRepo) PromptExecute(ctx context.Context, req llmrepo.Request, 
 }
 
 func (m *mockModelRepo) Chat(ctx context.Context, req llmrepo.Request, messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument) (libmodelprovider.ChatResult, llmrepo.Meta, error) {
-	return libmodelprovider.ChatResult{}, llmrepo.Meta{}, errors.New("Chat should not be called")
+	if m.chatFunc == nil {
+		return libmodelprovider.ChatResult{}, llmrepo.Meta{}, errors.New("Chat should not be called")
+	}
+	return m.chatFunc(ctx, req, messages, opts...)
 }
 
 func (m *mockModelRepo) Embed(ctx context.Context, embedReq llmrepo.EmbedRequest, prompt string) ([]float64, llmrepo.Meta, error) {

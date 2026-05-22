@@ -177,7 +177,7 @@ func TestUnit_Shift_PrunesPreExistingOrphanToolResult(t *testing.T) {
 	}
 }
 
-func TestUnit_Shift_StripsUnansweredToolCallKeptBySlide(t *testing.T) {
+func TestUnit_Shift_UnansweredToolCallIsPairedByGuardThenKeptBySlide(t *testing.T) {
 	var sent []libmodelprovider.Message
 	env := newShiftEnvCapture(t, &sent)
 
@@ -192,13 +192,18 @@ func TestUnit_Shift_StripsUnansweredToolCallKeptBySlide(t *testing.T) {
 	require.NoError(t, err)
 	requireNoOrphanedToolLinks(t, sent)
 	var asst *libmodelprovider.Message
+	var toolResult *libmodelprovider.Message
 	for i := range sent {
 		if sent[i].Role == "assistant" {
 			asst = &sent[i]
 		}
+		if sent[i].Role == "tool" && sent[i].ToolCallID == "t1" {
+			toolResult = &sent[i]
+		}
 	}
 	require.NotNil(t, asst, "the assistant text must be retained")
-	require.Empty(t, asst.ToolCalls, "an unanswered tool call kept by the slide must be stripped, else the provider rejects the turn")
+	require.NotNil(t, toolResult, "the dangling tool call must be paired with a synthesized tool result by the HandleChatCompletion guard before shift runs, so the provider never sees an orphan")
+	require.Len(t, asst.ToolCalls, 1, "the original tool_call must remain alongside its synthesized result; pairing > silent stripping")
 	require.Equal(t, "answer text", asst.Content)
 }
 
