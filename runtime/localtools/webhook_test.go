@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/localtools"
-	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/localtools"
+	"github.com/contenox/agent/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
 )
 
 type localProvider struct {

@@ -3,7 +3,7 @@ package libacp_test
 import (
 	"testing"
 
-	"github.com/contenox/contenox/libacp"
+	"github.com/contenox/agent/libacp"
 	"github.com/stretchr/testify/require"
 )
 

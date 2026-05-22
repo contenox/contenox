@@ -3,7 +3,7 @@
 
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/contenox/contenox?label=version&logo=github)](https://github.com/contenox/contenox/releases)
+[![Version](https://img.shields.io/github/v/release/contenox/contenox?label=version&logo=github)](https://github.com/contenox/agent/releases)
 
 You describe what you want in plain English. *How* the agent behaves — system prompt, model selection, tool policy, retries, when to pause, when to branch — is a chain file you wrote, not a binary the vendor compiled. Edit it, version it in git, port it anywhere the engine runs.
 
@@ -194,7 +194,7 @@ contenox config set default-provider ollama
 Requires Go 1.25+.
 
 ```bash
-git clone https://github.com/contenox/contenox
+git clone https://github.com/contenox/agent
 cd contenox
 make build-contenox
 ```

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/agent/runtime/taskengine"
 )
 
 func TestUnit_MergeTemplateVars_preservesParent(t *testing.T) {

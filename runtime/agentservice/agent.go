@@ -8,13 +8,13 @@ import (
 	"log/slog"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/chatservice"
-	"github.com/contenox/contenox/runtime/enginesvc"
-	"github.com/contenox/contenox/runtime/runtimetypes"
-	"github.com/contenox/contenox/runtime/sessionservice"
-	"github.com/contenox/contenox/runtime/taskengine"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/chatservice"
+	"github.com/contenox/agent/runtime/enginesvc"
+	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/sessionservice"
+	"github.com/contenox/agent/runtime/taskengine"
 )
 
 type Agent interface {

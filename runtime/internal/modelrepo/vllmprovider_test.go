@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
-	"github.com/contenox/contenox/runtime/internal/modelrepo/vllm"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/internal/modelrepo/vllm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

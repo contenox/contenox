@@ -15,16 +15,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/internal/clikv"
-	"github.com/contenox/contenox/runtime/runtimetypes"
-	"github.com/contenox/contenox/runtime/version"
-	"github.com/contenox/contenox/runtime/vfsservice"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/internal/clikv"
+	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/version"
+	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
 // Version is an optional link-time override via
-// -ldflags "-X github.com/contenox/contenox/contenoxcli.Version=…"
+// -ldflags "-X github.com/contenox/agent/contenoxcli.Version=…"
 // (e.g. distro packagers). When empty, CLIVersion uses runtime/version/version.txt.
 var Version string
 

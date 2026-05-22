@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
 	"github.com/ollama/ollama/api"
 )
 

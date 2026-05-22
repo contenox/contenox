@@ -3,7 +3,7 @@ package vfsstore
 import (
 	"context"
 
-	"github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/agent/libdbexec"
 )
 
 // InitSchema creates the VFS tables and indexes if they do not already exist.

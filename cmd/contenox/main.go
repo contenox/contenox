@@ -2,7 +2,7 @@
 package main
 
 import (
-	"github.com/contenox/contenox/runtime/contenoxcli"
+	"github.com/contenox/agent/runtime/contenoxcli"
 )
 
 func main() {

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
 	"github.com/stretchr/testify/require"
 )
 

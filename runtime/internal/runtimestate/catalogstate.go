@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
-	"github.com/contenox/contenox/runtime/runtimetypes"
-	"github.com/contenox/contenox/runtime/statetype"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/statetype"
 )
 
 func providerConfigKey(backendType string) (string, bool) {

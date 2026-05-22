@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/agent/runtime/taskengine"
 )
 
 func loadChainFromFile(path string) (*taskengine.TaskChainDefinition, error) {

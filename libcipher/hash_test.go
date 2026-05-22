@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"testing"
 
-	"github.com/contenox/contenox/libcipher"
+	"github.com/contenox/agent/libcipher"
 	"github.com/google/uuid"
 )
 

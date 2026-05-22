@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
 	"github.com/ollama/ollama/llama"
 	"github.com/ollama/ollama/ml"
 )

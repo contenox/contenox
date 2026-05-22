@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/runtimetypes"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/runtime/runtimetypes"
 )
 
 var ErrInvalidBackend = errors.New("invalid backend data")

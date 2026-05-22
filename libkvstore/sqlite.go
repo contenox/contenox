@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/contenox/libdbexec"
+	"github.com/contenox/agent/libdbexec"
 )
 
 // Schema is the DDL needed to bootstrap the kv store table in SQLite.

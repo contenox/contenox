@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/contenox/runtime/hitlservice"
-	"github.com/contenox/contenox/runtime/localtools"
+	"github.com/contenox/agent/runtime/hitlservice"
+	"github.com/contenox/agent/runtime/localtools"
 )
 
 // NewCLIAskApproval returns an AskApproval callback suitable for interactive

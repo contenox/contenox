@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
 )
 
 // vLLMPromptClient handles prompt execution

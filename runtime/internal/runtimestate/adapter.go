@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
-	"github.com/contenox/contenox/runtime/statetype"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/statetype"
 )
 
 // LocalProviderAdapter creates providers for self-hosted backends (Ollama, vLLM)

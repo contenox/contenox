@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/contenox/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/ollama/ollama/api"
 	ollamamodel "github.com/ollama/ollama/types/model"
 )

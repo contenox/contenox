@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/taskengine"
-	"github.com/contenox/contenox/runtime/vfsservice"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/google/uuid"
 )
 

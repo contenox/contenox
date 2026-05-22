@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/internal/clikv"
-	"github.com/contenox/contenox/runtime/runtimetypes"
+	"github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/runtime/internal/clikv"
+	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

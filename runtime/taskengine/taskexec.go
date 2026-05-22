@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/internal/llmrepo"
-	libmodelprovider "github.com/contenox/contenox/runtime/internal/modelrepo"
-	"github.com/contenox/contenox/runtime/taskengine/llmretry"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/internal/llmrepo"
+	libmodelprovider "github.com/contenox/agent/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/taskengine/llmretry"
 )
 
 // TaskExecutor executes individual tasks within a workflow.

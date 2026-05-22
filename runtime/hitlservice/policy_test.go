@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/hitlservice"
-	"github.com/contenox/contenox/runtime/vfsservice"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/hitlservice"
+	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

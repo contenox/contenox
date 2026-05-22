@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/contenox/contenox/libacp"
-	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/agent/libacp"
+	"github.com/contenox/agent/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

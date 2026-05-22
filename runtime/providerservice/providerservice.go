@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/internal/runtimestate"
-	"github.com/contenox/contenox/runtime/runtimetypes"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/runtime/internal/runtimestate"
+	"github.com/contenox/agent/runtime/runtimetypes"
 )
 
 type Encryptor interface {

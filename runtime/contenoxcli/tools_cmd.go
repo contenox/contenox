@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/internal/tools"
-	"github.com/contenox/contenox/runtime/runtimetypes"
-	"github.com/contenox/contenox/runtime/toolsproviderservice"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/internal/tools"
+	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/toolsproviderservice"
 	"github.com/spf13/cobra"
 )
 

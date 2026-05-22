@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/hitlservice"
-	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/hitlservice"
+	"github.com/contenox/agent/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 

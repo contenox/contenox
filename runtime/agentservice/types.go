@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/agent/runtime/taskengine"
 )
 
 type PromptRequest struct {

@@ -4,7 +4,7 @@ import (
 	"crypto/sha256"
 	"testing"
 
-	"github.com/contenox/contenox/libcipher"
+	"github.com/contenox/agent/libcipher"
 )
 
 func TestUnit_CheckPasswordHash_Incorrect(t *testing.T) {

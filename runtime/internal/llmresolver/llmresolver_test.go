@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/contenox/contenox/runtime/internal/llmresolver"
-	libmodelprovider "github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/internal/llmresolver"
+	libmodelprovider "github.com/contenox/agent/runtime/internal/modelrepo"
 )
 
 func TestUnit_ChatModelResolution(t *testing.T) {

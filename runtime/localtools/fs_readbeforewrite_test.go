@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/localtools"
-	"github.com/contenox/contenox/runtime/runtimetypes"
-	"github.com/contenox/contenox/runtime/taskengine"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/runtime/localtools"
+	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

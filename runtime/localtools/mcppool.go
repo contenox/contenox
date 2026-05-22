@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/localtools/mcpoauth"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/localtools/mcpoauth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
 )

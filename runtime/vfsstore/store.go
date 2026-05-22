@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	libdb "github.com/contenox/contenox/libdbexec"
+	libdb "github.com/contenox/agent/libdbexec"
 )
 
 // Store defines all persistence operations for the VFS.

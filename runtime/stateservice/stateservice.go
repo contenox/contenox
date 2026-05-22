@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/internal/clikv"
-	"github.com/contenox/contenox/runtime/internal/runtimestate"
-	"github.com/contenox/contenox/runtime/internal/setupcheck"
-	"github.com/contenox/contenox/runtime/runtimetypes"
-	"github.com/contenox/contenox/runtime/statetype"
+	"github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/runtime/internal/clikv"
+	"github.com/contenox/agent/runtime/internal/runtimestate"
+	"github.com/contenox/agent/runtime/internal/setupcheck"
+	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/statetype"
 )
 
 // Service exposes runtime backend state plus onboarding/setup evaluation (same inputs as GET /setup-status).

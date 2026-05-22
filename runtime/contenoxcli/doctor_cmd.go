@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/contenox/contenox/runtime/internal/setupcheck"
-	"github.com/contenox/contenox/runtime/vfsservice"
+	"github.com/contenox/agent/runtime/internal/setupcheck"
+	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 

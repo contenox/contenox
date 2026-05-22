@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/vfsstore"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/runtime/vfsstore"
 	"github.com/stretchr/testify/require"
 )
 

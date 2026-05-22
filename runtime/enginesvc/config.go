@@ -1,16 +1,16 @@
 package enginesvc
 
 import (
-	"github.com/contenox/contenox/libbus"
-	"github.com/contenox/contenox/libkvstore"
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/execservice"
-	"github.com/contenox/contenox/runtime/hitlservice"
-	"github.com/contenox/contenox/runtime/internal/setupcheck"
-	"github.com/contenox/contenox/runtime/localtools"
-	"github.com/contenox/contenox/runtime/mcpworker"
-	"github.com/contenox/contenox/runtime/taskengine"
-	"github.com/contenox/contenox/runtime/vfsservice"
+	"github.com/contenox/agent/libbus"
+	"github.com/contenox/agent/libkvstore"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/execservice"
+	"github.com/contenox/agent/runtime/hitlservice"
+	"github.com/contenox/agent/runtime/internal/setupcheck"
+	"github.com/contenox/agent/runtime/localtools"
+	"github.com/contenox/agent/runtime/mcpworker"
+	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/agent/runtime/vfsservice"
 )
 
 type Config struct {

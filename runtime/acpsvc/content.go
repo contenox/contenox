@@ -3,7 +3,7 @@ package acpsvc
 import (
 	"strings"
 
-	"github.com/contenox/contenox/libacp"
+	"github.com/contenox/agent/libacp"
 )
 
 func flattenPromptBlocks(blocks []libacp.ContentBlock) (string, []string) {

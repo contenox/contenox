@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/messagestore"
-	"github.com/contenox/contenox/runtime/runtimetypes"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/runtime/messagestore"
+	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/stretchr/testify/require"
 )
 

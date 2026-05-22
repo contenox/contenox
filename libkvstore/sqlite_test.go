@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/libkvstore"
+	"github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libkvstore"
 )
 
 func openSQLiteKV(t *testing.T) libkvstore.KVExecutor {

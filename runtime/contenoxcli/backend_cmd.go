@@ -9,10 +9,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/backendservice"
-	"github.com/contenox/contenox/runtime/runtimetypes"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/backendservice"
+	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
+	libdb "github.com/contenox/agent/libdbexec"
 	"github.com/stretchr/testify/require"
 )
 

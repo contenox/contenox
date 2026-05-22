@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
+	libdb "github.com/contenox/agent/libdbexec"
 	"github.com/google/uuid"
 )
 

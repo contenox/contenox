@@ -18,13 +18,13 @@ import (
 	"testing"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/libtracker"
-	"github.com/contenox/contenox/runtime/chatservice"
-	"github.com/contenox/contenox/runtime/internal/tools"
-	"github.com/contenox/contenox/runtime/messagestore"
-	"github.com/contenox/contenox/runtime/runtimetypes"
-	"github.com/contenox/contenox/runtime/taskengine"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/agent/runtime/chatservice"
+	"github.com/contenox/agent/runtime/internal/tools"
+	"github.com/contenox/agent/runtime/messagestore"
+	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

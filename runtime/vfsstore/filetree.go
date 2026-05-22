@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
+	libdb "github.com/contenox/agent/libdbexec"
 )
 
 // ChildEntry holds the name and file metadata for a single directory child.

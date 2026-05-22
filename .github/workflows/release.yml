@@ -108,7 +108,7 @@ jobs:
           CXX: ${{ matrix.cxx }}
         run: |
           TAG="${{ needs.verify.outputs.tag }}"
-          LDFLAGS="-X github.com/contenox/contenox/contenoxcli.Version=${TAG}"
+          LDFLAGS="-X github.com/contenox/agent/contenoxcli.Version=${TAG}"
           mkdir -p bin
           go build -ldflags="${LDFLAGS}" -o bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/contenox
 

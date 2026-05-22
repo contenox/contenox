@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	libdb "github.com/contenox/contenox/libdbexec"
+	libdb "github.com/contenox/agent/libdbexec"
 )
 
 // localFS implements Service against the local filesystem under a root directory.

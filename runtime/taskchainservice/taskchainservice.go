@@ -3,7 +3,7 @@ package taskchainservice
 import (
 	"context"
 
-	"github.com/contenox/contenox/runtime/taskengine"
+	"github.com/contenox/agent/runtime/taskengine"
 )
 
 // Service loads and stores task chain definitions as JSON in the VFS (see NewVFS).

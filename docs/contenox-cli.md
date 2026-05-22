@@ -12,7 +12,7 @@ contenox init                          # scaffold .contenox/ with config + defau
 contenox "list files in my home dir"   # natural language → shell → response
 
 # Or build from source:
-git clone https://github.com/contenox/contenox.git
+git clone https://github.com/contenox/agent.git
 cd contenox
 go build -o contenox ./cmd/contenox
 contenox init
@@ -288,14 +288,14 @@ Chain fields like `system_instruction` and `prompt_template` support macros expa
 ## Build from source
 
 ```bash
-git clone https://github.com/contenox/contenox.git
+git clone https://github.com/contenox/agent.git
 cd contenox
 make build-contenox
 # binary: ./bin/contenox
 contenox init
 ```
 
-The release version string is **`runtime/version/version.txt`**, embedded at compile time through `version.Get()` and shown in `contenox --help`, `contenox --version`, and the root command `Short` line. Optional link-time override: `-ldflags "-X github.com/contenox/contenox/contenoxcli.Version=…"`.
+The release version string is **`runtime/version/version.txt`**, embedded at compile time through `version.Get()` and shown in `contenox --help`, `contenox --version`, and the root command `Short` line. Optional link-time override: `-ldflags "-X github.com/contenox/agent/contenoxcli.Version=…"`.
 
 ### Check that CLI help still works
 

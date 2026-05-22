@@ -13,12 +13,12 @@ import (
 	"sync"
 	"time"
 
-	libbus "github.com/contenox/contenox/libbus"
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/libkvstore"
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
-	"github.com/contenox/contenox/runtime/runtimetypes"
-	"github.com/contenox/contenox/runtime/statetype"
+	libbus "github.com/contenox/agent/libbus"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libkvstore"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/agent/runtime/statetype"
 )
 
 // ProviderCacheDuration defines how long the state of models from an external

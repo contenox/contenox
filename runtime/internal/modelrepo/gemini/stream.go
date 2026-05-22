@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/internal/modelrepo"
 )
 
 type GeminiStreamClient struct {

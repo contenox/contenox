@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	libacp "github.com/contenox/contenox/libacp"
-	"github.com/contenox/contenox/runtime/localtools"
+	libacp "github.com/contenox/agent/libacp"
+	"github.com/contenox/agent/runtime/localtools"
 )
 
 var osFallback = localtools.NewOSFileIO()

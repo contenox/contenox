@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/contenox/contenox/runtime/vfsservice"
+	"github.com/contenox/agent/runtime/vfsservice"
 )
 
 // Action is the outcome of policy evaluation for a tool call.

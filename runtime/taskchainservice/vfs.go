@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	libdb "github.com/contenox/contenox/libdbexec"
-	"github.com/contenox/contenox/runtime/taskengine"
-	"github.com/contenox/contenox/runtime/vfsservice"
+	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/agent/runtime/vfsservice"
 )
 
 // vfsStore persists task chains as JSON files via vfsservice.Service (same storage as /api/files).
