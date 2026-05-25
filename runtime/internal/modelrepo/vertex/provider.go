@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
+
+	"golang.org/x/oauth2"
 
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/internal/modelrepo"
@@ -22,6 +25,13 @@ type vertexProvider struct {
 	canEmbed      bool
 	canStream     bool
 	tracker       libtracker.ActivityTracker
+
+	// Cached token source. Initialized once on first use and reused across all
+	// requests; oauth2 keeps the access token in memory until expiry, so
+	// steady-state requests don't hit the token endpoint at all.
+	tokenOnce sync.Once
+	tokenSrc  oauth2.TokenSource
+	tokenErr  error
 }
 
 // NewVertexProvider returns a modelrepo.Provider for a Vertex AI model.
@@ -64,6 +74,23 @@ func (p *vertexProvider) CanStream() bool         { return p.canStream }
 func (p *vertexProvider) CanPrompt() bool         { return p.canPrompt }
 func (p *vertexProvider) CanThink() bool          { return false }
 
+// tokenFn returns an access token using the provider's cached oauth2 source.
+// The source is built once on first use (with context.Background so it
+// outlives the request that triggered initialization) and reused thereafter.
+func (p *vertexProvider) tokenFn(_ context.Context) (string, error) {
+	p.tokenOnce.Do(func() {
+		p.tokenSrc, p.tokenErr = NewTokenSource(context.Background(), p.credJSON)
+	})
+	if p.tokenErr != nil {
+		return "", p.tokenErr
+	}
+	tok, err := p.tokenSrc.Token()
+	if err != nil {
+		return "", fmt.Errorf("vertex AI token: %w", err)
+	}
+	return tok.AccessToken, nil
+}
+
 func (p *vertexProvider) client() vertexClient {
 	return vertexClient{
 		baseURL:       p.baseURL,
@@ -73,6 +100,7 @@ func (p *vertexProvider) client() vertexClient {
 		credJSON:      p.credJSON,
 		httpClient:    p.httpClient,
 		tracker:       p.tracker,
+		tokenFn:       p.tokenFn,
 	}
 }
 

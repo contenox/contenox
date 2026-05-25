@@ -161,12 +161,18 @@ func toolCallIDFromCtx(ctx context.Context) string {
 	return v
 }
 
-func terminalAttachNotification(sid libacp.SessionID, toolCallID, terminalID string) libacp.SessionNotification {
+// terminalAttachNotification is sent with SessionUpdateToolCall (the
+// create-or-update kind) so it's race-safe vs the pending notification.
+// The ACP schema requires `title` on tool_call notifications — Zed rejects
+// the whole update with "missing field `title`" otherwise, and the user
+// sees "Tool call not found" because the embed never registered.
+func terminalAttachNotification(sid libacp.SessionID, toolCallID, terminalID, title string) libacp.SessionNotification {
 	return libacp.SessionNotification{
 		SessionID: sid,
 		Update: libacp.SessionUpdate{
 			SessionUpdate: libacp.SessionUpdateToolCall,
 			ToolCallID:    toolCallID,
+			Title:         title,
 			Kind:          libacp.ToolKindExecute,
 			Status:        libacp.ToolCallStatusInProgress,
 			ToolContent: []libacp.ToolCallContent{

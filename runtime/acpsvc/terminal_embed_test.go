@@ -11,13 +11,16 @@ import (
 )
 
 func TestUnit_TerminalAttachNotification_Shape(t *testing.T) {
-	note := terminalAttachNotification(libacp.SessionID("sess-1"), "call-7", "term-42")
+	note := terminalAttachNotification(libacp.SessionID("sess-1"), "call-7", "term-42", "local_shell: ls -la")
 	upd := note.Update
 
 	require.Equal(t, libacp.SessionID("sess-1"), note.SessionID)
 	require.Equal(t, libacp.SessionUpdateToolCall, upd.SessionUpdate,
 		"must be the full tool_call kind (create-or-update by id) so it is race-safe vs the pending notification")
 	require.Equal(t, "call-7", upd.ToolCallID)
+	require.Equal(t, "local_shell: ls -la", upd.Title,
+		"title is required by the ACP schema on tool_call notifications; "+
+			"omitting it causes Zed to reject the update and the terminal embed is lost")
 	require.Equal(t, libacp.ToolKindExecute, upd.Kind)
 	require.Equal(t, libacp.ToolCallStatusInProgress, upd.Status)
 	require.Len(t, upd.ToolContent, 1)

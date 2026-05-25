@@ -33,6 +33,7 @@
             "_max_attempts": "3"
           }
         },
+        "max_tokens": 16384,
         "retry_policy": {
           "max_attempts": 4,
           "initial_backoff": "1s",
@@ -121,6 +122,7 @@
             "_max_attempts": "3"
           }
         },
+        "max_tokens": 16384,
         "retry_policy": {
           "max_attempts": 4,
           "initial_backoff": "1s",

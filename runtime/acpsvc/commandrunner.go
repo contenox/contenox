@@ -33,14 +33,19 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 
 	command := spec.Command
 	cmdArgs := spec.Args
-	if spec.UseShell {
-		full := spec.Command
-		if len(spec.Args) > 0 {
-			full += " " + strings.Join(spec.Args, " ")
-		}
-		command = "/bin/sh"
-		cmdArgs = []string{"-c", full}
+	titleCmd := spec.Command
+	if len(spec.Args) > 0 {
+		titleCmd += " " + strings.Join(spec.Args, " ")
 	}
+	if spec.UseShell {
+		command = "/bin/sh"
+		cmdArgs = []string{"-c", titleCmd}
+	}
+	const titleMax = 80
+	if len(titleCmd) > titleMax {
+		titleCmd = titleCmd[:titleMax-3] + "..."
+	}
+	title := "local_shell: " + titleCmd
 
 	req := libacp.CreateTerminalRequest{
 		Command:         command,
@@ -78,7 +83,7 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 
 	if sid != "" {
 		if tcID := toolCallIDFromCtx(ctx); tcID != "" {
-			t.sendUpdate(ctx, terminalAttachNotification(sid, tcID, termID))
+			t.sendUpdate(ctx, terminalAttachNotification(sid, tcID, termID, title))
 		}
 	}
 

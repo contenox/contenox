@@ -6,10 +6,33 @@ import (
 	"net/url"
 	"strings"
 
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
 const cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+
+// NewTokenSource returns a caching oauth2.TokenSource. Call this ONCE per
+// provider and reuse the returned source — it caches the access token until
+// expiry and only round-trips to the token endpoint on refresh. Creating a new
+// source per request (as the BearerToken* helpers do) round-trips every time
+// and adds ~100–400ms of auth latency to every chat/stream call.
+//
+// credJSON is the service account key JSON; empty falls back to ADC.
+func NewTokenSource(ctx context.Context, credJSON string) (oauth2.TokenSource, error) {
+	if credJSON != "" {
+		creds, err := google.CredentialsFromJSON(ctx, []byte(credJSON), cloudPlatformScope)
+		if err != nil {
+			return nil, fmt.Errorf("vertex AI service account credentials: %w", err)
+		}
+		return creds.TokenSource, nil
+	}
+	ts, err := google.DefaultTokenSource(ctx, cloudPlatformScope)
+	if err != nil {
+		return nil, fmt.Errorf("vertex AI ADC: %w", err)
+	}
+	return ts, nil
+}
 
 // extractProjectFromVertexURL parses the GCP project ID from a Vertex AI base URL of the form
 // https://{region}-aiplatform.googleapis.com/v1/projects/{project}/locations/{region}.

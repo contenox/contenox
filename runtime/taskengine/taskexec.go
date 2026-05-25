@@ -1109,14 +1109,12 @@ func (exe *SimpleExec) executeLLM(
 	if llmCall.Think != "" {
 		chatArgs = append(chatArgs, libmodelprovider.WithThink(llmCall.Think))
 	}
-	maxOutputTokens := 0
+	// Only forward an explicit max_tokens. Falling back to ctxLength conflates
+	// the input+output context window with the per-response output cap and trips
+	// per-model output limits (e.g. Vertex Gemini 2.5 Pro caps maxOutputTokens
+	// at 65536, well below typical 131072 ctxLength settings).
 	if llmCall.MaxTokens != nil && *llmCall.MaxTokens > 0 {
-		maxOutputTokens = *llmCall.MaxTokens
-	} else if ctxLength > 0 {
-		maxOutputTokens = ctxLength
-	}
-	if maxOutputTokens > 0 {
-		chatArgs = append(chatArgs, libmodelprovider.WithMaxTokens(maxOutputTokens))
+		chatArgs = append(chatArgs, libmodelprovider.WithMaxTokens(*llmCall.MaxTokens))
 	}
 	if llmCall.Shift {
 		chatArgs = append(chatArgs, libmodelprovider.WithShift{})
