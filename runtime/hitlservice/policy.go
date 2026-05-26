@@ -325,8 +325,8 @@ func matchSuffix(pattern, s string) bool {
 	return matchDoubleGlob(pattern, s)
 }
 
-func loadPolicy(ctx context.Context, vfs vfsservice.Service, policyPath string) (*Policy, error) {
-	f, err := vfs.GetFileByID(ctx, policyPath)
+func loadPolicy(ctx context.Context, vfs vfsservice.Service, tenantID, policyPath string) (*Policy, error) {
+	f, err := vfs.GetFileByID(ctx, tenantID, policyPath)
 	if err != nil {
 		return nil, fmt.Errorf("read hitl policy %q: %w", policyPath, err)
 	}

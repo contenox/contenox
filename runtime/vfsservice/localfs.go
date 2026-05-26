@@ -12,41 +12,87 @@ import (
 )
 
 // localFS implements Service against the local filesystem under a root directory.
+// Each tenant gets its own subdirectory (root/<tenantID>/...) so a single
+// localFS instance can host many tenants.
 // Operations that have no meaningful local-FS equivalent return ErrNotSupported.
 type localFS struct {
 	root string
+	cb   Callbacks
 }
 
 // NewLocalFS returns a Service backed by the local filesystem rooted at root.
-// Intended for the CLI and TUI.
-func NewLocalFS(root string) Service {
-	return &localFS{root: filepath.Clean(root)}
+// Each tenant's data is namespaced under root/<tenantID>/. Pass Callbacks{}
+// for pure storage; proprietary callers use the hooks to enforce tenancy
+// policy or record ownership.
+func NewLocalFS(root string, cb Callbacks) Service {
+	return &localFS{root: filepath.Clean(root), cb: cb}
 }
 
 var _ Service = (*localFS)(nil)
 
-// abs resolves path under l.root and rejects traversals that escape the root
-// (Fix 1: path traversal vulnerability via ../.. sequences).
-func (l *localFS) abs(path string) (string, error) {
-	target := filepath.Join(l.root, filepath.FromSlash(path))
-	// After Join+Clean, verify the result is still inside root.
-	if target != l.root && !strings.HasPrefix(target, l.root+string(filepath.Separator)) {
-		return "", fmt.Errorf("path %q escapes root directory", path)
+// tenantRoot returns the per-tenant base directory.
+func (l *localFS) tenantRoot(tenantID string) string {
+	return filepath.Join(l.root, tenantID)
+}
+
+// abs resolves path under the per-tenant root and rejects traversals that
+// escape it.
+func (l *localFS) abs(tenantID, path string) (string, error) {
+	base := l.tenantRoot(tenantID)
+	target := filepath.Join(base, filepath.FromSlash(path))
+	if target != base && !strings.HasPrefix(target, base+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes tenant root directory", path)
 	}
 	return target, nil
 }
 
-func (l *localFS) CreateFile(ctx context.Context, file *File) (*File, error) {
+// --- callback shims ---
+
+func (l *localFS) beforeRead(ctx context.Context, tenantID, id string) error {
+	if l.cb.BeforeRead != nil {
+		return l.cb.BeforeRead(ctx, tenantID, id)
+	}
+	return nil
+}
+
+func (l *localFS) beforeWrite(ctx context.Context, tenantID, id string) error {
+	if l.cb.BeforeWrite != nil {
+		return l.cb.BeforeWrite(ctx, tenantID, id)
+	}
+	return nil
+}
+
+func (l *localFS) onCreate(ctx context.Context, tenantID string, f *File) {
+	if l.cb.OnCreate != nil {
+		_ = l.cb.OnCreate(ctx, tenantID, f)
+	}
+}
+
+func (l *localFS) onUpdate(ctx context.Context, tenantID string, f *File) {
+	if l.cb.OnUpdate != nil {
+		_ = l.cb.OnUpdate(ctx, tenantID, f)
+	}
+}
+
+func (l *localFS) onDelete(ctx context.Context, tenantID, id string) {
+	if l.cb.OnDelete != nil {
+		_ = l.cb.OnDelete(ctx, tenantID, id)
+	}
+}
+
+func (l *localFS) CreateFile(ctx context.Context, tenantID string, file *File) (*File, error) {
+	if err := l.beforeWrite(ctx, tenantID, ""); err != nil {
+		return nil, err
+	}
 	if file.Name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
-	// Fix 2: check actual data length, not caller-supplied Size field.
 	if int64(len(file.Data)) > MaxUploadSize {
 		return nil, fmt.Errorf("file size exceeds maximum allowed size")
 	}
-	dir := l.root
+	dir := l.tenantRoot(tenantID)
 	if file.ParentID != "" {
-		p, err := l.abs(file.ParentID)
+		p, err := l.abs(tenantID, file.ParentID)
 		if err != nil {
 			return nil, err
 		}
@@ -60,8 +106,8 @@ func (l *localFS) CreateFile(ctx context.Context, file *File) (*File, error) {
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 	now := time.Now().UTC()
-	rel, _ := filepath.Rel(l.root, dest)
-	return &File{
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), dest)
+	res := &File{
 		ID:          rel,
 		Path:        filepath.ToSlash(rel),
 		Name:        file.Name,
@@ -71,11 +117,16 @@ func (l *localFS) CreateFile(ctx context.Context, file *File) (*File, error) {
 		Data:        file.Data,
 		CreatedAt:   now,
 		UpdatedAt:   now,
-	}, nil
+	}
+	l.onCreate(ctx, tenantID, res)
+	return res, nil
 }
 
-func (l *localFS) GetFileByID(ctx context.Context, id string) (*File, error) {
-	path, err := l.abs(id)
+func (l *localFS) GetFileByID(ctx context.Context, tenantID, id string) (*File, error) {
+	if err := l.beforeRead(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	path, err := l.abs(tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +139,7 @@ func (l *localFS) GetFileByID(ctx context.Context, id string) (*File, error) {
 	}
 	info, _ := os.Stat(path)
 	name := filepath.Base(path)
-	rel, _ := filepath.Rel(l.root, path)
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), path)
 	return &File{
 		ID:        rel,
 		Path:      filepath.ToSlash(rel),
@@ -99,8 +150,11 @@ func (l *localFS) GetFileByID(ctx context.Context, id string) (*File, error) {
 	}, nil
 }
 
-func (l *localFS) GetFolderByID(ctx context.Context, id string) (*Folder, error) {
-	path, err := l.abs(id)
+func (l *localFS) GetFolderByID(ctx context.Context, tenantID, id string) (*Folder, error) {
+	if err := l.beforeRead(ctx, tenantID, id); err != nil {
+		return nil, err
+	}
+	path, err := l.abs(tenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +168,7 @@ func (l *localFS) GetFolderByID(ctx context.Context, id string) (*Folder, error)
 	if !info.IsDir() {
 		return nil, fmt.Errorf("not a directory")
 	}
-	rel, _ := filepath.Rel(l.root, path)
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), path)
 	return &Folder{
 		ID:   rel,
 		Path: filepath.ToSlash(rel),
@@ -122,12 +176,11 @@ func (l *localFS) GetFolderByID(ctx context.Context, id string) (*Folder, error)
 	}, nil
 }
 
-func (l *localFS) GetFilesByPath(ctx context.Context, path string) ([]File, error) {
-	// Fix 7: treat "/" the same as root.
+func (l *localFS) GetFilesByPath(ctx context.Context, tenantID, path string) ([]File, error) {
 	if path == "/" {
 		path = ""
 	}
-	dir, err := l.abs(path)
+	dir, err := l.abs(tenantID, path)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +193,10 @@ func (l *localFS) GetFilesByPath(ctx context.Context, path string) ([]File, erro
 	}
 	var files []File
 	for _, e := range entries {
-		rel, _ := filepath.Rel(l.root, filepath.Join(dir, e.Name()))
+		rel, _ := filepath.Rel(l.tenantRoot(tenantID), filepath.Join(dir, e.Name()))
+		if err := l.beforeRead(ctx, tenantID, rel); err != nil {
+			continue
+		}
 		info, _ := e.Info()
 		f := File{
 			ID:          rel,
@@ -157,12 +213,14 @@ func (l *localFS) GetFilesByPath(ctx context.Context, path string) ([]File, erro
 	return files, nil
 }
 
-func (l *localFS) UpdateFile(ctx context.Context, file *File) (*File, error) {
-	// Fix 2: check actual data length.
+func (l *localFS) UpdateFile(ctx context.Context, tenantID string, file *File) (*File, error) {
+	if err := l.beforeWrite(ctx, tenantID, file.ID); err != nil {
+		return nil, err
+	}
 	if int64(len(file.Data)) > MaxUploadSize {
 		return nil, fmt.Errorf("file size exceeds maximum allowed size")
 	}
-	path, err := l.abs(file.ID)
+	path, err := l.abs(tenantID, file.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -170,8 +228,8 @@ func (l *localFS) UpdateFile(ctx context.Context, file *File) (*File, error) {
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 	now := time.Now().UTC()
-	rel, _ := filepath.Rel(l.root, path)
-	return &File{
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), path)
+	res := &File{
 		ID:          rel,
 		Path:        filepath.ToSlash(rel),
 		Name:        filepath.Base(path),
@@ -179,19 +237,31 @@ func (l *localFS) UpdateFile(ctx context.Context, file *File) (*File, error) {
 		ContentType: file.ContentType,
 		Data:        file.Data,
 		UpdatedAt:   now,
-	}, nil
+	}
+	l.onUpdate(ctx, tenantID, res)
+	return res, nil
 }
 
-func (l *localFS) DeleteFile(ctx context.Context, id string) error {
-	path, err := l.abs(id)
+func (l *localFS) DeleteFile(ctx context.Context, tenantID, id string) error {
+	if err := l.beforeWrite(ctx, tenantID, id); err != nil {
+		return err
+	}
+	path, err := l.abs(tenantID, id)
 	if err != nil {
 		return err
 	}
-	return os.Remove(path)
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	l.onDelete(ctx, tenantID, id)
+	return nil
 }
 
-func (l *localFS) CreateFolder(ctx context.Context, parentID, name string) (*Folder, error) {
-	base, err := l.abs(parentID)
+func (l *localFS) CreateFolder(ctx context.Context, tenantID, parentID, name string) (*Folder, error) {
+	if err := l.beforeWrite(ctx, tenantID, parentID); err != nil {
+		return nil, err
+	}
+	base, err := l.abs(tenantID, parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +269,7 @@ func (l *localFS) CreateFolder(ctx context.Context, parentID, name string) (*Fol
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	rel, _ := filepath.Rel(l.root, dir)
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), dir)
 	return &Folder{
 		ID:       rel,
 		Path:     filepath.ToSlash(rel),
@@ -208,12 +278,14 @@ func (l *localFS) CreateFolder(ctx context.Context, parentID, name string) (*Fol
 	}, nil
 }
 
-func (l *localFS) RenameFile(ctx context.Context, fileID, newName string) (*File, error) {
-	// Fix 8: block slashes in new names.
+func (l *localFS) RenameFile(ctx context.Context, tenantID, fileID, newName string) (*File, error) {
+	if err := l.beforeWrite(ctx, tenantID, fileID); err != nil {
+		return nil, err
+	}
 	if strings.Contains(newName, "/") {
 		return nil, fmt.Errorf("name cannot contain slashes")
 	}
-	src, err := l.abs(fileID)
+	src, err := l.abs(tenantID, fileID)
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +293,7 @@ func (l *localFS) RenameFile(ctx context.Context, fileID, newName string) (*File
 	if err := os.Rename(src, dst); err != nil {
 		return nil, err
 	}
-	rel, _ := filepath.Rel(l.root, dst)
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), dst)
 	return &File{
 		ID:   rel,
 		Path: filepath.ToSlash(rel),
@@ -229,12 +301,14 @@ func (l *localFS) RenameFile(ctx context.Context, fileID, newName string) (*File
 	}, nil
 }
 
-func (l *localFS) RenameFolder(ctx context.Context, folderID, newName string) (*Folder, error) {
-	// Fix 8: block slashes in new names.
+func (l *localFS) RenameFolder(ctx context.Context, tenantID, folderID, newName string) (*Folder, error) {
+	if err := l.beforeWrite(ctx, tenantID, folderID); err != nil {
+		return nil, err
+	}
 	if strings.Contains(newName, "/") {
 		return nil, fmt.Errorf("name cannot contain slashes")
 	}
-	src, err := l.abs(folderID)
+	src, err := l.abs(tenantID, folderID)
 	if err != nil {
 		return nil, err
 	}
@@ -243,9 +317,8 @@ func (l *localFS) RenameFolder(ctx context.Context, folderID, newName string) (*
 	if err := os.Rename(src, dst); err != nil {
 		return nil, err
 	}
-	rel, _ := filepath.Rel(l.root, dst)
-	parentRel, _ := filepath.Rel(l.root, dir)
-	// Fix 10: filepath.Rel returns "." for the root directory; normalise to "".
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), dst)
+	parentRel, _ := filepath.Rel(l.tenantRoot(tenantID), dir)
 	if parentRel == "." {
 		parentRel = ""
 	}
@@ -257,20 +330,30 @@ func (l *localFS) RenameFolder(ctx context.Context, folderID, newName string) (*
 	}, nil
 }
 
-func (l *localFS) DeleteFolder(ctx context.Context, folderID string) error {
-	path, err := l.abs(folderID)
+func (l *localFS) DeleteFolder(ctx context.Context, tenantID, folderID string) error {
+	if err := l.beforeWrite(ctx, tenantID, folderID); err != nil {
+		return err
+	}
+	path, err := l.abs(tenantID, folderID)
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(path)
+	if err := os.RemoveAll(path); err != nil {
+		return err
+	}
+	l.onDelete(ctx, tenantID, folderID)
+	return nil
 }
 
-func (l *localFS) MoveFile(ctx context.Context, fileID, newParentID string) (*File, error) {
-	src, err := l.abs(fileID)
+func (l *localFS) MoveFile(ctx context.Context, tenantID, fileID, newParentID string) (*File, error) {
+	if err := l.beforeWrite(ctx, tenantID, fileID); err != nil {
+		return nil, err
+	}
+	src, err := l.abs(tenantID, fileID)
 	if err != nil {
 		return nil, err
 	}
-	dstDir, err := l.abs(newParentID)
+	dstDir, err := l.abs(tenantID, newParentID)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +365,7 @@ func (l *localFS) MoveFile(ctx context.Context, fileID, newParentID string) (*Fi
 	if err := os.Rename(src, dst); err != nil {
 		return nil, err
 	}
-	rel, _ := filepath.Rel(l.root, dst)
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), dst)
 	return &File{
 		ID:       rel,
 		Path:     filepath.ToSlash(rel),
@@ -291,12 +374,15 @@ func (l *localFS) MoveFile(ctx context.Context, fileID, newParentID string) (*Fi
 	}, nil
 }
 
-func (l *localFS) MoveFolder(ctx context.Context, folderID, newParentID string) (*Folder, error) {
-	src, err := l.abs(folderID)
+func (l *localFS) MoveFolder(ctx context.Context, tenantID, folderID, newParentID string) (*Folder, error) {
+	if err := l.beforeWrite(ctx, tenantID, folderID); err != nil {
+		return nil, err
+	}
+	src, err := l.abs(tenantID, folderID)
 	if err != nil {
 		return nil, err
 	}
-	dstDir, err := l.abs(newParentID)
+	dstDir, err := l.abs(tenantID, newParentID)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +394,7 @@ func (l *localFS) MoveFolder(ctx context.Context, folderID, newParentID string) 
 	if err := os.Rename(src, dst); err != nil {
 		return nil, err
 	}
-	rel, _ := filepath.Rel(l.root, dst)
+	rel, _ := filepath.Rel(l.tenantRoot(tenantID), dst)
 	return &Folder{
 		ID:       rel,
 		Path:     filepath.ToSlash(rel),

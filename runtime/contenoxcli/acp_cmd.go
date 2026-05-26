@@ -237,5 +237,5 @@ func acpGlobalVFS() vfsservice.Service {
 	if err != nil {
 		return nil
 	}
-	return vfsservice.NewLocalFS(filepath.Join(home, ".contenox"))
+	return vfsservice.NewLocalFS(filepath.Join(home, ".contenox"), vfsservice.Callbacks{})
 }

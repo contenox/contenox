@@ -34,11 +34,11 @@ func sanitizeFile(f *File) *File {
 	}
 }
 
-func (d *activityTrackerDecorator) CreateFile(ctx context.Context, file *File) (*File, error) {
+func (d *activityTrackerDecorator) CreateFile(ctx context.Context, tenantID string, file *File) (*File, error) {
 	reportErr, reportChange, end := d.tracker.Start(ctx, "create", "file",
-		"path", file.Path, "contentType", file.ContentType, "size", fmt.Sprintf("%d", file.Size))
+		"tenantID", tenantID, "path", file.Path, "contentType", file.ContentType, "size", fmt.Sprintf("%d", file.Size))
 	defer end()
-	result, err := d.svc.CreateFile(ctx, file)
+	result, err := d.svc.CreateFile(ctx, tenantID, file)
 	if err != nil {
 		reportErr(err)
 	} else {
@@ -47,41 +47,41 @@ func (d *activityTrackerDecorator) CreateFile(ctx context.Context, file *File) (
 	return result, err
 }
 
-func (d *activityTrackerDecorator) GetFileByID(ctx context.Context, id string) (*File, error) {
-	reportErr, _, end := d.tracker.Start(ctx, "read", "file", "fileID", id)
+func (d *activityTrackerDecorator) GetFileByID(ctx context.Context, tenantID, id string) (*File, error) {
+	reportErr, _, end := d.tracker.Start(ctx, "read", "file", "tenantID", tenantID, "fileID", id)
 	defer end()
-	result, err := d.svc.GetFileByID(ctx, id)
+	result, err := d.svc.GetFileByID(ctx, tenantID, id)
 	if err != nil {
 		reportErr(err)
 	}
 	return result, err
 }
 
-func (d *activityTrackerDecorator) GetFolderByID(ctx context.Context, id string) (*Folder, error) {
-	reportErr, _, end := d.tracker.Start(ctx, "read", "folder", "folderID", id)
+func (d *activityTrackerDecorator) GetFolderByID(ctx context.Context, tenantID, id string) (*Folder, error) {
+	reportErr, _, end := d.tracker.Start(ctx, "read", "folder", "tenantID", tenantID, "folderID", id)
 	defer end()
-	result, err := d.svc.GetFolderByID(ctx, id)
+	result, err := d.svc.GetFolderByID(ctx, tenantID, id)
 	if err != nil {
 		reportErr(err)
 	}
 	return result, err
 }
 
-func (d *activityTrackerDecorator) GetFilesByPath(ctx context.Context, path string) ([]File, error) {
-	reportErr, _, end := d.tracker.Start(ctx, "read", "file", "path", path)
+func (d *activityTrackerDecorator) GetFilesByPath(ctx context.Context, tenantID, path string) ([]File, error) {
+	reportErr, _, end := d.tracker.Start(ctx, "read", "file", "tenantID", tenantID, "path", path)
 	defer end()
-	result, err := d.svc.GetFilesByPath(ctx, path)
+	result, err := d.svc.GetFilesByPath(ctx, tenantID, path)
 	if err != nil {
 		reportErr(err)
 	}
 	return result, err
 }
 
-func (d *activityTrackerDecorator) UpdateFile(ctx context.Context, file *File) (*File, error) {
+func (d *activityTrackerDecorator) UpdateFile(ctx context.Context, tenantID string, file *File) (*File, error) {
 	reportErr, reportChange, end := d.tracker.Start(ctx, "update", "file",
-		"fileID", file.ID, "contentType", file.ContentType, "size", fmt.Sprintf("%d", file.Size))
+		"tenantID", tenantID, "fileID", file.ID, "contentType", file.ContentType, "size", fmt.Sprintf("%d", file.Size))
 	defer end()
-	result, err := d.svc.UpdateFile(ctx, file)
+	result, err := d.svc.UpdateFile(ctx, tenantID, file)
 	if err != nil {
 		reportErr(err)
 	} else {
@@ -90,10 +90,10 @@ func (d *activityTrackerDecorator) UpdateFile(ctx context.Context, file *File) (
 	return result, err
 }
 
-func (d *activityTrackerDecorator) DeleteFile(ctx context.Context, id string) error {
-	reportErr, reportChange, end := d.tracker.Start(ctx, "delete", "file", "fileID", id)
+func (d *activityTrackerDecorator) DeleteFile(ctx context.Context, tenantID, id string) error {
+	reportErr, reportChange, end := d.tracker.Start(ctx, "delete", "file", "tenantID", tenantID, "fileID", id)
 	defer end()
-	err := d.svc.DeleteFile(ctx, id)
+	err := d.svc.DeleteFile(ctx, tenantID, id)
 	if err != nil {
 		reportErr(err)
 	} else {
@@ -102,10 +102,10 @@ func (d *activityTrackerDecorator) DeleteFile(ctx context.Context, id string) er
 	return err
 }
 
-func (d *activityTrackerDecorator) CreateFolder(ctx context.Context, parentID, name string) (*Folder, error) {
-	reportErr, reportChange, end := d.tracker.Start(ctx, "create", "folder", "name", name)
+func (d *activityTrackerDecorator) CreateFolder(ctx context.Context, tenantID, parentID, name string) (*Folder, error) {
+	reportErr, reportChange, end := d.tracker.Start(ctx, "create", "folder", "tenantID", tenantID, "name", name)
 	defer end()
-	result, err := d.svc.CreateFolder(ctx, parentID, name)
+	result, err := d.svc.CreateFolder(ctx, tenantID, parentID, name)
 	if err != nil {
 		reportErr(err)
 	} else {
@@ -114,10 +114,10 @@ func (d *activityTrackerDecorator) CreateFolder(ctx context.Context, parentID, n
 	return result, err
 }
 
-func (d *activityTrackerDecorator) RenameFile(ctx context.Context, fileID, newName string) (*File, error) {
-	reportErr, reportChange, end := d.tracker.Start(ctx, "rename", "file", "fileID", fileID, "newName", newName)
+func (d *activityTrackerDecorator) RenameFile(ctx context.Context, tenantID, fileID, newName string) (*File, error) {
+	reportErr, reportChange, end := d.tracker.Start(ctx, "rename", "file", "tenantID", tenantID, "fileID", fileID, "newName", newName)
 	defer end()
-	result, err := d.svc.RenameFile(ctx, fileID, newName)
+	result, err := d.svc.RenameFile(ctx, tenantID, fileID, newName)
 	if err != nil {
 		reportErr(err)
 	} else {
@@ -126,10 +126,10 @@ func (d *activityTrackerDecorator) RenameFile(ctx context.Context, fileID, newNa
 	return result, err
 }
 
-func (d *activityTrackerDecorator) RenameFolder(ctx context.Context, folderID, newName string) (*Folder, error) {
-	reportErr, reportChange, end := d.tracker.Start(ctx, "rename", "folder", "folderID", folderID, "newName", newName)
+func (d *activityTrackerDecorator) RenameFolder(ctx context.Context, tenantID, folderID, newName string) (*Folder, error) {
+	reportErr, reportChange, end := d.tracker.Start(ctx, "rename", "folder", "tenantID", tenantID, "folderID", folderID, "newName", newName)
 	defer end()
-	result, err := d.svc.RenameFolder(ctx, folderID, newName)
+	result, err := d.svc.RenameFolder(ctx, tenantID, folderID, newName)
 	if err != nil {
 		reportErr(err)
 	} else {
@@ -138,10 +138,10 @@ func (d *activityTrackerDecorator) RenameFolder(ctx context.Context, folderID, n
 	return result, err
 }
 
-func (d *activityTrackerDecorator) DeleteFolder(ctx context.Context, folderID string) error {
-	reportErr, reportChange, end := d.tracker.Start(ctx, "delete", "folder", "folderID", folderID)
+func (d *activityTrackerDecorator) DeleteFolder(ctx context.Context, tenantID, folderID string) error {
+	reportErr, reportChange, end := d.tracker.Start(ctx, "delete", "folder", "tenantID", tenantID, "folderID", folderID)
 	defer end()
-	err := d.svc.DeleteFolder(ctx, folderID)
+	err := d.svc.DeleteFolder(ctx, tenantID, folderID)
 	if err != nil {
 		reportErr(err)
 	} else {
@@ -150,10 +150,10 @@ func (d *activityTrackerDecorator) DeleteFolder(ctx context.Context, folderID st
 	return err
 }
 
-func (d *activityTrackerDecorator) MoveFile(ctx context.Context, fileID, newParentID string) (*File, error) {
-	reportErr, reportChange, end := d.tracker.Start(ctx, "move", "file", "fileID", fileID, "newParentID", newParentID)
+func (d *activityTrackerDecorator) MoveFile(ctx context.Context, tenantID, fileID, newParentID string) (*File, error) {
+	reportErr, reportChange, end := d.tracker.Start(ctx, "move", "file", "tenantID", tenantID, "fileID", fileID, "newParentID", newParentID)
 	defer end()
-	result, err := d.svc.MoveFile(ctx, fileID, newParentID)
+	result, err := d.svc.MoveFile(ctx, tenantID, fileID, newParentID)
 	if err != nil {
 		reportErr(err)
 	} else {
@@ -162,10 +162,10 @@ func (d *activityTrackerDecorator) MoveFile(ctx context.Context, fileID, newPare
 	return result, err
 }
 
-func (d *activityTrackerDecorator) MoveFolder(ctx context.Context, folderID, newParentID string) (*Folder, error) {
-	reportErr, reportChange, end := d.tracker.Start(ctx, "move", "folder", "folderID", folderID, "newParentID", newParentID)
+func (d *activityTrackerDecorator) MoveFolder(ctx context.Context, tenantID, folderID, newParentID string) (*Folder, error) {
+	reportErr, reportChange, end := d.tracker.Start(ctx, "move", "folder", "tenantID", tenantID, "folderID", folderID, "newParentID", newParentID)
 	defer end()
-	result, err := d.svc.MoveFolder(ctx, folderID, newParentID)
+	result, err := d.svc.MoveFolder(ctx, tenantID, folderID, newParentID)
 	if err != nil {
 		reportErr(err)
 	} else {

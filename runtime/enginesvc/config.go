@@ -41,6 +41,9 @@ type Config struct {
 	SkipBackendCycle bool
 
 	WorkspaceID string
+	// TenantID is the tenant the engine operates under. When empty, defaults
+	// to runtimetypes.LocalTenantID. Proprietary builds pass real tenant IDs.
+	TenantID    string
 	VFS         vfsservice.Service
 	FallbackVFS vfsservice.Service
 }

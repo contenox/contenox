@@ -36,6 +36,7 @@ const defaultPolicyName = "hitl-policy-default.json"
 
 type service struct {
 	vfs            vfsservice.Service
+	tenantID       string
 	store          KVReader
 	tracker        libtracker.ActivityTracker
 	fallbackPolicy string
@@ -44,11 +45,13 @@ type service struct {
 	pending map[string]chan bool
 }
 
-func New(vfs vfsservice.Service, store KVReader, tracker libtracker.ActivityTracker) Service {
-	return NewWithDefaultPolicy(vfs, store, tracker, defaultPolicyName)
+// New constructs a hitlservice bound to a tenant. The tenantID is forwarded
+// to every vfs lookup the service performs.
+func New(vfs vfsservice.Service, tenantID string, store KVReader, tracker libtracker.ActivityTracker) Service {
+	return NewWithDefaultPolicy(vfs, tenantID, store, tracker, defaultPolicyName)
 }
 
-func NewWithDefaultPolicy(vfs vfsservice.Service, store KVReader, tracker libtracker.ActivityTracker, fallbackPolicy string) Service {
+func NewWithDefaultPolicy(vfs vfsservice.Service, tenantID string, store KVReader, tracker libtracker.ActivityTracker, fallbackPolicy string) Service {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
 	}
@@ -57,6 +60,7 @@ func NewWithDefaultPolicy(vfs vfsservice.Service, store KVReader, tracker libtra
 	}
 	return &service{
 		vfs:            vfs,
+		tenantID:       tenantID,
 		store:          store,
 		tracker:        tracker,
 		fallbackPolicy: fallbackPolicy,
@@ -86,7 +90,7 @@ func (s *service) Evaluate(ctx context.Context, toolsName, toolName string, args
 	if policyPath == "" {
 		policyPath = defaultPolicyName
 	}
-	p, err := loadPolicy(ctx, s.vfs, policyPath)
+	p, err := loadPolicy(ctx, s.vfs, s.tenantID, policyPath)
 	if err != nil {
 		reportErr(fmt.Errorf("hitl: falling back to built-in default policy: %w", err))
 		p = defaultPolicy()

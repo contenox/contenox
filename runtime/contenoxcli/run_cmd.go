@@ -132,7 +132,7 @@ Examples:
 		// Build chatOpts from flags and SQLite KV defaults.
 		o := buildRunOpts(cmd, db, contenoxDir)
 		o.EffectiveDB = dbPathAbs
-		vfs := vfsservice.NewLocalFS(o.ContenoxDir)
+		vfs := vfsservice.NewLocalFS(o.ContenoxDir, vfsservice.Callbacks{})
 		engine, err := BuildEngine(ctx, db, o, vfs)
 		if err != nil {
 			return fmt.Errorf("failed to build engine: %w", err)

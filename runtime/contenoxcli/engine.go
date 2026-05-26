@@ -63,5 +63,5 @@ func globalContenoxVFS() vfsservice.Service {
 	if err != nil {
 		return nil
 	}
-	return vfsservice.NewLocalFS(home + "/.contenox")
+	return vfsservice.NewLocalFS(home+"/.contenox", vfsservice.Callbacks{})
 }

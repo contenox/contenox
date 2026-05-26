@@ -23,10 +23,10 @@ func (erroringSink) Enabled() bool { return true }
 
 func seedAndService(t *testing.T, json string) hitlservice.Service {
 	t.Helper()
-	vfs := vfsservice.NewLocalFS(t.TempDir())
-	_, err := vfs.CreateFile(context.Background(), &vfsservice.File{Name: "hitl-policy.json", Data: []byte(json)})
+	vfs := vfsservice.NewLocalFS(t.TempDir(), vfsservice.Callbacks{})
+	_, err := vfs.CreateFile(context.Background(), testTenant, &vfsservice.File{Name: "hitl-policy.json", Data: []byte(json)})
 	require.NoError(t, err)
-	return hitlservice.New(vfs, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
+	return hitlservice.New(vfs, testTenant, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
 }
 
 func TestUnit_Evaluate_CharClassGlobIsNotTreatedAsLiteral(t *testing.T) {
@@ -67,8 +67,8 @@ func TestUnit_Evaluate_MalformedBraceGlobFailsClosed(t *testing.T) {
 
 func TestUnit_RequestApproval_FailsFastWhenEventSinkErrors(t *testing.T) {
 	t.Parallel()
-	vfs := vfsservice.NewLocalFS(t.TempDir())
-	svc := hitlservice.New(vfs, nopKVReader{}, libtracker.NoopTracker{})
+	vfs := vfsservice.NewLocalFS(t.TempDir(), vfsservice.Callbacks{})
+	svc := hitlservice.New(vfs, testTenant, nopKVReader{}, libtracker.NoopTracker{})
 
 	done := make(chan error, 1)
 	go func() {
@@ -88,7 +88,7 @@ func TestUnit_RequestApproval_FailsFastWhenEventSinkErrors(t *testing.T) {
 func TestUnit_Evaluate_BraceGlobConditionMatchesAlternatives(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
 	ctx := context.Background()
 	data := []byte(`{
 		"default_action": "approve",
@@ -97,10 +97,10 @@ func TestUnit_Evaluate_BraceGlobConditionMatchesAlternatives(t *testing.T) {
 			{"tools":"local_fs","tool":"read_file","action":"allow"}
 		]
 	}`)
-	_, err := vfs.CreateFile(ctx, &vfsservice.File{Name: "hitl-policy.json", Data: data})
+	_, err := vfs.CreateFile(ctx, testTenant, &vfsservice.File{Name: "hitl-policy.json", Data: data})
 	require.NoError(t, err)
 
-	svc := hitlservice.New(vfs, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
+	svc := hitlservice.New(vfs, testTenant, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
 
 	for _, secret := range []string{"/home/u/.ssh/id_rsa", "rel/.gnupg/secring", "/home/u/.config/gcloud/creds"} {
 		r, err := svc.Evaluate(ctx, "local_fs", "read_file", map[string]any{"path": secret})
@@ -116,8 +116,8 @@ func TestUnit_Evaluate_BraceGlobConditionMatchesAlternatives(t *testing.T) {
 func TestUnit_Evaluate_BuiltinFallbackDeniesSecretReads(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
-	svc := hitlservice.New(vfs, nopKVReader{}, libtracker.NoopTracker{})
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
+	svc := hitlservice.New(vfs, testTenant, nopKVReader{}, libtracker.NoopTracker{})
 	ctx := context.Background()
 
 	r, err := svc.Evaluate(ctx, "local_fs", "read_file", map[string]any{"path": "/home/u/.ssh/id_rsa"})

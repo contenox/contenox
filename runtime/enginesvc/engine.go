@@ -23,7 +23,9 @@ import (
 	"github.com/contenox/agent/runtime/taskengine"
 )
 
-const LocalTenantID = "00000000-0000-0000-0000-000000000001"
+// LocalTenantID is re-exported from runtimetypes for backwards compatibility.
+// New code should reference runtimetypes.LocalTenantID directly.
+const LocalTenantID = runtimetypes.LocalTenantID
 
 func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, error) {
 	engineCtx, engineCancel := context.WithCancel(ctx)
@@ -70,8 +72,12 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 		return nil, fmt.Errorf("failed to create runtime state: %w", err)
 	}
 
+	tenantID := cfg.TenantID
+	if tenantID == "" {
+		tenantID = runtimetypes.LocalTenantID
+	}
 	config := &runtimestate.Config{
-		TenantID:   LocalTenantID,
+		TenantID:   tenantID,
 		EmbedModel: cfg.DefaultModel,
 		TaskModel:  cfg.DefaultModel,
 		ChatModel:  cfg.DefaultModel,
@@ -95,7 +101,7 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 			CanEmbed:      false,
 		},
 	}
-	if err := runtimestate.EnsureModels(ctx, db, LocalTenantID, specs); err != nil {
+	if err := runtimestate.EnsureModels(ctx, db, tenantID, specs); err != nil {
 		return nil, fmt.Errorf("failed to ensure models: %w", err)
 	}
 
@@ -220,7 +226,11 @@ func buildTools(engineCtx context.Context, cfg Config, db libdbexec.DBManager, t
 			if cfg.FallbackVFS != nil {
 				hitlVFS = newLayered(cfg.VFS, cfg.FallbackVFS)
 			}
-			hitlSvc = hitlservice.NewWithDefaultPolicy(hitlVFS, store, tracker, cfg.HITLDefaultPolicyName)
+			hitlTenant := cfg.TenantID
+			if hitlTenant == "" {
+				hitlTenant = runtimetypes.LocalTenantID
+			}
+			hitlSvc = hitlservice.NewWithDefaultPolicy(hitlVFS, hitlTenant, store, tracker, cfg.HITLDefaultPolicyName)
 		}
 		toolsRepo = localtools.NewHITLWrapper(toolsRepo, cfg.AskApproval, hitlSvc, tracker)
 	}

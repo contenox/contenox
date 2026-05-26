@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testTenant = "00000000-0000-0000-0000-000000000001"
+
 type nopKVReader struct{}
 
 func (nopKVReader) GetKV(_ context.Context, _ string, _ any) error {
@@ -30,8 +32,8 @@ func (f fixedKVReader) GetKV(_ context.Context, _ string, out any) error {
 func TestUnit_Evaluate_FallsBackToDefaultWhenFileMissing(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
-	svc := hitlservice.New(vfs, nopKVReader{}, libtracker.NoopTracker{})
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
+	svc := hitlservice.New(vfs, testTenant, nopKVReader{}, libtracker.NoopTracker{})
 	result, err := svc.Evaluate(context.Background(), "local_fs", "write_file", nil)
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionApprove, result.Action)
@@ -40,13 +42,13 @@ func TestUnit_Evaluate_FallsBackToDefaultWhenFileMissing(t *testing.T) {
 func TestUnit_Evaluate_LoadsFromVFS(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
 	ctx := context.Background()
 	data := []byte(`{"default_action":"deny","rules":[{"tools":"webtools","tool":"call","action":"allow"}]}`)
-	_, err := vfs.CreateFile(ctx, &vfsservice.File{Name: "hitl-policy.json", Data: data})
+	_, err := vfs.CreateFile(ctx, testTenant, &vfsservice.File{Name: "hitl-policy.json", Data: data})
 	require.NoError(t, err)
 
-	svc := hitlservice.New(vfs, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
+	svc := hitlservice.New(vfs, testTenant, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
 	result, err := svc.Evaluate(ctx, "webtools", "call", nil)
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionAllow, result.Action)
@@ -59,7 +61,7 @@ func TestUnit_Evaluate_LoadsFromVFS(t *testing.T) {
 func TestUnit_Evaluate_WhenConditionFromVFS(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
 	ctx := context.Background()
 	data := []byte(`{
 		"default_action": "approve",
@@ -68,10 +70,10 @@ func TestUnit_Evaluate_WhenConditionFromVFS(t *testing.T) {
 			{"tools":"local_fs","tool":"write_file","action":"approve","timeout_s":30,"on_timeout":"deny"}
 		]
 	}`)
-	_, err := vfs.CreateFile(ctx, &vfsservice.File{Name: "hitl-policy.json", Data: data})
+	_, err := vfs.CreateFile(ctx, testTenant, &vfsservice.File{Name: "hitl-policy.json", Data: data})
 	require.NoError(t, err)
 
-	svc := hitlservice.New(vfs, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
+	svc := hitlservice.New(vfs, testTenant, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
 
 	result, err := svc.Evaluate(ctx, "local_fs", "write_file", map[string]any{"path": "./src/main.go"})
 	require.NoError(t, err)
@@ -88,14 +90,14 @@ func TestUnit_Evaluate_WhenConditionFromVFS(t *testing.T) {
 func TestUnit_Evaluate_ResolvesFromKV(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
 	ctx := context.Background()
 
 	data := []byte(`{"default_action":"deny","rules":[]}`)
-	_, err := vfs.CreateFile(ctx, &vfsservice.File{Name: "hitl-policy-strict.json", Data: data})
+	_, err := vfs.CreateFile(ctx, testTenant, &vfsservice.File{Name: "hitl-policy-strict.json", Data: data})
 	require.NoError(t, err)
 
-	svc := hitlservice.New(vfs, fixedKVReader{"hitl-policy-strict.json"}, libtracker.NoopTracker{})
+	svc := hitlservice.New(vfs, testTenant, fixedKVReader{"hitl-policy-strict.json"}, libtracker.NoopTracker{})
 	result, err := svc.Evaluate(ctx, "local_fs", "write_file", nil)
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionDeny, result.Action, "strict policy (deny-by-default) should deny write_file")
@@ -104,8 +106,8 @@ func TestUnit_Evaluate_ResolvesFromKV(t *testing.T) {
 func TestUnit_Evaluate_FallsBackToBuiltinWhenKVEmptyAndFileMissing(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
-	svc := hitlservice.New(vfs, nopKVReader{}, libtracker.NoopTracker{})
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
+	svc := hitlservice.New(vfs, testTenant, nopKVReader{}, libtracker.NoopTracker{})
 	result, err := svc.Evaluate(context.Background(), "local_fs", "write_file", nil)
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionApprove, result.Action, "built-in default requires approval for write_file")
@@ -114,8 +116,8 @@ func TestUnit_Evaluate_FallsBackToBuiltinWhenKVEmptyAndFileMissing(t *testing.T)
 func TestUnit_Evaluate_BuiltinDefaultIsFailClosedForUnaccountedTool(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
-	svc := hitlservice.New(vfs, nopKVReader{}, libtracker.NoopTracker{})
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
+	svc := hitlservice.New(vfs, testTenant, nopKVReader{}, libtracker.NoopTracker{})
 
 	r, err := svc.Evaluate(context.Background(), "some_mcp_server", "arbitrary_tool", nil)
 	require.NoError(t, err)
@@ -133,17 +135,17 @@ func TestUnit_Evaluate_BuiltinDefaultIsFailClosedForUnaccountedTool(t *testing.T
 func TestUnit_Evaluate_DefaultPolicyOverrideSelectsACPPolicyWhenKVUnset(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	vfs := vfsservice.NewLocalFS(dir)
+	vfs := vfsservice.NewLocalFS(dir, vfsservice.Callbacks{})
 	ctx := context.Background()
 
 	acp := []byte(`{"default_action":"approve","rules":[{"tools":"local_fs","tool":"read_file","action":"allow"},{"tools":"local_shell","tool":"local_shell","action":"approve"}]}`)
-	_, err := vfs.CreateFile(ctx, &vfsservice.File{Name: "hitl-policy-acp.json", Data: acp})
+	_, err := vfs.CreateFile(ctx, testTenant, &vfsservice.File{Name: "hitl-policy-acp.json", Data: acp})
 	require.NoError(t, err)
 	other := []byte(`{"default_action":"allow"}`)
-	_, err = vfs.CreateFile(ctx, &vfsservice.File{Name: "hitl-policy.json", Data: other})
+	_, err = vfs.CreateFile(ctx, testTenant, &vfsservice.File{Name: "hitl-policy.json", Data: other})
 	require.NoError(t, err)
 
-	svc := hitlservice.NewWithDefaultPolicy(vfs, nopKVReader{}, libtracker.NoopTracker{}, "hitl-policy-acp.json")
+	svc := hitlservice.NewWithDefaultPolicy(vfs, testTenant, nopKVReader{}, libtracker.NoopTracker{}, "hitl-policy-acp.json")
 	r, err := svc.Evaluate(ctx, "local_shell", "local_shell", nil)
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionApprove, r.Action, "with no KV set, the ACP entrypoint must fall back to hitl-policy-acp.json, not the generic default")
@@ -151,7 +153,7 @@ func TestUnit_Evaluate_DefaultPolicyOverrideSelectsACPPolicyWhenKVUnset(t *testi
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionAllow, r.Action)
 
-	explicit := hitlservice.NewWithDefaultPolicy(vfs, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{}, "hitl-policy-acp.json")
+	explicit := hitlservice.NewWithDefaultPolicy(vfs, testTenant, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{}, "hitl-policy-acp.json")
 	r, err = explicit.Evaluate(ctx, "local_shell", "local_shell", nil)
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionAllow, r.Action, "an explicit hitl-policy-name KV must still override the per-process ACP default")

@@ -62,7 +62,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	o := buildRunOpts(cmd, db, contenoxDir)
 	o.EffectiveDB = dbPath
 	o.EffectiveSkipBackendCycle, _ = cmd.Flags().GetBool("skip-cycle")
-	vfs := vfsservice.NewLocalFS(o.ContenoxDir)
+	vfs := vfsservice.NewLocalFS(o.ContenoxDir, vfsservice.Callbacks{})
 
 	engine, err := BuildEngine(ctx, db, o, vfs)
 	if err != nil {

@@ -12,16 +12,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testTenant = "00000000-0000-0000-0000-000000000001"
+
 type nopKV struct{}
 
 func (nopKV) GetKV(_ context.Context, _ string, _ any) error { return errors.New("not found") }
 
 func seededPolicyService(t *testing.T, name, content string) hitlservice.Service {
 	t.Helper()
-	vfs := vfsservice.NewLocalFS(t.TempDir())
-	_, err := vfs.CreateFile(context.Background(), &vfsservice.File{Name: name, Data: []byte(content)})
+	vfs := vfsservice.NewLocalFS(t.TempDir(), vfsservice.Callbacks{})
+	_, err := vfs.CreateFile(context.Background(), testTenant, &vfsservice.File{Name: name, Data: []byte(content)})
 	require.NoError(t, err)
-	return hitlservice.NewWithDefaultPolicy(vfs, nopKV{}, libtracker.NoopTracker{}, name)
+	return hitlservice.NewWithDefaultPolicy(vfs, testTenant, nopKV{}, libtracker.NoopTracker{}, name)
 }
 
 func assertSeededSecretInvariant(t *testing.T, name, content string) {

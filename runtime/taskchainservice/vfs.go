@@ -12,17 +12,20 @@ import (
 	"github.com/contenox/agent/runtime/vfsservice"
 )
 
-// vfsStore persists task chains as JSON files via vfsservice.Service (same storage as /api/files).
+// vfsStore persists task chains as JSON files via vfsservice.Service.
+// The tenantID is bound at construction and forwarded on every vfs call.
 type vfsStore struct {
-	vfs vfsservice.Service
+	vfs      vfsservice.Service
+	tenantID string
 }
 
-// NewVFS returns a Service backed by the given VFS. vfs must be the same instance used for file APIs.
-func NewVFS(vfs vfsservice.Service) Service {
+// NewVFS returns a Service backed by the given VFS for a specific tenant.
+// vfs must be the same instance used for file APIs.
+func NewVFS(vfs vfsservice.Service, tenantID string) Service {
 	if vfs == nil {
 		return nil
 	}
-	return &vfsStore{vfs: vfs}
+	return &vfsStore{vfs: vfs, tenantID: tenantID}
 }
 
 // NormalizeVFSPath returns a clean relative path or an error if it escapes the root.
@@ -80,7 +83,7 @@ func isJSONName(name string) bool {
 }
 
 func (s *vfsStore) listRootJSON(ctx context.Context) ([]vfsservice.File, error) {
-	files, err := s.vfs.GetFilesByPath(ctx, "")
+	files, err := s.vfs.GetFilesByPath(ctx, s.tenantID, "")
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +97,7 @@ func (s *vfsStore) listRootJSON(ctx context.Context) ([]vfsservice.File, error) 
 }
 
 func (s *vfsStore) loadFileFull(ctx context.Context, fileID string) (*taskengine.TaskChainDefinition, error) {
-	f, err := s.vfs.GetFileByID(ctx, fileID)
+	f, err := s.vfs.GetFileByID(ctx, s.tenantID, fileID)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +166,7 @@ func (s *vfsStore) CreateAtPath(ctx context.Context, path string, chain *taskeng
 	if !isJSONName(name) {
 		return fmt.Errorf("chain file must have .json extension")
 	}
-	existing, gerr := s.vfs.GetFileByID(ctx, rel)
+	existing, gerr := s.vfs.GetFileByID(ctx, s.tenantID, rel)
 	if gerr == nil && existing != nil && len(existing.Data) > 0 {
 		return fmt.Errorf("task chain file already exists: %s", rel)
 	}
@@ -171,7 +174,7 @@ func (s *vfsStore) CreateAtPath(ctx context.Context, path string, chain *taskeng
 	if err != nil {
 		return fmt.Errorf("marshal chain: %w", err)
 	}
-	_, err = s.vfs.CreateFile(ctx, &vfsservice.File{
+	_, err = s.vfs.CreateFile(ctx, s.tenantID, &vfsservice.File{
 		Name:        name,
 		ParentID:    parentID,
 		Data:        data,
@@ -192,7 +195,7 @@ func (s *vfsStore) UpdateAtPath(ctx context.Context, path string, chain *taskeng
 	if err != nil {
 		return err
 	}
-	prev, err := s.vfs.GetFileByID(ctx, rel)
+	prev, err := s.vfs.GetFileByID(ctx, s.tenantID, rel)
 	if err != nil || prev == nil || len(prev.Data) == 0 {
 		return fmt.Errorf("task chain file not found: %w", libdb.ErrNotFound)
 	}
@@ -200,7 +203,7 @@ func (s *vfsStore) UpdateAtPath(ctx context.Context, path string, chain *taskeng
 	if err != nil {
 		return fmt.Errorf("marshal chain: %w", err)
 	}
-	_, err = s.vfs.UpdateFile(ctx, &vfsservice.File{
+	_, err = s.vfs.UpdateFile(ctx, s.tenantID, &vfsservice.File{
 		ID:          rel,
 		Data:        data,
 		ContentType: "application/json",
@@ -217,7 +220,7 @@ func (s *vfsStore) DeleteByPath(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.vfs.DeleteFile(ctx, rel); err != nil {
+	if err := s.vfs.DeleteFile(ctx, s.tenantID, rel); err != nil {
 		return fmt.Errorf("delete chain file: %w", err)
 	}
 	return nil

@@ -470,7 +470,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 	}
 	defer closeLogs()
 
-	vfs := vfsservice.NewLocalFS(contenoxDir)
+	vfs := vfsservice.NewLocalFS(contenoxDir, vfsservice.Callbacks{})
 	store := runtimetypes.New(db.WithoutTransaction())
 
 	changed := func(name string) bool { return flags.Changed(name) }

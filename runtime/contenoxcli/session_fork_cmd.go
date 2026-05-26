@@ -145,7 +145,7 @@ func summarizeForFork(ctx context.Context, cmd *cobra.Command, db libdb.DBManage
 		ContenoxDir:                 contenoxDir,
 	}
 
-	vfs := vfsservice.NewLocalFS(contenoxDir)
+	vfs := vfsservice.NewLocalFS(contenoxDir, vfsservice.Callbacks{})
 	engineCtx := libtracker.WithNewRequestID(ctx)
 	engine, err := BuildEngine(engineCtx, db, opts, vfs)
 	if err != nil {

@@ -11,12 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testTenant = "00000000-0000-0000-0000-000000000001"
+
 // newFileID inserts a minimal vfs_files record and returns its ID.
 // Required by tree tests to satisfy vfs_filestree.id → vfs_files.id FK.
 func newFileID(t *testing.T, s vfsstore.Store, ctx context.Context) string {
 	t.Helper()
 	id := uuid.NewString()
-	err := s.CreateFile(ctx, &vfsstore.File{
+	err := s.CreateFile(ctx, testTenant, &vfsstore.File{
 		ID:   id,
 		Type: "text/plain",
 		Meta: []byte(`{}`),
@@ -34,7 +36,7 @@ func TestUnit_CreateAndGetFile(t *testing.T) {
 		Meta: []byte(`{}`),
 		Data: []byte("hello"),
 	}
-	require.NoError(t, s.CreateBlob(ctx, blob))
+	require.NoError(t, s.CreateBlob(ctx, testTenant, blob))
 
 	file := &vfsstore.File{
 		ID:      uuid.NewString(),
@@ -43,12 +45,12 @@ func TestUnit_CreateAndGetFile(t *testing.T) {
 		BlobsID: blob.ID,
 	}
 
-	err := s.CreateFile(ctx, file)
+	err := s.CreateFile(ctx, testTenant, file)
 	require.NoError(t, err)
 	require.NotZero(t, file.CreatedAt)
 	require.NotZero(t, file.UpdatedAt)
 
-	retrieved, err := s.GetFileByID(ctx, file.ID)
+	retrieved, err := s.GetFileByID(ctx, testTenant, file.ID)
 	require.NoError(t, err)
 	require.Equal(t, file.ID, retrieved.ID)
 	require.Equal(t, file.Type, retrieved.Type)
@@ -62,7 +64,7 @@ func TestUnit_UpdateFile(t *testing.T) {
 	ctx, s := SetupStore(t)
 
 	blob := &vfsstore.Blob{ID: uuid.NewString(), Meta: []byte(`{}`), Data: []byte("v1")}
-	require.NoError(t, s.CreateBlob(ctx, blob))
+	require.NoError(t, s.CreateBlob(ctx, testTenant, blob))
 
 	file := &vfsstore.File{
 		ID:      uuid.NewString(),
@@ -70,17 +72,17 @@ func TestUnit_UpdateFile(t *testing.T) {
 		Meta:    []byte(`{"description": "Old description"}`),
 		BlobsID: blob.ID,
 	}
-	require.NoError(t, s.CreateFile(ctx, file))
+	require.NoError(t, s.CreateFile(ctx, testTenant, file))
 
 	blob2 := &vfsstore.Blob{ID: uuid.NewString(), Meta: []byte(`{}`), Data: []byte("v2")}
-	require.NoError(t, s.CreateBlob(ctx, blob2))
+	require.NoError(t, s.CreateBlob(ctx, testTenant, blob2))
 
 	file.Type = "application/json"
 	file.Meta = []byte(`{"description": "New description"}`)
 	file.BlobsID = blob2.ID
-	require.NoError(t, s.UpdateFile(ctx, file))
+	require.NoError(t, s.UpdateFile(ctx, testTenant, file))
 
-	updated, err := s.GetFileByID(ctx, file.ID)
+	updated, err := s.GetFileByID(ctx, testTenant, file.ID)
 	require.NoError(t, err)
 	require.Equal(t, "application/json", updated.Type)
 	require.Equal(t, file.Meta, updated.Meta)
@@ -92,7 +94,7 @@ func TestUnit_DeleteFile(t *testing.T) {
 	ctx, s := SetupStore(t)
 
 	blob := &vfsstore.Blob{ID: uuid.NewString(), Meta: []byte(`{}`), Data: []byte("data")}
-	require.NoError(t, s.CreateBlob(ctx, blob))
+	require.NoError(t, s.CreateBlob(ctx, testTenant, blob))
 
 	file := &vfsstore.File{
 		ID:      uuid.NewString(),
@@ -100,37 +102,37 @@ func TestUnit_DeleteFile(t *testing.T) {
 		Meta:    []byte(`{"description": "To be deleted"}`),
 		BlobsID: blob.ID,
 	}
-	require.NoError(t, s.CreateFile(ctx, file))
-	require.NoError(t, s.DeleteFile(ctx, file.ID))
+	require.NoError(t, s.CreateFile(ctx, testTenant, file))
+	require.NoError(t, s.DeleteFile(ctx, testTenant, file.ID))
 
-	_, err := s.GetFileByID(ctx, file.ID)
+	_, err := s.GetFileByID(ctx, testTenant, file.ID)
 	require.ErrorIs(t, err, libdb.ErrNotFound)
 }
 
 func TestUnit_GetFileByIDNotFound(t *testing.T) {
 	ctx, s := SetupStore(t)
 
-	_, err := s.GetFileByID(ctx, uuid.NewString())
+	_, err := s.GetFileByID(ctx, testTenant, uuid.NewString())
 	require.ErrorIs(t, err, libdb.ErrNotFound)
 }
 
 func TestUnit_ListAll(t *testing.T) {
 	ctx, s := SetupStore(t)
 
-	files, err := s.ListFiles(ctx)
+	files, err := s.ListFiles(ctx, testTenant)
 	require.NoError(t, err)
 	require.Len(t, files, 0)
 
 	for i := 0; i < 3; i++ {
 		// Files may have no blob (blobs_id is nullable) — omit BlobsID to avoid FK violation.
-		require.NoError(t, s.CreateFile(ctx, &vfsstore.File{
+		require.NoError(t, s.CreateFile(ctx, testTenant, &vfsstore.File{
 			ID:   uuid.NewString(),
 			Type: "text/plain",
 			Meta: []byte(`{}`),
 		}))
 	}
 
-	files, err = s.ListFiles(ctx)
+	files, err = s.ListFiles(ctx, testTenant)
 	require.NoError(t, err)
 	require.Len(t, files, 3)
 }
@@ -142,13 +144,13 @@ func TestUnit_CreateAndGetFileNameID(t *testing.T) {
 	parentID := newFileID(t, s, ctx)
 	name := "example.txt"
 
-	require.NoError(t, s.CreateFileNameID(ctx, id, parentID, name))
+	require.NoError(t, s.CreateFileNameID(ctx, testTenant, id, parentID, name))
 
-	gotName, err := s.GetFileNameByID(ctx, id)
+	gotName, err := s.GetFileNameByID(ctx, testTenant, id)
 	require.NoError(t, err)
 	require.Equal(t, name, gotName)
 
-	gotParentID, err := s.GetFileParentID(ctx, id)
+	gotParentID, err := s.GetFileParentID(ctx, testTenant, id)
 	require.NoError(t, err)
 	require.Equal(t, parentID, gotParentID)
 }
@@ -158,11 +160,11 @@ func TestUnit_UpdateFileNameByID(t *testing.T) {
 
 	id := newFileID(t, s, ctx)
 	parentID := newFileID(t, s, ctx)
-	require.NoError(t, s.CreateFileNameID(ctx, id, parentID, "initial.txt"))
+	require.NoError(t, s.CreateFileNameID(ctx, testTenant, id, parentID, "initial.txt"))
 
-	require.NoError(t, s.UpdateFileNameByID(ctx, id, "updated.txt"))
+	require.NoError(t, s.UpdateFileNameByID(ctx, testTenant, id, "updated.txt"))
 
-	gotName, err := s.GetFileNameByID(ctx, id)
+	gotName, err := s.GetFileNameByID(ctx, testTenant, id)
 	require.NoError(t, err)
 	require.Equal(t, "updated.txt", gotName)
 }
@@ -172,10 +174,10 @@ func TestUnit_DeleteFileNameID(t *testing.T) {
 
 	id := newFileID(t, s, ctx)
 	parentID := newFileID(t, s, ctx)
-	require.NoError(t, s.CreateFileNameID(ctx, id, parentID, "todelete.txt"))
-	require.NoError(t, s.DeleteFileNameID(ctx, id))
+	require.NoError(t, s.CreateFileNameID(ctx, testTenant, id, parentID, "todelete.txt"))
+	require.NoError(t, s.DeleteFileNameID(ctx, testTenant, id))
 
-	_, err := s.GetFileNameByID(ctx, id)
+	_, err := s.GetFileNameByID(ctx, testTenant, id)
 	require.ErrorIs(t, err, libdb.ErrNotFound)
 }
 
@@ -186,10 +188,10 @@ func TestUnit_ListFileIDsByParentID(t *testing.T) {
 	id1 := newFileID(t, s, ctx)
 	id2 := newFileID(t, s, ctx)
 
-	require.NoError(t, s.CreateFileNameID(ctx, id1, parentID, "a.txt"))
-	require.NoError(t, s.CreateFileNameID(ctx, id2, parentID, "b.txt"))
+	require.NoError(t, s.CreateFileNameID(ctx, testTenant, id1, parentID, "a.txt"))
+	require.NoError(t, s.CreateFileNameID(ctx, testTenant, id2, parentID, "b.txt"))
 
-	ids, err := s.ListFileIDsByParentID(ctx, parentID)
+	ids, err := s.ListFileIDsByParentID(ctx, testTenant, parentID)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{id1, id2}, ids)
 }
@@ -200,10 +202,10 @@ func TestUnit_ListFileIDsByEmptyParentID(t *testing.T) {
 	id1 := newFileID(t, s, ctx)
 	id2 := newFileID(t, s, ctx)
 
-	require.NoError(t, s.CreateFileNameID(ctx, id1, "", "a.txt"))
-	require.NoError(t, s.CreateFileNameID(ctx, id2, "", "b.txt"))
+	require.NoError(t, s.CreateFileNameID(ctx, testTenant, id1, "", "a.txt"))
+	require.NoError(t, s.CreateFileNameID(ctx, testTenant, id2, "", "b.txt"))
 
-	ids, err := s.ListFileIDsByParentID(ctx, "")
+	ids, err := s.ListFileIDsByParentID(ctx, testTenant, "")
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{id1, id2}, ids)
 }
@@ -213,9 +215,9 @@ func TestUnit_ListFileIDsByName(t *testing.T) {
 
 	parentID := newFileID(t, s, ctx)
 	id := newFileID(t, s, ctx)
-	require.NoError(t, s.CreateFileNameID(ctx, id, parentID, "unique.txt"))
+	require.NoError(t, s.CreateFileNameID(ctx, testTenant, id, parentID, "unique.txt"))
 
-	ids, err := s.ListFileIDsByName(ctx, parentID, "unique.txt")
+	ids, err := s.ListFileIDsByName(ctx, testTenant, parentID, "unique.txt")
 	require.NoError(t, err)
 	require.Contains(t, ids, id)
 }
@@ -229,11 +231,11 @@ func TestUnit_Blob_CreatesAndFetchesByID(t *testing.T) {
 		Data: []byte("binary data"),
 	}
 
-	require.NoError(t, s.CreateBlob(ctx, blob))
+	require.NoError(t, s.CreateBlob(ctx, testTenant, blob))
 	require.NotZero(t, blob.CreatedAt)
 	require.NotZero(t, blob.UpdatedAt)
 
-	retrieved, err := s.GetBlobByID(ctx, blob.ID)
+	retrieved, err := s.GetBlobByID(ctx, testTenant, blob.ID)
 	require.NoError(t, err)
 	require.Equal(t, blob.ID, retrieved.ID)
 	require.Equal(t, blob.Meta, retrieved.Meta)
@@ -244,7 +246,7 @@ func TestUnit_Blob_CreatesAndFetchesByID(t *testing.T) {
 func TestUnit_Blob_GetNonexistentReturnsNotFound(t *testing.T) {
 	ctx, s := SetupStore(t)
 
-	_, err := s.GetBlobByID(ctx, uuid.NewString())
+	_, err := s.GetBlobByID(ctx, testTenant, uuid.NewString())
 	require.ErrorIs(t, err, libdb.ErrNotFound)
 }
 
@@ -256,10 +258,10 @@ func TestUnit_Blob_DeletesSuccessfully(t *testing.T) {
 		Meta: []byte(`{}`),
 		Data: []byte("data"),
 	}
-	require.NoError(t, s.CreateBlob(ctx, blob))
-	require.NoError(t, s.DeleteBlob(ctx, blob.ID))
+	require.NoError(t, s.CreateBlob(ctx, testTenant, blob))
+	require.NoError(t, s.DeleteBlob(ctx, testTenant, blob.ID))
 
-	_, err := s.GetBlobByID(ctx, blob.ID)
+	_, err := s.GetBlobByID(ctx, testTenant, blob.ID)
 	require.ErrorIs(t, err, libdb.ErrNotFound)
 }
 
@@ -271,11 +273,11 @@ func TestUnit_UpdateBlob(t *testing.T) {
 		Meta: []byte(`{"v":1}`),
 		Data: []byte("original"),
 	}
-	require.NoError(t, s.CreateBlob(ctx, blob))
+	require.NoError(t, s.CreateBlob(ctx, testTenant, blob))
 
-	require.NoError(t, s.UpdateBlob(ctx, blob.ID, []byte("updated"), []byte(`{"v": 2}`)))
+	require.NoError(t, s.UpdateBlob(ctx, testTenant, blob.ID, []byte("updated"), []byte(`{"v": 2}`)))
 
-	got, err := s.GetBlobByID(ctx, blob.ID)
+	got, err := s.GetBlobByID(ctx, testTenant, blob.ID)
 	require.NoError(t, err)
 	require.Equal(t, []byte("updated"), got.Data)
 	require.Equal(t, []byte(`{"v": 2}`), got.Meta)
