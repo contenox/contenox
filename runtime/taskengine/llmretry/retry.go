@@ -3,7 +3,7 @@
 // dependencies and is safe to use from any task handler.
 //
 // The classifier inspects formatted error strings because contenox's provider
-// clients (internal/modelrepo/{openai,vllm,gemini,...}) return errors as
+// clients (modelrepo/{openai,vllm,gemini,...}) return errors as
 // fmt.Errorf-wrapped strings of the shape:
 //
 //	"OpenAI API returned non-200 status: 429, body: …"

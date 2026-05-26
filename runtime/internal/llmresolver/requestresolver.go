@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/contenox/agent/libtracker"
-	libmodelprovider "github.com/contenox/agent/runtime/internal/modelrepo"
+	libmodelprovider "github.com/contenox/agent/runtime/modelrepo"
 )
 
 func filterCandidates(

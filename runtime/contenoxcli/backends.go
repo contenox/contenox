@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/contenox/agent/runtime/internal/runtimestate"
+	"github.com/contenox/agent/runtime/runtimestate"
 	"github.com/contenox/agent/runtime/runtimetypes"
 )
 

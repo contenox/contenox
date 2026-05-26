@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/contenox/agent/runtime/errdefs"
-	"github.com/contenox/agent/runtime/internal/llmrepo"
+	"github.com/contenox/agent/runtime/llmrepo"
 	"github.com/google/uuid"
 )
 

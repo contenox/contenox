@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/internal/llmrepo"
-	libmodelprovider "github.com/contenox/agent/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/llmrepo"
+	libmodelprovider "github.com/contenox/agent/runtime/modelrepo"
 	"github.com/contenox/agent/runtime/taskengine/llmretry"
 )
 

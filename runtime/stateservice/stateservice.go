@@ -7,7 +7,7 @@ import (
 
 	"github.com/contenox/agent/libdbexec"
 	"github.com/contenox/agent/runtime/internal/clikv"
-	"github.com/contenox/agent/runtime/internal/runtimestate"
+	"github.com/contenox/agent/runtime/runtimestate"
 	"github.com/contenox/agent/runtime/internal/setupcheck"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/statetype"

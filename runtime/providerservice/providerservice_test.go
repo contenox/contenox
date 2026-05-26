@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/internal/runtimestate"
+	"github.com/contenox/agent/runtime/runtimestate"
 	"github.com/contenox/agent/runtime/runtimetypes"
 )
 

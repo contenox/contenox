@@ -8,8 +8,8 @@ import (
 
 	"github.com/contenox/agent/libbus"
 	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/internal/llmrepo"
-	libmodelprovider "github.com/contenox/agent/runtime/internal/modelrepo"
+	"github.com/contenox/agent/runtime/llmrepo"
+	libmodelprovider "github.com/contenox/agent/runtime/modelrepo"
 	"github.com/contenox/agent/runtime/internal/tools"
 	"github.com/contenox/agent/runtime/taskengine"
 	"github.com/stretchr/testify/assert"

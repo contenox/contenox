@@ -38,7 +38,7 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 | File | What it shows |
 |------|---------------|
 | `runtime/taskengine/tasktype.go` | Task types, handlers, branch operators |
-| `runtime/internal/runtimestate/state.go` | Backend state sync |
+| `runtime/runtimestate/state.go` | Backend state sync |
 | `runtime/contenoxcli/cli.go` | CLI dispatch |
 | `runtime/contenoxcli/engine.go` | CLI-local engine bootstrap |
 
@@ -108,7 +108,7 @@ Optional: **`make dev-install`** (or **`make dev-link`** after a build) symlinks
 
 ### Building with local LLM inference (CGo)
 
-The `runtime/internal/modelrepo/local` package embeds llama.cpp inference directly into the binary via `github.com/ollama/ollama/llama` (CGo). This is **required** to build the full binary — `CGO_ENABLED=0` no longer works.
+The `runtime/modelrepo/local` package embeds llama.cpp inference directly into the binary via `github.com/ollama/ollama/llama` (CGo). This is **required** to build the full binary — `CGO_ENABLED=0` no longer works.
 
 **System packages (Ubuntu/Debian):**
 
