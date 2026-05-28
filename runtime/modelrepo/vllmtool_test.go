@@ -16,19 +16,18 @@ import (
 func TestSystem_VLLM_Tools(t *testing.T) {
 	ctx := context.Background()
 
-	//model := "Qwen/Qwen2-0.5B-Instruct"
-	// model := "ibm-granite/granite-3.1-1b-a400m-instruct"
-	// model := "microsoft/Phi-4-mini-instruct"
-	// model := "HuggingFaceTB/SmolLM2-360M-Instruct"
-	// model := "TinyLlama/TinyLlama_v1.1"
-	model := "microsoft/DialoGPT-small"
+	// Qwen2.5-Instruct ships Hermes-style tool-use in its chat template, so vLLM
+	// serves tool calls with --tool-call-parser hermes. The 0.5B variant is the
+	// smallest ungated model that actually supports tool calling on CPU.
+	// (DialoGPT/GPT-2 have no chat template and cannot do tools at all.)
+	model := "Qwen/Qwen2.5-0.5B-Instruct"
 	tag := "latest"
 
 	t.Logf("Setting up vLLM container with model: %s", model)
 
 	// Set up vLLM instance
 	// deepseek_v3,granite-20b-fc,granite,hermes,internlm,jamba,llama4_pythonic,llama4_json,llama3_json,mistral,phi4_mini_json,pythonic
-	apiBase, _, cleanup, err := modelrepo.SetupVLLMLocalInstance(ctx, model, tag, "llama3_json")
+	apiBase, _, cleanup, err := modelrepo.SetupVLLMLocalInstance(ctx, model, tag, "hermes")
 	require.NoError(t, err, "failed to setup vLLM instance")
 	defer cleanup()
 
@@ -89,10 +88,14 @@ func TestSystem_VLLM_Tools(t *testing.T) {
 
 		resp, err := chatClient.Chat(ctx, messages, modelrepo.WithTools(tools...))
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp.Message.Content)
 		assert.Equal(t, "assistant", resp.Message.Role)
+		// A tool-calling response carries tool_calls with (usually) empty content;
+		// a plain answer carries content. The integration flow is healthy as long
+		// as one of them is present — a small model may not always choose to call.
+		assert.True(t, resp.Message.Content != "" || len(resp.ToolCalls) > 0,
+			"response must contain either content or tool calls")
 
-		t.Logf("Response: %s", resp.Message.Content)
+		t.Logf("Response content: %q", resp.Message.Content)
 		if len(resp.ToolCalls) > 0 {
 			t.Logf("Tool calls: %d", len(resp.ToolCalls))
 			for i, toolCall := range resp.ToolCalls {
@@ -161,9 +164,14 @@ func TestSystem_VLLM_Tools(t *testing.T) {
 
 		resp, err := chatClient.Chat(ctx, messages, modelrepo.WithTool(tool))
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp.Message.Content)
 		assert.Equal(t, "assistant", resp.Message.Role)
+		assert.True(t, resp.Message.Content != "" || len(resp.ToolCalls) > 0,
+			"response must contain either content or tool calls")
 
-		t.Logf("Response with single tool: %s", resp.Message.Content)
+		t.Logf("Response content: %q, tool calls: %d", resp.Message.Content, len(resp.ToolCalls))
+		for _, tc := range resp.ToolCalls {
+			assert.Equal(t, "function", tc.Type)
+			t.Logf("Tool call: %s with args: %s", tc.Function.Name, tc.Function.Arguments)
+		}
 	})
 }

@@ -3,11 +3,12 @@ package contenoxcli
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/hitlservice"
-	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,10 +21,9 @@ func (nopKV) GetKV(_ context.Context, _ string, _ any) error { return errors.New
 
 func seededPolicyService(t *testing.T, name, content string) hitlservice.Service {
 	t.Helper()
-	vfs := vfsservice.NewLocalFS(t.TempDir(), vfsservice.Callbacks{})
-	_, err := vfs.CreateFile(context.Background(), testTenant, &vfsservice.File{Name: name, Data: []byte(content)})
-	require.NoError(t, err)
-	return hitlservice.NewWithDefaultPolicy(vfs, testTenant, nopKV{}, libtracker.NoopTracker{}, name)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644))
+	return hitlservice.NewWithDefaultPolicy(hitlservice.NewFSPolicySource(dir), testTenant, nopKV{}, libtracker.NoopTracker{}, name)
 }
 
 func assertSeededSecretInvariant(t *testing.T, name, content string) {

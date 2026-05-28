@@ -19,7 +19,6 @@ import (
 	"github.com/contenox/agent/runtime/internal/clikv"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/version"
-	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -470,7 +469,6 @@ func runChat(cmd *cobra.Command, args []string) error {
 	}
 	defer closeLogs()
 
-	vfs := vfsservice.NewLocalFS(contenoxDir, vfsservice.Callbacks{})
 	store := runtimetypes.New(db.WithoutTransaction())
 
 	changed := func(name string) bool { return flags.Changed(name) }
@@ -604,7 +602,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 		InputFlagPassed:              inputPassed,
 		ContenoxDir:                  contenoxDir,
 	}
-	return execChat(ctx, db, opts, vfs, cmd.OutOrStdout(), cmd.ErrOrStderr())
+	return execChat(ctx, db, opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 // Sentinel errors so RunE can return and main can os.Exit(1).

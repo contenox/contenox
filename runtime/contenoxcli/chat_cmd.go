@@ -12,7 +12,6 @@ import (
 	libdb "github.com/contenox/agent/libdbexec"
 	"github.com/contenox/agent/runtime/agentservice"
 	"github.com/contenox/agent/runtime/taskengine"
-	"github.com/contenox/agent/runtime/vfsservice"
 )
 
 // chatOpts carries all effective config and flags needed by the run pipeline.
@@ -43,8 +42,8 @@ type chatOpts struct {
 
 // execChat runs the full chat pipeline and returns any error encountered.
 // db is already opened by the caller (runChat in cli.go) so we share it here.
-func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, vfs vfsservice.Service, out, errW io.Writer) error {
-	engine, err := BuildEngine(ctx, db, opts, vfs)
+func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW io.Writer) error {
+	engine, err := BuildEngine(ctx, db, opts)
 	if err != nil {
 		return fmt.Errorf("failed to build engine: %w", err)
 	}

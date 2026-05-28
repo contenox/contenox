@@ -13,7 +13,6 @@ import (
 	"github.com/contenox/agent/runtime/chatservice"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/taskengine"
-	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -145,9 +144,8 @@ func summarizeForFork(ctx context.Context, cmd *cobra.Command, db libdb.DBManage
 		ContenoxDir:                 contenoxDir,
 	}
 
-	vfs := vfsservice.NewLocalFS(contenoxDir, vfsservice.Callbacks{})
 	engineCtx := libtracker.WithNewRequestID(ctx)
-	engine, err := BuildEngine(engineCtx, db, opts, vfs)
+	engine, err := BuildEngine(engineCtx, db, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build engine: %w", err)
 	}

@@ -7,7 +7,6 @@ import (
 	"io"
 
 	"github.com/contenox/agent/runtime/internal/setupcheck"
-	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -62,9 +61,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	o := buildRunOpts(cmd, db, contenoxDir)
 	o.EffectiveDB = dbPath
 	o.EffectiveSkipBackendCycle, _ = cmd.Flags().GetBool("skip-cycle")
-	vfs := vfsservice.NewLocalFS(o.ContenoxDir, vfsservice.Callbacks{})
 
-	engine, err := BuildEngine(ctx, db, o, vfs)
+	engine, err := BuildEngine(ctx, db, o)
 	if err != nil {
 		return fmt.Errorf("failed to build engine: %w", err)
 	}

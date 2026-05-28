@@ -12,12 +12,12 @@ import (
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/execservice"
 	"github.com/contenox/agent/runtime/hitlservice"
-	"github.com/contenox/agent/runtime/llmrepo"
-	"github.com/contenox/agent/runtime/ollamatokenizer"
-	"github.com/contenox/agent/runtime/runtimestate"
 	"github.com/contenox/agent/runtime/internal/tools"
+	"github.com/contenox/agent/runtime/llmrepo"
 	"github.com/contenox/agent/runtime/localtools"
 	"github.com/contenox/agent/runtime/mcpworker"
+	"github.com/contenox/agent/runtime/ollamatokenizer"
+	"github.com/contenox/agent/runtime/runtimestate"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/stateservice"
 	"github.com/contenox/agent/runtime/taskengine"
@@ -222,15 +222,11 @@ func buildTools(engineCtx context.Context, cfg Config, db libdbexec.DBManager, t
 		}
 		hitlSvc := cfg.HITLService
 		if hitlSvc == nil {
-			hitlVFS := cfg.VFS
-			if cfg.FallbackVFS != nil {
-				hitlVFS = newLayered(cfg.VFS, cfg.FallbackVFS)
-			}
 			hitlTenant := cfg.TenantID
 			if hitlTenant == "" {
 				hitlTenant = runtimetypes.LocalTenantID
 			}
-			hitlSvc = hitlservice.NewWithDefaultPolicy(hitlVFS, hitlTenant, store, tracker, cfg.HITLDefaultPolicyName)
+			hitlSvc = hitlservice.NewWithDefaultPolicy(cfg.HITLPolicySource, hitlTenant, store, tracker, cfg.HITLDefaultPolicyName)
 		}
 		toolsRepo = localtools.NewHITLWrapper(toolsRepo, cfg.AskApproval, hitlSvc, tracker)
 	}

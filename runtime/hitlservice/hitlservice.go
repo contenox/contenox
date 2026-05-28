@@ -12,7 +12,6 @@ import (
 
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/taskengine"
-	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/google/uuid"
 )
 
@@ -35,7 +34,7 @@ type Service interface {
 const defaultPolicyName = "hitl-policy-default.json"
 
 type service struct {
-	vfs            vfsservice.Service
+	src            PolicySource
 	tenantID       string
 	store          KVReader
 	tracker        libtracker.ActivityTracker
@@ -45,13 +44,13 @@ type service struct {
 	pending map[string]chan bool
 }
 
-// New constructs a hitlservice bound to a tenant. The tenantID is forwarded
-// to every vfs lookup the service performs.
-func New(vfs vfsservice.Service, tenantID string, store KVReader, tracker libtracker.ActivityTracker) Service {
-	return NewWithDefaultPolicy(vfs, tenantID, store, tracker, defaultPolicyName)
+// New constructs a hitlservice bound to a tenant. The tenantID is forwarded to
+// every policy lookup the service performs.
+func New(src PolicySource, tenantID string, store KVReader, tracker libtracker.ActivityTracker) Service {
+	return NewWithDefaultPolicy(src, tenantID, store, tracker, defaultPolicyName)
 }
 
-func NewWithDefaultPolicy(vfs vfsservice.Service, tenantID string, store KVReader, tracker libtracker.ActivityTracker, fallbackPolicy string) Service {
+func NewWithDefaultPolicy(src PolicySource, tenantID string, store KVReader, tracker libtracker.ActivityTracker, fallbackPolicy string) Service {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
 	}
@@ -59,7 +58,7 @@ func NewWithDefaultPolicy(vfs vfsservice.Service, tenantID string, store KVReade
 		fallbackPolicy = defaultPolicyName
 	}
 	return &service{
-		vfs:            vfs,
+		src:            src,
 		tenantID:       tenantID,
 		store:          store,
 		tracker:        tracker,
@@ -90,7 +89,7 @@ func (s *service) Evaluate(ctx context.Context, toolsName, toolName string, args
 	if policyPath == "" {
 		policyPath = defaultPolicyName
 	}
-	p, err := loadPolicy(ctx, s.vfs, s.tenantID, policyPath)
+	p, err := loadPolicy(ctx, s.src, s.tenantID, policyPath)
 	if err != nil {
 		reportErr(fmt.Errorf("hitl: falling back to built-in default policy: %w", err))
 		p = defaultPolicy()

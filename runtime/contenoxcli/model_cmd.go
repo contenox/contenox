@@ -13,8 +13,8 @@ import (
 	libbus "github.com/contenox/agent/libbus"
 	libdb "github.com/contenox/agent/libdbexec"
 	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/runtimestate"
 	"github.com/contenox/agent/runtime/modelservice"
+	"github.com/contenox/agent/runtime/runtimestate"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 )

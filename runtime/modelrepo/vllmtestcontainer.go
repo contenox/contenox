@@ -14,10 +14,13 @@ import (
 )
 
 const (
-	vllmPort           = "8000/tcp"
-	vllmHealthPath     = "/health"
-	vllmModelsPath     = "/v1/models"
-	defaultMaxModelLen = "512"
+	vllmPort       = "8000/tcp"
+	vllmHealthPath = "/health"
+	vllmModelsPath = "/v1/models"
+	// Must exceed the largest output budget a client requests (the prompt client
+	// asks for max_tokens = context length, up to 2048) plus the prompt itself —
+	// otherwise vLLM 400s with "maximum context length" when output+input > limit.
+	defaultMaxModelLen = "4096"
 	defaultModel       = "HuggingFaceTB/SmolLM2-360M-Instruct"
 	defaultTag         = "latest"
 	startupTimeout     = 8 * time.Minute
@@ -38,8 +41,17 @@ func SetupVLLMLocalInstance(ctx context.Context, model string, tag string, toolP
 	// Define a no-op cleanup function to start. This ensures we can always
 	// return a valid, non-nil function.
 	cleanup := func() {}
+	// Memory-bound the CPU backend so the container can start on a normally-loaded
+	// machine. vLLM-CPU reserves gpu-memory-utilization * total_RAM at startup and
+	// aborts if that exceeds what's free (default 0.92 ≈ all RAM); 0.3 keeps the
+	// target small. max-model-len must be a flag (the MAX_MODEL_LEN env is ignored
+	// by vLLM), and VLLM_CPU_KVCACHE_SPACE caps the KV cache (default 4 GiB).
 	cmd := []string{
 		"--model", model,
+		"--max-model-len", defaultMaxModelLen,
+		"--max-num-seqs", "1",
+		"--gpu-memory-utilization", "0.3",
+		"--enforce-eager",
 	}
 	if toolParser != "" && toolParser != "none" {
 		// deepseek_v3,granite-20b-fc,granite,hermes,internlm,jamba,llama4_pythonic,llama4_json,llama3_json,mistral,phi4_mini_json,pythonic
@@ -49,8 +61,8 @@ func SetupVLLMLocalInstance(ctx context.Context, model string, tag string, toolP
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image: "openeuler/vllm-cpu:" + tag,
 			Env: map[string]string{
-				"MODEL":         model,
-				"MAX_MODEL_LEN": defaultMaxModelLen,
+				"MODEL":                  model,
+				"VLLM_CPU_KVCACHE_SPACE": "1",
 			},
 			Cmd:          cmd,
 			Privileged:   true,

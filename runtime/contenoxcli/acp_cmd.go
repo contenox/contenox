@@ -18,7 +18,6 @@ import (
 	"github.com/contenox/agent/runtime/localtools"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/taskengine"
-	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -197,7 +196,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	if enableHITL {
 		cfg.EnableHITL = true
 		cfg.AskApproval = askApproval
-		cfg.VFS = acpGlobalVFS()
+		cfg.HITLPolicySource = acpPolicySource()
 		cfg.HITLDefaultPolicyName = profile.hitlPolicy
 	}
 
@@ -232,10 +231,10 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	return nil
 }
 
-func acpGlobalVFS() vfsservice.Service {
+func acpPolicySource() hitlservice.PolicySource {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil
+		return hitlservice.NewFSPolicySource()
 	}
-	return vfsservice.NewLocalFS(filepath.Join(home, ".contenox"), vfsservice.Callbacks{})
+	return hitlservice.NewFSPolicySource(filepath.Join(home, ".contenox"))
 }

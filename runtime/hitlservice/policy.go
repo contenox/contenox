@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"path"
 	"strings"
-
-	"github.com/contenox/agent/runtime/vfsservice"
 )
 
 // Action is the outcome of policy evaluation for a tool call.
@@ -325,13 +323,13 @@ func matchSuffix(pattern, s string) bool {
 	return matchDoubleGlob(pattern, s)
 }
 
-func loadPolicy(ctx context.Context, vfs vfsservice.Service, tenantID, policyPath string) (*Policy, error) {
-	f, err := vfs.GetFileByID(ctx, tenantID, policyPath)
+func loadPolicy(ctx context.Context, src PolicySource, tenantID, policyPath string) (*Policy, error) {
+	data, err := src.ReadPolicy(ctx, tenantID, policyPath)
 	if err != nil {
 		return nil, fmt.Errorf("read hitl policy %q: %w", policyPath, err)
 	}
 	var p Policy
-	if err := json.Unmarshal(f.Data, &p); err != nil {
+	if err := json.Unmarshal(data, &p); err != nil {
 		return nil, fmt.Errorf("parse hitl policy %q: %w", policyPath, err)
 	}
 	if err := validatePolicy(&p); err != nil {

@@ -4,18 +4,19 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/contenox/agent/libdbexec"
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/enginesvc"
+	"github.com/contenox/agent/runtime/hitlservice"
 	"github.com/contenox/agent/runtime/localtools"
 	"github.com/contenox/agent/runtime/taskengine"
-	"github.com/contenox/agent/runtime/vfsservice"
 )
 
 type Engine = enginesvc.Engine
 
-func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts, vfs vfsservice.Service) (*Engine, error) {
+func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*Engine, error) {
 	var tracker libtracker.ActivityTracker = libtracker.NoopTracker{}
 	if opts.EffectiveTracing {
 		tracker = libtracker.NewLogActivityTracker(slog.Default())
@@ -53,15 +54,16 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts, vfs
 		Tracing:            opts.EffectiveTracing,
 		SkipBackendCycle:   opts.EffectiveSkipBackendCycle,
 		WorkspaceID:        ResolveWorkspaceID(opts.ContenoxDir),
-		VFS:                vfs,
-		FallbackVFS:        globalContenoxVFS(),
+		HITLPolicySource:   hitlPolicySource(opts.ContenoxDir),
 	})
 }
 
-func globalContenoxVFS() vfsservice.Service {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
+// hitlPolicySource builds the CLI's HITL policy lookup: the workspace .contenox
+// dir first, then the user's ~/.contenox as fallback.
+func hitlPolicySource(primaryDir string) hitlservice.PolicySource {
+	dirs := []string{primaryDir}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".contenox"))
 	}
-	return vfsservice.NewLocalFS(home+"/.contenox", vfsservice.Callbacks{})
+	return hitlservice.NewFSPolicySource(dirs...)
 }

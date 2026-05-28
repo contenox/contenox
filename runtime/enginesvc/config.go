@@ -10,7 +10,6 @@ import (
 	"github.com/contenox/agent/runtime/localtools"
 	"github.com/contenox/agent/runtime/mcpworker"
 	"github.com/contenox/agent/runtime/taskengine"
-	"github.com/contenox/agent/runtime/vfsservice"
 )
 
 type Config struct {
@@ -43,9 +42,11 @@ type Config struct {
 	WorkspaceID string
 	// TenantID is the tenant the engine operates under. When empty, defaults
 	// to runtimetypes.LocalTenantID. Proprietary builds pass real tenant IDs.
-	TenantID    string
-	VFS         vfsservice.Service
-	FallbackVFS vfsservice.Service
+	TenantID string
+	// HITLPolicySource supplies HITL policy documents (used only when EnableHITL
+	// is set and HITLService is nil). OSS passes a filesystem-backed source;
+	// tenant-scoped builds inject their own.
+	HITLPolicySource hitlservice.PolicySource
 }
 
 type Engine struct {

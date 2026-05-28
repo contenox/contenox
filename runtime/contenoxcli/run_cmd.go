@@ -19,7 +19,6 @@ import (
 	"github.com/contenox/agent/runtime/agentservice"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/taskengine"
-	"github.com/contenox/agent/runtime/vfsservice"
 	"github.com/spf13/cobra"
 )
 
@@ -132,8 +131,7 @@ Examples:
 		// Build chatOpts from flags and SQLite KV defaults.
 		o := buildRunOpts(cmd, db, contenoxDir)
 		o.EffectiveDB = dbPathAbs
-		vfs := vfsservice.NewLocalFS(o.ContenoxDir, vfsservice.Callbacks{})
-		engine, err := BuildEngine(ctx, db, o, vfs)
+		engine, err := BuildEngine(ctx, db, o)
 		if err != nil {
 			return fmt.Errorf("failed to build engine: %w", err)
 		}
