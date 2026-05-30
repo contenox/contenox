@@ -4,18 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
 	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libkvstore"
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/backendservice"
+	"github.com/contenox/agent/runtime/runtimestate"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
+
+// invalidateBackendModelCache busts the cached model list (prov:<id>) for a
+// backend so the next chat/run refetches from the provider. Best-effort: a
+// failure is surfaced as a warning but does not fail the backend operation.
+// NewSQLiteManager wraps db without taking ownership, so it is not closed here.
+func invalidateBackendModelCache(ctx context.Context, errW io.Writer, db libdb.DBManager, backendID string) {
+	if err := runtimestate.InvalidateModelCache(ctx, libkvstore.NewSQLiteManager(db), backendID); err != nil {
+		fmt.Fprintf(errW, "warning: model cache invalidation failed for backend %s: %v\n", backendID, err)
+	}
+}
 
 var backendCmd = &cobra.Command{
 	Use:   "backend",
@@ -30,8 +43,8 @@ A backend points at an LLM provider. Supported types:
   openai                        api.openai.com (requires --api-key-env).
   gemini                        Google Gemini (requires --api-key-env).
   vllm                          Self-hosted OpenAI-compatible endpoint (requires --url).
-  vertex-google / -anthropic    Google Cloud Vertex AI (requires gcloud auth application-default login
-  / -meta / -mistralai          and GOOGLE_CLOUD_PROJECT).
+  vertex-google                 Google Cloud Vertex AI / Gemini (requires gcloud auth application-default
+                                login and GOOGLE_CLOUD_PROJECT).
 
 Examples:
   # Fully embedded inference — no daemon, no network:
@@ -75,8 +88,7 @@ The --type flag determines which provider protocol is used.
   ollama                        Local daemon (requires 'ollama serve') or hosted Ollama Cloud (use
                                 --url https://ollama.com/api and --api-key-env OLLAMA_API_KEY).
   vllm                          Self-hosted OpenAI-compatible endpoint (requires --url).
-  vertex-google / -anthropic    Google Cloud Vertex AI (requires gcloud auth application-default login).
-  / -meta / -mistralai
+  vertex-google                 Google Cloud Vertex AI / Gemini (requires gcloud auth application-default login).
 
 API keys should be passed via --api-key-env (reads from environment) rather than
 --api-key (inline literal) to avoid leaking secrets into shell history.
@@ -115,8 +127,10 @@ Examples:
 				baseURL = "https://api.mistral.ai/v1"
 			case "gemini":
 				baseURL = "https://generativelanguage.googleapis.com"
-			case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+			case "vertex-google":
 				return fmt.Errorf("--url is required for %s backends\n  Include project and location, e.g.:\n  --url \"https://us-central1-aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/us-central1\"", typ)
+			case "bedrock":
+				return fmt.Errorf("--url is required for bedrock backends (it carries the region)\n  e.g.: --url \"https://bedrock-runtime.us-east-1.amazonaws.com\"\n  Credentials come from the ambient AWS chain (env / profile / IAM role); no --api-key needed unless storing static keys.")
 			}
 		}
 		apiKey := apiKeyLit
@@ -164,6 +178,9 @@ Examples:
 				return fmt.Errorf("backend added but failed to store API key: %w", err)
 			}
 		}
+
+		// Drop any stale cached model list so the next chat/run refetches.
+		invalidateBackendModelCache(ctx, cmd.ErrOrStderr(), db, backend.ID)
 
 		fmt.Fprintf(cmd.OutOrStdout(), "Backend %q added (%s → %s).\n", name, typ, baseURL)
 		return nil
@@ -243,6 +260,10 @@ var backendRemoveCmd = &cobra.Command{
 		if err := svc.Delete(ctx, b.ID); err != nil {
 			return fmt.Errorf("failed to remove backend: %w", err)
 		}
+
+		// Drop the removed backend's cached model list.
+		invalidateBackendModelCache(ctx, cmd.ErrOrStderr(), db, b.ID)
+
 		fmt.Fprintf(cmd.OutOrStdout(), "Backend %q removed.\n", args[0])
 		return nil
 	},
@@ -293,7 +314,7 @@ func globalContenoxDir() (string, error) {
 }
 
 func init() {
-	backendAddCmd.Flags().String("type", "ollama", "Backend type: local (embedded llama.cpp, no external server), ollama, openai, anthropic, mistral, gemini, vllm, vertex-google, vertex-anthropic, vertex-meta, vertex-mistralai")
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: local (embedded llama.cpp, no external server), ollama, openai, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
 	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/anthropic/mistral/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
 	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")
 	backendAddCmd.Flags().String("api-key", "", "API key literal — prefer --api-key-env to avoid leaking into shell history")

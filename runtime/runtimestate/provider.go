@@ -8,11 +8,9 @@ const (
 	OpenaiKey          = ProviderKeyPrefix + "openai"
 	AnthropicKey       = ProviderKeyPrefix + "anthropic"
 	MistralKey         = ProviderKeyPrefix + "mistral"
+	BedrockKey         = ProviderKeyPrefix + "bedrock"
 	GeminiKey          = ProviderKeyPrefix + "gemini"
 	VertexGoogleKey    = ProviderKeyPrefix + "vertex-google"
-	VertexAnthropicKey = ProviderKeyPrefix + "vertex-anthropic"
-	VertexMetaKey      = ProviderKeyPrefix + "vertex-meta"
-	VertexMistralaiKey = ProviderKeyPrefix + "vertex-mistralai"
 )
 
 type ProviderConfig struct {

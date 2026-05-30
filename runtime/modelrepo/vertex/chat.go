@@ -13,21 +13,9 @@ type vertexChatClient struct {
 	vertexClient
 }
 
-// Chat implements modelrepo.LLMChatClient. It dispatches to the wire format the
-// publisher actually speaks (Vertex is not a unified API).
+// Chat implements modelrepo.LLMChatClient against the Gemini generateContent
+// wire format (vertex-google).
 func (c *vertexChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
-	switch vertexFamilyFor(c.publisher) {
-	case familyAnthropic:
-		return c.chatAnthropic(ctx, messages, args)
-	case familyOpenAICompat:
-		return c.chatOpenAICompat(ctx, messages, args)
-	default:
-		return c.chatGemini(ctx, messages, args)
-	}
-}
-
-// chatGemini implements the Gemini generateContent path (vertex-google).
-func (c *vertexChatClient) chatGemini(ctx context.Context, messages []modelrepo.Message, args []modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "vertex", "model", c.modelName)
 	defer end()
 

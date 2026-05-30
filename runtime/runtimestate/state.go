@@ -293,8 +293,10 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 		s.processOpenAIBackend(ctx, backend, declaredModels)
 	case "local":
 		s.processLocalBackend(ctx, backend, declaredModels)
-	case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+	case "vertex-google":
 		s.processVertexBackend(ctx, backend, declaredModels)
+	case "bedrock":
+		s.processBedrockBackend(ctx, backend, declaredModels)
 	default:
 		brokenService := &statetype.BackendRuntimeState{
 			ID:      backend.ID,
@@ -544,8 +546,21 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 }
 
 // processVertexBackend handles state reconciliation for all vertex-* backend types.
-// Auth uses a stored service account JSON when available; falls back to ADC otherwise.
-func (s *State) processVertexBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
+func (s *State) processVertexBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
+	s.processOptionalCredCloudBackend(ctx, backend, models)
+}
+
+// processBedrockBackend handles state reconciliation for AWS Bedrock backends.
+func (s *State) processBedrockBackend(ctx context.Context, backend *runtimetypes.Backend, models []*runtimetypes.Model) {
+	s.processOptionalCredCloudBackend(ctx, backend, models)
+}
+
+// processOptionalCredCloudBackend reconciles a cloud backend whose credentials
+// are OPTIONAL: a stored cred blob (Vertex service-account JSON / Bedrock static
+// keys) is used when present, and an empty blob is fine — the provider falls
+// back to the ambient credential chain (GCP ADC / AWS default chain). This
+// differs from processOpenAIBackend, which errors when no API key is stored.
+func (s *State) processOptionalCredCloudBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
 	stateInstance := &statetype.BackendRuntimeState{
 		ID:           backend.ID,
 		Name:         backend.Name,

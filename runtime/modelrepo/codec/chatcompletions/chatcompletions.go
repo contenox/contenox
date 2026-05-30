@@ -5,10 +5,9 @@
 // round-tripping.
 //
 // It does NO I/O: callers build a Request, marshal and POST it through their
-// own transport (API-key header for direct OpenAI/Mistral, OAuth bearer + the
-// Vertex MaaS / rawPredict URL for Vertex partner models), then hand the raw
-// response bytes back here to decode. This is what lets the same codec serve
-// vertex-meta, vertex-mistralai, and (later) a direct Mistral/OpenAI provider.
+// own transport (API-key header for direct OpenAI/Mistral), then hand the raw
+// response bytes back here to decode. This is what lets the direct Mistral /
+// OpenAI provider stay a thin transport wrapper around the shared codec.
 package chatcompletions
 
 import (
@@ -21,8 +20,8 @@ import (
 
 // Request is the OpenAI-compatible chat/completions request body.
 //
-// Note: this codec emits `max_tokens` (the field Mistral and the Vertex MaaS
-// OpenAI-compatible endpoint accept), not the newer `max_completion_tokens`.
+// Note: this codec emits `max_tokens` (the field Mistral's OpenAI-compatible
+// endpoint accepts), not the newer `max_completion_tokens`.
 type Request struct {
 	Model       string        `json:"model"`
 	Messages    []wireMessage `json:"messages"`
@@ -69,7 +68,7 @@ type wireToolDecl struct {
 // the StreamDecoder can translate tool-call names back to what the caller used.
 //
 // model is placed verbatim in the body; the transport decides the exact string
-// (e.g. "meta/llama-3.3-70b-instruct-maas" for Vertex MaaS, or a bare id).
+// (e.g. "mistral-large-latest", or whatever id the provider expects).
 func Build(model string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig) (Request, map[string]string) {
 	req := Request{Model: model}
 	if cfg != nil {

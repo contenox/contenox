@@ -472,8 +472,10 @@ func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
 		switch strings.ToLower(strings.TrimSpace(backend.Type)) {
 		case "openai", "anthropic", "mistral", "gemini":
 			return fmt.Sprintf("Save credentials on Cloud providers, or re-add backend %q after exporting the provider API key.", backend.Name)
-		case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+		case "vertex-google":
 			return fmt.Sprintf("Backend %q uses ADC (Application Default Credentials). Run: gcloud auth application-default login", backend.Name)
+		case "bedrock":
+			return fmt.Sprintf("Backend %q uses the ambient AWS credential chain (env / profile / IAM role). Verify with: aws sts get-caller-identity", backend.Name)
 		case "ollama":
 			if isHostedOllamaBackend(backend) {
 				return fmt.Sprintf("Save the Ollama Cloud API key on Cloud providers, or re-add backend %q after exporting OLLAMA_API_KEY.", backend.Name)
@@ -486,8 +488,10 @@ func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
 		switch strings.ToLower(strings.TrimSpace(backend.Type)) {
 		case "openai", "anthropic", "mistral", "gemini":
 			return fmt.Sprintf("The stored API key for backend %q was rejected. Update the key on Cloud providers.", backend.Name)
-		case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+		case "vertex-google":
 			return fmt.Sprintf("ADC credentials for backend %q were rejected. Refresh with: gcloud auth application-default login", backend.Name)
+		case "bedrock":
+			return fmt.Sprintf("AWS credentials for backend %q were rejected, or the model isn't enabled. Check: aws sts get-caller-identity and Bedrock console model access.", backend.Name)
 		case "ollama":
 			if isHostedOllamaBackend(backend) {
 				return fmt.Sprintf("The stored Ollama Cloud API key for backend %q was rejected. Update the key on Cloud providers.", backend.Name)
@@ -498,8 +502,10 @@ func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
 		}
 	case backendErrorUnreachable:
 		switch strings.ToLower(strings.TrimSpace(backend.Type)) {
-		case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+		case "vertex-google":
 			return fmt.Sprintf("Check connectivity to Vertex AI and confirm GOOGLE_CLOUD_PROJECT is set. Backend %q URL: %s", backend.Name, backend.BaseURL)
+		case "bedrock":
+			return fmt.Sprintf("Check connectivity to Bedrock and that the URL region matches an enabled region. Backend %q URL: %s", backend.Name, backend.BaseURL)
 		case "ollama":
 			if isHostedOllamaBackend(backend) {
 				return fmt.Sprintf("Check connectivity to Ollama Cloud and confirm the stored API key for backend %q.", backend.Name)
@@ -596,7 +602,7 @@ func modelNamePresent(available []string, wanted string) bool {
 
 func providerFixPath(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "openai", "anthropic", "mistral", "gemini", "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+	case "openai", "anthropic", "mistral", "bedrock", "gemini", "vertex-google":
 		return "/backends?tab=cloud-providers"
 	default:
 		return "/backends?tab=backends"
@@ -605,7 +611,7 @@ func providerFixPath(provider string) string {
 
 func providerFixPathForChecks(provider string, checks []BackendCheck) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "openai", "anthropic", "mistral", "gemini", "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+	case "openai", "anthropic", "mistral", "bedrock", "gemini", "vertex-google":
 		return "/backends?tab=cloud-providers"
 	case "ollama":
 		if anyHostedOllamaCheck(checks) {
@@ -627,8 +633,10 @@ func providerAddCommand(provider string) string {
 		return "contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY"
 	case "local":
 		return "contenox backend add local --type local --url ~/.contenox/models/"
-	case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+	case "vertex-google":
 		return fmt.Sprintf("gcloud auth application-default login && contenox backend add %s --type %s --url \"https://us-central1-aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/us-central1\"", provider, provider)
+	case "bedrock":
+		return "contenox backend add bedrock --type bedrock --url \"https://bedrock-runtime.us-east-1.amazonaws.com\"   # uses the ambient AWS credential chain"
 	default:
 		return "contenox backend add local --type ollama  # or: contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY"
 	}
@@ -640,8 +648,8 @@ func noChatModelsCommand(provider string) string {
 		return "contenox model list   # confirm which chat models the provider exposes"
 	case "vertex-google":
 		return "contenox model list   # Gemini models from AI Studio metadata; set default-model to a gemini-* name"
-	case "vertex-anthropic", "vertex-meta", "vertex-mistralai":
-		return "contenox model list && contenox model register <name> --backend <backend-name> --can-chat --can-stream --can-prompt   # publisher models have no capability metadata; register manually"
+	case "bedrock":
+		return "Enable the model in the AWS Bedrock console (Model access), then: contenox model list   # Bedrock returns AccessDeniedException until the model is enabled for your account"
 	case "local":
 		return "contenox model pull granite-3.2-2b   # or: contenox model registry-list for full list"
 	default:
@@ -653,8 +661,10 @@ func primaryDiagnosticCommand(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case "openai", "anthropic", "mistral", "gemini":
 		return "contenox doctor --json   # inspect backendChecks.error for the provider backend"
-	case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+	case "vertex-google":
 		return "gcloud auth application-default print-access-token   # verify ADC is working; also check GOOGLE_CLOUD_PROJECT is set"
+	case "bedrock":
+		return "aws sts get-caller-identity   # verify AWS creds resolve; then check model access in the Bedrock console"
 	case "local":
 		return "ls ~/.contenox/models/   # confirm at least one *.gguf model exists; run 'contenox model pull <name>' if empty"
 	default:
@@ -682,8 +692,10 @@ func repairBackendCommand(check *BackendCheck) string {
 		return fmt.Sprintf("export MISTRAL_API_KEY=... && contenox backend remove %q && contenox backend add %q --type mistral --url %q --api-key-env MISTRAL_API_KEY", check.Name, check.Name, chooseBaseURL(check.BaseURL, "https://api.mistral.ai/v1"))
 	case "gemini":
 		return fmt.Sprintf("export GEMINI_API_KEY=... && contenox backend remove %q && contenox backend add %q --type gemini --url %q --api-key-env GEMINI_API_KEY", check.Name, check.Name, chooseBaseURL(check.BaseURL, "https://generativelanguage.googleapis.com"))
-	case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+	case "vertex-google":
 		return fmt.Sprintf("gcloud auth application-default login && contenox backend remove %q && contenox backend add %q --type %s --url %q", check.Name, check.Name, backendType, check.BaseURL)
+	case "bedrock":
+		return fmt.Sprintf("# ensure AWS creds resolve (aws sts get-caller-identity), then:\ncontenox backend remove %q && contenox backend add %q --type bedrock --url %q", check.Name, check.Name, chooseBaseURL(check.BaseURL, "https://bedrock-runtime.us-east-1.amazonaws.com"))
 	default:
 		return ""
 	}
@@ -726,6 +738,8 @@ func providerDisplayName(provider string) string {
 		return "Anthropic"
 	case "mistral":
 		return "Mistral"
+	case "bedrock":
+		return "AWS Bedrock"
 	case "gemini":
 		return "Gemini"
 	case "vllm":
@@ -734,12 +748,6 @@ func providerDisplayName(provider string) string {
 		return "Local (GGUF)"
 	case "vertex-google":
 		return "Vertex AI (Google)"
-	case "vertex-anthropic":
-		return "Vertex AI (Anthropic)"
-	case "vertex-meta":
-		return "Vertex AI (Meta)"
-	case "vertex-mistralai":
-		return "Vertex AI (Mistral)"
 	default:
 		return "backend"
 	}

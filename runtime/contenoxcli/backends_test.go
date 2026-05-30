@@ -153,7 +153,7 @@ func TestUnit_backendService_differentType_sameURL_allowed(t *testing.T) {
 
 	url := "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1"
 	b1 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "vertex-google", Type: "vertex-google", BaseURL: url}
-	b2 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "vertex-anthropic", Type: "vertex-anthropic", BaseURL: url}
+	b2 := &runtimetypes.Backend{ID: uuid.NewString(), Name: "gemini", Type: "gemini", BaseURL: url}
 
 	require.NoError(t, svc.Create(ctx, b1))
 	require.NoError(t, svc.Create(ctx, b2))

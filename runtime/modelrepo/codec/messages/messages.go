@@ -2,16 +2,10 @@
 // wire format (request, content-block response, and named-SSE-event streaming).
 // It maps between contenox's neutral modelrepo types and Anthropic's JSON shape.
 //
-// It does NO I/O. The transport supplies the envelope that differs between
-// hosting modes:
-//   - Vertex: model in the URL (leave Request.Model empty) and set
-//     Request.AnthropicVersion = "vertex-2023-10-16"; POST to :rawPredict /
-//     :streamRawPredict with an OAuth bearer token.
-//   - Direct (api.anthropic.com): model in the body, version via the
-//     `anthropic-version` header, auth via `x-api-key`.
-//
-// This is what lets the same codec back both vertex-anthropic and a future
-// direct Anthropic provider.
+// It does NO I/O. The transport (api.anthropic.com) supplies the envelope:
+// model in the body, version via the `anthropic-version` header, auth via
+// `x-api-key`. This lets the direct Anthropic provider stay a thin transport
+// wrapper around the shared codec.
 package messages
 
 import (

@@ -154,9 +154,12 @@ No YAML file — use CLI commands to register backends and set defaults.
 ```bash
 contenox backend add local   --type ollama
 contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
-contenox backend add openai  --type openai  --api-key-env OPENAI_API_KEY
-contenox backend add gemini  --type gemini  --api-key-env GEMINI_API_KEY
-contenox backend add myvllm --type vllm    --url http://gpu-host:8000
+contenox backend add openai    --type openai    --api-key-env OPENAI_API_KEY
+contenox backend add anthropic --type anthropic --api-key-env ANTHROPIC_API_KEY
+contenox backend add mistral   --type mistral   --api-key-env MISTRAL_API_KEY
+contenox backend add gemini    --type gemini    --api-key-env GEMINI_API_KEY
+contenox backend add bedrock   --type bedrock   --url https://bedrock-runtime.us-east-1.amazonaws.com
+contenox backend add myvllm    --type vllm      --url http://gpu-host:8000
 
 contenox backend list
 contenox backend show openai
@@ -178,10 +181,15 @@ contenox config list   # review current settings
 
 | `--type` | Provider | Notes                                                                                                     |
 | -------- | -------- | --------------------------------------------------------------------------------------------------------- |
+| `local`  | llama.cpp | Embedded inference, no server. `--url` takes a GGUF path or huggingface.co URL. Registered by `init`.    |
 | `ollama` | Ollama   | Local: run `ollama serve` first. Hosted: use `--url https://ollama.com/api --api-key-env OLLAMA_API_KEY`. |
-| `openai` | OpenAI   | Use `--api-key-env OPENAI_API_KEY`                                                                        |
+| `openai` | OpenAI   | Use `--api-key-env OPENAI_API_KEY`. Base URL inferred.                                                    |
+| `anthropic` | Anthropic | Claude (direct API). Use `--api-key-env ANTHROPIC_API_KEY`. Base URL inferred.                         |
+| `mistral` | Mistral | La Plateforme. Use `--api-key-env MISTRAL_API_KEY`. Base URL inferred.                                     |
+| `gemini` | Gemini   | Use `--api-key-env GEMINI_API_KEY`. Base URL inferred.                                                    |
+| `bedrock` | AWS Bedrock | Converse API. `--url` carries the region. Auth: ambient AWS chain, or static-keys JSON via `--api-key-env`. |
 | `vllm`   | vLLM     | Self-hosted OpenAI-compatible endpoint, requires `--url`                                                  |
-| `gemini` | Gemini   | Use `--api-key-env GEMINI_API_KEY`                                                                        |
+| `vertex-google` | Vertex AI | Gemini on GCP. Requires `--url` with project + region. Auth: service-account JSON via `--api-key-env`, or ADC. |
 
 ### Model management
 

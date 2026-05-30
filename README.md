@@ -108,7 +108,7 @@ contenox --shell "drive localhost:3000 with playwright, write the doc into Notio
 
 Useful day-to-day for the work above. Also, a workbench for testing new chains and MCP servers, and a primitive other agents can shell out to.
 
-State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Gemini, vLLM, Vertex, or in-process llama.cpp. Any model, any vendor — or no vendor at all if you serve your own.
+State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Anthropic, Mistral, Gemini, AWS Bedrock, vLLM, Vertex (Gemini), or in-process llama.cpp. Any model, any vendor — or no vendor at all if you serve your own.
 
 ---
 
@@ -178,9 +178,12 @@ contenox backend add ollama    --type ollama
 contenox backend add myvllm    --type vllm   --url http://gpu-host:8000
 
 # Cloud providers
-contenox backend add openai    --type openai --api-key-env OPENAI_API_KEY
-contenox backend add gemini    --type gemini --api-key-env GEMINI_API_KEY
-contenox backend add vertex    --type vertex-google
+contenox backend add openai    --type openai    --api-key-env OPENAI_API_KEY
+contenox backend add anthropic --type anthropic --api-key-env ANTHROPIC_API_KEY
+contenox backend add mistral   --type mistral   --api-key-env MISTRAL_API_KEY
+contenox backend add gemini    --type gemini    --api-key-env GEMINI_API_KEY
+contenox backend add bedrock   --type bedrock   --url https://bedrock-runtime.us-east-1.amazonaws.com
+contenox backend add vertex    --type vertex-google --url "https://us-central1-aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/us-central1"
 
 # Set your defaults
 contenox config set default-model qwen2.5:7b

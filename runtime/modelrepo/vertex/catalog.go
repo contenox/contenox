@@ -15,9 +15,6 @@ import (
 
 func init() {
 	modelrepo.RegisterCatalogProvider("vertex-google", newGoogleCatalog)
-	modelrepo.RegisterCatalogProvider("vertex-anthropic", newPublisherCatalog("anthropic"))
-	modelrepo.RegisterCatalogProvider("vertex-meta", newPublisherCatalog("meta"))
-	modelrepo.RegisterCatalogProvider("vertex-mistralai", newPublisherCatalog("mistralai"))
 }
 
 // googleCatalogProvider lists models via the Vertex AI publisher Model Garden API
@@ -109,8 +106,10 @@ func vertexRegionalPublisherListURL(vertexLocationBaseURL, publisher string) (st
 	return fmt.Sprintf("%s://%s/v1beta1/publishers/%s/models", scheme, u.Host, publisher), nil
 }
 
-// listVertexPublisherModelNames returns model IDs from the Vertex AI publisher list using the
-// regional hostname from the backend URL (same host used for generateContent).
+// vertexPublisherModel is one entry from the Vertex Model Garden publisher list.
+// listVertexPublisherModelNames returns model IDs from the Vertex AI publisher
+// list using the regional hostname from the backend URL (same host used for
+// generateContent).
 func listVertexPublisherModelNames(ctx context.Context, vertexLocationBaseURL, publisher string, httpClient *http.Client, tokenFn func(context.Context) (string, error)) ([]string, error) {
 	listURLPrefix, err := vertexRegionalPublisherListURL(vertexLocationBaseURL, publisher)
 	if err != nil {
@@ -182,69 +181,4 @@ func listVertexPublisherModelNames(ctx context.Context, vertexLocationBaseURL, p
 
 func (p *googleCatalogProvider) ProviderFor(model modelrepo.ObservedModel) modelrepo.Provider {
 	return NewVertexProvider("google", model.Name, []string{p.spec.BaseURL}, model.CapabilityConfig, p.spec.APIKey, p.httpClient, p.tracker)
-}
-
-// publisherCatalogProvider lists models from the Vertex AI publisher endpoint.
-// The API returns model names only — no capability metadata.
-// Models are returned with all capability flags false and ContextLength=0;
-// users must declare them via `contenox model register` to make them usable.
-type publisherCatalogProvider struct {
-	publisher  string
-	spec       modelrepo.BackendSpec
-	httpClient *http.Client
-	tracker    libtracker.ActivityTracker
-	tokenFn    func(context.Context) (string, error) // test tools
-}
-
-func newPublisherCatalog(publisher string) func(modelrepo.BackendSpec, modelrepo.CatalogOptions) (modelrepo.CatalogProvider, error) {
-	return func(spec modelrepo.BackendSpec, opts modelrepo.CatalogOptions) (modelrepo.CatalogProvider, error) {
-		if spec.BaseURL == "" {
-			return nil, fmt.Errorf("vertex-%s backend requires --url with project and location, e.g. https://us-central1-aiplatform.googleapis.com/v1/projects/MY_PROJECT/locations/us-central1", publisher)
-		}
-		client := opts.HTTPClient
-		if client == nil {
-			client = http.DefaultClient
-		}
-		return &publisherCatalogProvider{
-			publisher:  publisher,
-			spec:       spec,
-			httpClient: client,
-			tracker:    opts.Tracker,
-			tokenFn:    BearerToken,
-		}, nil
-	}
-}
-
-func (p *publisherCatalogProvider) Type() string { return "vertex-" + p.publisher }
-
-func (p *publisherCatalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedModel, error) {
-	tokenFn := p.tokenFn
-	if tokenFn == nil {
-		tokenFn = func(ctx context.Context) (string, error) {
-			return BearerTokenWithCreds(ctx, p.spec.APIKey)
-		}
-	}
-	names, err := listVertexPublisherModelNames(ctx, p.spec.BaseURL, p.publisher, p.httpClient, tokenFn)
-	if err != nil {
-		return nil, err
-	}
-	models := make([]modelrepo.ObservedModel, 0, len(names))
-	for _, name := range names {
-		// Anthropic/Mistral/Meta partner models are all chat models, so default
-		// the chat capabilities on (mirrors vertex-google, vllm, and local).
-		// ContextLength stays 0; set it per model via `contenox model set-context`.
-		models = append(models, modelrepo.ObservedModel{
-			Name: name,
-			CapabilityConfig: modelrepo.CapabilityConfig{
-				CanChat:   true,
-				CanStream: true,
-				CanPrompt: true,
-			},
-		})
-	}
-	return models, nil
-}
-
-func (p *publisherCatalogProvider) ProviderFor(model modelrepo.ObservedModel) modelrepo.Provider {
-	return NewVertexProvider(p.publisher, model.Name, []string{p.spec.BaseURL}, model.CapabilityConfig, p.spec.APIKey, p.httpClient, p.tracker)
 }

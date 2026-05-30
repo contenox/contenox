@@ -59,8 +59,7 @@ func (c *vertexClient) authHeaders(ctx context.Context, req *http.Request) error
 }
 
 // postJSON POSTs request as JSON to endpoint with ADC bearer auth and returns
-// the raw response body. Used by the Gemini path (via sendRequest) and by the
-// Anthropic / OpenAI-compatible codecs, which decode the bytes themselves.
+// the raw response body. Used by the Gemini path via sendRequest.
 func (c *vertexClient) postJSON(ctx context.Context, endpoint string, request any) ([]byte, error) {
 	reportErr, reportChange, end := c.tracker.Start(
 		ctx,
@@ -140,36 +139,6 @@ func (c *vertexClient) sendRequest(ctx context.Context, endpoint string, request
 		}
 	}
 	return nil
-}
-
-// openStream POSTs request and returns the streaming HTTP response for SSE
-// consumption. The caller owns resp.Body and must close it.
-func (c *vertexClient) openStream(ctx context.Context, endpoint string, request any) (*http.Response, error) {
-	body, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal stream request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(body))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stream request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("Cache-Control", "no-cache")
-	req.Header.Set("Connection", "keep-alive")
-	if err := c.authHeaders(ctx, req); err != nil {
-		return nil, err
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP stream request failed for model %s: %w", c.modelName, err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("vertex API returned non-200 status for stream: %d, body: %s", resp.StatusCode, string(b))
-	}
-	return resp, nil
 }
 
 // buildVertexRequest converts modelrepo messages and args to a vertexRequest.

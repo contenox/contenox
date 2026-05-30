@@ -87,6 +87,11 @@ var providerConfigs = map[string]providerConfig{
 		defaultModel: "mistral-large-latest",
 		envKey:       "MISTRAL_API_KEY",
 	},
+	"bedrock": {
+		name:         "AWS Bedrock",
+		defaultModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+		envKey:       "", // ambient AWS credential chain
+	},
 	"local": {
 		name:         "Local (GGUF)",
 		defaultModel: "",
@@ -95,21 +100,6 @@ var providerConfigs = map[string]providerConfig{
 	"vertex-google": {
 		name:         "Google Vertex AI (Gemini)",
 		defaultModel: "gemini-flash-latest",
-		envKey:       "",
-	},
-	"vertex-anthropic": {
-		name:         "Google Vertex AI (Anthropic)",
-		defaultModel: "claude-sonnet-4-5-20251029",
-		envKey:       "",
-	},
-	"vertex-meta": {
-		name:         "Google Vertex AI (Meta)",
-		defaultModel: "llama-3.1-405b-instruct-maas",
-		envKey:       "",
-	},
-	"vertex-mistralai": {
-		name:         "Google Vertex AI (Mistral)",
-		defaultModel: "mistral-large-2411",
 		envKey:       "",
 	},
 }
@@ -247,7 +237,7 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 
 	pc, ok := providerConfigs[provider]
 	if !ok {
-		return fmt.Errorf("unknown provider %q — valid options: ollama, gemini, openai, local, vertex-google, vertex-anthropic, vertex-meta, vertex-mistralai", provider)
+		return fmt.Errorf("unknown provider %q — valid options: ollama, gemini, openai, local, vertex-google", provider)
 	}
 	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
 		return fmt.Errorf("failed to create .contenox directory: %w", err)
@@ -381,7 +371,7 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 	fmt.Fprintln(out, "")
 	chatStep := 3
 	switch provider {
-	case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
+	case "vertex-google":
 		fmt.Fprintln(out, "  1. Authenticate with Google Cloud:")
 		fmt.Fprintln(out, "       export GOOGLE_CLOUD_PROJECT=my-project-id")
 		fmt.Fprintln(out, "       gcloud auth application-default login --project $GOOGLE_CLOUD_PROJECT")

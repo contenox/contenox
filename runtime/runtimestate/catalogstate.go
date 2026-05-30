@@ -7,10 +7,58 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/contenox/agent/libkvstore"
 	"github.com/contenox/agent/runtime/modelrepo"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/statetype"
 )
+
+// observedModelCachePrefix is the KV key prefix under which each backend's
+// observed model list is cached (see loadObservedModelCache /
+// storeObservedModelCache). Distinct from ProviderKeyPrefix ("cloud-provider:").
+const observedModelCachePrefix = "prov:"
+
+func observedModelCacheKey(backendID string) string {
+	return observedModelCachePrefix + backendID
+}
+
+// InvalidateModelCache removes the cached observed-model list for one backend,
+// forcing the next backend cycle to refetch from the provider. Safe when no
+// entry exists; no-op when kv is nil.
+func InvalidateModelCache(ctx context.Context, kv libkvstore.KVManager, backendID string) error {
+	if kv == nil {
+		return nil
+	}
+	exec, err := kv.Executor(ctx)
+	if err != nil {
+		return err
+	}
+	return exec.Delete(ctx, observedModelCacheKey(backendID))
+}
+
+// ClearModelCache removes every cached observed-model list (all "prov:*" keys)
+// and returns how many were cleared. No-op (0) when kv is nil.
+func ClearModelCache(ctx context.Context, kv libkvstore.KVManager) (int, error) {
+	if kv == nil {
+		return 0, nil
+	}
+	exec, err := kv.Executor(ctx)
+	if err != nil {
+		return 0, err
+	}
+	keys, err := exec.Keys(ctx, observedModelCachePrefix+"*")
+	if err != nil {
+		return 0, err
+	}
+	cleared := 0
+	for _, k := range keys {
+		if err := exec.Delete(ctx, k); err != nil {
+			return cleared, err
+		}
+		cleared++
+	}
+	return cleared, nil
+}
 
 func providerConfigKey(backendType string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(backendType)) {
@@ -22,6 +70,8 @@ func providerConfigKey(backendType string) (string, bool) {
 		return AnthropicKey, true
 	case "mistral":
 		return MistralKey, true
+	case "bedrock":
+		return BedrockKey, true
 	case "gemini":
 		return GeminiKey, true
 	case "vllm":
@@ -29,12 +79,6 @@ func providerConfigKey(backendType string) (string, bool) {
 		return OpenaiKey, true
 	case "vertex-google":
 		return VertexGoogleKey, true
-	case "vertex-anthropic":
-		return VertexAnthropicKey, true
-	case "vertex-meta":
-		return VertexMetaKey, true
-	case "vertex-mistralai":
-		return VertexMistralaiKey, true
 	default:
 		return "", false
 	}
@@ -68,7 +112,7 @@ func (s *State) newCatalogProvider(backend *runtimetypes.Backend, apiKey string)
 func (s *State) loadObservedModelCache(ctx context.Context, backendID, apiKey string) ([]modelrepo.ObservedModel, bool) {
 	if s.kvStore != nil {
 		if exec, err := s.kvStore.Executor(ctx); err == nil {
-			if raw, err := exec.Get(ctx, "prov:"+backendID); err == nil {
+			if raw, err := exec.Get(ctx, observedModelCacheKey(backendID)); err == nil {
 				var entry providerCacheEntry
 				if json.Unmarshal(raw, &entry) == nil && entry.APIKey == apiKey && len(entry.Models) > 0 {
 					return entry.Models, true
@@ -91,7 +135,7 @@ func (s *State) storeObservedModelCache(ctx context.Context, backendID, apiKey s
 	if s.kvStore != nil {
 		if exec, err := s.kvStore.Executor(ctx); err == nil {
 			if data, err := json.Marshal(entry); err == nil {
-				_ = exec.SetWithTTL(ctx, "prov:"+backendID, data, ProviderCacheDuration)
+				_ = exec.SetWithTTL(ctx, observedModelCacheKey(backendID), data, ProviderCacheDuration)
 			}
 		}
 		return

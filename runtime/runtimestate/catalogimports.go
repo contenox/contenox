@@ -2,6 +2,7 @@ package runtimestate
 
 import (
 	_ "github.com/contenox/agent/runtime/modelrepo/anthropic"
+	_ "github.com/contenox/agent/runtime/modelrepo/bedrock"
 	_ "github.com/contenox/agent/runtime/modelrepo/gemini"
 	_ "github.com/contenox/agent/runtime/modelrepo/local"
 	_ "github.com/contenox/agent/runtime/modelrepo/mistral"

@@ -64,62 +64,6 @@ func TestUnit_GoogleCatalog_ListModels(t *testing.T) {
 	require.Equal(t, "gemini-flash-latest", provider.ModelName())
 }
 
-func TestUnit_PublisherCatalog_ListModels(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodGet, r.Method)
-		require.NotEmpty(t, r.Header.Get("Authorization"), "expected ADC bearer token")
-		require.Equal(t, "test-project", r.Header.Get("x-goog-user-project"))
-		require.Equal(t, "/v1beta1/publishers/anthropic/models", r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"publisherModels": []map[string]any{
-				{"name": "publishers/anthropic/models/claude-sonnet-4-5-20251029"},
-				{"name": "publishers/anthropic/models/claude-haiku-4-5"},
-			},
-		})
-	}))
-	defer server.Close()
-
-	catalog := &publisherCatalogProvider{
-		publisher: "anthropic",
-		spec: modelrepo.BackendSpec{
-			Type:    "vertex-anthropic",
-			BaseURL: "https://us-central1-aiplatform.googleapis.com/v1/projects/test-project/locations/us-central1",
-		},
-		tokenFn: func(_ context.Context) (string, error) { return "fake-token", nil },
-		httpClient: &http.Client{
-			Transport: bearerInjectTransport{
-				inner:     server.Client().Transport,
-				serverURL: server.URL,
-				token:     "fake-token",
-			},
-		},
-	}
-
-	models, err := catalog.ListModels(context.Background())
-	require.NoError(t, err)
-	require.Len(t, models, 2)
-
-	require.Equal(t, "claude-sonnet-4-5-20251029", models[0].Name)
-	require.Equal(t, "claude-haiku-4-5", models[1].Name)
-
-	// Partner publisher models (Claude/Mistral/Llama) are all chat models, so
-	// chat capabilities default on (mirrors vertex-google/vllm/local). The
-	// publisher list API carries no context length, so that stays 0 until the
-	// user sets it via `contenox model set-context`.
-	require.True(t, models[0].CanChat)
-	require.True(t, models[0].CanStream)
-	require.True(t, models[0].CanPrompt)
-	require.False(t, models[0].CanEmbed)
-	require.Equal(t, 0, models[0].ContextLength)
-
-	provider := catalog.ProviderFor(models[0])
-	require.Equal(t, "vertex-anthropic", provider.GetType())
-	require.Equal(t, "claude-sonnet-4-5-20251029", provider.ModelName())
-}
-
 // bearerInjectTransport provides a fake bearer token and redirects to the test server.
 type bearerInjectTransport struct {
 	inner     http.RoundTripper
