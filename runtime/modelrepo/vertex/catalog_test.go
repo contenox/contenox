@@ -105,9 +105,14 @@ func TestUnit_PublisherCatalog_ListModels(t *testing.T) {
 	require.Equal(t, "claude-sonnet-4-5-20251029", models[0].Name)
 	require.Equal(t, "claude-haiku-4-5", models[1].Name)
 
-	// All capabilities must be false (no metadata from publisher API).
-	require.False(t, models[0].CanChat)
-	require.False(t, models[0].CanStream)
+	// Partner publisher models (Claude/Mistral/Llama) are all chat models, so
+	// chat capabilities default on (mirrors vertex-google/vllm/local). The
+	// publisher list API carries no context length, so that stays 0 until the
+	// user sets it via `contenox model set-context`.
+	require.True(t, models[0].CanChat)
+	require.True(t, models[0].CanStream)
+	require.True(t, models[0].CanPrompt)
+	require.False(t, models[0].CanEmbed)
 	require.Equal(t, 0, models[0].ContextLength)
 
 	provider := catalog.ProviderFor(models[0])

@@ -40,7 +40,13 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	bus := t.deps.Engine.Bus
 	if bus != nil && reqID != "" {
 		sub, err := bus.Stream(promptCtx, taskengine.TaskEventRequestSubject(reqID), rawCh)
-		if err == nil {
+		if err != nil {
+			// The prompt still runs, but the client gets no incremental
+			// updates. Surface why instead of silently degrading.
+			subErr, _, subEnd := t.tracker().Start(promptCtx, "subscribe", "acp_event_stream", "session_id", string(req.SessionID), "request_id", reqID)
+			subErr(err)
+			subEnd()
+		} else {
 			translateDone := make(chan struct{})
 			go func() {
 				defer close(translateDone)

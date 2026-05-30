@@ -18,6 +18,10 @@ func providerConfigKey(backendType string) (string, bool) {
 		return OllamaKey, true
 	case "openai":
 		return OpenaiKey, true
+	case "anthropic":
+		return AnthropicKey, true
+	case "mistral":
+		return MistralKey, true
 	case "gemini":
 		return GeminiKey, true
 	case "vllm":

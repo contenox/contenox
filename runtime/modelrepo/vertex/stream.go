@@ -17,8 +17,21 @@ type vertexStreamClient struct {
 	vertexClient
 }
 
-// Stream implements modelrepo.LLMStreamClient.
+// Stream implements modelrepo.LLMStreamClient. It dispatches to the wire format
+// the publisher actually speaks.
 func (c *vertexStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
+	switch vertexFamilyFor(c.publisher) {
+	case familyAnthropic:
+		return c.streamAnthropic(ctx, messages, args)
+	case familyOpenAICompat:
+		return c.streamOpenAICompat(ctx, messages, args)
+	default:
+		return c.streamGemini(ctx, messages, args)
+	}
+}
+
+// streamGemini implements the Gemini streamGenerateContent path (vertex-google).
+func (c *vertexStreamClient) streamGemini(ctx context.Context, messages []modelrepo.Message, args []modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	parcels := make(chan *modelrepo.StreamParcel)
 
 	request, err := buildVertexRequest(messages, args)

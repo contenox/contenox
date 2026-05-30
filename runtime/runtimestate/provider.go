@@ -6,6 +6,8 @@ const (
 	ProviderKeyPrefix  = "cloud-provider:"
 	OllamaKey          = ProviderKeyPrefix + "ollama"
 	OpenaiKey          = ProviderKeyPrefix + "openai"
+	AnthropicKey       = ProviderKeyPrefix + "anthropic"
+	MistralKey         = ProviderKeyPrefix + "mistral"
 	GeminiKey          = ProviderKeyPrefix + "gemini"
 	VertexGoogleKey    = ProviderKeyPrefix + "vertex-google"
 	VertexAnthropicKey = ProviderKeyPrefix + "vertex-anthropic"

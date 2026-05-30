@@ -230,9 +230,17 @@ func (p *publisherCatalogProvider) ListModels(ctx context.Context) ([]modelrepo.
 	}
 	models := make([]modelrepo.ObservedModel, 0, len(names))
 	for _, name := range names {
-		// All capability flags are false; ContextLength is 0.
-		// Users must declare models via `contenox model register` to enable them.
-		models = append(models, modelrepo.ObservedModel{Name: name})
+		// Anthropic/Mistral/Meta partner models are all chat models, so default
+		// the chat capabilities on (mirrors vertex-google, vllm, and local).
+		// ContextLength stays 0; set it per model via `contenox model set-context`.
+		models = append(models, modelrepo.ObservedModel{
+			Name: name,
+			CapabilityConfig: modelrepo.CapabilityConfig{
+				CanChat:   true,
+				CanStream: true,
+				CanPrompt: true,
+			},
+		})
 	}
 	return models, nil
 }

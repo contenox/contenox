@@ -32,11 +32,36 @@ func (c *vertexClient) endpoint(method string) string {
 		":" + method
 }
 
-// sendRequest POSTs to the given Vertex AI endpoint with ADC bearer auth.
-// Pattern mirrors gemini/client.go sendRequest.
-func (c *vertexClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
-	fullURL := endpoint
+// bearer returns an OAuth2 access token using the provider's cached source
+// (the per-call BearerTokenWithCreds fallback only fires in tests, where
+// tokenFn is unset).
+func (c *vertexClient) bearer(ctx context.Context) (string, error) {
+	tokenFn := c.tokenFn
+	if tokenFn == nil {
+		tokenFn = func(ctx context.Context) (string, error) {
+			return BearerTokenWithCreds(ctx, c.credJSON)
+		}
+	}
+	return tokenFn(ctx)
+}
 
+// authHeaders sets the bearer token and the quota-project header on req.
+func (c *vertexClient) authHeaders(ctx context.Context, req *http.Request) error {
+	token, err := c.bearer(ctx)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	if project := extractProjectFromVertexURL(c.baseURL); project != "" {
+		req.Header.Set("x-goog-user-project", project)
+	}
+	return nil
+}
+
+// postJSON POSTs request as JSON to endpoint with ADC bearer auth and returns
+// the raw response body. Used by the Gemini path (via sendRequest) and by the
+// Anthropic / OpenAI-compatible codecs, which decode the bytes themselves.
+func (c *vertexClient) postJSON(ctx context.Context, endpoint string, request any) ([]byte, error) {
 	reportErr, reportChange, end := c.tracker.Start(
 		ctx,
 		"http_request",
@@ -53,42 +78,32 @@ func (c *vertexClient) sendRequest(ctx context.Context, endpoint string, request
 		if err != nil {
 			err = fmt.Errorf("failed to marshal request: %w", err)
 			reportErr(err)
-			return err
+			return nil, err
 		}
 		reqBody = bytes.NewBuffer(b)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, reqBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, reqBody)
 	if err != nil {
 		err = fmt.Errorf("failed to create request: %w", err)
 		reportErr(err)
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	tokenFn := c.tokenFn
-	if tokenFn == nil {
-		tokenFn = func(ctx context.Context) (string, error) {
-			return BearerTokenWithCreds(ctx, c.credJSON)
-		}
-	}
-	token, err := tokenFn(ctx)
-	if err != nil {
+	if err := c.authHeaders(ctx, req); err != nil {
 		reportErr(err)
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	if project := extractProjectFromVertexURL(c.baseURL); project != "" {
-		req.Header.Set("x-goog-user-project", project)
+		return nil, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		err = fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
 		reportErr(err)
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
 
 	reportChange("http_response", map[string]any{
 		"status_code": resp.StatusCode,
@@ -96,29 +111,65 @@ func (c *vertexClient) sendRequest(ctx context.Context, endpoint string, request
 	})
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
 		var eresp vertexErrorResponse
 		if jsonErr := json.Unmarshal(body, &eresp); jsonErr == nil && eresp.Error.Message != "" {
 			err = fmt.Errorf("vertex API error: %d %s - %s (model=%s url=%s)",
-				resp.StatusCode, eresp.Error.Status, eresp.Error.Message, c.modelName, fullURL)
+				resp.StatusCode, eresp.Error.Status, eresp.Error.Message, c.modelName, endpoint)
 			reportErr(err)
-			return err
+			return nil, err
 		}
-		err = fmt.Errorf("vertex API error: %d - %s (model=%s url=%s)", resp.StatusCode, string(body), c.modelName, fullURL)
+		err = fmt.Errorf("vertex API error: %d - %s (model=%s url=%s)", resp.StatusCode, string(body), c.modelName, endpoint)
 		reportErr(err)
-		return err
-	}
-
-	if response != nil {
-		if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
-			err = fmt.Errorf("failed to decode response for model %s: %w", c.modelName, err)
-			reportErr(err)
-			return err
-		}
+		return nil, err
 	}
 
 	reportChange("request_completed", nil)
+	return body, nil
+}
+
+// sendRequest POSTs to the given Vertex AI endpoint and decodes the JSON
+// response into response. Pattern mirrors gemini/client.go sendRequest.
+func (c *vertexClient) sendRequest(ctx context.Context, endpoint string, request interface{}, response interface{}) error {
+	body, err := c.postJSON(ctx, endpoint, request)
+	if err != nil {
+		return err
+	}
+	if response != nil {
+		if err := json.Unmarshal(body, response); err != nil {
+			return fmt.Errorf("failed to decode response for model %s: %w", c.modelName, err)
+		}
+	}
 	return nil
+}
+
+// openStream POSTs request and returns the streaming HTTP response for SSE
+// consumption. The caller owns resp.Body and must close it.
+func (c *vertexClient) openStream(ctx context.Context, endpoint string, request any) (*http.Response, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal stream request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stream request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Connection", "keep-alive")
+	if err := c.authHeaders(ctx, req); err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP stream request failed for model %s: %w", c.modelName, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("vertex API returned non-200 status for stream: %d, body: %s", resp.StatusCode, string(b))
+	}
+	return resp, nil
 }
 
 // buildVertexRequest converts modelrepo messages and args to a vertexRequest.

@@ -109,6 +109,10 @@ Examples:
 				baseURL = "http://localhost:11434"
 			case "openai":
 				baseURL = "https://api.openai.com/v1"
+			case "anthropic":
+				baseURL = "https://api.anthropic.com"
+			case "mistral":
+				baseURL = "https://api.mistral.ai/v1"
 			case "gemini":
 				baseURL = "https://generativelanguage.googleapis.com"
 			case "vertex-google", "vertex-anthropic", "vertex-meta", "vertex-mistralai":
@@ -289,8 +293,8 @@ func globalContenoxDir() (string, error) {
 }
 
 func init() {
-	backendAddCmd.Flags().String("type", "ollama", "Backend type: local (embedded llama.cpp, no external server), ollama, openai, gemini, vllm, vertex-google, vertex-anthropic, vertex-meta, vertex-mistralai")
-	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: local (embedded llama.cpp, no external server), ollama, openai, anthropic, mistral, gemini, vllm, vertex-google, vertex-anthropic, vertex-meta, vertex-mistralai")
+	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/anthropic/mistral/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
 	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")
 	backendAddCmd.Flags().String("api-key", "", "API key literal — prefer --api-key-env to avoid leaking into shell history")
 

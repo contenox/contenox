@@ -77,6 +77,16 @@ var providerConfigs = map[string]providerConfig{
 		defaultModel: "gpt-5-mini",
 		envKey:       "OPENAI_API_KEY",
 	},
+	"anthropic": {
+		name:         "Anthropic (direct)",
+		defaultModel: "claude-sonnet-4-5",
+		envKey:       "ANTHROPIC_API_KEY",
+	},
+	"mistral": {
+		name:         "Mistral (direct)",
+		defaultModel: "mistral-large-latest",
+		envKey:       "MISTRAL_API_KEY",
+	},
 	"local": {
 		name:         "Local (GGUF)",
 		defaultModel: "",
