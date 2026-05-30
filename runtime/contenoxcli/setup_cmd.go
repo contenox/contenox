@@ -47,7 +47,7 @@ type setupProvider struct {
 var setupProviders = []setupProvider{
 	{key: "ollama", label: "Ollama (local daemon)", defaultModel: "qwen2.5:7b", needsAPIKey: false},
 	{key: "openai", label: "OpenAI", defaultModel: "gpt-5-mini", envKey: "OPENAI_API_KEY", needsAPIKey: true},
-	{key: "gemini", label: "Google Gemini", defaultModel: "gemini-2.5-flash", envKey: "GEMINI_API_KEY", needsAPIKey: true},
+	{key: "gemini", label: "Google Gemini", defaultModel: "gemini-flash-latest", envKey: "GEMINI_API_KEY", needsAPIKey: true},
 	{key: "local", label: "Local (embedded llama.cpp — no server, no API key)", defaultModel: "", needsAPIKey: false},
 }
 

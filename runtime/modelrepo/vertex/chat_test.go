@@ -40,7 +40,7 @@ func TestUnit_VertexChatClient_Chat(t *testing.T) {
 		vertexClient: vertexClient{
 			baseURL:   srv.URL + "/v1/projects/test/locations/us-central1",
 			publisher: "google",
-			modelName: "gemini-2.5-flash",
+			modelName: "gemini-flash-latest",
 			httpClient: &http.Client{
 				Transport: bearerInjectTransport{
 					serverURL: srv.URL,

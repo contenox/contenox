@@ -20,12 +20,12 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 		case "/v1beta/models":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"models": []map[string]any{
-					{"name": "models/gemini-2.5-flash"},
+					{"name": "models/gemini-flash-latest"},
 				},
 			})
-		case "/v1beta/models/gemini-2.5-flash":
+		case "/v1beta/models/gemini-flash-latest":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"name":            "models/gemini-2.5-flash",
+				"name":            "models/gemini-flash-latest",
 				"inputTokenLimit": 8192,
 				"supportedGenerationMethods": []string{
 					"generateContent",
@@ -50,7 +50,7 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	require.Len(t, models, 1)
 
 	model := models[0]
-	require.Equal(t, "models/gemini-2.5-flash", model.Name)
+	require.Equal(t, "models/gemini-flash-latest", model.Name)
 	require.Equal(t, 8192, model.ContextLength)
 	require.True(t, model.CanChat)
 	require.True(t, model.CanPrompt)
@@ -59,5 +59,5 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 
 	provider := catalog.ProviderFor(model)
 	require.Equal(t, "gemini", provider.GetType())
-	require.Equal(t, "gemini-2.5-flash", provider.ModelName())
+	require.Equal(t, "gemini-flash-latest", provider.ModelName())
 }

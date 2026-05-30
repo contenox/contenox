@@ -22,7 +22,7 @@ func TestUnit_GoogleCatalog_ListModels(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"publisherModels": []map[string]any{
-				{"name": "publishers/google/models/gemini-2.5-flash"},
+				{"name": "publishers/google/models/gemini-flash-latest"},
 				{"name": "publishers/google/models/gemini-2.5-pro"},
 			},
 		})
@@ -49,7 +49,7 @@ func TestUnit_GoogleCatalog_ListModels(t *testing.T) {
 	require.Len(t, models, 2)
 
 	flash := models[0]
-	require.Equal(t, "gemini-2.5-flash", flash.Name)
+	require.Equal(t, "gemini-flash-latest", flash.Name)
 	require.True(t, flash.CanChat)
 	require.True(t, flash.CanPrompt)
 	require.True(t, flash.CanStream)
@@ -61,7 +61,7 @@ func TestUnit_GoogleCatalog_ListModels(t *testing.T) {
 
 	provider := catalog.ProviderFor(flash)
 	require.Equal(t, "vertex-google", provider.GetType())
-	require.Equal(t, "gemini-2.5-flash", provider.ModelName())
+	require.Equal(t, "gemini-flash-latest", provider.ModelName())
 }
 
 func TestUnit_PublisherCatalog_ListModels(t *testing.T) {

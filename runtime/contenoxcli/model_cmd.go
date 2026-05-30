@@ -32,7 +32,7 @@ Examples:
   contenox model list
 
 Set the default model:
-  contenox config set default-model    gemini-2.5-flash
+  contenox config set default-model    gemini-flash-latest
   contenox config set default-provider gemini`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {

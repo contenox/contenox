@@ -182,7 +182,7 @@ No daemon, no cloud required. State is stored in SQLite.
 
     # Google Gemini (no GPU required)
     contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
-    contenox config set default-model  gemini-2.5-flash
+    contenox config set default-model  gemini-flash-latest
     contenox config set default-provider gemini
 
     # OpenAI

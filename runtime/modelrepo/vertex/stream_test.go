@@ -52,7 +52,7 @@ func TestUnit_VertexStreamClient_Stream(t *testing.T) {
 		vertexClient: vertexClient{
 			baseURL:       srv.URL + "/v1/projects/test/locations/us-central1",
 			publisher:     "google",
-			modelName:     "gemini-2.5-flash",
+			modelName:     "gemini-flash-latest",
 			contextLength: 0,
 			httpClient: &http.Client{
 				Transport: bearerInjectTransport{

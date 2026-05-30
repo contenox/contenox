@@ -84,7 +84,7 @@ var providerConfigs = map[string]providerConfig{
 	},
 	"vertex-google": {
 		name:         "Google Vertex AI (Gemini)",
-		defaultModel: "gemini-2.5-flash-preview-04-17",
+		defaultModel: "gemini-flash-latest",
 		envKey:       "",
 	},
 	"vertex-anthropic": {
