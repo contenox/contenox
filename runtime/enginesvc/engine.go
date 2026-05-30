@@ -134,6 +134,7 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 		return nil, fmt.Errorf("setup status failed: %w", err)
 	}
 	engine.SetupCheck = res
+	engine.SetupStatus = ss.SetupStatus
 
 	tokenizer := ollamatokenizer.NewEstimateTokenizer()
 	tracker := cfg.Tracker

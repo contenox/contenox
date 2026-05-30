@@ -32,7 +32,7 @@ wizard that runs inside IDE terminals via ACP.
 Examples:
   contenox setup`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSetup(cmd.OutOrStdout(), cmd.ErrOrStderr())
+		return runSetup(cmd, cmd.OutOrStdout())
 	},
 }
 
@@ -51,7 +51,7 @@ var setupProviders = []setupProvider{
 	{key: "local", label: "Local (embedded llama.cpp — no server, no API key)", defaultModel: "", needsAPIKey: false},
 }
 
-func runSetup(out, errOut io.Writer) error {
+func runSetup(cmd *cobra.Command, out io.Writer) error {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  Welcome to Contenox!")
 	fmt.Fprintln(out, "")
@@ -186,10 +186,46 @@ func runSetup(out, errOut io.Writer) error {
 	if model != "" {
 		fmt.Fprintf(out, "  ✓ Model:    %s\n", model)
 	}
-	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "  Setup complete. Close this tab and start chatting!")
-	fmt.Fprintln(out, "")
+
+	reportSetupReadiness(ctx, cmd, db, out, sp.key, model)
 	return nil
+}
+
+// reportSetupReadiness runs the same read-only reachability check as
+// `contenox doctor` (a backend sync, never a model completion) and prints an
+// honest verdict instead of unconditionally claiming success. Config is already
+// saved; this only reports — it never second-guesses the operator or mutates
+// anything, so it is safe even against ERP/audited tool backends.
+func reportSetupReadiness(ctx context.Context, cmd *cobra.Command, db libdb.DBManager, out io.Writer, provider, model string) {
+	contenoxDir, _ := ResolveContenoxDir(cmd)
+	opts := buildRunOpts(cmd, db, contenoxDir)
+	opts.EffectiveDefaultProvider = provider
+	if model != "" {
+		opts.EffectiveDefaultModel = model
+	}
+
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  Checking reachability (no test prompt is sent)...")
+	res, err := ComputeReadiness(ctx, db, opts)
+	if err != nil {
+		fmt.Fprintf(out, "  ⚠  Could not verify setup: %v\n", err)
+		fmt.Fprintln(out, "     Config is saved. Run `contenox doctor` to check connectivity.")
+		fmt.Fprintln(out, "")
+		return
+	}
+	if res.Ready() {
+		fmt.Fprintln(out, "")
+		fmt.Fprintln(out, "  ✓ Setup ready — provider reachable and a chat model is available.")
+		fmt.Fprintln(out, "  Close this tab and start chatting!")
+		fmt.Fprintln(out, "")
+		return
+	}
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  Config saved, but the agent is not ready yet:")
+	PrintSetupIssues(out, res)
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  Fix the above (or run `contenox doctor`), then you're set.")
+	fmt.Fprintln(out, "")
 }
 
 func registerSetupBackend(ctx context.Context, db libdb.DBManager, providerType, apiKey string) error {

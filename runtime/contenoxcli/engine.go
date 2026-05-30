@@ -10,9 +10,25 @@ import (
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/enginesvc"
 	"github.com/contenox/agent/runtime/hitlservice"
+	"github.com/contenox/agent/runtime/internal/setupcheck"
 	"github.com/contenox/agent/runtime/localtools"
 	"github.com/contenox/agent/runtime/taskengine"
 )
+
+// ComputeReadiness builds the engine — which runs a read-only backend sync, NOT
+// a model completion — and returns the evaluated setup readiness. It is the
+// shared path behind `contenox doctor` and the setup wizard's final check, so
+// readiness is verified without ever sending a prompt (which would run a chain,
+// spend tokens, and could touch tools/audit trails). opts.EffectiveNoDeleteModels
+// is honored by BuildEngine, so a readiness check never prunes models.
+func ComputeReadiness(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (setupcheck.Result, error) {
+	engine, err := BuildEngine(ctx, db, opts)
+	if err != nil {
+		return setupcheck.Result{}, err
+	}
+	defer engine.Stop()
+	return setupcheck.EnrichResultWithOllamaProbe(ctx, engine.SetupCheck), nil
+}
 
 type Engine = enginesvc.Engine
 

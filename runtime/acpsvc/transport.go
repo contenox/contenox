@@ -21,6 +21,9 @@ type Deps struct {
 	DefaultModel    string
 	DefaultProvider string
 	WorkspaceID     string
+	// ContenoxDir is the active .contenox directory, used to locate auxiliary
+	// chains (e.g. chain-compact.json for the /compact command).
+	ContenoxDir string
 }
 
 type sessionEntry struct {
@@ -42,6 +45,13 @@ type Transport struct {
 	sessionMu       sync.Mutex
 	sessions        map[libacp.SessionID]*sessionEntry
 	contenoxToACPID map[string]libacp.SessionID
+
+	// cfgMu guards the live model/provider, which the /model and /provider
+	// commands mutate while concurrent prompts read them. The values seed from
+	// Deps at construction; Deps.DefaultModel/DefaultProvider are not read again.
+	cfgMu           sync.Mutex
+	defaultModel    string
+	defaultProvider string
 
 	permMu      sync.Mutex
 	permPending map[string]struct{}
@@ -82,8 +92,37 @@ func New(deps Deps) libacp.AgentFactory {
 			conn:            conn,
 			sessions:        make(map[libacp.SessionID]*sessionEntry),
 			contenoxToACPID: make(map[string]libacp.SessionID),
+			defaultModel:    deps.DefaultModel,
+			defaultProvider: deps.DefaultProvider,
 		}
 	}
+}
+
+// model returns the live default model, which /model may have changed since
+// startup. Safe for concurrent reads/writes against the command handlers.
+func (t *Transport) model() string {
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
+	return t.defaultModel
+}
+
+// provider returns the live default provider, which /provider may have changed.
+func (t *Transport) provider() string {
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
+	return t.defaultProvider
+}
+
+func (t *Transport) setModel(v string) {
+	t.cfgMu.Lock()
+	t.defaultModel = v
+	t.cfgMu.Unlock()
+}
+
+func (t *Transport) setProvider(v string) {
+	t.cfgMu.Lock()
+	t.defaultProvider = v
+	t.cfgMu.Unlock()
 }
 
 func (t *Transport) acpSessionForContenoxID(contenoxSessionID string) (libacp.SessionID, bool) {

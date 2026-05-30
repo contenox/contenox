@@ -174,6 +174,67 @@ func Evaluate(in Input) Result {
 	return r
 }
 
+// blockingIssue reports whether an issue prevents a usable agent: any
+// error-severity issue, plus no_backends (emitted as a warning, but chat/run/ACP
+// cannot resolve any model without at least one backend).
+func blockingIssue(iss Issue) bool {
+	return iss.Severity == "error" || iss.Code == "no_backends"
+}
+
+// BlockingIssues returns the issues that make the runtime not ready, in the
+// order Evaluate produced them. It performs no I/O.
+func (r Result) BlockingIssues() []Issue {
+	var out []Issue
+	for _, iss := range r.Issues {
+		if blockingIssue(iss) {
+			out = append(out, iss)
+		}
+	}
+	return out
+}
+
+// Ready reports whether the runtime has a usable default model and provider with
+// a reachable backend. It reads the already-computed Result — no I/O, and never a
+// model completion — and is the shared readiness predicate for doctor, chat/run
+// preflight, and the setup wizard.
+func (r Result) Ready() bool {
+	return len(r.BlockingIssues()) == 0
+}
+
+// Summary renders a concise, human-readable readiness report for a chat/terminal
+// surface (e.g. the ACP /doctor command). It reads the already-computed Result —
+// no I/O and no model completion.
+func (r Result) Summary() string {
+	model := r.DefaultModel
+	if model == "" {
+		model = "(unset)"
+	}
+	provider := r.DefaultProvider
+	if provider == "" {
+		provider = "(unset)"
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Default model:    %s\n", model)
+	fmt.Fprintf(&b, "Default provider: %s\n", provider)
+	fmt.Fprintf(&b, "Backends:         %d/%d reachable", r.ReachableBackendCount, r.BackendCount)
+
+	if r.Ready() {
+		b.WriteString("\n\n✓ Ready — provider reachable and a chat model is available.")
+		return b.String()
+	}
+
+	b.WriteString("\n\n⚠ Not ready:")
+	for _, iss := range r.BlockingIssues() {
+		fmt.Fprintf(&b, "\n  • %s", iss.Message)
+		if iss.CLICommand != "" {
+			fmt.Fprintf(&b, "\n    Try: %s", iss.CLICommand)
+		}
+	}
+	b.WriteString("\n\nRun `contenox doctor` for full backend diagnostics.")
+	return b.String()
+}
+
 func addDefaultProviderIssues(r *Result) {
 	defaultProvider := strings.ToLower(strings.TrimSpace(r.DefaultProvider))
 	if defaultProvider == "" {

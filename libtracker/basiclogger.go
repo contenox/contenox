@@ -2,6 +2,7 @@ package libtracker
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"time"
 )
@@ -11,6 +12,13 @@ var _ ActivityTracker = (*logActivityTracker)(nil)
 // logActivityTracker is a simple implementation of ActivityTracker that logs events using slog.
 type logActivityTracker struct {
 	logger *slog.Logger
+}
+
+// NewTextActivityTracker returns an ActivityTracker that emits structured text
+// logs to w at Info level. It owns its slog wiring so callers (e.g. command
+// entrypoints) don't have to import log/slog just to obtain a tracker.
+func NewTextActivityTracker(w io.Writer) ActivityTracker {
+	return NewLogActivityTracker(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
 }
 
 // NewLogActivityTracker creates a new instance of logActivityTracker.

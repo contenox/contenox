@@ -135,6 +135,15 @@ func (m *Manager) DeleteSession(ctx context.Context, tx libdb.Exec, sessionID st
 	return nil
 }
 
+// ClearSession removes all messages for a session while keeping the index, so
+// the session keeps its identity and name but starts a fresh conversation.
+func (m *Manager) ClearSession(ctx context.Context, tx libdb.Exec, sessionID string) error {
+	if err := messagestore.New(tx, m.workspaceID).DeleteMessages(ctx, sessionID); err != nil {
+		return fmt.Errorf("failed to clear session messages: %w", err)
+	}
+	return nil
+}
+
 // RenameSession updates the human-readable name of a session.
 func (m *Manager) RenameSession(ctx context.Context, tx libdb.Exec, sessionID string, name string) error {
 	return messagestore.New(tx, m.workspaceID).RenameSession(ctx, sessionID, name)

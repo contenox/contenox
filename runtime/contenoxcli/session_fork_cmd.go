@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	libdb "github.com/contenox/agent/libdbexec"
 	"github.com/contenox/agent/libtracker"
@@ -114,16 +113,6 @@ func runSessionFork(cmd *cobra.Command, args []string) error {
 }
 
 func summarizeForFork(ctx context.Context, cmd *cobra.Command, db libdb.DBManager, contenoxDir string, history []taskengine.Message, keep int) ([]taskengine.Message, error) {
-	sysEnd := 0
-	for sysEnd < len(history) && history[sysEnd].Role == "system" {
-		sysEnd++
-	}
-	if len(history)-sysEnd <= keep {
-		return nil, fmt.Errorf("session too short to summarize (have %d non-system messages, --keep=%d)", len(history)-sysEnd, keep)
-	}
-	compactEnd := len(history) - keep
-	toCompact := taskengine.ChatHistory{Messages: history[sysEnd:compactEnd]}
-
 	model, provider, altModel, altProvider := resolveDefaultModelProvider(cmd, db)
 	if model == "" {
 		return nil, fmt.Errorf("no default model configured; run 'contenox config set default-model <model>'")
@@ -178,25 +167,7 @@ func summarizeForFork(ctx context.Context, cmd *cobra.Command, db libdb.DBManage
 	execCtx := taskengine.WithTemplateVars(engineCtx, templateVars)
 
 	fmt.Fprintln(cmd.ErrOrStderr(), "Summarizing...")
-	out, _, _, err := engine.TaskService.Execute(execCtx, &chain, toCompact, taskengine.DataTypeChatHistory)
-	if err != nil {
-		return nil, fmt.Errorf("compaction chain failed: %w", err)
-	}
-	compactHist, ok := out.(taskengine.ChatHistory)
-	if !ok || len(compactHist.Messages) == 0 {
-		return nil, fmt.Errorf("compaction returned empty result")
-	}
-	summaryContent := compactHist.Messages[len(compactHist.Messages)-1].Content
-
-	spliced := make([]taskengine.Message, 0, sysEnd+1+keep)
-	spliced = append(spliced, history[:sysEnd]...)
-	spliced = append(spliced, taskengine.Message{
-		Role:      "user",
-		Content:   fmt.Sprintf("<compact-summary>\n%s\n</compact-summary>", summaryContent),
-		Timestamp: time.Now().UTC(),
-	})
-	spliced = append(spliced, history[compactEnd:]...)
-	return spliced, nil
+	return chatservice.CompactHistory(execCtx, engine.TaskService, &chain, history, keep)
 }
 
 func resolveSystemChain(cmd *cobra.Command, contenoxDir, name string) (string, error) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -96,10 +95,8 @@ func runACPX(cmd *cobra.Command, _ []string) error { return runACPProfile(cmd, a
 
 func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	if setup, _ := cmd.Flags().GetBool("setup"); setup {
-		return runSetup(cmd.OutOrStdout(), cmd.ErrOrStderr())
+		return runSetup(cmd, cmd.OutOrStdout())
 	}
-
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	parentCtx := cmd.Context()
 	if parentCtx == nil {
@@ -144,7 +141,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	}
 	defer closeLogs()
 
-	var tracker libtracker.ActivityTracker = libtracker.NewLogActivityTracker(slog.Default())
+	var tracker libtracker.ActivityTracker = libtracker.NewTextActivityTracker(os.Stderr)
 	var transport *acpsvc.Transport
 
 	defaultModel := acpsvc.ReadConfigValue(ctx, db, "default-model")
@@ -213,6 +210,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		DefaultModel:    defaultModel,
 		DefaultProvider: defaultProvider,
 		WorkspaceID:     workspaceID,
+		ContenoxDir:     contenoxDir,
 	})
 
 	conn := libacp.NewAgentSideConnection(acpStdio{}, func(c *libacp.AgentSideConnection) libacp.Agent {

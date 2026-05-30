@@ -33,6 +33,11 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		return libacp.PromptResponse{}, err
 	}
 
+	if name, args, ok := parseCommand(input); ok {
+		cmdCtx := libtracker.WithNewRequestID(ctx)
+		return t.dispatchCommand(cmdCtx, req.SessionID, sess, name, args)
+	}
+
 	promptCtx := libtracker.WithNewRequestID(ctx)
 	reqID, _ := promptCtx.Value(libtracker.ContextKeyRequestID).(string)
 
@@ -61,8 +66,8 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	}
 
 	templateVars := map[string]string{
-		"model":    t.deps.DefaultModel,
-		"provider": t.defaultProvider(),
+		"model":    t.model(),
+		"provider": t.provider(),
 	}
 
 	resp, err := sess.Agent.Prompt(promptCtx, agentservice.PromptRequest{
@@ -96,12 +101,6 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		"dropped_content_kinds": droppedContentKinds,
 	})
 	return libacp.PromptResponse{StopReason: stopReason}, nil
-}
-
-func (t *Transport) defaultProvider() string {
-	t.initMu.Lock()
-	defer t.initMu.Unlock()
-	return t.deps.DefaultProvider
 }
 
 func mapStopReason(r agentservice.StopReason) libacp.StopReason {

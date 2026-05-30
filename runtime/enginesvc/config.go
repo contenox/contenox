@@ -1,6 +1,8 @@
 package enginesvc
 
 import (
+	"context"
+
 	"github.com/contenox/agent/libbus"
 	"github.com/contenox/agent/libkvstore"
 	"github.com/contenox/agent/libtracker"
@@ -58,4 +60,8 @@ type Engine struct {
 	SetupCheck    setupcheck.Result
 	TaskEventSink taskengine.TaskEventSink
 	Stop          func()
+	// SetupStatus recomputes current readiness from live runtime state (read-only:
+	// reads synced backend state + config, never probes or runs a completion).
+	// SetupCheck above is the build-time snapshot; this reflects the latest state.
+	SetupStatus func(ctx context.Context) (setupcheck.Result, error)
 }

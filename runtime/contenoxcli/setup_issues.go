@@ -17,26 +17,13 @@ var ErrPreflightBlocked = errors.New("LLM setup is not ready")
 // PreflightLLMSetup checks setup status before running chat or run. If the user must fix
 // configuration first, it prints instructions and returns ErrPreflightBlocked. Otherwise it returns nil.
 func PreflightLLMSetup(w io.Writer, res setupcheck.Result) error {
-	if !llmSetupNeedsAttention(res) {
+	if res.Ready() {
 		return nil
 	}
 	io.WriteString(w, "\n")
 	io.WriteString(w, "Cannot run until LLM setup is ready.\n")
 	PrintSetupIssues(w, res)
 	return ErrPreflightBlocked
-}
-
-func llmSetupNeedsAttention(res setupcheck.Result) bool {
-	for _, iss := range res.Issues {
-		if iss.Severity == "error" {
-			return true
-		}
-		if iss.Code == "no_backends" {
-			// Warning in Evaluate, but chat/run cannot resolve any model without a backend.
-			return true
-		}
-	}
-	return false
 }
 
 // isModelResolverFailure reports errors where printing setupcheck issues helps the user.

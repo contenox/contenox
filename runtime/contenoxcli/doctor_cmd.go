@@ -62,14 +62,12 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	o.EffectiveDB = dbPath
 	o.EffectiveSkipBackendCycle, _ = cmd.Flags().GetBool("skip-cycle")
 
-	engine, err := BuildEngine(ctx, db, o)
+	res, err := ComputeReadiness(ctx, db, o)
 	if err != nil {
 		return fmt.Errorf("failed to build engine: %w", err)
 	}
-	defer engine.Stop()
 
 	jsonOut, _ := cmd.Flags().GetBool("json")
-	res := setupcheck.EnrichResultWithOllamaProbe(ctx, engine.SetupCheck)
 	if jsonOut {
 		enc := json.NewEncoder(cmd.OutOrStdout())
 		enc.SetIndent("", "  ")

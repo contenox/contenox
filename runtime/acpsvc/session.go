@@ -77,6 +77,7 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.sessionMu.Unlock()
 
 	t.replayMessages(ctx, req.SessionID, messages)
+	t.sendAvailableCommands(ctx, req.SessionID)
 
 	reportChange(string(req.SessionID), map[string]any{
 		"contenox_session_id": contenoxSessionID,
@@ -223,6 +224,8 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	t.sessions[sessionID] = entry
 	t.contenoxToACPID[contenoxSessionID] = sessionID
 	t.sessionMu.Unlock()
+
+	t.sendAvailableCommands(ctx, sessionID)
 
 	reportChange(string(sessionID), map[string]any{
 		"contenox_session_id": contenoxSessionID,
