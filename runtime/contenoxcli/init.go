@@ -3,7 +3,9 @@ package contenoxcli
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -33,6 +35,11 @@ var initACPChain string
 
 //go:embed chain-acpx.json
 var initACPXChain string
+
+// blessedChainHashes is a map of file basenames to a list of known-good SHA256
+// checksums from previous versions. When the --update flag is used, if a file's
+// current checksum matches one of these, it is safe to overwrite it.
+var blessedChainHashes = map[string][]string{}
 
 // headlessACPChainFilename is the on-disk name the acpx (OpenClaw / untrusted
 // driver) profile loads its chain from, parallel to default-acp-chain.json for
@@ -214,7 +221,7 @@ func RunGlobalInit(out io.Writer) error {
 // RunInit scaffolds .contenox/ with default chain files.
 // provider is "" (defaults to the already-configured provider or "local"), "ollama", "gemini", "openai", or "local".
 // contenoxDir is the target data directory (e.g. from --data-dir or the default .contenox/).
-func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir string) error {
+func RunInit(out, errOut io.Writer, force, update bool, provider string, contenoxDir string) error {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	if provider == "" {
 		// Default to the provider already configured in the database so that
@@ -247,16 +254,54 @@ func RunInit(out, errOut io.Writer, force bool, provider string, contenoxDir str
 		_ = os.WriteFile(wsPath, []byte(uuid.NewString()), 0o644)
 	}
 	writeFile := func(path, content string) error {
-		if !force {
-			if _, err := os.Stat(path); err == nil {
-				fmt.Fprintf(out, "  %s already exists (use --force to overwrite)\n", path)
-				return nil
+		// If the file doesn't exist, we always write it.
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				return fmt.Errorf("failed to write %s: %w", path, err)
 			}
+			fmt.Fprintf(out, "  Created %s\n", path)
+			return nil
 		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", path, err)
+
+		// If we're forcing, we always overwrite.
+		if force {
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				return fmt.Errorf("failed to write %s: %w", path, err)
+			}
+			fmt.Fprintf(out, "  Overwrote %s (--force)\n", path)
+			return nil
 		}
-		fmt.Fprintf(out, "  Created %s\n", path)
+
+		// If --update is passed, we check the checksum and overwrite if it's a known-good, unmodified file.
+		if update {
+			basename := filepath.Base(path)
+			if knownHashes, ok := blessedChainHashes[basename]; ok {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return fmt.Errorf("failed to read %s for update check: %w", path, err)
+				}
+				hash := sha256.Sum256(data)
+				currentHash := hex.EncodeToString(hash[:])
+
+				for _, knownHash := range knownHashes {
+					if currentHash == knownHash {
+						// Checksum matches, safe to overwrite.
+						if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+							return fmt.Errorf("failed to write %s: %w", path, err)
+						}
+						fmt.Fprintf(out, "  Updated %s\n", path)
+						return nil
+					}
+				}
+			}
+			// If we're here, the file was either not in the blessed list or the checksum didn't match.
+			// We don't overwrite it, but we also don't print a scary "already exists" message.
+			fmt.Fprintf(out, "  Skipped %s (has been modified)\n", path)
+			return nil
+		}
+
+		// Default case: file exists, no --force, no --update. Do nothing.
+		fmt.Fprintf(out, "  %s already exists (use --force to overwrite or --update to refresh)\n", path)
 		return nil
 	}
 

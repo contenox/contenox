@@ -280,7 +280,7 @@ After init, register a backend, make sure the runtime can see a model, then set 
   contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
   contenox config set default-model gemini-3.1-pro-preview
 
-Use --force to overwrite existing files.`,
+Use --force to overwrite existing files, or --update to refresh unchanged default files to the latest version.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runInitCmd,
 }
@@ -338,6 +338,8 @@ func init() {
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
+	initCmd.Flags().Bool("update", false, "Update unchanged default files to the latest version")
+	initCmd.Flags().Bool("update", false, "Update unchanged default files to the latest version")
 
 	// Chat-specific local flags (not exposed globally).
 	chatCmd.Flags().Int("trim", 0, "Only send the last N messages from session history to the model (0 = send all)")
@@ -419,6 +421,7 @@ func ResolveWorkspaceID(contenoxDir string) string {
 
 func runInitCmd(cmd *cobra.Command, args []string) error {
 	force, _ := cmd.Flags().GetBool("force")
+	update, _ := cmd.Flags().GetBool("update")
 	provider := ""
 	if len(args) > 0 {
 		provider = args[0]
@@ -427,7 +430,7 @@ func runInitCmd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve .contenox dir: %w", err)
 	}
-	return RunInit(cmd.OutOrStdout(), cmd.ErrOrStderr(), force, provider, contenoxDir)
+	return RunInit(cmd.OutOrStdout(), cmd.ErrOrStderr(), force, update, provider, contenoxDir)
 }
 
 func runChat(cmd *cobra.Command, args []string) error {
