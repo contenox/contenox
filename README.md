@@ -62,7 +62,7 @@ The agent's behavior is a chain file. Every decision is a JSON key:
       },
       "transition": {
         "branches": [
-          { "operator": "equals", "when": "tool-call", "goto": "run_tools" },
+          { "operator": "equals", "when": "tool_call", "goto": "run_tools" },
           { "operator": "default", "goto": "end" }
         ]
       }

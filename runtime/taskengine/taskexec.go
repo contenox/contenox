@@ -280,6 +280,16 @@ func (exe *SimpleExec) shiftMessagesToFit(ctx context.Context, modelName string,
 }
 
 // getPrimaryModel extracts the primary model name from execution config
+// temperatureValue unwraps an optional temperature. ok is false when the field
+// is nil (unset), in which case callers must NOT send a temperature so the
+// provider default applies. See LLMExecutionConfig.Temperature.
+func temperatureValue(t *float32) (float32, bool) {
+	if t == nil {
+		return 0, false
+	}
+	return *t, true
+}
+
 func GetPrimaryModel(llmCall *LLMExecutionConfig) string {
 	if llmCall.Model != "" {
 		return llmCall.Model
@@ -335,8 +345,12 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 		Tracker:       exe.tracker,
 	}
 
+	// The prompt/route path historically always sent a temperature (0 when unset).
+	// Preserve that — route handlers depend on temp-0 determinism to emit exactly
+	// one label. Only the chat path treats nil as "use the provider default".
+	promptTemp, _ := temperatureValue(llmCall.Temperature)
 	streamArgs := []libmodelprovider.ChatArgument{
-		libmodelprovider.WithTemperature(float64(llmCall.Temperature)),
+		libmodelprovider.WithTemperature(float64(promptTemp)),
 	}
 	if llmCall.Think != "" {
 		streamArgs = append(streamArgs, libmodelprovider.WithThink(llmCall.Think))
@@ -419,7 +433,8 @@ func (exe *SimpleExec) promptWithRetry(
 		if modelID != "" && modelID != primary {
 			callReq.ModelNames = []string{modelID}
 		}
-		r, m, e := exe.repo.PromptExecute(ctx, callReq, systemInstruction, float32(llmCall.Temperature), prompt)
+		promptTemp, _ := temperatureValue(llmCall.Temperature)
+		r, m, e := exe.repo.PromptExecute(ctx, callReq, systemInstruction, promptTemp, prompt)
 		prevErr = e
 		if e != nil {
 			return nil, e
@@ -477,7 +492,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		return nil, DataTypeAny, "request was canceled", fmt.Errorf("task execution failed: %w", taskCtx.Err())
 	}
 	if currentTask.Handler == HandleNoop {
-		return output, outputType, "noop", nil
+		return output, outputType, TransitionNoop, nil
 	}
 	if currentTask.Tools == nil {
 		currentTask.Tools = &ToolsCall{}
@@ -591,7 +606,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 
 		default:
-			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'chat_history' or 'string', used var: %s but got '%s'", currentTask.InputVar, currentTask.Handler, dataType.String())
+			return nil, DataTypeAny, "", fmt.Errorf("handler '%s' requires input of type 'chat_history' or 'string', used var: %s but got '%s'", currentTask.Handler, currentTask.InputVar, dataType.String())
 		}
 
 		// Count tokens and check limits for chat completion
@@ -645,13 +660,13 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		}
 
 		if len(chatHistory.Messages) == 0 {
-			transitionEval = "no_op"
+			transitionEval = TransitionNoop
 			break
 		}
 
 		lastMessage := chatHistory.Messages[len(chatHistory.Messages)-1]
 		if len(lastMessage.CallTools) == 0 {
-			transitionEval = "no_calls_found"
+			transitionEval = TransitionNoCallsFound
 			break
 		}
 
@@ -829,12 +844,12 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 
 		switch {
 		case taskErr != nil:
-			transitionEval = "failed"
+			transitionEval = TransitionFailed
 		case executedAny:
-			transitionEval = "tools_executed"
+			transitionEval = TransitionToolsExecuted
 		default:
 			// We *had* tool calls, but none resolved to tools
-			transitionEval = "no_calls_found"
+			transitionEval = TransitionNoCallsFound
 		}
 
 	case HandleTools:
@@ -972,6 +987,9 @@ func (exe *SimpleExec) executeLLM(
 			included[name] = struct{}{}
 		}
 		for _, twr := range toolsResolution {
+			if _, ok := hiddenTools[twr.Function.Name]; ok {
+				continue
+			}
 			if _, ok := included[twr.ToolsName]; ok {
 				tools = append(tools, libmodelprovider.Tool{
 					Type: twr.Type,
@@ -1106,6 +1124,9 @@ func (exe *SimpleExec) executeLLM(
 			"messages": preludeContents,
 		})
 	}
+	if v, ok := temperatureValue(llmCall.Temperature); ok {
+		chatArgs = append(chatArgs, libmodelprovider.WithTemperature(float64(v)))
+	}
 	if llmCall.Think != "" {
 		chatArgs = append(chatArgs, libmodelprovider.WithThink(llmCall.Think))
 	}
@@ -1160,7 +1181,10 @@ func (exe *SimpleExec) executeLLM(
 				Thinking:  streamedThinking.String(),
 				Timestamp: time.Now().UTC(),
 			})
-			return input, DataTypeChatHistory, "", nil
+			// Streaming is gated on len(tools)==0, so this branch can only ever be
+			// the finished-turn / no-tool-call outcome — emit the same transition
+			// eval as the non-streaming path so branching is identical either way.
+			return input, DataTypeChatHistory, TransitionExecuted, nil
 		}
 	}
 
@@ -1206,9 +1230,9 @@ func (exe *SimpleExec) executeLLM(
 	input.OutputTokens = outputTokensCount
 
 	if len(callTools) > 0 {
-		return input, DataTypeChatHistory, "tool-call", nil
+		return input, DataTypeChatHistory, TransitionToolCall, nil
 	}
-	return input, DataTypeChatHistory, "executed", nil
+	return input, DataTypeChatHistory, TransitionExecuted, nil
 }
 
 // toolsengine handles the execution of a tools, including output templating.
@@ -1227,25 +1251,26 @@ func (exe *SimpleExec) toolsengine(
 	// Call the provider with the new, simple signature.
 	toolsOutput, dataType, err := exe.toolsProvider.Exec(ctx, startingTime, input, debug, tools)
 	if err != nil {
-		return nil, dataType, "failed", err
+		return nil, dataType, TransitionFailed, err
 	}
 
 	toolsOutput, dataType, normErr := NormalizeDataType(toolsOutput, dataType)
 	if normErr != nil {
-		return nil, DataTypeAny, "failed", normErr
+		return nil, DataTypeAny, TransitionFailed, normErr
 	}
 
-	// On success, process the output.
+	// On success, process the output. Default eval matches execute_tool_calls'
+	// success token; an OutputTemplate (below) overrides it with its rendered text.
 	finalOutput := toolsOutput
 	finalOutputType := dataType
-	finalTransitionEval := "ok"
+	finalTransitionEval := TransitionToolsExecuted
 
 	// Apply the output template if it's defined.
 	if outputTemplate != "" {
 		rendered, tplErr := renderTemplate(outputTemplate, finalOutput)
 		if tplErr != nil {
 			// Return a descriptive error if templating fails.
-			return nil, DataTypeAny, "failed", fmt.Errorf("failed to render tools output template: %w", tplErr)
+			return nil, DataTypeAny, TransitionFailed, fmt.Errorf("failed to render tools output template: %w", tplErr)
 		}
 		finalOutput = rendered
 		finalOutputType = DataTypeString

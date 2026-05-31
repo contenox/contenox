@@ -16,7 +16,7 @@ type StackTrace interface {
 
 type CapturedStateUnit struct {
 	TaskID      string        `json:"taskID" example:"validate_input"`
-	TaskHandler string        `json:"taskHandler" example:"condition_key"`
+	TaskHandler string        `json:"taskHandler" example:"chat_completion"`
 	InputType   DataType      `json:"inputType" example:"string" openapi_include_type:"string"`
 	OutputType  DataType      `json:"outputType" example:"string" openapi_include_type:"string"`
 	Transition  string        `json:"transition" example:"valid_input"`

@@ -11,6 +11,45 @@ marked **[verified]** were checked empirically against the code/registry on
 
 ---
 
+## CORRECTION (2026-05-31): the priority order below was inverted
+
+Re-verified against current HEAD *and* the registry's actual PR CI
+(`agentclientprotocol/registry` `.github/workflows/build-registry.yml` +
+`verify_agents.py`/`client.py`). Two findings overturn §0:
+
+1. **Distribution was never the gating blocker.** The registry schema accepts
+   `.zip/.tar.gz/.tgz/.tar.bz2/.tbz2` **or a raw binary**, and per-platform
+   binaries are already published on GitHub releases (darwin-arm64, linux-amd64,
+   linux-arm64). To mirror the convention every real binary entry uses
+   (opencode: `cmd "./opencode", args ["acp"]`), `release.yml` now also emits a
+   `.tar.gz` per platform containing a binary named `contenox`. **[done]**
+
+2. **The real gate is clean-environment boot.** The PR-gating `verify-auth` job
+   downloads the archive into an isolated `HOME`, launches the binary, sends one
+   `initialize`, and requires an `authMethods` entry of type agent/terminal — no
+   authenticate, no prompt. Empirically, `contenox acp` in a pristine `HOME`
+   printed `default-model is not configured` to stderr and **emitted nothing on
+   stdout** (`acp_cmd.go` returned before starting the transport). It also would
+   have hard-errored on the missing `default-acp-chain.json`
+   (`chain.go` has no embedded fallback; the `acp` profile didn't seed it). So
+   the §5 "serve doesn't self-heal" items the original doc filed as *non-gating*
+   were in fact THE blocker. **Both fixed** (see §5).
+
+The fix kept to the CLI-boot + acpsvc layers (enginesvc untouched, since
+`Build → Init{Embeder,PromptExec,ChatExec}`/`EnsureModels` all reject an empty
+model name): seed the `acp` chain like `acpx` does; when no model is configured,
+serve a **setup-only** transport (engine nil) that still answers
+initialize/authenticate; session creation returns an actionable
+`errSetupRequired` instead of nil-panicking. Regression-tested in
+`runtime/acpsvc/setuponly_test.go`.
+
+Setup-liveness (§4) was separately resolved by the maintainer as **read-only
+reachability** (`reportSetupReadiness`, "no test prompt is sent"), deliberately
+NOT the smoke-completion the original §4 prescribed. Treat §4.1/§4.2 as
+closed-by-design, not pending.
+
+---
+
 ## 0. TL;DR priority order
 
 1. **Distribution** is the real listing blocker. The registry installs a binary

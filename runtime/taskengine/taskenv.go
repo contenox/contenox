@@ -353,7 +353,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 		// Render prompt template if exists
 		if currentTask.PromptTemplate != "" {
-			rendered, err := renderTemplate(currentTask.PromptTemplate, vars)
+			rendered, err := renderTemplate(expandStepMacros(currentTask.PromptTemplate, edgeCounts), vars)
 			if err != nil {
 				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: template error: %v", currentTask.ID, err)
 			}
@@ -508,7 +508,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 		// Handle print statement
 		if currentTask.Print != "" {
-			printMsg, err := renderTemplate(currentTask.Print, vars)
+			printMsg, err := renderTemplate(expandStepMacros(currentTask.Print, edgeCounts), vars)
 			if err != nil {
 				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: print template error: %v", currentTask.ID, err)
 			}
@@ -581,6 +581,13 @@ func renderTemplate(tmplStr string, vars any) (string, error) {
 }
 
 func (exe SimpleEnv) evaluateTransitions(_ context.Context, _ string, transition TaskTransition, eval string, edgeCounts map[string]int) (string, *TransitionBranch, error) {
+	// A task with no branches is a leaf: end the chain cleanly with its output
+	// rather than erroring. (Authoring an explicit {operator: default, goto: ""}
+	// branch remains the way to end conditionally.)
+	if len(transition.Branches) == 0 {
+		return "", nil, nil
+	}
+
 	// First check explicit matches
 	for _, branch := range transition.Branches {
 		if branch.Operator == OpDefault {

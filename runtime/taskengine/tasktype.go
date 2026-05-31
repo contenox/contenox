@@ -3,7 +3,6 @@ package taskengine
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/contenox/agent/runtime/taskengine/llmretry"
@@ -26,12 +25,47 @@ func (t TaskHandler) String() string {
 	return string(t)
 }
 
+// Transition-eval tokens are the control values a handler emits as its
+// transition "eval"; a TransitionBranch matches them via its When field (with
+// the default Operator, exact string equality). These are part of the DSL
+// contract — branch on these constants, not the model's free text:
+//
+//   - chat_completion        → TransitionToolCall (model requested tools) | TransitionExecuted (finished, no tool calls)
+//   - execute_tool_calls     → TransitionNoop (empty history) | TransitionNoCallsFound (model produced no tool calls) | TransitionToolsExecuted | TransitionFailed
+//   - tools                  → TransitionToolsExecuted | TransitionFailed (or, when OutputTemplate is set, its rendered text)
+//   - noop                   → TransitionNoop
+//
+// To branch on the model's actual text, use the `route` handler, whose eval IS
+// the model's chosen label.
+const (
+	// TransitionExecuted: a chat_completion turn finished with no tool calls.
+	TransitionExecuted = "executed"
+	// TransitionToolCall: a chat_completion turn requested one or more tool calls.
+	// (Snake_case to match the "tool_call" task-event kind; pre-1.0 this replaced
+	// the earlier hyphenated "tool-call".)
+	TransitionToolCall = "tool_call"
+	// TransitionNoop: the noop handler ran, or execute_tool_calls saw empty history.
+	TransitionNoop = "noop"
+	// TransitionNoCallsFound: the model's last message carried no tool calls to run.
+	TransitionNoCallsFound = "no_calls_found"
+	// TransitionToolsExecuted: a tools task ran its tool successfully.
+	TransitionToolsExecuted = "tools_executed"
+	// TransitionFailed: a tools task failed.
+	TransitionFailed = "failed"
+)
+
+// DataType (un)marshals as its lowercase string name in both JSON and YAML.
+// All four methods route through String()/DataTypeFromString so the parsers can
+// never drift (previously JSON accepted "any" but YAML did not, and neither
+// accepted "nil" though the type exists, and the YAML methods used the wrong
+// yaml.v3 signatures and were silently dead).
+
 func (d DataType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
-func (d DataType) MarshalYAML() ([]byte, error) {
-	return yaml.Marshal(d.String())
+func (d DataType) MarshalYAML() (any, error) {
+	return d.String(), nil
 }
 
 func (dt *DataType) UnmarshalJSON(data []byte) error {
@@ -39,44 +73,24 @@ func (dt *DataType) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &s); err != nil {
 		return err
 	}
-
-	switch strings.ToLower(s) {
-	case "any":
-		*dt = DataTypeAny
-	case "string":
-		*dt = DataTypeString
-	case "int":
-		*dt = DataTypeInt
-	case "json":
-		*dt = DataTypeJSON
-	case "chat_history":
-		*dt = DataTypeChatHistory
-	default:
-		return fmt.Errorf("unknown data type: %q", s)
+	v, err := DataTypeFromString(s)
+	if err != nil {
+		return err
 	}
-
+	*dt = v
 	return nil
 }
 
-func (dt *DataType) UnmarshalYAML(data []byte) error {
+func (dt *DataType) UnmarshalYAML(value *yaml.Node) error {
 	var s string
-	if err := yaml.Unmarshal(data, &s); err != nil {
+	if err := value.Decode(&s); err != nil {
 		return err
 	}
-
-	switch strings.ToLower(s) {
-	case "string":
-		*dt = DataTypeString
-	case "int":
-		*dt = DataTypeInt
-	case "json":
-		*dt = DataTypeJSON
-	case "chat_history":
-		*dt = DataTypeChatHistory
-	default:
-		return fmt.Errorf("unknown data type: %q", s)
+	v, err := DataTypeFromString(s)
+	if err != nil {
+		return err
 	}
-
+	*dt = v
 	return nil
 }
 
@@ -93,14 +107,22 @@ type TaskTransition struct {
 // TransitionBranch defines a single possible path in the workflow,
 // selected when the task's output matches the specified condition.
 type TransitionBranch struct {
-	// Operator defines how to compare the task's output to When.
+	// Operator defines how to compare the task's transition eval to When.
+	// Omitted operator behaves as exact-equality. The comparison for
+	// equals/contains/starts_with/ends_with is byte-exact and CASE-SENSITIVE with
+	// no trimming — a trailing newline (common in multiline template literals)
+	// will not match. Only the `route` handler normalizes its answer.
 	Operator OperatorTerm `yaml:"operator,omitempty" json:"operator,omitempty" example:"equals" openapi_include_type:"string"`
 
-	// When specifies the condition that must be met to follow this branch.
-	// Format depends on the task type:
-	// - For most handlers: matched against the task's transition eval
-	// - For edge_traversed_at_least: integer threshold
-	When string `yaml:"when" json:"when" example:"yes"`
+	// When is the value this branch matches against the task's transition eval.
+	// What the eval is depends on the handler:
+	//   - chat_completion / execute_tool_calls / tools / noop → a control token,
+	//     one of the Transition* constants (e.g. "tool_call", "executed",
+	//     "tools_executed", "no_calls_found", "noop", "failed"). You CANNOT branch
+	//     on the model's free text here — use the `route` handler for that.
+	//   - route → the model's chosen label (one of the declared branch targets).
+	//   - edge_traversed_at_least → an integer threshold (see that operator).
+	When string `yaml:"when" json:"when" example:"tool_call"`
 
 	// Goto specifies the target task ID if this branch is taken.
 	// Leave empty or use taskengine.TermEnd to end the chain.
@@ -170,22 +192,38 @@ func ToOperatorTerm(s string) (OperatorTerm, error) {
 
 // LLMExecutionConfig represents configuration for executing tasks using Large Language Models (LLMs).
 type LLMExecutionConfig struct {
-	Model       string   `yaml:"model" json:"model" example:"mistral:instruct"`
-	Models      []string `yaml:"models,omitempty" json:"models,omitempty" example:"[\"gpt-4\", \"gpt-3.5-turbo\"]"`
-	Provider    string   `yaml:"provider,omitempty" json:"provider,omitempty" example:"ollama"`
-	Providers   []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
-	Temperature float32  `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
-	// Tools is the allowlist of tools names this task may invoke.
+	// Model is the primary model: it is placed first in the candidate list and is
+	// the model used for token counting (see GetPrimaryModel). When both Model and
+	// Models are set, Model plus Models form the candidate set (Model first);
+	// the resolver then picks a reachable one — so set exactly Model for a single
+	// pinned model, or use Models for an explicit candidate pool.
+	Model string `yaml:"model" json:"model" example:"mistral:instruct"`
+	// Models is an additional candidate pool, considered alongside Model.
+	Models []string `yaml:"models,omitempty" json:"models,omitempty" example:"[\"gpt-4\", \"gpt-3.5-turbo\"]"`
+	// Provider is the primary provider, placed first in the candidate list;
+	// Providers supplies additional candidates.
+	Provider  string   `yaml:"provider,omitempty" json:"provider,omitempty" example:"ollama"`
+	Providers []string `yaml:"providers,omitempty" json:"providers,omitempty" example:"[\"ollama\", \"openai\"]"`
+	// Temperature is the sampling temperature; pointer so "unset" (nil) is
+	// distinguishable from an explicit 0.0. When set it is honored everywhere.
+	// When unset: chat_completion uses the provider default; the prompt/route
+	// handlers use 0.0 (route depends on deterministic single-label output).
+	Temperature *float32 `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
+	// Tools is the allowlist of registry tool names this task may invoke. (Client-
+	// passed tools are governed separately by PassClientsTools.)
 	//
 	// Patterns supported:
-	//   - absent/null   — all registered tools (backward-compatible default)
-	//   - []            — no tools exposed to the model
-	//   - ["*"]         — all registered tools (explicit)
-	//   - ["a","b"]     — only the named tools (unknown names silently ignored)
-	//   - ["*","!name"] — all tools except the excluded name(s)
+	//   - absent/null/[] — NO registry tools exposed. Note: omitempty collapses
+	//                      nil and [] to the same wire form, so they are identical.
+	//   - ["*"]          — all registered tools
+	//   - ["a","b"]      — only the named tools (unknown names are ignored)
+	//   - ["*","!name"]  — all tools except the excluded name(s)
 	//
-	// Exclusions ("!name") are only meaningful when combined with "*".
-	Tools     []string `yaml:"tools,omitempty" json:"tools,omitempty" example:"[\"local_shell\", \"nws\"]"`
+	// Exclusions ("!name") are only meaningful combined with "*"; an exclusion-only
+	// list resolves to no tools.
+	Tools []string `yaml:"tools,omitempty" json:"tools,omitempty" example:"[\"local_shell\", \"nws\"]"`
+	// HideTools suppresses specific tools by (namespaced) name from BOTH the
+	// registry tools selected via Tools and the client-passed tools.
 	HideTools []string `yaml:"hide_tools,omitempty" json:"hide_tools,omitempty" example:"[\"tool1\", \"tools_name1.tool1\"]"`
 	// ToolsPolicies carries per-tools policy overrides for this task.
 	// Keys are tools names; values are maps of policy key → value pairs.
@@ -202,10 +240,11 @@ type LLMExecutionConfig struct {
 	// Think enables reasoning mode for supported models.
 	// Accepts "true"/"false" or "high"/"medium"/"low". Empty = provider default (off).
 	Think string `yaml:"think,omitempty" json:"think,omitempty" example:"high"`
-	// MaxTokens caps the model's output tokens for this task.
-	// When unset, the engine falls back to the chain's TokenLimit so providers
-	// (notably Gemini thinking models) don't burn their entire output budget on
-	// hidden reasoning and emit empty content.
+	// MaxTokens caps the model's output tokens for this task. When unset, NO
+	// explicit output cap is sent and the provider default applies — the engine
+	// deliberately does NOT fall back to the chain's TokenLimit (that is the
+	// input+output context window, not an output cap, and conflating them trips
+	// per-model output limits, e.g. Vertex Gemini 2.5 Pro's 65536 cap).
 	MaxTokens *int `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty" example:"8192"`
 	// Shift allows the context window to slide on overflow instead of erroring.
 	Shift bool `yaml:"shift,omitempty" json:"shift,omitempty"`
@@ -236,7 +275,7 @@ type TaskDefinition struct {
 	Description string `yaml:"description" json:"description" example:"Validates user input meets quality requirements"`
 
 	// Handler determines how the LLM output (or tools) will be interpreted.
-	Handler TaskHandler `yaml:"handler" json:"handler" example:"condition_key" openapi_include_type:"string"`
+	Handler TaskHandler `yaml:"handler" json:"handler" example:"chat_completion" openapi_include_type:"string"`
 
 	// SystemInstruction provides additional instructions to the LLM, if applicable system level will be used.
 	SystemInstruction string `yaml:"system_instruction,omitempty" json:"system_instruction,omitempty" example:"You are a quality control assistant. Respond only with 'valid' or 'invalid'."`

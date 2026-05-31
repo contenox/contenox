@@ -90,7 +90,7 @@ func (c *chatExecutor) TaskExec(_ context.Context, _ time.Time, _ int, _ *tasken
 	msgs = append(msgs, assistant)
 	transition := "executed"
 	if c.assistantToolCall != nil {
-		transition = "tool-call"
+		transition = "tool_call"
 	}
 	return taskengine.ChatHistory{Messages: msgs}, taskengine.DataTypeChatHistory, transition, nil
 }

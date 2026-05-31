@@ -112,11 +112,21 @@ jobs:
           mkdir -p bin
           go build -ldflags="${LDFLAGS}" -o bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/contenox
 
+      # The ACP registry consumes an archive whose `cmd` is the executable inside
+      # it (see opencode/codex-acp manifests: cmd "./<name>"). Package a .tar.gz
+      # holding a binary named plainly `contenox`, alongside the raw binary that
+      # install.sh keeps fetching by its goos-goarch name.
+      - name: Package ACP registry archive
+        run: |
+          cp bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }} bin/contenox
+          tar -czf bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C bin contenox
+          rm bin/contenox
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: contenox-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}*
 
   release:
     needs: [verify, build]

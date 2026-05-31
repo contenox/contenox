@@ -37,6 +37,11 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 		reportErr(err)
 		return libacp.LoadSessionResponse{}, err
 	}
+	if t.deps.Engine == nil {
+		err := errSetupRequired()
+		reportErr(err)
+		return libacp.LoadSessionResponse{}, err
+	}
 	workspaceID := t.workspaceID()
 	if resolved, ok := t.resolveSessionWorkspace(ctx, string(req.SessionID)); ok {
 		workspaceID = resolved
@@ -176,6 +181,15 @@ func toolCallUpdateFromResult(m taskengine.Message) libacp.SessionUpdate {
 	return update
 }
 
+// errSetupRequired is returned by session operations when the transport is
+// running setup-only (no default-model was configured at launch, so the engine
+// is nil). It gives the ACP client an actionable message instead of letting the
+// nil engine panic on first use. initialize/authenticate stay available so the
+// "Setup Contenox" terminal auth method can configure a model.
+func errSetupRequired() error {
+	return libacp.NewError(libacp.ErrInvalidParams, "contenox is not configured yet: no default-model is set. Run the \"Setup Contenox\" auth method (or `contenox acp --setup`), then reconnect.")
+}
+
 func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest) (libacp.NewSessionResponse, error) {
 	internalID := newSessionID(sessionNamespace(t))
 	sessionID := libacp.SessionID(internalID)
@@ -185,6 +199,11 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 
 	if !filepath.IsAbs(req.Cwd) {
 		err := libacp.NewErrorf(libacp.ErrInvalidParams, "cwd must be an absolute path, got %q", req.Cwd)
+		reportErr(err)
+		return libacp.NewSessionResponse{}, err
+	}
+	if t.deps.Engine == nil {
+		err := errSetupRequired()
 		reportErr(err)
 		return libacp.NewSessionResponse{}, err
 	}

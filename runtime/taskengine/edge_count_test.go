@@ -21,10 +21,10 @@ func TestUnit_EdgeTraversedAtLeast_BoundsAgenticLoop(t *testing.T) {
 
 	mockExec := &taskengine.MockTaskExecutor{
 		MockTransitionValueSequence: []string{
-			"tool-call", "", // round 1: chat -> run_tools, run_tools -> chat
-			"tool-call", "", // round 2
-			"tool-call", "", // round 3 (chat->run_tools count reaches 3)
-			"tool-call", // round 4: chat re-enters; budget branch should win regardless of this value
+			"tool_call", "", // round 1: chat -> run_tools, run_tools -> chat
+			"tool_call", "", // round 2
+			"tool_call", "", // round 3 (chat->run_tools count reaches 3)
+			"tool_call", // round 4: chat re-enters; budget branch should win regardless of this value
 			"",          // summariser default-branches to end
 		},
 		MockOutput: "stub",
@@ -47,7 +47,7 @@ func TestUnit_EdgeTraversedAtLeast_BoundsAgenticLoop(t *testing.T) {
 							When:     "3",
 							Goto:     "summariser",
 						},
-						{Operator: taskengine.OpEquals, When: "tool-call", Goto: "run_tools"},
+						{Operator: taskengine.OpEquals, When: "tool_call", Goto: "run_tools"},
 					},
 				},
 			},
@@ -87,8 +87,8 @@ func TestUnit_EdgeTraversedAtLeast_BoundsAgenticLoop(t *testing.T) {
 func TestUnit_EdgeTraversedAtLeast_DoesNotFireBelowThreshold(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
 		MockTransitionValueSequence: []string{
-			"tool-call", "", // round 1
-			"tool-call", "", // round 2
+			"tool_call", "", // round 1
+			"tool_call", "", // round 2
 			"done", // round 3: chat returns non-tool-call, default branch -> end
 		},
 		MockOutput: "stub",
@@ -111,7 +111,7 @@ func TestUnit_EdgeTraversedAtLeast_DoesNotFireBelowThreshold(t *testing.T) {
 							When:     "10", // never reached
 							Goto:     "summariser",
 						},
-						{Operator: taskengine.OpEquals, When: "tool-call", Goto: "run_tools"},
+						{Operator: taskengine.OpEquals, When: "tool_call", Goto: "run_tools"},
 						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
 					},
 				},

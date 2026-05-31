@@ -50,8 +50,8 @@ func TestUnit_StepMacro_EdgeCountGrowsAcrossLoopIterations(t *testing.T) {
 	rec := &stepRecordingExec{
 		watchTaskID: "chat",
 		transitions: []string{
-			"tool-call", "", // round 1: chat -> run_tools, run_tools -> chat
-			"tool-call", "", // round 2
+			"tool_call", "", // round 1: chat -> run_tools, run_tools -> chat
+			"tool_call", "", // round 2
 			"done", // round 3: chat default-branches to end
 		},
 	}
@@ -74,7 +74,7 @@ func TestUnit_StepMacro_EdgeCountGrowsAcrossLoopIterations(t *testing.T) {
 				SystemInstruction: "BUDGET: {{edge_count:chat->run_tools}}/20",
 				Transition: taskengine.TaskTransition{
 					Branches: []taskengine.TransitionBranch{
-						{Operator: taskengine.OpEquals, When: "tool-call", Goto: "run_tools"},
+						{Operator: taskengine.OpEquals, When: "tool_call", Goto: "run_tools"},
 						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
 					},
 				},

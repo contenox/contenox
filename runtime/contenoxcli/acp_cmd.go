@@ -81,6 +81,7 @@ var acpProfileACP = acpProfile{
 	hitlPolicy: "hitl-policy-acp.json",
 	chainFile:  "default-acp-chain.json",
 	chainEnv:   "CONTENOX_ACP_CHAIN_PATH",
+	seedChain:  seedACPChainIfMissing,
 }
 
 var acpProfileACPX = acpProfile{
@@ -121,7 +122,18 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	}
 	defer db.Close()
 
-	contenoxDir, _ := ResolveContenoxDir(cmd)
+	// Anchor seeding/telemetry to the SAME directory the ACP runtime reads from.
+	// The DB (globalDBPath), the chain (LoadChainRegistryFrom) and HITL policies
+	// (acpPolicySource) all resolve to $HOME/.contenox via os.UserHomeDir(),
+	// ignoring ResolveContenoxDir's cwd-walk. Using that cwd-walk here meant a
+	// launch from an arbitrary working directory (Zed's project dir, or the ACP
+	// registry's isolated sandbox) seeded presets into <cwd>/.contenox while the
+	// loaders looked in $HOME/.contenox — so the chain/policy presets were
+	// silently absent and `acp` hard-errored before serving initialize.
+	contenoxDir, err := globalContenoxDir()
+	if err != nil {
+		return fmt.Errorf("resolve contenox dir: %w", err)
+	}
 	workspaceID := workspaceFlag
 	if workspaceID == "" {
 		workspaceID = ResolveWorkspaceID(contenoxDir)
@@ -146,9 +158,6 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 
 	defaultModel := acpsvc.ReadConfigValue(ctx, db, "default-model")
 	defaultProvider := acpsvc.ReadConfigValue(ctx, db, "default-provider")
-	if defaultModel == "" {
-		return fmt.Errorf("default-model is not configured; run `contenox config set default-model <name>` first")
-	}
 
 	chains, err := acpsvc.LoadChainRegistryFrom(profile.chainFile, profile.chainEnv)
 	if err != nil {
@@ -183,25 +192,36 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		}
 	}
 
-	cfg := enginesvc.Config{
-		DefaultModel:    defaultModel,
-		DefaultProvider: defaultProvider,
-		LocalTools:      tools,
-		Tracker:         tracker,
-		WorkspaceID:     workspaceID,
-	}
-	if enableHITL {
-		cfg.EnableHITL = true
-		cfg.AskApproval = askApproval
-		cfg.HITLPolicySource = acpPolicySource()
-		cfg.HITLDefaultPolicyName = profile.hitlPolicy
-	}
+	// The engine requires a configured model: enginesvc.Build wires the embed/
+	// task/chat executors and EnsureModels, all of which reject an empty model
+	// name. When none is set yet we serve a setup-only transport instead of
+	// hard-exiting: initialize/authenticate still work, so an ACP client can run
+	// the "Setup Contenox" terminal auth method (`acp --setup`) to configure one.
+	// Session creation returns an actionable error until then (see acpsvc).
+	var engine *enginesvc.Engine
+	if defaultModel == "" {
+		fmt.Fprintln(os.Stderr, "contenox acp: no default-model configured; serving setup-only. Run the \"Setup Contenox\" auth method or `contenox acp --setup` to configure a provider and model.")
+	} else {
+		cfg := enginesvc.Config{
+			DefaultModel:    defaultModel,
+			DefaultProvider: defaultProvider,
+			LocalTools:      tools,
+			Tracker:         tracker,
+			WorkspaceID:     workspaceID,
+		}
+		if enableHITL {
+			cfg.EnableHITL = true
+			cfg.AskApproval = askApproval
+			cfg.HITLPolicySource = acpPolicySource()
+			cfg.HITLDefaultPolicyName = profile.hitlPolicy
+		}
 
-	engine, err := enginesvc.Build(ctx, db, cfg)
-	if err != nil {
-		return fmt.Errorf("build engine: %w", err)
+		engine, err = enginesvc.Build(ctx, db, cfg)
+		if err != nil {
+			return fmt.Errorf("build engine: %w", err)
+		}
+		defer engine.Stop()
 	}
-	defer engine.Stop()
 
 	transportFactory := acpsvc.New(acpsvc.Deps{
 		Engine:                engine,

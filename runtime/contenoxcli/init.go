@@ -61,6 +61,24 @@ func seedHeadlessACPChainIfMissing(contenoxDir string) error {
 	return os.WriteFile(dst, []byte(initACPXChain), 0644)
 }
 
+// seedACPChainIfMissing writes the default-acp-chain.json preset when it is
+// absent, so the `acp` profile is self-sufficient on a fresh install the same
+// way `acpx` is via seedHeadlessACPChainIfMissing. Without this, a clean
+// environment that never ran `contenox init`/`--setup` hard-errors at launch
+// in LoadChainRegistryFrom (the registry validator runs in exactly such an
+// isolated HOME), so the ACP transport never starts and `initialize` is never
+// answered.
+func seedACPChainIfMissing(contenoxDir string) error {
+	dst := filepath.Join(contenoxDir, "default-acp-chain.json")
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, []byte(initACPChain), 0644)
+}
+
 // providerConfig holds the provider-specific values used during init.
 type providerConfig struct {
 	name         string
