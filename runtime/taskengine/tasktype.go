@@ -256,17 +256,20 @@ type LLMExecutionConfig struct {
 	RetryPolicy *llmretry.RetryPolicy `yaml:"retry_policy,omitempty" json:"retry_policy,omitempty"`
 }
 
-// ToolsCall represents an external integration or side-effect triggered during a task.
-// Tools allow tasks to interact with external systems (e.g., "send_email", "update_db").
+// ToolsCall configures a `tools` task — a direct, deterministic call to one tool
+// of one registered tools-provider (e.g. an MCP server), distinct from the
+// model-driven tool calls of chat_completion/execute_tool_calls.
 type ToolsCall struct {
-	// Name is the registered tools-service (e.g., "send_email").
+	// Name is the registered tools-PROVIDER (the service/server, e.g. "slack"),
+	// not the tool. Required.
 	Name string `yaml:"name" json:"name" example:"slack"`
 
-	// ToolName is the name of the tool to invoke (e.g., "send_slack_notification").
+	// ToolName is the specific TOOL to invoke on that provider
+	// (e.g. "send_slack_notification").
 	ToolName string `yaml:"tool_name" json:"tool_name" example:"send_slack_notification"`
-	// Args are key-value pairs to parameterize the tools call.
+	// Args are key-value pairs passed to the tool call.
 	// Example: {"to": "user@example.com", "subject": "Notification"}
-	Args map[string]string `yaml:"args" json:"args" example:"{\"channel\": \"#alerts\", \"message\": \"Task completed successfully\"}"`
+	Args map[string]string `yaml:"args,omitempty" json:"args,omitempty" example:"{\"channel\": \"#alerts\", \"message\": \"Task completed successfully\"}"`
 }
 
 type TaskDefinition struct {
@@ -300,7 +303,7 @@ type TaskDefinition struct {
 	// Optional; when set it overrides the resolved input as the prompt.
 	// Supports template variables from previous task outputs.
 	// Example: "Rate the quality from 1-10: {{.input}}"
-	PromptTemplate string `yaml:"prompt_template" json:"prompt_template" example:"Is this input valid? {{.input}}"`
+	PromptTemplate string `yaml:"prompt_template,omitempty" json:"prompt_template,omitempty" example:"Is this input valid? {{.input}}"`
 
 	// OutputTemplate is an optional go template to format the output of a tools.
 	// If specified, the tools's JSON output will be used as data for the template.

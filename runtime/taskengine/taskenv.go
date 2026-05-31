@@ -569,6 +569,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 }
 
 func renderTemplate(tmplStr string, vars any) (string, error) {
+	// NOTE: missingkey=error is intentionally NOT set — a referenced-but-absent
+	// variable renders the literal "<no value>" rather than erroring. Templates
+	// legitimately reference not-yet-populated keys (e.g. a task's Print that
+	// references its own id, which is stored after Print renders), so erroring
+	// would break valid chains. Authors must reference only already-set vars.
 	tmpl, err := template.New("prompt").Funcs(sprig.TxtFuncMap()).Parse(tmplStr)
 	if err != nil {
 		return "", err
