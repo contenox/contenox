@@ -40,7 +40,7 @@ func (p *localProvider) GetPromptConnection(_ context.Context, _ string) (modelr
 
 func (p *localProvider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LLMEmbedClient, error) {
 	modelPath := filepath.Join(p.modelDir, p.name, "model.gguf")
-	return &localEmbedClient{modelPath: modelPath}, nil
+	return &localEmbedClient{modelPath: modelPath, contextLength: p.caps.ContextLength}, nil
 }
 
 func (p *localProvider) GetStreamConnection(_ context.Context, _ string) (modelrepo.LLMStreamClient, error) {
