@@ -5,6 +5,7 @@ import (
 	"context"
 
 	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/sessionservice"
 )
 
@@ -13,5 +14,5 @@ const localIdentity = "local-user"
 // ensureDefaultSession creates the "default" session if no active session exists,
 // sets it as active, and returns the session ID to use for this invocation.
 func ensureDefaultSession(ctx context.Context, db libdb.DBManager, workspaceID string) (string, error) {
-	return sessionservice.New(db, workspaceID).EnsureDefault(ctx, localIdentity)
+	return sessionservice.New(db, workspaceID, libtracker.NoopTracker{}).EnsureDefault(ctx, localIdentity)
 }

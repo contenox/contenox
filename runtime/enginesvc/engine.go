@@ -105,28 +105,36 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 		return nil, fmt.Errorf("failed to ensure models: %w", err)
 	}
 
-	if !cfg.SkipBackendCycle {
+	tracker := cfg.Tracker
+	if tracker == nil {
 		if cfg.Tracing {
-			slog.Info("Running backend cycle to sync models...")
+			tracker = libtracker.NewLogActivityTracker(slog.Default())
+		} else {
+			tracker = libtracker.NoopTracker{}
 		}
+	}
+
+	if !cfg.SkipBackendCycle {
+		cycleReportErr, _, cycleEnd := tracker.Start(ctx, "sync", "backend_cycle")
 		if err := state.RunBackendCycle(ctx); err != nil {
-			slog.Warn("Backend cycle encountered errors", "error", err)
+			cycleReportErr(err)
 		}
+		cycleEnd()
 	}
 	rt := state.Get(ctx)
 	anyReachable := false
+	_, reportReachable, reachableEnd := tracker.Start(ctx, "check", "backend_reachability")
 	for id, bs := range rt {
 		if bs.Error != "" {
-			if cfg.Tracing {
-				slog.Warn("Backend unreachable", "id", id, "url", bs.Backend.BaseURL, "error", bs.Error)
-			}
+			reportReachable(id, map[string]any{"url": bs.Backend.BaseURL, "error": bs.Error})
 		} else {
 			anyReachable = true
 		}
 	}
-	if !anyReachable && cfg.Tracing {
-		slog.Warn("No reachable backends – subsequent model operations may fail")
+	if !anyReachable {
+		reportReachable("", "no reachable backends; subsequent model operations may fail")
 	}
+	reachableEnd()
 
 	ss := stateservice.New(state, db, cfg.WorkspaceID)
 	res, err := ss.SetupStatus(ctx)
@@ -137,14 +145,6 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 	engine.SetupStatus = ss.SetupStatus
 
 	tokenizer := ollamatokenizer.NewEstimateTokenizer()
-	tracker := cfg.Tracker
-	if tracker == nil {
-		if cfg.Tracing {
-			tracker = libtracker.NewLogActivityTracker(slog.Default())
-		} else {
-			tracker = libtracker.NoopTracker{}
-		}
-	}
 
 	repo, err := llmrepo.NewModelManager(state, tokenizer, llmrepo.ModelManagerConfig{
 		DefaultPromptModel:    llmrepo.ModelConfig{Name: cfg.DefaultModel, Provider: cfg.DefaultProvider},
@@ -215,7 +215,7 @@ func buildTools(engineCtx context.Context, cfg Config, db libdbexec.DBManager, t
 	for name := range cfg.LocalTools {
 		localToolNames = append(localToolNames, name)
 	}
-	toolsRepo := tools.NewPersistentRepo(cfg.LocalTools, db, http.DefaultClient, bus)
+	toolsRepo := tools.NewPersistentRepo(cfg.LocalTools, db, http.DefaultClient, bus, tracker)
 
 	if cfg.EnableHITL {
 		if cfg.AskApproval == nil {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
 	libdb "github.com/contenox/agent/libdbexec"
@@ -52,7 +51,7 @@ func (a *agent) Capabilities(_ context.Context) (*AgentCapabilities, error) {
 }
 
 func (a *agent) sessionSvc() sessionservice.Service {
-	return sessionservice.New(a.deps.DB, a.deps.WorkspaceID)
+	return sessionservice.New(a.deps.DB, a.deps.WorkspaceID, a.tracker())
 }
 
 func (a *agent) chatMgr() *chatservice.Manager {
@@ -238,7 +237,6 @@ func (a *agent) buildChatInput(ctx context.Context, req PromptRequest) (any, tas
 		msgs, err := a.chatMgr().ListMessages(ctx, a.deps.DB.WithoutTransaction(), req.SessionID)
 		if err != nil {
 			sessionReportErr(err)
-			slog.Warn("failed to load chat history — continuing without prior context", "sessionID", req.SessionID, "error", err)
 		} else {
 			history = msgs
 		}
@@ -251,7 +249,9 @@ func (a *agent) buildChatInput(ctx context.Context, req PromptRequest) (any, tas
 
 	if len(history) == 0 && req.AgentsMD != "" {
 		history = append([]taskengine.Message{AgentsMDMessage(req.AgentsMD, req.AgentsMDSource)}, history...)
-		slog.Debug("loaded AGENTS.md into session", "source", req.AgentsMDSource, "bytes", len(req.AgentsMD))
+		_, reportChange, end := a.tracker().Start(ctx, "load", "agents_md", "source", req.AgentsMDSource, "bytes", len(req.AgentsMD))
+		reportChange(req.AgentsMDSource, len(req.AgentsMD))
+		end()
 	}
 
 	userMsg := taskengine.Message{Role: "user", Content: req.Input, Timestamp: time.Now().UTC()}
@@ -277,20 +277,17 @@ func (a *agent) persistHistory(ctx context.Context, sessionID string, input any,
 	exec, commit, release, txErr := a.deps.DB.WithTransaction(cleanCtx)
 	if txErr != nil {
 		persistReportErr(fmt.Errorf("start transaction: %w", txErr))
-		slog.Warn("chat history not saved (transaction failed)", "error", txErr)
 		return
 	}
 	defer release()
 
 	if persistErr := a.chatMgr().PersistDiff(cleanCtx, exec, sessionID, synthesized); persistErr != nil {
 		persistReportErr(fmt.Errorf("persist diff: %w", persistErr))
-		slog.Warn("chat history not saved", "error", persistErr)
 		return
 	}
 
 	if commitErr := commit(cleanCtx); commitErr != nil {
 		persistReportErr(fmt.Errorf("commit: %w", commitErr))
-		slog.Warn("chat history not saved (commit failed)", "error", commitErr)
 		return
 	}
 

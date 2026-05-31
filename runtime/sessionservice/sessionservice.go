@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/google/uuid"
 
 	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/messagestore"
 	"github.com/contenox/agent/runtime/runtimetypes"
 )
@@ -57,10 +57,14 @@ type Service interface {
 type service struct {
 	db          libdb.DBManager
 	workspaceID string
+	tracker     libtracker.ActivityTracker
 }
 
-func New(db libdb.DBManager, workspaceID string) Service {
-	return &service{db: db, workspaceID: workspaceID}
+func New(db libdb.DBManager, workspaceID string, tracker libtracker.ActivityTracker) Service {
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
+	return &service{db: db, workspaceID: workspaceID, tracker: tracker}
 }
 
 func (s *service) New(ctx context.Context, identity, name string) (string, error) {
@@ -172,10 +176,13 @@ func (s *service) SetActiveID(ctx context.Context, id string) error {
 
 func (s *service) EnsureDefault(ctx context.Context, identity string) (string, error) {
 	const defaultName = "default"
+	reportErr, reportChange, end := s.tracker.Start(ctx, "ensure", "default_session", "identity", identity)
+	defer end()
 	exec := s.db.WithoutTransaction()
 
 	activeID, err := s.GetActiveID(ctx)
 	if err != nil {
+		reportErr(err)
 		return "", err
 	}
 	if activeID != "" {
@@ -187,13 +194,13 @@ func (s *service) EnsureDefault(ctx context.Context, identity string) (string, e
 				}
 			}
 		}
-		slog.Warn("Active session not found in DB, re-creating default", "activeID", activeID)
+		reportChange("recreate_default", activeID)
 	}
 
 	// Re-use an existing "default" session if present.
 	if existing, err := messagestore.New(exec, s.workspaceID).GetSessionByName(ctx, identity, defaultName); err == nil {
 		if setErr := s.setKV(ctx, exec, existing.ID); setErr != nil {
-			slog.Warn("Failed to set active session", "error", setErr)
+			reportErr(fmt.Errorf("set active session: %w", setErr))
 		}
 		return existing.ID, nil
 	}

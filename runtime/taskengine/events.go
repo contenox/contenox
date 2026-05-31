@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -173,11 +172,16 @@ func NewTaskEvent(ctx context.Context, kind TaskEventKind) TaskEvent {
 	return event
 }
 
-func publishTaskEventBestEffort(ctx context.Context, sink TaskEventSink, event TaskEvent) {
+func publishTaskEventBestEffort(ctx context.Context, tracker libtracker.ActivityTracker, sink TaskEventSink, event TaskEvent) {
 	if sink == nil || !sink.Enabled() {
 		return
 	}
 	if err := sink.PublishTaskEvent(ctx, event); err != nil {
-		slog.Warn("task event publish failed", "kind", event.Kind, "error", err)
+		if tracker == nil {
+			tracker = libtracker.NoopTracker{}
+		}
+		reportErr, _, end := tracker.Start(ctx, "publish", "task_event", "kind", string(event.Kind))
+		reportErr(err)
+		end()
 	}
 }

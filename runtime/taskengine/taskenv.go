@@ -227,11 +227,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			chainEvent.Error = retErr.Error()
 			chainEvent.OutputType = ""
 		}
-		publishTaskEventBestEffort(ctx, env.eventSink, chainEvent)
+		publishTaskEventBestEffort(ctx, env.tracker, env.eventSink,chainEvent)
 	}()
 	chainStarted := NewTaskEvent(ctx, TaskEventChainStarted)
 	chainStarted.ChainID = chain.ID
-	publishTaskEventBestEffort(ctx, env.eventSink, chainStarted)
+	publishTaskEventBestEffort(ctx, env.tracker, env.eventSink,chainStarted)
 
 	vars := map[string]any{
 		"input": input,
@@ -382,7 +382,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				Retry:       retry,
 			})
 			stepStarted := NewTaskEvent(taskCtx, TaskEventStepStarted)
-			publishTaskEventBestEffort(taskCtx, env.eventSink, stepStarted)
+			publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink,stepStarted)
 			reportErrAttempt, reportChangeAttempt, endAttempt := env.tracker.Start(
 				taskCtx,
 				"task_attempt",
@@ -461,11 +461,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				stepEvent.Kind = TaskEventStepFailed
 				stepEvent.Error = taskErr.Error()
 				stepEvent.OutputType = ""
-				publishTaskEventBestEffort(taskCtx, env.eventSink, stepEvent)
+				publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink,stepEvent)
 				reportErrAttempt(taskErr)
 				continue
 			}
-			publishTaskEventBestEffort(taskCtx, env.eventSink, stepEvent)
+			publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink,stepEvent)
 
 			// Report successful attempt
 			reportChangeAttempt(currentTask.ID, output)
@@ -514,7 +514,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			}
 			printEvent := NewTaskEvent(ctx, TaskEventPrint)
 			printEvent.Content = printMsg
-			publishTaskEventBestEffort(ctx, env.eventSink, printEvent)
+			publishTaskEventBestEffort(ctx, env.tracker, env.eventSink,printEvent)
 		}
 
 		// Evaluate transitions and get chosen branch

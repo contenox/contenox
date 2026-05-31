@@ -81,7 +81,7 @@ func (exe *SimpleExec) publishStepChunk(ctx context.Context, meta llmrepo.Meta, 
 	event.BackendID = meta.BackendID
 	event.Content = content
 	event.Thinking = thinking
-	publishTaskEventBestEffort(ctx, exe.eventSink, event)
+	publishTaskEventBestEffort(ctx, exe.tracker, exe.eventSink,event)
 }
 
 // countTokensAndCheckLimit counts tokens for text and checks against context limit
@@ -675,7 +675,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 					toolEvent.ToolName = toolCall.Function.Name
 					toolEvent.ApprovalID = toolCall.ID
 					toolEvent.Error = errStr
-					publishTaskEventBestEffort(taskCtx, exe.eventSink, toolEvent)
+					publishTaskEventBestEffort(taskCtx, exe.tracker, exe.eventSink,toolEvent)
 				}
 				continue
 			}
@@ -705,7 +705,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 					toolEvent.ToolName = toolCall.Function.Name
 					toolEvent.ApprovalID = toolCall.ID
 					toolEvent.Error = errStr
-					publishTaskEventBestEffort(taskCtx, exe.eventSink, toolEvent)
+					publishTaskEventBestEffort(taskCtx, exe.tracker, exe.eventSink,toolEvent)
 				}
 				break
 			}
@@ -759,7 +759,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				pendingEvent.ToolName = toolCall.Function.Name
 				pendingEvent.ApprovalID = toolCall.ID
 				pendingEvent.ApprovalArgs = args
-				publishTaskEventBestEffort(callCtx, exe.eventSink, pendingEvent)
+				publishTaskEventBestEffort(callCtx, exe.tracker, exe.eventSink,pendingEvent)
 			}
 
 			// `args` are the per-call dynamic tool arguments
@@ -816,7 +816,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				if toolExecErr != nil {
 					toolEvent.Error = toolExecErr.Error()
 				}
-				publishTaskEventBestEffort(callCtx, exe.eventSink, toolEvent)
+				publishTaskEventBestEffort(callCtx, exe.tracker, exe.eventSink,toolEvent)
 			}
 
 			if taskErr != nil {
@@ -910,7 +910,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 					toolEvent.Error = toolExecErr.Error()
 				}
 
-				publishTaskEventBestEffort(toolsCtx, exe.eventSink, toolEvent)
+				publishTaskEventBestEffort(toolsCtx, exe.tracker, exe.eventSink,toolEvent)
 			}
 		}
 

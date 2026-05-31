@@ -12,6 +12,7 @@ import (
 
 	"github.com/contenox/agent/libbus"
 	libdb "github.com/contenox/agent/libdbexec"
+	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/mcpworker"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/taskengine"
@@ -25,6 +26,7 @@ type PersistentRepo struct {
 	httpClient   *http.Client
 	toolProtocol ToolProtocol
 	messenger    libbus.Messenger
+	tracker      libtracker.ActivityTracker
 }
 
 func NewPersistentRepo(
@@ -32,9 +34,13 @@ func NewPersistentRepo(
 	dbInstance libdb.DBManager,
 	httpClient *http.Client,
 	messenger libbus.Messenger,
+	tracker libtracker.ActivityTracker,
 ) taskengine.ToolsRepo {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
 	}
 
 	return &PersistentRepo{
@@ -43,6 +49,7 @@ func NewPersistentRepo(
 		httpClient:   httpClient,
 		toolProtocol: &OpenAPIToolProtocol{},
 		messenger:    messenger,
+		tracker:      tracker,
 	}
 }
 
@@ -72,25 +79,45 @@ func (p *PersistentRepo) Exec(
 	debug bool,
 	args *taskengine.ToolsCall,
 ) (any, taskengine.DataType, error) {
-	// 1. Check local built-in tools first.
+	// 1. Check local built-in tools first. These carry their own tracking, so
+	// pass through untouched to avoid double-spanning.
 	if tools, ok := p.localTools[args.Name]; ok {
 		return tools.Exec(ctx, startingTime, input, debug, args)
 	}
+
+	// Remote (MCP / HTTP) dispatch is the external surface previously invisible
+	// to the tracker seam — span it so an injected exporter sees it.
+	reportErr, reportChange, end := p.tracker.Start(ctx, "exec", "remote_tools", "tools", args.Name, "tool", args.ToolName)
+	defer end()
 
 	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
 
 	// 2. Check MCP servers from DB (transient connection per call).
 	if mcpSrv, err := store.GetMCPServerByName(ctx, args.Name); err == nil {
-		return p.execMCPTools(ctx, mcpSrv, args, input)
+		out, dt, execErr := p.execMCPTools(ctx, mcpSrv, args, input)
+		if execErr != nil {
+			reportErr(execErr)
+		} else {
+			reportChange(args.Name, args.ToolName)
+		}
+		return out, dt, execErr
 	}
 
 	// 3. Fall back to HTTP remote tools from DB.
 	remoteTools, err := store.GetRemoteToolsByName(ctx, args.Name)
 	if err != nil {
-		return nil, taskengine.DataTypeAny, fmt.Errorf("unknown tools: %s", args.Name)
+		err = fmt.Errorf("unknown tools: %s", args.Name)
+		reportErr(err)
+		return nil, taskengine.DataTypeAny, err
 	}
 
-	return p.execRemoteTools(ctx, remoteTools, input, args)
+	out, dt, execErr := p.execRemoteTools(ctx, remoteTools, input, args)
+	if execErr != nil {
+		reportErr(execErr)
+	} else {
+		reportChange(args.Name, args.ToolName)
+	}
+	return out, dt, execErr
 }
 
 // execMCPTools routes a tool call to the persistent session worker via NATS.

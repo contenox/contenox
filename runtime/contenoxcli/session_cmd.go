@@ -112,7 +112,7 @@ func openSessionService(cmd *cobra.Command) (context.Context, libdb.DBManager, s
 	contenoxDir, _ := ResolveContenoxDir(cmd)
 	workspaceID := ResolveWorkspaceID(contenoxDir)
 	cleanup := func() { _ = db.Close() }
-	return ctx, db, sessionservice.New(db, workspaceID), cleanup, nil
+	return ctx, db, sessionservice.New(db, workspaceID, libtracker.NoopTracker{}), cleanup, nil
 }
 
 func runSessionNew(cmd *cobra.Command, args []string) error {
