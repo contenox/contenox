@@ -35,6 +35,16 @@ var HITLPolicyPresets = []struct {
 	{"hitl-policy-acpx.json", hitlPolicyACPX},
 }
 
+// embeddedPolicyNames returns the preset file names in preset order, for the
+// ACP /policy listing.
+func embeddedPolicyNames() []string {
+	names := make([]string, len(HITLPolicyPresets))
+	for i, p := range HITLPolicyPresets {
+		names[i] = p.Name
+	}
+	return names
+}
+
 // writeEmbeddedHITLPolicies writes the embedded policy presets to contenoxDir.
 // If overwrite is false, existing files are left untouched (returns false for that file).
 func writeEmbeddedHITLPolicies(contenoxDir string, overwrite bool) error {

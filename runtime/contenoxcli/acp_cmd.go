@@ -204,13 +204,15 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	defer engine.Stop()
 
 	transportFactory := acpsvc.New(acpsvc.Deps{
-		Engine:          engine,
-		DB:              db,
-		ChainRegistry:   chains,
-		DefaultModel:    defaultModel,
-		DefaultProvider: defaultProvider,
-		WorkspaceID:     workspaceID,
-		ContenoxDir:     contenoxDir,
+		Engine:                engine,
+		DB:                    db,
+		ChainRegistry:         chains,
+		DefaultModel:          defaultModel,
+		DefaultProvider:       defaultProvider,
+		WorkspaceID:           workspaceID,
+		ContenoxDir:           contenoxDir,
+		KnownPolicies:         embeddedPolicyNames(),
+		HITLDefaultPolicyName: profile.hitlPolicy,
 	})
 
 	conn := libacp.NewAgentSideConnection(acpStdio{}, func(c *libacp.AgentSideConnection) libacp.Agent {

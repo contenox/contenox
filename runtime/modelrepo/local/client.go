@@ -101,7 +101,7 @@ func generate(ctx context.Context, modelPath, prompt string, cfg *modelrepo.Chat
 		return "", fmt.Errorf("tokenize: %w", err)
 	}
 
-	batch, err := llama.NewBatch(defaultBatch, 0, 0)
+	batch, err := llama.NewBatch(defaultBatch, 1, 0)
 	if err != nil {
 		return "", fmt.Errorf("create batch: %w", err)
 	}
@@ -199,7 +199,7 @@ func (c *localStreamClient) Stream(ctx context.Context, messages []modelrepo.Mes
 			return
 		}
 
-		batch, err := llama.NewBatch(defaultBatch, 0, 0)
+		batch, err := llama.NewBatch(defaultBatch, 1, 0)
 		if err != nil {
 			ch <- &modelrepo.StreamParcel{Error: fmt.Errorf("create batch: %w", err)}
 			return
@@ -277,7 +277,7 @@ func (c *localEmbedClient) Embed(ctx context.Context, prompt string) ([]float64,
 		return nil, fmt.Errorf("tokenize: %w", err)
 	}
 
-	batch, err := llama.NewBatch(defaultBatch, 0, 0)
+	batch, err := llama.NewBatch(defaultBatch, 1, 0)
 	if err != nil {
 		return nil, fmt.Errorf("create batch: %w", err)
 	}

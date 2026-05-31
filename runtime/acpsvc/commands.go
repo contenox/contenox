@@ -24,6 +24,7 @@ func acpCommands() []libacp.AvailableCommand {
 		{Name: "compact", Description: "Summarize older history into a single message to reclaim context.", Input: &libacp.AvailableCommandInput{Hint: "[keep]"}},
 		{Name: "model", Description: "Show the current model, or set it: /model <name>.", Input: &libacp.AvailableCommandInput{Hint: "[model-name]"}},
 		{Name: "provider", Description: "Show the current provider, or set it: /provider <name>.", Input: &libacp.AvailableCommandInput{Hint: "[provider-name]"}},
+		{Name: "policy", Description: "Show the active HITL policy, or switch it: /policy <name>.", Input: &libacp.AvailableCommandInput{Hint: "[policy-name]"}},
 	}
 }
 
@@ -77,6 +78,8 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 		out, err = t.handleModel(ctx, args)
 	case "provider":
 		out, err = t.handleProvider(ctx, args)
+	case "policy":
+		out, err = t.handlePolicy(ctx, args)
 	case "clear":
 		out, err = t.handleClear(ctx, sid, sess)
 	case "compact":
@@ -164,6 +167,50 @@ func (t *Transport) handleProvider(ctx context.Context, args string) (string, er
 	}
 	t.setProvider(value)
 	return fmt.Sprintf("Provider set to %s.", value), nil
+}
+
+// handlePolicy shows or switches the active HITL approval policy. Switching
+// writes the global cli.hitl-policy-name key — the key the engine reads live on
+// every gated tool call — so the change takes effect on the next gated call. It
+// just does what it's told: the operator owns the policy.
+func (t *Transport) handlePolicy(ctx context.Context, args string) (string, error) {
+	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+	value := strings.TrimSpace(args)
+	if value == "" {
+		return t.policyStatus(clikv.ReadHITLPolicy(ctx, store)), nil
+	}
+	cfgCtx := libtracker.WithNewRequestID(ctx)
+	if err := clikv.SetHITLPolicy(cfgCtx, store, value); err != nil {
+		return "", fmt.Errorf("set hitl policy: %w", err)
+	}
+	return fmt.Sprintf("HITL policy set to %s. Applies to the next gated tool call.", value), nil
+}
+
+// policyStatus renders the effective policy and the selectable presets. With no
+// override set, the effective policy is the engine's fallback default.
+func (t *Transport) policyStatus(active string) string {
+	effective := active
+	if effective == "" {
+		effective = t.deps.HITLDefaultPolicyName
+	}
+	var b strings.Builder
+	if active == "" {
+		fmt.Fprintf(&b, "Active HITL policy: %s (default)\n", effective)
+	} else {
+		fmt.Fprintf(&b, "Active HITL policy: %s\n", effective)
+	}
+	if len(t.deps.KnownPolicies) > 0 {
+		b.WriteString("Presets:\n")
+		for _, name := range t.deps.KnownPolicies {
+			marker := "  "
+			if name == effective {
+				marker = "* "
+			}
+			fmt.Fprintf(&b, "%s%s\n", marker, name)
+		}
+		b.WriteString("Switch with: /policy <name>")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // persistConfig writes a global CLI config value, mirroring `contenox config

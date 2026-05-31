@@ -24,6 +24,13 @@ type Deps struct {
 	// ContenoxDir is the active .contenox directory, used to locate auxiliary
 	// chains (e.g. chain-compact.json for the /compact command).
 	ContenoxDir string
+
+	// KnownPolicies are the HITL policy preset names shown by /policy when
+	// listing. Display only — empty just omits the list.
+	KnownPolicies []string
+	// HITLDefaultPolicyName is the policy the engine falls back to when no
+	// override is set, shown by /policy so the status is accurate. Display only.
+	HITLDefaultPolicyName string
 }
 
 type sessionEntry struct {
