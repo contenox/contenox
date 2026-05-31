@@ -49,6 +49,32 @@ func TestUnit_EmptyBranches_CleanEnd(t *testing.T) {
 	require.Nil(t, branch)
 }
 
+// TestUnit_ValidateChain_Tightening guards A1–A5: malformed chains that used to
+// pass validation and fail opaquely at runtime are now rejected up front.
+func TestUnit_ValidateChain_Tightening(t *testing.T) {
+	end := []TransitionBranch{{Operator: OpDefault, When: "", Goto: TermEnd}}
+	ok := func(id string) TaskDefinition {
+		return TaskDefinition{ID: id, Handler: HandleNoop, Transition: TaskTransition{Branches: end}}
+	}
+
+	require.NoError(t, validateChain([]TaskDefinition{ok("a")}), "a minimal valid chain must pass")
+
+	cases := map[string][]TaskDefinition{
+		"duplicate id":     {ok("a"), ok("a")},
+		"unknown handler":  {{ID: "a", Handler: "chat_completon", Transition: TaskTransition{Branches: end}}},
+		"empty operator":   {{ID: "a", Handler: HandleNoop, Transition: TaskTransition{Branches: []TransitionBranch{{When: "x", Goto: TermEnd}}}}},
+		"unknown operator": {{ID: "a", Handler: HandleNoop, Transition: TaskTransition{Branches: []TransitionBranch{{Operator: "eq", When: "x", Goto: TermEnd}}}}},
+		"dangling goto":    {{ID: "a", Handler: HandleNoop, Transition: TaskTransition{Branches: []TransitionBranch{{Operator: OpDefault, Goto: "ghost"}}}}},
+		"dangling onfail":  {{ID: "a", Handler: HandleNoop, Transition: TaskTransition{OnFailure: "ghost", Branches: end}}},
+		"tools no block":   {{ID: "a", Handler: HandleTools, Transition: TaskTransition{Branches: end}}},
+	}
+	for name, tasks := range cases {
+		t.Run(name, func(t *testing.T) {
+			require.Error(t, validateChain(tasks), "%s must be rejected at validation", name)
+		})
+	}
+}
+
 // TestUnit_TemperatureValue guards E1's nullability: nil means "do not send a
 // temperature" (provider default), a set value is forwarded.
 func TestUnit_TemperatureValue(t *testing.T) {

@@ -107,11 +107,13 @@ type TaskTransition struct {
 // TransitionBranch defines a single possible path in the workflow,
 // selected when the task's output matches the specified condition.
 type TransitionBranch struct {
-	// Operator defines how to compare the task's transition eval to When.
-	// Omitted operator behaves as exact-equality. The comparison for
-	// equals/contains/starts_with/ends_with is byte-exact and CASE-SENSITIVE with
-	// no trimming — a trailing newline (common in multiline template literals)
-	// will not match. Only the `route` handler normalizes its answer.
+	// Operator defines how to compare the task's transition eval to When. It is
+	// REQUIRED and must be one of SupportedOperators() — an empty or unknown
+	// operator is rejected at chain validation (at runtime it would never match,
+	// a silent dead branch). The comparison for equals/contains/starts_with/
+	// ends_with is byte-exact and CASE-SENSITIVE with no trimming — a trailing
+	// newline (common in multiline template literals) will not match. Only the
+	// `route` handler normalizes its answer.
 	Operator OperatorTerm `yaml:"operator,omitempty" json:"operator,omitempty" example:"equals" openapi_include_type:"string"`
 
 	// When is the value this branch matches against the task's transition eval.

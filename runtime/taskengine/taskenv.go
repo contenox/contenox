@@ -654,24 +654,59 @@ func findTaskByID(tasks []TaskDefinition, id string) (*TaskDefinition, error) {
 	return nil, fmt.Errorf("task not found: %s", id)
 }
 
+func isKnownHandler(h TaskHandler) bool {
+	switch h {
+	case HandleRaiseError, HandleRoute, HandleChatCompletion, HandleExecuteToolCalls, HandleNoop, HandleTools:
+		return true
+	}
+	return false
+}
+
 func validateChain(tasks []TaskDefinition) error {
 	if len(tasks) == 0 {
 		return fmt.Errorf("chain has no tasks %w", errdefs.ErrBadRequest)
 	}
 	taskIDs := make(map[string]struct{}, len(tasks))
 	for _, ct := range tasks {
-		if ct.ID == "" || ct.ID == TermEnd {
-			if ct.ID == "" {
-				return fmt.Errorf("task ID cannot be empty %w", errdefs.ErrBadRequest)
-			}
-			if ct.ID == TermEnd {
-				return fmt.Errorf("task ID cannot be '%s' %w", TermEnd, errdefs.ErrBadRequest)
-			}
+		if ct.ID == "" {
+			return fmt.Errorf("task ID cannot be empty %w", errdefs.ErrBadRequest)
+		}
+		if ct.ID == TermEnd {
+			return fmt.Errorf("task ID cannot be '%s' %w", TermEnd, errdefs.ErrBadRequest)
+		}
+		if _, dup := taskIDs[ct.ID]; dup {
+			return fmt.Errorf("duplicate task ID %q %w", ct.ID, errdefs.ErrBadRequest)
 		}
 		taskIDs[ct.ID] = struct{}{}
 	}
 	for _, ct := range tasks {
+		// Handler must be one of the known handlers, else it fails opaquely at
+		// runtime on the default switch arm.
+		if !isKnownHandler(ct.Handler) {
+			return fmt.Errorf("task %q: unknown handler %q %w", ct.ID, ct.Handler, errdefs.ErrBadRequest)
+		}
+		// A 'tools' task without a tools block silently execs an empty call.
+		if ct.Handler == HandleTools && (ct.Tools == nil || ct.Tools.Name == "") {
+			return fmt.Errorf("task %q: 'tools' handler requires a tools block with a name %w", ct.ID, errdefs.ErrBadRequest)
+		}
+		// on_failure must reference a real task ('end' is not resolvable at runtime).
+		if ct.Transition.OnFailure != "" {
+			if _, ok := taskIDs[ct.Transition.OnFailure]; !ok {
+				return fmt.Errorf("task %q: on_failure references unknown task %q %w", ct.ID, ct.Transition.OnFailure, errdefs.ErrBadRequest)
+			}
+		}
 		for _, br := range ct.Transition.Branches {
+			// Operator must be a supported term — an empty/unknown operator never
+			// matches (compare errors → swallowed), producing a silent dead branch.
+			if _, err := ToOperatorTerm(string(br.Operator)); err != nil {
+				return fmt.Errorf("task %q: %v %w", ct.ID, err, errdefs.ErrBadRequest)
+			}
+			// goto must reference a real task; empty or 'end' ends the chain.
+			if br.Goto != "" && br.Goto != TermEnd {
+				if _, ok := taskIDs[br.Goto]; !ok {
+					return fmt.Errorf("task %q: branch goto references unknown task %q %w", ct.ID, br.Goto, errdefs.ErrBadRequest)
+				}
+			}
 			if br.Operator != OpEdgeTraversedAtLeast {
 				continue
 			}
