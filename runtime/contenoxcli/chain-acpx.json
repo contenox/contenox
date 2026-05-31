@@ -26,6 +26,12 @@
         "on_failure": "recovery_chat",
         "branches": [
           {
+            "operator": "edge_traversed_at_least",
+            "edge": "acp_chat->run_tools",
+            "when": "10",
+            "goto": "recovery_chat"
+          },
+          {
             "operator": "equals",
             "when": "tool-call",
             "goto": "run_tools"
@@ -59,7 +65,7 @@
       "description": "Recovery agentic loop — picks up the full chat history from the main loop with a fresh system instruction noting the prior agent got stuck. Has its own tool access and 10-round budget.",
       "handler": "chat_completion",
       "input_var": "acp_chat",
-      "system_instruction": "You are Contenox, a coding assistant driven over the Agent Client Protocol by an untrusted client.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used 10 of 20 tool-call rounds on this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.",
+      "system_instruction": "You are Contenox, a coding assistant driven over the Agent Client Protocol by an untrusted client.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used {{edge_count:acp_chat->run_tools}} of 10 main and {{edge_count:recovery_chat->recovery_tools}} of 10 recovery tool-call rounds this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.",
       "execute_config": {
         "model": "{{var:model}}",
         "provider": "{{var:provider}}",
