@@ -90,6 +90,47 @@ func TestUnit_Evaluate_WhenConditionFromSource(t *testing.T) {
 	assert.Equal(t, hitlservice.ActionDeny, result.OnTimeout)
 }
 
+func TestUnit_Evaluate_HostConditionDeniesByURLHost(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	src := hitlservice.NewFSPolicySource(dir)
+	ctx := context.Background()
+	writePolicy(t, dir, "hitl-policy.json", []byte(`{
+		"default_action": "allow",
+		"rules": [
+			{"tools":"webtools","tool":"*","action":"deny","when":[{"key":"url","op":"host","value":"localhost,127.0.0.1,169.254.169.254,metadata.google.internal"}]}
+		]
+	}`))
+	svc := hitlservice.New(src, testTenant, fixedKVReader{"hitl-policy.json"}, libtracker.NoopTracker{})
+
+	// Host parsing must survive scheme, :port and path — the cases a raw URL
+	// glob would let slip through.
+	denied := []string{
+		"http://localhost/",
+		"http://localhost:8080/api",
+		"https://127.0.0.1/x",
+		"http://169.254.169.254:80/latest/meta-data",
+		"http://metadata.google.internal/computeMetadata/v1/",
+		"http://sub.metadata.google.internal/",
+	}
+	for _, u := range denied {
+		r, err := svc.Evaluate(ctx, "webtools", "web_get", map[string]any{"url": u})
+		require.NoError(t, err)
+		assert.Equal(t, hitlservice.ActionDeny, r.Action, "host deny must block %q", u)
+	}
+
+	// A host that only contains the pattern as a substring must NOT be denied.
+	allowed := []string{
+		"http://example.com/?redir=localhost",
+		"https://api.example.com/v1",
+	}
+	for _, u := range allowed {
+		r, err := svc.Evaluate(ctx, "webtools", "web_get", map[string]any{"url": u})
+		require.NoError(t, err)
+		assert.Equal(t, hitlservice.ActionAllow, r.Action, "non-matching host must pass %q", u)
+	}
+}
+
 func TestUnit_Evaluate_ResolvesFromKV(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

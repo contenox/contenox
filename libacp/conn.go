@@ -14,6 +14,50 @@ var (
 	ErrConnectionClosed = errors.New("libacp: connection closed")
 )
 
+// afterResponseSink collects callbacks scheduled by a request handler to run
+// once the handler's result has been written to the wire. handleRequest installs
+// one per request and flushes it after the result, so notifications a handler
+// emits are ordered AFTER the response.
+type afterResponseSink struct {
+	mu  sync.Mutex
+	fns []func()
+}
+
+func (s *afterResponseSink) add(fn func()) {
+	s.mu.Lock()
+	s.fns = append(s.fns, fn)
+	s.mu.Unlock()
+}
+
+func (s *afterResponseSink) run() {
+	s.mu.Lock()
+	fns := s.fns
+	s.fns = nil
+	s.mu.Unlock()
+	for _, fn := range fns {
+		fn()
+	}
+}
+
+type afterResponseKey struct{}
+
+// AfterResponse schedules fn to run after the result of the request currently
+// being handled has been written to the wire. Use it from a request handler
+// (NewSession, LoadSession, ...) to emit session/update notifications that must
+// reach the client only once it can resolve the session — most importantly the
+// available_commands_update after session/new, which a client (e.g. Zed) drops
+// as an "unknown session" if it arrives before the session/new result.
+//
+// Called outside a request handler (no sink in ctx), fn runs immediately, so it
+// is always safe to use regardless of caller context.
+func AfterResponse(ctx context.Context, fn func()) {
+	if sink, ok := ctx.Value(afterResponseKey{}).(*afterResponseSink); ok {
+		sink.add(fn)
+		return
+	}
+	fn()
+}
+
 type AgentSideConnection struct {
 	reader *ndjsonReader
 	writer *ndjsonWriter
@@ -115,6 +159,9 @@ func (c *AgentSideConnection) dispatch(ctx context.Context, line []byte) {
 }
 
 func (c *AgentSideConnection) handleRequest(ctx context.Context, req Request) {
+	sink := &afterResponseSink{}
+	ctx = context.WithValue(ctx, afterResponseKey{}, sink)
+
 	result, rpcErr := c.callMethod(ctx, req)
 	if rpcErr != nil {
 		_ = c.writer.Write(NewErrorResponse(req.ID, rpcErr))
@@ -126,6 +173,10 @@ func (c *AgentSideConnection) handleRequest(ctx context.Context, req Request) {
 		return
 	}
 	_ = c.writer.Write(NewResultResponse(req.ID, resultRaw))
+	// Now that the result (and any session id it carries) is on the wire, flush
+	// notifications the handler deferred via AfterResponse. They are ordered
+	// after the response, so the client can resolve their session.
+	sink.run()
 }
 
 func (c *AgentSideConnection) handleNotification(ctx context.Context, n Notification) {

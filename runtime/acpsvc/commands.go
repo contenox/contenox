@@ -106,7 +106,10 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 }
 
 // sendAvailableCommands advertises the admin command set for a session. The
-// client uses it to populate its slash-command menu.
+// client uses it to populate its slash-command menu. It MUST run only after the
+// session's creation/load result has reached the client (callers schedule it via
+// libacp.AfterResponse): a client maps the update to a session it already knows,
+// and drops it otherwise — which silently disables the menu.
 func (t *Transport) sendAvailableCommands(ctx context.Context, sid libacp.SessionID) {
 	t.sendUpdate(ctx, libacp.SessionNotification{
 		SessionID: sid,

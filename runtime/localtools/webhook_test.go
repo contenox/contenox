@@ -87,12 +87,14 @@ func TestUnit_WebTools_Get_ReturnsTextWhenNotJSON(t *testing.T) {
 
 func TestUnit_WebTools_Get_DeniedHostBlocked(t *testing.T) {
 	tools := newWebTools(t, &recTracker{})
-	// Default policy denies localhost. URL never gets contacted.
-	res, dt, err := execWeb(t, context.Background(), tools, "web_get", map[string]any{"url": "http://localhost/"})
+	// No host is denied by default — host policy is opt-in. Setting _denied_hosts
+	// blocks the call before the URL is ever contacted.
+	ctx := ctxWithPolicy(map[string]string{"_denied_hosts": "localhost"})
+	res, dt, err := execWeb(t, ctx, tools, "web_get", map[string]any{"url": "http://localhost/"})
 	require.NoError(t, err, "soft denial must be a string result, not an error")
 	require.Equal(t, taskengine.DataTypeString, dt)
 	msg, _ := res.(string)
-	require.Contains(t, msg, "denied by policy")
+	require.Contains(t, msg, "is denied by tools_policies.webtools._denied_hosts")
 }
 
 func TestUnit_WebTools_Get_AllowedHostsExclusive(t *testing.T) {

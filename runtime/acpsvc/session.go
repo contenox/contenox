@@ -82,7 +82,9 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.sessionMu.Unlock()
 
 	t.replayMessages(ctx, req.SessionID, messages)
-	t.sendAvailableCommands(ctx, req.SessionID)
+	// Emit the slash-command menu only after the session/load result is on the
+	// wire (see sendAvailableCommands) so the client can resolve the session.
+	libacp.AfterResponse(ctx, func() { t.sendAvailableCommands(ctx, req.SessionID) })
 
 	reportChange(string(req.SessionID), map[string]any{
 		"contenox_session_id": contenoxSessionID,
@@ -244,7 +246,11 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	t.contenoxToACPID[contenoxSessionID] = sessionID
 	t.sessionMu.Unlock()
 
-	t.sendAvailableCommands(ctx, sessionID)
+	// A client learns this new session's id only from the session/new result;
+	// emitting available_commands_update before that result makes the client drop
+	// it as an unknown session (and the slash-command menu never appears). Defer
+	// it until libacp has written the result.
+	libacp.AfterResponse(ctx, func() { t.sendAvailableCommands(ctx, sessionID) })
 
 	reportChange(string(sessionID), map[string]any{
 		"contenox_session_id": contenoxSessionID,

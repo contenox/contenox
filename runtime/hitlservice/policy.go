@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/url"
 	"path"
 	"strings"
 )
@@ -44,6 +46,14 @@ const (
 	// preventing path-traversal bypass (e.g. ./src/../etc/passwd → etc/passwd).
 	// Supports * (within a path component), ? (single char), and ** (across separators).
 	OpGlob ConditionOp = "glob"
+	// OpHost treats the argument value as a URL and matches its host against a
+	// comma-separated list of host patterns in Value. It is the policy-native
+	// way to express SSRF-style host denial (e.g. webtools to localhost or a
+	// cloud-metadata endpoint): the host is parsed out of the URL, so a trailing
+	// :port or path cannot evade the match the way a raw URL glob can. IP
+	// literals match exactly; bare names match the host and any subdomain
+	// (api.example.com matches example.com).
+	OpHost ConditionOp = "host"
 )
 
 // Condition is a single key/op/value predicate applied to the args of a tool call.
@@ -146,6 +156,40 @@ func conditionMatches(c Condition, args map[string]any) bool {
 			if globMatch(c.Value, s) {
 				return true
 			}
+		case OpHost:
+			if urlHostMatches(s, c.Value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// urlHostMatches parses rawURL and reports whether its host equals, or is a
+// subdomain of, any comma-separated pattern in patternsCSV. Parsing the host
+// out of the URL (rather than substring-matching the raw URL) is what makes a
+// host deny rule robust against :port and path evasion. IP literals match
+// exactly; bare names match the host and any subdomain.
+func urlHostMatches(rawURL, patternsCSV string) bool {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return false
+	}
+	isIP := net.ParseIP(host) != nil
+	for _, p := range strings.Split(patternsCSV, ",") {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p == "" {
+			continue
+		}
+		if host == p {
+			return true
+		}
+		if !isIP && strings.HasSuffix(host, "."+p) {
+			return true
 		}
 	}
 	return false
@@ -355,13 +399,14 @@ func validatePolicy(p *Policy) error {
 			return fmt.Errorf("rule %d: unknown on_timeout %q", i, r.OnTimeout)
 		}
 		for j, c := range r.When {
-			if c.Op != OpEq && c.Op != OpGlob {
-				return fmt.Errorf("rule %d, condition %d: unknown op %q", i, j, c.Op)
-			}
-			if c.Op == OpGlob {
+			switch c.Op {
+			case OpEq, OpHost:
+			case OpGlob:
 				if err := validateGlobValue(c.Value); err != nil {
 					return fmt.Errorf("rule %d, condition %d: %w", i, j, err)
 				}
+			default:
+				return fmt.Errorf("rule %d, condition %d: unknown op %q", i, j, c.Op)
 			}
 		}
 	}

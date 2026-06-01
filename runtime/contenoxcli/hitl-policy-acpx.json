@@ -17,6 +17,8 @@
 
     {"tools": "local_shell",  "tool": "local_shell",     "action": "deny"},
 
+    {"tools": "webtools", "tool": "*", "action": "deny", "when": [{"key": "url", "op": "host", "value": "localhost,127.0.0.1,0.0.0.0,::1,169.254.169.254,169.254.170.2,metadata.google.internal,metadata.azure.com"}]},
+
     {"tools": "webtools",     "tool": "web_post",        "action": "deny"},
     {"tools": "webtools",     "tool": "web_put",         "action": "deny"},
     {"tools": "webtools",     "tool": "web_patch",       "action": "deny"},

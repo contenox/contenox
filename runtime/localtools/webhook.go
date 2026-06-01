@@ -24,11 +24,6 @@ import (
 // and the key used to look up tools_policies entries.
 const WebToolsName = "webtools"
 
-// defaultDeniedHosts is the SSRF-defense baseline applied when no
-// _denied_hosts policy key is configured. An explicit empty string opts out
-// (chain author's responsibility).
-const defaultDeniedHosts = "169.254.169.254,169.254.170.2,localhost,127.0.0.1,0.0.0.0,::1,metadata.google.internal,metadata.azure.com"
-
 // WebCaller exposes per-verb HTTP tools (web_get, web_head, web_post, web_put,
 // web_patch, web_delete) under the "webtools" namespace. Each call is gated
 // by tools_policies.webtools (host allow/deny, scheme allowlist, size limits,
@@ -142,9 +137,11 @@ func (h *WebCaller) validateURL(args map[string]string, raw string) (*url.URL, s
 	if host == "" {
 		return nil, "webtools: URL must include a host", true, nil
 	}
-	denied := h.policyCSV(args, "_denied_hosts", defaultDeniedHosts)
+	// No host is denied by default; host policy is opt-in, either via this
+	// _denied_hosts knob or — preferably — an HITL policy rule with op:"host".
+	denied := h.policyCSV(args, "_denied_hosts", "")
 	if hostMatches(host, denied) {
-		return nil, fmt.Sprintf("webtools: host %q is denied by policy (SSRF guard). If this is intentional, set tools_policies.webtools._denied_hosts to override.", host), true, nil
+		return nil, fmt.Sprintf("webtools: host %q is denied by tools_policies.webtools._denied_hosts", host), true, nil
 	}
 	allowed := h.policyCSV(args, "_allowed_hosts", "")
 	if len(allowed) > 0 && !hostMatches(host, allowed) {
