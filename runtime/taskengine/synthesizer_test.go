@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

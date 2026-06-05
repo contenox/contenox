@@ -6,13 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/enginesvc"
-	"github.com/contenox/agent/runtime/hitlservice"
-	"github.com/contenox/agent/runtime/internal/setupcheck"
-	"github.com/contenox/agent/runtime/localtools"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 // ComputeReadiness builds the engine — which runs a read-only backend sync, NOT

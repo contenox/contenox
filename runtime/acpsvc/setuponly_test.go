@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	libacp "github.com/contenox/agent/libacp"
+	libacp "github.com/contenox/runtime/libacp"
 	"github.com/stretchr/testify/require"
 )
 

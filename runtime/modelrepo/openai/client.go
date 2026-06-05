@@ -11,18 +11,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
-	"github.com/contenox/agent/runtime/reasoning"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/reasoning"
 )
 
 type openAIClient struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
-	modelName  string
-	maxTokens  int
-	tracker    libtracker.ActivityTracker
+	baseURL       string
+	apiKey        string
+	httpClient    *http.Client
+	modelName     string
+	maxTokens     int
+	tracker       libtracker.ActivityTracker
+	supportsThink bool
 }
 
 type openAIChatRequest struct {
@@ -210,6 +211,10 @@ func parseRetryAfterMs(h http.Header) time.Duration {
 // so any prior-turn assistant messages must have their tool call names
 // sanitized before being forwarded to the API.
 func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) (openAIChatRequest, map[string]string) {
+	return buildOpenAIRequestWithCapabilities(modelName, messages, args, true)
+}
+
+func buildOpenAIRequestWithCapabilities(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument, supportsThink bool) (openAIChatRequest, map[string]string) {
 	req := openAIChatRequest{
 		Model: modelName,
 	}
@@ -224,7 +229,9 @@ func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []m
 	req.TopP = cfg.TopP
 	req.Seed = cfg.Seed
 
-	req.ReasoningEffort = openAIReasoningEffort(modelName, cfg.Think)
+	if supportsThink {
+		req.ReasoningEffort = openAIReasoningEffort(modelName, cfg.Think)
+	}
 
 	// OpenAI's sampling parameter support depends on both model family and
 	// reasoning mode. Keep this logic internal and driven by the existing Think
@@ -362,14 +369,6 @@ func openAIReasoningEffort(model string, think *string) string {
 	default:
 		return ""
 	}
-}
-
-func openAIModelCanReason(model string) bool {
-	base := openAIAPIBaseModelID(model)
-	return strings.HasPrefix(base, "gpt-5") ||
-		strings.HasPrefix(base, "o1") ||
-		strings.HasPrefix(base, "o3") ||
-		strings.HasPrefix(base, "o4")
 }
 
 func openAIShouldOmitSamplingParams(model, reasoningEffort string) bool {

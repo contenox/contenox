@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type anthropicProvider struct {
@@ -45,7 +45,7 @@ func NewAnthropicProvider(apiKey, modelName string, backendURLs []string, capabi
 		canChat:       capability.CanChat,
 		canPrompt:     capability.CanPrompt,
 		canStream:     capability.CanStream,
-		canThink:      capability.CanThink || anthropicModelCanThink(modelName),
+		canThink:      capability.CanThink,
 		tracker:       tracker,
 	}
 }
@@ -67,6 +67,7 @@ func (p *anthropicProvider) base() anthropicClient {
 		apiKey:     p.apiKey,
 		modelName:  p.modelName,
 		httpClient: p.httpClient,
+		canThink:   p.canThink,
 		tracker:    p.tracker,
 	}
 }

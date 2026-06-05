@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type OpenAIChatClient struct {
@@ -44,7 +44,7 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "openai", "model", c.modelName)
 	defer end()
 
-	req, nameMap := buildOpenAIRequest(c.modelName, messages, args)
+	req, nameMap := buildOpenAIRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
 
 	var response openAIChatCompletionResponse
 

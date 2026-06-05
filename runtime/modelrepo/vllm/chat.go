@@ -5,20 +5,21 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type VLLMChatClient struct {
 	vLLMClient
 }
 
-func NewVLLMChatClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string, tracker libtracker.ActivityTracker) (modelrepo.LLMChatClient, error) {
+func NewVLLMChatClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string, canThink bool, tracker libtracker.ActivityTracker) (modelrepo.LLMChatClient, error) {
 	client := &VLLMChatClient{
 		vLLMClient: vLLMClient{
 			baseURL:    baseURL,
 			httpClient: httpClient,
 			modelName:  modelName,
+			canThink:   canThink,
 			apiKey:     apiKey,
 			tracker:    tracker,
 		},
@@ -33,7 +34,7 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message,
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "vllm", "model", c.modelName)
 	defer end()
 
-	request := buildChatRequest(c.modelName, messages, args)
+	request := buildChatRequest(c.modelName, messages, args, c.canThink)
 
 	var response chatResponse
 

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,6 +50,14 @@ func (t *captureTracker) change(id string) (any, bool) {
 
 var _ libtracker.ActivityTracker = (*captureTracker)(nil)
 
+func TestUnit_VLLMProvider_DoesNotInferThinkingFromModelName(t *testing.T) {
+	provider := NewVLLMProvider("Qwen/Qwen3-32B", []string{"http://localhost:8000"}, nil, modelrepo.CapabilityConfig{}, "", nil)
+	require.False(t, provider.CanThink(), "model name alone must not set CanThink")
+
+	provider = NewVLLMProvider("custom", []string{"http://localhost:8000"}, nil, modelrepo.CapabilityConfig{CanThink: true}, "", nil)
+	require.True(t, provider.CanThink(), "explicit capability metadata must set CanThink")
+}
+
 func TestUnit_BuildChatRequest_MapsThinkingLevels(t *testing.T) {
 	t.Parallel()
 
@@ -75,6 +83,12 @@ func TestUnit_BuildChatRequest_MapsThinkingLevels(t *testing.T) {
 	assert.Equal(t, "none", req.ReasoningEffort)
 	require.NotNil(t, req.ChatTemplateKwargs)
 	assert.Equal(t, false, req.ChatTemplateKwargs["enable_thinking"])
+
+	req = buildChatRequest("model", []modelrepo.Message{{Role: "user", Content: "hi"}}, []modelrepo.ChatArgument{
+		modelrepo.WithThink("high"),
+	}, false)
+	assert.Empty(t, req.ReasoningEffort, "provider with CanThink=false must omit vLLM reasoning effort")
+	assert.Nil(t, req.ChatTemplateKwargs, "provider with CanThink=false must omit vLLM chat template thinking kwargs")
 }
 
 func TestUnit_VLLMChat_AllowsToolCallsFinishReason(t *testing.T) {
@@ -107,6 +121,7 @@ func TestUnit_VLLMChat_AllowsToolCallsFinishReason(t *testing.T) {
 			baseURL:    srv.URL,
 			httpClient: srv.Client(),
 			modelName:  "test-model",
+			canThink:   true,
 			tracker:    libtracker.NoopTracker{},
 		},
 	}
@@ -193,6 +208,7 @@ func TestUnit_VLLMStreamClient_UsesChatRequestParityAndStreamsThinking(t *testin
 			baseURL:    srv.URL,
 			httpClient: srv.Client(),
 			modelName:  "test-model",
+			canThink:   true,
 			tracker:    libtracker.NoopTracker{},
 		},
 	}

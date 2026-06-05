@@ -7,8 +7,8 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	libmodelprovider "github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	libmodelprovider "github.com/contenox/runtime/runtime/modelrepo"
 )
 
 func filterCandidates(

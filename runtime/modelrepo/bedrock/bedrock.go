@@ -25,8 +25,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 // bedrockClient is the shared transport: a constructed SDK runtime client plus

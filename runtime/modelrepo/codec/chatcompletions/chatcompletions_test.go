@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 func TestUnit_Build_PlacesModelAndSanitizesToolNames(t *testing.T) {

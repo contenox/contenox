@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/yalp/jsonpath"
 )
 

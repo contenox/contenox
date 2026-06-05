@@ -1,11 +1,13 @@
 # Contenox
-**The AI copilot that's actually yours.**
+**A local runtime for packaged, auditable AI workflows.**
 
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/contenox/contenox?label=version&logo=github)](https://github.com/contenox/agent/releases)
+[![Version](https://img.shields.io/github/v/release/contenox/runtime?label=version&logo=github)](https://github.com/contenox/runtime/releases)
 
-You describe what you want in plain English. *How* the agent behaves — system prompt, model selection, tool policy, retries, when to pause, when to branch — is a chain file you wrote, not a binary the vendor compiled. Edit it, version it in git, port it anywhere the engine runs.
+Contenox is an Apache 2 runtime for turning repeatable knowledge/tool workflows into versioned chains. A chain makes the important parts explicit: system prompts, model routing, tool allowlists, retries, pauses, branch conditions, and human approval gates. Edit it, review it, commit it, and run it on your machine with the models and tools you choose.
+
+The useful unit is a known workflow with examples, tools, acceptance rules, and review points, not a vague promise of fully delegated work.
 
 📖 **[contenox.com](https://contenox.com)**
 
@@ -42,7 +44,7 @@ That's it. No API key, no external server, no `backend add` ceremony — `init` 
 
 ## What you author
 
-The agent's behavior is a chain file. Every decision is a JSON key:
+The workflow behavior is a chain file. Every decision is a JSON key:
 
 ```json
 {
@@ -81,7 +83,7 @@ The agent's behavior is a chain file. Every decision is a JSON key:
 }
 ```
 
-System prompt, model, tool policy, allowed commands — all yours. Save it and pipe in a diff:
+System prompt, model, tool policy, allowed commands, retry budget, and transitions are all visible. Save the chain and pipe in a diff:
 
 ```bash
 git diff | contenox run --chain ./review.json
@@ -91,30 +93,40 @@ Walk through your first chain step by step: **[contenox.com/docs/guide/first-cha
 
 ---
 
-## What it does
+## What it is good for
 
-The connective tissue between the systems you already use, done in plain English with a human pause at every step.
+Contenox is strongest when the workflow is specific and repeatable: known inputs, known tools, known output shape, and explicit review gates.
 
-```bash
-# Someone yelled at you on Teams about a bug
-cat teams-bug.txt | contenox --shell "check the issue tracker for a duplicate; if none, file it and assign to dev group"
+Examples of workflows you can package as chains:
 
-# Friday and you forgot the timesheet
-contenox --shell "use my git log to fill the timesheet, round to 9-5"
-
-# New app on localhost:3000, you promised someone documentation
-contenox --shell "drive localhost:3000 with playwright, write the doc into Notion"
+```text
+Release evidence pack
+Input: git log, PRs, tickets, CI output
+Output: changelog, risk notes, deployment checklist, reviewer packet
+Gate: human approval before publishing
 ```
 
-Useful day-to-day for the work above. Also, a workbench for testing new chains and MCP servers, and a primitive other agents can shell out to.
+```text
+API-to-workflow wrapper
+Input: internal OpenAPI spec
+Output: curated tool subset, hidden tenant/env args, auth handling, HITL policy
+Gate: approval for mutating calls
+```
 
-State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Anthropic, Mistral, Gemini, AWS Bedrock, vLLM, Vertex (Gemini), or in-process llama.cpp. Any model, any vendor — or no vendor at all if you serve your own.
+```text
+Repo maintenance chain
+Input: issue or migration request
+Output: patch, test run, PR description
+Gate: shell/filesystem approval and human merge
+```
+
+State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Anthropic, Mistral, Gemini, AWS Bedrock, vLLM, Vertex (Gemini), or in-process llama.cpp. Use a cloud model, a local server, or a local GGUF model depending on the workflow and data boundary.
 
 ---
 
 ## Connect your stack
 
-Anything you can reach over MCP, an OpenAPI spec, or a shell command is a tool Contenox can call:
+Anything you can reach over MCP, an OpenAPI spec, or a shell command can become a scoped tool in a chain:
 
 ```bash
 # Any MCP-compatible server (Notion, Linear, Playwright, GitHub, Postgres, …)
@@ -132,7 +144,7 @@ contenox --shell "check Proxmox and flag anything red"
 
 ## Use it from Zed (or any ACP client)
 
-Contenox speaks the [Agent Client Protocol](https://github.com/zed-industries/agent-client-protocol) over stdio. Drop this into `~/.config/zed/settings.json`:
+ACP/editor support is an optional way to run the same local chains inside an editor. Contenox speaks the [Agent Client Protocol](https://github.com/zed-industries/agent-client-protocol) over stdio. Drop this into `~/.config/zed/settings.json`:
 
 ```json
 {
@@ -197,8 +209,8 @@ contenox config set default-provider ollama
 Requires Go 1.25+.
 
 ```bash
-git clone https://github.com/contenox/agent
-cd contenox
+git clone https://github.com/contenox/runtime
+cd runtime
 make build-contenox
 ```
 

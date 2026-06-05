@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/contenox/agent/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/spf13/cobra"
 )
 

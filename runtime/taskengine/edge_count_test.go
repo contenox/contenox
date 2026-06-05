@@ -4,19 +4,19 @@ import (
 	"context"
 	"testing"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/internal/tools"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/internal/tools"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
 
-// TestUnit_EdgeTraversedAtLeast_BoundsAgenticLoop verifies that an
+// TestUnit_EdgeTraversedAtLeast_BoundsCyclicWorkflow verifies that an
 // edge_traversed_at_least branch placed ahead of a normal loop branch
 // intercepts the loop after exactly N traversals of the named edge.
 //
 // Chain shape: chat <-> run_tools loop, with a budget branch out to
 // summariser when chat->run_tools has fired the threshold many times.
-func TestUnit_EdgeTraversedAtLeast_BoundsAgenticLoop(t *testing.T) {
+func TestUnit_EdgeTraversedAtLeast_BoundsCyclicWorkflow(t *testing.T) {
 	const threshold = 3
 
 	mockExec := &taskengine.MockTaskExecutor{

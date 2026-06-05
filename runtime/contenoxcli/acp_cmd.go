@@ -9,22 +9,22 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/contenox/agent/libacp"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/acpsvc"
-	"github.com/contenox/agent/runtime/enginesvc"
-	"github.com/contenox/agent/runtime/hitlservice"
-	"github.com/contenox/agent/runtime/localtools"
-	"github.com/contenox/agent/runtime/reasoning"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/acpsvc"
+	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/reasoning"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/spf13/cobra"
 )
 
 var acpCmd = &cobra.Command{
 	Use:   "acp",
-	Short: "Run as an Agent Client Protocol agent over stdio.",
-	Long: `Speak Agent Client Protocol over stdio so editors like Zed can drive contenox as an agent.
+	Short: "Run the Contenox ACP server over stdio.",
+	Long: `Speak Agent Client Protocol over stdio so editors like Zed can run local Contenox chains.
 
 The chain executed for each session/prompt is loaded from ~/.contenox/default-acp-chain.json
 (override with the CONTENOX_ACP_CHAIN_PATH environment variable). Populate it like any other
@@ -57,7 +57,7 @@ profiles never share state.`,
 
 func init() {
 	for _, c := range []*cobra.Command{acpCmd, acpxCmd} {
-		c.Flags().Bool("auto", false, "Autonomous mode: disable HITL permission prompts (gated tools run unattended)")
+		c.Flags().Bool("auto", false, "Non-interactive mode: disable HITL permission prompts (gated tools run unattended)")
 		c.Flags().Bool("setup", false, "Run interactive setup wizard to configure provider and model, then exit.")
 		c.Flags().String("workspace-id", "", "Workspace ID for new ACP sessions (default: the stable workspace from ~/.contenox/workspace.id, same as the CLI). Existing sessions are always located by their session ID regardless of workspace.")
 	}

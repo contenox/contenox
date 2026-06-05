@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 // splitAndTrim splits s by sep and trims each element.

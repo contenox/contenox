@@ -7,10 +7,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/libkvstore"
-	"github.com/contenox/agent/runtime/modelrepo"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/statetype"
+	"github.com/contenox/runtime/libkvstore"
+	"github.com/contenox/runtime/runtime/modelcapability"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/statetype"
 )
 
 // observedModelCachePrefix is the KV key prefix under which each backend's
@@ -149,6 +150,22 @@ func observedModelNames(models []modelrepo.ObservedModel) []string {
 		names = append(names, model.Name)
 	}
 	return names
+}
+
+func (s *State) applyCapabilityOverrides(ctx context.Context, provider string, model statetype.ModelPullStatus) statetype.ModelPullStatus {
+	name := strings.TrimSpace(model.Model)
+	if name == "" {
+		name = strings.TrimSpace(model.Name)
+	}
+	if name == "" {
+		return model
+	}
+	override, ok, err := modelcapability.New(runtimetypes.New(s.dbInstance.WithoutTransaction())).Get(ctx, provider, name)
+	if err != nil || !ok || override.CanThink == nil {
+		return model
+	}
+	model.CanThink = *override.CanThink
+	return model
 }
 
 func storeBackendError(state *State, backend *runtimetypes.Backend, apiKey string, err error, models []string) {

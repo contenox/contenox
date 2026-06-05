@@ -12,7 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	libbus "github.com/contenox/agent/libbus"
+	libbus "github.com/contenox/runtime/libbus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

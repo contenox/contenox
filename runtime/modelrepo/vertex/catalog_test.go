@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,10 +58,12 @@ func TestUnit_GoogleCatalog_ListModels(t *testing.T) {
 	require.Equal(t, "gemini-2.5-pro", pro.Name)
 	require.True(t, pro.CanChat)
 	require.False(t, pro.CanEmbed)
+	require.False(t, pro.CanThink, "Vertex publisher list metadata does not expose Gemini thinking support")
 
 	provider := catalog.ProviderFor(flash)
 	require.Equal(t, "vertex-google", provider.GetType())
 	require.Equal(t, "gemini-flash-latest", provider.ModelName())
+	require.False(t, provider.CanThink())
 }
 
 // bearerInjectTransport provides a fake bearer token and redirects to the test server.

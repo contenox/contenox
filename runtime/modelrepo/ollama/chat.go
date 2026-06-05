@@ -5,17 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/google/uuid"
 	"github.com/ollama/ollama/api"
 )
 
 type OllamaChatClient struct {
-	ollamaClient *ollamaHTTPClient
-	modelName    string
-	backendURL   string
-	tracker      libtracker.ActivityTracker
+	ollamaClient  *ollamaHTTPClient
+	modelName     string
+	backendURL    string
+	supportsThink bool
+	tracker       libtracker.ActivityTracker
 }
 
 func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
@@ -59,7 +60,10 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	llamaOptions := buildOllamaOptions(config)
-	think := buildOllamaThink(config)
+	var think *api.ThinkValue
+	if c.supportsThink {
+		think = buildOllamaThink(config)
+	}
 	stream := false
 
 	apiTools, err := buildOllamaTools(config)

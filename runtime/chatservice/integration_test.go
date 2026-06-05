@@ -18,13 +18,13 @@ import (
 	"testing"
 	"time"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/chatservice"
-	"github.com/contenox/agent/runtime/internal/tools"
-	"github.com/contenox/agent/runtime/messagestore"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/taskengine"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/chatservice"
+	"github.com/contenox/runtime/runtime/internal/tools"
+	"github.com/contenox/runtime/runtime/messagestore"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -312,7 +312,7 @@ func TestIntegration_ChatRoundTrip_IdempotentReplay(t *testing.T) {
 
 // Tool-call shape: assistant emits a tool call, then a (mock) downstream tool
 // turn happens. Ensures the tool-call path round-trips cleanly. We use a
-// single chain task here; the real two-task agentic loop is exercised via
+// single chain task here; the real two-task workflow loop is exercised via
 // the contenox CLI integration but the within-batch dedup contract for
 // PersistDiff applies the same way.
 func TestIntegration_ChatRoundTrip_AssistantWithToolCall(t *testing.T) {

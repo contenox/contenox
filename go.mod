@@ -1,4 +1,4 @@
-module github.com/contenox/agent
+module github.com/contenox/runtime
 
 go 1.25.0
 

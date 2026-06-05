@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/internal/tools"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/internal/tools"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

@@ -11,9 +11,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type catalogProvider struct {
@@ -42,7 +43,50 @@ func (p *catalogProvider) baseURL() string {
 }
 
 func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedModel, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.baseURL(), "/")+"/v1/models", nil)
+	return p.listModels(ctx, "/v1/models")
+}
+
+type modelListResponse struct {
+	Data []modelInfo `json:"data"`
+}
+
+type modelInfo struct {
+	ID             string             `json:"id"`
+	CreatedAt      string             `json:"created_at"`
+	MaxInputTokens int                `json:"max_input_tokens"`
+	Capabilities   *modelCapabilities `json:"capabilities"`
+}
+
+type modelCapabilities struct {
+	Thinking thinkingCapability `json:"thinking"`
+	Effort   effortCapability   `json:"effort"`
+}
+
+type thinkingCapability struct {
+	Supported bool          `json:"supported"`
+	Types     thinkingTypes `json:"types"`
+}
+
+type thinkingTypes struct {
+	Adaptive capabilitySupport `json:"adaptive"`
+	Enabled  capabilitySupport `json:"enabled"`
+}
+
+type effortCapability struct {
+	Supported bool              `json:"supported"`
+	Low       capabilitySupport `json:"low"`
+	Medium    capabilitySupport `json:"medium"`
+	High      capabilitySupport `json:"high"`
+	XHigh     capabilitySupport `json:"xhigh"`
+	Max       capabilitySupport `json:"max"`
+}
+
+type capabilitySupport struct {
+	Supported bool `json:"supported"`
+}
+
+func (p *catalogProvider) listModels(ctx context.Context, path string) ([]modelrepo.ObservedModel, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.baseURL(), "/")+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -61,30 +105,42 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("anthropic catalog returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("anthropic catalog %s returned %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
+	var payload modelListResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("decode anthropic catalog response: %w", err)
 	}
 	models := make([]modelrepo.ObservedModel, 0, len(payload.Data))
 	for _, item := range payload.Data {
 		// All Claude models are chat models with streaming.
+		modifiedAt, _ := time.Parse(time.RFC3339, item.CreatedAt)
 		models = append(models, modelrepo.ObservedModel{
-			Name: item.ID,
+			Name:          item.ID,
+			ContextLength: item.MaxInputTokens,
+			ModifiedAt:    modifiedAt,
 			CapabilityConfig: modelrepo.CapabilityConfig{
-				CanChat:   true,
-				CanStream: true,
-				CanPrompt: true,
-				CanThink:  anthropicModelCanThink(item.ID),
+				ContextLength: item.MaxInputTokens,
+				CanChat:       true,
+				CanStream:     true,
+				CanPrompt:     true,
+				CanThink:      anthropicCapabilitiesCanThink(item.Capabilities),
 			},
 		})
 	}
 	return models, nil
+}
+
+func anthropicCapabilitiesCanThink(caps *modelCapabilities) bool {
+	if caps == nil {
+		return false
+	}
+	thinking := caps.Thinking
+	if thinking.Supported || thinking.Types.Adaptive.Supported || thinking.Types.Enabled.Supported {
+		return true
+	}
+	effort := caps.Effort
+	return effort.Supported || effort.Low.Supported || effort.Medium.Supported || effort.High.Supported || effort.XHigh.Supported || effort.Max.Supported
 }
 
 func (p *catalogProvider) ProviderFor(model modelrepo.ObservedModel) modelrepo.Provider {

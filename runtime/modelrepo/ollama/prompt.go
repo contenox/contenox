@@ -4,16 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/ollama/ollama/api"
 )
 
 type OllamaPromptClient struct {
-	ollamaClient *ollamaHTTPClient
-	modelName    string
-	backendURL   string
-	tracker      libtracker.ActivityTracker
+	ollamaClient  *ollamaHTTPClient
+	modelName     string
+	backendURL    string
+	supportsThink bool
+	tracker       libtracker.ActivityTracker
 }
 
 // Prompt implements LLMPromptExecClient interface
@@ -25,7 +26,10 @@ func (o *OllamaPromptClient) Prompt(ctx context.Context, systemInstruction strin
 	stream := false
 	config := &modelrepo.ChatConfig{}
 	modelrepo.WithTemperature(float64(temperature)).Apply(config)
-	think := buildOllamaThink(config)
+	var think *api.ThinkValue
+	if o.supportsThink {
+		think = buildOllamaThink(config)
+	}
 	req := &api.GenerateRequest{
 		Model:   o.modelName,
 		Prompt:  prompt,

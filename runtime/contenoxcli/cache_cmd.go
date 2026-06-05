@@ -6,9 +6,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/contenox/agent/libkvstore"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/runtimestate"
+	"github.com/contenox/runtime/libkvstore"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/spf13/cobra"
 )
 

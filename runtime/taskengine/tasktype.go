@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/contenox/agent/runtime/taskengine/llmretry"
+	"github.com/contenox/runtime/runtime/taskengine/llmretry"
 	"gopkg.in/yaml.v3"
 )
 
@@ -148,7 +148,7 @@ const (
 	// OpEdgeTraversedAtLeast fires when the edge specified by TransitionBranch.Edge
 	// (formatted "fromTaskID->toTaskID") has been traversed at least the integer
 	// in TransitionBranch.When times during the current chain run. Reads engine
-	// state, not task output. Use it to bound agentic loops:
+	// state, not task output. Use it to bound workflow loops:
 	//
 	//   { "operator": "edge_traversed_at_least",
 	//     "edge": "chat->run_tools", "when": "20", "goto": "summarise_failure" }

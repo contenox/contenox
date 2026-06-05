@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/contenox/agent/runtime/internal/llmresolver"
-	"github.com/contenox/agent/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/internal/llmresolver"
+	"github.com/contenox/runtime/runtime/internal/setupcheck"
 )
 
 // ErrPreflightBlocked is returned when LLM setup is not ready; instructions are already printed to w.

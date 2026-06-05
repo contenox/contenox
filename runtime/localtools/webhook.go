@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 

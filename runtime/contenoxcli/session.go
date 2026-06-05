@@ -4,9 +4,9 @@ package contenoxcli
 import (
 	"context"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/sessionservice"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/sessionservice"
 )
 
 const localIdentity = "local-user"

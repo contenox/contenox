@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 // NewVLLMPromptClient creates a new prompt client
-func NewVLLMPromptClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string, tracker libtracker.ActivityTracker) (modelrepo.LLMPromptExecClient, error) {
+func NewVLLMPromptClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string, canThink bool, tracker libtracker.ActivityTracker) (modelrepo.LLMPromptExecClient, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -20,6 +20,7 @@ func NewVLLMPromptClient(ctx context.Context, baseURL, modelName string, context
 			baseURL:    baseURL,
 			httpClient: httpClient,
 			modelName:  modelName,
+			canThink:   canThink,
 			apiKey:     apiKey,
 			tracker:    tracker,
 		},

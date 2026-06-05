@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,8 +44,10 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	require.True(t, model.CanPrompt)
 	require.True(t, model.CanStream)
 	require.False(t, model.CanEmbed)
+	require.False(t, model.CanThink, "vLLM model list must not infer thinking from qwen3 model ids")
 
 	provider := catalog.ProviderFor(model)
 	require.Equal(t, "vllm", provider.GetType())
 	require.Equal(t, "qwen3:32b", provider.ModelName())
+	require.False(t, provider.CanThink())
 }

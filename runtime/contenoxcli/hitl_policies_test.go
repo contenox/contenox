@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/hitlservice"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

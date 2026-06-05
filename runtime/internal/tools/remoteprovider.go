@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/agent/libbus"
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/mcpworker"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libbus"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/mcpworker"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type GeminiProvider struct {
@@ -49,7 +49,7 @@ func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap m
 		canPrompt:     cap.CanPrompt,
 		canEmbed:      cap.CanEmbed,
 		canStream:     cap.CanStream,
-		canThink:      cap.CanThink || geminiModelCanThink(modelName),
+		canThink:      cap.CanThink,
 		tracker:       tracker,
 	}
 }
@@ -75,6 +75,7 @@ func (p *GeminiProvider) GetChatConnection(ctx context.Context, backendID string
 			baseURL:    p.baseURL,
 			httpClient: p.httpClient,
 			maxTokens:  p.contextLength,
+			canThink:   p.canThink,
 			apiKey:     p.apiKey,
 			tracker:    p.tracker,
 		},
@@ -91,6 +92,7 @@ func (p *GeminiProvider) GetPromptConnection(ctx context.Context, backendID stri
 			baseURL:    p.baseURL,
 			httpClient: p.httpClient,
 			maxTokens:  p.contextLength,
+			canThink:   p.canThink,
 			apiKey:     p.apiKey,
 			tracker:    p.tracker,
 		},
@@ -122,6 +124,7 @@ func (p *GeminiProvider) GetStreamConnection(ctx context.Context, backendID stri
 			baseURL:    p.baseURL,
 			httpClient: p.httpClient,
 			maxTokens:  p.contextLength,
+			canThink:   p.canThink,
 			apiKey:     p.apiKey,
 			tracker:    p.tracker,
 		},

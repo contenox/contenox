@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type mistralProvider struct {
@@ -20,6 +20,7 @@ type mistralProvider struct {
 	canPrompt     bool
 	canEmbed      bool
 	canStream     bool
+	canThink      bool
 	tracker       libtracker.ActivityTracker
 }
 
@@ -46,6 +47,7 @@ func NewMistralProvider(apiKey, modelName string, backendURLs []string, capabili
 		canPrompt:     capability.CanPrompt,
 		canEmbed:      capability.CanEmbed,
 		canStream:     capability.CanStream,
+		canThink:      capability.CanThink,
 		tracker:       tracker,
 	}
 }
@@ -59,7 +61,7 @@ func (p *mistralProvider) CanChat() bool           { return p.canChat }
 func (p *mistralProvider) CanEmbed() bool          { return p.canEmbed }
 func (p *mistralProvider) CanStream() bool         { return p.canStream }
 func (p *mistralProvider) CanPrompt() bool         { return p.canPrompt }
-func (p *mistralProvider) CanThink() bool          { return false }
+func (p *mistralProvider) CanThink() bool          { return p.canThink }
 
 func (p *mistralProvider) base() mistralClient {
 	return mistralClient{

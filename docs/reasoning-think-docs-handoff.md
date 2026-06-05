@@ -40,13 +40,16 @@ Suggested docs locations:
 
 ## ACP Docs Needed
 
-Document the session-local ACP command:
+Document the ACP slash commands:
 
 ```text
 /think
 /think high
 /think off
 /think auto
+/capability show <provider> <model>
+/capability set <provider> <model> --think true|false
+/capability unset <provider> <model>
 ```
 
 Important points:
@@ -54,6 +57,7 @@ Important points:
 - `/think` without args reports the current session level.
 - `/think <level>` changes only the current ACP session.
 - The ACP `/think` setting is not persisted globally.
+- `/capability` persists a provider/model capability override in the same KV store used by the CLI.
 - New ACP sessions seed from `default-think`, or `high` when unset.
 - ACP emits reasoning through existing `agent_thought_chunk` events when providers return thought chunks.
 - Session replay continues to include stored thought chunks from messages with `Thinking`.
@@ -95,17 +99,16 @@ Document provider request behavior at a high level only:
 
 Avoid documenting unsupported or guessed model support as a guarantee.
 
-## Capability Detection Handoff
-
-Capability detection is intentionally left for another session.
+## Capability Detection And Overrides
 
 The important design constraint from the codebase is:
 
 - Do not hardcode model names to advertise `CanThink`.
-- Provider `CanThink()` should come from explicit `CapabilityConfig` or concrete backend/catalog metadata.
-- If a provider API does not expose reliable thinking capability metadata, leave `CanThink` false unless the user or registry has explicitly configured it.
+- Provider `CanThink()` should come from concrete backend/catalog metadata or a manual provider/model override.
+- If a provider API does not expose reliable thinking capability metadata, leave `CanThink` false unless the operator explicitly configures it.
+- Manual overrides are set with `contenox model capability set <provider> <model> --think true|false` or ACP `/capability set ...`.
 
-Separate follow-up work should audit any temporary model-name capability inference and replace it with the repo's established capability flow.
+Separate follow-up work should keep provider-specific docs aligned if new active probes or new provider catalog fields are added.
 
 ## EE Docs Handoff
 

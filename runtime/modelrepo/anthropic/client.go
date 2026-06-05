@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
-	msgcodec "github.com/contenox/agent/runtime/modelrepo/codec/messages"
-	"github.com/contenox/agent/runtime/reasoning"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	msgcodec "github.com/contenox/runtime/runtime/modelrepo/codec/messages"
+	"github.com/contenox/runtime/runtime/reasoning"
 )
 
 const (
@@ -29,6 +29,7 @@ type anthropicClient struct {
 	apiKey     string
 	modelName  string
 	httpClient *http.Client
+	canThink   bool
 	tracker    libtracker.ActivityTracker
 }
 
@@ -190,15 +191,6 @@ func anthropicMythos(modelName string) bool {
 	return strings.Contains(strings.ToLower(modelName), "mythos")
 }
 
-func anthropicModelCanThink(modelName string) bool {
-	m := strings.ToLower(modelName)
-	return strings.Contains(m, "claude-3-7") ||
-		strings.Contains(m, "claude-sonnet-4") ||
-		strings.Contains(m, "claude-opus-4") ||
-		strings.Contains(m, "claude-haiku-4") ||
-		anthropicMythos(m)
-}
-
 type anthropicChatClient struct{ anthropicClient }
 
 func (c *anthropicChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
@@ -208,7 +200,9 @@ func (c *anthropicChatClient) Chat(ctx context.Context, messages []modelrepo.Mes
 	cfg := chatConfigFromArgs(args)
 	req := msgcodec.Build(messages, cfg)
 	req.Model = c.modelName // direct: model in body, version via header
-	applyAnthropicThinking(&req, c.modelName, cfg)
+	if c.canThink {
+		applyAnthropicThinking(&req, c.modelName, cfg)
+	}
 
 	raw, err := c.post(ctx, "/v1/messages", req)
 	if err != nil {
@@ -230,7 +224,9 @@ func (c *anthropicStreamClient) Stream(ctx context.Context, messages []modelrepo
 	cfg := chatConfigFromArgs(args)
 	req := msgcodec.Build(messages, cfg)
 	req.Model = c.modelName
-	applyAnthropicThinking(&req, c.modelName, cfg)
+	if c.canThink {
+		applyAnthropicThinking(&req, c.modelName, cfg)
+	}
 	req.Stream = true
 	dec := msgcodec.NewStreamDecoder()
 

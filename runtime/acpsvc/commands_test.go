@@ -1,8 +1,14 @@
 package acpsvc
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/modelcapability"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 func TestParseCommand(t *testing.T) {
@@ -90,5 +96,60 @@ func TestUnit_HandleThinkStatusSetAndInvalid(t *testing.T) {
 	}
 	if got := sess.think(); got != "high" {
 		t.Fatalf("invalid /think mutated session value to %q", got)
+	}
+}
+
+func TestUnit_HandleCapabilitySetShowUnset(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "capability-acp.db")
+	db, err := libdb.NewSQLiteDBManager(ctx, path, runtimetypes.SchemaSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	tr := &Transport{deps: Deps{DB: db}}
+	out, err := tr.handleCapability(ctx, "set OpenAI gpt-5-mini --think true")
+	if err != nil {
+		t.Fatalf("set capability: %v", err)
+	}
+	if out != "Capability override set for openai/gpt-5-mini: think=true." {
+		t.Fatalf("set output = %q", out)
+	}
+
+	override, ok, err := modelcapability.New(runtimetypes.New(db.WithoutTransaction())).Get(ctx, "openai", "gpt-5-mini")
+	if err != nil || !ok || override.CanThink == nil || !*override.CanThink {
+		t.Fatalf("stored override = %#v ok=%v err=%v", override, ok, err)
+	}
+
+	out, err = tr.handleCapability(ctx, "show openai gpt-5-mini")
+	if err != nil {
+		t.Fatalf("show capability: %v", err)
+	}
+	if out != "Capability override for openai/gpt-5-mini: think=true." {
+		t.Fatalf("show output = %q", out)
+	}
+
+	out, err = tr.handleCapability(ctx, "unset openai gpt-5-mini")
+	if err != nil {
+		t.Fatalf("unset capability: %v", err)
+	}
+	if out != "Capability override removed for openai/gpt-5-mini." {
+		t.Fatalf("unset output = %q", out)
+	}
+}
+
+func TestUnit_ParseCapabilitySetArgs(t *testing.T) {
+	provider, model, canThink, err := parseCapabilitySetArgs([]string{"set", "VLLM", "Qwen/Qwen3-32B", "--think=false"})
+	if err != nil {
+		t.Fatalf("parse inline flag: %v", err)
+	}
+	if provider != "VLLM" || model != "Qwen/Qwen3-32B" || canThink {
+		t.Fatalf("parsed = provider=%q model=%q canThink=%v", provider, model, canThink)
+	}
+
+	_, _, _, err = parseCapabilitySetArgs([]string{"set", "openai", "gpt-5", "--think", "maybe"})
+	if err == nil || !strings.Contains(err.Error(), "--think must be true or false") {
+		t.Fatalf("invalid think error = %v", err)
 	}
 }

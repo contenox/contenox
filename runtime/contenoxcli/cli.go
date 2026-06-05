@@ -15,17 +15,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/internal/clikv"
-	"github.com/contenox/agent/runtime/reasoning"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/version"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/reasoning"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 // Version is an optional link-time override via
-// -ldflags "-X github.com/contenox/agent/contenoxcli.Version=…"
+// -ldflags "-X github.com/contenox/runtime/runtime/contenoxcli.Version=…"
 // (e.g. distro packagers). When empty, CLIVersion uses runtime/version/version.txt.
 var Version string
 
@@ -155,15 +155,15 @@ func firstNonFlagIsReserved(args []string) bool {
 
 var rootCmd = &cobra.Command{
 	Use:   "contenox",
-	Short: "AI agent CLI: execute tasks using your LLM of choice.",
-	Long: `Contenox is a local AI agent CLI that executes tasks on your machine using
-filesystem and shell tools — driven by your LLM of choice.
-No daemon, no cloud required. State is stored in SQLite.
+	Short: "Local AI workflow runtime: run versioned chains with your tools and models.",
+	Long: `Contenox is a local runtime for packaged, auditable AI workflows.
+Chains define the prompts, model routing, tools, retries, branch conditions,
+and human approval gates. No daemon, no cloud required. State is stored in SQLite.
 
   Quickstart:
     contenox setup                         # interactive wizard — pick provider, model, API key
     contenox init                          # scaffold .contenox/ with default chains
-    contenox "list files in my home dir"   # one-shot natural language → shell
+    contenox "list files in my home dir"   # one-shot chain run using your configured policy
 
   Or register an LLM backend manually:
     # Fully embedded (no external server, no network, no API key):
@@ -229,14 +229,14 @@ Giving the model tools (file system and shell access):
   --local-exec-allowed-dir <dir>     allow local_fs tools inside <dir>
   --shell                            enable local_shell (command policy is defined in the chain)
 
-Human-in-the-loop is on by default. The agent pauses for terminal approval before
+Human-in-the-loop is on by default. The workflow pauses for terminal approval before
 write_file, sed, and local_shell calls. The active policy is defined in
 ~/.contenox/hitl-policy-default.json (override per workspace via
 .contenox/hitl-policy-*.json or via 'contenox config set hitl-policy-name').
 
-  --auto                             autonomous mode: disable approval prompts
+  --auto                             non-interactive mode: skip approval prompts
                                      entirely. Use only in trusted environments
-                                     or for non-interactive scripts.
+                                     or for scripted workflows.
 
 Examples:
   # Chat with file system access to the current project:
@@ -245,7 +245,7 @@ Examples:
   # Shell access (policy comes from the chain's tools_policies; default chains allow common dev tools):
   contenox chat --shell "suggest a commit message from git diff"
 
-  # Autonomous shell run — no approvals, runs everything (USE WITH CARE):
+  # Non-interactive shell run — no approvals, runs everything allowed by policy (USE WITH CARE):
   contenox chat --shell --local-exec-allowed-dir . --auto "refactor main.go to use slog"
 
   # Trim context: only send last 10 messages from session history to the model:
@@ -300,7 +300,7 @@ var versionCmd = &cobra.Command{
 func init() {
 	v := cliVersion()
 	rootCmd.Version = v
-	rootCmd.Short = fmt.Sprintf("AI agent CLI v%s: execute tasks using your LLM of choice.", v)
+	rootCmd.Short = fmt.Sprintf("Local AI workflow runtime v%s: run versioned chains with your tools and models.", v)
 	// Cobra prints Long for --help when set; include version so it matches runtime/version/version.txt.
 	rootCmd.Long = fmt.Sprintf("Version: %s\n\n%s", v, rootCmd.Long)
 
@@ -345,7 +345,7 @@ func init() {
 	// Chat-specific local flags (not exposed globally).
 	chatCmd.Flags().Int("trim", 0, "Only send the last N messages from session history to the model (0 = send all)")
 	chatCmd.Flags().Int("last", 0, "Print last N user/assistant turns after the reply (0 = only print new reply)")
-	chatCmd.Flags().Bool("auto", false, "Autonomous mode: disable HITL approval prompts. Default is HITL on; tools route through the active hitl-policy. Use --auto only in trusted/scripted contexts.")
+	chatCmd.Flags().Bool("auto", false, "Non-interactive mode: disable HITL approval prompts. Default is HITL on; tools route through the active hitl-policy. Use --auto only in trusted/scripted contexts.")
 
 }
 

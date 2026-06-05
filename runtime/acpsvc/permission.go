@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/contenox/agent/libacp"
-	"github.com/contenox/agent/runtime/hitlservice"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 const (

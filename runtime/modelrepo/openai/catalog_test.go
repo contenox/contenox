@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,6 +42,7 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	require.True(t, models[0].CanPrompt)
 	require.True(t, models[0].CanStream)
 	require.False(t, models[0].CanEmbed)
+	require.False(t, models[0].CanThink, "OpenAI /models does not expose reasoning capability metadata")
 
 	require.Equal(t, "text-embedding-3-small", models[1].Name)
 	require.False(t, models[1].CanChat)
@@ -50,4 +51,5 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	provider := catalog.ProviderFor(models[0])
 	require.Equal(t, "openai", provider.GetType())
 	require.Equal(t, "gpt-5", provider.ModelName())
+	require.False(t, provider.CanThink())
 }

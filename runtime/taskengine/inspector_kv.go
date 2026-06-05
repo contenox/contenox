@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	libkv "github.com/contenox/agent/libkvstore"
-	"github.com/contenox/agent/libtracker"
+	libkv "github.com/contenox/runtime/libkvstore"
+	"github.com/contenox/runtime/libtracker"
 )
 
 const (

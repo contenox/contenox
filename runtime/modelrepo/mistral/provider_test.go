@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,6 +38,36 @@ func TestUnit_MistralChat_RequestShapeAndResponse(t *testing.T) {
 	require.Equal(t, "Bearer secret-key", gotAuth)
 	require.Equal(t, "mistral-large-latest", gotBody["model"], "model goes in the body")
 	require.Equal(t, "hi there", res.Message.Content)
+}
+
+func TestUnit_MistralCatalog_DoesNotInferThinkingFromModelName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/models", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"magistral-medium-latest"}]}`))
+	}))
+	defer srv.Close()
+
+	catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "mistral", BaseURL: srv.URL})
+	require.NoError(t, err)
+
+	models, err := catalog.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	require.Equal(t, "magistral-medium-latest", models[0].Name)
+	require.False(t, models[0].CanThink, "model name must not advertise Mistral thinking support")
+
+	provider := catalog.ProviderFor(models[0])
+	require.False(t, provider.CanThink())
+}
+
+func TestUnit_MistralProvider_CanThinkFromCapabilityConfigOnly(t *testing.T) {
+	provider := NewMistralProvider("", "magistral-medium-latest", []string{"http://localhost"}, modelrepo.CapabilityConfig{}, nil, nil)
+	require.False(t, provider.CanThink(), "model name alone must not set CanThink")
+
+	provider = NewMistralProvider("", "custom", []string{"http://localhost"}, modelrepo.CapabilityConfig{CanThink: true}, nil, nil)
+	require.True(t, provider.CanThink(), "explicit capability config must set CanThink")
 }
 
 func TestUnit_MistralCatalog_Registered(t *testing.T) {

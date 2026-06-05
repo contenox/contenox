@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/google/uuid"
 )
 
@@ -19,7 +19,7 @@ func (c *vertexChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "vertex", "model", c.modelName)
 	defer end()
 
-	req, err := buildVertexRequest(c.modelName, messages, args)
+	req, err := buildVertexRequest(c.modelName, messages, args, c.canThink)
 	if err != nil {
 		reportErr(err)
 		return modelrepo.ChatResult{}, err

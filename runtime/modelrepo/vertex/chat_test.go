@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,4 +80,8 @@ func TestUnit_BuildVertexRequest_MapsThinkingConfig(t *testing.T) {
 	req, err = buildVertexRequest("gemini-3-pro", msgs, []modelrepo.ChatArgument{modelrepo.WithThink("auto")})
 	require.NoError(t, err)
 	require.Nil(t, req.GenerationConfig.ThinkingConfig)
+
+	req, err = buildVertexRequest("gemini-2.5-pro", msgs, []modelrepo.ChatArgument{modelrepo.WithThink("high")}, false)
+	require.NoError(t, err)
+	require.Nil(t, req.GenerationConfig.ThinkingConfig, "provider with CanThink=false must omit Vertex thinking config")
 }

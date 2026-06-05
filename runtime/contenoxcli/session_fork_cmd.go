@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/chatservice"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/taskengine"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/chatservice"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/spf13/cobra"
 )
 

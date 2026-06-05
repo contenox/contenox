@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/taskengine"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 

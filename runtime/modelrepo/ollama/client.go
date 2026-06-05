@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/contenox/agent/runtime/modelrepo"
-	"github.com/contenox/agent/runtime/reasoning"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/ollama/ollama/api"
 )
 
@@ -248,20 +248,6 @@ func buildOllamaThink(config *modelrepo.ChatConfig) *api.ThinkValue {
 		mapped = reasoning.High
 	}
 	return &api.ThinkValue{Value: mapped}
-}
-
-func ollamaModelCanThink(modelName string) bool {
-	m := strings.ToLower(modelName)
-	families := []string{
-		"qwen3", "qwq", "deepseek-r1", "deepseek-r", "gpt-oss", "granite",
-		"magistral", "nemotron", "glm-4.5", "hunyuan", "seed-oss", "skywork",
-	}
-	for _, family := range families {
-		if strings.Contains(m, family) {
-			return true
-		}
-	}
-	return false
 }
 
 func buildOllamaTools(config *modelrepo.ChatConfig) (api.Tools, error) {

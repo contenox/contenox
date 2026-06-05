@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	libacp "github.com/contenox/agent/libacp"
+	libacp "github.com/contenox/runtime/libacp"
 )
 
 func TestUnit_MapACPNotExist_WrapsResourceNotFoundAsErrNotExist(t *testing.T) {

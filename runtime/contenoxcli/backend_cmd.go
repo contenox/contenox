@@ -10,12 +10,12 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libkvstore"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/backendservice"
-	"github.com/contenox/agent/runtime/runtimestate"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libkvstore"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/backendservice"
+	"github.com/contenox/runtime/runtime/runtimestate"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )

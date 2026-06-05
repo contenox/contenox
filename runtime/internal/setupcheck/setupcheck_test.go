@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/statetype"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/statetype"
 )
 
 func TestSystem_Evaluate_missingDefaults(t *testing.T) {

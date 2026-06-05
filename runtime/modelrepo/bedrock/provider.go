@@ -8,8 +8,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type bedrockProvider struct {
@@ -22,6 +22,7 @@ type bedrockProvider struct {
 	canChat       bool
 	canPrompt     bool
 	canStream     bool
+	canThink      bool
 	tracker       libtracker.ActivityTracker
 
 	// aws.Config / SDK client built once and reused (mirrors vertex tokenOnce).
@@ -47,6 +48,7 @@ func NewBedrockProvider(region, credBlob, modelName string, cap modelrepo.Capabi
 		canChat:       cap.CanChat,
 		canPrompt:     cap.CanPrompt,
 		canStream:     cap.CanStream,
+		canThink:      cap.CanThink,
 		tracker:       tracker,
 	}
 }
@@ -60,7 +62,7 @@ func (p *bedrockProvider) CanChat() bool           { return p.canChat }
 func (p *bedrockProvider) CanEmbed() bool          { return false }
 func (p *bedrockProvider) CanStream() bool         { return p.canStream }
 func (p *bedrockProvider) CanPrompt() bool         { return p.canPrompt }
-func (p *bedrockProvider) CanThink() bool          { return false }
+func (p *bedrockProvider) CanThink() bool          { return p.canThink }
 
 func (p *bedrockProvider) client(ctx context.Context) (bedrockClient, error) {
 	p.once.Do(func() {

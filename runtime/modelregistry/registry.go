@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/modelregistryservice"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/modelregistryservice"
 )
 
 var ErrNotFound = errors.New("model not found in registry")

@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/backendservice"
-	"github.com/contenox/agent/runtime/internal/clikv"
-	"github.com/contenox/agent/runtime/runtimestate"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/backendservice"
+	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/runtimestate"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )

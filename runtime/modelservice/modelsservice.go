@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/errdefs"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/errdefs"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 var ErrInvalidModel = errors.New("invalid model data")

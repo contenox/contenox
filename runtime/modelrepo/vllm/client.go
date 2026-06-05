@@ -7,11 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
-	"github.com/contenox/agent/runtime/reasoning"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/reasoning"
 )
 
 // vLLMPromptClient handles prompt execution
@@ -29,6 +28,7 @@ type vLLMClient struct {
 	httpClient *http.Client
 	modelName  string
 	maxTokens  int
+	canThink   bool
 	apiKey     string
 	tracker    libtracker.ActivityTracker
 }
@@ -167,16 +167,16 @@ func (c *vLLMClient) sendRequest(ctx context.Context, endpoint string, request i
 	return nil
 }
 
-func buildChatRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) chatRequest {
+func buildChatRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument, canThink ...bool) chatRequest {
 	config := &modelrepo.ChatConfig{}
 	for _, arg := range args {
 		arg.Apply(config)
 	}
 
-	return buildChatRequestFromConfig(modelName, messages, config)
+	return buildChatRequestFromConfig(modelName, messages, config, canThink...)
 }
 
-func buildChatRequestFromConfig(modelName string, messages []modelrepo.Message, config *modelrepo.ChatConfig) chatRequest {
+func buildChatRequestFromConfig(modelName string, messages []modelrepo.Message, config *modelrepo.ChatConfig, canThink ...bool) chatRequest {
 	req := chatRequest{
 		Model:       modelName,
 		Messages:    messages,
@@ -188,12 +188,18 @@ func buildChatRequestFromConfig(modelName string, messages []modelrepo.Message, 
 		Tools:       config.Tools,
 	}
 
-	if effort, ok := vllmReasoningEffort(config.Think); ok {
-		req.ReasoningEffort = effort
-		req.ChatTemplateKwargs = map[string]any{"enable_thinking": effort != "none"}
+	if vllmThinkingAllowed(canThink) {
+		if effort, ok := vllmReasoningEffort(config.Think); ok {
+			req.ReasoningEffort = effort
+			req.ChatTemplateKwargs = map[string]any{"enable_thinking": effort != "none"}
+		}
 	}
 
 	return req
+}
+
+func vllmThinkingAllowed(canThink []bool) bool {
+	return len(canThink) == 0 || canThink[0]
 }
 
 func vllmReasoningEffort(think *string) (string, bool) {
@@ -220,19 +226,4 @@ func valueOfStringPtr(v *string) string {
 		return ""
 	}
 	return *v
-}
-
-func vllmModelCanThink(modelName string) bool {
-	m := strings.ToLower(modelName)
-	families := []string{
-		"deepseek-r1", "deepseek-r", "deepseek-v3.1", "qwen3", "qwq",
-		"granite", "gpt-oss", "glm-4.5", "hunyuan-a13b", "magistral",
-		"nemotron", "seed-oss", "skywork", "ernie-4.5-vl",
-	}
-	for _, family := range families {
-		if strings.Contains(m, family) {
-			return true
-		}
-	}
-	return false
 }

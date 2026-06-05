@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type OllamaProvider struct {
@@ -40,7 +40,7 @@ func NewOllamaProvider(name string, backends []string, httpClient *http.Client, 
 		SupportsEmbed:  caps.CanEmbed,
 		SupportsStream: caps.CanStream,
 		SupportsPrompt: caps.CanPrompt,
-		SupportsThink:  caps.CanThink || ollamaModelCanThink(name),
+		SupportsThink:  caps.CanThink,
 		apiKey:         apiKey,
 		Backends:       backends,
 		httpClient:     httpClient,
@@ -98,10 +98,11 @@ func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string
 	}
 
 	return &OllamaChatClient{
-		ollamaClient: client,
-		modelName:    p.ModelName(),
-		backendURL:   backendID,
-		tracker:      p.tracker,
+		ollamaClient:  client,
+		modelName:     p.ModelName(),
+		backendURL:    backendID,
+		supportsThink: p.SupportsThink,
+		tracker:       p.tracker,
 	}, nil
 }
 
@@ -132,10 +133,11 @@ func (p *OllamaProvider) GetPromptConnection(ctx context.Context, backendID stri
 	}
 
 	return &OllamaPromptClient{
-		ollamaClient: client,
-		modelName:    p.ModelName(),
-		backendURL:   backendID,
-		tracker:      p.tracker,
+		ollamaClient:  client,
+		modelName:     p.ModelName(),
+		backendURL:    backendID,
+		supportsThink: p.SupportsThink,
+		tracker:       p.tracker,
 	}, nil
 }
 
@@ -148,9 +150,10 @@ func (p *OllamaProvider) GetStreamConnection(ctx context.Context, backendID stri
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
 	return &OllamaStreamClient{
-		ollamaClient: client,
-		modelName:    p.ModelName(),
-		backendURL:   backendID,
-		tracker:      p.tracker,
+		ollamaClient:  client,
+		modelName:     p.ModelName(),
+		backendURL:    backendID,
+		supportsThink: p.SupportsThink,
+		tracker:       p.tracker,
 	}, nil
 }

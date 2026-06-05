@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/contenox/agent/runtime/internal/llmresolver"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/statetype"
+	"github.com/contenox/runtime/runtime/internal/llmresolver"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/statetype"
 )
 
 const (

@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/contenox/agent/runtime/runtimestate"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/runtimestate"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 func setProviderConfigKV(ctx context.Context, store runtimetypes.Store, providerType, apiKey string) error {

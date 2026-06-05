@@ -4,7 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type localProvider struct {
@@ -26,7 +26,7 @@ func (p *localProvider) CanChat() bool           { return true }
 func (p *localProvider) CanEmbed() bool          { return true }
 func (p *localProvider) CanStream() bool         { return true }
 func (p *localProvider) CanPrompt() bool         { return true }
-func (p *localProvider) CanThink() bool          { return false }
+func (p *localProvider) CanThink() bool          { return p.caps.CanThink }
 
 func (p *localProvider) GetChatConnection(_ context.Context, _ string) (modelrepo.LLMChatClient, error) {
 	modelPath := filepath.Join(p.modelDir, p.name, "model.gguf")

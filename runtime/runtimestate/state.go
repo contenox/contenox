@@ -19,12 +19,12 @@ import (
 	"sync"
 	"time"
 
-	libbus "github.com/contenox/agent/libbus"
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libkvstore"
-	"github.com/contenox/agent/runtime/modelrepo"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/statetype"
+	libbus "github.com/contenox/runtime/libbus"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libkvstore"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/statetype"
 )
 
 // ProviderCacheDuration defines how long the state of models from an external
@@ -381,6 +381,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 			}
 		}
 
+		lmr = s.applyCapabilityOverrides(ctx, backend.Type, lmr)
 		pulledModels = append(pulledModels, lmr)
 	}
 
@@ -414,7 +415,8 @@ func (s *State) processLocalBackend(ctx context.Context, backend *runtimetypes.B
 	}
 	pulledModels := make([]statetype.ModelPullStatus, 0, len(observedModels))
 	for _, observed := range observedModels {
-		pulledModels = append(pulledModels, pullStatusFromObservedModel(observed))
+		lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(observed))
+		pulledModels = append(pulledModels, lmr)
 	}
 	stateservice.PulledModels = pulledModels
 	if s.autoDiscoverModels {
@@ -465,7 +467,7 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 				_ = runtimetypes.New(s.dbInstance.WithoutTransaction()).UpdateModel(ctx, &declCopy)
 			}
 
-			pulledModels = append(pulledModels, statetype.ModelPullStatus{
+			lmr := statetype.ModelPullStatus{
 				Name:          declaredModel.ID,
 				Model:         declaredModel.Model,
 				ModifiedAt:    declaredModel.UpdatedAt,
@@ -474,12 +476,15 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 				CanEmbed:      declaredModel.CanEmbed,
 				CanPrompt:     declaredModel.CanPrompt,
 				CanStream:     declaredModel.CanStream,
-			})
+			}
+			lmr = s.applyCapabilityOverrides(ctx, backend.Type, lmr)
+			pulledModels = append(pulledModels, lmr)
 			continue
 		}
 
 		if s.autoDiscoverModels {
-			pulledModels = append(pulledModels, pullStatusFromObservedModel(observed))
+			lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(observed))
+			pulledModels = append(pulledModels, lmr)
 		}
 	}
 
@@ -514,7 +519,8 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 		stateInstance.Models = observedModelNames(cachedModels)
 		stateInstance.PulledModels = make([]statetype.ModelPullStatus, 0, len(cachedModels))
 		for _, model := range cachedModels {
-			stateInstance.PulledModels = append(stateInstance.PulledModels, pullStatusFromObservedModel(model))
+			lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model))
+			stateInstance.PulledModels = append(stateInstance.PulledModels, lmr)
 		}
 		s.state.Store(backend.ID, stateInstance)
 		return
@@ -537,7 +543,8 @@ func (s *State) processGeminiBackend(ctx context.Context, backend *runtimetypes.
 	stateInstance.Models = observedModelNames(observedModels)
 	stateInstance.PulledModels = make([]statetype.ModelPullStatus, 0, len(observedModels))
 	for _, model := range observedModels {
-		stateInstance.PulledModels = append(stateInstance.PulledModels, pullStatusFromObservedModel(model))
+		lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model))
+		stateInstance.PulledModels = append(stateInstance.PulledModels, lmr)
 	}
 	s.state.Store(backend.ID, stateInstance)
 
@@ -576,7 +583,8 @@ func (s *State) processOptionalCredCloudBackend(ctx context.Context, backend *ru
 		stateInstance.Models = observedModelNames(cachedModels)
 		stateInstance.PulledModels = make([]statetype.ModelPullStatus, 0, len(cachedModels))
 		for _, model := range cachedModels {
-			stateInstance.PulledModels = append(stateInstance.PulledModels, pullStatusFromObservedModel(model))
+			lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model))
+			stateInstance.PulledModels = append(stateInstance.PulledModels, lmr)
 		}
 		s.state.Store(backend.ID, stateInstance)
 		return
@@ -598,7 +606,8 @@ func (s *State) processOptionalCredCloudBackend(ctx context.Context, backend *ru
 	stateInstance.Models = observedModelNames(observedModels)
 	stateInstance.PulledModels = make([]statetype.ModelPullStatus, 0, len(observedModels))
 	for _, model := range observedModels {
-		stateInstance.PulledModels = append(stateInstance.PulledModels, pullStatusFromObservedModel(model))
+		lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(model))
+		stateInstance.PulledModels = append(stateInstance.PulledModels, lmr)
 	}
 	s.state.Store(backend.ID, stateInstance)
 	s.storeObservedModelCache(ctx, backend.ID, credJSON, observedModels)
@@ -653,7 +662,7 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 	pulledModels := make([]statetype.ModelPullStatus, 0, len(observedModels))
 	for _, observed := range observedModels {
 		if declaredModel, exists := declaredModels[observed.Name]; exists {
-			pulledModels = append(pulledModels, statetype.ModelPullStatus{
+			lmr := statetype.ModelPullStatus{
 				Name:          declaredModel.ID,
 				Model:         declaredModel.Model,
 				ModifiedAt:    declaredModel.UpdatedAt,
@@ -662,11 +671,14 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 				CanEmbed:      declaredModel.CanEmbed,
 				CanPrompt:     declaredModel.CanPrompt,
 				CanStream:     declaredModel.CanStream,
-			})
+			}
+			lmr = s.applyCapabilityOverrides(ctx, backend.Type, lmr)
+			pulledModels = append(pulledModels, lmr)
 			continue
 		}
 		if s.autoDiscoverModels {
-			pulledModels = append(pulledModels, pullStatusFromObservedModel(observed))
+			lmr := s.applyCapabilityOverrides(ctx, backend.Type, pullStatusFromObservedModel(observed))
+			pulledModels = append(pulledModels, lmr)
 		}
 	}
 	stateInstance.PulledModels = pulledModels

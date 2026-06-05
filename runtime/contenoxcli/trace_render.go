@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 // traceDrainGrace is the time we wait after a chain returns before cancelling

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,8 +24,8 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"models": []map[string]any{
 					{
-						"name":        "smollm2:135m",
-						"model":       "smollm2:135m",
+						"name":        "qwen3:8b",
+						"model":       "qwen3:8b",
 						"modified_at": time.Date(2026, 4, 4, 0, 0, 0, 0, time.UTC),
 						"size":        12345,
 						"digest":      "sha256:test",
@@ -57,17 +57,19 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	require.Len(t, models, 1)
 
 	model := models[0]
-	require.Equal(t, "smollm2:135m", model.Name)
+	require.Equal(t, "qwen3:8b", model.Name)
 	require.Equal(t, 4096, model.ContextLength)
 	require.True(t, model.CanChat)
 	require.True(t, model.CanPrompt)
 	require.True(t, model.CanStream)
 	require.True(t, model.CanEmbed)
+	require.False(t, model.CanThink, "Ollama show metadata must not infer thinking from qwen3 model names")
 	require.Equal(t, int64(12345), model.Size)
 	require.Equal(t, "sha256:test", model.Digest)
 
 	provider := catalog.ProviderFor(model)
 	require.Equal(t, "ollama", provider.GetType())
-	require.Equal(t, "smollm2:135m", provider.ModelName())
+	require.Equal(t, "qwen3:8b", provider.ModelName())
 	require.True(t, provider.CanEmbed())
+	require.False(t, provider.CanThink())
 }

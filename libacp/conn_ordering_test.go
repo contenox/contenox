@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/agent/libacp"
+	"github.com/contenox/runtime/libacp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

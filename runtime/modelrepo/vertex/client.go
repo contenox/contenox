@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
-	"github.com/contenox/agent/runtime/reasoning"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/reasoning"
 )
 
 type vertexClient struct {
@@ -21,6 +21,7 @@ type vertexClient struct {
 	contextLength int
 	credJSON      string // service account JSON; empty → ADC
 	httpClient    *http.Client
+	canThink      bool
 	tracker       libtracker.ActivityTracker
 	tokenFn       func(context.Context) (string, error) // test tools; overrides credJSON when set
 }
@@ -144,7 +145,7 @@ func (c *vertexClient) sendRequest(ctx context.Context, endpoint string, request
 
 // buildVertexRequest converts modelrepo messages and args to a vertexRequest.
 // Free function matching OpenAI/Gemini convention.
-func buildVertexRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) (vertexRequest, error) {
+func buildVertexRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument, canThink ...bool) (vertexRequest, error) {
 	cfg := &modelrepo.ChatConfig{}
 	for _, a := range args {
 		a.Apply(cfg)
@@ -196,9 +197,15 @@ func buildVertexRequest(modelName string, messages []modelrepo.Message, args []m
 	req.GenerationConfig.TopP = cfg.TopP
 	req.GenerationConfig.MaxOutputTokens = cfg.MaxTokens
 	req.GenerationConfig.Seed = cfg.Seed
-	req.GenerationConfig.ThinkingConfig = vertexThinkingConfigForModel(modelName, cfg.Think)
+	if vertexThinkingAllowed(canThink) {
+		req.GenerationConfig.ThinkingConfig = vertexThinkingConfigForModel(modelName, cfg.Think)
+	}
 
 	return req, nil
+}
+
+func vertexThinkingAllowed(canThink []bool) bool {
+	return len(canThink) == 0 || canThink[0]
 }
 
 func vertexThinkingConfigForModel(modelName string, think *string) *vertexThinkingConfig {
@@ -274,11 +281,6 @@ func vertexThinkingBudget(level string) (int, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func vertexGoogleModelCanThink(modelName string) bool {
-	m := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(m, "gemini-2.5") || strings.Contains(m, "gemini-3")
 }
 
 // convertToVertexContents maps modelrepo messages to Vertex AI content format.

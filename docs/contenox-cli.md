@@ -1,6 +1,6 @@
 # Contenox CLI
 
-**Contenox CLI** is the local CLI layer over the Contenox task engine. It runs without Postgres, NATS, or a tokenizer service — just SQLite and an in-memory bus. Point it at local Ollama, Ollama Cloud, OpenAI, vLLM, or Gemini, and run AI workflows from the terminal: interactive chat or arbitrary chain pipelines.
+**Contenox CLI** is the local CLI layer over the Contenox workflow runtime. It runs without Postgres, NATS, or a tokenizer service — just SQLite and an in-memory bus. Point it at local Ollama, Ollama Cloud, OpenAI, vLLM, Gemini, or local GGUF models, then run versioned chains with explicit prompts, tool policy, retries, branches, and review gates.
 
 ---
 
@@ -9,11 +9,11 @@
 ```bash
 # From a release binary:
 contenox init                          # scaffold .contenox/ with config + default chain
-contenox "list files in my home dir"   # natural language → shell → response
+contenox "list files in my home dir"   # one-shot chain run using configured policy
 
 # Or build from source:
-git clone https://github.com/contenox/agent.git
-cd contenox
+git clone https://github.com/contenox/runtime.git
+cd runtime
 go build -o contenox ./cmd/contenox
 contenox init
 ```
@@ -25,6 +25,12 @@ ollama pull qwen2.5:7b
 ```
 
 For hosted providers instead, use `contenox backend add ...` with `--api-key-env` as shown below. For Ollama Cloud, set `--url https://ollama.com/api --api-key-env OLLAMA_API_KEY`.
+
+---
+
+## Runtime posture
+
+Contenox is useful as a stable local machine for packaged workflows. Prefer small, reviewable chains for known recurring work over broad promises of fully delegated work. The OSS runtime gives you model/backend switching, local state, OpenAPI/MCP/shell/filesystem tools, chain branching, retries, and HITL gates.
 
 ---
 
@@ -43,7 +49,7 @@ contenox --input "explain this error" < build.log
 echo "summarise this" | contenox
 ```
 
-### `contenox chat` — interactive chat (session history)
+### `contenox chat` — stateful chain session
 
 ```bash
 contenox chat "hello"
@@ -178,7 +184,7 @@ contenox config set default-chain    .contenox/default-chain.json
 contenox config list   # review current settings
 ```
 
-`default-think` controls provider reasoning for supported models. Valid values are `auto`, `off`, `minimal`, `low`, `medium`, `high`, and `xhigh`. CLI and ACP sessions default to `high` when no config is set; `--think <level>` overrides it for one CLI invocation.
+`default-think` controls the requested reasoning level for models whose effective runtime capability has `think` enabled. Valid values are `auto`, `off`, `minimal`, `low`, `medium`, `high`, and `xhigh`. CLI and ACP sessions default to `high` when no config is set; `--think <level>` overrides it for one CLI invocation. If a provider does not advertise thinking support, add a provider/model override with `contenox model capability set ... --think true`.
 
 ### Supported backends
 
@@ -197,7 +203,14 @@ contenox config list   # review current settings
 ### Model management
 
 ```bash
-contenox model list                              # query live backends (runtime-observed inventory)
+contenox model list                              # query live backends and effective capabilities
+
+# Store a provider-scoped thinking capability override.
+# Use this when the backend does not advertise thinking support, or to suppress it.
+contenox model capability set openai gpt-5-mini --think true
+contenox model capability set vllm Qwen/Qwen3-32B --think false
+contenox model capability show openai gpt-5-mini
+contenox model capability unset openai gpt-5-mini
 
 # Store a local context override for a model that already has a local row.
 # Accepts a bare integer or a k/m shorthand (case-insensitive):
@@ -210,6 +223,7 @@ contenox model set-context qwen2.5:7b             --context 32k
 
 OSS no longer exposes model CRUD. The runtime discovers models from registered backends; use
 `contenox backend add ...`, provider configuration, and `contenox model list` to manage what is available.
+`contenox model list` shows effective capabilities, including manual `model capability` overrides.
 
 ### Global flags reference
 
@@ -220,7 +234,7 @@ OSS no longer exposes model CRUD. The runtime discovers models from registered b
 | `--data-dir`               | Override the `.contenox` data directory (skips walk-up search; DB defaults to `<path>/local.db`) |
 | `--provider`               | Provider type override                                                                           |
 | `--model`                  | Model name override                                                                              |
-| `--think <level>`          | Reasoning level override: `auto`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`             |
+| `--think <level>`          | Per-invocation reasoning level override: `auto`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `--context`                | Context length in tokens — bare int or shorthand (`12k`, `128k`, `1m`)                           |
 | `--shell`                  | Enable `local_shell` tool (opt-in; policy is set in the chain, not here)                         |
 | `--local-exec-allowed-dir` | Restrict `local_fs` to this directory                                                            |
@@ -280,9 +294,26 @@ When `--shell` is not passed, the `local_shell` tool is simply not registered �
 
 ---
 
+## ACP slash commands
+
+ACP sessions can run the same local chains from an editor and advertise the same runtime controls through slash commands:
+
+```text
+/model [model-name]
+/provider [provider-name]
+/think [level|off|auto]
+/capability show <provider> <model>
+/capability set <provider> <model> --think true|false
+/capability unset <provider> <model>
+```
+
+`/think` changes only the current ACP session's requested reasoning level. `/capability` persists the provider/model capability override in the same KV store used by the CLI, so it affects future backend cycles and sessions.
+
+---
+
 ## Chains
 
-Chains are JSON files that define the LLM workflow: which model, which tools, how to branch based on output. Place them in `.contenox/` and reference by path.
+Chains are JSON files that package workflow behavior: which model to use, which tools are exposed, how retries work, when to pause, and how to branch based on output. Place them in `.contenox/` and reference by path.
 
 ### Macros in chains
 
@@ -304,14 +335,14 @@ Chain text fields and `execute_config.model`, `execute_config.provider`, and `ex
 ## Build from source
 
 ```bash
-git clone https://github.com/contenox/agent.git
-cd contenox
+git clone https://github.com/contenox/runtime.git
+cd runtime
 make build-contenox
 # binary: ./bin/contenox
 contenox init
 ```
 
-The release version string is **`runtime/version/version.txt`**, embedded at compile time through `version.Get()` and shown in `contenox --help`, `contenox --version`, and the root command `Short` line. Optional link-time override: `-ldflags "-X github.com/contenox/agent/contenoxcli.Version=…"`.
+The release version string is **`runtime/version/version.txt`**, embedded at compile time through `version.Get()` and shown in `contenox --help`, `contenox --version`, and the root command `Short` line. Optional link-time override: `-ldflags "-X github.com/contenox/runtime/runtime/contenoxcli.Version=…"`.
 
 ### Check that CLI help still works
 

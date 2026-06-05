@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/contenox/agent/runtime/agentservice"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 const (

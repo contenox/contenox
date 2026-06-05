@@ -9,8 +9,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 func init() {
@@ -79,7 +79,6 @@ func enrichGooglePublisherModel(name string) modelrepo.ObservedModel {
 		om.CanChat = true
 		om.CanPrompt = true
 		om.CanStream = true
-		om.CanThink = vertexGoogleModelCanThink(name)
 	}
 	return om
 }

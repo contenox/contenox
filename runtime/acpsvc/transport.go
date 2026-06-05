@@ -5,13 +5,13 @@ import (
 	"strings"
 	"sync"
 
-	libacp "github.com/contenox/agent/libacp"
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/agentservice"
-	"github.com/contenox/agent/runtime/enginesvc"
-	"github.com/contenox/agent/runtime/internal/clikv"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libacp "github.com/contenox/runtime/libacp"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 type Deps struct {

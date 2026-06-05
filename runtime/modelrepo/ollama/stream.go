@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/ollama/ollama/api"
 )
 
 type OllamaStreamClient struct {
-	ollamaClient *ollamaHTTPClient
-	modelName    string
-	backendURL   string
-	tracker      libtracker.ActivityTracker
+	ollamaClient  *ollamaHTTPClient
+	modelName     string
+	backendURL    string
+	supportsThink bool
+	tracker       libtracker.ActivityTracker
 }
 
 func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
@@ -52,7 +53,10 @@ func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 	}
 
 	stream := true
-	think := buildOllamaThink(config)
+	var think *api.ThinkValue
+	if c.supportsThink {
+		think = buildOllamaThink(config)
+	}
 	apiTools, err := buildOllamaTools(config)
 	if err != nil {
 		reportErr(err)

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type OpenAIProvider struct {
@@ -50,7 +50,7 @@ func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capabilit
 		canPrompt:     capability.CanPrompt,
 		canEmbed:      capability.CanEmbed,
 		canStream:     capability.CanStream,
-		canThink:      capability.CanThink || openAIModelCanReason(modelName),
+		canThink:      capability.CanThink,
 		tracker:       tracker,
 	}
 }
@@ -101,12 +101,13 @@ func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string
 	}
 	return &OpenAIChatClient{
 		openAIClient: openAIClient{
-			baseURL:    p.baseURL,
-			apiKey:     p.apiKey,
-			httpClient: p.httpClient,
-			modelName:  p.modelName,
-			maxTokens:  p.contextLength,
-			tracker:    p.tracker,
+			baseURL:       p.baseURL,
+			apiKey:        p.apiKey,
+			httpClient:    p.httpClient,
+			modelName:     p.modelName,
+			maxTokens:     p.contextLength,
+			tracker:       p.tracker,
+			supportsThink: p.CanThink(),
 		},
 	}, nil
 }
@@ -117,12 +118,13 @@ func (p *OpenAIProvider) GetPromptConnection(ctx context.Context, backendID stri
 	}
 	return &OpenAIPromptClient{
 		openAIClient: openAIClient{
-			baseURL:    p.baseURL,
-			apiKey:     p.apiKey,
-			httpClient: p.httpClient,
-			modelName:  p.modelName,
-			maxTokens:  p.contextLength,
-			tracker:    p.tracker,
+			baseURL:       p.baseURL,
+			apiKey:        p.apiKey,
+			httpClient:    p.httpClient,
+			modelName:     p.modelName,
+			maxTokens:     p.contextLength,
+			tracker:       p.tracker,
+			supportsThink: p.CanThink(),
 		},
 	}, nil
 }
@@ -133,11 +135,12 @@ func (p *OpenAIProvider) GetEmbedConnection(ctx context.Context, backendID strin
 	}
 	return &OpenAIEmbedClient{
 		openAIClient: openAIClient{
-			baseURL:    p.baseURL,
-			apiKey:     p.apiKey,
-			httpClient: p.httpClient,
-			modelName:  p.modelName,
-			tracker:    p.tracker,
+			baseURL:       p.baseURL,
+			apiKey:        p.apiKey,
+			httpClient:    p.httpClient,
+			modelName:     p.modelName,
+			tracker:       p.tracker,
+			supportsThink: p.CanThink(),
 		},
 	}, nil
 }
@@ -148,12 +151,13 @@ func (p *OpenAIProvider) GetStreamConnection(ctx context.Context, backendID stri
 	}
 	return &OpenAIStreamClient{
 		openAIClient: openAIClient{
-			baseURL:    p.baseURL,
-			apiKey:     p.apiKey,
-			httpClient: p.httpClient,
-			modelName:  p.modelName,
-			maxTokens:  p.contextLength,
-			tracker:    p.tracker,
+			baseURL:       p.baseURL,
+			apiKey:        p.apiKey,
+			httpClient:    p.httpClient,
+			modelName:     p.modelName,
+			maxTokens:     p.contextLength,
+			tracker:       p.tracker,
+			supportsThink: p.CanThink(),
 		},
 	}, nil
 }

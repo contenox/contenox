@@ -10,12 +10,12 @@ import (
 	"text/tabwriter"
 	"unicode"
 
-	libbus "github.com/contenox/agent/libbus"
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelservice"
-	"github.com/contenox/agent/runtime/runtimestate"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libbus "github.com/contenox/runtime/libbus"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelservice"
+	"github.com/contenox/runtime/runtime/runtimestate"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 )
 
@@ -26,10 +26,12 @@ var modelCmd = &cobra.Command{
 	Long: `Inspect models available from LLM backends.
 
 By default, 'model list' queries each registered backend in real-time and
-shows the models it is currently serving.
+shows the models it is currently serving. Use 'model capability' to set manual
+provider/model capability overrides when a backend does not advertise them.
 
 Examples:
   contenox model list
+  contenox model capability set openai gpt-5-mini --think true
 
 Set the default model:
   contenox config set default-model    gemini-flash-latest
@@ -49,8 +51,8 @@ var modelListCmd = &cobra.Command{
 	Short:   "List models available from live backends.",
 	Long: `Query each registered backend in real time and show its available models.
 
-Shows model name, backend it comes from, and capabilities discovered at runtime
-(chat, embed, prompt, stream, context length).
+Shows model name, backend it comes from, and effective capabilities observed at
+runtime plus manual overrides (chat, embed, prompt, think, context length).
 
 Examples:
   contenox model list`,
@@ -104,6 +106,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 		canChat     map[string]bool
 		canEmbed    map[string]bool
 		canPrompt   map[string]bool
+		canThink    map[string]bool
 		ctx         map[string]int
 	}
 	var entries []entry
@@ -114,6 +117,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 			canChat:     map[string]bool{},
 			canEmbed:    map[string]bool{},
 			canPrompt:   map[string]bool{},
+			canThink:    map[string]bool{},
 			ctx:         map[string]int{},
 		}
 		for _, pm := range bs.PulledModels {
@@ -121,6 +125,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 			e.canChat[pm.Model] = pm.CanChat
 			e.canEmbed[pm.Model] = pm.CanEmbed
 			e.canPrompt[pm.Model] = pm.CanPrompt
+			e.canThink[pm.Model] = pm.CanThink
 			e.ctx[pm.Model] = pm.ContextLength
 		}
 		// Some providers only report model names; when the backend is healthy,
@@ -135,18 +140,18 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 
 	any := false
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "BACKEND\tMODEL\tCHAT\tEMBED\tPROMPT\tCTX")
+	fmt.Fprintln(w, "BACKEND\tMODEL\tCHAT\tEMBED\tPROMPT\tTHINK\tCTX")
 	for _, e := range entries {
 		if e.backendErr != "" {
 			errMsg := e.backendErr
 			if len(errMsg) > 80 {
 				errMsg = errMsg[:80] + "..."
 			}
-			fmt.Fprintf(w, "%s\t(unreachable: %s)\t\t\t\t\n", e.backendName, errMsg)
+			fmt.Fprintf(w, "%s\t(unreachable: %s)\t\t\t\t\t\n", e.backendName, errMsg)
 			continue
 		}
 		if len(e.pulled) == 0 {
-			fmt.Fprintf(w, "%s\t(no models)\t\t\t\t\n", e.backendName)
+			fmt.Fprintf(w, "%s\t(no models)\t\t\t\t\t\n", e.backendName)
 			continue
 		}
 		for _, m := range e.pulled {
@@ -155,11 +160,12 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 			if preferredModel != "" && m == preferredModel {
 				displayName = m + " *"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\n",
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
 				e.backendName, displayName,
 				boolMark(e.canChat[m]),
 				boolMark(e.canEmbed[m]),
 				boolMark(e.canPrompt[m]),
+				boolMark(e.canThink[m]),
 				e.ctx[m],
 			)
 		}

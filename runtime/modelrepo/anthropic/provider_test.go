@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/contenox/agent/runtime/modelrepo"
-	msgcodec "github.com/contenox/agent/runtime/modelrepo/codec/messages"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	msgcodec "github.com/contenox/runtime/runtime/modelrepo/codec/messages"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,6 +43,28 @@ func TestUnit_AnthropicChat_RequestShapeAndResponse(t *testing.T) {
 	require.Equal(t, "hi there", res.Message.Content)
 }
 
+func TestUnit_AnthropicChat_OmitsThinkingWhenCapabilityIsFalse(t *testing.T) {
+	var gotBody map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		_, _ = w.Write([]byte(`{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"hi there"}]}`))
+	}))
+	defer srv.Close()
+
+	p := NewAnthropicProvider("secret-key", "claude-sonnet-4-5", []string{srv.URL},
+		modelrepo.CapabilityConfig{CanChat: true}, srv.Client(), nil)
+	chat, err := p.GetChatConnection(context.Background(), "")
+	require.NoError(t, err)
+
+	_, err = chat.Chat(context.Background(), []modelrepo.Message{{Role: "user", Content: "hi"}}, modelrepo.WithThink("high"))
+	require.NoError(t, err)
+	require.NotNil(t, gotBody)
+	require.Nil(t, gotBody["thinking"], "provider with CanThink=false must not send Anthropic thinking controls")
+	require.Nil(t, gotBody["output_config"], "provider with CanThink=false must not send Anthropic effort controls")
+}
+
 func TestUnit_AnthropicCatalog_RegisteredAndChatCapable(t *testing.T) {
 	cp, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "anthropic", APIKey: "k"})
 	require.NoError(t, err, "anthropic must be registered in the catalog registry")
@@ -55,6 +77,65 @@ func TestUnit_AnthropicCatalog_RegisteredAndChatCapable(t *testing.T) {
 	require.Equal(t, "anthropic", prov.GetType())
 	require.True(t, prov.CanChat())
 	require.False(t, prov.CanEmbed())
+}
+
+func TestUnit_AnthropicCatalog_DetectsThinkingFromCapabilities(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/v1/models", r.URL.Path)
+		require.Empty(t, r.URL.RawQuery)
+		require.Equal(t, "secret-key", r.Header.Get("x-api-key"))
+		require.Equal(t, anthropicAPIVersion, r.Header.Get("anthropic-version"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"data": [{
+				"id": "claude-sonnet-4-5",
+				"created_at": "2026-02-19T00:00:00Z",
+				"max_input_tokens": 200000,
+				"capabilities": {
+					"thinking": {"supported": true, "types": {"enabled": {"supported": true}, "adaptive": {"supported": false}}},
+					"effort": {"supported": false}
+				}
+			}]
+		}`))
+	}))
+	defer srv.Close()
+
+	catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{
+		Type:    "anthropic",
+		BaseURL: srv.URL,
+		APIKey:  "secret-key",
+	})
+	require.NoError(t, err)
+
+	models, err := catalog.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	require.Equal(t, "claude-sonnet-4-5", models[0].Name)
+	require.Equal(t, 200000, models[0].ContextLength)
+	require.True(t, models[0].CanThink)
+
+	provider := catalog.ProviderFor(models[0])
+	require.True(t, provider.CanThink())
+}
+
+func TestUnit_AnthropicCatalog_DoesNotInferThinkingWhenCapabilitiesAreMissing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.Equal(t, "/v1/models", r.URL.Path)
+		require.Empty(t, r.URL.RawQuery)
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet-4-5","type":"model"}]}`))
+	}))
+	defer srv.Close()
+
+	catalog, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{Type: "anthropic", BaseURL: srv.URL})
+	require.NoError(t, err)
+
+	models, err := catalog.ListModels(context.Background())
+	require.NoError(t, err)
+	require.Len(t, models, 1)
+	require.Equal(t, "claude-sonnet-4-5", models[0].Name)
+	require.False(t, models[0].CanThink, "missing capability metadata must not fall back to model-name inference")
 }
 
 func TestUnit_AnthropicThinking_ManualBudgetAndAdaptiveEffort(t *testing.T) {

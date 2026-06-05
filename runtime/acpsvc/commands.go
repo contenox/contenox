@@ -7,11 +7,12 @@ import (
 	"strings"
 	"unicode"
 
-	libacp "github.com/contenox/agent/libacp"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/internal/clikv"
-	"github.com/contenox/agent/runtime/reasoning"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libacp "github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/modelcapability"
+	"github.com/contenox/runtime/runtime/reasoning"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 // acpCommands is the admin command set advertised to ACP clients. The protocol
@@ -26,6 +27,7 @@ func acpCommands() []libacp.AvailableCommand {
 		{Name: "model", Description: "Show the current model, or set it: /model <name>.", Input: &libacp.AvailableCommandInput{Hint: "[model-name]"}},
 		{Name: "provider", Description: "Show the current provider, or set it: /provider <name>.", Input: &libacp.AvailableCommandInput{Hint: "[provider-name]"}},
 		{Name: "think", Description: "Show or set this session's reasoning level: /think <level|off|auto>.", Input: &libacp.AvailableCommandInput{Hint: "[level|off|auto]"}},
+		{Name: "capability", Description: "Show or set persistent provider/model capability overrides.", Input: &libacp.AvailableCommandInput{Hint: "set|show|unset <provider> <model> [--think true|false]"}},
 		{Name: "policy", Description: "Show the active HITL policy, or switch it: /policy <name>.", Input: &libacp.AvailableCommandInput{Hint: "[policy-name]"}},
 	}
 }
@@ -82,6 +84,8 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 		out, err = t.handleProvider(ctx, args)
 	case "think":
 		out, err = t.handleThink(sess, args)
+	case "capability":
+		out, err = t.handleCapability(ctx, args)
 	case "policy":
 		out, err = t.handlePolicy(ctx, args)
 	case "clear":
@@ -187,6 +191,117 @@ func (t *Transport) handleThink(sess *sessionEntry, args string) (string, error)
 	}
 	sess.setThink(level)
 	return fmt.Sprintf("Think set to %s for this session.", level), nil
+}
+
+func (t *Transport) handleCapability(ctx context.Context, args string) (string, error) {
+	fields := strings.Fields(args)
+	if len(fields) == 0 {
+		return t.capabilityUsage(ctx), nil
+	}
+	switch fields[0] {
+	case "show":
+		if len(fields) != 3 {
+			return "", fmt.Errorf("usage: /capability show <provider> <model>")
+		}
+		return t.capabilityShow(ctx, fields[1], fields[2])
+	case "set":
+		provider, model, canThink, err := parseCapabilitySetArgs(fields)
+		if err != nil {
+			return "", err
+		}
+		store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+		override, err := modelcapability.New(store).SetThink(ctx, provider, model, canThink)
+		if err != nil {
+			return "", fmt.Errorf("set capability override: %w", err)
+		}
+		return fmt.Sprintf("Capability override set for %s/%s: think=%t.", override.Provider, override.Model, canThink), nil
+	case "unset":
+		if len(fields) != 3 {
+			return "", fmt.Errorf("usage: /capability unset <provider> <model>")
+		}
+		store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+		removed, err := modelcapability.New(store).Unset(ctx, fields[1], fields[2])
+		if err != nil {
+			return "", fmt.Errorf("unset capability override: %w", err)
+		}
+		_, provider, model, keyErr := modelcapability.Key(fields[1], fields[2])
+		if keyErr != nil {
+			return "", keyErr
+		}
+		if !removed {
+			return fmt.Sprintf("No capability override for %s/%s.", provider, model), nil
+		}
+		return fmt.Sprintf("Capability override removed for %s/%s.", provider, model), nil
+	default:
+		return "", fmt.Errorf("usage: /capability set|show|unset <provider> <model> [--think true|false]")
+	}
+}
+
+func (t *Transport) capabilityUsage(ctx context.Context) string {
+	usage := "Usage:\n  /capability show <provider> <model>\n  /capability set <provider> <model> --think true|false\n  /capability unset <provider> <model>\n\nThis persists a provider/model capability override. It is separate from /think, which only changes this session's reasoning level."
+	provider := strings.TrimSpace(t.provider())
+	model := strings.TrimSpace(t.model())
+	if provider == "" || model == "" {
+		return usage
+	}
+	status, err := t.capabilityShow(ctx, provider, model)
+	if err != nil {
+		return usage
+	}
+	return usage + "\n\nCurrent default:\n" + status
+}
+
+func (t *Transport) capabilityShow(ctx context.Context, provider, model string) (string, error) {
+	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+	override, ok, err := modelcapability.New(store).Get(ctx, provider, model)
+	if err != nil {
+		return "", fmt.Errorf("show capability override: %w", err)
+	}
+	if !ok || override.CanThink == nil {
+		_, p, m, keyErr := modelcapability.Key(provider, model)
+		if keyErr != nil {
+			return "", keyErr
+		}
+		return fmt.Sprintf("No capability override for %s/%s.", p, m), nil
+	}
+	return fmt.Sprintf("Capability override for %s/%s: think=%t.", override.Provider, override.Model, *override.CanThink), nil
+}
+
+func parseCapabilitySetArgs(fields []string) (string, string, bool, error) {
+	if len(fields) < 4 {
+		return "", "", false, fmt.Errorf("usage: /capability set <provider> <model> --think true|false")
+	}
+	provider, model := fields[1], fields[2]
+	var canThink bool
+	seenThink := false
+	for i := 3; i < len(fields); i++ {
+		arg := fields[i]
+		value := ""
+		if strings.HasPrefix(arg, "--think=") {
+			value = strings.TrimPrefix(arg, "--think=")
+		} else if arg == "--think" {
+			if i+1 >= len(fields) {
+				return "", "", false, fmt.Errorf("--think requires true or false")
+			}
+			i++
+			value = fields[i]
+		} else {
+			return "", "", false, fmt.Errorf("unknown capability flag %q", arg)
+		}
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "true":
+			canThink = true
+		case "false":
+			canThink = false
+		default:
+			return "", "", false, fmt.Errorf("--think must be true or false")
+		}
+		seenThink = true
+	}
+	if !seenThink {
+		return "", "", false, fmt.Errorf("--think is required")
+	}
+	return provider, model, canThink, nil
 }
 
 // handlePolicy shows or switches the active HITL approval policy. Switching

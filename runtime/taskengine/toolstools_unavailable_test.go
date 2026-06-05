@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 func TestUnit_ToolsToolsUnavailable_WrapsSentinel(t *testing.T) {

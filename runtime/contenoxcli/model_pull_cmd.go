@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/internal/clikv"
-	"github.com/contenox/agent/runtime/modelregistry"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/modelregistry"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )

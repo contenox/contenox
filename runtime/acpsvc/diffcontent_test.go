@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	libacp "github.com/contenox/agent/libacp"
-	"github.com/contenox/agent/runtime/taskengine"
+	libacp "github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
 

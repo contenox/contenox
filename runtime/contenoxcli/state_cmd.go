@@ -7,9 +7,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/contenox/agent/libkvstore"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libkvstore"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/spf13/cobra"
 )
 

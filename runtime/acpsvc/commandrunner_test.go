@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/contenox/agent/libacp"
-	"github.com/contenox/agent/runtime/localtools"
+	"github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/localtools"
 )
 
 func TestUnit_ACPCommandRunner_FallsBackToOSWhenClientLacksTerminalCapability(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 
 func TestUnit_LocalCatalog_ListModels_ReturnsFullCapabilities(t *testing.T) {
 	dir := t.TempDir()
-	modelDir := filepath.Join(dir, "mymodel")
+	modelDir := filepath.Join(dir, "FastThink-0.5B")
 	require.NoError(t, os.MkdirAll(modelDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake"), 0644))
 
@@ -20,7 +20,7 @@ func TestUnit_LocalCatalog_ListModels_ReturnsFullCapabilities(t *testing.T) {
 	models, err := c.ListModels(context.Background())
 	require.NoError(t, err)
 	require.Len(t, models, 1)
-	assert.Equal(t, "mymodel", models[0].Name)
+	assert.Equal(t, "FastThink-0.5B", models[0].Name)
 	assert.True(t, models[0].CanChat)
 	assert.True(t, models[0].CanPrompt)
 	assert.True(t, models[0].CanStream)

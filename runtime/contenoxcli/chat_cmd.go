@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/agentservice"
-	"github.com/contenox/agent/runtime/taskengine"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 // chatOpts carries all effective config and flags needed by the run pipeline.

@@ -10,11 +10,11 @@ import (
 
 	"github.com/google/uuid"
 
-	libacp "github.com/contenox/agent/libacp"
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/agentservice"
-	"github.com/contenox/agent/runtime/runtimetypes"
-	"github.com/contenox/agent/runtime/taskengine"
+	libacp "github.com/contenox/runtime/libacp"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 const mcpNamePrefix = "acp-"

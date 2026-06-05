@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 const defaultBaseURL = "https://api.openai.com/v1"
@@ -128,12 +128,10 @@ func inferObservedModel(id string) modelrepo.ObservedModel {
 		observed.CanChat = true
 		observed.CanPrompt = true
 		observed.CanStream = true
-		observed.CanThink = openAIModelCanReason(id)
 	default:
 		observed.CanChat = true
 		observed.CanPrompt = true
 		observed.CanStream = true
-		observed.CanThink = openAIModelCanReason(id)
 	}
 
 	return observed

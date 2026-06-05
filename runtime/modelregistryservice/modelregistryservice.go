@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
 var ErrInvalidEntry = errors.New("invalid model registry entry")

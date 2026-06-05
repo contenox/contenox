@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type vLLMProvider struct {
@@ -37,7 +37,7 @@ func NewVLLMProvider(modelName string, backends []string, client *http.Client, c
 		SupportsEmbed:  caps.CanEmbed,
 		SupportsStream: caps.CanStream,
 		SupportsPrompt: caps.CanPrompt,
-		SupportsThink:  caps.CanThink || vllmModelCanThink(modelName),
+		SupportsThink:  caps.CanThink,
 		Backends:       backends,
 		authToken:      authToken,
 		client:         client,
@@ -107,7 +107,7 @@ func (p *vLLMProvider) GetChatConnection(ctx context.Context, backendID string) 
 		return nil, err
 	}
 
-	return NewVLLMChatClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.tracker)
+	return NewVLLMChatClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.CanThink(), p.tracker)
 }
 
 func (p *vLLMProvider) GetPromptConnection(ctx context.Context, backendID string) (modelrepo.LLMPromptExecClient, error) {
@@ -119,7 +119,7 @@ func (p *vLLMProvider) GetPromptConnection(ctx context.Context, backendID string
 		return nil, err
 	}
 
-	return NewVLLMPromptClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.tracker)
+	return NewVLLMPromptClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.CanThink(), p.tracker)
 }
 
 func (p *vLLMProvider) GetEmbedConnection(ctx context.Context, backendID string) (modelrepo.LLMEmbedClient, error) {
@@ -135,5 +135,5 @@ func (p *vLLMProvider) GetStreamConnection(ctx context.Context, backendID string
 		return nil, err
 	}
 
-	return NewVLLMStreamClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.tracker)
+	return NewVLLMStreamClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.CanThink(), p.tracker)
 }

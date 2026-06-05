@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 // DefaultMaxTokens is used when the caller does not set ChatConfig.MaxTokens.

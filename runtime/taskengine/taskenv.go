@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Masterminds/sprig/v3"
 	"strconv"
 	"strings"
 	"text/template"
 	"time"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/errdefs"
+	"github.com/Masterminds/sprig/v3"
+
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/errdefs"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
@@ -227,11 +228,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			chainEvent.Error = retErr.Error()
 			chainEvent.OutputType = ""
 		}
-		publishTaskEventBestEffort(ctx, env.tracker, env.eventSink,chainEvent)
+		publishTaskEventBestEffort(ctx, env.tracker, env.eventSink, chainEvent)
 	}()
 	chainStarted := NewTaskEvent(ctx, TaskEventChainStarted)
 	chainStarted.ChainID = chain.ID
-	publishTaskEventBestEffort(ctx, env.tracker, env.eventSink,chainStarted)
+	publishTaskEventBestEffort(ctx, env.tracker, env.eventSink, chainStarted)
 
 	vars := map[string]any{
 		"input": input,
@@ -258,7 +259,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 	// edgeCounts tracks how many times each edge "fromTaskID->toTaskID" has been
 	// traversed during this chain run. Consulted by OpEdgeTraversedAtLeast to
-	// bound agentic loops and other cyclic chains. Per-Execute, no DB.
+	// bound workflow loops and other cyclic chains. Per-Execute, no DB.
 	edgeCounts := map[string]int{}
 
 	chainContext := &ChainContext{
@@ -382,7 +383,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				Retry:       retry,
 			})
 			stepStarted := NewTaskEvent(taskCtx, TaskEventStepStarted)
-			publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink,stepStarted)
+			publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink, stepStarted)
 			reportErrAttempt, reportChangeAttempt, endAttempt := env.tracker.Start(
 				taskCtx,
 				"task_attempt",
@@ -461,11 +462,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 				stepEvent.Kind = TaskEventStepFailed
 				stepEvent.Error = taskErr.Error()
 				stepEvent.OutputType = ""
-				publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink,stepEvent)
+				publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink, stepEvent)
 				reportErrAttempt(taskErr)
 				continue
 			}
-			publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink,stepEvent)
+			publishTaskEventBestEffort(taskCtx, env.tracker, env.eventSink, stepEvent)
 
 			// Report successful attempt
 			reportChangeAttempt(currentTask.ID, output)
@@ -514,7 +515,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			}
 			printEvent := NewTaskEvent(ctx, TaskEventPrint)
 			printEvent.Content = printMsg
-			publishTaskEventBestEffort(ctx, env.tracker, env.eventSink,printEvent)
+			publishTaskEventBestEffort(ctx, env.tracker, env.eventSink, printEvent)
 		}
 
 		// Evaluate transitions and get chosen branch

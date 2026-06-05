@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/contenox/agent/libbus"
-	"github.com/contenox/agent/libtracker"
+	"github.com/contenox/runtime/libbus"
+	"github.com/contenox/runtime/libtracker"
 )
 
 func StateSubject(reqID string) string {

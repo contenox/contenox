@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type catalogProvider struct {
@@ -75,7 +75,6 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 				CanChat:       true,
 				CanPrompt:     true,
 				CanStream:     true,
-				CanThink:      vllmModelCanThink(item.ID),
 			},
 		})
 	}

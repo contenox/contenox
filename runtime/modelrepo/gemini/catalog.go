@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 const defaultBaseURL = "https://generativelanguage.googleapis.com"
@@ -122,6 +122,7 @@ func (p *catalogProvider) describeModel(ctx context.Context, modelName string) (
 	var payload struct {
 		Name                       string   `json:"name"`
 		InputTokenLimit            int      `json:"inputTokenLimit"`
+		Thinking                   bool     `json:"thinking"`
 		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -132,7 +133,7 @@ func (p *catalogProvider) describeModel(ctx context.Context, modelName string) (
 		Name:          modelName,
 		ContextLength: payload.InputTokenLimit,
 	}
-	observed.CanThink = geminiModelCanThink(modelName)
+	observed.CanThink = payload.Thinking
 	for _, method := range payload.SupportedGenerationMethods {
 		switch method {
 		case "generateContent":

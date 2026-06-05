@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type vertexStreamClient struct {
@@ -22,7 +22,7 @@ type vertexStreamClient struct {
 func (c *vertexStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	parcels := make(chan *modelrepo.StreamParcel)
 
-	request, err := buildVertexRequest(c.modelName, messages, args)
+	request, err := buildVertexRequest(c.modelName, messages, args, c.canThink)
 	if err != nil {
 		return nil, err
 	}

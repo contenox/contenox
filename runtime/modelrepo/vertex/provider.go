@@ -8,8 +8,8 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type vertexProvider struct {
@@ -60,7 +60,7 @@ func NewVertexProvider(publisher, modelName string, baseURLs []string, cap model
 		canPrompt:     cap.CanPrompt,
 		canEmbed:      cap.CanEmbed,
 		canStream:     cap.CanStream,
-		canThink:      cap.CanThink || (publisher == "google" && vertexGoogleModelCanThink(modelName)),
+		canThink:      cap.CanThink,
 		tracker:       tracker,
 	}
 }
@@ -101,6 +101,7 @@ func (p *vertexProvider) client() vertexClient {
 		contextLength: p.contextLength,
 		credJSON:      p.credJSON,
 		httpClient:    p.httpClient,
+		canThink:      p.canThink,
 		tracker:       p.tracker,
 		tokenFn:       p.tokenFn,
 	}

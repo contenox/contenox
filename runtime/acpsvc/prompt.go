@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/contenox/agent/libacp"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/agentservice"
-	"github.com/contenox/agent/runtime/taskengine"
+	"github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libacp.PromptResponse, error) {

@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type OpenAIStreamClient struct {
@@ -47,7 +47,7 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 	// Note: We don't defer end() here because the stream is asynchronous
 
 	// buildOpenAIRequest now returns (request, nameMap); we only need the request here.
-	request, _ := buildOpenAIRequest(c.modelName, messages, args)
+	request, _ := buildOpenAIRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
 	request.Stream = true
 
 	url := c.baseURL + "/chat/completions"

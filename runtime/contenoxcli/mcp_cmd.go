@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"text/tabwriter"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/localtools"
-	"github.com/contenox/agent/runtime/mcpserverservice"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/mcpserverservice"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 )
 

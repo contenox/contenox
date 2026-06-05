@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 func TestUnit_LocalProvider_Capabilities(t *testing.T) {
@@ -17,6 +17,10 @@ func TestUnit_LocalProvider_Capabilities(t *testing.T) {
 	assert.True(t, p.CanStream())
 	assert.True(t, p.CanEmbed())
 	assert.False(t, p.CanThink())
+
+	configured := &localProvider{name: "fastthink", modelDir: "/fake", caps: modelrepo.CapabilityConfig{CanThink: true}}
+	assert.True(t, configured.CanThink(), "explicit local/admin capability config should be preserved")
+
 	assert.Equal(t, "local", p.GetType())
 	assert.Equal(t, "test", p.ModelName())
 	assert.Equal(t, "local:test", p.GetID())

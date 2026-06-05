@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -99,11 +99,21 @@ func TestUnit_BedrockCatalog_RegisteredAndChatCapable(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, models)
 	require.True(t, models[0].CanChat)
+	require.False(t, models[0].CanThink, "curated Bedrock model list must not infer thinking support")
 
 	prov := cp.ProviderFor(models[0])
 	require.Equal(t, "bedrock", prov.GetType())
 	require.True(t, prov.CanChat())
 	require.False(t, prov.CanEmbed())
+	require.False(t, prov.CanThink())
+}
+
+func TestUnit_BedrockProvider_CanThinkFromCapabilityConfigOnly(t *testing.T) {
+	provider := NewBedrockProvider("us-east-1", "", "anthropic.claude-3-7-sonnet-20250219-v1:0", modelrepo.CapabilityConfig{CanChat: true}, nil, nil)
+	require.False(t, provider.CanThink(), "model name alone must not set CanThink")
+
+	provider = NewBedrockProvider("us-east-1", "", "custom", modelrepo.CapabilityConfig{CanChat: true, CanThink: true}, nil, nil)
+	require.True(t, provider.CanThink(), "explicit capability config must set CanThink")
 }
 
 func tc(id, name, args string) modelrepo.ToolCall {

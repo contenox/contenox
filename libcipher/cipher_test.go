@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/contenox/agent/libcipher"
+	"github.com/contenox/runtime/libcipher"
 )
 
 func TestUnit_AESCBCHMAC_EncryptDecrypt(t *testing.T) {

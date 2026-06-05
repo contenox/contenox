@@ -3,9 +3,9 @@ package stateservice
 import (
 	"context"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/internal/setupcheck"
-	"github.com/contenox/agent/runtime/statetype"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/statetype"
 )
 
 type activityTrackerDecorator struct {

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/google/uuid"
 )
 
@@ -34,7 +34,7 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		filtered = append(filtered, m)
 	}
 
-	req, err := buildGeminiRequest(c.modelName, filtered, systemInstruction, args)
+	req, err := buildGeminiRequest(c.modelName, filtered, systemInstruction, args, c.canThink)
 	if err != nil {
 		reportErr(err)
 		return modelrepo.ChatResult{}, err

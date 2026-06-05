@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"time"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/messagestore"
-	"github.com/contenox/agent/runtime/sessionservice"
-	"github.com/contenox/agent/runtime/taskengine"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/messagestore"
+	"github.com/contenox/runtime/runtime/sessionservice"
+	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/spf13/cobra"
 )
 

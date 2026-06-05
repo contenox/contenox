@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 func TestUnit_OpenAIReasoningEffort(t *testing.T) {
@@ -141,5 +141,27 @@ func TestUnit_BuildOpenAIRequest_GPT4KeepsTemperature(t *testing.T) {
 	}
 	if *req.Temperature != 0.7 {
 		t.Fatalf("temperature = %v, want 0.7", *req.Temperature)
+	}
+}
+
+func TestUnit_BuildOpenAIRequest_OmitsReasoningWhenCanThinkFalse(t *testing.T) {
+	t.Parallel()
+	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
+	req, _ := buildOpenAIRequestWithCapabilities("gpt-5", msgs, []modelrepo.ChatArgument{
+		modelrepo.WithThink("high"),
+	}, false)
+	if req.ReasoningEffort != "" {
+		t.Fatalf("reasoning_effort = %q, want empty when CanThink=false", req.ReasoningEffort)
+	}
+}
+
+func TestUnit_BuildOpenAIRequest_EmitsReasoningWhenCanThinkTrue(t *testing.T) {
+	t.Parallel()
+	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
+	req, _ := buildOpenAIRequestWithCapabilities("gpt-5", msgs, []modelrepo.ChatArgument{
+		modelrepo.WithThink("high"),
+	}, true)
+	if req.ReasoningEffort != "high" {
+		t.Fatalf("reasoning_effort = %q, want high", req.ReasoningEffort)
 	}
 }

@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/modelrepo"
-	"github.com/contenox/agent/runtime/reasoning"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/reasoning"
 )
 
 type geminiClient struct {
@@ -20,6 +20,7 @@ type geminiClient struct {
 	baseURL    string
 	httpClient *http.Client
 	maxTokens  int
+	canThink   bool
 	tracker    libtracker.ActivityTracker
 }
 
@@ -132,7 +133,7 @@ func (c *geminiClient) sendRequest(ctx context.Context, endpoint string, request
 }
 
 // buildGeminiRequest builds a proper Gemini generateContent request using modelrepo args & tools
-func buildGeminiRequest(modelName string, messages []modelrepo.Message, systemInstruction *geminiSystemInstruction, args []modelrepo.ChatArgument) (geminiGenerateContentRequest, error) {
+func buildGeminiRequest(modelName string, messages []modelrepo.Message, systemInstruction *geminiSystemInstruction, args []modelrepo.ChatArgument, canThink ...bool) (geminiGenerateContentRequest, error) {
 	// Collect chat args
 	cfg := &modelrepo.ChatConfig{}
 	for _, a := range args {
@@ -178,7 +179,9 @@ func buildGeminiRequest(modelName string, messages []modelrepo.Message, systemIn
 	req.GenerationConfig.Seed = cfg.Seed
 
 	// Omitting ThinkingConfig means the model uses its default.
-	req.GenerationConfig.ThinkingConfig = geminiThinkingConfigForModel(modelName, cfg.Think)
+	if thinkingAllowed(canThink) {
+		req.GenerationConfig.ThinkingConfig = geminiThinkingConfigForModel(modelName, cfg.Think)
+	}
 
 	return req, nil
 }
@@ -200,6 +203,10 @@ func geminiThinkingConfigForModel(modelName string, think *string) *geminiThinki
 		return nil
 	}
 	return &geminiThinkingConfig{ThinkingBudget: &budget}
+}
+
+func thinkingAllowed(canThink []bool) bool {
+	return len(canThink) == 0 || canThink[0]
 }
 
 func valueOfStringPtr(v *string) string {
@@ -255,11 +262,6 @@ func geminiThinkingBudget(level string) (int, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func geminiModelCanThink(modelName string) bool {
-	m := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(modelName), "models/"))
-	return strings.Contains(m, "gemini-2.5") || strings.Contains(m, "gemini-3")
 }
 
 // convert modelrepo messages to Gemini "contents"

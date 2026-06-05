@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	libdb "github.com/contenox/agent/libdbexec"
-	"github.com/contenox/agent/runtime/localtools"
-	"github.com/contenox/agent/runtime/localtools/mcpoauth"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/localtools/mcpoauth"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"golang.org/x/oauth2"
 )
 

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	libacp "github.com/contenox/agent/libacp"
-	"github.com/contenox/agent/runtime/localtools"
+	libacp "github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/localtools"
 )
 
 var acpTerminalOutputByteLimit int64 = 1 * 1024 * 1024

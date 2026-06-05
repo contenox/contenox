@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/contenox/agent/libbus"
-	"github.com/contenox/agent/libtracker"
-	"github.com/contenox/agent/runtime/mcpworker"
-	"github.com/contenox/agent/runtime/runtimetypes"
+	"github.com/contenox/runtime/libbus"
+	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/mcpworker"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

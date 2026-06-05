@@ -3,7 +3,7 @@ package acpsvc
 import (
 	"context"
 
-	libacp "github.com/contenox/agent/libacp"
+	libacp "github.com/contenox/runtime/libacp"
 )
 
 const terminalAuthMethodID = "terminal"

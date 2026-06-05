@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type GeminiStreamClient struct {
@@ -19,7 +19,7 @@ type GeminiStreamClient struct {
 
 func (c *GeminiStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	parcels := make(chan *modelrepo.StreamParcel)
-	request, err := buildGeminiRequest(c.modelName, messages, nil, args)
+	request, err := buildGeminiRequest(c.modelName, messages, nil, args, c.canThink)
 	if err != nil {
 		return nil, err
 	}
