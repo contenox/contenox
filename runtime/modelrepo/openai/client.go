@@ -13,6 +13,7 @@ import (
 
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/agent/runtime/reasoning"
 )
 
 type openAIClient struct {
@@ -329,36 +330,31 @@ func openAIReasoningEffort(model string, think *string) string {
 		return ""
 	}
 
-	level := strings.ToLower(strings.TrimSpace(*think))
-	switch level {
-	case "", "false":
+	level, ok, err := reasoning.NormalizeOptional(*think)
+	if err != nil || !ok || level == reasoning.Auto {
+		return ""
+	}
+	if level == reasoning.Off {
 		if openAIModelSupportsNoneReasoning(model) {
 			return "none"
 		}
 		return ""
-	case "true":
-		level = "high"
 	}
 
 	switch level {
-	case "none":
-		if openAIModelSupportsNoneReasoning(model) {
-			return "none"
-		}
-		return ""
-	case "minimal":
+	case reasoning.Minimal:
 		if openAIModelSupportsMinimalReasoning(model) {
 			return "minimal"
 		}
 		return "low"
-	case "low", "medium":
+	case reasoning.Low, reasoning.Medium:
 		if openAIModelOnlyHighReasoning(model) {
 			return "high"
 		}
 		return level
-	case "high":
+	case reasoning.High:
 		return "high"
-	case "xhigh":
+	case reasoning.XHigh:
 		if openAIModelSupportsXHighReasoning(model) {
 			return "xhigh"
 		}
@@ -366,6 +362,14 @@ func openAIReasoningEffort(model string, think *string) string {
 	default:
 		return ""
 	}
+}
+
+func openAIModelCanReason(model string) bool {
+	base := openAIAPIBaseModelID(model)
+	return strings.HasPrefix(base, "gpt-5") ||
+		strings.HasPrefix(base, "o1") ||
+		strings.HasPrefix(base, "o3") ||
+		strings.HasPrefix(base, "o4")
 }
 
 func openAIShouldOmitSamplingParams(model, reasoningEffort string) bool {

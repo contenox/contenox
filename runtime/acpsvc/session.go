@@ -75,6 +75,7 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 		InternalSessionID: contenoxSessionID,
 		Agent:             ag,
 		McpServerNames:    registered,
+		Think:             t.thinkDefault(),
 	}
 	t.sessionMu.Lock()
 	t.sessions[req.SessionID] = entry
@@ -240,6 +241,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		InternalSessionID: contenoxSessionID,
 		Agent:             ag,
 		McpServerNames:    registered,
+		Think:             t.thinkDefault(),
 	}
 	t.sessionMu.Lock()
 	t.sessions[sessionID] = entry

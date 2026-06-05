@@ -59,3 +59,25 @@ func TestUnit_VertexChatClient_Chat(t *testing.T) {
 	require.Equal(t, "hello back", result.Message.Content)
 	require.Equal(t, "assistant", result.Message.Role)
 }
+
+func TestUnit_BuildVertexRequest_MapsThinkingConfig(t *testing.T) {
+	t.Parallel()
+	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
+
+	req, err := buildVertexRequest("gemini-2.5-pro", msgs, []modelrepo.ChatArgument{modelrepo.WithThink("xhigh")})
+	require.NoError(t, err)
+	require.NotNil(t, req.GenerationConfig.ThinkingConfig)
+	require.NotNil(t, req.GenerationConfig.ThinkingConfig.ThinkingBudget)
+	require.Equal(t, -1, *req.GenerationConfig.ThinkingConfig.ThinkingBudget)
+	require.Equal(t, "", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+
+	req, err = buildVertexRequest("gemini-3-pro", msgs, []modelrepo.ChatArgument{modelrepo.WithThink("medium")})
+	require.NoError(t, err)
+	require.NotNil(t, req.GenerationConfig.ThinkingConfig)
+	require.Nil(t, req.GenerationConfig.ThinkingConfig.ThinkingBudget)
+	require.Equal(t, "high", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+
+	req, err = buildVertexRequest("gemini-3-pro", msgs, []modelrepo.ChatArgument{modelrepo.WithThink("auto")})
+	require.NoError(t, err)
+	require.Nil(t, req.GenerationConfig.ThinkingConfig)
+}

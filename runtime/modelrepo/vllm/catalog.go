@@ -75,6 +75,7 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 				CanChat:       true,
 				CanPrompt:     true,
 				CanStream:     true,
+				CanThink:      vllmModelCanThink(item.ID),
 			},
 		})
 	}

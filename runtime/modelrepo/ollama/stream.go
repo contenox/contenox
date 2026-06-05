@@ -63,7 +63,7 @@ func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 		Model:    c.modelName,
 		Messages: apiMessages,
 		Stream:   &stream,
-		Think:    &think,
+		Think:    think,
 		Options:  buildOllamaOptions(config),
 		Tools:    apiTools,
 	}

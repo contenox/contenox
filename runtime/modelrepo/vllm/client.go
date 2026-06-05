@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/agent/runtime/reasoning"
 )
 
 // vLLMPromptClient handles prompt execution
@@ -32,19 +34,16 @@ type vLLMClient struct {
 }
 
 type chatRequest struct {
-	Model       string              `json:"model"`
-	Messages    []modelrepo.Message `json:"messages"`
-	Temperature *float64            `json:"temperature,omitempty"`
-	MaxTokens   *int                `json:"max_tokens,omitempty"`
-	TopP        *float64            `json:"top_p,omitempty"`
-	Seed        *int                `json:"seed,omitempty"`
-	Stream      bool                `json:"stream,omitempty"`
-	Tools       []modelrepo.Tool    `json:"tools,omitempty"`
-	// ExtraBody passes provider-specific parameters (e.g. enable_thinking for Qwen3/Granite).
-	// We intentionally defer vLLM-only request fields such as tool_choice,
-	// parallel_tool_calls, response_format, structured_outputs, and /v1/responses
-	// until modelrepo grows matching shared request fields.
-	ExtraBody map[string]any `json:"extra_body,omitempty"`
+	Model              string              `json:"model"`
+	Messages           []modelrepo.Message `json:"messages"`
+	Temperature        *float64            `json:"temperature,omitempty"`
+	MaxTokens          *int                `json:"max_tokens,omitempty"`
+	TopP               *float64            `json:"top_p,omitempty"`
+	Seed               *int                `json:"seed,omitempty"`
+	Stream             bool                `json:"stream,omitempty"`
+	Tools              []modelrepo.Tool    `json:"tools,omitempty"`
+	ReasoningEffort    string              `json:"reasoning_effort,omitempty"`
+	ChatTemplateKwargs map[string]any      `json:"chat_template_kwargs,omitempty"`
 }
 
 type chatResponse struct {
@@ -189,29 +188,51 @@ func buildChatRequestFromConfig(modelName string, messages []modelrepo.Message, 
 		Tools:       config.Tools,
 	}
 
-	// Wire enable_thinking for Qwen3, Granite, and DeepSeek-V3.1 served via vLLM.
-	// DeepSeek-R1 reasoning output is enabled server-side (--reasoning-parser deepseek_r1);
-	// it doesn't need this flag but harmlessly ignores it.
-	if thinkEnabled, ok := vllmThinkingEnabled(config.Think); ok {
-		req.ExtraBody = map[string]any{
-			"chat_template_kwargs": map[string]any{"enable_thinking": thinkEnabled},
-		}
+	if effort, ok := vllmReasoningEffort(config.Think); ok {
+		req.ReasoningEffort = effort
+		req.ChatTemplateKwargs = map[string]any{"enable_thinking": effort != "none"}
 	}
 
 	return req
 }
 
-func vllmThinkingEnabled(think *string) (bool, bool) {
-	if think == nil {
-		return false, false
+func vllmReasoningEffort(think *string) (string, bool) {
+	level, ok, err := reasoning.NormalizeOptional(valueOfStringPtr(think))
+	if err != nil || !ok || level == reasoning.Auto {
+		return "", false
 	}
-
-	switch *think {
-	case "", "default":
-		return false, false
-	case "false", "none", "off", "disabled":
-		return false, true
+	switch level {
+	case reasoning.Off:
+		return "none", true
+	case reasoning.Minimal, reasoning.Low:
+		return reasoning.Low, true
+	case reasoning.Medium:
+		return reasoning.Medium, true
+	case reasoning.High, reasoning.XHigh:
+		return reasoning.High, true
 	default:
-		return true, true
+		return "", false
 	}
+}
+
+func valueOfStringPtr(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func vllmModelCanThink(modelName string) bool {
+	m := strings.ToLower(modelName)
+	families := []string{
+		"deepseek-r1", "deepseek-r", "deepseek-v3.1", "qwen3", "qwq",
+		"granite", "gpt-oss", "glm-4.5", "hunyuan-a13b", "magistral",
+		"nemotron", "seed-oss", "skywork", "ernie-4.5-vl",
+	}
+	for _, family := range families {
+		if strings.Contains(m, family) {
+			return true
+		}
+	}
+	return false
 }

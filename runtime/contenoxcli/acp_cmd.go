@@ -15,6 +15,7 @@ import (
 	"github.com/contenox/agent/runtime/enginesvc"
 	"github.com/contenox/agent/runtime/hitlservice"
 	"github.com/contenox/agent/runtime/localtools"
+	"github.com/contenox/agent/runtime/reasoning"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/taskengine"
 	"github.com/spf13/cobra"
@@ -158,6 +159,14 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 
 	defaultModel := acpsvc.ReadConfigValue(ctx, db, "default-model")
 	defaultProvider := acpsvc.ReadConfigValue(ctx, db, "default-provider")
+	defaultThink := reasoning.Default
+	if configuredThink := acpsvc.ReadConfigValue(ctx, db, "default-think"); configuredThink != "" {
+		level, err := reasoning.Normalize(configuredThink)
+		if err != nil {
+			return fmt.Errorf("config default-think: %w", err)
+		}
+		defaultThink = level
+	}
 
 	chains, err := acpsvc.LoadChainRegistryFrom(profile.chainFile, profile.chainEnv)
 	if err != nil {
@@ -229,6 +238,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		ChainRegistry:         chains,
 		DefaultModel:          defaultModel,
 		DefaultProvider:       defaultProvider,
+		DefaultThink:          defaultThink,
 		WorkspaceID:           workspaceID,
 		ContenoxDir:           contenoxDir,
 		KnownPolicies:         embeddedPolicyNames(),

@@ -19,6 +19,7 @@ type anthropicProvider struct {
 	canChat       bool
 	canPrompt     bool
 	canStream     bool
+	canThink      bool
 	tracker       libtracker.ActivityTracker
 }
 
@@ -44,6 +45,7 @@ func NewAnthropicProvider(apiKey, modelName string, backendURLs []string, capabi
 		canChat:       capability.CanChat,
 		canPrompt:     capability.CanPrompt,
 		canStream:     capability.CanStream,
+		canThink:      capability.CanThink || anthropicModelCanThink(modelName),
 		tracker:       tracker,
 	}
 }
@@ -57,7 +59,7 @@ func (p *anthropicProvider) CanChat() bool           { return p.canChat }
 func (p *anthropicProvider) CanEmbed() bool          { return false }
 func (p *anthropicProvider) CanStream() bool         { return p.canStream }
 func (p *anthropicProvider) CanPrompt() bool         { return p.canPrompt }
-func (p *anthropicProvider) CanThink() bool          { return false }
+func (p *anthropicProvider) CanThink() bool          { return p.canThink }
 
 func (p *anthropicProvider) base() anthropicClient {
 	return anthropicClient{

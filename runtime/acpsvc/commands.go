@@ -10,6 +10,7 @@ import (
 	libacp "github.com/contenox/agent/libacp"
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/internal/clikv"
+	"github.com/contenox/agent/runtime/reasoning"
 	"github.com/contenox/agent/runtime/runtimetypes"
 )
 
@@ -24,6 +25,7 @@ func acpCommands() []libacp.AvailableCommand {
 		{Name: "compact", Description: "Summarize older history into a single message to reclaim context.", Input: &libacp.AvailableCommandInput{Hint: "[keep]"}},
 		{Name: "model", Description: "Show the current model, or set it: /model <name>.", Input: &libacp.AvailableCommandInput{Hint: "[model-name]"}},
 		{Name: "provider", Description: "Show the current provider, or set it: /provider <name>.", Input: &libacp.AvailableCommandInput{Hint: "[provider-name]"}},
+		{Name: "think", Description: "Show or set this session's reasoning level: /think <level|off|auto>.", Input: &libacp.AvailableCommandInput{Hint: "[level|off|auto]"}},
 		{Name: "policy", Description: "Show the active HITL policy, or switch it: /policy <name>.", Input: &libacp.AvailableCommandInput{Hint: "[policy-name]"}},
 	}
 }
@@ -78,6 +80,8 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 		out, err = t.handleModel(ctx, args)
 	case "provider":
 		out, err = t.handleProvider(ctx, args)
+	case "think":
+		out, err = t.handleThink(sess, args)
 	case "policy":
 		out, err = t.handlePolicy(ctx, args)
 	case "clear":
@@ -170,6 +174,19 @@ func (t *Transport) handleProvider(ctx context.Context, args string) (string, er
 	}
 	t.setProvider(value)
 	return fmt.Sprintf("Provider set to %s.", value), nil
+}
+
+func (t *Transport) handleThink(sess *sessionEntry, args string) (string, error) {
+	value := strings.TrimSpace(args)
+	if value == "" {
+		return fmt.Sprintf("Think: %s", sess.think()), nil
+	}
+	level, err := reasoning.Normalize(value)
+	if err != nil {
+		return "", err
+	}
+	sess.setThink(level)
+	return fmt.Sprintf("Think set to %s for this session.", level), nil
 }
 
 // handlePolicy shows or switches the active HITL approval policy. Switching

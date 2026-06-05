@@ -20,6 +20,7 @@ type Deps struct {
 	ChainRegistry   *ChainRegistry
 	DefaultModel    string
 	DefaultProvider string
+	DefaultThink    string
 	WorkspaceID     string
 	// ContenoxDir is the active .contenox directory, used to locate auxiliary
 	// chains (e.g. chain-compact.json for the /compact command).
@@ -34,11 +35,13 @@ type Deps struct {
 }
 
 type sessionEntry struct {
+	mu                sync.Mutex
 	WorkspaceID       string
 	Cwd               string
 	InternalSessionID string
 	Agent             agentservice.Agent
 	McpServerNames    []string
+	Think             string
 }
 
 type Transport struct {
@@ -59,6 +62,7 @@ type Transport struct {
 	cfgMu           sync.Mutex
 	defaultModel    string
 	defaultProvider string
+	defaultThink    string
 
 	permMu      sync.Mutex
 	permPending map[string]struct{}
@@ -101,6 +105,7 @@ func New(deps Deps) libacp.AgentFactory {
 			contenoxToACPID: make(map[string]libacp.SessionID),
 			defaultModel:    deps.DefaultModel,
 			defaultProvider: deps.DefaultProvider,
+			defaultThink:    deps.DefaultThink,
 		}
 	}
 }
@@ -130,6 +135,33 @@ func (t *Transport) setProvider(v string) {
 	t.cfgMu.Lock()
 	t.defaultProvider = v
 	t.cfgMu.Unlock()
+}
+
+func (t *Transport) thinkDefault() string {
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
+	if t.defaultThink == "" {
+		return "high"
+	}
+	return t.defaultThink
+}
+
+func (s *sessionEntry) think() string {
+	if s == nil {
+		return "high"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Think == "" {
+		return "high"
+	}
+	return s.Think
+}
+
+func (s *sessionEntry) setThink(v string) {
+	s.mu.Lock()
+	s.Think = v
+	s.mu.Unlock()
 }
 
 func (t *Transport) acpSessionForContenoxID(contenoxSessionID string) (libacp.SessionID, bool) {

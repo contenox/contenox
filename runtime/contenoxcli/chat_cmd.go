@@ -30,7 +30,7 @@ type chatOpts struct {
 	EffectiveSteps               bool
 	EffectiveHITL                bool
 	EffectiveRaw                 bool
-	EffectiveThink               bool
+	EffectiveThink               string
 	HistoryTrim                  int
 	LastN                        int
 	InputValue                   string
@@ -103,6 +103,7 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 	templateVars := map[string]string{
 		"model":    opts.EffectiveDefaultModel,
 		"provider": opts.EffectiveDefaultProvider,
+		"think":    opts.EffectiveThink,
 	}
 	if opts.EffectiveAltDefaultModel != "" {
 		templateVars["alt_model"] = opts.EffectiveAltDefaultModel
@@ -126,6 +127,8 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 
 	stopTrace := startTraceStream(ctx, opts, engine, errW)
 	defer stopTrace()
+	stopThoughts := startThoughtStream(ctx, engine, errW, opts.EffectiveThink)
+	defer stopThoughts()
 
 	agentsMD, agentsMDSource := loadAgentsMDFromCwd()
 
@@ -148,11 +151,11 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 	// ------------------------------------------------------------------------
 	// 12. Print results (CLI-specific output formatting)
 	// ------------------------------------------------------------------------
-	if opts.EffectiveThink {
+	if shouldPrintThinking(opts.EffectiveThink) {
 		if hist, ok := resp.Output.(taskengine.ChatHistory); ok {
 			for _, msg := range hist.Messages {
 				if msg.Role == "assistant" && msg.Thinking != "" {
-					fmt.Fprintln(errW, "\n💭 Reasoning:")
+					fmt.Fprintln(errW, "\nReasoning:")
 					fmt.Fprintln(errW, msg.Thinking)
 				}
 			}

@@ -239,8 +239,9 @@ type LLMExecutionConfig struct {
 	//       _denied_commands:  "sudo,su,dd,mkfs"
 	ToolsPolicies    map[string]map[string]string `yaml:"tools_policies,omitempty" json:"tools_policies,omitempty"`
 	PassClientsTools bool                         `yaml:"pass_clients_tools" json:"pass_clients_tools"`
-	// Think enables reasoning mode for supported models.
-	// Accepts "true"/"false" or "high"/"medium"/"low". Empty = provider default (off).
+	// Think controls reasoning mode for supported models.
+	// Accepts auto, off, minimal, low, medium, high, xhigh, plus boolean-style aliases.
+	// Empty = provider default; user-facing built-in chains set this via {{var:think}}.
 	Think string `yaml:"think,omitempty" json:"think,omitempty" example:"high"`
 	// MaxTokens caps the model's output tokens for this task. When unset, NO
 	// explicit output cap is sent and the provider default applies — the engine

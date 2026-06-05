@@ -32,7 +32,7 @@ func openTestDB(t *testing.T) (context.Context, libdbexec.DBManager, runtimetype
 
 func TestUnit_getConfigKV_unset_returnsEmpty(t *testing.T) {
 	ctx, _, store := openTestDB(t)
-	for _, key := range []string{"default-model", "default-provider", "default-alt-model", "default-alt-provider", "default-chain"} {
+	for _, key := range []string{"default-model", "default-provider", "default-alt-model", "default-alt-provider", "default-think", "default-chain"} {
 		val, err := getConfigKV(ctx, store, key)
 		require.NoError(t, err, "key=%s", key)
 		assert.Equal(t, "", val, "key=%s should be empty when not set", key)
@@ -59,6 +59,7 @@ func TestUnit_getConfigKV_allConfigKeys(t *testing.T) {
 		"default-provider":     "ollama",
 		"default-alt-model":    "granite-3.2-2b",
 		"default-alt-provider": "local",
+		"default-think":        "medium",
 		"default-chain":        "default-chain.json",
 	}
 	for k, v := range pairs {

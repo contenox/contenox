@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/agent/runtime/reasoning"
 )
 
 type geminiClient struct {
@@ -41,13 +43,11 @@ type geminiGenerationConfig struct {
 	ThinkingConfig *geminiThinkingConfig `json:"thinkingConfig,omitempty"`
 }
 
-// geminiThinkingConfig maps to Gemini's thinkingConfig.thinkingBudget:
-//
-//	 -1 = dynamic / uncapped
-//	  0 = disabled
-//	N>0 = exact token budget
+// geminiThinkingConfig maps to Gemini thinking controls. Gemini 3 uses
+// thinkingLevel; Gemini 2.5 uses thinkingBudget.
 type geminiThinkingConfig struct {
-	ThinkingBudget int `json:"thinkingBudget"`
+	ThinkingBudget *int   `json:"thinkingBudget,omitempty"`
+	ThinkingLevel  string `json:"thinkingLevel,omitempty"`
 }
 
 // sendRequest: shared HTTP helper for Gemini clients
@@ -132,7 +132,7 @@ func (c *geminiClient) sendRequest(ctx context.Context, endpoint string, request
 }
 
 // buildGeminiRequest builds a proper Gemini generateContent request using modelrepo args & tools
-func buildGeminiRequest(_ string, messages []modelrepo.Message, systemInstruction *geminiSystemInstruction, args []modelrepo.ChatArgument) (geminiGenerateContentRequest, error) {
+func buildGeminiRequest(modelName string, messages []modelrepo.Message, systemInstruction *geminiSystemInstruction, args []modelrepo.ChatArgument) (geminiGenerateContentRequest, error) {
 	// Collect chat args
 	cfg := &modelrepo.ChatConfig{}
 	for _, a := range args {
@@ -177,22 +177,89 @@ func buildGeminiRequest(_ string, messages []modelrepo.Message, systemInstructio
 	}
 	req.GenerationConfig.Seed = cfg.Seed
 
-	// Wire ThinkingConfig for Gemini 2.5+ thinking models.
-	// Omitting it (nil) means the model uses its default (usually no thinking).
-	if cfg.Think != nil {
-		switch *cfg.Think {
-		case "true", "high":
-			req.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{ThinkingBudget: -1} // uncapped
-		case "medium":
-			req.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{ThinkingBudget: 8192}
-		case "low":
-			req.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{ThinkingBudget: 1024}
-		case "false":
-			req.GenerationConfig.ThinkingConfig = &geminiThinkingConfig{ThinkingBudget: 0}
-		}
-	}
+	// Omitting ThinkingConfig means the model uses its default.
+	req.GenerationConfig.ThinkingConfig = geminiThinkingConfigForModel(modelName, cfg.Think)
 
 	return req, nil
+}
+
+func geminiThinkingConfigForModel(modelName string, think *string) *geminiThinkingConfig {
+	level, ok, err := reasoning.NormalizeOptional(valueOfStringPtr(think))
+	if err != nil || !ok || level == reasoning.Auto {
+		return nil
+	}
+	if geminiUsesThinkingLevel(modelName) {
+		mapped := geminiThinkingLevel(modelName, level)
+		if mapped == "" {
+			return nil
+		}
+		return &geminiThinkingConfig{ThinkingLevel: mapped}
+	}
+	budget, ok := geminiThinkingBudget(level)
+	if !ok {
+		return nil
+	}
+	return &geminiThinkingConfig{ThinkingBudget: &budget}
+}
+
+func valueOfStringPtr(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func geminiUsesThinkingLevel(modelName string) bool {
+	m := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(m, "gemini-3")
+}
+
+func geminiThinkingLevel(modelName, level string) string {
+	switch level {
+	case reasoning.Off:
+		if strings.Contains(strings.ToLower(modelName), "flash") {
+			return "minimal"
+		}
+		return "low"
+	case reasoning.Minimal:
+		if strings.Contains(strings.ToLower(modelName), "flash") {
+			return "minimal"
+		}
+		return "low"
+	case reasoning.Low:
+		return "low"
+	case reasoning.Medium:
+		if strings.Contains(strings.ToLower(modelName), "flash") {
+			return "medium"
+		}
+		return "high"
+	case reasoning.High, reasoning.XHigh:
+		return "high"
+	default:
+		return ""
+	}
+}
+
+func geminiThinkingBudget(level string) (int, bool) {
+	switch level {
+	case reasoning.Off:
+		return 0, true
+	case reasoning.Minimal, reasoning.Low:
+		return 1024, true
+	case reasoning.Medium:
+		return 8192, true
+	case reasoning.High:
+		return 24576, true
+	case reasoning.XHigh:
+		return -1, true
+	default:
+		return 0, false
+	}
+}
+
+func geminiModelCanThink(modelName string) bool {
+	m := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(modelName), "models/"))
+	return strings.Contains(m, "gemini-2.5") || strings.Contains(m, "gemini-3")
 }
 
 // convert modelrepo messages to Gemini "contents"

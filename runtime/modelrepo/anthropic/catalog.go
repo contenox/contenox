@@ -80,6 +80,7 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 				CanChat:   true,
 				CanStream: true,
 				CanPrompt: true,
+				CanThink:  anthropicModelCanThink(item.ID),
 			},
 		})
 	}

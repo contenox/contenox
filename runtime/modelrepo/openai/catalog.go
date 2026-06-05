@@ -128,10 +128,12 @@ func inferObservedModel(id string) modelrepo.ObservedModel {
 		observed.CanChat = true
 		observed.CanPrompt = true
 		observed.CanStream = true
+		observed.CanThink = openAIModelCanReason(id)
 	default:
 		observed.CanChat = true
 		observed.CanPrompt = true
 		observed.CanStream = true
+		observed.CanThink = openAIModelCanReason(id)
 	}
 
 	return observed

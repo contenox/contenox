@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/contenox/agent/runtime/modelrepo"
+	msgcodec "github.com/contenox/agent/runtime/modelrepo/codec/messages"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,4 +55,34 @@ func TestUnit_AnthropicCatalog_RegisteredAndChatCapable(t *testing.T) {
 	require.Equal(t, "anthropic", prov.GetType())
 	require.True(t, prov.CanChat())
 	require.False(t, prov.CanEmbed())
+}
+
+func TestUnit_AnthropicThinking_ManualBudgetAndAdaptiveEffort(t *testing.T) {
+	manualCfg := &modelrepo.ChatConfig{}
+	modelrepo.WithThink("medium").Apply(manualCfg)
+	manualReq := msgcodec.Request{MaxTokens: 1500}
+	applyAnthropicThinking(&manualReq, "claude-3-7-sonnet-latest", manualCfg)
+	require.NotNil(t, manualReq.Thinking)
+	require.Equal(t, "enabled", manualReq.Thinking.Type)
+	require.Equal(t, 1499, manualReq.Thinking.BudgetTokens, "budget must stay below max_tokens")
+	require.Nil(t, manualReq.OutputConfig)
+
+	adaptiveCfg := &modelrepo.ChatConfig{}
+	modelrepo.WithThink("xhigh").Apply(adaptiveCfg)
+	adaptiveReq := msgcodec.Request{MaxTokens: 4096}
+	applyAnthropicThinking(&adaptiveReq, "claude-opus-4-7", adaptiveCfg)
+	require.NotNil(t, adaptiveReq.Thinking)
+	require.Equal(t, "adaptive", adaptiveReq.Thinking.Type)
+	require.Equal(t, "summarized", adaptiveReq.Thinking.Display)
+	require.NotNil(t, adaptiveReq.OutputConfig)
+	require.Equal(t, "xhigh", adaptiveReq.OutputConfig.Effort)
+}
+
+func TestUnit_AnthropicThinking_OffDisablesWhenSupported(t *testing.T) {
+	cfg := &modelrepo.ChatConfig{}
+	modelrepo.WithThink("off").Apply(cfg)
+	req := msgcodec.Request{MaxTokens: 4096}
+	applyAnthropicThinking(&req, "claude-3-7-sonnet-latest", cfg)
+	require.NotNil(t, req.Thinking)
+	require.Equal(t, "disabled", req.Thinking.Type)
 }

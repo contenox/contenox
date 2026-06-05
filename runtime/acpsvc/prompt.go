@@ -68,6 +68,7 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	templateVars := map[string]string{
 		"model":    t.model(),
 		"provider": t.provider(),
+		"think":    sess.think(),
 	}
 
 	resp, err := sess.Agent.Prompt(promptCtx, agentservice.PromptRequest{

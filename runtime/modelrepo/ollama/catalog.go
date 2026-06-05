@@ -63,6 +63,9 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		if showResp, err := client.Show(ctx, &api.ShowRequest{Model: model.Model}); err == nil {
 			applyShowMetadata(&observed, showResp)
 		}
+		if ollamaModelCanThink(observed.Name) {
+			observed.CanThink = true
+		}
 
 		out = append(out, observed)
 	}

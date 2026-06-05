@@ -72,7 +72,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		Model:    c.modelName,
 		Messages: apiMessages,
 		Stream:   &stream,
-		Think:    &think,
+		Think:    think,
 		Options:  llamaOptions,
 		Tools:    apiTools,
 	}

@@ -79,6 +79,7 @@ func enrichGooglePublisherModel(name string) modelrepo.ObservedModel {
 		om.CanChat = true
 		om.CanPrompt = true
 		om.CanStream = true
+		om.CanThink = vertexGoogleModelCanThink(name)
 	}
 	return om
 }

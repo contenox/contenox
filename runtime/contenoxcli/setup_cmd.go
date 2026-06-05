@@ -198,7 +198,13 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 // anything, so it is safe even against ERP/audited tool backends.
 func reportSetupReadiness(ctx context.Context, cmd *cobra.Command, db libdb.DBManager, out io.Writer, provider, model string) {
 	contenoxDir, _ := ResolveContenoxDir(cmd)
-	opts := buildRunOpts(cmd, db, contenoxDir)
+	opts, err := buildRunOpts(cmd, db, contenoxDir)
+	if err != nil {
+		fmt.Fprintf(out, "  ⚠  Could not verify setup: %v\n", err)
+		fmt.Fprintln(out, "     Config is saved. Run `contenox doctor` to check connectivity.")
+		fmt.Fprintln(out, "")
+		return
+	}
 	opts.EffectiveDefaultProvider = provider
 	if model != "" {
 		opts.EffectiveDefaultModel = model

@@ -64,9 +64,8 @@ type ChatConfig struct {
 	TopP        *float64 `json:"top_p,omitempty"`
 	Seed        *int     `json:"seed,omitempty"`
 	Tools       []Tool   `json:"tools,omitempty"`
-	// Think controls reasoning-model behaviour. nil = use provider default (off).
-	// Accepts provider-specific levels such as "none", "minimal", "low",
-	// "medium", "high", and "xhigh" where supported.
+	// Think controls reasoning-model behaviour. nil = use provider default.
+	// Normalized values are auto, off, minimal, low, medium, high, and xhigh.
 	Think *string `json:"think,omitempty"`
 	// Shift instructs the provider to slide the context window on overflow
 	// instead of returning a token-limit error.

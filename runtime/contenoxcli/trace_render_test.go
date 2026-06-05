@@ -165,3 +165,23 @@ func TestUnit_RenderTraceUnits_SkipsBadJSON(t *testing.T) {
 	assert.Contains(t, out, "task=good")
 	assert.Equal(t, 1, strings.Count(out, "\n"))
 }
+
+func TestUnit_RenderThinkingEvents_OnlyWritesThinkingChunks(t *testing.T) {
+	var buf bytes.Buffer
+	ctx := context.Background()
+	ch := make(chan []byte, 4)
+	thinking, _ := json.Marshal(taskengine.TaskEvent{Kind: taskengine.TaskEventStepChunk, Thinking: "step 1"})
+	content, _ := json.Marshal(taskengine.TaskEvent{Kind: taskengine.TaskEventStepChunk, Content: "visible answer"})
+	completed, _ := json.Marshal(taskengine.TaskEvent{Kind: taskengine.TaskEventStepCompleted, Thinking: "ignored"})
+	ch <- []byte("not json")
+	ch <- content
+	ch <- thinking
+	ch <- completed
+	close(ch)
+
+	renderThinkingEvents(ctx, ch, &buf)
+	out := buf.String()
+	assert.Contains(t, out, "Reasoning:\nstep 1")
+	assert.NotContains(t, out, "visible answer")
+	assert.NotContains(t, out, "ignored")
+}

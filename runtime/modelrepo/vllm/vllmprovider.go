@@ -37,7 +37,7 @@ func NewVLLMProvider(modelName string, backends []string, client *http.Client, c
 		SupportsEmbed:  caps.CanEmbed,
 		SupportsStream: caps.CanStream,
 		SupportsPrompt: caps.CanPrompt,
-		SupportsThink:  caps.CanThink,
+		SupportsThink:  caps.CanThink || vllmModelCanThink(modelName),
 		Backends:       backends,
 		authToken:      authToken,
 		client:         client,

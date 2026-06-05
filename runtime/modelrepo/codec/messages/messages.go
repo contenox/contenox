@@ -26,14 +26,26 @@ type Request struct {
 	Model string `json:"model,omitempty"`
 	// AnthropicVersion is set by the Vertex transport ("vertex-2023-10-16");
 	// empty for direct (sent as a header instead).
-	AnthropicVersion string        `json:"anthropic_version,omitempty"`
-	MaxTokens        int           `json:"max_tokens"`
-	System           string        `json:"system,omitempty"`
-	Messages         []wireMessage `json:"messages"`
-	Temperature      *float64      `json:"temperature,omitempty"`
-	TopP             *float64      `json:"top_p,omitempty"`
-	Tools            []wireTool    `json:"tools,omitempty"`
-	Stream           bool          `json:"stream,omitempty"`
+	AnthropicVersion string          `json:"anthropic_version,omitempty"`
+	MaxTokens        int             `json:"max_tokens"`
+	System           string          `json:"system,omitempty"`
+	Messages         []wireMessage   `json:"messages"`
+	Temperature      *float64        `json:"temperature,omitempty"`
+	TopP             *float64        `json:"top_p,omitempty"`
+	Tools            []wireTool      `json:"tools,omitempty"`
+	Thinking         *ThinkingConfig `json:"thinking,omitempty"`
+	OutputConfig     *OutputConfig   `json:"output_config,omitempty"`
+	Stream           bool            `json:"stream,omitempty"`
+}
+
+type ThinkingConfig struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	Display      string `json:"display,omitempty"`
+}
+
+type OutputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 type wireMessage struct {

@@ -24,6 +24,7 @@ type vertexProvider struct {
 	canPrompt     bool
 	canEmbed      bool
 	canStream     bool
+	canThink      bool
 	tracker       libtracker.ActivityTracker
 
 	// Cached token source. Initialized once on first use and reused across all
@@ -59,6 +60,7 @@ func NewVertexProvider(publisher, modelName string, baseURLs []string, cap model
 		canPrompt:     cap.CanPrompt,
 		canEmbed:      cap.CanEmbed,
 		canStream:     cap.CanStream,
+		canThink:      cap.CanThink || (publisher == "google" && vertexGoogleModelCanThink(modelName)),
 		tracker:       tracker,
 	}
 }
@@ -72,7 +74,7 @@ func (p *vertexProvider) CanChat() bool           { return p.canChat }
 func (p *vertexProvider) CanEmbed() bool          { return p.canEmbed }
 func (p *vertexProvider) CanStream() bool         { return p.canStream }
 func (p *vertexProvider) CanPrompt() bool         { return p.canPrompt }
-func (p *vertexProvider) CanThink() bool          { return false }
+func (p *vertexProvider) CanThink() bool          { return p.canThink }
 
 // tokenFn returns an access token using the provider's cached oauth2 source.
 // The source is built once on first use (with context.Background so it

@@ -35,6 +35,7 @@ type ModelPullStatus struct {
 	CanEmbed      bool         `json:"canEmbed" example:"false"`
 	CanPrompt     bool         `json:"canPrompt" example:"true"`
 	CanStream     bool         `json:"canStream" example:"true"`
+	CanThink      bool         `json:"canThink,omitempty" example:"true"`
 }
 
 type ModelDetails struct {

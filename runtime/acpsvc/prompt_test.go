@@ -47,8 +47,10 @@ func (rt *recTracker) find(op string) *recOp {
 }
 
 type fakeAgent struct {
-	resp *agentservice.PromptResponse
-	err  error
+	mu      sync.Mutex
+	resp    *agentservice.PromptResponse
+	err     error
+	lastReq agentservice.PromptRequest
 }
 
 func (f *fakeAgent) Capabilities(context.Context) (*agentservice.AgentCapabilities, error) {
@@ -62,8 +64,17 @@ func (f *fakeAgent) SessionLoad(context.Context, string) (string, []taskengine.M
 	return "", nil, nil
 }
 func (f *fakeAgent) SessionEnsureDefault(context.Context) (string, error) { return "", nil }
-func (f *fakeAgent) Prompt(context.Context, agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
+func (f *fakeAgent) Prompt(_ context.Context, req agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
+	f.mu.Lock()
+	f.lastReq = req
+	f.mu.Unlock()
 	return f.resp, f.err
+}
+
+func (f *fakeAgent) lastPromptRequest() agentservice.PromptRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastReq
 }
 
 func transportWithFakeAgent(a agentservice.Agent) (*Transport, libacp.SessionID, *recTracker) {
@@ -150,5 +161,18 @@ func TestUnit_Prompt_HappyPath(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, libacp.StopReasonEndTurn, resp.StopReason)
+	requireSpan(t, rt, 0, 1)
+}
+
+func TestUnit_Prompt_IncludesSessionThinkTemplateVar(t *testing.T) {
+	agent := &fakeAgent{resp: &agentservice.PromptResponse{StopReason: agentservice.StopEndTurn}}
+	tr, sid, rt := transportWithFakeAgent(agent)
+	tr.sessions[sid].Think = "low"
+
+	resp, err := tr.Prompt(context.Background(), promptReq(sid))
+	require.NoError(t, err)
+	require.Equal(t, libacp.StopReasonEndTurn, resp.StopReason)
+	req := agent.lastPromptRequest()
+	require.Equal(t, "low", req.TemplateVars["think"])
 	requireSpan(t, rt, 0, 1)
 }

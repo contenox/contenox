@@ -64,6 +64,46 @@ func startTraceStream(ctx context.Context, opts chatOpts, engine *Engine, w io.W
 	}
 }
 
+func startThoughtStream(ctx context.Context, engine *Engine, w io.Writer, thinkLevel string) func() {
+	if !shouldPrintThinking(thinkLevel) || engine == nil || engine.Bus == nil {
+		return func() {}
+	}
+	reqID, ok := ctx.Value(libtracker.ContextKeyRequestID).(string)
+	if !ok || reqID == "" {
+		return func() {}
+	}
+	subject := taskengine.TaskEventRequestSubject(reqID)
+
+	tracker := engine.Tracker
+	if tracker == nil {
+		tracker = libtracker.NoopTracker{}
+	}
+	reportErr, _, end := tracker.Start(ctx, "subscribe", "thinking_event_bus", "subject", subject)
+	defer end()
+
+	streamCtx, cancel := context.WithCancel(ctx)
+	rawCh := make(chan []byte, 32)
+	sub, err := engine.Bus.Stream(streamCtx, subject, rawCh)
+	if err != nil {
+		cancel()
+		reportErr(err)
+		return func() {}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		renderThinkingEvents(streamCtx, rawCh, w)
+		close(done)
+	}()
+
+	return func() {
+		time.Sleep(traceDrainGrace)
+		cancel()
+		_ = sub.Unsubscribe()
+		<-done
+	}
+}
+
 func startPrintStream(ctx context.Context, engine *Engine, w io.Writer) func() {
 	if engine == nil || engine.Bus == nil {
 		return func() {}
@@ -101,6 +141,42 @@ func startPrintStream(ctx context.Context, engine *Engine, w io.Writer) func() {
 		cancel()
 		_ = sub.Unsubscribe()
 		<-done
+	}
+}
+
+func renderThinkingEvents(ctx context.Context, ch <-chan []byte, w io.Writer) {
+	started := false
+	for {
+		select {
+		case <-ctx.Done():
+			if started {
+				_, _ = fmt.Fprintln(w)
+			}
+			return
+		case payload, ok := <-ch:
+			if !ok {
+				if started {
+					_, _ = fmt.Fprintln(w)
+				}
+				return
+			}
+			var ev taskengine.TaskEvent
+			if err := json.Unmarshal(payload, &ev); err != nil {
+				continue
+			}
+			if ev.Kind != taskengine.TaskEventStepChunk || ev.Thinking == "" {
+				continue
+			}
+			if !started {
+				if _, err := fmt.Fprint(w, "\nReasoning:\n"); err != nil {
+					return
+				}
+				started = true
+			}
+			if _, err := fmt.Fprint(w, ev.Thinking); err != nil {
+				return
+			}
+		}
 	}
 }
 

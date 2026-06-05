@@ -1,6 +1,9 @@
 package acpsvc
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseCommand(t *testing.T) {
 	tests := []struct {
@@ -52,5 +55,40 @@ func TestAcpCommandsCoverDispatch(t *testing.T) {
 		if _, _, ok := parseCommand("/" + c.Name); !ok {
 			t.Errorf("advertised command %q is not recognized by parseCommand", c.Name)
 		}
+	}
+}
+
+func TestUnit_HandleThinkStatusSetAndInvalid(t *testing.T) {
+	sess := &sessionEntry{Think: "medium"}
+	tr := &Transport{}
+
+	out, err := tr.handleThink(sess, "")
+	if err != nil {
+		t.Fatalf("handleThink status: %v", err)
+	}
+	if out != "Think: medium" {
+		t.Fatalf("status = %q, want Think: medium", out)
+	}
+
+	out, err = tr.handleThink(sess, "true")
+	if err != nil {
+		t.Fatalf("handleThink set alias: %v", err)
+	}
+	if out != "Think set to high for this session." {
+		t.Fatalf("set output = %q", out)
+	}
+	if got := sess.think(); got != "high" {
+		t.Fatalf("session think = %q, want high", got)
+	}
+
+	_, err = tr.handleThink(sess, "nonsense")
+	if err == nil {
+		t.Fatal("invalid think level should error")
+	}
+	if !strings.Contains(err.Error(), "invalid think level") {
+		t.Fatalf("invalid error = %q", err.Error())
+	}
+	if got := sess.think(); got != "high" {
+		t.Fatalf("invalid /think mutated session value to %q", got)
 	}
 }

@@ -19,7 +19,7 @@ func (c *vertexChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "vertex", "model", c.modelName)
 	defer end()
 
-	req, err := buildVertexRequest(messages, args)
+	req, err := buildVertexRequest(c.modelName, messages, args)
 	if err != nil {
 		reportErr(err)
 		return modelrepo.ChatResult{}, err

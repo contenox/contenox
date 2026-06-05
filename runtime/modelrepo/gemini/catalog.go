@@ -132,6 +132,7 @@ func (p *catalogProvider) describeModel(ctx context.Context, modelName string) (
 		Name:          modelName,
 		ContextLength: payload.InputTokenLimit,
 	}
+	observed.CanThink = geminiModelCanThink(modelName)
 	for _, method := range payload.SupportedGenerationMethods {
 		switch method {
 		case "generateContent":

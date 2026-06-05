@@ -11,6 +11,7 @@ import (
 
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/agent/runtime/reasoning"
 )
 
 type vertexClient struct {
@@ -143,7 +144,7 @@ func (c *vertexClient) sendRequest(ctx context.Context, endpoint string, request
 
 // buildVertexRequest converts modelrepo messages and args to a vertexRequest.
 // Free function matching OpenAI/Gemini convention.
-func buildVertexRequest(messages []modelrepo.Message, args []modelrepo.ChatArgument) (vertexRequest, error) {
+func buildVertexRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) (vertexRequest, error) {
 	cfg := &modelrepo.ChatConfig{}
 	for _, a := range args {
 		a.Apply(cfg)
@@ -195,8 +196,89 @@ func buildVertexRequest(messages []modelrepo.Message, args []modelrepo.ChatArgum
 	req.GenerationConfig.TopP = cfg.TopP
 	req.GenerationConfig.MaxOutputTokens = cfg.MaxTokens
 	req.GenerationConfig.Seed = cfg.Seed
+	req.GenerationConfig.ThinkingConfig = vertexThinkingConfigForModel(modelName, cfg.Think)
 
 	return req, nil
+}
+
+func vertexThinkingConfigForModel(modelName string, think *string) *vertexThinkingConfig {
+	level, ok, err := reasoning.NormalizeOptional(vertexStringPtrValue(think))
+	if err != nil || !ok || level == reasoning.Auto {
+		return nil
+	}
+	if vertexUsesThinkingLevel(modelName) {
+		mapped := vertexThinkingLevel(modelName, level)
+		if mapped == "" {
+			return nil
+		}
+		return &vertexThinkingConfig{ThinkingLevel: mapped}
+	}
+	budget, ok := vertexThinkingBudget(level)
+	if !ok {
+		return nil
+	}
+	return &vertexThinkingConfig{ThinkingBudget: &budget}
+}
+
+func vertexStringPtrValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
+func vertexUsesThinkingLevel(modelName string) bool {
+	m := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(m, "gemini-3")
+}
+
+func vertexThinkingLevel(modelName, level string) string {
+	m := strings.ToLower(modelName)
+	switch level {
+	case reasoning.Off:
+		if strings.Contains(m, "flash") {
+			return "minimal"
+		}
+		return "low"
+	case reasoning.Minimal:
+		if strings.Contains(m, "flash") {
+			return "minimal"
+		}
+		return "low"
+	case reasoning.Low:
+		return "low"
+	case reasoning.Medium:
+		if strings.Contains(m, "flash") {
+			return "medium"
+		}
+		return "high"
+	case reasoning.High, reasoning.XHigh:
+		return "high"
+	default:
+		return ""
+	}
+}
+
+func vertexThinkingBudget(level string) (int, bool) {
+	switch level {
+	case reasoning.Off:
+		return 0, true
+	case reasoning.Minimal, reasoning.Low:
+		return 1024, true
+	case reasoning.Medium:
+		return 8192, true
+	case reasoning.High:
+		return 24576, true
+	case reasoning.XHigh:
+		return -1, true
+	default:
+		return 0, false
+	}
+}
+
+func vertexGoogleModelCanThink(modelName string) bool {
+	m := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(m, "gemini-2.5") || strings.Contains(m, "gemini-3")
 }
 
 // convertToVertexContents maps modelrepo messages to Vertex AI content format.

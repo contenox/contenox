@@ -58,7 +58,10 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	o := buildRunOpts(cmd, db, contenoxDir)
+	o, err := buildRunOpts(cmd, db, contenoxDir)
+	if err != nil {
+		return err
+	}
 	o.EffectiveDB = dbPath
 	o.EffectiveSkipBackendCycle, _ = cmd.Flags().GetBool("skip-cycle")
 

@@ -22,7 +22,7 @@ type vertexStreamClient struct {
 func (c *vertexStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	parcels := make(chan *modelrepo.StreamParcel)
 
-	request, err := buildVertexRequest(messages, args)
+	request, err := buildVertexRequest(c.modelName, messages, args)
 	if err != nil {
 		return nil, err
 	}

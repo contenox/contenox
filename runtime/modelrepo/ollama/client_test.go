@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/contenox/agent/runtime/modelrepo"
 	"github.com/ollama/ollama/api"
 )
 
@@ -67,5 +68,38 @@ func TestUnit_OllamaHTTPClient_GenerateStreamsNDJSON(t *testing.T) {
 	}
 	if len(chunks) != 2 || chunks[0] != "hel" || chunks[1] != "lo" {
 		t.Fatalf("unexpected streamed chunks: %#v", chunks)
+	}
+}
+
+func TestUnit_BuildOllamaThink_NormalizesLevels(t *testing.T) {
+	cfg := &modelrepo.ChatConfig{}
+	if got := buildOllamaThink(cfg); got != nil {
+		t.Fatalf("nil think config should omit Ollama think, got %#v", got)
+	}
+
+	modelrepo.WithThink("auto").Apply(cfg)
+	if got := buildOllamaThink(cfg); got != nil {
+		t.Fatalf("auto should omit Ollama think, got %#v", got)
+	}
+
+	cfg = &modelrepo.ChatConfig{}
+	modelrepo.WithThink("off").Apply(cfg)
+	got := buildOllamaThink(cfg)
+	if got == nil || got.Value != false {
+		t.Fatalf("off = %#v, want bool false", got)
+	}
+
+	cfg = &modelrepo.ChatConfig{}
+	modelrepo.WithThink("minimal").Apply(cfg)
+	got = buildOllamaThink(cfg)
+	if got == nil || got.Value != "low" {
+		t.Fatalf("minimal = %#v, want low", got)
+	}
+
+	cfg = &modelrepo.ChatConfig{}
+	modelrepo.WithThink("xhigh").Apply(cfg)
+	got = buildOllamaThink(cfg)
+	if got == nil || got.Value != "high" {
+		t.Fatalf("xhigh = %#v, want high", got)
 	}
 }

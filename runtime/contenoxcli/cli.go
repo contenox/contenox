@@ -17,9 +17,11 @@ import (
 
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/internal/clikv"
+	"github.com/contenox/agent/runtime/reasoning"
 	"github.com/contenox/agent/runtime/runtimetypes"
 	"github.com/contenox/agent/runtime/version"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Version is an optional link-time override via
@@ -118,7 +120,7 @@ func firstNonFlagIsReserved(args []string) bool {
 	// value of --trace and then forward it to the chat command as text input.
 	boolFlags := map[string]bool{
 		"--shell": true, "--trace": true, "--steps": true, "--raw": true,
-		"--think": true, "--no-delete-models": true, "--editor": true,
+		"--no-delete-models": true, "--editor": true,
 		"-e": true, "-h": true, "--help": true, "-v": true, "--version": true,
 	}
 	for i := 0; i < len(args); i++ {
@@ -322,7 +324,7 @@ func init() {
 
 	f.Bool("steps", false, "Print execution steps after the result")
 	f.Bool("raw", false, "Print full output (e.g. entire chat JSON)")
-	f.Bool("think", false, "Print model reasoning trace to stderr (for thinking models)")
+	f.String("think", "", "Set reasoning level for supported models: auto, off, minimal, low, medium, high, xhigh (default: config default-think, then high)")
 	f.BoolP("editor", "e", false, "Open $EDITOR (or $VISUAL, fallback nano) to compose the prompt; piped stdin is preloaded as reference")
 
 	rootCmd.AddCommand(initCmd, chatCmd, sessionCmd, runCmd, toolsCmd, doctorCmd, versionCmd)
@@ -577,7 +579,10 @@ func runChat(cmd *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(timeoutCtx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	effectiveThink, _ := flags.GetBool("think")
+	effectiveThink, err := resolveEffectiveThink(dbCtx, store, flags)
+	if err != nil {
+		return err
+	}
 	autoMode, _ := cmd.Flags().GetBool("auto")
 	effectiveHITL := !autoMode
 	historyTrim, _ := cmd.Flags().GetInt("trim")
@@ -606,6 +611,31 @@ func runChat(cmd *cobra.Command, args []string) error {
 		ContenoxDir:                  contenoxDir,
 	}
 	return execChat(ctx, db, opts, cmd.OutOrStdout(), cmd.ErrOrStderr())
+}
+
+func resolveEffectiveThink(ctx context.Context, store runtimetypes.Store, flags *pflag.FlagSet) (string, error) {
+	if flags != nil && flags.Changed("think") {
+		v, _ := flags.GetString("think")
+		level, err := reasoning.Normalize(v)
+		if err != nil {
+			return "", fmt.Errorf("--think: %w", err)
+		}
+		return level, nil
+	}
+	if store != nil {
+		if kv, _ := getConfigKV(ctx, store, "default-think"); kv != "" {
+			level, err := reasoning.Normalize(kv)
+			if err != nil {
+				return "", fmt.Errorf("config default-think: %w", err)
+			}
+			return level, nil
+		}
+	}
+	return reasoning.Default, nil
+}
+
+func shouldPrintThinking(level string) bool {
+	return reasoning.DisplayEnabled(level)
 }
 
 // Sentinel errors so RunE can return and main can os.Exit(1).

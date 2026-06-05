@@ -65,14 +65,16 @@ func TestUnit_BuildChatRequest_MapsThinkingLevels(t *testing.T) {
 		modelrepo.WithThink("xhigh"),
 	})
 	require.Len(t, req.Tools, 1)
-	require.NotNil(t, req.ExtraBody)
-	assert.Equal(t, true, req.ExtraBody["chat_template_kwargs"].(map[string]any)["enable_thinking"])
+	assert.Equal(t, "high", req.ReasoningEffort)
+	require.NotNil(t, req.ChatTemplateKwargs)
+	assert.Equal(t, true, req.ChatTemplateKwargs["enable_thinking"])
 
 	req = buildChatRequest("model", []modelrepo.Message{{Role: "user", Content: "hi"}}, []modelrepo.ChatArgument{
 		modelrepo.WithThink("none"),
 	})
-	require.NotNil(t, req.ExtraBody)
-	assert.Equal(t, false, req.ExtraBody["chat_template_kwargs"].(map[string]any)["enable_thinking"])
+	assert.Equal(t, "none", req.ReasoningEffort)
+	require.NotNil(t, req.ChatTemplateKwargs)
+	assert.Equal(t, false, req.ChatTemplateKwargs["enable_thinking"])
 }
 
 func TestUnit_VLLMChat_AllowsToolCallsFinishReason(t *testing.T) {
@@ -203,8 +205,9 @@ func TestUnit_VLLMStreamClient_UsesChatRequestParityAndStreamsThinking(t *testin
 
 	require.True(t, gotRequest.Stream)
 	require.Len(t, gotRequest.Tools, 1)
-	require.NotNil(t, gotRequest.ExtraBody)
-	assert.Equal(t, true, gotRequest.ExtraBody["chat_template_kwargs"].(map[string]any)["enable_thinking"])
+	assert.Equal(t, "high", gotRequest.ReasoningEffort)
+	require.NotNil(t, gotRequest.ChatTemplateKwargs)
+	assert.Equal(t, true, gotRequest.ChatTemplateKwargs["enable_thinking"])
 
 	var parcels []struct {
 		Data     string

@@ -32,7 +32,7 @@ func (o *OllamaPromptClient) Prompt(ctx context.Context, systemInstruction strin
 		System:  systemInstruction,
 		Stream:  &stream,
 		Options: buildOllamaOptions(config),
-		Think:   &think,
+		Think:   think,
 	}
 
 	var (

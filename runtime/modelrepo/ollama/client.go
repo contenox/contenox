@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/contenox/agent/runtime/modelrepo"
+	"github.com/contenox/agent/runtime/reasoning"
 	"github.com/ollama/ollama/api"
 )
 
@@ -228,18 +229,39 @@ func buildOllamaOptions(config *modelrepo.ChatConfig) map[string]any {
 	return opts
 }
 
-func buildOllamaThink(config *modelrepo.ChatConfig) api.ThinkValue {
-	think := api.ThinkValue{Value: false}
-	if config.Think == nil {
-		return think
+func buildOllamaThink(config *modelrepo.ChatConfig) *api.ThinkValue {
+	if config == nil || config.Think == nil {
+		return nil
 	}
-	switch strings.ToLower(strings.TrimSpace(*config.Think)) {
-	case "true", "high", "medium", "low":
-		think = api.ThinkValue{Value: strings.ToLower(strings.TrimSpace(*config.Think))}
-	case "false", "none":
-		think = api.ThinkValue{Value: false}
+	level, ok, err := reasoning.NormalizeOptional(*config.Think)
+	if err != nil || !ok || level == reasoning.Auto {
+		return nil
 	}
-	return think
+	if level == reasoning.Off {
+		return &api.ThinkValue{Value: false}
+	}
+	mapped := level
+	if mapped == reasoning.Minimal {
+		mapped = reasoning.Low
+	}
+	if mapped == reasoning.XHigh {
+		mapped = reasoning.High
+	}
+	return &api.ThinkValue{Value: mapped}
+}
+
+func ollamaModelCanThink(modelName string) bool {
+	m := strings.ToLower(modelName)
+	families := []string{
+		"qwen3", "qwq", "deepseek-r1", "deepseek-r", "gpt-oss", "granite",
+		"magistral", "nemotron", "glm-4.5", "hunyuan", "seed-oss", "skywork",
+	}
+	for _, family := range families {
+		if strings.Contains(m, family) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildOllamaTools(config *modelrepo.ChatConfig) (api.Tools, error) {

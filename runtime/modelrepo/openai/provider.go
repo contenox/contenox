@@ -20,6 +20,7 @@ type OpenAIProvider struct {
 	canPrompt     bool
 	canEmbed      bool
 	canStream     bool
+	canThink      bool
 	tracker       libtracker.ActivityTracker
 }
 
@@ -49,6 +50,7 @@ func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capabilit
 		canPrompt:     capability.CanPrompt,
 		canEmbed:      capability.CanEmbed,
 		canStream:     capability.CanStream,
+		canThink:      capability.CanThink || openAIModelCanReason(modelName),
 		tracker:       tracker,
 	}
 }
@@ -90,7 +92,7 @@ func (p *OpenAIProvider) CanPrompt() bool {
 }
 
 func (p *OpenAIProvider) CanThink() bool {
-	return false
+	return p.canThink
 }
 
 func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {

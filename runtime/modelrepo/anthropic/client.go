@@ -13,6 +13,7 @@ import (
 	"github.com/contenox/agent/libtracker"
 	"github.com/contenox/agent/runtime/modelrepo"
 	msgcodec "github.com/contenox/agent/runtime/modelrepo/codec/messages"
+	"github.com/contenox/agent/runtime/reasoning"
 )
 
 const (
@@ -97,6 +98,107 @@ func (c *anthropicClient) openStream(ctx context.Context, path string, request a
 	return resp, nil
 }
 
+func applyAnthropicThinking(req *msgcodec.Request, modelName string, cfg *modelrepo.ChatConfig) {
+	if req == nil || cfg == nil || cfg.Think == nil {
+		return
+	}
+	level, ok, err := reasoning.NormalizeOptional(*cfg.Think)
+	if err != nil || !ok || level == reasoning.Auto {
+		return
+	}
+	if level == reasoning.Off {
+		if !anthropicRequiresAdaptiveThinking(modelName) && !anthropicMythos(modelName) {
+			req.Thinking = &msgcodec.ThinkingConfig{Type: "disabled"}
+		}
+		return
+	}
+
+	if anthropicUsesAdaptiveThinking(modelName) {
+		req.Thinking = &msgcodec.ThinkingConfig{Type: "adaptive", Display: "summarized"}
+		if effort := anthropicEffort(modelName, level); effort != "" && effort != reasoning.High {
+			req.OutputConfig = &msgcodec.OutputConfig{Effort: effort}
+		} else if effort == reasoning.High {
+			// high is the API default; omit output_config to keep the payload smaller.
+			req.OutputConfig = nil
+		}
+		return
+	}
+
+	budget := anthropicThinkingBudget(level, req.MaxTokens)
+	if budget <= 0 {
+		return
+	}
+	req.Thinking = &msgcodec.ThinkingConfig{Type: "enabled", BudgetTokens: budget}
+}
+
+func anthropicThinkingBudget(level string, maxTokens int) int {
+	budget := 0
+	switch level {
+	case reasoning.Minimal, reasoning.Low:
+		budget = 1024
+	case reasoning.Medium:
+		budget = 2048
+	case reasoning.High:
+		budget = 4096
+	case reasoning.XHigh:
+		budget = 8192
+	}
+	if maxTokens > 1 && budget >= maxTokens {
+		budget = maxTokens - 1
+	}
+	return budget
+}
+
+func anthropicEffort(modelName, level string) string {
+	switch level {
+	case reasoning.Minimal:
+		return reasoning.Low
+	case reasoning.Low, reasoning.Medium, reasoning.High:
+		return level
+	case reasoning.XHigh:
+		if anthropicSupportsXHighEffort(modelName) {
+			return reasoning.XHigh
+		}
+		return reasoning.High
+	default:
+		return ""
+	}
+}
+
+func anthropicUsesAdaptiveThinking(modelName string) bool {
+	m := strings.ToLower(modelName)
+	return strings.Contains(m, "claude-opus-4-8") ||
+		strings.Contains(m, "claude-opus-4-7") ||
+		strings.Contains(m, "claude-opus-4-6") ||
+		strings.Contains(m, "claude-sonnet-4-6") ||
+		anthropicMythos(m)
+}
+
+func anthropicRequiresAdaptiveThinking(modelName string) bool {
+	m := strings.ToLower(modelName)
+	return strings.Contains(m, "claude-opus-4-8") ||
+		strings.Contains(m, "claude-opus-4-7") ||
+		anthropicMythos(m)
+}
+
+func anthropicSupportsXHighEffort(modelName string) bool {
+	m := strings.ToLower(modelName)
+	return strings.Contains(m, "claude-opus-4-8") || strings.Contains(m, "claude-opus-4-7")
+}
+
+func anthropicMythos(modelName string) bool {
+	return strings.Contains(strings.ToLower(modelName), "mythos")
+}
+
+func anthropicModelCanThink(modelName string) bool {
+	m := strings.ToLower(modelName)
+	return strings.Contains(m, "claude-3-7") ||
+		strings.Contains(m, "claude-sonnet-4") ||
+		strings.Contains(m, "claude-opus-4") ||
+		strings.Contains(m, "claude-haiku-4") ||
+		anthropicMythos(m)
+}
+
 type anthropicChatClient struct{ anthropicClient }
 
 func (c *anthropicChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
@@ -106,6 +208,7 @@ func (c *anthropicChatClient) Chat(ctx context.Context, messages []modelrepo.Mes
 	cfg := chatConfigFromArgs(args)
 	req := msgcodec.Build(messages, cfg)
 	req.Model = c.modelName // direct: model in body, version via header
+	applyAnthropicThinking(&req, c.modelName, cfg)
 
 	raw, err := c.post(ctx, "/v1/messages", req)
 	if err != nil {
@@ -127,6 +230,7 @@ func (c *anthropicStreamClient) Stream(ctx context.Context, messages []modelrepo
 	cfg := chatConfigFromArgs(args)
 	req := msgcodec.Build(messages, cfg)
 	req.Model = c.modelName
+	applyAnthropicThinking(&req, c.modelName, cfg)
 	req.Stream = true
 	dec := msgcodec.NewStreamDecoder()
 

@@ -317,3 +317,62 @@ func TestUnit_MacroEnv_HostFacts_AutoAppendedAndIdempotent(t *testing.T) {
 		t.Fatalf("host facts must be appended exactly once, got %d:\n%s", strings.Count(out, "Host: os="), out)
 	}
 }
+
+type execConfigThinkEnv struct{}
+
+func (n *execConfigThinkEnv) ExecEnv(_ context.Context, chain *taskengine.TaskChainDefinition, input any, _ taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
+	if len(chain.Tasks) > 0 && chain.Tasks[0].ExecuteConfig != nil {
+		return chain.Tasks[0].ExecuteConfig.Think, taskengine.DataTypeString, nil, nil
+	}
+	return input, taskengine.DataTypeString, nil, nil
+}
+
+func TestUnit_MacroEnv_ExecuteConfigThink_ExpandsTemplateVar(t *testing.T) {
+	env, err := taskengine.NewMacroEnv(&execConfigThinkEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := &taskengine.TaskChainDefinition{
+		ID: "test-chain",
+		Tasks: []taskengine.TaskDefinition{{
+			ID:            "task1",
+			Handler:       taskengine.HandleChatCompletion,
+			ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "test", Think: "{{var:think}}"},
+			Transition:    taskengine.TaskTransition{Branches: []taskengine.TransitionBranch{{Operator: "default", Goto: "end"}}},
+		}},
+	}
+	ctx := taskengine.WithTemplateVars(libtracker.WithNewRequestID(context.Background()), map[string]string{"think": "medium"})
+	raw, _, _, err := env.ExecEnv(ctx, chain, "", taskengine.DataTypeString)
+	if err != nil {
+		t.Fatalf("ExecEnv: %v", err)
+	}
+	if raw != "medium" {
+		t.Fatalf("expanded think = %v, want medium", raw)
+	}
+	if chain.Tasks[0].ExecuteConfig.Think != "{{var:think}}" {
+		t.Fatalf("MacroEnv mutated original chain think field: %q", chain.Tasks[0].ExecuteConfig.Think)
+	}
+}
+
+func TestUnit_MacroEnv_ExecuteConfigThink_MissingVarErrors(t *testing.T) {
+	env, err := taskengine.NewMacroEnv(&execConfigThinkEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := &taskengine.TaskChainDefinition{
+		ID: "test-chain",
+		Tasks: []taskengine.TaskDefinition{{
+			ID:            "task1",
+			Handler:       taskengine.HandleChatCompletion,
+			ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "test", Think: "{{var:think}}"},
+			Transition:    taskengine.TaskTransition{Branches: []taskengine.TransitionBranch{{Operator: "default", Goto: "end"}}},
+		}},
+	}
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "", taskengine.DataTypeString)
+	if err == nil {
+		t.Fatal("missing think template var should error")
+	}
+	if !strings.Contains(err.Error(), "execute_config.think macro error") {
+		t.Fatalf("error = %q, want execute_config.think macro context", err.Error())
+	}
+}

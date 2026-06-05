@@ -130,8 +130,8 @@ func (m *MacroEnv) ExecEnv(
 			}
 		}
 
-		// Expand {{var:*}} in execute_config model/provider so chains can use
-		// {{var:model}} and {{var:provider}} without callers doing manual string replacement.
+		// Expand {{var:*}} in execute_config model/provider/think so chains can use
+		// {{var:model}}, {{var:provider}}, and {{var:think}} without callers doing manual string replacement.
 		if t.ExecuteConfig != nil {
 			if t.ExecuteConfig.Model != "" {
 				t.ExecuteConfig.Model, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.ExecuteConfig.Model)
@@ -143,6 +143,12 @@ func (m *MacroEnv) ExecEnv(
 				t.ExecuteConfig.Provider, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.ExecuteConfig.Provider)
 				if err != nil {
 					return nil, DataTypeAny, nil, fmt.Errorf("task %s: execute_config.provider macro error: %w", t.ID, err)
+				}
+			}
+			if t.ExecuteConfig.Think != "" {
+				t.ExecuteConfig.Think, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.ExecuteConfig.Think)
+				if err != nil {
+					return nil, DataTypeAny, nil, fmt.Errorf("task %s: execute_config.think macro error: %w", t.ID, err)
 				}
 			}
 		}

@@ -129,7 +129,10 @@ Examples:
 		defer closeLogs()
 
 		// Build chatOpts from flags and SQLite KV defaults.
-		o := buildRunOpts(cmd, db, contenoxDir)
+		o, err := buildRunOpts(cmd, db, contenoxDir)
+		if err != nil {
+			return err
+		}
 		o.EffectiveDB = dbPathAbs
 		engine, err := BuildEngine(ctx, db, o)
 		if err != nil {
@@ -155,6 +158,7 @@ Examples:
 		templateVars := map[string]string{
 			"model":    o.EffectiveDefaultModel,
 			"provider": o.EffectiveDefaultProvider,
+			"think":    o.EffectiveThink,
 		}
 		if o.EffectiveAltDefaultModel != "" {
 			templateVars["alt_model"] = o.EffectiveAltDefaultModel
@@ -173,10 +177,6 @@ Examples:
 		// when the command returns, instead of leaking a blocked goroutine.
 		execCtx, stop := signal.NotifyContext(timeoutCtx, syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
-		effectiveThink, err := flags.GetBool("think")
-		if err != nil {
-			return fmt.Errorf("failed to get think flag: %w", err)
-		}
 
 		if o.EffectiveTracing {
 			slog.Info("Executing chain", "chain", chainPathAbs, "input_type", inputTypeName)
@@ -188,6 +188,8 @@ Examples:
 		defer stopTrace()
 		stopPrint := startPrintStream(execCtx, engine, cmd.ErrOrStderr())
 		defer stopPrint()
+		stopThoughts := startThoughtStream(execCtx, engine, cmd.ErrOrStderr(), o.EffectiveThink)
+		defer stopThoughts()
 
 		// Create agent and execute via service layer (stateless — no session).
 		workspaceID := ResolveWorkspaceID(o.ContenoxDir)
@@ -213,11 +215,11 @@ Examples:
 
 		effectiveRaw, _ := flags.GetBool("raw")
 		effectiveSteps, _ := flags.GetBool("steps")
-		if effectiveThink {
+		if shouldPrintThinking(o.EffectiveThink) {
 			if hist, ok := resp.Output.(taskengine.ChatHistory); ok {
 				for _, msg := range hist.Messages {
 					if msg.Role == "assistant" && msg.Thinking != "" {
-						fmt.Fprintln(cmd.ErrOrStderr(), "\n💭 Reasoning:")
+						fmt.Fprintln(cmd.ErrOrStderr(), "\nReasoning:")
 						fmt.Fprintln(cmd.ErrOrStderr(), msg.Thinking)
 					}
 				}
@@ -325,7 +327,7 @@ func parseRunInput(raw, typeName string) (any, taskengine.DataType, error) {
 }
 
 // buildRunOpts resolves effective options from flags and persistent SQLite config.
-func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string) chatOpts {
+func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string) (chatOpts, error) {
 	flags := cmd.Root().Flags()
 
 	ctx := libtracker.WithNewRequestID(context.Background())
@@ -336,6 +338,10 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 	kvProvider, _ := getConfigKV(ctx, store, "default-provider")
 	kvAltModel, _ := getConfigKV(ctx, store, "default-alt-model")
 	kvAltProvider, _ := getConfigKV(ctx, store, "default-alt-provider")
+	effectiveThink, err := resolveEffectiveThink(ctx, store, flags)
+	if err != nil {
+		return chatOpts{}, err
+	}
 
 	effectiveModel, _ := flags.GetString("model")
 	if !flags.Changed("model") && (effectiveModel == "" || effectiveModel == defaultModel) {
@@ -388,8 +394,9 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 		EffectiveLocalExecAllowedDir: effectiveLocalExecAllowedDir,
 		EffectiveHITL:                effectiveHITL,
 		EffectiveTracing:             effectiveTracing,
+		EffectiveThink:               effectiveThink,
 		ContenoxDir:                  contenoxDir,
-	}
+	}, nil
 }
 
 func init() {

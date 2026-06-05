@@ -82,3 +82,25 @@ func TestUnit_GeminiChat_BlockedPromptStillErrors(t *testing.T) {
 
 	require.Error(t, err, "a genuinely blocked prompt (no candidates) must still surface an error, not be silently tolerated")
 }
+
+func TestUnit_BuildGeminiRequest_MapsThinkingConfig(t *testing.T) {
+	t.Parallel()
+	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
+
+	req, err := buildGeminiRequest("gemini-2.5-pro", msgs, nil, []modelrepo.ChatArgument{modelrepo.WithThink("medium")})
+	require.NoError(t, err)
+	require.NotNil(t, req.GenerationConfig.ThinkingConfig)
+	require.NotNil(t, req.GenerationConfig.ThinkingConfig.ThinkingBudget)
+	assert.Equal(t, 8192, *req.GenerationConfig.ThinkingConfig.ThinkingBudget)
+	assert.Equal(t, "", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+
+	req, err = buildGeminiRequest("gemini-3-flash", msgs, nil, []modelrepo.ChatArgument{modelrepo.WithThink("off")})
+	require.NoError(t, err)
+	require.NotNil(t, req.GenerationConfig.ThinkingConfig)
+	require.Nil(t, req.GenerationConfig.ThinkingConfig.ThinkingBudget)
+	assert.Equal(t, "minimal", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+
+	req, err = buildGeminiRequest("gemini-3-pro", msgs, nil, []modelrepo.ChatArgument{modelrepo.WithThink("auto")})
+	require.NoError(t, err)
+	require.Nil(t, req.GenerationConfig.ThinkingConfig)
+}

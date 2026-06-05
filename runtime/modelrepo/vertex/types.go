@@ -10,10 +10,16 @@ type vertexRequest struct {
 }
 
 type vertexGenerationConfig struct {
-	Temperature     *float64 `json:"temperature,omitempty"`
-	TopP            *float64 `json:"topP,omitempty"`
-	MaxOutputTokens *int     `json:"maxOutputTokens,omitempty"`
-	Seed            *int     `json:"seed,omitempty"`
+	Temperature     *float64              `json:"temperature,omitempty"`
+	TopP            *float64              `json:"topP,omitempty"`
+	MaxOutputTokens *int                  `json:"maxOutputTokens,omitempty"`
+	Seed            *int                  `json:"seed,omitempty"`
+	ThinkingConfig  *vertexThinkingConfig `json:"thinkingConfig,omitempty"`
+}
+
+type vertexThinkingConfig struct {
+	ThinkingBudget *int   `json:"thinkingBudget,omitempty"`
+	ThinkingLevel  string `json:"thinkingLevel,omitempty"`
 }
 
 type vertexToolRequest struct {
