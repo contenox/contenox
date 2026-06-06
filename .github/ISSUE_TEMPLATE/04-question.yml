@@ -1,0 +1,42 @@
+name: Question or Help
+description: Ask how something works, whether a use case is supported, or where to start.
+labels: ["needs-triage", "question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome. If this turns into a docs or feature issue, maintainers can relabel it.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to figure out?
+      placeholder: How do I... / Is it possible to... / Where should I look for...
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried or read?
+      description: Optional. Commands, docs pages, examples, or error output help avoid repeating work.
+      placeholder: I checked... / I ran... / I found...
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Optional. Include your setup, provider, model, editor/ACP client, or workflow if relevant.
+      placeholder: I am using... and trying to...
+    validations:
+      required: false
+
+  - type: textarea
+    id: answer
+    attributes:
+      label: What kind of answer would help?
+      placeholder: A command example / a docs link / a design explanation / confirmation that this is not supported yet...
+    validations:
+      required: false

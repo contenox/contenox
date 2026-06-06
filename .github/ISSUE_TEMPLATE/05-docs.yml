@@ -1,0 +1,44 @@
+name: Docs Improvement
+description: Report missing, confusing, outdated, or hard-to-find documentation.
+labels: ["needs-triage", "documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Docs issues can be small. A confusing sentence, missing example, or broken link is worth reporting.
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Where is the docs issue?
+      description: Link a page, file, section, command help output, README area, or say where you expected docs to exist.
+      placeholder: README section... / docs page... / `contenox help ...` / I expected to find this under...
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is confusing, missing, or wrong?
+      placeholder: This does not explain... / This example fails because... / I could not find...
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested change
+      description: Optional. Paste wording, outline an example, or describe the missing topic.
+      placeholder: Add an example showing... / Change this sentence to...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you like to help with the docs change?
+      options:
+        - label: I can review proposed wording.
+          required: false
+        - label: I can open a docs PR.
+          required: false

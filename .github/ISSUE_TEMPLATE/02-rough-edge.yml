@@ -1,0 +1,42 @@
+name: Rough Edge
+description: Something feels confusing, awkward, slow, surprising, or harder than it should be.
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for friction that may not be a bug yet. Small paper cuts are useful signal.
+
+  - type: textarea
+    id: moment
+    attributes:
+      label: Where did you hit friction?
+      description: Point to the command, UI, docs page, workflow, setup step, or mental model that felt off.
+      placeholder: I was trying to... and got stuck at...
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: What made it hard?
+      placeholder: The wording was unclear / the default surprised me / I could not tell what to do next / it took too many steps...
+    validations:
+      required: false
+
+  - type: textarea
+    id: better
+    attributes:
+      label: What would feel better?
+      description: A sketch, comparison, or rough idea is enough.
+      placeholder: A better version might...
+    validations:
+      required: false
+
+  - type: textarea
+    id: audience
+    attributes:
+      label: Who do you think this affects?
+      placeholder: New users, maintainers, ACP users, local-model users, contributors, people using...
+    validations:
+      required: false

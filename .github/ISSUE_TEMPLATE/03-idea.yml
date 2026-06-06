@@ -1,0 +1,54 @@
+name: Idea or Feature
+description: Propose a capability, workflow, integration, or behavior change.
+labels: ["needs-triage", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas do not need to arrive fully designed. Share the problem and the shape of the outcome.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem should this solve?
+      placeholder: I want to... but today...
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would a good outcome look like?
+      placeholder: A user should be able to...
+    validations:
+      required: false
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples, references, or prior art
+      description: Link projects, docs, workflows, screenshots, or issues that explain the idea.
+      placeholder: "This is similar to... / Related: ..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope or tradeoffs
+      description: Optional. Mention constraints, things this should not do, or concerns maintainers should weigh.
+      placeholder: It should not... / The risky part is... / This only needs to cover...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you like to help move it forward?
+      options:
+        - label: I can discuss the design.
+          required: false
+        - label: I can test an implementation.
+          required: false
+        - label: I may be able to open a PR with guidance.
+          required: false

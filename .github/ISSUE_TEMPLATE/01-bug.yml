@@ -1,0 +1,71 @@
+name: Bug Report
+description: Something broke, regressed, or behaved in an unexpected way.
+labels: ["needs-triage", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. A rough report is fine; maintainers can help narrow it down.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the bug in your own words.
+      placeholder: I ran... and saw... but expected...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we reproduce it?
+      description: Commands, config, chain files, logs, or a short sequence of steps all help.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. See ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect instead?
+      placeholder: It should have...
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "Include anything relevant: Contenox version, OS, provider/backend, model, shell, editor, or ACP client."
+      placeholder: |
+        contenox version:
+        OS:
+        provider/backend:
+        model:
+        command or client:
+    validations:
+      required: false
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Just reporting
+        - Annoying but workable
+        - Important to my workflow
+        - Blocking me
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Can you help verify a fix?
+      options:
+        - label: I can test a patch or release candidate.
+          required: false
