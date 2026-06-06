@@ -16,7 +16,7 @@ The useful unit is a known workflow with examples, tools, acceptance rules, and 
 ## Install
 
 <!-- Release tooling: keep next line in sync with runtime/version/version.txt (updated by `make -f Makefile.version bump-*`). -->
-<!-- TAG=v0.28.0 -->
+<!-- TAG=v0.28.1 -->
 
 ```bash
 curl -fsSL https://contenox.com/install.sh | sh
