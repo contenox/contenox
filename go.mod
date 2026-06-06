@@ -14,6 +14,7 @@ require (
 	github.com/nats-io/nats.go v1.47.0
 	github.com/ollama/ollama v0.17.5
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.9
 	github.com/testcontainers/testcontainers-go/modules/nats v0.39.0
 	github.com/testcontainers/testcontainers-go/modules/valkey v0.39.0
 	github.com/valkey-io/valkey-go v1.0.67
@@ -73,7 +74,6 @@ require (
 	github.com/segmentio/encoding v0.5.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect

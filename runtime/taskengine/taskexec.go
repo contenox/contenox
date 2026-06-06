@@ -670,6 +670,12 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			break
 		}
 
+		allowedTools, explicitToolsScope, err := exe.executionToolsScope(taskCtx, currentTask)
+		if err != nil {
+			taskErr = fmt.Errorf("failed to resolve execution tools scope: %w", err)
+			break
+		}
+		hiddenTools := executionHiddenTools(currentTask)
 		executedAny := false
 
 		for _, toolCall := range lastMessage.CallTools {
@@ -693,6 +699,19 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 					publishTaskEventBestEffort(taskCtx, exe.tracker, exe.eventSink, toolEvent)
 				}
 				continue
+			}
+
+			if isExecutionToolHidden(hiddenTools, toolCall.Function.Name, resolutionInfo) {
+				errStr := fmt.Sprintf("tool %s is hidden for task %s", toolCall.Function.Name, currentTask.ID)
+				exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
+				continue
+			}
+			if explicitToolsScope {
+				if _, ok := allowedTools[resolutionInfo.ToolsName]; !ok {
+					errStr := fmt.Sprintf("tool %s from tools %q is not allowed for task %s", toolCall.Function.Name, resolutionInfo.ToolsName, currentTask.ID)
+					exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
+					continue
+				}
 			}
 
 			var args map[string]any
@@ -1302,6 +1321,86 @@ func resolveToolWithResolution(chainContext *ChainContext, toolName string) (Too
 	}
 
 	return ToolWithResolution{}, false
+}
+
+func (exe *SimpleExec) executionToolsScope(ctx context.Context, currentTask *TaskDefinition) (map[string]struct{}, bool, error) {
+	if currentTask == nil || currentTask.ExecuteConfig == nil || currentTask.ExecuteConfig.Tools == nil {
+		return nil, false, nil
+	}
+	names, err := resolveToolsNames(ctx, currentTask.ExecuteConfig.Tools, exe.toolsProvider)
+	if err != nil {
+		return nil, true, err
+	}
+	allowed := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		allowed[name] = struct{}{}
+	}
+	return allowed, true, nil
+}
+
+func executionHiddenTools(currentTask *TaskDefinition) map[string]struct{} {
+	if currentTask == nil || currentTask.ExecuteConfig == nil || len(currentTask.ExecuteConfig.HideTools) == 0 {
+		return nil
+	}
+	hidden := make(map[string]struct{}, len(currentTask.ExecuteConfig.HideTools))
+	for _, name := range currentTask.ExecuteConfig.HideTools {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			hidden[name] = struct{}{}
+		}
+	}
+	return hidden
+}
+
+func isExecutionToolHidden(hidden map[string]struct{}, toolName string, resolution ToolWithResolution) bool {
+	if len(hidden) == 0 {
+		return false
+	}
+	if _, ok := hidden[toolName]; ok {
+		return true
+	}
+	if _, ok := hidden[resolution.Function.Name]; ok {
+		return true
+	}
+	leaf := strings.TrimPrefix(toolName, resolution.ToolsName+".")
+	if _, ok := hidden[leaf]; ok {
+		return true
+	}
+	namespaced := resolution.ToolsName + "." + leaf
+	if _, ok := hidden[namespaced]; ok {
+		return true
+	}
+	return false
+}
+
+func toolErrorContent(errStr string) string {
+	payload, err := json.Marshal(map[string]string{"error": errStr})
+	if err != nil {
+		return fmt.Sprintf(`{"error": "%s"}`, errStr)
+	}
+	return string(payload)
+}
+
+func (exe *SimpleExec) appendToolErrorResult(ctx context.Context, chatHistory *ChatHistory, toolCall ToolCall, errStr string, args map[string]any) {
+	if chatHistory == nil {
+		return
+	}
+	toolResultMessage := Message{
+		Role:       "tool",
+		Content:    toolErrorContent(errStr),
+		ToolCallID: toolCall.ID,
+		Timestamp:  time.Now().UTC(),
+	}
+	chatHistory.Messages = append(chatHistory.Messages, toolResultMessage)
+
+	if exe.eventSink.Enabled() {
+		toolEvent := NewTaskEvent(ctx, TaskEventToolCall)
+		toolEvent.ToolName = toolCall.Function.Name
+		toolEvent.ApprovalID = toolCall.ID
+		toolEvent.ApprovalArgs = args
+		toolEvent.Error = errStr
+		publishTaskEventBestEffort(ctx, exe.tracker, exe.eventSink, toolEvent)
+	}
 }
 
 // chatWithRetry wraps repo.Chat with [llmretry.Do] when llmCall.RetryPolicy is

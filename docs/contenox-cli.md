@@ -332,6 +332,8 @@ Chain text fields and `execute_config.model`, `execute_config.provider`, and `ex
 | `{{toolservice:tools}}`        | Allowed tool group names only                                                          |
 | `{{toolservice:tools <name>}}` | Tool names for a specific tool group (empty if not in allowlist)                  |
 
+For `execute_tool_calls` tasks, `execute_config.tools` is also an execution-time restriction when the field is explicitly present. Omit it to preserve legacy chain-wide tool-call resolution; set it to `[]` to execute no registry tools in that phase. `hide_tools` blocks matching namespaced tools such as `local_fs.write_file`.
+
 ## Build from source
 
 ```bash

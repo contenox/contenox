@@ -1,10 +1,540 @@
 {
   "id": "chain-acp",
-  "description": "Default ACP chain for editor integration (Zed, etc). Tools are provided by the editor via MCP servers registered at session setup. Two-stage tool-using workflow loop: main (10 rounds) → recovery (10 rounds) → summarise_failure.",
+  "description": "Default ACP chain for editor integration. Routes general prompts to the normal tool loop and coding-change prompts through inspect → patch → verify → audit rails.",
   "tasks": [
     {
+      "id": "classify_request",
+      "description": "Classify each ACP prompt before choosing the general loop or the staged coding workflow.",
+      "handler": "route",
+      "system_instruction": "Classify the user's latest message. Use 'coding_change' for requests to create, edit, migrate, refactor, fix, test, build, or otherwise change code/files. Use 'general' for questions, explanations, brainstorming, setup help, or anything that should use the normal assistant loop.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "tools": [],
+        "retry_policy": {
+          "max_attempts": 3,
+          "initial_backoff": "1s",
+          "max_backoff": "10s",
+          "jitter": 0.25
+        }
+      },
+      "transition": {
+        "on_failure": "acp_chat",
+        "branches": [
+          {
+            "operator": "equals",
+            "when": "coding_change",
+            "goto": "coding_inspect"
+          },
+          {
+            "operator": "equals",
+            "when": "general",
+            "goto": "acp_chat"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "acp_chat"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_inspect",
+      "description": "Read-only repo inspection before any coding plan or patch.",
+      "handler": "chat_completion",
+      "input_var": "input",
+      "system_instruction": "You are in INSPECT phase for a coding task. You may inspect only. Read package/config files, routes, framework conventions, existing components, content directories, tests, and relevant source before proposing changes. Do not write files, do not run shell commands, do not move/delete files, and do not claim completion. If enough context is gathered, stop tool use and continue to the patch phase.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "think": "{{var:think}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [
+          "local_fs"
+        ],
+        "hide_tools": [
+          "local_fs.write_file",
+          "local_fs.sed"
+        ],
+        "tools_policies": {
+          "local_fs": {
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+          }
+        },
+        "max_tokens": 16384,
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
+        }
+      },
+      "transition": {
+        "on_failure": "coding_blocked",
+        "branches": [
+          {
+            "operator": "edge_traversed_at_least",
+            "edge": "coding_inspect->coding_inspect_tools",
+            "when": "6",
+            "goto": "coding_patch"
+          },
+          {
+            "operator": "equals",
+            "when": "tool_call",
+            "goto": "coding_inspect_tools"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_patch"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_inspect_tools",
+      "description": "Execute read-only inspection tool calls.",
+      "handler": "execute_tool_calls",
+      "input_var": "coding_inspect",
+      "execute_config": {
+        "tools": [
+          "local_fs"
+        ],
+        "hide_tools": [
+          "local_fs.write_file",
+          "local_fs.sed"
+        ],
+        "tools_policies": {
+          "local_fs": {
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+          }
+        }
+      },
+      "transition": {
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_inspect"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_patch",
+      "description": "Patch the requested coding change using the inspection evidence and guarded tool scopes.",
+      "handler": "chat_completion",
+      "input_var": "coding_inspect",
+      "system_instruction": "You are in PATCH phase. Use the inspection evidence above and implement the requested change directly. Stay within discovered repo conventions. Read before writing existing files. Do not destructively move, delete, or overwrite user content unless the user explicitly requested it. Keep changes small and auditable.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "think": "{{var:think}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [
+          "local_fs",
+          "local_shell"
+        ],
+        "tools_policies": {
+          "local_fs": {
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+          },
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,npx,pnpm,yarn,bun,make,cargo,pytest",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred,rm,mv"
+          }
+        },
+        "max_tokens": 16384,
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
+        }
+      },
+      "transition": {
+        "on_failure": "coding_blocked",
+        "branches": [
+          {
+            "operator": "edge_traversed_at_least",
+            "edge": "coding_patch->coding_patch_tools",
+            "when": "10",
+            "goto": "coding_blocked"
+          },
+          {
+            "operator": "equals",
+            "when": "tool_call",
+            "goto": "coding_patch_tools"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_verify"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_patch_tools",
+      "description": "Execute patch-phase tool calls.",
+      "handler": "execute_tool_calls",
+      "input_var": "coding_patch",
+      "execute_config": {
+        "tools": [
+          "local_fs",
+          "local_shell"
+        ],
+        "tools_policies": {
+          "local_fs": {
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+          },
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,npx,pnpm,yarn,bun,make,cargo,pytest",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred,rm,mv"
+          }
+        }
+      },
+      "transition": {
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_patch"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_verify",
+      "description": "Run build/test/render-oriented verification without file mutation.",
+      "handler": "chat_completion",
+      "input_var": "coding_patch",
+      "system_instruction": "You are in VERIFY phase. Run the most relevant build, test, lint, typecheck, or dev/render checks available from the repo evidence. Inspect rendered output or screenshots when an available tool makes that possible; otherwise state that rendered inspection was unavailable. Do not edit files in this phase. If a check fails, capture the exact error and stop tool use so audit can decide whether to revise or block.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "think": "{{var:think}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [
+          "local_fs",
+          "local_shell"
+        ],
+        "hide_tools": [
+          "local_fs.write_file",
+          "local_fs.sed"
+        ],
+        "tools_policies": {
+          "local_fs": {
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+          },
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,npx,pnpm,yarn,bun,make,cargo,pytest",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred,rm,mv"
+          }
+        },
+        "max_tokens": 16384,
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
+        }
+      },
+      "transition": {
+        "on_failure": "coding_blocked",
+        "branches": [
+          {
+            "operator": "edge_traversed_at_least",
+            "edge": "coding_verify->coding_verify_tools",
+            "when": "6",
+            "goto": "coding_audit"
+          },
+          {
+            "operator": "equals",
+            "when": "tool_call",
+            "goto": "coding_verify_tools"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_audit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_verify_tools",
+      "description": "Execute verification tool calls with file writes hidden.",
+      "handler": "execute_tool_calls",
+      "input_var": "coding_verify",
+      "execute_config": {
+        "tools": [
+          "local_fs",
+          "local_shell"
+        ],
+        "hide_tools": [
+          "local_fs.write_file",
+          "local_fs.sed"
+        ],
+        "tools_policies": {
+          "local_fs": {
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+          },
+          "local_shell": {
+            "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,npx,pnpm,yarn,bun,make,cargo,pytest",
+            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred,rm,mv"
+          }
+        }
+      },
+      "transition": {
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_verify"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_audit",
+      "description": "Audit the patch against the original request and verification evidence.",
+      "handler": "chat_completion",
+      "input_var": "coding_verify",
+      "system_instruction": "You are in AUDIT phase. Compare the implemented result against the original user requirement and the evidence in this turn. Check for placeholder content, missing styling/routes, overwritten user content, unfounded claims, failed commands, and unavailable rendered inspection. You may read files if necessary. Do not write files. Produce an audit result that clearly says PASS, REVISE, or BLOCKED and why.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "think": "{{var:think}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [
+          "local_fs"
+        ],
+        "hide_tools": [
+          "local_fs.write_file",
+          "local_fs.sed"
+        ],
+        "tools_policies": {
+          "local_fs": {
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+          }
+        },
+        "max_tokens": 16384,
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
+        }
+      },
+      "transition": {
+        "on_failure": "coding_blocked",
+        "branches": [
+          {
+            "operator": "edge_traversed_at_least",
+            "edge": "coding_audit->coding_audit_tools",
+            "when": "4",
+            "goto": "coding_audit_route"
+          },
+          {
+            "operator": "equals",
+            "when": "tool_call",
+            "goto": "coding_audit_tools"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_audit_route"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_audit_tools",
+      "description": "Execute read-only audit tool calls.",
+      "handler": "execute_tool_calls",
+      "input_var": "coding_audit",
+      "execute_config": {
+        "tools": [
+          "local_fs"
+        ],
+        "hide_tools": [
+          "local_fs.write_file",
+          "local_fs.sed"
+        ],
+        "tools_policies": {
+          "local_fs": {
+            "_max_read_bytes": "1048576",
+            "_max_output_bytes": "524288",
+            "_max_list_depth": "6",
+            "_max_grep_matches": "5000",
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+          }
+        }
+      },
+      "transition": {
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_audit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_audit_route",
+      "description": "Route audit result to final answer, one revision loop, or blocked summary.",
+      "handler": "route",
+      "input_var": "previous_output",
+      "system_instruction": "Classify the audit result. Use 'pass' if the audit says the requirement is satisfied and verification evidence is acceptable. Use 'revise' if the audit identifies concrete fixable gaps. Use 'blocked' if the audit says verification was impossible, the same error class repeated, user input is needed, or continuing would risk destructive/speculative changes.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "tools": [],
+        "retry_policy": {
+          "max_attempts": 3,
+          "initial_backoff": "1s",
+          "max_backoff": "10s",
+          "jitter": 0.25
+        }
+      },
+      "transition": {
+        "on_failure": "coding_blocked",
+        "branches": [
+          {
+            "operator": "edge_traversed_at_least",
+            "edge": "coding_audit_route->coding_patch",
+            "when": "2",
+            "goto": "coding_blocked"
+          },
+          {
+            "operator": "equals",
+            "when": "pass",
+            "goto": "coding_final"
+          },
+          {
+            "operator": "equals",
+            "when": "revise",
+            "goto": "coding_patch"
+          },
+          {
+            "operator": "equals",
+            "when": "blocked",
+            "goto": "coding_blocked"
+          },
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "coding_blocked"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_final",
+      "description": "Summarize the completed coding task with evidence and verification status.",
+      "handler": "chat_completion",
+      "input_var": "coding_audit",
+      "system_instruction": "Give the user the final coding-work summary. State what changed, which files were touched if known, what verification ran, and any residual risk. Do not claim rendered inspection if it was unavailable. Do not call tools.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "think": "{{var:think}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [],
+        "max_tokens": 16384,
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
+        }
+      },
+      "transition": {
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    },
+    {
+      "id": "coding_blocked",
+      "description": "Stop the staged coding workflow when rails detect repeated or unsafe failure.",
+      "handler": "chat_completion",
+      "input_var": "previous_output",
+      "system_instruction": "The staged coding workflow is blocked. Do not call tools. Give one concise answer that states what was attempted, what evidence or command output caused the stop, what remains unfinished, and exactly what user input or tool capability would unblock the work. Do not claim completion.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "think": "{{var:think}}",
+        "shift": true,
+        "pass_clients_tools": false,
+        "tools": [],
+        "max_tokens": 16384,
+        "retry_policy": {
+          "max_attempts": 4,
+          "initial_backoff": "1s",
+          "max_backoff": "30s",
+          "jitter": 0.25,
+          "rate_limit_min_wait": "10s"
+        }
+      },
+      "transition": {
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    },
+    {
       "id": "acp_chat",
-      "description": "Tool-using workflow loop — model may call editor-provided tools (transition tool_call) or finish the turn (transition default → end).",
+      "description": "General tool-using workflow loop — model may call editor-provided tools (transition tool_call) or finish the turn (transition default → end).",
       "handler": "chat_completion",
       "system_instruction": "You are Contenox, a task-execution engine — not a chat-only product, a bit cheeky used inside the user's editor.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
       "execute_config": {
@@ -13,7 +543,9 @@
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
-        "tools": ["*"],
+        "tools": [
+          "*"
+        ],
         "max_tokens": 16384,
         "retry_policy": {
           "max_attempts": 4,
@@ -47,7 +579,7 @@
     },
     {
       "id": "run_tools",
-      "description": "Execute tool calls from the last message and append results to chat history.",
+      "description": "Execute tool calls from the last general-loop message and append results to chat history.",
       "handler": "execute_tool_calls",
       "input_var": "acp_chat",
       "transition": {
@@ -63,7 +595,7 @@
     },
     {
       "id": "recovery_chat",
-      "description": "Recovery workflow loop — picks up the full chat history from the main loop with a fresh system instruction noting the prior workflow got stuck. Has its own tool access and 10-round budget.",
+      "description": "Recovery workflow loop for the general ACP path.",
       "handler": "chat_completion",
       "input_var": "acp_chat",
       "system_instruction": "You are Contenox, a coding assistant running inside the user's editor.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used {{edge_count:acp_chat->run_tools}} of 10 main and {{edge_count:recovery_chat->recovery_tools}} of 10 recovery tool_call rounds this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
@@ -73,7 +605,9 @@
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
-        "tools": ["*"],
+        "tools": [
+          "*"
+        ],
         "max_tokens": 16384,
         "retry_policy": {
           "max_attempts": 4,
@@ -123,13 +657,14 @@
     },
     {
       "id": "verify",
-      "description": "Grounding gate. After the workflow gives a final answer (acp_chat or recovery_chat), route-classify whether the answer contradicts its own shown evidence or reports success over a failed tool. 'pass' -> end; 'revise' -> one correction pass. Fail-open (default -> end). Note: adds one route call per answered turn; can be pointed at a faster model.",
+      "description": "Grounding gate for the general ACP path.",
       "handler": "route",
       "input_var": "previous_output",
       "system_instruction": "You are a grounding verifier for an AI coding assistant working in the user's editor. You are given the assistant's final answer to the user. Your ONLY job is to catch answers that contradict their own shown evidence or report success over a failed tool.\n\nRespond 'revise' ONLY if one of these is clearly true:\n1. The answer shows or lists specific evidence (file lines, command output) and its stated conclusion directly contradicts that evidence — for example, it shows two things that clearly differ but concludes they match or are 'consistent', or shows an item is absent but concludes it is present.\n2. The answer claims a concrete success or result while ALSO showing a tool error, empty output, or 'I could not read/access' for the very thing it reports on.\n\nOtherwise respond 'pass'. Strongly default to 'pass' — including when the answer makes no factual claims, only asks a clarifying question, or shows no evidence either way. Do NOT flag an answer merely because it could have shown more evidence or you cannot independently confirm it. A correct, coherent answer MUST pass.",
       "execute_config": {
         "model": "{{var:model}}",
         "provider": "{{var:provider}}",
+        "tools": [],
         "retry_policy": {
           "max_attempts": 3,
           "initial_backoff": "1s",
@@ -160,7 +695,7 @@
     },
     {
       "id": "revise",
-      "description": "Single correction pass. Reached only when the grounding gate flagged the previous answer. Re-reads evidence and produces one corrected, evidence-quoting answer, then ends.",
+      "description": "Single correction pass for the general ACP grounding gate.",
       "handler": "chat_completion",
       "input_var": "previous_output",
       "system_instruction": "A grounding check flagged your previous answer: its conclusion may contradict the evidence shown in this conversation, or it reported a result where a tool actually failed. Re-examine the tool outputs above (re-read files if needed), then give ONE corrected final answer to the user. Quote the exact lines that support each claim. If a claim cannot be supported by the evidence, say so plainly instead of asserting it. Do not mention this check.",
@@ -170,7 +705,9 @@
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
-        "tools": ["*"],
+        "tools": [
+          "*"
+        ],
         "max_tokens": 16384,
         "retry_policy": {
           "max_attempts": 4,
@@ -193,7 +730,7 @@
     },
     {
       "id": "summarise_failure",
-      "description": "Final safety net. Reached when both the main and recovery workflow loops exceeded their budgets. No tools — tells the user what was tried and what would unblock the work.",
+      "description": "Final safety net for the general ACP path.",
       "handler": "chat_completion",
       "system_instruction": "You are Contenox, a coding assistant running inside the user's editor.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.\n\nGround this strictly in the actual chat history above — describe only steps that were really taken and results that actually occurred; do not invent attempts, tools, or causes.",
       "input_var": "recovery_chat",

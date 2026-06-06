@@ -212,7 +212,9 @@ type LLMExecutionConfig struct {
 	// handlers use 0.0 (route depends on deterministic single-label output).
 	Temperature *float32 `yaml:"temperature,omitempty" json:"temperature,omitempty" example:"0.7"`
 	// Tools is the allowlist of registry tool names this task may invoke. (Client-
-	// passed tools are governed separately by PassClientsTools.)
+	// passed tools are governed separately by PassClientsTools.) For
+	// execute_tool_calls tasks, an explicitly present tools field is also enforced
+	// at execution time; omit it to preserve legacy chain-wide tool resolution.
 	//
 	// Patterns supported:
 	//   - absent/null/[] — NO registry tools exposed. Note: omitempty collapses
