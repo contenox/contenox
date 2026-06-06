@@ -1,0 +1,104 @@
+name: Start a Conversation
+description: Share a bug, idea, question, rough edge, or contribution path.
+title: ""
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reaching out. This issue tracker is where the Contenox community and maintainers coordinate work.
+
+        You do not need a perfect report. Share what you know, what you tried, or what you want to build. Maintainers can help shape it from there.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: What kind of conversation is this?
+      description: Pick the closest fit. It is fine if it changes later.
+      options:
+        - I found a bug
+        - I have an idea
+        - I am stuck or have a question
+        - I want to improve docs
+        - I want to contribute
+        - I noticed a rough edge
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What is on your mind?
+      description: A few sentences are enough.
+      placeholder: Tell us what happened, what you expected, what you want to see, or what you are trying to do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Why does it matter?
+      description: Optional, but useful for understanding the people, workflow, or project behind the issue.
+      placeholder: Who is affected? What were you trying to accomplish? What would this unlock?
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Anything we can look at?
+      description: Logs, commands, screenshots, links, examples, sketches, failing tests, or "I do not know yet" are all acceptable.
+      placeholder: |
+        Command:
+        Output:
+        Link:
+        Screenshot:
+        Notes:
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Any direction you like?
+      description: Optional. Share a fix, design idea, tradeoff, or just the shape of a good outcome.
+      placeholder: I think this could work by... / A good version would feel like... / I am not sure yet.
+    validations:
+      required: false
+
+  - type: textarea
+    id: help
+    attributes:
+      label: How would you like to be involved?
+      description: Optional. This helps maintainers know whether to guide, discuss, or pick it up.
+      placeholder: |
+        - I can test a fix
+        - I can open a PR with guidance
+        - I only wanted to report it
+        - I can help with docs or examples
+    validations:
+      required: false
+
+  - type: dropdown
+    id: impact
+    attributes:
+      label: How urgent does this feel?
+      description: This is a signal, not a promise about priority.
+      options:
+        - Just a note
+        - Nice to have
+        - Important to my workflow
+        - Blocking me
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues or discussions when it was practical.
+          required: false
+        - label: I am open to follow-up questions from maintainers or contributors.
+          required: false
