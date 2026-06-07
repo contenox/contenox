@@ -1,4 +1,5 @@
-# Cheap CI: compile smoke + TestUnit_* only (-short). No TestSystem_* / Docker / LLM integration tests.
+# CI: Beam build/test/embed smoke, contenox compile smoke, and cheap TestUnit_* Go tests.
+# No TestSystem_* / Docker / LLM integration tests.
 name: CI
 
 on:
@@ -21,6 +22,14 @@ jobs:
         with:
           go-version: "1.25"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            packages/ui/package-lock.json
+            packages/beam/package-lock.json
+
       - name: Install CGo dependencies
         run: |
           sudo apt-get update -qq
@@ -37,6 +46,9 @@ jobs:
                -o "$MTMD/miniaudio/miniaudio.h"
           curl -fsSL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h \
                -o "$MTMD/stb/stb_image.h"
+
+      - name: Build, test, and verify Beam UI
+        run: make build-ui test-ui verify-ui-embed
 
       - name: Build contenox (compile smoke)
         run: make build-contenox

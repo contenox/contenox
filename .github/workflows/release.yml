@@ -35,8 +35,38 @@ jobs:
           fi
           echo "✓ Version verification passed: $VERSION_IN_FILE matches tag"
 
-  build:
+  web:
     needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            packages/ui/package-lock.json
+            packages/beam/package-lock.json
+
+      - name: Build, test, and verify Beam UI
+        run: make build-ui test-ui verify-ui-embed
+
+      - name: Upload Beam dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: beam-dist
+          path: runtime/internal/web/beam/dist
+
+  build:
+    needs: [verify, web]
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +94,12 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Download Beam dist
+        uses: actions/download-artifact@v4
+        with:
+          name: beam-dist
+          path: runtime/internal/web/beam/dist
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -139,6 +175,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: contenox-*
           merge-multiple: true
 
       - name: Create GitHub Release and upload assets

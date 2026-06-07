@@ -91,6 +91,9 @@ runtime/internal/web/beam/dist/*
 # Storybook build output
 packages/ui/storybook-static/
 
+# UI package build output
+packages/ui/dist/
+
 # Local AI context control
 .cursorignore
 .cursorindexingignore
