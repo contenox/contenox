@@ -45,6 +45,21 @@ func (d *activityTrackerDecorator) SetupStatus(ctx context.Context) (setupcheck.
 	return res, err
 }
 
+func (d *activityTrackerDecorator) Refresh(ctx context.Context) (setupcheck.Result, error) {
+	reportErrFn, _, endFn := d.tracker.Start(
+		ctx,
+		"sync",
+		"setup_status",
+	)
+	defer endFn()
+
+	res, err := d.service.Refresh(ctx)
+	if err != nil {
+		reportErrFn(err)
+	}
+	return res, err
+}
+
 func (d *activityTrackerDecorator) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLIConfigSnapshot, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,

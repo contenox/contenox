@@ -51,26 +51,30 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 		}
 	}()
 
-	engine := &Engine{Stop: func() {
-		engineCancel()
-		closeBus()
-	}, Bus: bus}
-
-	stateOpts := []runtimestate.Option{
-		runtimestate.WithAutoDiscoverModels(),
-	}
-	if cfg.NoDeleteModels {
-		stateOpts = append(stateOpts, runtimestate.WithSkipDeleteUndeclaredModels())
-	}
 	kvMgr := cfg.KVStore
 	if kvMgr == nil {
 		kvMgr = libkvstore.NewSQLiteManager(db)
 	}
-	stateOpts = append(stateOpts, runtimestate.WithKVStore(kvMgr), runtimestate.WithAutoDiscoverModels())
-	state, err := runtimestate.New(engineCtx, db, bus, stateOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create runtime state: %w", err)
+
+	state := cfg.State
+	if state == nil {
+		stateOpts := []runtimestate.Option{
+			runtimestate.WithKVStore(kvMgr),
+			runtimestate.WithAutoDiscoverModels(),
+		}
+		if cfg.NoDeleteModels {
+			stateOpts = append(stateOpts, runtimestate.WithSkipDeleteUndeclaredModels())
+		}
+		var err error
+		state, err = runtimestate.New(engineCtx, db, bus, stateOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create runtime state: %w", err)
+		}
 	}
+	engine := &Engine{Stop: func() {
+		engineCancel()
+		closeBus()
+	}, Bus: bus, State: state}
 
 	tenantID := cfg.TenantID
 	if tenantID == "" {

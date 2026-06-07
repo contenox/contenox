@@ -28,17 +28,19 @@ DEV_CONTENOX_BIN := $(HOME)/.local/bin/contenox
 .PHONY: help \
 	build-contenox \
 	clean \
-	deps-go-watch \
+	deps-go-watch deps-ui \
 	dev-install dev-link dev-unlink \
 	dev-go-watch \
-	test test-unit test-system test-contenox-verbose test-contenox-help
+	test test-unit test-system test-api test-contenox-verbose test-contenox-help test-ui \
+	build-ui verify-ui-embed
 
 # -----------------------------------------------------------------------------
 help:
-	@echo "build-*    build-contenox"
-	@echo "test-*     test test-unit test-system test-contenox-verbose test-contenox-help"
+	@echo "build-*    build-contenox build-ui"
+	@echo "test-*     test test-unit test-system test-api test-contenox-verbose test-contenox-help test-ui"
 	@echo "dev-*      dev-install dev-link dev-unlink dev-go-watch"
-	@echo "deps-*     deps-go-watch"
+	@echo "deps-*     deps-go-watch deps-ui"
+	@echo "verify-*   verify-ui-embed"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
 
@@ -46,6 +48,10 @@ help:
 # Contenox binary: CLI entrypoint (cmd/contenox).
 build-contenox:
 	CGO_ENABLED=1 go build -o $(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/cmd/contenox
+
+build-ui: deps-ui
+	cd $(PROJECT_ROOT)/packages/ui && npm run build
+	cd $(PROJECT_ROOT)/packages/beam && npm run build
 
 # —— test ————————————————————————————————————————————————————————————————
 test:
@@ -57,12 +63,22 @@ test-unit:
 test-system:
 	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -run '^TestSystem_' ./...
 
+test-api: build-contenox
+	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/run_apitests.sh $(PYTEST_ARGS)
+
 test-contenox-verbose:
 	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -v ./runtime/contenoxcli/...
 
 test-contenox-help: build-contenox
 	@chmod +x $(PROJECT_ROOT)/scripts/verify_cli_help.sh
 	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/verify_cli_help.sh
+
+test-ui: deps-ui
+	cd $(PROJECT_ROOT)/packages/beam && npm test
+
+verify-ui-embed:
+	@test -f "$(PROJECT_ROOT)/runtime/internal/web/beam/dist/index.html" || { echo "missing Beam dist; run: make build-ui"; exit 1; }
+	go test -C $(PROJECT_ROOT) ./runtime/internal/web
 
 # —— dev —————————————————————————————————————————————————————————————————
 dev-install: build-contenox dev-link
@@ -83,6 +99,10 @@ dev-go-watch:
 # —— deps ———————————————————————————————————————————————————————————————
 deps-go-watch:
 	go install github.com/air-verse/air@latest
+
+deps-ui:
+	cd $(PROJECT_ROOT)/packages/ui && npm ci
+	cd $(PROJECT_ROOT)/packages/beam && npm ci
 
 # —— clean ———————————————————————————————————————————————————————————————
 clean:

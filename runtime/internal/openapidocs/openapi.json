@@ -1,0 +1,39 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Contenox Runtime API",
+    "version": "phase-7"
+  },
+  "paths": {
+    "/health": {},
+    "/version": {},
+    "/state": {},
+    "/models": {},
+    "/model-registry": {},
+    "/tools/local": {},
+    "/mcp-servers": {},
+    "/setup-status": {},
+    "/providers/configs": {},
+    "/providers/{providerType}/configure": {},
+    "/providers/{providerType}/status": {},
+    "/providers/{providerType}/config": {},
+    "/files": {},
+    "/files/stat": {},
+    "/files/content": {},
+    "/files/download": {},
+    "/files/move": {},
+    "/folders": {},
+    "/taskchains/list": {},
+    "/taskchains": {},
+    "/hitl-policies/list": {},
+    "/hitl-policies": {},
+    "/chats": {},
+    "/chats/{id}": {},
+    "/chats/{id}/chat": {},
+    "/approvals/{approvalId}": {},
+    "/task-events": {},
+    "/terminal/sessions": {},
+    "/terminal/sessions/{id}": {},
+    "/terminal/sessions/{id}/ws": {}
+  }
+}

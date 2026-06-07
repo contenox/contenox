@@ -11,6 +11,7 @@ import (
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/mcpworker"
+	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
@@ -31,8 +32,12 @@ type Config struct {
 	HITLService           hitlservice.Service
 	HITLDefaultPolicyName string
 
-	Bus             libbus.Messenger
-	KVStore         libkvstore.KVManager
+	Bus     libbus.Messenger
+	KVStore libkvstore.KVManager
+	// State is the runtime backend/model snapshot to use. When nil, Build
+	// creates one. Supplying it lets HTTP routes and the engine share exactly
+	// one observed runtime state.
+	State           *runtimestate.State
 	Tracker         libtracker.ActivityTracker
 	ExtraInspectors []func(taskengine.Inspector) taskengine.Inspector
 	TaskEventSink   taskengine.TaskEventSink
@@ -55,6 +60,7 @@ type Engine struct {
 	TaskService   execservice.TasksEnvService
 	Tracker       libtracker.ActivityTracker
 	Bus           libbus.Messenger
+	State         *runtimestate.State
 	MCPManager    *mcpworker.Manager
 	LocalTools    []string
 	SetupCheck    setupcheck.Result

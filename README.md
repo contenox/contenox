@@ -42,6 +42,20 @@ That's it. No API key, no external server, no `backend add` ceremony — `init` 
 
 ---
 
+## Local UI
+
+Start the local HTTP server and Beam UI:
+
+```bash
+contenox serve
+```
+
+By default it listens on `127.0.0.1:32123` and serves the UI at the printed URL.
+Use `PORT=32125 contenox serve` or `ADDR=127.0.0.1 PORT=32125 contenox serve`
+to override the bind address.
+
+---
+
 ## What you author
 
 The workflow behavior is a chain file. Every decision is a JSON key:

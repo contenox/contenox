@@ -23,13 +23,13 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 
 ### Abstraction layers
 
-**Service Layer** — each domain gets its own interface + implementation package (`execservice`, `backendservice`, `mcpserverservice`, `stateservice`, `hitlservice`, `terminalservice`, `vfsservice`, etc.). Services don't call each other directly; they communicate through the shared `runtimetypes.Store` interface and bus events.
+**Service Layer** — each domain gets its own interface + implementation package (`execservice`, `backendservice`, `mcpserverservice`, `stateservice`, `hitlservice`, `terminalservice`, `localfileservice`, etc.). Services don't call each other directly; they communicate through the shared `runtimetypes.Store` interface and bus events.
 
 **Task Engine** (`runtime/taskengine/`) — the core execution model. Chains are JSON DAGs with typed I/O (`DataType`: String, Int, JSON, ChatHistory). Task handlers (`chat_completion`, `execute_tool_calls`, `tools`, `route`, `raise_error`, `noop`) are an enum. Branch conditions (`equals`, `contains`, `starts_with`, `ends_with`, `default`, `edge_traversed_at_least`) are declarative — no Go code lives inside chain definitions.
 
 **LLM Resolution** — two-level indirection: `llmrepo.ModelRepo` handles request-side selection (pick by capability or context length); `modelrepo.Provider` handles provider-side calls (Ollama, OpenAI, Gemini, Vertex, vLLM, local llama.cpp). `runtimestate` reconciles live backend capabilities every 10 s.
 
-**Hook System** — chains invoke hooks by name; resolution happens at runtime. Hook types: `local_shell`, `filesystem`, `http`, `ssh`, `mcp`, `hitl`, `print`. MCP hooks route via a stdio session pool. Adding a new integration does not require touching the engine.
+**Hook System** — chains invoke tools by name; resolution happens at runtime. Tool providers include `local_shell`, `local_fs`, `webtools`, `mcp`, HITL approval, and `print`. MCP tools route via managed worker sessions. Adding a new integration does not require touching the engine.
 
 **Event-driven async** — `libbus` abstracts an in-memory SQLite-backed bus. Services publish typed events (e.g. `task.events.step_completed`) that other services subscribe to. Coupling between services is through events, not direct calls.
 
@@ -45,7 +45,7 @@ Data + Integrations (lib*/ + runtime/runtimetypes/)
 
 ## Repository structure
 
-The **`contenox`** binary is the main (only) entrypoint: `setup`, `init`, `chat`, `run`, `tools`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`, `acp`.
+The **`contenox`** binary is the main entrypoint: `setup`, `init`, `chat`, `run`, `serve`, `tools`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`, `acp`, and `acpx`.
 
 All AI/LLM orchestration packages live under **`runtime/`**. Infrastructure libraries (`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libroutine`, `libtracker`) stay at the module root.
 
@@ -66,9 +66,9 @@ The root **`Makefile`** groups targets by prefix:
 | Prefix | Purpose |
 |--------|---------|
 | **`build-*`** | `build-contenox` |
-| **`test-*`** | Go tests, CLI help check |
+| **`test-*`** | Go, API smoke, UI, and CLI help checks |
 | **`dev-*`** | `dev-install` / `dev-link` / `dev-unlink`, `dev-go-watch` (Air live reload) |
-| **`deps-*`** | `deps-go-watch` (Air) |
+| **`deps-*`** | `deps-go-watch` (Air), `deps-ui` |
 | **`clean`** | Remove `bin/` |
 
 Run **`make help`** at the repo root for the full list (default goal).
@@ -155,7 +155,7 @@ make test-unit
 **Full Go suite:** includes `TestSystem_*` integration tests (Docker, Ollama, vLLM containers, etc.) — slower and needs those tools:
 
 ```bash
-make test              # GOMAXPROCS=4 go test ./...
+make test              # GOMAXPROCS=1 go test ./...
 make test-system       # only TestSystem_*
 ```
 
@@ -164,6 +164,18 @@ make test-system       # only TestSystem_*
 ```bash
 make test-contenox-verbose
 ```
+
+**Local HTTP API smoke tests:** builds `bin/contenox`, starts `contenox serve`
+with a temporary HOME/workspace/DB, runs pytest against the local API, then
+shuts the server down:
+
+```bash
+make test-api
+make test-api PYTEST_ARGS="-k taskchain"
+```
+
+These tests avoid real providers and model downloads by default. The optional
+download smoke can be enabled with `APITEST_RUN_DOWNLOAD=1`.
 
 **CLI help drift check** (after changing Cobra commands or flags): build first, then:
 

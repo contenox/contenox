@@ -51,7 +51,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "setup": true, "cache": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "setup": true, "cache": true, "serve": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -337,6 +337,7 @@ func init() {
 	rootCmd.AddCommand(acpCmd)
 	rootCmd.AddCommand(acpxCmd)
 	rootCmd.AddCommand(setupCmd)
+	rootCmd.AddCommand(serveCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")

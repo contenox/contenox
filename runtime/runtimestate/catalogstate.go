@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/contenox/runtime/libkvstore"
@@ -95,6 +96,9 @@ func (s *State) loadProviderAPIKey(ctx context.Context, backendType string) (str
 	store := runtimetypes.New(s.dbInstance.WithoutTransaction())
 	if err := store.GetKV(ctx, key, &cfg); err != nil {
 		return "", err
+	}
+	if cfg.APIKey == "" && strings.TrimSpace(cfg.APIKeyEnv) != "" {
+		return os.Getenv(strings.TrimSpace(cfg.APIKeyEnv)), nil
 	}
 	return cfg.APIKey, nil
 }

@@ -355,3 +355,19 @@ make test-contenox-help
 ```
 
 This rebuilds the binary and smoke-tests `contenox <command> --help` for each primary subcommand. If you maintain a second copy of this reference elsewhere, keep behavior descriptions aligned when you change defaults or chain resolution.
+
+### Check the local HTTP API
+
+After changing `contenox serve` or any `/api/*` route, run:
+
+```bash
+make test-api
+```
+
+This builds the local binary, starts `contenox serve` with an isolated temporary
+HOME/workspace/DB, runs the recovered Python API smoke tests, and shuts the
+server down. Use `PYTEST_ARGS` to narrow the run, for example:
+
+```bash
+make test-api PYTEST_ARGS="-k mcp"
+```

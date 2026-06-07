@@ -18,19 +18,21 @@ type Service interface {
 	Get(ctx context.Context) ([]statetype.BackendRuntimeState, error)
 	// SetupStatus returns readiness from KV defaults, registered backends, and current runtime state.
 	SetupStatus(ctx context.Context) (setupcheck.Result, error)
+	// Refresh reconciles registered backends/models, then returns the updated setup status.
+	Refresh(ctx context.Context) (setupcheck.Result, error)
 	// SetCLIConfig updates CLI default keys (model, provider, chain, hitl-policy-name) in SQLite KV (same as contenox config set / PUT /cli-config).
-	// Empty fields in the patch are left unchanged. At least one field must be non-empty after trim.
+	// Nil fields in the patch are left unchanged. Empty string fields are written and can clear a resolved setting.
 	SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLIConfigSnapshot, error)
 }
 
-// CLIConfigPatch selects which CLI default keys to write; empty strings mean "do not change".
+// CLIConfigPatch selects which CLI default keys to write; nil means "do not change".
 type CLIConfigPatch struct {
-	DefaultModel       string
-	DefaultProvider    string
-	DefaultAltModel    string
-	DefaultAltProvider string
-	DefaultChain       string
-	HITLPolicyName     string
+	DefaultModel       *string
+	DefaultProvider    *string
+	DefaultAltModel    *string
+	DefaultAltProvider *string
+	DefaultChain       *string
+	HITLPolicyName     *string
 }
 
 // CLIConfigSnapshot is the resolved KV values after an update.
@@ -73,44 +75,52 @@ func (s *service) SetupStatus(ctx context.Context) (setupcheck.Result, error) {
 	return setupcheck.Evaluate(in), nil
 }
 
+// Refresh implements Service.
+func (s *service) Refresh(ctx context.Context) (setupcheck.Result, error) {
+	if err := s.state.RunBackendCycle(ctx); err != nil {
+		return setupcheck.Result{}, err
+	}
+	return s.SetupStatus(ctx)
+}
+
 // SetCLIConfig implements Service.
 func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLIConfigSnapshot, error) {
-	if strings.TrimSpace(patch.DefaultModel) == "" &&
-		strings.TrimSpace(patch.DefaultProvider) == "" &&
-		strings.TrimSpace(patch.DefaultAltModel) == "" &&
-		strings.TrimSpace(patch.DefaultAltProvider) == "" &&
-		strings.TrimSpace(patch.DefaultChain) == "" &&
-		strings.TrimSpace(patch.HITLPolicyName) == "" {
-		return CLIConfigSnapshot{}, fmt.Errorf("provide at least one of default-model, default-provider, default-alt-model, default-alt-provider, default-chain, or hitl-policy-name")
+	if patch.DefaultModel == nil &&
+		patch.DefaultProvider == nil &&
+		patch.DefaultAltModel == nil &&
+		patch.DefaultAltProvider == nil &&
+		patch.DefaultChain == nil &&
+		patch.HITLPolicyName == nil {
+		return CLIConfigSnapshot{}, fmt.Errorf("provide at least one CLI config key")
 	}
 	store := runtimetypes.New(s.db.WithoutTransaction())
-	if strings.TrimSpace(patch.DefaultModel) != "" {
-		if err := clikv.SetString(ctx, store, "default-model", patch.DefaultModel); err != nil {
+	if patch.DefaultModel != nil {
+		if err := clikv.SetString(ctx, store, "default-model", strings.TrimSpace(*patch.DefaultModel)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-model: %w", err)
 		}
 	}
-	if strings.TrimSpace(patch.DefaultProvider) != "" {
-		if err := clikv.SetString(ctx, store, "default-provider", patch.DefaultProvider); err != nil {
+	if patch.DefaultProvider != nil {
+		if err := clikv.SetString(ctx, store, "default-provider", strings.TrimSpace(*patch.DefaultProvider)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-provider: %w", err)
 		}
 	}
-	if strings.TrimSpace(patch.DefaultAltModel) != "" {
-		if err := clikv.SetString(ctx, store, "default-alt-model", patch.DefaultAltModel); err != nil {
+	if patch.DefaultAltModel != nil {
+		if err := clikv.SetString(ctx, store, "default-alt-model", strings.TrimSpace(*patch.DefaultAltModel)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-alt-model: %w", err)
 		}
 	}
-	if strings.TrimSpace(patch.DefaultAltProvider) != "" {
-		if err := clikv.SetString(ctx, store, "default-alt-provider", patch.DefaultAltProvider); err != nil {
+	if patch.DefaultAltProvider != nil {
+		if err := clikv.SetString(ctx, store, "default-alt-provider", strings.TrimSpace(*patch.DefaultAltProvider)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-alt-provider: %w", err)
 		}
 	}
-	if strings.TrimSpace(patch.DefaultChain) != "" {
-		if err := clikv.WriteConfig(ctx, store, s.workspaceID, "default-chain", patch.DefaultChain); err != nil {
+	if patch.DefaultChain != nil {
+		if err := clikv.WriteConfig(ctx, store, s.workspaceID, "default-chain", strings.TrimSpace(*patch.DefaultChain)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-chain: %w", err)
 		}
 	}
-	if strings.TrimSpace(patch.HITLPolicyName) != "" {
-		if err := clikv.WriteConfig(ctx, store, s.workspaceID, "hitl-policy-name", patch.HITLPolicyName); err != nil {
+	if patch.HITLPolicyName != nil {
+		if err := clikv.WriteConfig(ctx, store, s.workspaceID, "hitl-policy-name", strings.TrimSpace(*patch.HITLPolicyName)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set hitl-policy-name: %w", err)
 		}
 	}

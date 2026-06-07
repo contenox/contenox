@@ -15,6 +15,21 @@ func TestUnit_acpxIsReservedSubcommand(t *testing.T) {
 	}
 }
 
+func TestUnit_serveIsReservedSubcommand(t *testing.T) {
+	if !reservedSubcommands["serve"] {
+		t.Fatal(`"serve" must be reserved so it is dispatched as a subcommand, not injected as run input`)
+	}
+	if !firstNonFlagIsReserved([]string{"serve"}) {
+		t.Fatal(`expected "serve" to be recognized as a reserved subcommand`)
+	}
+}
+
+func TestUnit_promptInputIsNotReserved(t *testing.T) {
+	if firstNonFlagIsReserved([]string{"summarise", "README.md"}) {
+		t.Fatal("ordinary prompt input must remain eligible for default run injection")
+	}
+}
+
 func TestUnit_seedHeadlessACPChainIfMissing(t *testing.T) {
 	dir := t.TempDir()
 	dst := filepath.Join(dir, headlessACPChainFilename)
