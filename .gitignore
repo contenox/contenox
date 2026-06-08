@@ -73,6 +73,7 @@ Thumbs.db
 *.local
 tmp/
 temp/
+.build/
 node_modules/
 .air.serve.toml
 

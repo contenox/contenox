@@ -23,8 +23,12 @@
         "archive": "https://github.com/contenox/runtime/releases/download/v0.28.1/contenox-linux-amd64.tar.gz",
         "cmd": "./contenox",
         "args": ["acp"]
+      },
+      "windows-x86_64": {
+        "archive": "https://github.com/contenox/runtime/releases/download/v0.28.1/contenox-windows-amd64.zip",
+        "cmd": "./contenox.exe",
+        "args": ["acp"]
       }
     }
   }
 }
-

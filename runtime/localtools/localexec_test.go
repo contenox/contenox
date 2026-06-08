@@ -90,6 +90,47 @@ func TestUnit_LocalExecTools_GetToolsForToolsByName_OK(t *testing.T) {
 	assert.Contains(t, tools[0].Function.Description, "Run a terminal command")
 }
 
+func TestUnit_LocalExecTools_GetToolsForToolsByName_IncludesDetectedShell(t *testing.T) {
+	ctx := context.Background()
+	h := localtools.NewLocalExecTools(
+		localtools.WithLocalExecShell(localtools.NewPowerShellShell("pwsh.exe")),
+	).(*localtools.LocalExecTools)
+
+	tools, err := h.GetToolsForToolsByName(ctx, "local_shell")
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+
+	desc := tools[0].Function.Description
+	assert.Contains(t, desc, "PowerShell")
+	assert.Contains(t, desc, "pwsh.exe")
+	assert.Contains(t, desc, "$env:NAME")
+
+	params, ok := tools[0].Function.Parameters.(map[string]interface{})
+	require.True(t, ok)
+	props, ok := params["properties"].(map[string]interface{})
+	require.True(t, ok)
+	shellProp, ok := props["shell"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Contains(t, shellProp["description"], "PowerShell")
+}
+
+func TestUnit_LocalExecTools_GetSchemasForSupportedTools_IncludesDetectedShell(t *testing.T) {
+	ctx := context.Background()
+	h := localtools.NewLocalExecTools(
+		localtools.WithLocalExecShell(localtools.NewCmdShell("cmd.exe")),
+	).(*localtools.LocalExecTools)
+
+	schemas, err := h.GetSchemasForSupportedTools(ctx)
+	require.NoError(t, err)
+
+	schema := schemas["local_shell"]
+	require.NotNil(t, schema)
+	assert.Contains(t, schema.Info.Description, "cmd.exe")
+	shellProp := schema.Components.Schemas["LocalExecRequest"].Value.Properties["shell"].Value
+	require.NotNil(t, shellProp)
+	assert.Contains(t, shellProp.Description, "%NAME%")
+}
+
 func TestUnit_LocalExecTools_GetToolsForToolsByName_Unknown(t *testing.T) {
 	ctx := context.Background()
 	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)

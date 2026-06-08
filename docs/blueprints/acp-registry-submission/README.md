@@ -23,5 +23,6 @@ Current local checks:
 
 - `v0.28.1` release asset URLs returned `200` on 2026-06-06.
 - `contenox-linux-amd64.tar.gz` contains a single executable named `contenox`.
+- Windows releases should publish `contenox-windows-amd64.zip` containing
+  `contenox.exe`; the registry `cmd` must be `./contenox.exe`.
 - `icon.svg` is 16x16, square, and uses `fill="currentColor"`.
-

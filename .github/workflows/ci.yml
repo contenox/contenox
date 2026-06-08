@@ -36,22 +36,20 @@ jobs:
           sudo apt-get install -y gcc g++ nlohmann-json3-dev
 
       - name: Fetch missing llama.cpp headers
-        run: |
-          OLLAMA_MOD="$(go env GOPATH)/pkg/mod/github.com/ollama/ollama@v0.17.5"
-          go mod download github.com/ollama/ollama@v0.17.5
-          chmod -R u+w "$OLLAMA_MOD/llama"
-          MTMD="$OLLAMA_MOD/llama/llama.cpp/tools/mtmd"
-          mkdir -p "$MTMD/miniaudio" "$MTMD/stb"
-          curl -fsSL https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h \
-               -o "$MTMD/miniaudio/miniaudio.h"
-          curl -fsSL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h \
-               -o "$MTMD/stb/stb_image.h"
+        run: scripts/prepare_ollama_llama_headers.sh
 
       - name: Build, test, and verify Beam UI
         run: make build-ui test-ui verify-ui-embed
 
       - name: Build contenox (compile smoke)
         run: make build-contenox
+
+      - name: Install Windows cross-build dependencies
+        run: |
+          sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
+
+      - name: Build contenox for Windows (compile smoke)
+        run: make build-contenox-windows
 
       - name: CLI help smoke
         run: make test-contenox-help

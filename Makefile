@@ -24,9 +24,14 @@ export OLLAMA_HOST
 
 AIR ?= $(shell command -v air 2>/dev/null || echo "$(shell go env GOPATH)/bin/air")
 DEV_CONTENOX_BIN := $(HOME)/.local/bin/contenox
+WINDOWS_CC ?= $(shell command -v x86_64-w64-mingw32-gcc-posix 2>/dev/null || command -v x86_64-w64-mingw32-gcc 2>/dev/null || echo x86_64-w64-mingw32-gcc)
+WINDOWS_CXX ?= $(shell command -v x86_64-w64-mingw32-g++-posix 2>/dev/null || command -v x86_64-w64-mingw32-g++ 2>/dev/null || echo x86_64-w64-mingw32-g++)
+WINDOWS_NLOHMANN_INCLUDE ?= $(PROJECT_ROOT)/.build/windows/include
+WINDOWS_CGO_CFLAGS ?=
+WINDOWS_CGO_CXXFLAGS ?= -I$(WINDOWS_NLOHMANN_INCLUDE)
 
 .PHONY: help \
-	build-contenox \
+	build-contenox build-contenox-windows deps-ollama-headers \
 	clean \
 	deps-go-watch deps-ui \
 	dev-install dev-link dev-unlink \
@@ -36,10 +41,10 @@ DEV_CONTENOX_BIN := $(HOME)/.local/bin/contenox
 
 # -----------------------------------------------------------------------------
 help:
-	@echo "build-*    build-contenox build-ui"
+	@echo "build-*    build-contenox build-contenox-windows build-ui"
 	@echo "test-*     test test-unit test-system test-api test-contenox-verbose test-contenox-help test-ui"
 	@echo "dev-*      dev-install dev-link dev-unlink dev-go-watch"
-	@echo "deps-*     deps-go-watch deps-ui"
+	@echo "deps-*     deps-go-watch deps-ollama-headers deps-ui"
 	@echo "verify-*   verify-ui-embed"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
@@ -48,6 +53,13 @@ help:
 # Contenox binary: CLI entrypoint (cmd/contenox).
 build-contenox:
 	CGO_ENABLED=1 go build -o $(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/cmd/contenox
+
+build-contenox-windows:
+	@command -v "$(WINDOWS_CC)" >/dev/null 2>&1 || { echo "missing Windows C compiler: $(WINDOWS_CC). Install a MinGW-w64 x86_64 POSIX toolchain, e.g. gcc-mingw-w64-x86-64-posix and g++-mingw-w64-x86-64-posix."; exit 1; }
+	@command -v "$(WINDOWS_CXX)" >/dev/null 2>&1 || { echo "missing Windows C++ compiler: $(WINDOWS_CXX). Install a MinGW-w64 x86_64 POSIX toolchain, e.g. gcc-mingw-w64-x86-64-posix and g++-mingw-w64-x86-64-posix."; exit 1; }
+	@$(PROJECT_ROOT)/scripts/prepare_ollama_llama_headers.sh
+	@WINDOWS_CROSS_INCLUDE="$(WINDOWS_NLOHMANN_INCLUDE)" $(PROJECT_ROOT)/scripts/prepare_windows_cross_includes.sh >/dev/null
+	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC="$(WINDOWS_CC)" CXX="$(WINDOWS_CXX)" CGO_CFLAGS="$(WINDOWS_CGO_CFLAGS)" CGO_CXXFLAGS="$(WINDOWS_CGO_CXXFLAGS)" go build -o $(PROJECT_ROOT)/bin/contenox-windows-amd64.exe $(PROJECT_ROOT)/cmd/contenox
 
 build-ui: deps-ui
 	cd $(PROJECT_ROOT)/packages/ui && npm run build
@@ -99,6 +111,9 @@ dev-go-watch:
 # —— deps ———————————————————————————————————————————————————————————————
 deps-go-watch:
 	go install github.com/air-verse/air@latest
+
+deps-ollama-headers:
+	@$(PROJECT_ROOT)/scripts/prepare_ollama_llama_headers.sh
 
 deps-ui:
 	cd $(PROJECT_ROOT)/packages/ui && npm ci

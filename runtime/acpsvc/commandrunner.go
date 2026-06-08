@@ -16,10 +16,15 @@ var acpTerminalOutputByteLimit int64 = 1 * 1024 * 1024
 
 type acpCommandRunner struct {
 	transport func() *Transport
+	shell     localtools.PlatformShell
 }
 
 func NewACPCommandRunner(transport func() *Transport) localtools.CommandRunner {
-	return &acpCommandRunner{transport: transport}
+	return NewACPCommandRunnerWithShell(transport, localtools.DetectPlatformShell())
+}
+
+func NewACPCommandRunnerWithShell(transport func() *Transport, shell localtools.PlatformShell) localtools.CommandRunner {
+	return &acpCommandRunner{transport: transport, shell: shell.WithDefaults()}
 }
 
 func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec, stdout, stderr io.Writer) (int, error) {
@@ -28,19 +33,10 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 		return -1, errors.New("acpsvc: no active ACP transport")
 	}
 	if !t.getClientCaps().Terminal {
-		return localtools.NewOSCommandRunner().Run(ctx, spec, stdout, stderr)
+		return localtools.NewOSCommandRunnerWithShell(a.shell).Run(ctx, spec, stdout, stderr)
 	}
 
-	command := spec.Command
-	cmdArgs := spec.Args
-	titleCmd := spec.Command
-	if len(spec.Args) > 0 {
-		titleCmd += " " + strings.Join(spec.Args, " ")
-	}
-	if spec.UseShell {
-		command = "/bin/sh"
-		cmdArgs = []string{"-c", titleCmd}
-	}
+	command, cmdArgs, titleCmd := a.terminalCommand(spec)
 	const titleMax = 80
 	if len(titleCmd) > titleMax {
 		titleCmd = titleCmd[:titleMax-3] + "..."
@@ -138,4 +134,20 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 		}
 	}
 	return exitCode, nil
+}
+
+func (a *acpCommandRunner) terminalCommand(spec localtools.CommandSpec) (command string, args []string, title string) {
+	title = spec.Command
+	if len(spec.Args) > 0 {
+		title += " " + strings.Join(spec.Args, " ")
+	}
+	if !spec.UseShell {
+		return spec.Command, spec.Args, title
+	}
+	shell := spec.Shell
+	if !shell.IsSet() {
+		shell = a.shell
+	}
+	command, args, _ = shell.WrapCommand(spec.Command, spec.Args)
+	return command, args, title
 }

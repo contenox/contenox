@@ -89,6 +89,12 @@ jobs:
             goarch: arm64
             cc: clang
             cxx: clang++
+          # ── Windows ────────────────────────────────────────────────────────
+          - os: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            cc: x86_64-w64-mingw32-gcc-posix
+            cxx: x86_64-w64-mingw32-g++-posix
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -110,8 +116,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y gcc g++ nlohmann-json3-dev
+          sudo apt-get install -y gcc g++ nlohmann-json3-dev zip
           ${{ matrix.cross && 'sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu' || 'true' }}
+          ${{ matrix.goos == 'windows' && 'sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix' || 'true' }}
 
       - name: Install CGo dependencies (macOS only)
         if: runner.os == 'macOS'
@@ -122,17 +129,13 @@ jobs:
           echo "CGO_CXXFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
 
       - name: Fetch missing llama.cpp headers
+        run: scripts/prepare_ollama_llama_headers.sh
+
+      - name: Prepare Windows cross-build includes
+        if: matrix.goos == 'windows'
         run: |
-          OLLAMA_VERSION="$(go list -m -f '{{.Version}}' github.com/ollama/ollama)"
-          OLLAMA_MOD="$(go env GOPATH)/pkg/mod/github.com/ollama/ollama@${OLLAMA_VERSION}"
-          go mod download "github.com/ollama/ollama@${OLLAMA_VERSION}"
-          chmod -R u+w "$OLLAMA_MOD/llama"
-          MTMD="$OLLAMA_MOD/llama/llama.cpp/tools/mtmd"
-          mkdir -p "$MTMD/miniaudio" "$MTMD/stb"
-          curl -fsSL https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h \
-               -o "$MTMD/miniaudio/miniaudio.h"
-          curl -fsSL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h \
-               -o "$MTMD/stb/stb_image.h"
+          INCLUDE_DIR="$(scripts/prepare_windows_cross_includes.sh)"
+          echo "CGO_CXXFLAGS=-I${INCLUDE_DIR}" >> "$GITHUB_ENV"
 
       - name: Build contenox binary
         env:
@@ -145,17 +148,28 @@ jobs:
           TAG="${{ needs.verify.outputs.tag }}"
           LDFLAGS="-X github.com/contenox/runtime/runtime/contenoxcli.Version=${TAG}"
           mkdir -p bin
-          go build -ldflags="${LDFLAGS}" -o bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/contenox
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            EXT=".exe"
+          fi
+          go build -ldflags="${LDFLAGS}" -o "bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}${EXT}" ./cmd/contenox
 
       # The ACP registry consumes an archive whose `cmd` is the executable inside
       # it (see opencode/codex-acp manifests: cmd "./<name>"). Package a .tar.gz
-      # holding a binary named plainly `contenox`, alongside the raw binary that
-      # install.sh keeps fetching by its goos-goarch name.
+      # holding a binary named plainly `contenox` on Unix, or a .zip holding
+      # `contenox.exe` on Windows, alongside the raw binary that install.sh keeps
+      # fetching by its goos-goarch name.
       - name: Package ACP registry archive
         run: |
-          cp bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }} bin/contenox
-          tar -czf bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C bin contenox
-          rm bin/contenox
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            cp bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}.exe bin/contenox.exe
+            (cd bin && zip contenox-${{ matrix.goos }}-${{ matrix.goarch }}.zip contenox.exe)
+            rm bin/contenox.exe
+          else
+            cp bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }} bin/contenox
+            tar -czf bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz -C bin contenox
+            rm bin/contenox
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -181,7 +195,7 @@ jobs:
       - name: Create GitHub Release and upload assets
         run: |
           TAG="${{ needs.verify.outputs.tag }}"
-          gh release create "$TAG" contenox-linux-* contenox-darwin-* \
+          gh release create "$TAG" contenox-linux-* contenox-darwin-* contenox-windows-* \
             --title "$TAG" \
             --notes "" \
             --latest \

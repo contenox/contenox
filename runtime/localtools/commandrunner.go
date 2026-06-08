@@ -17,6 +17,7 @@ type CommandSpec struct {
 	Cwd      string
 	Timeout  time.Duration
 	UseShell bool
+	Shell    PlatformShell
 	Stdin    string
 }
 
@@ -25,19 +26,26 @@ type CommandRunner interface {
 }
 
 func NewOSCommandRunner() CommandRunner {
-	return osCommandRunner{}
+	return NewOSCommandRunnerWithShell(DetectPlatformShell())
 }
 
-type osCommandRunner struct{}
+func NewOSCommandRunnerWithShell(shell PlatformShell) CommandRunner {
+	return osCommandRunner{shell: shell.WithDefaults()}
+}
 
-func (osCommandRunner) Run(ctx context.Context, spec CommandSpec, stdout, stderr io.Writer) (int, error) {
+type osCommandRunner struct {
+	shell PlatformShell
+}
+
+func (r osCommandRunner) Run(ctx context.Context, spec CommandSpec, stdout, stderr io.Writer) (int, error) {
 	var cmd *exec.Cmd
 	if spec.UseShell {
-		full := spec.Command
-		if len(spec.Args) > 0 {
-			full += " " + strings.Join(spec.Args, " ")
+		shell := spec.Shell
+		if !shell.IsSet() {
+			shell = r.shell
 		}
-		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", full)
+		program, args, _ := shell.WrapCommand(spec.Command, spec.Args)
+		cmd = exec.CommandContext(ctx, program, args...)
 	} else {
 		cmd = exec.CommandContext(ctx, spec.Command, spec.Args...)
 	}

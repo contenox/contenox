@@ -26,6 +26,8 @@ type LocalExecResult struct {
 	Error           string  `json:"error,omitempty"`
 	DurationSeconds float64 `json:"duration_seconds"`
 	Command         string  `json:"command,omitempty"`
+	Shell           string  `json:"shell,omitempty"`
+	OS              string  `json:"os,omitempty"`
 }
 
 // LocalExecTools runs commands on the local host (same machine as the process).
@@ -36,6 +38,7 @@ type LocalExecTools struct {
 	allowedCommands []string // if set, executable must be in this list (exact or resolved path)
 	deniedCommands  []string // if set, executable basename or path must not be in this list (checked first)
 	runner          CommandRunner
+	shell           PlatformShell
 }
 
 // LocalExecOption configures LocalExecTools.
@@ -69,22 +72,31 @@ func WithLocalExecDeniedCommands(commands []string) LocalExecOption {
 	}
 }
 
+// WithLocalExecShell sets the detected platform shell used for shell:true calls
+// and for tool schema descriptions.
+func WithLocalExecShell(shell PlatformShell) LocalExecOption {
+	return func(h *LocalExecTools) {
+		h.shell = shell.WithDefaults()
+	}
+}
+
 // NewLocalExecTools creates a new LocalExecTools with the given options.
 func NewLocalExecTools(opts ...LocalExecOption) taskengine.ToolsRepo {
 	return NewLocalExecToolsWith(nil, opts...)
 }
 
 func NewLocalExecToolsWith(runner CommandRunner, opts ...LocalExecOption) taskengine.ToolsRepo {
-	if runner == nil {
-		runner = osCommandRunner{}
-	}
 	h := &LocalExecTools{
 		defaultTimeout: 60 * time.Second,
-		runner:         runner,
+		shell:          DetectPlatformShell(),
 	}
 	for _, opt := range opts {
 		opt(h)
 	}
+	if runner == nil {
+		runner = NewOSCommandRunnerWithShell(h.shell)
+	}
+	h.runner = runner
 	return h
 }
 
@@ -210,10 +222,10 @@ func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (comm
 }
 
 func (h *LocalExecTools) checkAllowlist(command string, useShell bool, allowedCommands []string, allowedDir string, deniedCommands []string) error {
-	// 🚨 Security: forbid shell mode entirely when any policy is active.
-	// It is impossible to statically analyse a raw bash string for pipes (|),
+	// Security: forbid shell mode entirely when any policy is active.
+	// It is impossible to statically analyse a raw shell string for pipes (|),
 	// logic operators (&&, ||) and subshells ($(...)), so we refuse to run
-	// /bin/sh -c <string> when an allowlist, denylist or allowed-dir policy is
+	// a platform shell string when an allowlist, denylist or allowed-dir policy is
 	// configured.  Without this guard, an LLM could bypass
 	// This prevents the model from escaping policy via shell injection, e.g.
 	// with _allowed_commands=git and: {"command":"git status; rm -rf /","shell":true}
@@ -308,7 +320,8 @@ func (cw *capWriter) Write(p []byte) (n int, err error) {
 
 func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []string, cwd string, timeout time.Duration, useShell bool, stdinStr string) (*LocalExecResult, error) {
 	start := time.Now()
-	result := &LocalExecResult{Command: command}
+	shell := h.shell.WithDefaults()
+	result := &LocalExecResult{Command: command, Shell: shell.Summary(), OS: shell.OS}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -326,6 +339,7 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 		Cwd:      cwd,
 		Timeout:  timeout,
 		UseShell: useShell,
+		Shell:    shell,
 		Stdin:    stdinStr,
 	}
 	exitCode, runErr := h.runner.Run(runCtx, spec, stdout, stderr)
@@ -364,9 +378,10 @@ func (h *LocalExecTools) Supports(ctx context.Context) ([]string, error) {
 
 // GetSchemasForSupportedTools implements taskengine.ToolsWithSchema.
 func (h *LocalExecTools) GetSchemasForSupportedTools(ctx context.Context) (map[string]*openapi3.T, error) {
+	shellDesc := h.shell.ShellModeDescription()
 	schema := &openapi3.T{
 		OpenAPI: "3.1.0",
-		Info:    &openapi3.Info{Title: "Local Exec Tools", Description: "Run commands on the local host", Version: "1.0.0"},
+		Info:    &openapi3.Info{Title: "Local Exec Tools", Description: "Run commands on the local host. " + shellDesc, Version: "1.0.0"},
 		Paths:   openapi3.NewPaths(),
 		Components: &openapi3.Components{
 			Schemas: map[string]*openapi3.SchemaRef{
@@ -378,7 +393,7 @@ func (h *LocalExecTools) GetSchemasForSupportedTools(ctx context.Context) (map[s
 							"args":    {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Space-separated arguments"}},
 							"cwd":     {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Working directory"}},
 							"timeout": {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Duration e.g. 30s"}},
-							"shell":   {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeBoolean}, Description: "Run via /bin/sh -c. Set to true if you need ~ expansion, environment variables ($HOME), wildcards, pipes, or redirection. Default false."}},
+							"shell":   {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeBoolean}, Description: shellDesc}},
 						},
 						Required: []string{"command"},
 					},
@@ -394,6 +409,8 @@ func (h *LocalExecTools) GetSchemasForSupportedTools(ctx context.Context) (map[s
 							"error":            {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
 							"duration_seconds": {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeNumber}}},
 							"command":          {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
+							"shell":            {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
+							"os":               {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}},
 						},
 					},
 				},
@@ -411,7 +428,8 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 		return nil, fmt.Errorf("unknown tools: %s", name)
 	}
 	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
-	desc := "Run a terminal command on the local host. Input is passed as stdin. For inspecting or modifying files within the project, prefer the local_fs.* tools — they enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for genuine shell operations: running tests, builds, git, environment inspection, etc."
+	shellDesc := h.shell.ShellModeDescription()
+	desc := "Run a terminal command on the local host. Input is passed as stdin. For inspecting or modifying files within the project, prefer the local_fs.* tools - they enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for genuine shell operations: running tests, builds, git, environment inspection, etc. " + shellDesc
 	if len(allowedCommands) > 0 {
 		desc += " Allowed commands: " + strings.Join(allowedCommands, ", ") + "."
 	}
@@ -448,7 +466,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 						},
 						"shell": map[string]interface{}{
 							"type":        "boolean",
-							"description": "Run via /bin/sh -c (default false). Set to true if you need ~ expansion, environment variables ($HOME), wildcards, pipes, or redirection. Default false.",
+							"description": shellDesc,
 						},
 					},
 					"required": []string{"command"},

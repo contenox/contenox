@@ -29,3 +29,58 @@ func TestUnit_ACPCommandRunner_FallsBackToOSWhenClientLacksTerminalCapability(t 
 		t.Fatalf("expected os fallback stdout %q, got %q", "hello", stdout.String())
 	}
 }
+
+func TestUnit_ACPCommandRunner_TerminalCommandUsesDetectedShell(t *testing.T) {
+	t.Parallel()
+	runner := &acpCommandRunner{
+		shell: localtools.NewPowerShellShell("pwsh.exe"),
+	}
+
+	command, args, title := runner.terminalCommand(localtools.CommandSpec{
+		Command:  "Get-ChildItem",
+		Args:     []string{"."},
+		UseShell: true,
+	})
+
+	if command != "pwsh.exe" {
+		t.Fatalf("expected pwsh.exe, got %q", command)
+	}
+	wantArgs := []string{"-NoProfile", "-NonInteractive", "-Command", "Get-ChildItem ."}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected args %#v, got %#v", wantArgs, args)
+	}
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Fatalf("expected args %#v, got %#v", wantArgs, args)
+		}
+	}
+	if title != "Get-ChildItem ." {
+		t.Fatalf("expected title %q, got %q", "Get-ChildItem .", title)
+	}
+}
+
+func TestUnit_ACPCommandRunner_TerminalCommandSpecShellOverridesRunnerShell(t *testing.T) {
+	t.Parallel()
+	runner := &acpCommandRunner{
+		shell: localtools.NewPowerShellShell("pwsh.exe"),
+	}
+
+	command, args, _ := runner.terminalCommand(localtools.CommandSpec{
+		Command:  "dir",
+		UseShell: true,
+		Shell:    localtools.NewCmdShell("cmd.exe"),
+	})
+
+	if command != "cmd.exe" {
+		t.Fatalf("expected cmd.exe, got %q", command)
+	}
+	wantArgs := []string{"/D", "/C", "dir"}
+	if len(args) != len(wantArgs) {
+		t.Fatalf("expected args %#v, got %#v", wantArgs, args)
+	}
+	for i := range wantArgs {
+		if args[i] != wantArgs[i] {
+			t.Fatalf("expected args %#v, got %#v", wantArgs, args)
+		}
+	}
+}
