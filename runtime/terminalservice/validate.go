@@ -6,26 +6,8 @@ import (
 	"strings"
 )
 
-var defaultAllowedShells = map[string]struct{}{
-	"/bin/bash":     {},
-	"/bin/sh":       {},
-	"/usr/bin/bash": {},
-	"/usr/bin/sh":   {},
-	"/bin/zsh":      {},
-	"/usr/bin/zsh":  {},
-	"/bin/dash":     {},
-	"/usr/bin/dash": {},
-}
-
 func ValidateShell(shell string) error {
-	shell = filepath.Clean(shell)
-	if !filepath.IsAbs(shell) {
-		return fmt.Errorf("terminalservice: shell must be an absolute path")
-	}
-	if _, ok := defaultAllowedShells[shell]; !ok {
-		return fmt.Errorf("terminalservice: shell %q is not allowed", shell)
-	}
-	return nil
+	return validateShell(filepath.Clean(shell))
 }
 
 // CwdUnderRoot ensures cwd is the same as allowedRoot or a subdirectory.

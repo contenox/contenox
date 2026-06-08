@@ -27,9 +27,11 @@ func (s *service) Create(ctx context.Context, principal string, req CreateReques
 	if shell == "" {
 		shell = s.cfg.DefaultShell
 	}
-	if err := ValidateShell(shell); err != nil {
+	resolvedShell, err := resolveShell(shell)
+	if err != nil {
 		return nil, apiframework.BadRequest(err.Error())
 	}
+	shell = resolvedShell
 	cols, rows := req.Cols, req.Rows
 	if cols <= 0 {
 		cols = 80

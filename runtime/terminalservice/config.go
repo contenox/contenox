@@ -40,7 +40,7 @@ func ParseEnv(terminalEnabled, terminalAllowedRoot, terminalShell, terminalIdleT
 	}
 	cfg.DefaultShell = strings.TrimSpace(terminalShell)
 	if cfg.DefaultShell == "" {
-		cfg.DefaultShell = "/bin/bash"
+		cfg.DefaultShell = defaultTerminalShell()
 	}
 	idleStr := strings.TrimSpace(terminalIdleTimeout)
 	if idleStr == "" {
