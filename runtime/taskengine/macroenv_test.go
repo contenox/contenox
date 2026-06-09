@@ -105,14 +105,14 @@ func stubRepo() *stubToolsRepo {
 }
 
 func TestUnit_MacroEnv_Tools_NoAllowlist(t *testing.T) {
-	// nil allowlist = field absent = all tools (backward compat)
+	// nil allowlist = no tools exposed; use ["*"] to expose all tools
 	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools}}", nil)
 	var names []string
 	if err := json.Unmarshal([]byte(out), &names); err != nil {
 		t.Fatalf("not JSON: %v — got: %s", err, out)
 	}
-	if len(names) != 3 {
-		t.Errorf("expected 3 tools, got %d: %v", len(names), names)
+	if len(names) != 0 {
+		t.Errorf("nil allowlist: expected 0 tools (no tools exposed), got %d: %v", len(names), names)
 	}
 }
 
@@ -200,12 +200,12 @@ func TestUnit_MacroEnv_Tools_NotAllowed(t *testing.T) {
 }
 
 func TestUnit_MacroEnv_Tools_NoAllowlist_Allowed(t *testing.T) {
-	// nil = no allowlist = all tools accessible
-	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools tools_b}}", nil)
+	// nil allowlist → no tools exposed; ["*"] is the explicit all-tools opt-in
+	out := runMacroExpand(t, stubRepo(), "{{toolservice:tools tools_b}}", []string{"*"})
 	if strings.Contains(out, "tool_b1") {
 		return // good
 	}
-	t.Errorf("expected tool_b1 when nil allowlist, got: %s", out)
+	t.Errorf("expected tool_b1 when [*] allowlist, got: %s", out)
 }
 
 func keys(m map[string][]string) []string {

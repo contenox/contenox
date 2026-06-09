@@ -14,14 +14,14 @@ func sortedNames(names []string) []string {
 	return cp
 }
 
-func TestUnit_ResolveToolsNames_Nil_ReturnsAll(t *testing.T) {
+func TestUnit_ResolveToolsNames_Nil_ReturnsEmpty(t *testing.T) {
 	repo := stubRepo()
 	names, err := taskengine.ExportedResolveToolsNames(context.Background(), nil, repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(names) != 3 {
-		t.Errorf("nil allowlist: expected 3, got %d: %v", len(names), names)
+	if len(names) != 0 {
+		t.Errorf("nil allowlist: expected 0 (no tools), got %d: %v", len(names), names)
 	}
 }
 

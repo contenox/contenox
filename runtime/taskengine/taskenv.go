@@ -475,16 +475,28 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 
 		if taskErr != nil {
 			if currentTask.Transition.OnFailure != "" {
-				failedOutput := output
-				failedOutputType := outputType
-				if failedOutput == nil {
-					failedOutput = taskInput
-					failedOutputType = taskInputType
+				// Prefer the typed input that led to the failure. Only keep
+				// the task's output if it is a real, typed value — DataTypeAny
+				// and DataTypeNil are error/nil sentinels that cannot be safely
+				// consumed by a downstream chat_completion or other typed handler.
+				failedOutput := taskInput
+				failedOutputType := taskInputType
+				if output != nil && outputType != DataTypeAny && outputType != DataTypeNil {
+					failedOutput = output
+					failedOutputType = outputType
 				}
 				vars[currentTask.ID] = failedOutput
 				varTypes[currentTask.ID] = failedOutputType
 				vars["previous_output"] = failedOutput
 				varTypes["previous_output"] = failedOutputType
+				// Expose the raw error message so failure-handler tasks can
+				// reference it via {{.last_error}} or {{.<taskID>_error}}.
+				if taskErr != nil {
+					vars["last_error"] = taskErr.Error()
+					varTypes["last_error"] = DataTypeString
+					vars[currentTask.ID+"_error"] = taskErr.Error()
+					varTypes[currentTask.ID+"_error"] = DataTypeString
+				}
 
 				previousTaskID := currentTask.ID
 				edgeCounts[previousTaskID+"->"+currentTask.Transition.OnFailure]++

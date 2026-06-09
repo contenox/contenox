@@ -324,9 +324,15 @@ func convertToVertexContents(messages []modelrepo.Message) []vertexContent {
 				} else {
 					args = map[string]any{}
 				}
-				parts = append(parts, vertexPart{
+				part := vertexPart{
 					FunctionCall: &vertexFunctionCall{Name: tc.Function.Name, Args: args},
-				})
+				}
+				if sig, ok := tc.ProviderMeta["thought_signature"]; ok && sig != "" {
+					part.ThoughtSignature = sig
+				} else {
+					part.ThoughtSignature = "skip_thought_signature_validator"
+				}
+				parts = append(parts, part)
 			}
 		}
 

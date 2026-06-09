@@ -52,8 +52,12 @@ func (c *vertexChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		return modelrepo.ChatResult{}, err
 	}
 
-	var outText, thinkingText string
-	var toolCalls []modelrepo.ToolCall
+	var (
+		outText       string
+		thinkingText  string
+		toolCalls     []modelrepo.ToolCall
+		lastSignature string
+	)
 	for _, p := range cand.Content.Parts {
 		switch {
 		case p.Thought && p.Text != "":
@@ -65,7 +69,7 @@ func (c *vertexChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 			if err != nil {
 				continue
 			}
-			toolCalls = append(toolCalls, modelrepo.ToolCall{
+			tc := modelrepo.ToolCall{
 				ID:   uuid.NewString(),
 				Type: "function",
 				Function: struct {
@@ -75,7 +79,19 @@ func (c *vertexChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 					Name:      p.FunctionCall.Name,
 					Arguments: string(argsJSON),
 				},
-			})
+			}
+			sig := p.ThoughtSignature
+			if sig == "" {
+				sig = p.FunctionCall.ThoughtSignature
+			}
+			if sig == "" {
+				sig = lastSignature
+			}
+			if sig != "" {
+				lastSignature = sig
+				tc.ProviderMeta = map[string]string{"thought_signature": sig}
+			}
+			toolCalls = append(toolCalls, tc)
 		}
 	}
 
