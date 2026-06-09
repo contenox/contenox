@@ -42,9 +42,7 @@ func TestUnit_ToolCallUpdate_DeniedShellRetainsCommand(t *testing.T) {
 
 	note := toolCallUpdateNotification(libacp.SessionID("sess-1"), ev)
 
-	require.Len(t, note.Update.ToolContent, 1)
-	require.Equal(t, libacp.ToolCallContentRegular, note.Update.ToolContent[0].Type)
-	require.NotNil(t, note.Update.ToolContent[0].Content)
-	require.Contains(t, note.Update.ToolContent[0].Content.Text, "sh")
-	require.True(t, strings.Contains(note.Update.ToolContent[0].Content.Text, "git diff"))
+	require.Len(t, note.Update.ToolContent, 0)
+	require.Contains(t, note.Update.Title, "sh")
+	require.True(t, strings.Contains(note.Update.Title, "git diff"))
 }

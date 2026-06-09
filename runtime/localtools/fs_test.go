@@ -62,8 +62,14 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		if dataType != taskengine.DataTypeString {
+			t.Errorf("unexpected data type: %v", dataType)
+		}
 		files := res.(string)
-		if !strings.Contains(files, "test.txt") || dataType != taskengine.DataTypeString {
+		if files == "." {
+			t.Errorf("list_dir output should not literally be just the requested path string %q", files)
+		}
+		if !strings.Contains(files, "test.txt") {
 			t.Errorf("unexpected files: %q", files)
 		}
 	})
