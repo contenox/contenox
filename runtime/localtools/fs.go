@@ -2,6 +2,7 @@ package localtools
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,8 @@ const LocalFSToolsName = "local_fs"
 const readBeforeWriteDenial = "local_fs: cannot modify existing file %s without reading it first. Call local_fs.read_file(%q) to confirm the current contents, then retry."
 
 const readBeforeWriteFullReadDenial = "local_fs: cannot overwrite existing file %s after only reading a line range. Call local_fs.read_file(%q) to read the full current contents, then retry."
+
+const readBeforeWriteStaleReadDenial = "local_fs: cannot modify existing file %s because it changed since you read it. Call local_fs.read_file(%q) to refresh the current contents, then retry."
 
 type readRequirement int
 
@@ -117,10 +120,7 @@ func (h *LocalFSTools) Exec(ctx context.Context, startTime time.Time, input any,
 	}
 }
 
-// checkPath verifies if a path is within the allowed directory.
-// It resolves symlinks so that a symlink inside the sandbox pointing outside it
-// (e.g. ln -s /etc /allowed/link) is caught before any I/O is performed.
-func (h *LocalFSTools) checkPath(ctx context.Context, path string) (string, error) {
+func (h *LocalFSTools) baseDir(ctx context.Context) (string, error) {
 	base := h.allowedDir
 	if base == "" && h.cwdResolver != nil {
 		if r := h.cwdResolver(ctx); r != "" {
@@ -130,10 +130,77 @@ func (h *LocalFSTools) checkPath(ctx context.Context, path string) (string, erro
 	if base == "" {
 		return "", errors.New("local_fs: no allowed directory configured")
 	}
+	return base, nil
+}
 
+func (h *LocalFSTools) absAllowedDir(ctx context.Context) (string, error) {
+	base, err := h.baseDir(ctx)
+	if err != nil {
+		return "", err
+	}
 	absBase, err := filepath.Abs(base)
 	if err != nil {
 		return "", fmt.Errorf("local_fs: invalid allowed dir: %w", err)
+	}
+	if realBase, err := filepath.EvalSymlinks(absBase); err == nil {
+		absBase = realBase
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("local_fs: allowed dir resolution error: %w", err)
+	}
+	return filepath.Clean(absBase), nil
+}
+
+// resolvePathFollowingExistingSymlinks resolves symlinks for an existing target,
+// and for a non-existing target resolves the deepest existing parent directory
+// before appending the missing suffix. This prevents writes such as
+// "link/new.txt" where "link" is a symlink escaping the sandbox.
+func resolvePathFollowingExistingSymlinks(absPath string) (string, error) {
+	absPath = filepath.Clean(absPath)
+
+	if realPath, err := filepath.EvalSymlinks(absPath); err == nil {
+		return filepath.Abs(realPath)
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	probe := absPath
+	var missing []string
+
+	for {
+		realPath, err := filepath.EvalSymlinks(probe)
+		if err == nil {
+			resolved := realPath
+			for i := len(missing) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, missing[i])
+			}
+			return filepath.Abs(resolved)
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+
+		parent := filepath.Dir(probe)
+		if parent == probe {
+			return "", err
+		}
+
+		missing = append(missing, filepath.Base(probe))
+		probe = parent
+	}
+}
+
+// checkPath verifies if a path is within the allowed directory.
+// It resolves symlinks so that a symlink inside the sandbox pointing outside it
+// (e.g. ln -s /etc /allowed/link) is caught before any I/O is performed.
+func (h *LocalFSTools) checkPath(ctx context.Context, path string) (string, error) {
+	base, err := h.baseDir(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	absBase, err := h.absAllowedDir(ctx)
+	if err != nil {
+		return "", err
 	}
 
 	absPath := path
@@ -145,17 +212,12 @@ func (h *LocalFSTools) checkPath(ctx context.Context, path string) (string, erro
 		return "", fmt.Errorf("local_fs: invalid path: %w", err)
 	}
 
-	// Resolve symlinks to find the true on-disk destination.
-	// We only skip on NotExist so write_file to new files still works.
-	realPath, err := filepath.EvalSymlinks(absPath)
-	if err == nil {
-		absPath = realPath
-	} else if !os.IsNotExist(err) {
+	realPath, err := resolvePathFollowingExistingSymlinks(absPath)
+	if err != nil {
 		return "", fmt.Errorf("local_fs: path resolution error: %w", err)
 	}
+	absPath = filepath.Clean(realPath)
 
-	// Use the strict prefix check: ".." alone or "../" prefix.
-	// strings.HasPrefix(rel, "..") would falsely trigger for "..hidden".
 	sep := string(filepath.Separator)
 	rel, err := filepath.Rel(absBase, absPath)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+sep) {
@@ -403,7 +465,7 @@ func (h *LocalFSTools) maxReadBytesFromPolicy(ctx context.Context) (limit int64,
 }
 
 func (h *LocalFSTools) checkDeniedSubstrings(ctx context.Context, absPath string) error {
-	base, err := filepath.Abs(h.allowedDir)
+	base, err := h.absAllowedDir(ctx)
 	if err != nil {
 		return fmt.Errorf("local_fs: allowed dir: %w", err)
 	}
@@ -481,7 +543,7 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 	if err := h.checkToolOutputLimit(ctx, "read_file", out); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	h.recordRead(ctx, absPath)
+	h.recordFullRead(ctx, absPath, content)
 	return out, taskengine.DataTypeString, nil
 }
 
@@ -619,7 +681,6 @@ func (h *LocalFSTools) walkListDir(ctx context.Context, listRootArg string, curA
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
 	for _, e := range entries {
-		// Skip noise directories before any path computation.
 		if e.IsDir() && skipDirs[e.Name()] {
 			continue
 		}
@@ -872,7 +933,7 @@ func (h *LocalFSTools) readFileRange(ctx context.Context, args map[string]any) (
 	if err := h.checkToolOutputLimit(ctx, "read_file_range", out); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	h.recordRangeRead(ctx, absPath)
+	h.recordRangeRead(ctx, absPath, content)
 	return out, taskengine.DataTypeString, nil
 }
 
@@ -927,7 +988,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "read_file",
-				Description: "Read the full content of a text file under the project root. For large files use read_file_range instead. Calling this is also a prerequisite for write_file or sed against an existing file — the path you read here unlocks subsequent mutations of that same path in this session.",
+				Description: "Read the full content of a text file under the project root. For large files use read_file_range instead. Calling this is also a prerequisite for write_file or sed against an existing file — the path and exact file version you read here unlock subsequent mutations of that same path in this session.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -941,7 +1002,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "write_file",
-				Description: "Write content to a file. Overwrites existing content. Creates directories if needed. Modifying an existing file requires that you have first called read_file against the same path in this session — range reads are not enough for full-file overwrite. Creating a brand-new file (path does not yet exist) needs no prior read.",
+				Description: "Write content to a file. Overwrites existing content. Creates directories if needed. Modifying an existing file requires that you have first called read_file against the same current file version in this session — range reads are not enough for full-file overwrite. Creating a brand-new file (path does not yet exist) needs no prior read.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1007,7 +1068,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "sed",
-				Description: "Replace occurrences of a pattern with a replacement in a file. Requires that you have first called read_file or read_file_range against the same path in this session — modifying a file you have not seen is blocked.",
+				Description: "Replace occurrences of a pattern with a replacement in a file. Requires that you have first called read_file or read_file_range against the same current file version in this session — modifying a file you have not seen, or that changed since you saw it, is blocked.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1037,7 +1098,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "read_file_range",
-				Description: "Read a contiguous range of lines from a file (1-based, inclusive end_line optional). This satisfies the read-before-mutate prerequisite for targeted sed edits, but not for write_file full-file overwrites. Call read_file before write_file on an existing file.",
+				Description: "Read a contiguous range of lines from a file (1-based, inclusive end_line optional). This satisfies the read-before-mutate prerequisite for targeted sed edits on the same current file version, but not for write_file full-file overwrites. Call read_file before write_file on an existing file.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1091,6 +1152,11 @@ func sessionIDFromContext(ctx context.Context) string {
 	return s
 }
 
+func contentHash(content []byte) string {
+	sum := sha256.Sum256(content)
+	return fmt.Sprintf("%x", sum[:])
+}
+
 // rangeReadMarkerPath returns a separate DB key for partial/range reads.
 //
 // Full-file reads intentionally keep using the plain canonical absPath key for
@@ -1101,17 +1167,29 @@ func rangeReadMarkerPath(absPath string) string {
 	return "range:" + absPath
 }
 
-// recordRead persists that this session has read the full absPath. Errors are silent —
-// the read itself already succeeded; failing the tool call because of a tracker
-// glitch would be worse than letting the next write proceed unguarded.
-func (h *LocalFSTools) recordRead(ctx context.Context, absPath string) {
-	h.recordReadMarker(ctx, absPath)
+func fullHashMarkerPath(absPath, hash string) string {
+	return "fullhash:" + absPath + ":" + hash
 }
 
-// recordRangeRead persists that this session has read only a line range from absPath.
+func rangeHashMarkerPath(absPath, hash string) string {
+	return "rangehash:" + absPath + ":" + hash
+}
+
+// recordFullRead persists that this session has read the full absPath and the
+// exact content version that was observed.
+func (h *LocalFSTools) recordFullRead(ctx context.Context, absPath string, content []byte) {
+	hash := contentHash(content)
+	h.recordReadMarker(ctx, absPath)
+	h.recordReadMarker(ctx, fullHashMarkerPath(absPath, hash))
+}
+
+// recordRangeRead persists that this session has read only a line range from
+// absPath and the exact file version from which the range was taken.
 // This is enough for targeted mutators such as sed, but not for write_file.
-func (h *LocalFSTools) recordRangeRead(ctx context.Context, absPath string) {
+func (h *LocalFSTools) recordRangeRead(ctx context.Context, absPath string, content []byte) {
+	hash := contentHash(content)
 	h.recordReadMarker(ctx, rangeReadMarkerPath(absPath))
+	h.recordReadMarker(ctx, rangeHashMarkerPath(absPath, hash))
 }
 
 func (h *LocalFSTools) recordReadMarker(ctx context.Context, markerPath string) {
@@ -1130,6 +1208,10 @@ func (h *LocalFSTools) recordReadMarker(ctx context.Context, markerPath string) 
 	)
 }
 
+func (h *LocalFSTools) readTrackingDisabled(ctx context.Context) bool {
+	return h.db == nil || sessionIDFromContext(ctx) == ""
+}
+
 // hasPriorRead reports whether the current session has called read_file against
 // absPath. Returns true (fail-open) when no DB is configured or no session ID is
 // in scope, since the guard only applies when the tool can scope its check.
@@ -1143,12 +1225,16 @@ func (h *LocalFSTools) hasPriorRangeRead(ctx context.Context, absPath string) bo
 	return h.hasReadMarker(ctx, rangeReadMarkerPath(absPath))
 }
 
+func (h *LocalFSTools) hasCurrentFullRead(ctx context.Context, absPath, currentHash string) bool {
+	return h.hasReadMarker(ctx, fullHashMarkerPath(absPath, currentHash))
+}
+
+func (h *LocalFSTools) hasCurrentRangeRead(ctx context.Context, absPath, currentHash string) bool {
+	return h.hasReadMarker(ctx, rangeHashMarkerPath(absPath, currentHash))
+}
+
 func (h *LocalFSTools) hasAnyPriorRead(ctx context.Context, absPath string) bool {
-	if h.db == nil {
-		return true
-	}
-	sessionID := sessionIDFromContext(ctx)
-	if sessionID == "" {
+	if h.readTrackingDisabled(ctx) {
 		return true
 	}
 	return h.hasReadMarker(ctx, absPath) || h.hasReadMarker(ctx, rangeReadMarkerPath(absPath))
@@ -1187,32 +1273,59 @@ func (h *LocalFSTools) requireReadBeforeMutation(ctx context.Context, absPath st
 		if os.IsNotExist(err) {
 			return "", false
 		}
-		// Permission/IO error: let the actual write attempt surface it.
+		// Permission/IO error: let the actual mutation attempt surface it.
 		return "", false
 	}
 
+	if h.readTrackingDisabled(ctx) {
+		return "", false
+	}
+
+	currentBytes, err := h.fileIO.ReadFile(ctx, absPath)
+	if err != nil {
+		// Let the actual mutation attempt surface the I/O error.
+		return "", false
+	}
+	currentHash := contentHash(currentBytes)
+
 	switch requirement {
 	case requireFullFileRead:
-		if h.hasPriorRead(ctx, absPath) {
+		if h.hasCurrentFullRead(ctx, absPath, currentHash) {
 			return "", false
 		}
-		if h.hasPriorRangeRead(ctx, absPath) {
+		if h.hasCurrentRangeRead(ctx, absPath, currentHash) {
 			return fmt.Sprintf(readBeforeWriteFullReadDenial, absPath, absPath), true
+		}
+		if h.hasAnyPriorRead(ctx, absPath) {
+			return fmt.Sprintf(readBeforeWriteStaleReadDenial, absPath, absPath), true
 		}
 		return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
 
 	case requireAnyFileRead:
-		if h.hasAnyPriorRead(ctx, absPath) {
+		if h.hasCurrentFullRead(ctx, absPath, currentHash) || h.hasCurrentRangeRead(ctx, absPath, currentHash) {
 			return "", false
+		}
+		if h.hasAnyPriorRead(ctx, absPath) {
+			return fmt.Sprintf(readBeforeWriteStaleReadDenial, absPath, absPath), true
 		}
 		return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
 
 	default:
-		if h.hasPriorRead(ctx, absPath) {
+		if h.hasCurrentFullRead(ctx, absPath, currentHash) {
 			return "", false
+		}
+		if h.hasAnyPriorRead(ctx, absPath) {
+			return fmt.Sprintf(readBeforeWriteStaleReadDenial, absPath, absPath), true
 		}
 		return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
 	}
+}
+
+func escapeSQLiteLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
 }
 
 func (h *LocalFSTools) invalidateReads(ctx context.Context, absPath string) {
@@ -1223,9 +1336,24 @@ func (h *LocalFSTools) invalidateReads(ctx context.Context, absPath string) {
 	if sessionID == "" {
 		return
 	}
+
+	fullPrefix := escapeSQLiteLike("fullhash:"+absPath+":") + "%"
+	rangePrefix := escapeSQLiteLike("rangehash:"+absPath+":") + "%"
+
 	exec := h.db.WithoutTransaction()
 	_, _ = exec.ExecContext(ctx,
-		`DELETE FROM local_fs_reads WHERE session_id = ? AND path IN (?, ?)`,
-		sessionID, absPath, rangeReadMarkerPath(absPath),
+		`DELETE FROM local_fs_reads
+		  WHERE session_id = ?
+		    AND (
+		      path = ?
+		      OR path = ?
+		      OR path LIKE ? ESCAPE '\'
+		      OR path LIKE ? ESCAPE '\'
+		    )`,
+		sessionID,
+		absPath,
+		rangeReadMarkerPath(absPath),
+		fullPrefix,
+		rangePrefix,
 	)
 }
