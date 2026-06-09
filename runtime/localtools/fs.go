@@ -526,6 +526,7 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 	if err := h.fileIO.WriteFile(ctx, absPath, []byte(content)); err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to write file: %w", err)
 	}
+	h.invalidateReads(ctx, absPath)
 
 	return FsWriteResult{
 		Path:    absPath,
@@ -777,6 +778,7 @@ func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taske
 	if err := h.fileIO.WriteFile(ctx, absPath, []byte(newContent)); err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to write file: %w", err)
 	}
+	h.invalidateReads(ctx, absPath)
 
 	return "ok", taskengine.DataTypeString, nil
 }
@@ -1211,4 +1213,19 @@ func (h *LocalFSTools) requireReadBeforeMutation(ctx context.Context, absPath st
 		}
 		return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
 	}
+}
+
+func (h *LocalFSTools) invalidateReads(ctx context.Context, absPath string) {
+	if h.db == nil {
+		return
+	}
+	sessionID := sessionIDFromContext(ctx)
+	if sessionID == "" {
+		return
+	}
+	exec := h.db.WithoutTransaction()
+	_, _ = exec.ExecContext(ctx,
+		`DELETE FROM local_fs_reads WHERE session_id = ? AND path IN (?, ?)`,
+		sessionID, absPath, rangeReadMarkerPath(absPath),
+	)
 }
