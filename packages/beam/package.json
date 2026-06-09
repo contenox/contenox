@@ -4,6 +4,13 @@
   "version": "0.6.5",
   "description": "Contenox web UI — chain editor, chat thread, file browser, and live terminal in one view.",
   "type": "module",
+  "exports": {
+    "./chat": {
+      "types": "./src/chat/index.ts",
+      "import": "./src/chat/index.ts",
+      "default": "./src/chat/index.ts"
+    }
+  },
   "scripts": {
     "dev": "vite",
     "dev:proxy": "vite --mode proxy",

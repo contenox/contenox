@@ -1,7 +1,7 @@
 {
   "name": "@contenox/ui",
   "version": "0.6.5",
-  "main": "dist/index.cjs",
+  "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -40,7 +40,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+      "require": "./dist/index.js"
+    },
+    "./chat": {
+      "types": "./src/chat.ts",
+      "import": "./src/chat.ts",
+      "default": "./src/chat.ts"
     },
     "./tailwind-config": {
       "types": "./tailwind.config.d.ts",
@@ -49,7 +54,8 @@
     "./styles.css": "./dist/index.css"
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "devDependencies": {
     "@storybook/addon-themes": "^10.4.0",

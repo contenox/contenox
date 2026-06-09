@@ -64,7 +64,8 @@
             "_max_output_bytes": "524288",
             "_max_list_depth": "6",
             "_max_grep_matches": "5000",
-            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
           }
         },
         "max_tokens": 16384,
@@ -117,7 +118,8 @@
             "_max_output_bytes": "524288",
             "_max_list_depth": "6",
             "_max_grep_matches": "5000",
-            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
           }
         }
       },
@@ -153,7 +155,8 @@
             "_max_output_bytes": "524288",
             "_max_list_depth": "6",
             "_max_grep_matches": "5000",
-            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
           },
           "local_shell": {
             "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,npx,pnpm,yarn,bun,make,cargo,pytest",
@@ -207,7 +210,8 @@
             "_max_output_bytes": "524288",
             "_max_list_depth": "6",
             "_max_grep_matches": "5000",
-            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
           },
           "local_shell": {
             "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,npx,pnpm,yarn,bun,make,cargo,pytest",
@@ -251,7 +255,8 @@
             "_max_output_bytes": "524288",
             "_max_list_depth": "6",
             "_max_grep_matches": "5000",
-            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
           },
           "local_shell": {
             "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,npx,pnpm,yarn,bun,make,cargo,pytest",
@@ -309,7 +314,8 @@
             "_max_output_bytes": "524288",
             "_max_list_depth": "6",
             "_max_grep_matches": "5000",
-            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
           },
           "local_shell": {
             "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,npx,pnpm,yarn,bun,make,cargo,pytest",
@@ -352,7 +358,8 @@
             "_max_output_bytes": "524288",
             "_max_list_depth": "6",
             "_max_grep_matches": "5000",
-            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
           }
         },
         "max_tokens": 16384,
@@ -405,7 +412,8 @@
             "_max_output_bytes": "524288",
             "_max_list_depth": "6",
             "_max_grep_matches": "5000",
-            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json"
+            "_denied_path_substrings": ".git/,node_modules,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
           }
         }
       },

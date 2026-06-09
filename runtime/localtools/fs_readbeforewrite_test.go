@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,4 +205,76 @@ func TestUnit_ReadBeforeWrite_SessionScoping(t *testing.T) {
 	require.NoError(t, err)
 	msg, _ := res.(string)
 	require.Contains(t, msg, "without reading it first", "a read in session A must not satisfy a write in session B")
+}
+
+func TestUnit_ReadBeforeWrite_DeniedWhenFileChangedAfterRead(t *testing.T) {
+	ctx, tools, dir := setupFSReadGuard(t)
+	writeFile(t, dir, "a.txt", "original\n")
+
+	_, err := execTool(t, ctx, tools, "read_file", map[string]any{
+		"path": "a.txt",
+	})
+	require.NoError(t, err)
+
+	// Simulate the filesystem changing after the agent read the file.
+	// A guard that only stores "this path was read" will incorrectly allow
+	// the next write and overwrite this external change.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "a.txt"),
+		[]byte("external change\n"),
+		0644,
+	))
+
+	res, err := execTool(t, ctx, tools, "write_file", map[string]any{
+		"path":    "a.txt",
+		"content": "agent overwrite\n",
+	})
+	require.NoError(t, err, "stale-read denial should be a soft tool result, not a chain error")
+
+	msg, ok := res.(string)
+	require.True(t, ok, "expected stale-read denial as string, got %T: %#v", res, res)
+	require.Contains(t, msg, "changed", "denial should explain that the file changed since it was read")
+	require.Contains(t, msg, "read", "denial should tell the agent to re-read before writing")
+
+	got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "external change\n", string(got), "stale write must not overwrite external changes")
+}
+
+func TestUnit_ReadBeforeWrite_RangeReadDoesNotAuthorizeFullFileWrite(t *testing.T) {
+	ctx, tools, dir := setupFSReadGuard(t)
+
+	original := strings.Join([]string{
+		"line 1: alpha",
+		"line 2: bravo",
+		"line 3: charlie",
+		"line 4: delta",
+		"line 5: echo",
+	}, "\n") + "\n"
+
+	writeFile(t, dir, "a.txt", original)
+
+	_, err := execTool(t, ctx, tools, "read_file_range", map[string]any{
+		"path":       "a.txt",
+		"start_line": float64(1),
+		"end_line":   float64(2),
+	})
+	require.NoError(t, err)
+
+	// A range read should not authorize replacing the whole file.
+	// Otherwise the agent can inspect two lines and then destroy unseen content.
+	res, err := execTool(t, ctx, tools, "write_file", map[string]any{
+		"path":    "a.txt",
+		"content": "collapsed rewrite\n",
+	})
+	require.NoError(t, err, "range-read denial should be a soft tool result, not a chain error")
+
+	msg, ok := res.(string)
+	require.True(t, ok, "expected range-read denial as string, got %T: %#v", res, res)
+	require.Contains(t, msg, "read_file", "denial should tell the agent to read the full file before full overwrite")
+	require.Contains(t, msg, "range", "denial should explain that a range read is insufficient for full-file write")
+
+	got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	require.NoError(t, err)
+	require.Equal(t, original, string(got), "full-file write after range read must not mutate the file")
 }

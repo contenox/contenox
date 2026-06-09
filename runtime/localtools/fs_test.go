@@ -360,6 +360,143 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 			t.Fatalf("expected not-a-directory: %v", err)
 		}
 	})
+
+	// --- list_dir noise-filtering tests ---
+
+	// TestFailure: before the fix, list_dir(".") on a project root would return
+	// .git/ and node_modules/ entries, flooding the model's context window with
+	// thousands of irrelevant paths. The default skip set must prevent this.
+	t.Run("listDirSkipsNoiseDirsDefault", func(t *testing.T) {
+		root := t.TempDir()
+		// Simulate the real-project layout that caused the context flood.
+		_ = os.MkdirAll(filepath.Join(root, ".git", "objects"), 0755)
+		_ = os.WriteFile(filepath.Join(root, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0644)
+		_ = os.MkdirAll(filepath.Join(root, "node_modules", "react"), 0755)
+		_ = os.WriteFile(filepath.Join(root, "node_modules", "react", "index.js"), []byte("//react\n"), 0644)
+		_ = os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0644)
+
+		h2 := localtools.NewLocalFSTools(root, nil)
+		res, _, err := h2.Exec(ctx, now, map[string]any{"path": "."}, false, &taskengine.ToolsCall{ToolName: "list_dir"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		listing := res.(string)
+		if strings.Contains(listing, ".git") {
+			t.Errorf("default listing must not contain .git, got:\n%s", listing)
+		}
+		if strings.Contains(listing, "node_modules") {
+			t.Errorf("default listing must not contain node_modules, got:\n%s", listing)
+		}
+		if !strings.Contains(listing, "main.go") {
+			t.Errorf("default listing must contain main.go, got:\n%s", listing)
+		}
+	})
+
+	t.Run("listDirSkipDirNamesCustom", func(t *testing.T) {
+		root := t.TempDir()
+		_ = os.MkdirAll(filepath.Join(root, "build"), 0755)
+		_ = os.MkdirAll(filepath.Join(root, "src"), 0755)
+		_ = os.WriteFile(filepath.Join(root, "src", "app.go"), []byte("package main\n"), 0644)
+
+		ctxCustom := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
+			"_skip_dir_names": "build",
+		})
+		h2 := localtools.NewLocalFSTools(root, nil)
+		res, _, err := h2.Exec(ctxCustom, now, map[string]any{"path": "."}, false, &taskengine.ToolsCall{ToolName: "list_dir"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		listing := res.(string)
+		if strings.Contains(listing, "build") {
+			t.Errorf("build/ must be skipped by custom policy, got:\n%s", listing)
+		}
+		if !strings.Contains(listing, "src/") {
+			t.Errorf("src/ must appear when not in skip list, got:\n%s", listing)
+		}
+	})
+
+	t.Run("listDirSkipDirNamesDisabled", func(t *testing.T) {
+		root := t.TempDir()
+		_ = os.MkdirAll(filepath.Join(root, ".git"), 0755)
+		_ = os.WriteFile(filepath.Join(root, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0644)
+
+		// Empty string disables the default filter entirely.
+		ctxDisabled := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
+			"_skip_dir_names": "",
+		})
+		h2 := localtools.NewLocalFSTools(root, nil)
+		res, _, err := h2.Exec(ctxDisabled, now, map[string]any{"path": "."}, false, &taskengine.ToolsCall{ToolName: "list_dir"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		listing := res.(string)
+		if !strings.Contains(listing, ".git/") {
+			t.Errorf("disabled skip filter must show .git/, got:\n%s", listing)
+		}
+	})
+
+	t.Run("listDirExtensionFilter", func(t *testing.T) {
+		root := t.TempDir()
+		_ = os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0644)
+		_ = os.WriteFile(filepath.Join(root, "README.md"), []byte("# readme\n"), 0644)
+		_ = os.WriteFile(filepath.Join(root, "go.sum"), []byte("hash\n"), 0644)
+		_ = os.WriteFile(filepath.Join(root, "logo.png"), []byte("\x89PNG\r\n"), 0644)
+
+		ctxExt := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
+			"_list_extensions": ".go,.md",
+			"_skip_dir_names":  "", // show everything dir-wise; we only filter files
+		})
+		h2 := localtools.NewLocalFSTools(root, nil)
+		res, _, err := h2.Exec(ctxExt, now, map[string]any{"path": "."}, false, &taskengine.ToolsCall{ToolName: "list_dir"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		listing := res.(string)
+		if !strings.Contains(listing, "main.go") {
+			t.Errorf("main.go must appear with .go filter, got:\n%s", listing)
+		}
+		if !strings.Contains(listing, "README.md") {
+			t.Errorf("README.md must appear with .md filter, got:\n%s", listing)
+		}
+		if strings.Contains(listing, "go.sum") {
+			t.Errorf("go.sum must be hidden by extension filter, got:\n%s", listing)
+		}
+		if strings.Contains(listing, "logo.png") {
+			t.Errorf("logo.png must be hidden by extension filter, got:\n%s", listing)
+		}
+	})
+
+	t.Run("listDirExtensionFilterRecursive", func(t *testing.T) {
+		root := t.TempDir()
+		_ = os.MkdirAll(filepath.Join(root, "pkg", "sub"), 0755)
+		_ = os.WriteFile(filepath.Join(root, "pkg", "sub", "util.go"), []byte("package sub\n"), 0644)
+		_ = os.WriteFile(filepath.Join(root, "pkg", "sub", "util_test.go"), []byte("package sub\n"), 0644)
+		_ = os.WriteFile(filepath.Join(root, "pkg", "sub", "data.json"), []byte("{}"), 0644)
+
+		ctxExt := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
+			"_list_extensions": ".go",
+			"_skip_dir_names":  "",
+		})
+		h2 := localtools.NewLocalFSTools(root, nil)
+		res, _, err := h2.Exec(ctxExt, now, map[string]any{
+			"path":      "pkg",
+			"recursive": true,
+			"max_depth": float64(3),
+		}, false, &taskengine.ToolsCall{ToolName: "list_dir"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		listing := res.(string)
+		if !strings.Contains(listing, "util.go") {
+			t.Errorf("util.go must appear in recursive .go filter, got:\n%s", listing)
+		}
+		if !strings.Contains(listing, "util_test.go") {
+			t.Errorf("util_test.go must appear in recursive .go filter, got:\n%s", listing)
+		}
+		if strings.Contains(listing, "data.json") {
+			t.Errorf("data.json must be hidden by .go extension filter, got:\n%s", listing)
+		}
+	})
 }
 
 func TestUnit_LocalFSTools_InjectedNamePlumbsThrough(t *testing.T) {

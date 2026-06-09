@@ -27,6 +27,17 @@ const LocalFSToolsName = "local_fs"
 // it as a normal tool result and is expected to call read_file then retry.
 const readBeforeWriteDenial = "local_fs: cannot modify existing file %s without reading it first. Call local_fs.read_file(%q) to confirm the current contents, then retry."
 
+const readBeforeWriteFullReadDenial = "local_fs: cannot overwrite existing file %s after only reading a line range. Call local_fs.read_file(%q) to read the full current contents, then retry."
+
+type readRequirement int
+
+const (
+	// requireAnyFileRead is enough for targeted mutators such as sed.
+	requireAnyFileRead readRequirement = iota
+	// requireFullFileRead is required for full-file overwrite via write_file.
+	requireFullFileRead
+)
+
 // LocalFSTools provides direct filesystem access tools.
 //
 // The tool tracks its own per-session read history in the local_fs_reads table
@@ -201,6 +212,85 @@ func (h *LocalFSTools) maxListDepthFromPolicy(ctx context.Context) int {
 		return 32
 	}
 	return n
+}
+
+// defaultSkipDirNames is the set of directory basenames that list_dir omits by
+// default. These directories are typically large, machine-generated, or
+// version-control internals that add noise to the model's context without
+// contributing useful source information.
+var defaultSkipDirNames = []string{
+	".git", "node_modules", ".venv", "__pycache__",
+	".next", "dist", ".cache", "vendor", "target",
+	".idea", ".vscode",
+}
+
+// skipDirNamesFromPolicy returns the set of directory basenames that list_dir
+// should silently omit from output and recursion.
+// Policy key (tools_policies.local_fs): _skip_dir_names — comma-separated
+// basenames. When the key is absent the default noise set is used. Set the
+// key to "" (empty string) to disable filtering entirely and show every
+// directory.
+func (h *LocalFSTools) skipDirNamesFromPolicy(ctx context.Context) map[string]bool {
+	args := taskengine.ToolsArgsFromContext(ctx, h.name)
+	raw, keyPresent := "", false
+	if args != nil {
+		raw, keyPresent = args["_skip_dir_names"]
+	}
+	if !keyPresent {
+		return skipDirNameSet(defaultSkipDirNames)
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil // disabled: show everything
+	}
+	var names []string
+	for _, s := range strings.Split(raw, ",") {
+		if n := strings.TrimSpace(s); n != "" {
+			names = append(names, n)
+		}
+	}
+	return skipDirNameSet(names)
+}
+
+func skipDirNameSet(names []string) map[string]bool {
+	if len(names) == 0 {
+		return nil
+	}
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
+}
+
+// listExtensionsFromPolicy returns the set of lower-cased file extensions that
+// list_dir will include. When absent or empty, all files are returned.
+// Policy key (tools_policies.local_fs): _list_extensions — comma-separated
+// extensions, e.g. ".go,.md,.json". A leading dot is optional.
+func (h *LocalFSTools) listExtensionsFromPolicy(ctx context.Context) map[string]bool {
+	args := taskengine.ToolsArgsFromContext(ctx, h.name)
+	if args == nil {
+		return nil
+	}
+	raw := strings.TrimSpace(args["_list_extensions"])
+	if raw == "" {
+		return nil
+	}
+	m := make(map[string]bool)
+	for _, s := range strings.Split(raw, ",") {
+		ext := strings.ToLower(strings.TrimSpace(s))
+		if ext == "" {
+			continue
+		}
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		m[ext] = true
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // maxGrepMatchesFromPolicy stops grep after this many lines (error: narrow pattern/range). tools_policies.local_fs: _max_grep_matches — default 5000.
@@ -420,7 +510,7 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 		return nil, taskengine.DataTypeAny, err
 	}
 
-	if denial, deny := h.requireReadBeforeMutation(ctx, absPath); deny {
+	if denial, deny := h.requireReadBeforeMutation(ctx, absPath, requireFullFileRead); deny {
 		return denial, taskengine.DataTypeString, nil
 	}
 
@@ -480,6 +570,9 @@ func (h *LocalFSTools) listDir(ctx context.Context, args map[string]any) (any, t
 		}
 	}
 
+	skipDirs := h.skipDirNamesFromPolicy(ctx)
+	allowExts := h.listExtensionsFromPolicy(ctx)
+
 	var results []string
 	if !recursive {
 		entries, err := os.ReadDir(absRoot)
@@ -488,14 +581,20 @@ func (h *LocalFSTools) listDir(ctx context.Context, args map[string]any) (any, t
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 		for _, entry := range entries {
-			suffix := ""
 			if entry.IsDir() {
-				suffix = "/"
+				if skipDirs[entry.Name()] {
+					continue
+				}
+				results = append(results, entry.Name()+"/")
+			} else {
+				if allowExts != nil && !allowExts[strings.ToLower(filepath.Ext(entry.Name()))] {
+					continue
+				}
+				results = append(results, entry.Name())
 			}
-			results = append(results, entry.Name()+suffix)
 		}
 	} else {
-		if err := h.walkListDir(ctx, listRootArg, absRoot, "", 1, reqDepth, &results); err != nil {
+		if err := h.walkListDir(ctx, listRootArg, absRoot, "", 1, reqDepth, skipDirs, allowExts, &results); err != nil {
 			return nil, taskengine.DataTypeAny, err
 		}
 	}
@@ -509,7 +608,9 @@ func (h *LocalFSTools) listDir(ctx context.Context, args map[string]any) (any, t
 
 // walkListDir appends paths relative to the project root, one per line; directories end with '/'.
 // relFromListRoot is the path under listRootArg (POSIX slashes) for the current directory.
-func (h *LocalFSTools) walkListDir(ctx context.Context, listRootArg string, curAbs string, relFromListRoot string, depth, maxDepth int, out *[]string) error {
+// skipDirs is the set of directory basenames to omit from output and recursion (nil = no filter).
+// allowExts is the set of lower-cased file extensions to include (nil = all files).
+func (h *LocalFSTools) walkListDir(ctx context.Context, listRootArg string, curAbs string, relFromListRoot string, depth, maxDepth int, skipDirs map[string]bool, allowExts map[string]bool, out *[]string) error {
 	entries, err := os.ReadDir(curAbs)
 	if err != nil {
 		return fmt.Errorf("local_fs: failed to read directory: %w", err)
@@ -517,6 +618,11 @@ func (h *LocalFSTools) walkListDir(ctx context.Context, listRootArg string, curA
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
 	for _, e := range entries {
+		// Skip noise directories before any path computation.
+		if e.IsDir() && skipDirs[e.Name()] {
+			continue
+		}
+
 		var rel string
 		if relFromListRoot == "" {
 			rel = e.Name()
@@ -547,10 +653,13 @@ func (h *LocalFSTools) walkListDir(ctx context.Context, listRootArg string, curA
 				continue
 			}
 			childAbs := filepath.Join(curAbs, e.Name())
-			if err := h.walkListDir(ctx, listRootArg, childAbs, rel, depth+1, maxDepth, out); err != nil {
+			if err := h.walkListDir(ctx, listRootArg, childAbs, rel, depth+1, maxDepth, skipDirs, allowExts, out); err != nil {
 				return err
 			}
 		} else {
+			if allowExts != nil && !allowExts[strings.ToLower(filepath.Ext(e.Name()))] {
+				continue
+			}
 			*out = append(*out, userPath)
 		}
 	}
@@ -654,7 +763,7 @@ func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taske
 		return nil, taskengine.DataTypeAny, err
 	}
 
-	if denial, deny := h.requireReadBeforeMutation(ctx, absPath); deny {
+	if denial, deny := h.requireReadBeforeMutation(ctx, absPath, requireAnyFileRead); deny {
 		return denial, taskengine.DataTypeString, nil
 	}
 
@@ -761,7 +870,7 @@ func (h *LocalFSTools) readFileRange(ctx context.Context, args map[string]any) (
 	if err := h.checkToolOutputLimit(ctx, "read_file_range", out); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
-	h.recordRead(ctx, absPath)
+	h.recordRangeRead(ctx, absPath)
 	return out, taskengine.DataTypeString, nil
 }
 
@@ -830,7 +939,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "write_file",
-				Description: "Write content to a file. Overwrites existing content. Creates directories if needed. Modifying an existing file requires that you have first called read_file or read_file_range against the same path in this session — this guards against overwriting files you have not actually seen. Creating a brand-new file (path does not yet exist) needs no prior read.",
+				Description: "Write content to a file. Overwrites existing content. Creates directories if needed. Modifying an existing file requires that you have first called read_file against the same path in this session — range reads are not enough for full-file overwrite. Creating a brand-new file (path does not yet exist) needs no prior read.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -845,7 +954,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "list_dir",
-				Description: "List entries in a directory under the project root. Non-recursive: one level, names sorted. Set recursive true for a depth-limited tree (paths relative to project root, dirs end with /).",
+				Description: "List entries in a directory under the project root. Non-recursive: one level, names sorted. Set recursive true for a depth-limited tree (paths relative to project root, dirs end with /). By default, high-noise directories (.git, node_modules, .venv, etc.) are silently omitted — override with _skip_dir_names policy key (comma-separated basenames; empty string disables filtering). Filter returned files by extension with _list_extensions (comma-separated, e.g. .go,.md,.json).",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -926,7 +1035,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "read_file_range",
-				Description: "Read a contiguous range of lines from a file (1-based, inclusive end_line optional). Like read_file, calling this satisfies the read-before-mutate prerequisite for write_file and sed against the same path in this session.",
+				Description: "Read a contiguous range of lines from a file (1-based, inclusive end_line optional). This satisfies the read-before-mutate prerequisite for targeted sed edits, but not for write_file full-file overwrites. Call read_file before write_file on an existing file.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -980,10 +1089,30 @@ func sessionIDFromContext(ctx context.Context) string {
 	return s
 }
 
-// recordRead persists that this session has read absPath. Errors are silent —
+// rangeReadMarkerPath returns a separate DB key for partial/range reads.
+//
+// Full-file reads intentionally keep using the plain canonical absPath key for
+// backward compatibility with the existing local_fs_reads table and tests.
+// Range reads must not use the same key, otherwise read_file_range unlocks
+// write_file full overwrites.
+func rangeReadMarkerPath(absPath string) string {
+	return "range:" + absPath
+}
+
+// recordRead persists that this session has read the full absPath. Errors are silent —
 // the read itself already succeeded; failing the tool call because of a tracker
 // glitch would be worse than letting the next write proceed unguarded.
 func (h *LocalFSTools) recordRead(ctx context.Context, absPath string) {
+	h.recordReadMarker(ctx, absPath)
+}
+
+// recordRangeRead persists that this session has read only a line range from absPath.
+// This is enough for targeted mutators such as sed, but not for write_file.
+func (h *LocalFSTools) recordRangeRead(ctx context.Context, absPath string) {
+	h.recordReadMarker(ctx, rangeReadMarkerPath(absPath))
+}
+
+func (h *LocalFSTools) recordReadMarker(ctx context.Context, markerPath string) {
 	if h.db == nil {
 		return
 	}
@@ -995,15 +1124,35 @@ func (h *LocalFSTools) recordRead(ctx context.Context, absPath string) {
 	_, _ = exec.ExecContext(ctx,
 		`INSERT INTO local_fs_reads (session_id, path, last_read_at) VALUES (?, ?, ?)
 		 ON CONFLICT (session_id, path) DO UPDATE SET last_read_at = excluded.last_read_at`,
-		sessionID, absPath, time.Now().UTC(),
+		sessionID, markerPath, time.Now().UTC(),
 	)
 }
 
-// hasPriorRead reports whether the current session has called read_file or
-// read_file_range against absPath. Returns true (fail-open) when no DB is
-// configured or no session ID is in scope, since the guard only applies when
-// the tool can scope its check.
+// hasPriorRead reports whether the current session has called read_file against
+// absPath. Returns true (fail-open) when no DB is configured or no session ID is
+// in scope, since the guard only applies when the tool can scope its check.
 func (h *LocalFSTools) hasPriorRead(ctx context.Context, absPath string) bool {
+	return h.hasReadMarker(ctx, absPath)
+}
+
+// hasPriorRangeRead reports whether the current session has called
+// read_file_range against absPath.
+func (h *LocalFSTools) hasPriorRangeRead(ctx context.Context, absPath string) bool {
+	return h.hasReadMarker(ctx, rangeReadMarkerPath(absPath))
+}
+
+func (h *LocalFSTools) hasAnyPriorRead(ctx context.Context, absPath string) bool {
+	if h.db == nil {
+		return true
+	}
+	sessionID := sessionIDFromContext(ctx)
+	if sessionID == "" {
+		return true
+	}
+	return h.hasReadMarker(ctx, absPath) || h.hasReadMarker(ctx, rangeReadMarkerPath(absPath))
+}
+
+func (h *LocalFSTools) hasReadMarker(ctx context.Context, markerPath string) bool {
 	if h.db == nil {
 		return true
 	}
@@ -1015,7 +1164,7 @@ func (h *LocalFSTools) hasPriorRead(ctx context.Context, absPath string) bool {
 	var dummy string
 	err := exec.QueryRowContext(ctx,
 		`SELECT path FROM local_fs_reads WHERE session_id = ? AND path = ?`,
-		sessionID, absPath,
+		sessionID, markerPath,
 	).Scan(&dummy)
 	if err == nil {
 		return true
@@ -1031,7 +1180,7 @@ func (h *LocalFSTools) hasPriorRead(ctx context.Context, absPath string) bool {
 // existing file. Returns (denialMessage, true) when the call should be denied
 // with a soft tool-result message; ("", false) when the call may proceed.
 // New files (not yet on disk) always pass through.
-func (h *LocalFSTools) requireReadBeforeMutation(ctx context.Context, absPath string) (string, bool) {
+func (h *LocalFSTools) requireReadBeforeMutation(ctx context.Context, absPath string, requirement readRequirement) (string, bool) {
 	if _, err := os.Stat(absPath); err != nil {
 		if os.IsNotExist(err) {
 			return "", false
@@ -1039,8 +1188,27 @@ func (h *LocalFSTools) requireReadBeforeMutation(ctx context.Context, absPath st
 		// Permission/IO error: let the actual write attempt surface it.
 		return "", false
 	}
-	if h.hasPriorRead(ctx, absPath) {
-		return "", false
+
+	switch requirement {
+	case requireFullFileRead:
+		if h.hasPriorRead(ctx, absPath) {
+			return "", false
+		}
+		if h.hasPriorRangeRead(ctx, absPath) {
+			return fmt.Sprintf(readBeforeWriteFullReadDenial, absPath, absPath), true
+		}
+		return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
+
+	case requireAnyFileRead:
+		if h.hasAnyPriorRead(ctx, absPath) {
+			return "", false
+		}
+		return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
+
+	default:
+		if h.hasPriorRead(ctx, absPath) {
+			return "", false
+		}
+		return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
 	}
-	return fmt.Sprintf(readBeforeWriteDenial, absPath, absPath), true
 }
