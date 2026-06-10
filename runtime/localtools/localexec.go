@@ -167,10 +167,15 @@ func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (comm
 		command = cmd
 	}
 	if a := get("args"); a != "" {
-		argsSlice = strings.Fields(a)
+		argsSlice = splitShellArgs(a)
 	}
 	if d := get("cwd"); d != "" {
-		cwd = filepath.Clean(d)
+		absCwd, err := filepath.Abs(d)
+		if err == nil {
+			cwd = absCwd
+		} else {
+			cwd = filepath.Clean(d)
+		}
 	}
 	if t := get("timeout"); t != "" {
 		if d, e := time.ParseDuration(t); e == nil {
@@ -204,10 +209,18 @@ func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (comm
 			useShell = strings.EqualFold(s, "true") || s == "1"
 		}
 		if a, ok := v["args"].(string); ok && len(argsSlice) == 0 {
-			argsSlice = strings.Fields(a)
+			argsSlice = splitShellArgs(a)
+		}
+		if a, ok := v["args"].([]string); ok && len(argsSlice) == 0 {
+			argsSlice = a
 		}
 		if d, ok := v["cwd"].(string); ok && cwd == "" {
-			cwd = filepath.Clean(d)
+			absCwd, err := filepath.Abs(d)
+			if err == nil {
+				cwd = absCwd
+			} else {
+				cwd = filepath.Clean(d)
+			}
 		}
 		if t, ok := v["timeout"].(string); ok {
 			if d, e := time.ParseDuration(t); e == nil && timeout == h.defaultTimeout {
@@ -367,8 +380,51 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 		return result, nil
 	}
 	result.ExitCode = exitCode
-	result.Success = true
+	result.Success = exitCode == 0
+	if !result.Success && result.Error == "" {
+		result.Error = fmt.Sprintf("command exited with status %d", exitCode)
+	}
 	return result, nil
+}
+
+// splitShellArgs splits a string into an array of shell arguments, respecting single and double quotes and basic backslash escapes.
+func splitShellArgs(s string) []string {
+	var args []string
+	var current strings.Builder
+	inSingle := false
+	inDouble := false
+	escaped := false
+	for _, r := range s {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' && !inSingle {
+			escaped = true
+			continue
+		}
+		if r == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if r == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if (r == ' ' || r == '\t' || r == '\n') && !inSingle && !inDouble {
+			if current.Len() > 0 {
+				args = append(args, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		current.WriteRune(r)
+	}
+	if current.Len() > 0 {
+		args = append(args, current.String())
+	}
+	return args
 }
 
 // Supports implements taskengine.ToolsRegistry.

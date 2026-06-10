@@ -112,7 +112,7 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 	}
 
 	if outputResp.Output != "" {
-		_, _ = io.WriteString(stdout, outputResp.Output)
+		_, _ = io.WriteString(stdout, strings.TrimRight(outputResp.Output, "\n"))
 	}
 
 	if timedOut {
