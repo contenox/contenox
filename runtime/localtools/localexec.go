@@ -170,11 +170,9 @@ func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (comm
 		argsSlice = splitShellArgs(a)
 	}
 	if d := get("cwd"); d != "" {
-		absCwd, err := filepath.Abs(d)
-		if err == nil {
+		cwd = filepath.Clean(d)
+		if absCwd, err := filepath.Abs(cwd); err == nil {
 			cwd = absCwd
-		} else {
-			cwd = filepath.Clean(d)
 		}
 	}
 	if t := get("timeout"); t != "" {
@@ -215,11 +213,9 @@ func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (comm
 			argsSlice = a
 		}
 		if d, ok := v["cwd"].(string); ok && cwd == "" {
-			absCwd, err := filepath.Abs(d)
-			if err == nil {
+			cwd = filepath.Clean(d)
+			if absCwd, err := filepath.Abs(cwd); err == nil {
 				cwd = absCwd
-			} else {
-				cwd = filepath.Clean(d)
 			}
 		}
 		if t, ok := v["timeout"].(string); ok {
@@ -446,7 +442,13 @@ func (h *LocalExecTools) GetSchemasForSupportedTools(ctx context.Context) (map[s
 						Type: &openapi3.Types{openapi3.TypeObject},
 						Properties: map[string]*openapi3.SchemaRef{
 							"command": {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Executable path or name"}},
-							"args":    {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Space-separated arguments"}},
+							"args": {Value: &openapi3.Schema{
+								OneOf: []*openapi3.SchemaRef{
+									{Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Space-separated arguments string"}},
+									{Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeArray}, Items: &openapi3.SchemaRef{Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}}}, Description: "Array of argument strings"}},
+								},
+								Description: "Arguments as space-separated string or array of strings",
+							}},
 							"cwd":     {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Working directory"}},
 							"timeout": {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeString}, Description: "Duration e.g. 30s"}},
 							"shell":   {Value: &openapi3.Schema{Type: &openapi3.Types{openapi3.TypeBoolean}, Description: shellDesc}},
@@ -509,8 +511,18 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 							"description": "Executable path or name (required)",
 						},
 						"args": map[string]interface{}{
-							"type":        "string",
-							"description": "Space-separated arguments",
+							"oneOf": []interface{}{
+								map[string]interface{}{
+									"type":        "string",
+									"description": "Space-separated arguments string",
+								},
+								map[string]interface{}{
+									"type":        "array",
+									"items":       map[string]interface{}{"type": "string"},
+									"description": "Array of argument strings",
+								},
+							},
+							"description": "Arguments as space-separated string or array of strings",
 						},
 						"cwd": map[string]interface{}{
 							"type":        "string",

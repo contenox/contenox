@@ -28,22 +28,28 @@
     {"tools": "local_fs", "tool": "read_file_range", "action": "approve", "when": [{"key": "path", "op": "glob", "value": "**/{*.pem,*.key,.env,.env.*}"}]},
     {"tools": "local_fs", "tool": "grep", "action": "approve", "when": [{"key": "path", "op": "glob", "value": "**/{*.pem,*.key,.env,.env.*}"}]},
 
-    {"tools": "local_fs",     "tool": "read_file",       "action": "allow"},
-    {"tools": "local_fs",     "tool": "read_file_range", "action": "allow"},
-    {"tools": "local_fs",     "tool": "list_dir",        "action": "allow"},
-    {"tools": "local_fs",     "tool": "grep",            "action": "allow"},
-    {"tools": "local_fs",     "tool": "stat_file",       "action": "allow"},
-    {"tools": "local_fs",     "tool": "count_stats",     "action": "allow"},
-    {"tools": "local_fs",     "tool": "write_file",      "action": "approve"},
-    {"tools": "local_fs",     "tool": "sed",             "action": "approve"},
-    {"tools": "local_shell",  "tool": "local_shell",     "action": "approve"},
-    {"tools": "webtools",     "tool": "web_get",         "action": "allow"},
-    {"tools": "webtools",     "tool": "web_head",        "action": "allow"},
-    {"tools": "webtools",     "tool": "web_post",        "action": "approve"},
-    {"tools": "webtools",     "tool": "web_put",         "action": "approve"},
-    {"tools": "webtools",     "tool": "web_patch",       "action": "approve"},
-    {"tools": "webtools",     "tool": "web_delete",      "action": "approve"},
-    {"tools": "echo",                                    "action": "allow"},
-    {"tools": "print",                                   "action": "allow"}
+    {"tools": "local_fs", "tool": "read_file", "action": "allow"},
+    {"tools": "local_fs", "tool": "read_file_range", "action": "allow"},
+    {"tools": "local_fs", "tool": "list_dir", "action": "allow"},
+    {"tools": "local_fs", "tool": "grep", "action": "allow"},
+    {"tools": "local_fs", "tool": "stat_file", "action": "allow"},
+    {"tools": "local_fs", "tool": "count_stats", "action": "allow"},
+    {"tools": "local_fs", "tool": "write_file", "action": "approve"},
+    {"tools": "local_fs", "tool": "sed", "action": "approve"},
+
+    {"tools": "local_shell", "tool": "local_shell", "action": "deny", "when": [{"key": "command", "op": "command_blacklist", "value": "mkfs,mke2fs,fdisk,shred,wipefs"}]},
+    {"tools": "local_shell", "tool": "local_shell", "action": "approve", "when": [{"key": "command", "op": "command_ask_always", "value": "rm,sudo,dd,chmod,chown,mv,cp,>:,>>"}]},
+    {"tools": "local_shell", "tool": "local_shell", "action": "approve", "when": [{"key": "args", "op": "no_command_substitution", "value": ""}]},
+    {"tools": "local_shell", "tool": "local_shell", "action": "approve"},
+
+    {"tools": "webtools", "tool": "web_get", "action": "allow"},
+    {"tools": "webtools", "tool": "web_head", "action": "allow"},
+    {"tools": "webtools", "tool": "web_post", "action": "approve"},
+    {"tools": "webtools", "tool": "web_put", "action": "approve"},
+    {"tools": "webtools", "tool": "web_patch", "action": "approve"},
+    {"tools": "webtools", "tool": "web_delete", "action": "approve"},
+
+    {"tools": "echo", "action": "allow"},
+    {"tools": "print", "action": "allow"}
   ]
 }

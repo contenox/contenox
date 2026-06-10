@@ -15,27 +15,29 @@
     {"tools": "local_fs", "tool": "read_file_range", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{*.pem,*.key,.env,.env.*}"}]},
     {"tools": "local_fs", "tool": "grep", "action": "deny", "when": [{"key": "path", "op": "glob", "value": "**/{*.pem,*.key,.env,.env.*}"}]},
 
-    {"tools": "local_shell",  "tool": "local_shell",     "action": "deny"},
+    {"tools": "local_shell", "tool": "local_shell", "action": "deny", "when": [{"key": "command", "op": "command_blacklist", "value": "mkfs,mke2fs,fdisk,shred,wipefs,rm,sudo,dd,chmod,chown,mv,cp"}]},
+    {"tools": "local_shell", "tool": "local_shell", "action": "deny", "when": [{"key": "args", "op": "no_command_substitution", "value": ""}]},
+    {"tools": "local_shell", "tool": "local_shell", "action": "deny"},
 
     {"tools": "webtools", "tool": "*", "action": "deny", "when": [{"key": "url", "op": "host", "value": "localhost,127.0.0.1,0.0.0.0,::1,169.254.169.254,169.254.170.2,metadata.google.internal,metadata.azure.com"}]},
 
-    {"tools": "webtools",     "tool": "web_post",        "action": "deny"},
-    {"tools": "webtools",     "tool": "web_put",         "action": "deny"},
-    {"tools": "webtools",     "tool": "web_patch",       "action": "deny"},
-    {"tools": "webtools",     "tool": "web_delete",      "action": "deny"},
-    {"tools": "webtools",     "tool": "web_get",         "action": "deny"},
-    {"tools": "webtools",     "tool": "web_head",        "action": "deny"},
+    {"tools": "webtools", "tool": "web_post", "action": "deny"},
+    {"tools": "webtools", "tool": "web_put", "action": "deny"},
+    {"tools": "webtools", "tool": "web_patch", "action": "deny"},
+    {"tools": "webtools", "tool": "web_delete", "action": "deny"},
+    {"tools": "webtools", "tool": "web_get", "action": "deny"},
+    {"tools": "webtools", "tool": "web_head", "action": "deny"},
 
-    {"tools": "local_fs",     "tool": "write_file",      "action": "deny"},
-    {"tools": "local_fs",     "tool": "sed",             "action": "deny"},
+    {"tools": "local_fs", "tool": "write_file", "action": "deny"},
+    {"tools": "local_fs", "tool": "sed", "action": "deny"},
 
-    {"tools": "local_fs",     "tool": "read_file",       "action": "allow"},
-    {"tools": "local_fs",     "tool": "read_file_range", "action": "allow"},
-    {"tools": "local_fs",     "tool": "list_dir",        "action": "allow"},
-    {"tools": "local_fs",     "tool": "grep",            "action": "allow"},
-    {"tools": "local_fs",     "tool": "stat_file",       "action": "allow"},
-    {"tools": "local_fs",     "tool": "count_stats",     "action": "allow"},
-    {"tools": "echo",                                    "action": "allow"},
-    {"tools": "print",                                   "action": "allow"}
+    {"tools": "local_fs", "tool": "read_file", "action": "allow"},
+    {"tools": "local_fs", "tool": "read_file_range", "action": "allow"},
+    {"tools": "local_fs", "tool": "list_dir", "action": "allow"},
+    {"tools": "local_fs", "tool": "grep", "action": "allow"},
+    {"tools": "local_fs", "tool": "stat_file", "action": "allow"},
+    {"tools": "local_fs", "tool": "count_stats", "action": "allow"},
+    {"tools": "echo", "action": "allow"},
+    {"tools": "print", "action": "allow"}
   ]
 }

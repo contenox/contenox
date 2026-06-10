@@ -84,8 +84,8 @@ func TestUnit_IsToolBearingHandler(t *testing.T) {
 	require.True(t, isToolBearingHandler(string(taskengine.HandleChatCompletion)))
 	require.True(t, isToolBearingHandler(string(taskengine.HandleExecuteToolCalls)))
 	require.True(t, isToolBearingHandler(string(taskengine.HandleTools)))
+	require.True(t, isToolBearingHandler(string(taskengine.HandleRoute)))
 	require.False(t, isToolBearingHandler(string(taskengine.HandleNoop)))
-	require.False(t, isToolBearingHandler(string(taskengine.HandleRoute)))
 }
 
 func TestUnit_ReplayToolCall_FromAssistantMessage(t *testing.T) {

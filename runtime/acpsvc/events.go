@@ -66,7 +66,7 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 
 func isToolBearingHandler(handler string) bool {
 	switch taskengine.TaskHandler(handler) {
-	case taskengine.HandleExecuteToolCalls, taskengine.HandleTools, taskengine.HandleChatCompletion:
+	case taskengine.HandleExecuteToolCalls, taskengine.HandleTools, taskengine.HandleChatCompletion, taskengine.HandleRoute:
 		return true
 	}
 	return false

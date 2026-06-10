@@ -112,7 +112,13 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 	}
 
 	if outputResp.Output != "" {
-		_, _ = io.WriteString(stdout, strings.TrimRight(outputResp.Output, "\n"))
+		// Trim excessive trailing newlines from terminal output to avoid UI padding.
+		// Preserve at most 2 trailing newlines (common for command output).
+		output := outputResp.Output
+		for strings.HasSuffix(output, "\n\n\n") {
+			output = strings.TrimSuffix(output, "\n")
+		}
+		_, _ = io.WriteString(stdout, output)
 	}
 
 	if timedOut {

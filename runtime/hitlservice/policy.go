@@ -54,6 +54,17 @@ const (
 	// literals match exactly; bare names match the host and any subdomain
 	// (api.example.com matches example.com).
 	OpHost ConditionOp = "host"
+	// OpCommandBlacklist matches the command basename against a comma-separated
+	// list of denied commands. Used to block dangerous commands like rm, sudo, dd.
+	OpCommandBlacklist ConditionOp = "command_blacklist"
+	// OpCommandAskAlways matches the command basename against a comma-separated
+	// list of commands that should always require human approval (e.g., rm, sudo, chmod).
+	// Unlike OpCommandBlacklist which denies, this operator with action:"approve" creates
+	// a HITL pause point for safety-critical commands.
+	OpCommandAskAlways ConditionOp = "command_ask_always"
+	// OpNoCommandSubstitution blocks commands containing shell substitution
+	// patterns ($(), backticks, <(), >()) that could indicate command injection.
+	OpNoCommandSubstitution ConditionOp = "no_command_substitution"
 )
 
 // Condition is a single key/op/value predicate applied to the args of a tool call.
@@ -158,6 +169,18 @@ func conditionMatches(c Condition, args map[string]any) bool {
 			}
 		case OpHost:
 			if urlHostMatches(s, c.Value) {
+				return true
+			}
+		case OpCommandBlacklist:
+			if isCommandBlacklisted(args, c.Value) {
+				return true
+			}
+		case OpCommandAskAlways:
+			if isCommandInAskAlwaysList(args, c.Value) {
+				return true
+			}
+		case OpNoCommandSubstitution:
+			if detectCommandSubstitution(args) {
 				return true
 			}
 		}
@@ -367,6 +390,118 @@ func matchSuffix(pattern, s string) bool {
 	return matchDoubleGlob(pattern, s)
 }
 
+// commandSubstitutionPatterns are shell metacharacters that enable command
+// substitution and should be blocked to prevent injection attacks.
+var commandSubstitutionPatterns = []string{
+	"$(",  // Command substitution
+	"`",   // Backtick command substitution
+	"<(",  // Process substitution (read)
+	">(",  // Process substitution (write)
+	"$[",  // Arithmetic expansion
+	"${}", // Parameter expansion
+	"$((", // Arithmetic expansion
+}
+
+// detectCommandSubstitution checks if a command string or any of its arguments
+// contain shell metacharacters that could enable command injection.
+func detectCommandSubstitution(args map[string]any) bool {
+	// Check all argument values for substitution patterns
+	for _, v := range args {
+		for _, s := range conditionValues(v) {
+			for _, pattern := range commandSubstitutionPatterns {
+				if strings.Contains(s, pattern) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// getCommandFromArgs extracts the command string from tool arguments.
+// For local_shell, this checks both "command" and the first element of "args".
+func getCommandFromArgs(args map[string]any) string {
+	if cmd, ok := args["command"].(string); ok {
+		return cmd
+	}
+	// If args is a string, it might contain the full command
+	if argStr, ok := args["args"].(string); ok {
+		// Extract first word as command
+		parts := strings.Fields(argStr)
+		if len(parts) > 0 {
+			return parts[0]
+		}
+	}
+	// If args is an array, first element might be command
+	if argList, ok := args["args"].([]string); ok && len(argList) > 0 {
+		return argList[0]
+	}
+	return ""
+}
+
+// isCommandBlacklisted checks if the command matches any in the blacklist.
+// The blacklist is a comma-separated string of command names (basenames).
+func isCommandBlacklisted(args map[string]any, blacklist string) bool {
+	if blacklist == "" {
+		return false
+	}
+	cmd := getCommandFromArgs(args)
+	if cmd == "" {
+		return false
+	}
+	// Get basename of command (strip path and any suffixes)
+	base := path.Base(cmd)
+	// Remove any arguments that might be appended
+	// e.g., "grep -n" -> "grep"
+	base = strings.Fields(base)[0]
+	if base == "" {
+		return false
+	}
+	// Check against blacklist
+	for _, denied := range strings.Split(blacklist, ",") {
+		denied = strings.TrimSpace(denied)
+		if denied == "" {
+			continue
+		}
+		if base == denied {
+			return true
+		}
+	}
+	return false
+}
+
+// isCommandInAskAlwaysList checks if the command matches any in the ask-always list.
+// The list is a comma-separated string of command names (basenames) that should
+// always require human approval before execution.
+func isCommandInAskAlwaysList(args map[string]any, commandList string) bool {
+	if commandList == "" {
+		return false
+	}
+	cmd := getCommandFromArgs(args)
+	if cmd == "" {
+		return false
+	}
+	// Get basename of command (strip path and any suffixes)
+	base := path.Base(cmd)
+	// Remove any arguments that might be appended
+	// e.g., "rm -rf" -> "rm"
+	base = strings.Fields(base)[0]
+	if base == "" {
+		return false
+	}
+	// Check against the ask-always list
+	for _, cmdName := range strings.Split(commandList, ",") {
+		cmdName = strings.TrimSpace(cmdName)
+		if cmdName == "" {
+			continue
+		}
+		if base == cmdName {
+			return true
+		}
+	}
+	return false
+}
+
 func loadPolicy(ctx context.Context, src PolicySource, tenantID, policyPath string) (*Policy, error) {
 	data, err := src.ReadPolicy(ctx, tenantID, policyPath)
 	if err != nil {
@@ -400,7 +535,7 @@ func validatePolicy(p *Policy) error {
 		}
 		for j, c := range r.When {
 			switch c.Op {
-			case OpEq, OpHost:
+			case OpEq, OpHost, OpCommandBlacklist, OpCommandAskAlways, OpNoCommandSubstitution:
 			case OpGlob:
 				if err := validateGlobValue(c.Value); err != nil {
 					return fmt.Errorf("rule %d, condition %d: %w", i, j, err)
@@ -487,6 +622,15 @@ func defaultPolicy() *Policy {
 			{Tools: "local_fs", Tool: "count_stats", Action: ActionAllow},
 			{Tools: "local_fs", Tool: "write_file", Action: ActionApprove},
 			{Tools: "local_fs", Tool: "sed", Action: ActionApprove},
+			// local_shell: block commands that are never allowed under any circumstance.
+			// Values must be bare basenames — the matcher extracts path.Base(command) and compares
+			// exactly, so multi-word entries like "rm -rf" would silently never fire.
+			{Tools: "local_shell", Tool: "local_shell", Action: ActionDeny, When: []Condition{{Key: "command", Op: OpCommandBlacklist, Value: "mkfs,mke2fs,fdisk,shred,wipefs"}}},
+			// local_shell: require approval for dangerous commands (ask-always list)
+			{Tools: "local_shell", Tool: "local_shell", Action: ActionApprove, When: []Condition{{Key: "command", Op: OpCommandAskAlways, Value: "rm,sudo,dd,chmod,chown,mv,cp,>:,>>"}}},
+			// local_shell: require approval for command injection patterns
+			{Tools: "local_shell", Tool: "local_shell", Action: ActionApprove, When: []Condition{{Key: "args", Op: OpNoCommandSubstitution, Value: ""}}},
+			// local_shell: default to requiring approval (fail-closed safety)
 			{Tools: "local_shell", Tool: "local_shell", Action: ActionApprove},
 			{Tools: "webtools", Tool: "web_get", Action: ActionAllow},
 			{Tools: "webtools", Tool: "web_head", Action: ActionAllow},
