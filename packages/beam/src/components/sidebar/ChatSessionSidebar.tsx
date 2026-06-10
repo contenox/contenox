@@ -1,9 +1,16 @@
-import { Button, NavItem, Span, Spinner } from '@contenox/ui';
+import { Button, Span, Spinner } from '@contenox/ui';
 import { t } from 'i18next';
 import { MessageSquarePlus } from 'lucide-react';
 import { Link, useMatch, useNavigate } from 'react-router-dom';
 import { useChats, useCreateChat } from '../../hooks/useChats';
 import { ChatSession } from '../../lib/types';
+
+const getPreviewText = (content: string): string => {
+  const trimmed = content.trim();
+  if (trimmed.length === 0) return '';
+  if (trimmed.length <= 60) return trimmed;
+  return trimmed.slice(0, 57) + '…';
+};
 
 export function ChatSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) => void }) {
   const navigate = useNavigate();
@@ -58,24 +65,30 @@ export function ChatSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =
         ) : (
           chats.map(chat => {
             const isActive = activeChatId === chat.id;
+            const preview = chat.lastMessage?.content
+              ? getPreviewText(chat.lastMessage.content)
+              : null;
+            const displayText = preview || chat.model || chat.id.slice(0, 8);
+            const showModel = preview && (chat.model || chat.id.slice(0, 8));
             return (
-              <NavItem
+              <Link
                 key={chat.id}
-                as={Link}
                 to={`/chat/${chat.id}`}
-                isActive={isActive}
                 onClick={() => setIsOpen(false)}
-                className="block rounded-lg py-2 pr-2 pl-4"
-              >
-                <Span className="line-clamp-1 block text-sm">{chat.model || chat.id}</Span>
-                {chat.lastMessage?.content ? (
-                  <Span className="text-text-muted line-clamp-2 block text-xs">
-                    {chat.lastMessage.content.length > 80
-                      ? chat.lastMessage.content.slice(0, 77) + '…'
-                      : chat.lastMessage.content}
+                className={`block rounded-lg border p-4 transition-colors duration-150 ${
+                  isActive
+                    ? 'bg-surface-200 dark:bg-dark-surface-200 border-surface-400 dark:border-dark-surface-600'
+                    : 'bg-surface-100 dark:bg-dark-surface-100 border-surface-200 dark:border-dark-surface-700 hover:bg-surface-200 dark:hover:bg-dark-surface-200'
+                }`}>
+                <Span className="text-text dark:text-dark-text line-clamp-2 text-xs">
+                  {displayText}
+                </Span>
+                {showModel && (
+                  <Span className="text-text-muted dark:text-dark-text-muted mt-1 block text-xs">
+                    {chat.model || chat.id.slice(0, 8)}
                   </Span>
-                ) : null}
-              </NavItem>
+                )}
+              </Link>
             );
           })
         )}

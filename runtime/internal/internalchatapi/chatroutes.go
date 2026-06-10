@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -143,13 +144,54 @@ func (h *chatHandler) listChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := make([]chatSession, 0, len(sessions))
+	// Build sessions with last message timestamps for sorting
+	type sessionWithTimestamp struct {
+		session   *agentservice.SessionInfo
+		lastMsg   *chatMessage
+		lastMsgAt time.Time
+	}
+
+	var withTs []sessionWithTimestamp
 	for _, s := range sessions {
+		var lastMsg *chatMessage
+		var lastMsgAt time.Time
+		if h.deps.ChatMgr != nil && h.deps.DB != nil {
+			msgs, err := h.deps.ChatMgr.ListMessages(ctx, h.deps.DB.WithoutTransaction(), s.ID)
+			if err == nil && len(msgs) > 0 {
+				lastMsgAt = msgs[len(msgs)-1].Timestamp
+				lastMsg = &chatMessage{
+					ID:         msgs[len(msgs)-1].ID,
+					Role:       msgs[len(msgs)-1].Role,
+					Content:    msgs[len(msgs)-1].Content,
+					Thinking:   msgs[len(msgs)-1].Thinking,
+					SentAt:     msgs[len(msgs)-1].Timestamp,
+					IsUser:     msgs[len(msgs)-1].Role == "user",
+					IsLatest:   true,
+					CallTools:  msgs[len(msgs)-1].CallTools,
+					ToolCallID: msgs[len(msgs)-1].ToolCallID,
+				}
+			}
+		}
+		withTs = append(withTs, sessionWithTimestamp{
+			session:   s,
+			lastMsg:   lastMsg,
+			lastMsgAt: lastMsgAt,
+		})
+	}
+
+	// Sort by last message timestamp, newest first
+	sort.Slice(withTs, func(i, j int) bool {
+		return withTs[i].lastMsgAt.After(withTs[j].lastMsgAt)
+	})
+
+	resp := make([]chatSession, 0, len(withTs))
+	for _, w := range withTs {
 		resp = append(resp, chatSession{
-			ID:           s.ID,
-			Name:         s.Name,
-			MessageCount: s.MessageCount,
-			IsActive:     s.IsActive,
+			ID:           w.session.ID,
+			Name:         w.session.Name,
+			MessageCount: w.session.MessageCount,
+			IsActive:     w.session.IsActive,
+			LastMessage:  w.lastMsg,
 		})
 	}
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response []internalchatapi.chatSession
