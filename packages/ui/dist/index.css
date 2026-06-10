@@ -3410,11 +3410,6 @@
       color: var(--color-dark-success-800);
     }
   }
-  .dark\:text-dark-surface {
-    &:where(.dark, .dark *) {
-      color: var(--color-dark-surface);
-    }
-  }
   .dark\:text-dark-surface-50 {
     &:where(.dark, .dark *) {
       color: var(--color-dark-surface-50);
