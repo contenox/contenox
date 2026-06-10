@@ -12,6 +12,7 @@ import (
 	"github.com/contenox/runtime/runtime/llmrepo"
 	libmodelprovider "github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/taskengine/llmretry"
+	"github.com/google/uuid"
 )
 
 // TaskExecutor executes individual tasks within a workflow.
@@ -33,6 +34,17 @@ type TaskExecutor interface {
 	// - input: Task input data
 	// - dataType: Type of the input data
 	TaskExec(ctx context.Context, startingTime time.Time, ctxLength int, chainContext *ChainContext, currentTask *TaskDefinition, input any, dataType DataType) (any, DataType, string, error)
+}
+
+// ensureUniqueToolCallID ensures a tool call ID is unique by appending
+// a short UUID suffix. This prevents duplicate IDs that can confuse
+// ACP clients when the model reuses IDs across turns.
+func ensureUniqueToolCallID(id string) string {
+	if id == "" {
+		return uuid.NewString()
+	}
+	// Append 4-char UUID suffix to ensure uniqueness
+	return id + "-" + uuid.NewString()[:4]
 }
 
 // SimpleExec is a basic implementation of TaskExecutor.
@@ -878,7 +890,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			if currentTask.Tools.Args == nil {
 				currentTask.Tools.Args = make(map[string]string)
 			}
-			toolsCtx := context.WithValue(taskCtx, ContextKeyToolCallID, currentTask.ID)
+			toolsCtx := context.WithValue(taskCtx, ContextKeyToolCallID, ensureUniqueToolCallID(currentTask.ID))
 			if currentTask.ExecuteConfig != nil {
 				if policy, ok := currentTask.ExecuteConfig.ToolsPolicies[currentTask.Tools.Name]; ok && len(policy) > 0 {
 					toolsCtx = WithToolsArgs(toolsCtx, currentTask.Tools.Name, policy)
@@ -1220,7 +1232,7 @@ func (exe *SimpleExec) executeLLM(
 			Arguments: tc.Function.Arguments,
 		}
 		callTools[i] = ToolCall{
-			ID:           tc.ID,
+			ID:           ensureUniqueToolCallID(tc.ID),
 			Function:     function,
 			Type:         tc.Type,
 			ProviderMeta: tc.ProviderMeta,
