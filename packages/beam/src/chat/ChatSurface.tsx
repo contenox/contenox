@@ -1,4 +1,21 @@
 import {
+  AlertTriangle,
+  Bot,
+  Database,
+  FileText,
+  MessageSquarePlus,
+  Package,
+  Pencil,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  Wrench,
+} from 'lucide-react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import {
   Badge,
   Button,
   ChatComposer,
@@ -13,22 +30,6 @@ import {
   chatTranscriptMarkdownComponents,
   useChatScroll,
 } from '../../../ui/src/chat';
-import {
-  AlertTriangle,
-  Bot,
-  Database,
-  FileText,
-  MessageSquarePlus,
-  Package,
-  RefreshCw,
-  Search,
-  SlidersHorizontal,
-  Trash2,
-  Wrench,
-} from 'lucide-react';
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 export type BeamChatSession = {
   id: string;
@@ -88,6 +89,7 @@ export type BeamChatClient = {
   listSessions: () => Promise<BeamChatSession[]>;
   createSession: (input: { title: string }) => Promise<BeamChatSessionResponse>;
   getSession: (id: string) => Promise<BeamChatSessionResponse>;
+  renameSession?: (id: string, input: { title: string }) => Promise<BeamChatSessionResponse>;
   deleteSession?: (id: string) => Promise<void>;
   sendMessage: (id: string, input: { content: string }) => Promise<BeamChatMessageResponse>;
   listTools: () => Promise<BeamChatTool[]>;
@@ -139,10 +141,7 @@ function sessionTitle(session: BeamChatSession): string {
   return session.title?.trim() || 'New session';
 }
 
-function upsertSession(
-  sessions: BeamChatSession[],
-  session?: BeamChatSession,
-): BeamChatSession[] {
+function upsertSession(sessions: BeamChatSession[], session?: BeamChatSession): BeamChatSession[] {
   if (!session) return sessions;
   const next = [session, ...sessions.filter(item => item.id !== session.id)];
   return next.sort((a, b) => {
@@ -174,7 +173,8 @@ export function BeamChat({
     () => sessions.find(session => session.id === selectedId) ?? null,
     [selectedId, sessions],
   );
-  const composerDisabled = loadState !== 'ready' || pending || !selected;
+  const aiReady = Boolean(readiness.aiReady);
+  const composerDisabled = loadState !== 'ready' || pending || !selected || !aiReady;
 
   const selectSession = useCallback(
     async (id: string) => {
@@ -226,6 +226,7 @@ export function BeamChat({
   }, [client, selectSession]);
 
   const createSession = useCallback(async () => {
+    if (!aiReady) return;
     setPending(true);
     setErr(null);
     try {
@@ -242,7 +243,7 @@ export function BeamChat({
     } finally {
       setPending(false);
     }
-  }, [client, loadInitial]);
+  }, [aiReady, client, loadInitial]);
 
   const deleteSession = useCallback(
     async (session: BeamChatSession) => {
@@ -272,11 +273,38 @@ export function BeamChat({
     [client, selectedId, selectSession, sessions],
   );
 
+  const renameSession = useCallback(
+    async (session: BeamChatSession) => {
+      if (!client.renameSession) return;
+      const current = sessionTitle(session);
+      const title = window.prompt('Session name', current)?.trim();
+      if (!title || title === current) return;
+      setPending(true);
+      setErr(null);
+      try {
+        const result = await client.renameSession(session.id, { title });
+        if (result.session) {
+          setSessions(currentSessions => upsertSession(currentSessions, result.session));
+        } else {
+          await loadInitial();
+        }
+        if (result.messages && selectedId === session.id) {
+          setMessages(result.messages);
+        }
+      } catch (error) {
+        setErr(error instanceof Error ? error.message : String(error));
+      } finally {
+        setPending(false);
+      }
+    },
+    [client, loadInitial, selectedId],
+  );
+
   const sendMessage = useCallback(
     async (event?: FormEvent) => {
       event?.preventDefault();
       const content = input.trim();
-      if (!selected || !content) return;
+      if (!aiReady || !selected || !content) return;
 
       setPending(true);
       setErr(null);
@@ -297,7 +325,7 @@ export function BeamChat({
         setPending(false);
       }
     },
-    [client, input, selectSession, selected],
+    [aiReady, client, input, selectSession, selected],
   );
 
   useEffect(() => {
@@ -310,11 +338,13 @@ export function BeamChat({
         <div className="border-surface-200 dark:border-dark-surface-700 flex items-center justify-between border-b p-3">
           <div>
             <h2 className="text-sm font-semibold">Sessions</h2>
-            <Span variant="muted" className="text-xs">{sessions.length} sessions</Span>
+            <Span variant="muted" className="text-xs">
+              {sessions.length} sessions
+            </Span>
           </div>
           <Button
             aria-label="New Beam session"
-            disabled={loadState !== 'ready' || pending}
+            disabled={loadState !== 'ready' || pending || !aiReady}
             onClick={() => void createSession()}
             size="icon"
             type="button">
@@ -325,8 +355,12 @@ export function BeamChat({
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2" aria-label="Beam sessions">
           {loadState === 'loading' ? <ChatThreadSkeleton rows={3} /> : null}
           {loadState === 'ready' && sessions.length === 0 ? (
-            <Panel variant="empty" className="border-surface-200 dark:border-dark-surface-700 rounded-md border border-dashed p-4">
-              <Span variant="muted" className="text-sm">No sessions yet.</Span>
+            <Panel
+              variant="empty"
+              className="border-surface-200 dark:border-dark-surface-700 rounded-md border border-dashed p-4">
+              <Span variant="muted" className="text-sm">
+                No sessions yet.
+              </Span>
             </Panel>
           ) : null}
           {sessions.map(session => (
@@ -334,7 +368,7 @@ export function BeamChat({
               className={[
                 'group flex items-center gap-1 rounded-lg p-1',
                 session.id === selectedId
-                  ? 'bg-primary-600 text-white dark:bg-dark-primary-600'
+                  ? 'bg-primary-600 dark:bg-dark-primary-600 text-white'
                   : 'text-text hover:bg-surface-100 dark:text-dark-text dark:hover:bg-dark-surface-200',
               ].join(' ')}
               key={session.id}>
@@ -348,6 +382,18 @@ export function BeamChat({
                   {fmtDate(session.lastMessageAt ?? session.updatedAt)}
                 </div>
               </button>
+              {client.renameSession ? (
+                <Button
+                  aria-label={`Rename ${sessionTitle(session)}`}
+                  className="opacity-0 group-hover:opacity-100"
+                  disabled={pending}
+                  onClick={() => void renameSession(session)}
+                  size="icon"
+                  type="button"
+                  variant="ghost">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              ) : null}
               {client.deleteSession ? (
                 <Button
                   aria-label={`Delete ${sessionTitle(session)}`}
@@ -375,9 +421,15 @@ export function BeamChat({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Bot className="h-5 w-5 opacity-70" />
-              <h2 className="truncate text-base font-semibold">{selected ? sessionTitle(selected) : 'Beam'}</h2>
+              <h2 className="truncate text-base font-semibold">
+                {selected ? sessionTitle(selected) : 'Beam'}
+              </h2>
               <Badge variant={loadState === 'ready' ? 'outline' : 'secondary'} size="sm">
-                {loadState === 'ready' ? 'Ready' : loadState === 'loading' ? 'Loading' : 'Not connected'}
+                {loadState === 'ready'
+                  ? 'Ready'
+                  : loadState === 'loading'
+                    ? 'Loading'
+                    : 'Not connected'}
               </Badge>
             </div>
             <Span variant="muted" className="mt-1 block text-sm">
@@ -400,7 +452,9 @@ export function BeamChat({
         </div>
 
         {err ? (
-          <InlineNotice variant={loadState === 'unavailable' ? 'warning' : 'error'} className="m-4 mb-0">
+          <InlineNotice
+            variant={loadState === 'unavailable' ? 'warning' : 'error'}
+            className="m-4 mb-0">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{err}</span>
@@ -430,9 +484,11 @@ export function BeamChat({
             placeholder={
               loadState === 'unavailable'
                 ? 'Beam is not connected yet.'
-                : selected
-                  ? 'Ask about this workspace'
-                  : 'Create a session to start'
+                : !aiReady
+                  ? 'Complete Beam setup to start'
+                  : selected
+                    ? 'Ask about this workspace'
+                    : 'Create a session to start'
             }
             submitLabel="Send"
             pendingLabel="Sending"
@@ -459,7 +515,9 @@ function ConversationPane({
   readiness: BeamChatReadiness;
   selected: BeamChatSession | null;
 }) {
-  const { containerRef, endRef, scrollToEnd, isNearBottom } = useChatScroll({ deps: [messages, loadState] });
+  const { containerRef, endRef, scrollToEnd, isNearBottom } = useChatScroll({
+    deps: [messages, loadState],
+  });
 
   if (loadState === 'loading') {
     return (
@@ -485,7 +543,11 @@ function ConversationPane({
             <MessageSquarePlus className="h-8 w-8 opacity-70" />
           </div>
           <h3 className="text-lg font-semibold">No session selected</h3>
-          <Button className="mt-5" onClick={() => void onCreate()} type="button">
+          <Button
+            className="mt-5"
+            disabled={!readiness.aiReady}
+            onClick={() => void onCreate()}
+            type="button">
             <MessageSquarePlus className="mr-2 h-4 w-4" />
             New session
           </Button>
@@ -509,7 +571,7 @@ function ConversationPane({
               </div>
               <h3 className="text-lg font-semibold">New session</h3>
               <Span variant="muted" className="mt-2 block text-sm">
-                Ask a question once the workspace has searchable context.
+                Ask a question to start the conversation.
               </Span>
             </Panel>
           </div>
@@ -519,7 +581,9 @@ function ConversationPane({
             const showSeparator = !prev || dateKey(prev.createdAt) !== dateKey(message.createdAt);
             return (
               <div key={message.id} className="animate-in fade-in-0 space-y-4 duration-150">
-                {showSeparator ? <ChatDateSeparator label={formatDateLabel(message.createdAt)} /> : null}
+                {showSeparator ? (
+                  <ChatDateSeparator label={formatDateLabel(message.createdAt)} />
+                ) : null}
                 <ChatMessageView message={message} isLatest={index === messages.length - 1} />
               </div>
             );
@@ -531,13 +595,7 @@ function ConversationPane({
   );
 }
 
-function ChatMessageView({
-  message,
-  isLatest,
-}: {
-  message: BeamChatMessage;
-  isLatest: boolean;
-}) {
+function ChatMessageView({ message, isLatest }: { message: BeamChatMessage; isLatest: boolean }) {
   const roleLabel =
     message.role === 'user'
       ? 'You'
@@ -611,7 +669,10 @@ function ContextReadiness({
       icon: Database,
       label: 'Sources',
       ready: readiness.syncedSourceCount > 0,
-      value: readiness.sourceCount > 0 ? `${readiness.syncedSourceCount}/${readiness.sourceCount} synced` : 'None',
+      value:
+        readiness.sourceCount > 0
+          ? `${readiness.syncedSourceCount}/${readiness.sourceCount} synced`
+          : 'None',
       href: links.sources,
       disabled: !readiness.canManage,
     },
@@ -626,7 +687,9 @@ function ContextReadiness({
 
   return (
     <div className="space-y-2">
-      <div className="text-text-muted dark:text-dark-text-muted text-xs font-medium uppercase">Context</div>
+      <div className="text-text-muted dark:text-dark-text-muted text-xs font-medium uppercase">
+        Context
+      </div>
       {items.map(item => {
         const Icon = item.icon;
         const content = (
@@ -635,7 +698,9 @@ function ContextReadiness({
               <Icon className="h-4 w-4 shrink-0 opacity-70" />
               <span className="truncate">{item.label}</span>
             </span>
-            <Badge variant={item.ready ? 'success' : 'outline'} size="sm">{item.value}</Badge>
+            <Badge variant={item.ready ? 'success' : 'outline'} size="sm">
+              {item.value}
+            </Badge>
           </>
         );
 
@@ -662,19 +727,19 @@ function ContextReadiness({
   );
 }
 
-function ToolSummary({
-  tools,
-  unavailable,
-}: {
-  tools: BeamChatTool[];
-  unavailable: boolean;
-}) {
+function ToolSummary({ tools, unavailable }: { tools: BeamChatTool[]; unavailable: boolean }) {
   return (
     <div className="mt-4 space-y-2">
-      <div className="text-text-muted dark:text-dark-text-muted text-xs font-medium uppercase">Tools</div>
+      <div className="text-text-muted dark:text-dark-text-muted text-xs font-medium uppercase">
+        Tools
+      </div>
       {unavailable ? (
-        <Panel variant="empty" className="border-surface-200 dark:border-dark-surface-700 rounded-md border border-dashed px-2 py-2">
-          <Span variant="muted" className="text-sm">Runtime tools unavailable.</Span>
+        <Panel
+          variant="empty"
+          className="border-surface-200 dark:border-dark-surface-700 rounded-md border border-dashed px-2 py-2">
+          <Span variant="muted" className="text-sm">
+            Runtime tools unavailable.
+          </Span>
         </Panel>
       ) : tools.length > 0 ? (
         tools.slice(0, 4).map(tool => (
@@ -685,12 +750,18 @@ function ToolSummary({
               <Wrench className="h-4 w-4 shrink-0 opacity-70" />
               <span className="truncate">{tool.label}</span>
             </span>
-            <Badge variant={tool.enabled ? 'outline' : 'secondary'} size="sm">{tool.mode}</Badge>
+            <Badge variant={tool.enabled ? 'outline' : 'secondary'} size="sm">
+              {tool.mode}
+            </Badge>
           </div>
         ))
       ) : (
-        <Panel variant="empty" className="border-surface-200 dark:border-dark-surface-700 rounded-md border border-dashed px-2 py-2">
-          <Span variant="muted" className="text-sm">No tools enabled.</Span>
+        <Panel
+          variant="empty"
+          className="border-surface-200 dark:border-dark-surface-700 rounded-md border border-dashed px-2 py-2">
+          <Span variant="muted" className="text-sm">
+            No tools enabled.
+          </Span>
         </Panel>
       )}
     </div>
@@ -711,7 +782,7 @@ function UnavailableState({
       </div>
       <h3 className="text-lg font-semibold">Beam is not connected yet</h3>
       <Span variant="muted" className="mt-2 block text-sm">
-        The workbench is in the Dashboard, but message execution still needs the tenant Beam API behind it.
+        The Beam API is not responding. Refresh the page or check the workspace setup.
       </Span>
       <div className="mt-6 flex flex-wrap justify-center gap-2">
         {readiness.canManage ? (
