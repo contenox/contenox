@@ -332,6 +332,17 @@ func openAIAPIBaseModelID(model string) string {
 	return m
 }
 
+// openAIUsesResponsesEndpoint indicates whether this model requires
+// the OpenAI Responses API (POST /v1/responses).
+//
+// OpenAI chat-completions is the older API surface, while the newer
+// reasoning-capable models now reject it for request routing. In practice,
+// this repo routes GPT-5 family models to /responses.
+func openAIUsesResponsesEndpoint(model string) bool {
+	base := openAIAPIBaseModelID(model)
+	return strings.HasPrefix(base, "gpt-5")
+}
+
 func openAIReasoningEffort(model string, think *string) string {
 	if think == nil {
 		return ""

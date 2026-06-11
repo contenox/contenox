@@ -29,6 +29,62 @@ func (cancelAwareExecutor) TaskExec(
 	return nil, taskengine.DataTypeAny, "", errors.New("task context was not canceled")
 }
 
+type calledTask struct {
+	task     string
+	input    any
+	dataType taskengine.DataType
+}
+
+type scriptedExecutor struct {
+	calls       []calledTask
+	outputs     []any
+	outputTypes []taskengine.DataType
+	transitions []string
+	errors      []error
+}
+
+func (m *scriptedExecutor) TaskExec(
+	_ context.Context,
+	_ time.Time,
+	_ int,
+	_ *taskengine.ChainContext,
+	currentTask *taskengine.TaskDefinition,
+	input any,
+	dataType taskengine.DataType,
+) (any, taskengine.DataType, string, error) {
+	m.calls = append(m.calls, calledTask{
+		task:     currentTask.ID,
+		input:    input,
+		dataType: dataType,
+	})
+
+	output := any(nil)
+	if len(m.outputs) > 0 {
+		output = m.outputs[0]
+		m.outputs = m.outputs[1:]
+	}
+
+	outputType := taskengine.DataTypeAny
+	if len(m.outputTypes) > 0 {
+		outputType = m.outputTypes[0]
+		m.outputTypes = m.outputTypes[1:]
+	}
+
+	transition := ""
+	if len(m.transitions) > 0 {
+		transition = m.transitions[0]
+		m.transitions = m.transitions[1:]
+	}
+
+	err := error(nil)
+	if len(m.errors) > 0 {
+		err = m.errors[0]
+		m.errors = m.errors[1:]
+	}
+
+	return output, outputType, transition, err
+}
+
 func TestUnit_SimpleEnv_ExecEnv_SingleTask(t *testing.T) {
 	mockExec := &taskengine.MockTaskExecutor{
 		MockOutput:          "42",
@@ -62,6 +118,49 @@ func TestUnit_SimpleEnv_ExecEnv_SingleTask(t *testing.T) {
 	result, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "6 * 7", taskengine.DataTypeString)
 	require.NoError(t, err)
 	require.Equal(t, "42", result)
+}
+
+func TestUnit_SimpleEnv_ExecEnv_ErrorTransitionPreservesTaskInputForNextTask(t *testing.T) {
+	chainInput := taskengine.ChatHistory{
+		Messages: []taskengine.Message{{Role: "user", Content: "diagnostic"}},
+	}
+	exec := &scriptedExecutor{
+		outputs:     []any{nil, chainInput},
+		outputTypes: []taskengine.DataType{taskengine.DataTypeAny, taskengine.DataTypeChatHistory},
+		errors:      []error{errors.New("classify failed"), nil},
+	}
+
+	tracker := libtracker.NoopTracker{}
+	env, err := taskengine.NewEnv(context.Background(), tracker, exec, taskengine.NewSimpleInspector(), tools.NewMockToolsRegistry())
+	require.NoError(t, err)
+
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
+			{
+				ID:      "classify_request",
+				Handler: taskengine.HandleNoop,
+				Transition: taskengine.TaskTransition{
+					OnFailure: "acp_chat",
+				},
+			},
+			{
+				ID:      "acp_chat",
+				Handler: taskengine.HandleChatCompletion,
+				Transition: taskengine.TaskTransition{
+					Branches: []taskengine.TransitionBranch{
+						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+					},
+				},
+			},
+		},
+	}
+
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, chainInput, taskengine.DataTypeAny)
+	require.NoError(t, err)
+	require.Len(t, exec.calls, 2, "expect failed step and on_failure step to run")
+	require.Equal(t, "acp_chat", exec.calls[1].task)
+	require.Equal(t, chainInput, exec.calls[1].input)
+	require.Equal(t, taskengine.DataTypeChatHistory, exec.calls[1].dataType)
 }
 
 func TestUnit_SimpleEnv_ExecEnv_UsesParentCancellation(t *testing.T) {

@@ -312,6 +312,18 @@ func GetPrimaryModel(llmCall *LLMExecutionConfig) string {
 	return "default" // Fallback model name for token counting
 }
 
+func routeHistoryPrompt(history ChatHistory) string {
+	lines := make([]string, 0, len(history.Messages))
+	for _, msg := range history.Messages {
+		role := strings.TrimSpace(msg.Role)
+		if role == "" {
+			role = "message"
+		}
+		lines = append(lines, role+": "+strings.TrimSpace(msg.Content))
+	}
+	return strings.Join(lines, "\n")
+}
+
 // Prompt resolves a model client using the resolver policy and sends the prompt
 // to be executed. Returns the trimmed response string or an error.
 func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llmCall LLMExecutionConfig, prompt string, ctxLength int) (string, error) {
@@ -548,10 +560,6 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		if currentTask.ExecuteConfig == nil {
 			currentTask.ExecuteConfig = &LLMExecutionConfig{}
 		}
-		prompt, err := getPrompt()
-		if err != nil {
-			return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
-		}
 		routes := declaredRoutes(currentTask.Transition.Branches)
 		if len(routes) == 0 {
 			return nil, DataTypeAny, "", fmt.Errorf("route task %s has no equals branches to route between", currentTask.ID)
@@ -561,6 +569,58 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			sys += "\n\n"
 		}
 		sys += "Respond with exactly one of the following labels and nothing else: " + strings.Join(routes, ", ")
+
+		// Slide chat history for route tasks when Shift is enabled, so long
+		// histories can still classify using a token-safe suffix.
+		if dataType == DataTypeChatHistory && currentTask.ExecuteConfig.Shift && ctxLength > 0 {
+			history, ok := input.(ChatHistory)
+			if !ok {
+				return nil, DataTypeAny, "", fmt.Errorf("route task %s: input type mismatch for shift: %v", currentTask.ID, dataType)
+			}
+			if len(history.Messages) > 0 {
+				modelName := GetPrimaryModel(currentTask.ExecuteConfig)
+				sysTokens, countErr := exe.repo.CountTokens(taskCtx, modelName, sys)
+				if countErr != nil {
+					return nil, DataTypeAny, "", fmt.Errorf("route task %s: token count failed: %w", currentTask.ID, countErr)
+				}
+				routeOutputReserve := reserveOutputTokens(currentTask.ExecuteConfig, ctxLength)
+				budget := ctxLength - sysTokens - routeOutputReserve
+				if budget > 0 {
+					slid, _, slideErr := exe.shiftMessagesToFit(taskCtx, modelName, history.Messages, budget)
+					if slideErr != nil {
+						return nil, DataTypeAny, "", fmt.Errorf("route task %s: %w", currentTask.ID, slideErr)
+					}
+					history.Messages = slid
+					input = history
+					// If the slide itself fails (e.g. even system messages overflow)
+					// we fall through and let Prompt()'s own limit check surface the
+					// real error rather than swallowing it here.
+				}
+			}
+		}
+
+		// Extract the prompt from the configured input format.
+		var (
+			prompt string
+			err    error
+		)
+		switch dataType {
+		case DataTypeString, DataTypeInt:
+			outputType = dataType
+			prompt, err = getPrompt()
+		case DataTypeChatHistory:
+			history, ok := input.(ChatHistory)
+			if !ok {
+				return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: route task %s: input is not a chat history", currentTask.ID)
+			}
+			prompt = routeHistoryPrompt(history)
+		default:
+			return nil, DataTypeAny, "", fmt.Errorf("getPrompt unsupported input type for task %v: %v", currentTask.Handler.String(), dataType.String())
+		}
+		if err != nil {
+			return nil, DataTypeAny, "", fmt.Errorf("failed to get prompt: %w", err)
+		}
+
 		answer, err := exe.Prompt(taskCtx, sys, *currentTask.ExecuteConfig, prompt, ctxLength)
 		if err != nil {
 			return nil, DataTypeAny, "", fmt.Errorf("route task %s: %w", currentTask.ID, err)
@@ -574,6 +634,9 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 
 		var chatHistory ChatHistory
 		var finalExecConfig *LLMExecutionConfig = currentTask.ExecuteConfig
+		if input == nil {
+			return nil, DataTypeAny, "", fmt.Errorf("input is nil for task %s", currentTask.ID)
+		}
 
 		switch dataType {
 		case DataTypeChatHistory:

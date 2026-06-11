@@ -10,6 +10,7 @@
       "execute_config": {
         "model": "{{var:model}}",
         "provider": "{{var:provider}}",
+        "shift": true,
         "tools": [],
         "retry_policy": {
           "max_attempts": 3,

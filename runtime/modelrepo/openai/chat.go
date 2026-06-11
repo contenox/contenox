@@ -44,8 +44,23 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	reportErr, reportChange, end := c.tracker.Start(ctx, "chat", "openai", "model", c.modelName)
 	defer end()
 
-	req, nameMap := buildOpenAIRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
+	if openAIUsesResponsesEndpoint(c.modelName) {
+		req, nameMap := buildOpenAIResponsesRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
+		var response openAIResponse
+		if err := c.sendRequest(ctx, "/responses", req, &response); err != nil {
+			reportErr(err)
+			return modelrepo.ChatResult{}, err
+		}
+		result, err := parseOpenAIResponsesResponseFromObject(nameMap, response)
+		if err != nil {
+			reportErr(err)
+			return modelrepo.ChatResult{}, err
+		}
+		reportChange("chat_completed", result)
+		return result, nil
+	}
 
+	req, nameMap := buildOpenAIRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
 	var response openAIChatCompletionResponse
 
 	if err := c.sendRequest(ctx, "/chat/completions", req, &response); err != nil {

@@ -46,28 +46,41 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 	reportErr, reportChange, end := c.tracker.Start(ctx, "stream", "openai", "model", c.modelName)
 	// Note: We don't defer end() here because the stream is asynchronous
 
-	// buildOpenAIRequest now returns (request, nameMap); we only need the request here.
-	request, _ := buildOpenAIRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
-	request.Stream = true
+	streamCh := make(chan *modelrepo.StreamParcel)
+	usesResponses := openAIUsesResponsesEndpoint(c.modelName)
+	endpoint := "/chat/completions"
+	var requestBody []byte
+	var responseNameMap map[string]string
+	var err error
 
-	url := c.baseURL + "/chat/completions"
-	reqBody, err := json.Marshal(request)
+	if usesResponses {
+		var req openAIResponsesRequest
+		req, responseNameMap = buildOpenAIResponsesRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
+		// We intentionally avoid SSE parsing for the responses path while keeping this
+		// call functional for GPT-5 models.
+		req.Stream = false
+		requestBody, err = json.Marshal(req)
+		endpoint = "/responses"
+	} else {
+		var req openAIChatRequest
+		req, _ = buildOpenAIRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
+		req.Stream = true
+		requestBody, err = json.Marshal(req)
+	}
 	if err != nil {
 		end()
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+endpoint, bytes.NewBuffer(requestBody))
 	if err != nil {
 		end()
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 
-	streamCh := make(chan *modelrepo.StreamParcel)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		err = fmt.Errorf("HTTP request failed for model %s: %w", c.modelName, err)
 		reportErr(err)
@@ -90,6 +103,48 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 		defer close(streamCh)
 		defer resp.Body.Close()
 		defer end() // End tracking when the stream completes
+
+		if usesResponses {
+			body, readErr := io.ReadAll(resp.Body)
+			if readErr != nil {
+				err = fmt.Errorf("failed to read response body: %w", readErr)
+				reportErr(err)
+				select {
+				case streamCh <- &modelrepo.StreamParcel{Error: err}:
+				case <-ctx.Done():
+				}
+				return
+			}
+
+			result, parseErr := parseOpenAIResponsesResponse(responseNameMap, body)
+			if parseErr != nil {
+				reportErr(parseErr)
+				select {
+				case streamCh <- &modelrepo.StreamParcel{Error: parseErr}:
+				case <-ctx.Done():
+				}
+				return
+			}
+
+			if result.Message.Content == "" && result.Message.Thinking == "" {
+				return
+			}
+			select {
+			case streamCh <- &modelrepo.StreamParcel{
+				Data:     result.Message.Content,
+				Thinking: result.Message.Thinking,
+			}:
+			case <-ctx.Done():
+				return
+			}
+
+			reportChange("stream_completed", map[string]any{
+				"path":         "responses",
+				"content_len":  len(result.Message.Content),
+				"thinking_len": len(result.Message.Thinking),
+			})
+			return
+		}
 
 		// Create a scanner to read the response line by line
 		scanner := bufio.NewScanner(resp.Body)

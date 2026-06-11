@@ -75,20 +75,34 @@ type wireTool struct {
 
 // Build converts neutral messages + config into an Anthropic Messages Request.
 // The transport must still set Model and/or AnthropicVersion per hosting mode.
-func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) Request {
+func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) (Request, map[string]string) {
 	req := Request{MaxTokens: DefaultMaxTokens}
+	nameMap := make(map[string]string)
+	origToSanitized := make(map[string]string)
+
 	if cfg != nil {
 		if cfg.MaxTokens != nil && *cfg.MaxTokens > 0 {
 			req.MaxTokens = *cfg.MaxTokens
 		}
 		req.Temperature = cfg.Temperature
 		req.TopP = cfg.TopP
+		
+		seen := map[string]int{}
 		for _, t := range cfg.Tools {
 			if strings.ToLower(t.Type) != "function" || t.Function == nil {
 				continue
 			}
+			orig := t.Function.Name
+			name := sanitizeToolName(orig)
+			if name == "" {
+				name = "tool"
+			}
+			name = uniquifyToolName(seen, name)
+			nameMap[name] = orig
+			origToSanitized[orig] = name
+			
 			req.Tools = append(req.Tools, wireTool{
-				Name:        t.Function.Name,
+				Name:        name,
 				Description: t.Function.Description,
 				InputSchema: t.Function.Parameters,
 			})
@@ -118,6 +132,16 @@ func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) Request {
 				blocks = append(blocks, wireBlock{Type: "text", Text: m.Content})
 			}
 			for _, tc := range m.ToolCalls {
+				name := tc.Function.Name
+				if san, ok := origToSanitized[name]; ok {
+					name = san
+				} else {
+					name = sanitizeToolName(name)
+					if name == "" {
+						name = "tool"
+					}
+				}
+				
 				input := json.RawMessage(tc.Function.Arguments)
 				if len(strings.TrimSpace(tc.Function.Arguments)) == 0 {
 					input = json.RawMessage("{}")
@@ -125,7 +149,7 @@ func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) Request {
 				blocks = append(blocks, wireBlock{
 					Type:  "tool_use",
 					ID:    tc.ID,
-					Name:  tc.Function.Name,
+					Name:  name,
 					Input: input,
 				})
 			}
@@ -146,7 +170,7 @@ func Build(messages []modelrepo.Message, cfg *modelrepo.ChatConfig) Request {
 	if len(systemParts) > 0 {
 		req.System = strings.Join(systemParts, "\n\n")
 	}
-	return req
+	return req, nameMap
 }
 
 // Response is the non-streaming Anthropic Messages response body.
@@ -166,7 +190,7 @@ type responseBlock struct {
 }
 
 // DecodeResponse parses a non-streaming response into a neutral ChatResult.
-func DecodeResponse(raw []byte) (modelrepo.ChatResult, error) {
+func DecodeResponse(raw []byte, nameMap map[string]string) (modelrepo.ChatResult, error) {
 	var resp Response
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return modelrepo.ChatResult{}, fmt.Errorf("messages: decode response: %w", err)
@@ -187,7 +211,11 @@ func DecodeResponse(raw []byte) (modelrepo.ChatResult, error) {
 			if strings.TrimSpace(args) == "" {
 				args = "{}"
 			}
-			toolCalls = append(toolCalls, newToolCall(b.ID, b.Name, args))
+			name := b.Name
+			if orig, ok := nameMap[name]; ok && orig != "" {
+				name = orig
+			}
+			toolCalls = append(toolCalls, newToolCall(b.ID, name, args))
 		}
 	}
 	role := resp.Role
@@ -235,6 +263,7 @@ type streamEvent struct {
 // (id/name from content_block_start, arguments from input_json_delta) and
 // exposed via ToolCalls() once the stream ends.
 type StreamDecoder struct {
+	nameMap  map[string]string
 	toolAcc  map[int]*accTool
 	maxIndex int
 }
@@ -245,8 +274,8 @@ type accTool struct {
 	args strings.Builder
 }
 
-func NewStreamDecoder() *StreamDecoder {
-	return &StreamDecoder{toolAcc: map[int]*accTool{}, maxIndex: -1}
+func NewStreamDecoder(nameMap map[string]string) *StreamDecoder {
+	return &StreamDecoder{nameMap: nameMap, toolAcc: map[int]*accTool{}, maxIndex: -1}
 }
 
 // DecodeLine parses one SSE `data:` payload (bytes after "data: "). It returns
@@ -303,7 +332,53 @@ func (d *StreamDecoder) ToolCalls() []modelrepo.ToolCall {
 		if strings.TrimSpace(args) == "" {
 			args = "{}"
 		}
-		out = append(out, newToolCall(acc.id, acc.name, args))
+		name := acc.name
+		if orig, ok := d.nameMap[name]; ok && orig != "" {
+			name = orig
+		}
+		out = append(out, newToolCall(acc.id, name, args))
 	}
 	return out
+}
+
+func sanitizeToolName(in string) string {
+	if in == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range in {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	out := strings.Trim(b.String(), "_-")
+	if len(out) > 128 {
+		out = out[:128]
+	}
+	return out
+}
+
+func uniquifyToolName(seen map[string]int, name string) string {
+	if _, ok := seen[name]; !ok {
+		seen[name] = 1
+		return name
+	}
+	i := seen[name]
+	for {
+		suffix := fmt.Sprintf("_%d", i)
+		base := name
+		if len(base)+len(suffix) > 128 {
+			base = base[:128-len(suffix)]
+		}
+		candidate := base + suffix
+		if _, ok := seen[candidate]; !ok {
+			seen[name] = i + 1
+			seen[candidate] = 1
+			return candidate
+		}
+		i++
+	}
 }

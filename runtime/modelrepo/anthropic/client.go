@@ -198,7 +198,7 @@ func (c *anthropicChatClient) Chat(ctx context.Context, messages []modelrepo.Mes
 	defer end()
 
 	cfg := chatConfigFromArgs(args)
-	req := msgcodec.Build(messages, cfg)
+	req, nameMap := msgcodec.Build(messages, cfg)
 	req.Model = c.modelName // direct: model in body, version via header
 	if c.canThink {
 		applyAnthropicThinking(&req, c.modelName, cfg)
@@ -209,7 +209,7 @@ func (c *anthropicChatClient) Chat(ctx context.Context, messages []modelrepo.Mes
 		reportErr(err)
 		return modelrepo.ChatResult{}, err
 	}
-	res, err := msgcodec.DecodeResponse(raw)
+	res, err := msgcodec.DecodeResponse(raw, nameMap)
 	if err != nil {
 		reportErr(err)
 		return modelrepo.ChatResult{}, err
@@ -222,13 +222,13 @@ type anthropicStreamClient struct{ anthropicClient }
 
 func (c *anthropicStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	cfg := chatConfigFromArgs(args)
-	req := msgcodec.Build(messages, cfg)
+	req, nameMap := msgcodec.Build(messages, cfg)
 	req.Model = c.modelName
 	if c.canThink {
 		applyAnthropicThinking(&req, c.modelName, cfg)
 	}
 	req.Stream = true
-	dec := msgcodec.NewStreamDecoder()
+	dec := msgcodec.NewStreamDecoder(nameMap)
 
 	reportErr, reportChange, end := c.tracker.Start(ctx, "stream", "anthropic", "model", c.modelName)
 	resp, err := c.openStream(ctx, "/v1/messages", req)
