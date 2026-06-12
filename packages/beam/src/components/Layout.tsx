@@ -79,7 +79,7 @@ export function Layout({
         <div className="flex min-w-0 items-center gap-2">
           <img src={logoUrl} alt="" aria-hidden className="h-7 w-7 shrink-0" />
           <span className="truncate text-sm font-semibold tracking-normal text-text dark:text-dark-text sm:text-base">
-            Contenox Beam
+            Contenox Chat
           </span>
         </div>
       </div>

@@ -283,6 +283,16 @@ func (h *WebCaller) doRequest(ctx context.Context, method, toolName string, inpu
 	if dynArgs == nil {
 		dynArgs = map[string]any{}
 	}
+	switch method {
+	case http.MethodGet, http.MethodHead:
+		if err := rejectUnknownArgs("webtools."+toolName, dynArgs, "url", "headers", "query"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
+	default:
+		if err := rejectUnknownArgs("webtools."+toolName, dynArgs, "url", "headers", "query", "body"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
+	}
 
 	policy := h.policyArgs(ctx)
 	timeoutSec := h.policyInt(policy, "_request_timeout_seconds", 30)

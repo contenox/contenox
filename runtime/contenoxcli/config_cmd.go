@@ -3,6 +3,8 @@ package contenoxcli
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	libdb "github.com/contenox/runtime/libdbexec"
@@ -19,10 +21,12 @@ var validConfigKeys = map[string]string{
 	"default-provider":     "Default LLM provider type (e.g. ollama, openai, gemini)",
 	"default-alt-model":    "Optional alt LLM model name. Used by chains referencing {{var:alt_model}}.",
 	"default-alt-provider": "Optional alt LLM provider type. Used by chains referencing {{var:alt_provider}}.",
+	"default-max-tokens":   "Optional default response token cap. Used by chains referencing {{var:max_tokens}}.",
 	"default-think":        "Default reasoning level: auto, off, minimal, low, medium, high, xhigh.",
 	"default-chain":        "Default chain file path (relative to .contenox/ or absolute)",
 	"hitl-policy-name":     "Active HITL policy file name (e.g. hitl-policy-strict.json). Empty = use hitl-policy-default.json.",
 	"telemetry-enabled":    "Enable writing telemetry logs to <data-dir>/telemetry.log (true/false)",
+	"update-check":         "Enable automatic update availability checks (true/false). Set false for zero-trust/air-gapped environments.",
 }
 
 var configCmd = &cobra.Command{
@@ -30,7 +34,7 @@ var configCmd = &cobra.Command{
 	Short: "Manage persistent CLI settings (default model, provider, chain, HITL policy).",
 	Long: `Store and retrieve persistent CLI defaults backed by SQLite.
 
-Global keys (shared across all projects): default-model, default-provider, default-alt-model, default-alt-provider, default-think
+Global keys (shared across all projects): default-model, default-provider, default-alt-model, default-alt-provider, default-max-tokens, default-think
 Workspace keys (scoped to current project): default-chain, hitl-policy-name
 
 Supported keys:
@@ -38,6 +42,7 @@ Supported keys:
   default-provider      Default LLM provider type (e.g. ollama, openai, gemini)
   default-alt-model     Optional alt LLM model name (chains using {{var:alt_model}})
   default-alt-provider  Optional alt LLM provider (chains using {{var:alt_provider}})
+  default-max-tokens    Optional response token cap (chains using {{var:max_tokens}})
   default-think         Default reasoning level: auto, off, minimal, low, medium, high, xhigh
   default-chain         Default chain file path
   hitl-policy-name      Active HITL policy file name (e.g. hitl-policy-strict.json)`,
@@ -48,13 +53,14 @@ var configSetCmd = &cobra.Command{
 	Short: "Set a persistent config value.",
 	Long: `Set a persistent CLI default stored in the SQLite database.
 
-Global keys (default-model, default-provider, default-think) are shared across all projects.
+Global keys (default-model, default-provider, default-alt-model, default-alt-provider, default-max-tokens, default-think) are shared across all projects.
 Workspace keys (default-chain, hitl-policy-name) are scoped to the current project
 workspace and fall back to the global value when not set locally.
 
 Examples:
   contenox config set default-model    qwen2.5:7b
   contenox config set default-provider ollama
+  contenox config set default-max-tokens 8192
   contenox config set default-think    high
   contenox config set default-chain    .contenox/default-chain.json
   contenox config set hitl-policy-name hitl-policy-strict.json`,
@@ -62,7 +68,14 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key, value := args[0], args[1]
 		if _, ok := validConfigKeys[key]; !ok {
-			return fmt.Errorf("unknown key %q — valid keys: default-model, default-provider, default-alt-model, default-alt-provider, default-think, default-chain, hitl-policy-name", key)
+			return fmt.Errorf("unknown key %q — valid keys: default-model, default-provider, default-alt-model, default-alt-provider, default-max-tokens, default-think, default-chain, hitl-policy-name", key)
+		}
+		if key == "default-max-tokens" {
+			normalized, err := normalizeMaxTokensConfig(value)
+			if err != nil {
+				return err
+			}
+			value = normalized
 		}
 		if key == "default-think" {
 			normalized, err := reasoning.Normalize(value)
@@ -141,6 +154,21 @@ Example:
 		}
 		return w.Flush()
 	},
+}
+
+func normalizeMaxTokensConfig(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return "", fmt.Errorf("default-max-tokens must be a non-negative integer, got %q", value)
+	}
+	if n < 0 {
+		return "", fmt.Errorf("default-max-tokens must be non-negative, got %d", n)
+	}
+	return strconv.Itoa(n), nil
 }
 
 // getConfigKV retrieves a CLI setting from the KV store, returning "" if not set.

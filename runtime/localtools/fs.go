@@ -28,6 +28,12 @@ const LocalFSToolsName = "local_fs"
 // it as a normal tool result and is expected to call read_file then retry.
 const readBeforeWriteDenial = "local_fs: cannot modify existing file %s without reading it first. Call local_fs.read_file(%q) to confirm the current contents, then retry."
 
+// fileUnchangedStub is the tool-result text returned when the model re-reads a
+// file whose content hash is already recorded in this session. The earlier
+// read_file result is still in the conversation context, so re-sending the full
+// content wastes tokens without providing new information.
+const fileUnchangedStub = "File unchanged since last read — the content from your earlier read_file call in this conversation is still current."
+
 const readBeforeWriteFullReadDenial = "local_fs: cannot overwrite existing file %s after only reading a line range. Call local_fs.read_file(%q) to read the full current contents, then retry."
 
 const readBeforeWriteStaleReadDenial = "local_fs: cannot modify existing file %s because it changed since you read it. Call local_fs.read_file(%q) to refresh the current contents, then retry."
@@ -100,20 +106,54 @@ func (h *LocalFSTools) Exec(ctx context.Context, startTime time.Time, input any,
 
 	switch toolName {
 	case "read_file":
+		if err := rejectUnknownArgs("local_fs.read_file", args, "path"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		return h.readFile(ctx, args)
 	case "write_file":
+		if err := rejectUnknownArgs("local_fs.write_file", args, "path", "content"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		return h.writeFile(ctx, args)
 	case "list_dir":
+		if err := rejectUnknownArgs("local_fs.list_dir", args, "path", "recursive", "max_depth"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		return h.listDir(ctx, args)
 	case "grep":
+		if err := rejectUnknownArgs("local_fs.grep", args, "path", "pattern", "regex", "start_line", "end_line"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		return h.grep(ctx, args)
+	case "find_files":
+		if err := rejectUnknownArgs("local_fs.find_files", args, "pattern", "path"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
+		return h.findFiles(ctx, args)
+	case "search_repo":
+		if err := rejectUnknownArgs("local_fs.search_repo", args, "pattern", "path", "glob", "regex"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
+		return h.searchRepo(ctx, args)
 	case "sed":
+		if err := rejectUnknownArgs("local_fs.sed", args, "path", "pattern", "replacement"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		return h.sed(ctx, args)
 	case "count_stats":
+		if err := rejectUnknownArgs("local_fs.count_stats", args, "path"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		return h.countStats(ctx, args)
 	case "read_file_range":
+		if err := rejectUnknownArgs("local_fs.read_file_range", args, "path", "start_line", "end_line"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		return h.readFileRange(ctx, args)
 	case "stat_file":
+		if err := rejectUnknownArgs("local_fs.stat_file", args, "path"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		return h.statFile(ctx, args)
 	default:
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: unknown tool %s", toolName)
@@ -121,6 +161,20 @@ func (h *LocalFSTools) Exec(ctx context.Context, startTime time.Time, input any,
 }
 
 func (h *LocalFSTools) baseDir(ctx context.Context) (string, error) {
+	if args := taskengine.ToolsArgsFromContext(ctx, h.name); len(args) > 0 {
+		if policyDir := strings.TrimSpace(args["_allowed_dir"]); policyDir != "" {
+			cleaned := filepath.Clean(policyDir)
+			if filepath.IsAbs(cleaned) {
+				return cleaned, nil
+			}
+			if h.cwdResolver != nil {
+				if cwd := h.cwdResolver(ctx); cwd != "" {
+					return filepath.Clean(filepath.Join(cwd, cleaned)), nil
+				}
+			}
+			return cleaned, nil
+		}
+	}
 	base := h.allowedDir
 	if base == "" && h.cwdResolver != nil {
 		if r := h.cwdResolver(ctx); r != "" {
@@ -539,6 +593,14 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
 	}
 
+	// Dedup: if this session has already read this exact file version, return a
+	// stub instead of re-sending the full content. Only applies when read
+	// tracking is active (db + session). Falls through to full read otherwise.
+	hash := contentHash(content)
+	if !h.readTrackingDisabled(ctx) && h.hasCurrentFullRead(ctx, absPath, hash) {
+		return fileUnchangedStub, taskengine.DataTypeString, nil
+	}
+
 	out := string(content)
 	if err := h.checkToolOutputLimit(ctx, "read_file", out); err != nil {
 		return nil, taskengine.DataTypeAny, err
@@ -548,10 +610,41 @@ func (h *LocalFSTools) readFile(ctx context.Context, args map[string]any) (any, 
 }
 
 type FsWriteResult struct {
-	Path    string `json:"path"`
-	OldText string `json:"old_text"`
-	NewText string `json:"new_text"`
-	Written bool   `json:"written"`
+	Path      string `json:"path"`
+	Written   bool   `json:"written"`
+	OldBytes  int    `json:"old_bytes"`
+	NewBytes  int    `json:"new_bytes"`
+	OldSHA256 string `json:"old_sha256"`
+	NewSHA256 string `json:"new_sha256"`
+	OldText   string `json:"-"`
+	NewText   string `json:"-"`
+}
+
+func (r FsWriteResult) ToolDiff() (string, string, string, bool) {
+	if r.Path == "" || !r.Written || r.OldText == r.NewText {
+		return "", "", "", false
+	}
+	return r.Path, r.OldText, r.NewText, true
+}
+
+type FsSedResult struct {
+	Path         string `json:"path"`
+	Written      bool   `json:"written"`
+	Changed      bool   `json:"changed"`
+	Replacements int    `json:"replacements"`
+	OldBytes     int    `json:"old_bytes"`
+	NewBytes     int    `json:"new_bytes"`
+	OldSHA256    string `json:"old_sha256"`
+	NewSHA256    string `json:"new_sha256"`
+	OldText      string `json:"-"`
+	NewText      string `json:"-"`
+}
+
+func (r FsSedResult) ToolDiff() (string, string, string, bool) {
+	if r.Path == "" || !r.Written || r.OldText == r.NewText {
+		return "", "", "", false
+	}
+	return r.Path, r.OldText, r.NewText, true
 }
 
 func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {
@@ -591,10 +684,14 @@ func (h *LocalFSTools) writeFile(ctx context.Context, args map[string]any) (any,
 	h.invalidateReads(ctx, absPath)
 
 	return FsWriteResult{
-		Path:    absPath,
-		OldText: string(oldBytes),
-		NewText: content,
-		Written: true,
+		Path:      absPath,
+		Written:   true,
+		OldBytes:  len(oldBytes),
+		NewBytes:  len(content),
+		OldSHA256: contentHash(oldBytes),
+		NewSHA256: contentHash([]byte(content)),
+		OldText:   string(oldBytes),
+		NewText:   content,
 	}, taskengine.DataTypeJSON, nil
 }
 
@@ -803,6 +900,230 @@ func (h *LocalFSTools) grep(ctx context.Context, args map[string]any) (any, task
 	return out, taskengine.DataTypeString, nil
 }
 
+// maxFindResultsFromPolicy caps find_files results. tools_policies.local_fs: _max_find_results — default 200.
+func (h *LocalFSTools) maxFindResultsFromPolicy(ctx context.Context) int {
+	const defaultMax = 200
+	args := taskengine.ToolsArgsFromContext(ctx, h.name)
+	if args == nil {
+		return defaultMax
+	}
+	s := strings.TrimSpace(args["_max_find_results"])
+	if s == "" {
+		return defaultMax
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1 {
+		return defaultMax
+	}
+	if n > 5000 {
+		return 5000
+	}
+	return n
+}
+
+// findFiles implements find_files: glob-pattern path discovery under the project root.
+// Pattern is matched against the file basename (e.g. "*.go") or, when the pattern
+// contains a path separator, against the full path relative to the search root.
+func (h *LocalFSTools) findFiles(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {
+	pattern, ok := args["pattern"].(string)
+	if !ok || pattern == "" {
+		return nil, taskengine.DataTypeAny, errors.New("local_fs: pattern required for find_files")
+	}
+	rootArg, _ := args["path"].(string)
+	if rootArg == "" {
+		rootArg = "."
+	}
+
+	absRoot, err := h.checkPath(ctx, filepath.Clean(rootArg))
+	if err != nil {
+		return nil, taskengine.DataTypeAny, err
+	}
+
+	patternHasSlash := strings.ContainsRune(pattern, '/')
+	skipDirs := h.skipDirNamesFromPolicy(ctx)
+	maxResults := h.maxFindResultsFromPolicy(ctx)
+
+	var matches []string
+	truncated := false
+
+	walkErr := filepath.WalkDir(absRoot, func(walkPath string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries
+		}
+		if d.IsDir() {
+			if skipDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if truncated {
+			return filepath.SkipAll
+		}
+		rel, relErr := filepath.Rel(absRoot, walkPath)
+		if relErr != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+
+		var matched bool
+		if patternHasSlash {
+			matched, _ = filepath.Match(pattern, rel)
+		} else {
+			matched, _ = filepath.Match(pattern, d.Name())
+		}
+		if matched {
+			matches = append(matches, rel)
+			if len(matches) >= maxResults {
+				truncated = true
+			}
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: find_files: %w", walkErr)
+	}
+	if matches == nil {
+		matches = []string{}
+	}
+
+	type findResult struct {
+		Matches   []string `json:"matches"`
+		Count     int      `json:"count"`
+		Truncated bool     `json:"truncated,omitempty"`
+	}
+	out, err := json.Marshal(findResult{Matches: matches, Count: len(matches), Truncated: truncated})
+	if err != nil {
+		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: find_files marshal: %w", err)
+	}
+	s := string(out)
+	if err := h.checkToolOutputLimit(ctx, "find_files", s); err != nil {
+		return nil, taskengine.DataTypeAny, err
+	}
+	return s, taskengine.DataTypeJSON, nil
+}
+
+// searchRepo implements search_repo: multi-file content search under the project root.
+// Returns matching lines in "path:line: text" format, capped by _max_grep_matches.
+// Lines longer than 500 characters are truncated to prevent context flooding from
+// minified or generated files.
+func (h *LocalFSTools) searchRepo(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {
+	pattern, ok := args["pattern"].(string)
+	if !ok || pattern == "" {
+		return nil, taskengine.DataTypeAny, errors.New("local_fs: pattern required for search_repo")
+	}
+	rootArg, _ := args["path"].(string)
+	if rootArg == "" {
+		rootArg = "."
+	}
+	globFilter, _ := args["glob"].(string)
+	useRegex, _ := argBool(args, "regex")
+
+	absRoot, err := h.checkPath(ctx, filepath.Clean(rootArg))
+	if err != nil {
+		return nil, taskengine.DataTypeAny, err
+	}
+
+	var re *regexp.Regexp
+	if useRegex {
+		re, err = regexp.Compile(pattern)
+		if err != nil {
+			return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: invalid regex: %w", err)
+		}
+	}
+
+	skipDirs := h.skipDirNamesFromPolicy(ctx)
+	maxMatches := h.maxGrepMatchesFromPolicy(ctx)
+
+	var lines []string
+	truncated := false
+
+	walkErr := filepath.WalkDir(absRoot, func(walkPath string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if skipDirs[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if truncated {
+			return filepath.SkipAll
+		}
+		if globFilter != "" {
+			if matched, _ := filepath.Match(globFilter, d.Name()); !matched {
+				return nil
+			}
+		}
+
+		content, readErr := h.fileIO.ReadFile(ctx, walkPath)
+		if readErr != nil {
+			return nil // skip unreadable files
+		}
+		if isBinaryContent(content) {
+			return nil
+		}
+
+		rel, _ := filepath.Rel(absRoot, walkPath)
+		rel = filepath.ToSlash(rel)
+
+		for lineNo, line := range strings.Split(string(content), "\n") {
+			var matched bool
+			if useRegex {
+				matched = re.MatchString(line)
+			} else {
+				matched = strings.Contains(line, pattern)
+			}
+			if !matched {
+				continue
+			}
+			if len(line) > 500 {
+				line = line[:500] + "…"
+			}
+			lines = append(lines, fmt.Sprintf("%s:%d: %s", rel, lineNo+1, line))
+			if len(lines) >= maxMatches {
+				truncated = true
+				return filepath.SkipAll
+			}
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: search_repo: %w", walkErr)
+	}
+
+	var sb strings.Builder
+	if len(lines) == 0 {
+		sb.WriteString("No matches found.")
+	} else {
+		sb.WriteString(strings.Join(lines, "\n"))
+		if truncated {
+			fmt.Fprintf(&sb, "\n[Truncated at %d matches. Use path, glob, or regex to narrow the search.]", maxMatches)
+		}
+	}
+
+	out := sb.String()
+	if err := h.checkToolOutputLimit(ctx, "search_repo", out); err != nil {
+		return nil, taskengine.DataTypeAny, err
+	}
+	return out, taskengine.DataTypeString, nil
+}
+
+// isBinaryContent reports whether content is likely binary by scanning the first
+// 8 KB for NUL bytes, which are absent in well-formed UTF-8 text files.
+func isBinaryContent(content []byte) bool {
+	check := content
+	if len(check) > 8192 {
+		check = check[:8192]
+	}
+	for _, b := range check {
+		if b == 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -834,14 +1155,28 @@ func (h *LocalFSTools) sed(ctx context.Context, args map[string]any) (any, taske
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to read file: %w", err)
 	}
 
-	newContent := strings.ReplaceAll(string(content), pattern, replacement)
+	oldText := string(content)
+	replacements := strings.Count(oldText, pattern)
+	newContent := strings.ReplaceAll(oldText, pattern, replacement)
 
 	if err := h.fileIO.WriteFile(ctx, absPath, []byte(newContent)); err != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: failed to write file: %w", err)
 	}
 	h.invalidateReads(ctx, absPath)
 
-	return "ok", taskengine.DataTypeString, nil
+	newBytes := []byte(newContent)
+	return FsSedResult{
+		Path:         absPath,
+		Written:      true,
+		Changed:      replacements > 0,
+		Replacements: replacements,
+		OldBytes:     len(content),
+		NewBytes:     len(newBytes),
+		OldSHA256:    contentHash(content),
+		NewSHA256:    contentHash(newBytes),
+		OldText:      oldText,
+		NewText:      newContent,
+	}, taskengine.DataTypeJSON, nil
 }
 
 func (h *LocalFSTools) countStats(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {
@@ -972,7 +1307,7 @@ func (h *LocalFSTools) statFile(ctx context.Context, args map[string]any) (any, 
 }
 
 func (h *LocalFSTools) Supports(ctx context.Context) ([]string, error) {
-	return []string{h.name, "read_file", "write_file", "list_dir", "grep", "sed", "count_stats", "read_file_range", "stat_file"}, nil
+	return []string{h.name, "read_file", "write_file", "list_dir", "grep", "find_files", "search_repo", "sed", "count_stats", "read_file_range", "stat_file"}, nil
 }
 
 func (h *LocalFSTools) GetSchemasForSupportedTools(ctx context.Context) (map[string]*openapi3.T, error) {
@@ -988,7 +1323,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "read_file",
-				Description: "Read the full content of a text file under the project root. For large files use read_file_range instead. Calling this is also a prerequisite for write_file or sed against an existing file — the path and exact file version you read here unlock subsequent mutations of that same path in this session.",
+				Description: "Read the full content of a text file. Returns the raw text. If you have already read this exact file in this session and the file has not changed on disk, you will receive a short stub message instead of the full content — that means the prior read result already in your context is still current, so no action is needed. For large files prefer read_file_range to avoid hitting size limits. Calling read_file is also a prerequisite for write_file or sed on an existing file — the version you read here gates subsequent mutation of that path in this session.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1002,7 +1337,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "write_file",
-				Description: "Write content to a file. Overwrites existing content. Creates directories if needed. Modifying an existing file requires that you have first called read_file against the same current file version in this session — range reads are not enough for full-file overwrite. Creating a brand-new file (path does not yet exist) needs no prior read.",
+				Description: "Overwrite a file with new content, or create it if it does not exist. Creates intermediate directories automatically. Returns compact JSON with {path, written, old_bytes, new_bytes, old_sha256, new_sha256}; full old/new file bodies are not returned to the model. Modifying an existing file requires a prior read_file call against the same current version in this session; read_file_range is not sufficient for full-file overwrite. Creating a brand-new file requires no prior read.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1038,7 +1373,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "grep",
-				Description: "Search a single file for a pattern. Default: literal substring match. Set regex true for RE2 regex. Optional start_line and end_line (1-based, inclusive) limit the search to a line range. Output: matching lines as 'N: text'.",
+				Description: "Search a single file for a pattern. Default: literal substring match. Set regex true for RE2 regex. Optional start_line and end_line (1-based, inclusive) limit the search to a line range. Output: matching lines as 'N: text'. For multi-file or repo-wide search use search_repo instead.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1067,8 +1402,58 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 		{
 			Type: "function",
 			Function: taskengine.FunctionTool{
+				Name:        "find_files",
+				Description: "Find files by name pattern under the project root. Uses Go filepath.Match glob syntax: * matches any sequence of non-separator characters, ? matches one character, [range] matches a character class. Note: ** (double-star cross-directory wildcard) is NOT supported. Without a slash in the pattern, the pattern is matched against the file basename only (e.g. \"*.go\" finds all Go files anywhere in the tree). With a slash, the pattern is matched against the relative path. Returns JSON: {matches: [...], count: N, truncated: true|false}. Results are capped at 200 by default (policy: _max_find_results). High-noise directories (.git, node_modules, .venv, etc.) are skipped automatically. To search file contents use search_repo.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"pattern": map[string]interface{}{
+							"type":        "string",
+							"description": "Glob pattern matched against the file name (e.g. \"*.go\") or relative path when the pattern contains a slash",
+						},
+						"path": map[string]interface{}{
+							"type":        "string",
+							"description": "Root directory to search from (relative to project root, default: project root)",
+						},
+					},
+					"required": []string{"pattern"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: taskengine.FunctionTool{
+				Name:        "search_repo",
+				Description: "Search for a pattern across all text files under the project root. Returns matching lines as \"path:line_number: text\". Binary files are skipped automatically. Lines longer than 500 characters are truncated in the output. High-noise directories (.git, node_modules, .venv, etc.) are skipped automatically. Results are capped at 5000 matches by default (policy: _max_grep_matches); when the result is truncated a notice is appended — narrow with path, glob, or a more specific pattern. Use glob to restrict by filename (e.g. \"*.go\"). Use regex:true for RE2 regular expressions. Prefer this over running grep or rg via local_shell.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"pattern": map[string]interface{}{
+							"type":        "string",
+							"description": "Substring to search for, or RE2 regex when regex is true",
+						},
+						"path": map[string]interface{}{
+							"type":        "string",
+							"description": "Root directory to search from (relative to project root, default: project root)",
+						},
+						"glob": map[string]interface{}{
+							"type":        "string",
+							"description": "Glob pattern to filter files by name (e.g. \"*.go\", \"*.ts\")",
+						},
+						"regex": map[string]interface{}{
+							"type":        "boolean",
+							"description": "If true, pattern is a Go RE2 regular expression matched per line",
+						},
+					},
+					"required": []string{"pattern"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: taskengine.FunctionTool{
 				Name:        "sed",
-				Description: "Replace occurrences of a pattern with a replacement in a file. Requires that you have first called read_file or read_file_range against the same current file version in this session — modifying a file you have not seen, or that changed since you saw it, is blocked.",
+				Description: "Replace all literal occurrences of pattern with replacement in a file (plain string replacement, not regex). Replaces every occurrence on every line. Returns compact JSON with {path, written, changed, replacements, old_bytes, new_bytes, old_sha256, new_sha256}; full old/new file bodies are not returned to the model. Requires a prior read_file or read_file_range call against the current file version in this session; editing a file you have not seen, or that changed since you saw it, is blocked.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1084,7 +1469,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "count_stats",
-				Description: "Count lines, words, and bytes in a file (like wc)",
+				Description: "Count lines, words, and bytes in a file. Returns a plain string in the format \"Lines: N, Words: N, Bytes: N\". Useful for checking file size before deciding whether to read_file or read_file_range.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1114,7 +1499,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "stat_file",
-				Description: "Get file metadata",
+				Description: "Return metadata for a file or directory. Returns JSON with {name, size (bytes), modTime (RFC3339), isDir (bool)}. Does not read file contents. Useful for checking whether a path exists or is a directory before reading.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{

@@ -15,6 +15,7 @@ type PromptRequest struct {
 	InputValue     any
 	Chain          *taskengine.TaskChainDefinition
 	TemplateVars   map[string]string
+	ToolsAllowlist []string
 	HistoryTrim    int
 	Observer       Observer
 	AgentsMD       string

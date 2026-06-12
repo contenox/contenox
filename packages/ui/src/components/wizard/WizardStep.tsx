@@ -32,7 +32,7 @@ function StepIndicator({
       <span
         className={cn(
           base,
-          "border-primary-600 bg-primary-600 text-white dark:border-dark-primary-500 dark:bg-dark-primary-500 dark:text-dark-surface-50",
+          "border-primary-600 bg-primary-600 text-text-inverted dark:border-dark-primary-500 dark:bg-dark-primary-500 dark:text-dark-text-inverted",
         )}
         aria-hidden
       >
@@ -119,8 +119,10 @@ export function WizardStep({
           variant="subsectionTitle"
           className={cn(
             "text-base",
-            status === "complete" && "text-text-muted dark:text-dark-text-muted",
-            status === "upcoming" && "text-text-muted dark:text-dark-text-muted",
+            status === "complete" &&
+              "text-text-muted dark:text-dark-text-muted",
+            status === "upcoming" &&
+              "text-text-muted dark:text-dark-text-muted",
           )}
         >
           {title}

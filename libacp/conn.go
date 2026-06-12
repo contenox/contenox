@@ -253,6 +253,17 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request) (any,
 		}
 		return resp, nil
 
+	case MethodSessionSetConfigOption:
+		var p SetSessionConfigOptionRequest
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			return nil, InvalidParams(err.Error())
+		}
+		resp, err := c.agent.SetSessionConfigOption(ctx, p)
+		if err != nil {
+			return nil, AsError(err)
+		}
+		return resp, nil
+
 	case MethodSessionPrompt:
 		var p PromptRequest
 		if err := json.Unmarshal(req.Params, &p); err != nil {

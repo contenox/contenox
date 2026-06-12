@@ -52,7 +52,7 @@ func (m *mockAgent) Prompt(_ context.Context, req agentservice.PromptRequest) (*
 func TestUnit_ExecuteTask_PostsChainToAgent(t *testing.T) {
 	agent := &mockAgent{}
 	mux := http.NewServeMux()
-	AddRoutes(mux, agent, nil, Defaults{Model: "llama3", Provider: "ollama", Think: "off"})
+	AddRoutes(mux, agent, nil, Defaults{Model: "llama3", Provider: "ollama", MaxTokens: "8192", Think: "off"})
 	handler := apiframework.RequestIDMiddleware(mux)
 
 	body := `{
@@ -90,6 +90,7 @@ func TestUnit_ExecuteTask_PostsChainToAgent(t *testing.T) {
 	if agent.req.TemplateVars["custom"] != "value" ||
 		agent.req.TemplateVars["model"] != "llama3" ||
 		agent.req.TemplateVars["provider"] != "ollama" ||
+		agent.req.TemplateVars["max_tokens"] != "8192" ||
 		agent.req.TemplateVars["think"] != "off" {
 		t.Fatalf("template vars = %#v", agent.req.TemplateVars)
 	}

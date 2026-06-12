@@ -261,7 +261,7 @@ function ChatPageImpl() {
 
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(() => {
     if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem(WORKSPACE_PANEL_STORAGE_KEY) !== '0';
+    return window.localStorage.getItem(WORKSPACE_PANEL_STORAGE_KEY) === '1';
   });
   const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
 

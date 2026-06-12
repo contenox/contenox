@@ -11,11 +11,12 @@ import (
 )
 
 type OllamaStreamClient struct {
-	ollamaClient  *ollamaHTTPClient
-	modelName     string
-	backendURL    string
-	supportsThink bool
-	tracker       libtracker.ActivityTracker
+	ollamaClient    *ollamaHTTPClient
+	modelName       string
+	backendURL      string
+	maxOutputTokens int
+	supportsThink   bool
+	tracker         libtracker.ActivityTracker
 }
 
 func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
@@ -68,7 +69,7 @@ func (c *OllamaStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 		Messages: apiMessages,
 		Stream:   &stream,
 		Think:    think,
-		Options:  buildOllamaOptions(config),
+		Options:  buildOllamaOptions(config, c.maxOutputTokens),
 		Tools:    apiTools,
 	}
 	if config.Shift != nil {

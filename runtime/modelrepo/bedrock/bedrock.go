@@ -32,9 +32,10 @@ import (
 // bedrockClient is the shared transport: a constructed SDK runtime client plus
 // the model id and tracker.
 type bedrockClient struct {
-	api       *bedrockruntime.Client
-	modelName string
-	tracker   libtracker.ActivityTracker
+	api             *bedrockruntime.Client
+	modelName       string
+	maxOutputTokens int
+	tracker         libtracker.ActivityTracker
 }
 
 // staticCreds is the optional stored credential blob (mirrors vertex's stored

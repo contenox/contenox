@@ -122,6 +122,7 @@ func (p *catalogProvider) describeModel(ctx context.Context, modelName string) (
 	var payload struct {
 		Name                       string   `json:"name"`
 		InputTokenLimit            int      `json:"inputTokenLimit"`
+		OutputTokenLimit           int      `json:"outputTokenLimit"`
 		Thinking                   bool     `json:"thinking"`
 		SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
 	}
@@ -132,6 +133,10 @@ func (p *catalogProvider) describeModel(ctx context.Context, modelName string) (
 	observed := modelrepo.ObservedModel{
 		Name:          modelName,
 		ContextLength: payload.InputTokenLimit,
+		CapabilityConfig: modelrepo.CapabilityConfig{
+			ContextLength:   payload.InputTokenLimit,
+			MaxOutputTokens: payload.OutputTokenLimit,
+		},
 	}
 	observed.CanThink = payload.Thinking
 	for _, method := range payload.SupportedGenerationMethods {

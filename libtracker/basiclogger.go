@@ -2,12 +2,23 @@ package libtracker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"reflect"
+	"strings"
 	"time"
 )
 
 var _ ActivityTracker = (*logActivityTracker)(nil)
+
+const (
+	logChangeDataMaxJSONBytes = 32 * 1024
+	logChangeDataPreviewBytes = 4 * 1024
+)
 
 // logActivityTracker is a simple implementation of ActivityTracker that logs events using slog.
 type logActivityTracker struct {
@@ -103,7 +114,7 @@ func (t *logActivityTracker) Start(
 			slog.String("subject", subject),
 			slog.String("op_id", opID),
 			slog.String("change_id", id),
-			slog.Any("change_data", data),
+			slog.Any("change_data", boundedLogValue(data)),
 		}
 		if len(spanID) > 0 {
 			attr = append(attr, slog.String("span_id", spanID))
@@ -138,6 +149,56 @@ func (t *logActivityTracker) Start(
 	}
 
 	return reportErrFunc, reportChangeFunc, endFunc
+}
+
+func boundedLogValue(v any) any {
+	if v == nil {
+		return nil
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return map[string]any{
+			"truncated":     true,
+			"reason":        "json_marshal_error: " + capLogString(err.Error(), 512),
+			"original_type": logTypeName(v),
+		}
+	}
+	if len(raw) <= logChangeDataMaxJSONBytes {
+		return v
+	}
+	sum := sha256.Sum256(raw)
+	preview := previewLogBytes(raw, logChangeDataPreviewBytes)
+	return map[string]any{
+		"truncated":           true,
+		"reason":              "payload_exceeds_limit",
+		"original_type":       logTypeName(v),
+		"original_json_bytes": len(raw),
+		"sha256":              hex.EncodeToString(sum[:]),
+		"preview":             preview,
+		"preview_bytes":       len([]byte(preview)),
+	}
+}
+
+func capLogString(s string, maxBytes int) string {
+	if maxBytes <= 0 || len([]byte(s)) <= maxBytes {
+		return s
+	}
+	return previewLogBytes([]byte(s), maxBytes)
+}
+
+func previewLogBytes(raw []byte, maxBytes int) string {
+	if maxBytes > 0 && len(raw) > maxBytes {
+		raw = raw[:maxBytes]
+	}
+	return strings.ToValidUTF8(string(raw), "?")
+}
+
+func logTypeName(v any) string {
+	t := reflect.TypeOf(v)
+	if t == nil {
+		return fmt.Sprintf("%T", v)
+	}
+	return t.String()
 }
 
 // Helper: Convert key-value pairs into slog attributes

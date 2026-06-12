@@ -24,6 +24,9 @@ func (c *vertexChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		reportErr(err)
 		return modelrepo.ChatResult{}, err
 	}
+	if req.GenerationConfig != nil {
+		req.GenerationConfig.MaxOutputTokens = modelrepo.ClampMaxOutputTokensPtr(req.GenerationConfig.MaxOutputTokens, c.maxOutputTokens)
+	}
 
 	var resp vertexResponse
 	if err := c.sendRequest(ctx, c.endpoint("generateContent"), req, &resp); err != nil {

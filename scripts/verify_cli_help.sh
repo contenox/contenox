@@ -40,6 +40,7 @@ EXPECTED_CMDS=(
   "session"
   "state"
   "tools"
+  "update"
   "version"
 )
 

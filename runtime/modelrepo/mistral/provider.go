@@ -10,18 +10,19 @@ import (
 )
 
 type mistralProvider struct {
-	id            string
-	apiKey        string
-	modelName     string
-	baseURL       string
-	httpClient    *http.Client
-	contextLength int
-	canChat       bool
-	canPrompt     bool
-	canEmbed      bool
-	canStream     bool
-	canThink      bool
-	tracker       libtracker.ActivityTracker
+	id              string
+	apiKey          string
+	modelName       string
+	baseURL         string
+	httpClient      *http.Client
+	contextLength   int
+	maxOutputTokens int
+	canChat         bool
+	canPrompt       bool
+	canEmbed        bool
+	canStream       bool
+	canThink        bool
+	tracker         libtracker.ActivityTracker
 }
 
 // NewMistralProvider returns a modelrepo.Provider for the direct Mistral API.
@@ -37,18 +38,19 @@ func NewMistralProvider(apiKey, modelName string, backendURLs []string, capabili
 		baseURL = backendURLs[0]
 	}
 	return &mistralProvider{
-		id:            fmt.Sprintf("mistral-%s", modelName),
-		apiKey:        apiKey,
-		modelName:     modelName,
-		baseURL:       baseURL,
-		httpClient:    httpClient,
-		contextLength: capability.ContextLength,
-		canChat:       capability.CanChat,
-		canPrompt:     capability.CanPrompt,
-		canEmbed:      capability.CanEmbed,
-		canStream:     capability.CanStream,
-		canThink:      capability.CanThink,
-		tracker:       tracker,
+		id:              fmt.Sprintf("mistral-%s", modelName),
+		apiKey:          apiKey,
+		modelName:       modelName,
+		baseURL:         baseURL,
+		httpClient:      httpClient,
+		contextLength:   capability.ContextLength,
+		maxOutputTokens: capability.MaxOutputTokens,
+		canChat:         capability.CanChat,
+		canPrompt:       capability.CanPrompt,
+		canEmbed:        capability.CanEmbed,
+		canStream:       capability.CanStream,
+		canThink:        capability.CanThink,
+		tracker:         tracker,
 	}
 }
 
@@ -57,6 +59,7 @@ func (p *mistralProvider) ModelName() string       { return p.modelName }
 func (p *mistralProvider) GetID() string           { return p.id }
 func (p *mistralProvider) GetType() string         { return "mistral" }
 func (p *mistralProvider) GetContextLength() int   { return p.contextLength }
+func (p *mistralProvider) GetMaxOutputTokens() int { return p.maxOutputTokens }
 func (p *mistralProvider) CanChat() bool           { return p.canChat }
 func (p *mistralProvider) CanEmbed() bool          { return p.canEmbed }
 func (p *mistralProvider) CanStream() bool         { return p.canStream }
@@ -65,11 +68,12 @@ func (p *mistralProvider) CanThink() bool          { return p.canThink }
 
 func (p *mistralProvider) base() mistralClient {
 	return mistralClient{
-		baseURL:    p.baseURL,
-		apiKey:     p.apiKey,
-		modelName:  p.modelName,
-		httpClient: p.httpClient,
-		tracker:    p.tracker,
+		baseURL:         p.baseURL,
+		apiKey:          p.apiKey,
+		modelName:       p.modelName,
+		maxOutputTokens: p.maxOutputTokens,
+		httpClient:      p.httpClient,
+		tracker:         p.tracker,
 	}
 }
 

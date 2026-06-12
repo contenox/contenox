@@ -326,6 +326,7 @@ Chain text fields and `execute_config.model`, `execute_config.provider`, and `ex
 | `{{var:think}}`                | Effective reasoning level                                                        |
 | `{{var:chain}}`                | Chain ID                                                                         |
 | `{{var:NAME}}`                 | Value from `template_vars_from_env` config (contenox only)                       |
+| `{{date}}` / `{{date:layout}}` | Current local date, default `YYYY-MM-DD`                                         |
 | `{{now}}` / `{{now:layout}}`   | Current time                                                                     |
 | `{{chain:id}}`                 | Chain ID (same as `{{var:chain}}`)                                               |
 | `{{toolservice:list}}`         | All **allowed** tools + their function names as JSON, filtered by this task's `tools` allowlist |

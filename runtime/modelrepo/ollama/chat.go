@@ -12,11 +12,12 @@ import (
 )
 
 type OllamaChatClient struct {
-	ollamaClient  *ollamaHTTPClient
-	modelName     string
-	backendURL    string
-	supportsThink bool
-	tracker       libtracker.ActivityTracker
+	ollamaClient    *ollamaHTTPClient
+	modelName       string
+	backendURL      string
+	maxOutputTokens int
+	supportsThink   bool
+	tracker         libtracker.ActivityTracker
 }
 
 func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
@@ -59,7 +60,7 @@ func (c *OllamaChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		arg.Apply(config)
 	}
 
-	llamaOptions := buildOllamaOptions(config)
+	llamaOptions := buildOllamaOptions(config, c.maxOutputTokens)
 	var think *api.ThinkValue
 	if c.supportsThink {
 		think = buildOllamaThink(config)

@@ -109,6 +109,7 @@ func TestCreateListAndPromptChat(t *testing.T) {
 		DefaultProvider:    "provider-a",
 		AltDefaultModel:    "model-b",
 		AltDefaultProvider: "provider-b",
+		DefaultMaxTokens:   "8192",
 		DefaultThink:       "medium",
 	}, nil)
 	handler := apiframework.RequestIDMiddleware(mux)
@@ -139,6 +140,7 @@ func TestCreateListAndPromptChat(t *testing.T) {
 	require.Equal(t, "provider-a", agent.lastPrompt.TemplateVars["provider"])
 	require.Equal(t, "model-b", agent.lastPrompt.TemplateVars["alt_model"])
 	require.Equal(t, "provider-b", agent.lastPrompt.TemplateVars["alt_provider"])
+	require.Equal(t, "8192", agent.lastPrompt.TemplateVars["max_tokens"])
 	require.Equal(t, "medium", agent.lastPrompt.TemplateVars["think"])
 }
 

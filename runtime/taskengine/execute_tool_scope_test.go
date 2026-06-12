@@ -95,6 +95,15 @@ func TestUnit_ExecuteToolCalls_ExplicitToolsScope_AllowsProvider(t *testing.T) {
 	require.Equal(t, "read_file", repo.calls[0].ToolName)
 }
 
+func TestUnit_ExecuteToolCalls_UnqualifiedUniqueLeafResolves(t *testing.T) {
+	_, transition, repo := runExecuteToolScope(t, &taskengine.LLMExecutionConfig{Tools: []string{"local_fs"}}, "write_file")
+
+	require.Equal(t, taskengine.TransitionToolsExecuted, transition)
+	require.Len(t, repo.calls, 1)
+	require.Equal(t, "local_fs", repo.calls[0].Name)
+	require.Equal(t, "write_file", repo.calls[0].ToolName)
+}
+
 func TestUnit_ExecuteToolCalls_ExplicitToolsScope_BlocksProviderOutsideScope(t *testing.T) {
 	hist, _, repo := runExecuteToolScope(t, &taskengine.LLMExecutionConfig{Tools: []string{"local_fs"}}, "local_shell.local_shell")
 
@@ -110,6 +119,19 @@ func TestUnit_ExecuteToolCalls_HideTools_BlocksNamespacedTool(t *testing.T) {
 		Tools:     []string{"local_fs"},
 		HideTools: []string{"local_fs.write_file"},
 	}, "local_fs.write_file")
+
+	require.Empty(t, repo.calls)
+	last := hist.Messages[len(hist.Messages)-1]
+	require.Equal(t, "tool", last.Role)
+	require.Contains(t, last.Content, "hidden")
+	require.Equal(t, "call-1", last.ToolCallID)
+}
+
+func TestUnit_ExecuteToolCalls_HideTools_BlocksUnqualifiedLeaf(t *testing.T) {
+	hist, _, repo := runExecuteToolScope(t, &taskengine.LLMExecutionConfig{
+		Tools:     []string{"local_fs"},
+		HideTools: []string{"local_fs.write_file"},
+	}, "write_file")
 
 	require.Empty(t, repo.calls)
 	last := hist.Messages[len(hist.Messages)-1]

@@ -2,6 +2,7 @@ package taskengine
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -752,70 +753,48 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		}
 		hiddenTools := executionHiddenTools(currentTask)
 		executedAny := false
+		priorToolMessages := append([]Message(nil), chatHistory.Messages[:len(chatHistory.Messages)-1]...)
+		batchRepeatCounts := make(map[string]int)
 
 		for _, toolCall := range lastMessage.CallTools {
+			argsStr := normalizedToolArguments(toolCall.Function.Arguments)
+			repeatIndex := nextToolCallRepeatIndex(priorToolMessages, batchRepeatCounts, toolCall.Function.Name, argsStr)
+
 			// robust resolution: try direct key, then scan by Function.Name / ToolsName
 			resolutionInfo, found := resolveToolWithResolution(chainContext, toolCall.Function.Name)
 			if !found {
 				errStr := fmt.Sprintf("tool %s not found", toolCall.Function.Name)
-				toolResultMessage := Message{
-					Role:       "tool",
-					Content:    fmt.Sprintf(`{"error": "%s"}`, errStr),
-					ToolCallID: toolCall.ID,
-					Timestamp:  time.Now().UTC(),
-				}
-				chatHistory.Messages = append(chatHistory.Messages, toolResultMessage)
-
-				if exe.eventSink.Enabled() {
-					toolEvent := NewTaskEvent(taskCtx, TaskEventToolCall)
-					toolEvent.ToolName = toolCall.Function.Name
-					toolEvent.ApprovalID = toolCall.ID
-					toolEvent.Error = errStr
-					publishTaskEventBestEffort(taskCtx, exe.tracker, exe.eventSink, toolEvent)
-				}
+				exe.reportInvalidToolCall(taskCtx, toolCall, "not_found", errStr, repeatIndex)
+				exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
 				continue
+			}
+			if resolutionInfo.Function.Name != "" && resolutionInfo.Function.Name != toolCall.Function.Name {
+				toolCall.Function.Name = resolutionInfo.Function.Name
 			}
 
 			if isExecutionToolHidden(hiddenTools, toolCall.Function.Name, resolutionInfo) {
 				errStr := fmt.Sprintf("tool %s is hidden for task %s", toolCall.Function.Name, currentTask.ID)
+				exe.reportInvalidToolCall(taskCtx, toolCall, "hidden", errStr, repeatIndex)
 				exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
 				continue
 			}
 			if explicitToolsScope {
 				if _, ok := allowedTools[resolutionInfo.ToolsName]; !ok {
 					errStr := fmt.Sprintf("tool %s from tools %q is not allowed for task %s", toolCall.Function.Name, resolutionInfo.ToolsName, currentTask.ID)
+					exe.reportInvalidToolCall(taskCtx, toolCall, "not_allowed", errStr, repeatIndex, "tools_name", resolutionInfo.ToolsName)
 					exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
 					continue
 				}
 			}
 
 			var args map[string]any
-			// Fix 10: LLMs sometimes omit arguments entirely (empty string).
-			// Default to '{}' so Unmarshal succeeds and other tool calls aren't skipped.
-			argsStr := toolCall.Function.Arguments
-			if strings.TrimSpace(argsStr) == "" {
-				argsStr = "{}"
-			}
 			if err := json.Unmarshal([]byte(argsStr), &args); err != nil {
 				taskErr = fmt.Errorf("failed to unmarshal tool arguments for %s: %w",
 					toolCall.Function.Name, err)
 
 				errStr := taskErr.Error()
-				toolResultMessage := Message{
-					Role:       "tool",
-					Content:    fmt.Sprintf(`{"error": "%s"}`, errStr),
-					ToolCallID: toolCall.ID,
-					Timestamp:  time.Now().UTC(),
-				}
-				chatHistory.Messages = append(chatHistory.Messages, toolResultMessage)
-
-				if exe.eventSink.Enabled() {
-					toolEvent := NewTaskEvent(taskCtx, TaskEventToolCall)
-					toolEvent.ToolName = toolCall.Function.Name
-					toolEvent.ApprovalID = toolCall.ID
-					toolEvent.Error = errStr
-					publishTaskEventBestEffort(taskCtx, exe.tracker, exe.eventSink, toolEvent)
-				}
+				exe.reportInvalidToolCall(taskCtx, toolCall, "invalid_arguments", errStr, repeatIndex, "tools_name", resolutionInfo.ToolsName)
+				exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, args)
 				break
 			}
 
@@ -859,6 +838,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				callCtx, "tool_call", toolCall.Function.Name,
 				"tools_name", resolutionInfo.ToolsName,
 				"call_id", toolCall.ID,
+				"repeat_index", repeatIndex,
 			)
 
 			// Emit a "pending" event so ACP clients can show the tool card
@@ -883,30 +863,22 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				toolReportErr(fmt.Errorf("tool %s execution failed: %w", toolCall.Function.Name, err))
 				result = fmt.Sprintf("tool %s execution failed: %s", toolCall.Function.Name, err)
 				err = nil
-			default:
-				toolReportChange("result_type", resultType.String())
 			}
-			toolEnd()
 
 			executedAny = true
 
-			// Normalize result to a string for the tool message content (if/else so `break` exits the for-loop, not a switch).
-			var content string
-			switch resultType {
-			case DataTypeNil:
-				content = "null"
-			case DataTypeAny, DataTypeJSON:
-				b, marshalErr := json.Marshal(result)
-				if marshalErr != nil {
-					taskErr = fmt.Errorf("failed to marshal tool %s result: %w", toolCall.Function.Name, marshalErr)
-					toolExecErr = taskErr
-					content = fmt.Sprintf(`{"error": "%s"}`, taskErr.Error())
-				} else {
-					content = string(b)
-				}
-			default:
-				content = fmt.Sprintf("%v", result)
+			content, marshalErr := serializeToolResultContent(result, resultType)
+			if marshalErr != nil {
+				taskErr = fmt.Errorf("failed to marshal tool %s result: %w", toolCall.Function.Name, marshalErr)
+				toolExecErr = taskErr
+				content = toolErrorContent(taskErr.Error())
 			}
+			content, capInfo := capToolResultContentFromContext(callCtx, toolCall.Function.Name, content)
+			if taskErr == nil {
+				reportToolResultContent(toolReportChange, resultType, capInfo)
+				reportToolCallRepeat(toolReportChange, repeatIndex)
+			}
+			toolEnd()
 
 			toolResultMessage := Message{
 				Role:       "tool",
@@ -924,6 +896,11 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				toolEvent.Content = content
 				if toolExecErr != nil {
 					toolEvent.Error = toolExecErr.Error()
+				}
+				if diff, ok := toolDiffFromResult(result); ok {
+					toolEvent.ToolDiffPath = diff.Path
+					toolEvent.ToolDiffOldText = diff.OldText
+					toolEvent.ToolDiffNewText = diff.NewText
 				}
 				publishTaskEventBestEffort(callCtx, exe.tracker, exe.eventSink, toolEvent)
 			}
@@ -997,26 +974,22 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 					toolEvent.ApprovalArgs = map[string]any{"input": s}
 				}
 
-				var content string
-				switch outputType {
-				case DataTypeNil:
-					content = "null"
-				case DataTypeAny, DataTypeJSON:
-					if b, marshalErr := json.Marshal(output); marshalErr == nil {
-						content = string(b)
-					} else {
-						content = fmt.Sprintf("error: failed to marshal output: %v", marshalErr)
-						if toolExecErr == nil {
-							toolExecErr = marshalErr
-						}
+				content, marshalErr := serializeToolResultContent(output, outputType)
+				if marshalErr != nil {
+					content = fmt.Sprintf("error: failed to marshal output: %v", marshalErr)
+					if toolExecErr == nil {
+						toolExecErr = marshalErr
 					}
-				default:
-					content = fmt.Sprintf("%v", output)
 				}
 
 				toolEvent.Content = content
 				if toolExecErr != nil {
 					toolEvent.Error = toolExecErr.Error()
+				}
+				if diff, ok := toolDiffFromResult(output); ok {
+					toolEvent.ToolDiffPath = diff.Path
+					toolEvent.ToolDiffOldText = diff.OldText
+					toolEvent.ToolDiffNewText = diff.NewText
 				}
 
 				publishTaskEventBestEffort(toolsCtx, exe.tracker, exe.eventSink, toolEvent)
@@ -1204,9 +1177,16 @@ func (exe *SimpleExec) executeLLM(
 
 	// Prepare chat arguments
 	chatArgs := []libmodelprovider.ChatArgument{libmodelprovider.WithTools(tools...)}
+	toolSchemaBytes := 0
+	if len(tools) > 0 {
+		if b, err := json.Marshal(tools); err == nil {
+			toolSchemaBytes = len(b)
+		}
+	}
 	reportChange("tools_prepared", map[string]any{
-		"count": len(tools),
-		"model": llmCall.Model,
+		"count":        len(tools),
+		"model":        llmCall.Model,
+		"schema_bytes": toolSchemaBytes,
 	})
 	if len(prelude) > 0 {
 		preludeContents := make([]string, 0, len(prelude))
@@ -1395,6 +1375,21 @@ func resolveToolWithResolution(chainContext *ChainContext, toolName string) (Too
 		}
 	}
 
+	if !strings.Contains(toolName, ".") {
+		var match ToolWithResolution
+		matches := 0
+		for _, twr := range chainContext.Tools {
+			leaf := strings.TrimPrefix(twr.Function.Name, twr.ToolsName+".")
+			if leaf == toolName {
+				match = twr
+				matches++
+			}
+		}
+		if matches == 1 {
+			return match, true
+		}
+	}
+
 	return ToolWithResolution{}, false
 }
 
@@ -1454,6 +1449,195 @@ func toolErrorContent(errStr string) string {
 		return fmt.Sprintf(`{"error": "%s"}`, errStr)
 	}
 	return string(payload)
+}
+
+type toolResultCapInfo struct {
+	OriginalBytes int
+	FinalBytes    int
+	MaxBytes      int64
+	CapActive     bool
+	Truncated     bool
+}
+
+type toolDiff struct {
+	Path    string
+	OldText string
+	NewText string
+}
+
+type toolDiffProvider interface {
+	ToolDiff() (path string, oldText string, newText string, ok bool)
+}
+
+func serializeToolResultContent(result any, resultType DataType) (string, error) {
+	switch resultType {
+	case DataTypeNil:
+		return "null", nil
+	case DataTypeAny, DataTypeJSON:
+		b, err := json.Marshal(result)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	default:
+		return fmt.Sprintf("%v", result), nil
+	}
+}
+
+func toolDiffFromResult(result any) (toolDiff, bool) {
+	provider, ok := result.(toolDiffProvider)
+	if !ok {
+		return toolDiff{}, false
+	}
+	path, oldText, newText, ok := provider.ToolDiff()
+	if !ok || path == "" || oldText == newText {
+		return toolDiff{}, false
+	}
+	return toolDiff{Path: path, OldText: oldText, NewText: newText}, true
+}
+
+func normalizedToolArguments(arguments string) string {
+	trimmed := strings.TrimSpace(arguments)
+	if trimmed == "" {
+		return "{}"
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return trimmed
+	}
+	normalized, err := json.Marshal(decoded)
+	if err != nil {
+		return trimmed
+	}
+	return string(normalized)
+}
+
+func nextToolCallRepeatIndex(priorMessages []Message, batchCounts map[string]int, toolName string, arguments string) int {
+	key := toolCallRepeatKey(toolName, arguments)
+	prior := 0
+	for _, msg := range priorMessages {
+		for _, call := range msg.CallTools {
+			if toolCallRepeatKey(call.Function.Name, normalizedToolArguments(call.Function.Arguments)) == key {
+				prior++
+			}
+		}
+	}
+	batchCounts[key]++
+	return prior + batchCounts[key]
+}
+
+func toolCallRepeatKey(toolName string, arguments string) string {
+	return toolName + "\x00" + arguments
+}
+
+func capToolResultContentFromContext(ctx context.Context, toolName string, content string) (string, toolResultCapInfo) {
+	maxBytes, ok := ctx.Value(ContextKeyOutputByteLimit).(int64)
+	if !ok {
+		return content, toolResultCapInfo{
+			OriginalBytes: len(content),
+			FinalBytes:    len(content),
+		}
+	}
+	return capToolResultContent(toolName, content, maxBytes)
+}
+
+func capToolResultContent(toolName string, content string, maxBytes int64) (string, toolResultCapInfo) {
+	info := toolResultCapInfo{
+		OriginalBytes: len(content),
+		FinalBytes:    len(content),
+		MaxBytes:      maxBytes,
+		CapActive:     true,
+	}
+	if maxBytes < 0 || int64(len(content)) <= maxBytes {
+		return content, info
+	}
+
+	sum := sha256.Sum256([]byte(content))
+	payload := map[string]any{
+		"error":          "tool_result_too_large",
+		"tool":           toolName,
+		"original_bytes": info.OriginalBytes,
+		"max_bytes":      maxBytes,
+		"truncated":      true,
+		"sha256":         fmt.Sprintf("%x", sum),
+	}
+	if preview := toolResultPreview(content, maxBytes); preview != "" {
+		payload["preview"] = preview
+		payload["preview_kind"] = "head"
+	}
+
+	b, err := json.Marshal(payload)
+	if err != nil {
+		fallback := fmt.Sprintf(`{"error":"tool_result_too_large","tool":%q,"original_bytes":%d,"max_bytes":%d,"truncated":true}`,
+			toolName, info.OriginalBytes, maxBytes)
+		info.FinalBytes = len(fallback)
+		info.Truncated = true
+		return fallback, info
+	}
+
+	capped := string(b)
+	info.FinalBytes = len(capped)
+	info.Truncated = true
+	return capped, info
+}
+
+func toolResultPreview(content string, maxBytes int64) string {
+	if maxBytes <= 512 {
+		return ""
+	}
+	previewBytes := int(min(int64(4096), maxBytes/2))
+	if previewBytes <= 0 {
+		return ""
+	}
+	if len(content) <= previewBytes {
+		return content
+	}
+	return content[:previewBytes]
+}
+
+func reportToolResultContent(reportChange func(string, any), resultType DataType, info toolResultCapInfo) {
+	if reportChange == nil {
+		return
+	}
+	reportChange("result_type", resultType.String())
+	reportChange("result_bytes", info.FinalBytes)
+	reportChange("result_original_bytes", info.OriginalBytes)
+	reportChange("result_truncated", info.Truncated)
+	if info.CapActive {
+		reportChange("result_max_bytes", info.MaxBytes)
+	}
+}
+
+func reportToolCallRepeat(reportChange func(string, any), repeatIndex int) {
+	if reportChange == nil {
+		return
+	}
+	reportChange("repeat_index", repeatIndex)
+	if repeatIndex > 1 {
+		reportChange("repeated_call", true)
+	}
+}
+
+func (exe *SimpleExec) reportInvalidToolCall(ctx context.Context, toolCall ToolCall, class string, errStr string, repeatIndex int, kvArgs ...any) {
+	callCtx := context.WithValue(ctx, ContextKeyToolCallID, toolCall.ID)
+	startArgs := []any{
+		"call_id", toolCall.ID,
+		"invalid_call", true,
+		"invalid_call_class", class,
+		"repeat_index", repeatIndex,
+	}
+	startArgs = append(startArgs, kvArgs...)
+	reportErr, reportChange, end := exe.tracker.Start(callCtx, "tool_call", toolCall.Function.Name, startArgs...)
+	reportChange("invalid_call", true)
+	reportChange("invalid_call_class", class)
+	reportToolCallRepeat(reportChange, repeatIndex)
+	content := toolErrorContent(errStr)
+	reportToolResultContent(reportChange, DataTypeString, toolResultCapInfo{
+		OriginalBytes: len(content),
+		FinalBytes:    len(content),
+	})
+	reportErr(errors.New(errStr))
+	end()
 }
 
 func (exe *SimpleExec) appendToolErrorResult(ctx context.Context, chatHistory *ChatHistory, toolCall ToolCall, errStr string, args map[string]any) {

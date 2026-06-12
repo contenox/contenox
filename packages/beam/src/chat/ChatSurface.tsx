@@ -366,10 +366,10 @@ export function BeamChat({
           {sessions.map(session => (
             <div
               className={[
-                'group flex items-center gap-1 rounded-lg p-1',
+                'group flex items-center gap-1 rounded-lg border p-1',
                 session.id === selectedId
-                  ? 'bg-primary-600 dark:bg-dark-primary-600 text-white'
-                  : 'text-text hover:bg-surface-100 dark:text-dark-text dark:hover:bg-dark-surface-200',
+                  ? 'border-primary-500/60 bg-surface-100 text-text dark:border-dark-primary-500/50 dark:bg-dark-surface-300 dark:text-dark-text'
+                  : 'text-text hover:bg-surface-100 dark:text-dark-text dark:hover:bg-dark-surface-200 border-transparent',
               ].join(' ')}
               key={session.id}>
               <button

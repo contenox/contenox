@@ -287,9 +287,9 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 		s.processVLLMBackend(ctx, backend, declaredModels)
 	case "gemini":
 		s.processGeminiBackend(ctx, backend, declaredModels)
-	case "openai", "anthropic", "mistral":
+	case "openai", "openrouter", "anthropic", "mistral":
 		// Direct cloud, API-key + OpenAI-style model listing. processOpenAIBackend
-		// is generic over backend.Type (keys, catalog), so it serves all three.
+		// is generic over backend.Type (keys, catalog), so it serves all of them.
 		s.processOpenAIBackend(ctx, backend, declaredModels)
 	case "local":
 		s.processLocalBackend(ctx, backend, declaredModels)
@@ -468,14 +468,15 @@ func (s *State) processVLLMBackend(ctx context.Context, backend *runtimetypes.Ba
 			}
 
 			lmr := statetype.ModelPullStatus{
-				Name:          declaredModel.ID,
-				Model:         declaredModel.Model,
-				ModifiedAt:    declaredModel.UpdatedAt,
-				ContextLength: effectiveContextLen,
-				CanChat:       declaredModel.CanChat,
-				CanEmbed:      declaredModel.CanEmbed,
-				CanPrompt:     declaredModel.CanPrompt,
-				CanStream:     declaredModel.CanStream,
+				Name:            declaredModel.ID,
+				Model:           declaredModel.Model,
+				ModifiedAt:      declaredModel.UpdatedAt,
+				ContextLength:   effectiveContextLen,
+				MaxOutputTokens: observed.MaxOutputTokens,
+				CanChat:         declaredModel.CanChat,
+				CanEmbed:        declaredModel.CanEmbed,
+				CanPrompt:       declaredModel.CanPrompt,
+				CanStream:       declaredModel.CanStream,
 			}
 			lmr = s.applyCapabilityOverrides(ctx, backend.Type, lmr)
 			pulledModels = append(pulledModels, lmr)
@@ -663,14 +664,15 @@ func (s *State) processOpenAIBackend(ctx context.Context, backend *runtimetypes.
 	for _, observed := range observedModels {
 		if declaredModel, exists := declaredModels[observed.Name]; exists {
 			lmr := statetype.ModelPullStatus{
-				Name:          declaredModel.ID,
-				Model:         declaredModel.Model,
-				ModifiedAt:    declaredModel.UpdatedAt,
-				ContextLength: declaredModel.ContextLength,
-				CanChat:       declaredModel.CanChat,
-				CanEmbed:      declaredModel.CanEmbed,
-				CanPrompt:     declaredModel.CanPrompt,
-				CanStream:     declaredModel.CanStream,
+				Name:            declaredModel.ID,
+				Model:           declaredModel.Model,
+				ModifiedAt:      declaredModel.UpdatedAt,
+				ContextLength:   declaredModel.ContextLength,
+				MaxOutputTokens: observed.MaxOutputTokens,
+				CanChat:         declaredModel.CanChat,
+				CanEmbed:        declaredModel.CanEmbed,
+				CanPrompt:       declaredModel.CanPrompt,
+				CanStream:       declaredModel.CanStream,
 			}
 			lmr = s.applyCapabilityOverrides(ctx, backend.Type, lmr)
 			pulledModels = append(pulledModels, lmr)

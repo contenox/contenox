@@ -351,7 +351,7 @@ function P({ children, className, variant }) {
     {
       className: cn(
         "text-text dark:text-dark-text",
-        variant === "lead" ? "text-xl leading-relaxed" : variant === "cardSubtitle" ? "text-sm text-text-muted dark:text-dark-text-muted" : variant === "footerText" ? "text-sm text-text-muted dark:text-dark-text-muted" : variant === "body" ? "text-base" : variant === "caption" ? "text-xs text-text-muted uppercase tracking-wide" : "text-base",
+        variant === "lead" ? "text-xl leading-relaxed" : variant === "cardSubtitle" ? "text-sm text-text-muted dark:text-dark-text-muted" : variant === "footerText" ? "text-sm text-text-muted dark:text-dark-text-muted" : variant === "body" ? "text-base" : variant === "muted" ? "text-text-muted dark:text-dark-text-muted" : variant === "caption" ? "text-xs text-text-muted uppercase tracking-wide" : "text-base",
         variant === "status" ? "text-xs uppercase tracking-wider font-medium" : className
       ),
       children
@@ -361,7 +361,12 @@ function P({ children, className, variant }) {
 function Small({ children, className }) {
   return /* @__PURE__ */ jsx7("p", { className: cn("text-sm text-text dark:text-dark-text-muted", className), children });
 }
-function Span({ children, className, variant, ...props }) {
+function Span({
+  children,
+  className,
+  variant,
+  ...props
+}) {
   return /* @__PURE__ */ jsx7(
     "span",
     {
@@ -411,13 +416,13 @@ var Button = forwardRef3(
         "focus:ring-primary-300 dark:focus:ring-dark-primary-300"
       ),
       secondary: cn(
-        "text-text-inverted dark:text-dark-text-inverted",
+        "text-text-inverted dark:text-dark-text",
         variant !== "text" && "bg-secondary dark:bg-dark-secondary",
         "hover:bg-secondary-600 dark:hover:bg-dark-secondary-600",
         "focus:ring-secondary-300 dark:focus:ring-dark-secondary-300"
       ),
       accent: cn(
-        "text-text-inverted dark:text-dark-text-inverted",
+        "text-text-inverted dark:text-dark-text",
         variant !== "text" && "bg-accent dark:bg-dark-accent",
         "hover:bg-accent-600 dark:hover:bg-dark-accent-600",
         "focus:ring-accent-300 dark:focus:ring-dark-accent-300"
@@ -1075,7 +1080,7 @@ var Panel = forwardRef10(
           "p-4 bg-error-50 dark:bg-dark-error-900 text-error dark:text-dark-error border border-error-200 dark:border-dark-error-200": variant === "error",
           "p-4 bg-warning-50 dark:bg-dark-warning-50 text-warning-900 dark:text-dark-warning-800 border border-warning-200 dark:border-dark-warning-200": variant === "warning",
           "p-4 bg-info-50 dark:bg-dark-surface-200 text-info-900 dark:text-dark-text border border-info-200 dark:border-dark-surface-500": variant === "info",
-          "p-4 bg-gradient-to-br from-primary-600 to-accent-700 !text-white": variant === "gradient",
+          "p-4 bg-gradient-to-br from-primary-600 to-accent-700 text-text-inverted dark:from-dark-primary-500 dark:to-dark-primary-700 dark:text-dark-text-inverted": variant === "gradient",
           "p-4 bg-surface-50 dark:bg-dark-surface-100 border border-surface-200 dark:border-dark-surface-700": variant === "surface",
           "p-4 bg-transparent hover:bg-surface-50 dark:hover:bg-dark-surface-800 border border-surface-100 dark:border-dark-surface-700": variant === "ghost",
           "p-4 border-t border-[var(--color-surface-300)] dark:border-[var(--color-dark-surface-700)]": variant === "body",
@@ -1371,13 +1376,13 @@ function defaultAvatarLetter(role) {
 function avatarRingClass(role) {
   switch (role) {
     case "user":
-      return "bg-primary-600 text-white";
+      return "bg-primary-600 text-text-inverted dark:bg-dark-primary-600 dark:text-dark-text-inverted";
     case "system":
-      return "bg-accent-600 text-white";
+      return "bg-accent-600 text-text-inverted dark:bg-dark-accent-600 dark:text-dark-text";
     case "tool":
-      return "bg-secondary-600 text-white";
+      return "bg-secondary-600 text-text-inverted dark:bg-dark-secondary-600 dark:text-dark-text";
     default:
-      return "bg-secondary-600 text-white";
+      return "bg-secondary-600 text-text-inverted dark:bg-dark-secondary-600 dark:text-dark-text";
   }
 }
 function roleBadgeVariant(role) {
@@ -2874,7 +2879,7 @@ function Toast({ message, variant, className }) {
       className: cn(
         "fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg p-4 shadow-lg",
         "flex items-center gap-3",
-        variant === "success" ? "bg-primary-500 text-surface-50 dark:bg-dark-primary-600" : "bg-error-500 text-surface-50 dark:bg-dark-error-600",
+        variant === "success" ? "bg-primary-500 text-text-inverted dark:bg-dark-primary-600 dark:text-dark-text-inverted" : "bg-error-500 text-text-inverted dark:bg-dark-error-600 dark:text-dark-text",
         className
       ),
       children: [
@@ -3305,7 +3310,7 @@ var LayoutControls = ({
         variant: direction === "horizontal" ? "primary" : "secondary",
         onClick: () => onChangeDirection("horizontal"),
         "aria-label": "Horizontal layout",
-        className: `${direction === "horizontal" ? "bg-primary-500 dark:bg-dark-primary-500 text-white hover:bg-primary-600 dark:hover:bg-dark-primary-600" : "bg-surface-100 dark:bg-dark-surface-100 text-text dark:text-dark-text hover:bg-surface-200 dark:hover:bg-dark-surface-200"}`,
+        className: `${direction === "horizontal" ? "bg-primary-500 text-text-inverted hover:bg-primary-600 dark:bg-dark-primary-500 dark:text-dark-text-inverted dark:hover:bg-dark-primary-600" : "bg-surface-100 dark:bg-dark-surface-100 text-text dark:text-dark-text hover:bg-surface-200 dark:hover:bg-dark-surface-200"}`,
         children: /* @__PURE__ */ jsx64(LayoutGrid, { className: "h-4 w-4" })
       }
     ),
@@ -3316,7 +3321,7 @@ var LayoutControls = ({
         variant: direction === "vertical" ? "primary" : "secondary",
         onClick: () => onChangeDirection("vertical"),
         "aria-label": "Vertical layout",
-        className: `${direction === "vertical" ? "bg-primary-500 dark:bg-dark-primary-500 text-white hover:bg-primary-600 dark:hover:bg-dark-primary-600" : "bg-surface-100 dark:bg-dark-surface-100 text-text dark:text-dark-text hover:bg-surface-200 dark:hover:bg-dark-surface-200"}`,
+        className: `${direction === "vertical" ? "bg-primary-500 text-text-inverted hover:bg-primary-600 dark:bg-dark-primary-500 dark:text-dark-text-inverted dark:hover:bg-dark-primary-600" : "bg-surface-100 dark:bg-dark-surface-100 text-text dark:text-dark-text hover:bg-surface-200 dark:hover:bg-dark-surface-200"}`,
         children: /* @__PURE__ */ jsx64(LayoutList, { className: "h-4 w-4" })
       }
     )
@@ -4732,7 +4737,7 @@ function StepIndicator({
       {
         className: cn(
           base,
-          "border-primary-600 bg-primary-600 text-white dark:border-dark-primary-500 dark:bg-dark-primary-500 dark:text-dark-surface-50"
+          "border-primary-600 bg-primary-600 text-text-inverted dark:border-dark-primary-500 dark:bg-dark-primary-500 dark:text-dark-text-inverted"
         ),
         "aria-hidden": true,
         children: /* @__PURE__ */ jsx75(Check, { className: "h-4 w-4", strokeWidth: 2.5 })

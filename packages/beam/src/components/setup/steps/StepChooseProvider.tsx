@@ -22,8 +22,8 @@ function ProviderCard({ id, title, desc, selected, onSelect }: ProviderCardProps
       className={cn(
         'w-full rounded-lg border p-4 text-left transition-colors',
         selected
-          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
-          : 'border-surface-200 hover:border-surface-400 dark:border-dark-surface-600',
+          ? 'border-primary-500 bg-surface-100 text-text ring-primary-500/30 dark:border-dark-primary-500 dark:bg-dark-surface-300 dark:text-dark-text dark:ring-dark-primary-500/30 ring-1'
+          : 'border-surface-200 bg-surface-50 text-text hover:border-surface-400 hover:bg-surface-100 dark:border-dark-surface-600 dark:bg-dark-surface-100 dark:text-dark-text dark:hover:border-dark-surface-500 dark:hover:bg-dark-surface-300',
       )}>
       <div className="flex items-start gap-3">
         <div
@@ -35,8 +35,8 @@ function ProviderCard({ id, title, desc, selected, onSelect }: ProviderCardProps
           )}
         />
         <div>
-          <P className="font-semibold text-sm">{title}</P>
-          <P variant="muted" className="text-xs mt-0.5">
+          <P className="text-text dark:text-dark-text text-sm font-semibold">{title}</P>
+          <P variant="muted" className="text-text-muted dark:text-dark-text-muted mt-0.5 text-xs">
             {desc}
           </P>
         </div>
@@ -72,10 +72,10 @@ export default function StepChooseProvider({ value, onChange }: Props) {
   ];
 
   return (
-    <div className="max-w-xl mx-auto space-y-6">
+    <div className="mx-auto max-w-xl space-y-6">
       <div className="space-y-1">
         <H2 className="text-xl font-semibold">{t('onboarding.step_choose_provider.title')}</H2>
-        <P variant="muted" className="text-sm">
+        <P variant="muted" className="text-text-muted dark:text-dark-text-muted text-sm">
           {t('onboarding.step_choose_provider.desc')}
         </P>
       </div>

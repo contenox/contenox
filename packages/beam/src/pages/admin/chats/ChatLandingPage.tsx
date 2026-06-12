@@ -1,22 +1,12 @@
-import {
-  Badge,
-  Button,
-  InlineNotice,
-  P,
-  Page,
-  Panel,
-  Select,
-  Span,
-  Spinner,
-} from '@contenox/ui';
+import { Badge, Button, InlineNotice, P, Page, Panel, Select, Span, Spinner } from '@contenox/ui';
 import { GitBranch, MessageSquarePlus, Settings } from 'lucide-react';
-import { useMemo, useState, useEffect, FormEvent } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ArtifactRegistryProvider } from '../../../lib/artifacts';
 import { useListChains } from '../../../hooks/useChains';
 import { useCreateChat } from '../../../hooks/useChats';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
+import { ArtifactRegistryProvider } from '../../../lib/artifacts';
 import { SlashCommandRegistryProvider } from '../../../lib/slashCommands';
 import { ChatSession } from '../../../lib/types';
 import { MessageInputForm } from './components/MessageInputForm';
@@ -114,7 +104,9 @@ function ChatLandingPageImpl() {
             </div>
             {setupStatus?.defaultModel ? (
               <Badge variant="outline" size="sm" className="w-fit">
-                {[setupStatus.defaultModel, setupStatus.defaultProvider].filter(Boolean).join(' · ')}
+                {[setupStatus.defaultModel, setupStatus.defaultProvider]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Badge>
             ) : null}
           </div>
@@ -140,7 +132,7 @@ function ChatLandingPageImpl() {
               {chainsError ? (
                 <InlineNotice variant="error">{chainsError.message}</InlineNotice>
               ) : sortedChainPaths.length === 0 && !chainsLoading ? (
-                <div className="rounded-md border border-dashed border-surface-300 p-4 dark:border-dark-surface-600">
+                <div className="border-surface-300 dark:border-dark-surface-600 rounded-md border border-dashed p-4">
                   <Span className="block text-sm font-medium">
                     {t('chat.landing_no_chains_title')}
                   </Span>
@@ -168,7 +160,7 @@ function ChatLandingPageImpl() {
                           className={[
                             'rounded-md border px-2.5 py-1.5 text-xs transition-colors',
                             selectedChainId === path
-                              ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                              ? 'border-primary-500 bg-surface-100 text-text ring-primary-500/30 dark:border-dark-primary-500 dark:bg-dark-surface-300 dark:text-dark-text dark:ring-dark-primary-500/30 ring-1'
                               : 'border-surface-300 text-text-muted hover:border-surface-500 hover:bg-surface-100 hover:text-text dark:border-dark-surface-600 dark:text-dark-text-muted dark:hover:border-dark-surface-500 dark:hover:bg-dark-surface-300 dark:hover:text-dark-text',
                           ].join(' ')}>
                           {formatChainLabel(path)}

@@ -2,11 +2,14 @@ package acpsvc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -17,10 +20,36 @@ import (
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
-const mcpNamePrefix = "acp-"
+const mcpNamePrefix = runtimetypes.ACPMCPServerNamePrefix
 
-func mcpNameFor(sessionID libacp.SessionID, original string) string {
-	return mcpNamePrefix + string(sessionID) + "-" + original
+func mcpNameFor(connectionID string, sessionID libacp.SessionID, original string) string {
+	sum := sha256.Sum256([]byte(connectionID + "\x00" + string(sessionID) + "\x00" + original))
+	hash := hex.EncodeToString(sum[:])[:12]
+	return mcpNamePrefix + hash + "-" + sanitizeMCPNameComponent(original)
+}
+
+func sanitizeMCPNameComponent(name string) string {
+	var sb strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			sb.WriteRune(r)
+		case r >= '0' && r <= '9':
+			sb.WriteRune(r)
+		case r == '_' || r == '-':
+			sb.WriteRune(r)
+		default:
+			sb.WriteByte('_')
+		}
+		if sb.Len() >= 48 {
+			break
+		}
+	}
+	out := strings.Trim(sb.String(), "_-")
+	if out == "" {
+		return "mcp"
+	}
+	return out
 }
 
 func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionRequest) (libacp.LoadSessionResponse, error) {
@@ -75,6 +104,8 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 		InternalSessionID: contenoxSessionID,
 		Agent:             ag,
 		McpServerNames:    registered,
+		Provider:          t.provider(),
+		Model:             t.model(),
 		Think:             t.thinkDefault(),
 	}
 	t.sessionMu.Lock()
@@ -85,13 +116,21 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.replayMessages(ctx, req.SessionID, messages)
 	// Emit the slash-command menu only after the session/load result is on the
 	// wire (see sendAvailableCommands) so the client can resolve the session.
-	libacp.AfterResponse(ctx, func() { t.sendAvailableCommands(ctx, req.SessionID) })
+	libacp.AfterResponse(ctx, func() {
+		t.sendAvailableCommands(ctx, req.SessionID)
+		if banner := t.takeBanner(); banner != "" {
+			t.sendUpdate(ctx, libacp.SessionNotification{
+				SessionID: req.SessionID,
+				Update:    libacp.NewAgentMessageChunk(banner),
+			})
+		}
+	})
 
 	reportChange(string(req.SessionID), map[string]any{
 		"contenox_session_id": contenoxSessionID,
 		"message_count":       len(messages),
 	})
-	return libacp.LoadSessionResponse{}, nil
+	return libacp.LoadSessionResponse{ConfigOptions: t.sessionConfigOptions(ctx, entry)}, nil
 }
 
 func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.SessionID, messages []taskengine.Message) {
@@ -241,6 +280,8 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		InternalSessionID: contenoxSessionID,
 		Agent:             ag,
 		McpServerNames:    registered,
+		Provider:          t.provider(),
+		Model:             t.model(),
 		Think:             t.thinkDefault(),
 	}
 	t.sessionMu.Lock()
@@ -252,13 +293,24 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	// emitting available_commands_update before that result makes the client drop
 	// it as an unknown session (and the slash-command menu never appears). Defer
 	// it until libacp has written the result.
-	libacp.AfterResponse(ctx, func() { t.sendAvailableCommands(ctx, sessionID) })
+	libacp.AfterResponse(ctx, func() {
+		t.sendAvailableCommands(ctx, sessionID)
+		if banner := t.takeBanner(); banner != "" {
+			t.sendUpdate(ctx, libacp.SessionNotification{
+				SessionID: sessionID,
+				Update:    libacp.NewAgentMessageChunk(banner),
+			})
+		}
+	})
 
 	reportChange(string(sessionID), map[string]any{
 		"contenox_session_id": contenoxSessionID,
 		"workspace_id":        workspaceID,
 	})
-	return libacp.NewSessionResponse{SessionID: sessionID}, nil
+	return libacp.NewSessionResponse{
+		SessionID:     sessionID,
+		ConfigOptions: t.sessionConfigOptions(ctx, entry),
+	}, nil
 }
 
 func (t *Transport) registerMcpServers(ctx context.Context, store runtimetypes.Store, sessionID libacp.SessionID, servers []libacp.McpServer) ([]string, error) {
@@ -268,11 +320,18 @@ func (t *Transport) registerMcpServers(ctx context.Context, store runtimetypes.S
 			t.cleanupMcpServers(ctx, store, registered)
 			return nil, fmt.Errorf("acpsvc: invalid mcp server %q: %w", srv.Name, err)
 		}
-		name := mcpNameFor(sessionID, srv.Name)
+		name := mcpNameFor(t.mcpOwnerID(), sessionID, srv.Name)
 		row := mcpRowFromLibacp(name, srv)
 		if err := store.UpsertMCPServerByName(ctx, row); err != nil {
 			t.cleanupMcpServers(ctx, store, registered)
 			return nil, fmt.Errorf("acpsvc: register mcp server %q: %w", srv.Name, err)
+		}
+		if t.deps.Engine != nil && t.deps.Engine.MCPManager != nil {
+			if err := t.deps.Engine.MCPManager.StartWorker(ctx, row); err != nil {
+				registered = append(registered, name)
+				t.cleanupMcpServers(ctx, store, registered)
+				return nil, fmt.Errorf("acpsvc: start mcp worker %q: %w", srv.Name, err)
+			}
 		}
 		registered = append(registered, name)
 	}
@@ -281,6 +340,10 @@ func (t *Transport) registerMcpServers(ctx context.Context, store runtimetypes.S
 
 func (t *Transport) cleanupMcpServers(ctx context.Context, store runtimetypes.Store, names []string) {
 	for _, name := range names {
+		if t.deps.Engine != nil && t.deps.Engine.MCPManager != nil {
+			t.deps.Engine.MCPManager.StopWorker(ctx, name)
+		}
+		cleanupMCPSessionIDs(ctx, store, name)
 		row, err := store.GetMCPServerByName(ctx, name)
 		if err != nil {
 			if errors.Is(err, libdb.ErrNotFound) {
@@ -290,6 +353,92 @@ func (t *Transport) cleanupMcpServers(ctx context.Context, store runtimetypes.St
 		}
 		_ = store.DeleteMCPServer(ctx, row.ID)
 	}
+}
+
+func cleanupMCPSessionIDs(ctx context.Context, store runtimetypes.Store, serverName string) {
+	prefix := "mcp_session:" + serverName + ":"
+	for {
+		page, err := store.ListKVPrefix(ctx, prefix, nil, 100)
+		if err != nil {
+			return
+		}
+		for _, kv := range page {
+			_ = store.DeleteKV(ctx, kv.Key)
+		}
+		if len(page) < 100 {
+			return
+		}
+	}
+}
+
+func (t *Transport) runtimeToolsAllowlist(ctx context.Context, store runtimetypes.Store, sessionNames []string) ([]string, error) {
+	allowlist := []string{"*"}
+	current := make(map[string]struct{}, len(sessionNames))
+	for _, name := range sessionNames {
+		current[name] = struct{}{}
+	}
+	var cursor *time.Time
+	for {
+		page, err := store.ListMCPServers(ctx, cursor, 100)
+		if err != nil {
+			return nil, fmt.Errorf("acpsvc: list mcp servers for runtime allowlist: %w", err)
+		}
+		for _, srv := range page {
+			if !runtimetypes.IsACPManagedMCPServerName(srv.Name) {
+				continue
+			}
+			if _, ok := current[srv.Name]; ok {
+				continue
+			}
+			allowlist = append(allowlist, "!"+srv.Name)
+		}
+		if len(page) < 100 {
+			return allowlist, nil
+		}
+		cursor = &page[len(page)-1].CreatedAt
+	}
+}
+
+// CleanupStaleACPManagedMCPServers removes client-scoped ACP MCP registrations
+// left behind by a previous process. Durable MCP configuration must be created
+// through the normal `contenox mcp` commands or HTTP API; session/new and
+// session/load MCP servers are temporary by ACP contract.
+func CleanupStaleACPManagedMCPServers(ctx context.Context, db libdb.DBManager) error {
+	if db == nil {
+		return nil
+	}
+	store := runtimetypes.New(db.WithoutTransaction())
+	var stale []*runtimetypes.MCPServer
+	var cursor *time.Time
+	for {
+		page, err := store.ListMCPServers(ctx, cursor, 100)
+		if err != nil {
+			return err
+		}
+		for _, srv := range page {
+			if runtimetypes.IsACPManagedMCPServerName(srv.Name) {
+				stale = append(stale, srv)
+			}
+		}
+		if len(page) < 100 {
+			break
+		}
+		cursor = &page[len(page)-1].CreatedAt
+	}
+	for _, srv := range stale {
+		cleanupMCPSessionIDs(ctx, store, srv.Name)
+		if err := store.DeleteMCPServer(ctx, srv.ID); err != nil && !errors.Is(err, libdb.ErrNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *Transport) mcpOwnerID() string {
+	if t.connectionID != "" {
+		return t.connectionID
+	}
+	return "conn-unknown"
 }
 
 func mcpRowFromLibacp(name string, srv libacp.McpServer) *runtimetypes.MCPServer {

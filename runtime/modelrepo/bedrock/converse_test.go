@@ -30,7 +30,7 @@ func TestUnit_BuildConverseInput_RolesSystemToolsAndInference(t *testing.T) {
 		{Role: "tool", ToolCallID: "t1", Content: `{"files":["a"]}`},
 	}
 
-	in := buildConverseInput("anthropic.claude-3-5-sonnet-20241022-v2:0", msgs, cfg)
+	in := buildConverseInput("anthropic.claude-3-5-sonnet-20241022-v2:0", msgs, cfg, 0)
 
 	require.Equal(t, "anthropic.claude-3-5-sonnet-20241022-v2:0", aws.ToString(in.ModelId))
 	require.Len(t, in.System, 1)
@@ -52,6 +52,17 @@ func TestUnit_BuildConverseInput_RolesSystemToolsAndInference(t *testing.T) {
 	tr, ok := in.Messages[2].Content[0].(*types.ContentBlockMemberToolResult)
 	require.True(t, ok, "tool message must map to a tool_result block")
 	require.Equal(t, "t1", aws.ToString(tr.Value.ToolUseId))
+}
+
+func TestUnit_BuildConverseInput_ClampsMaxTokens(t *testing.T) {
+	maxTok := 9000
+	cfg := &modelrepo.ChatConfig{MaxTokens: &maxTok}
+
+	in := buildConverseInput("anthropic.claude-3-5-sonnet-20241022-v2:0", []modelrepo.Message{{Role: "user", Content: "hi"}}, cfg, 4096)
+
+	require.NotNil(t, in.InferenceConfig)
+	require.NotNil(t, in.InferenceConfig.MaxTokens)
+	require.Equal(t, int32(4096), *in.InferenceConfig.MaxTokens)
 }
 
 func TestUnit_DecodeConverse_TextAndToolUse(t *testing.T) {

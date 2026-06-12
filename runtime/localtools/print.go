@@ -29,6 +29,9 @@ func (h *Print) Exec(ctx context.Context, startTime time.Time, input any, debug 
 
 	var message string
 	if dynArgs, ok := input.(map[string]any); ok {
+		if err := rejectUnknownArgs("print", dynArgs, "message"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		if v, ok := dynArgs["message"]; ok {
 			switch x := v.(type) {
 			case string:

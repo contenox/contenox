@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -51,7 +52,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "setup": true, "cache": true, "serve": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "setup": true, "cache": true, "serve": true, "update": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -313,6 +314,7 @@ func init() {
 	f.String("provider", "", "Provider type override (ollama, openai, vllm, gemini). Overrides config default_provider.")
 	f.String("alt-model", "", "Alt model name (chains referencing {{var:alt_model}}). Overrides config default-alt-model.")
 	f.String("alt-provider", "", "Alt provider type (chains referencing {{var:alt_provider}}). Overrides config default-alt-provider.")
+	f.Int("max-tokens", 0, "Response token cap for chains referencing {{var:max_tokens}}. Overrides config default-max-tokens when set.")
 	f.Int("context", defaultContext, "Context length")
 	f.Bool("no-delete-models", true, "Legacy compatibility flag; OSS runtime model deletion is disabled.")
 	f.String("chain", "", "Path to a task chain JSON file. Chains define the LLM workflow: which model, which tools, how to branch. Falls back to default_chain in config, then .contenox/default-chain.json")
@@ -338,10 +340,12 @@ func init() {
 	rootCmd.AddCommand(acpxCmd)
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(updateCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
 	initCmd.Flags().Bool("update", false, "Update unchanged default files to the latest version")
+	serveCmd.Flags().Bool("ollama-compat", false, "Enable native Ollama-compatible /api/tags, /api/chat, and /api/generate routes.")
 
 	// Chat-specific local flags (not exposed globally).
 	chatCmd.Flags().Int("trim", 0, "Only send the last N messages from session history to the model (0 = send all)")
@@ -511,6 +515,11 @@ func runChat(cmd *cobra.Command, args []string) error {
 		effectiveAltProvider, _ = flags.GetString("alt-provider")
 	}
 
+	effectiveMaxTokens, err := resolveEffectiveMaxTokens(dbCtx, store, flags)
+	if err != nil {
+		return err
+	}
+
 	effectiveContext, _ := flags.GetInt("context")
 	effectiveNoDeleteModels, _ := flags.GetBool("no-delete-models")
 
@@ -596,6 +605,7 @@ func runChat(cmd *cobra.Command, args []string) error {
 		EffectiveDefaultProvider:     effectiveDefaultProvider,
 		EffectiveAltDefaultModel:     effectiveAltModel,
 		EffectiveAltDefaultProvider:  effectiveAltProvider,
+		EffectiveMaxTokens:           effectiveMaxTokens,
 		EffectiveContext:             effectiveContext,
 		EffectiveNoDeleteModels:      effectiveNoDeleteModels,
 		EffectiveEnableLocalExec:     effectiveEnableLocalExec,
@@ -633,6 +643,22 @@ func resolveEffectiveThink(ctx context.Context, store runtimetypes.Store, flags 
 		}
 	}
 	return reasoning.Default, nil
+}
+
+func resolveEffectiveMaxTokens(ctx context.Context, store runtimetypes.Store, flags *pflag.FlagSet) (string, error) {
+	if flags != nil && flags.Changed("max-tokens") {
+		n, _ := flags.GetInt("max-tokens")
+		if n < 0 {
+			return "", fmt.Errorf("--max-tokens must be non-negative, got %d", n)
+		}
+		return strconv.Itoa(n), nil
+	}
+	if store != nil {
+		if kv, _ := getConfigKV(ctx, store, "default-max-tokens"); kv != "" {
+			return normalizeMaxTokensConfig(kv)
+		}
+	}
+	return "", nil
 }
 
 func shouldPrintThinking(level string) bool {

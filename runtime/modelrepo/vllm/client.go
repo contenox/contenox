@@ -24,13 +24,14 @@ type vLLMChatClient struct {
 }
 
 type vLLMClient struct {
-	baseURL    string
-	httpClient *http.Client
-	modelName  string
-	maxTokens  int
-	canThink   bool
-	apiKey     string
-	tracker    libtracker.ActivityTracker
+	baseURL         string
+	httpClient      *http.Client
+	modelName       string
+	maxTokens       int
+	maxOutputTokens int
+	canThink        bool
+	apiKey          string
+	tracker         libtracker.ActivityTracker
 }
 
 type chatRequest struct {
@@ -196,6 +197,13 @@ func buildChatRequestFromConfig(modelName string, messages []modelrepo.Message, 
 	}
 
 	return req
+}
+
+func (c *vLLMClient) clampChatRequest(req *chatRequest) {
+	if req == nil {
+		return
+	}
+	req.MaxTokens = modelrepo.ClampMaxOutputTokensPtr(req.MaxTokens, c.maxOutputTokens)
 }
 
 func vllmThinkingAllowed(canThink []bool) bool {

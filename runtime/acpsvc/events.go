@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/libacp"
-	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
@@ -136,7 +135,7 @@ func toolCallUpdateNotification(sid libacp.SessionID, ev taskengine.TaskEvent) l
 		update.RawOutput = json.RawMessage(jsonString(ev.Content))
 	}
 
-	if diff := diffContentFromResult(ev.Content); diff != nil {
+	if diff := diffContentFromEvent(ev); diff != nil {
 		update.ToolContent = []libacp.ToolCallContent{*diff}
 	}
 
@@ -306,7 +305,7 @@ func toolKindFor(toolName string) libacp.ToolKind {
 
 func toolCallLocations(ev taskengine.TaskEvent) []libacp.ToolCallLocation {
 	path := ""
-	if diff := diffContentFromResult(ev.Content); diff != nil && diff.Path != "" {
+	if diff := diffContentFromEvent(ev); diff != nil && diff.Path != "" {
 		path = diff.Path
 	} else if p, ok := ev.ApprovalArgs["path"].(string); ok {
 		path = strings.TrimSpace(p)
@@ -317,11 +316,28 @@ func toolCallLocations(ev taskengine.TaskEvent) []libacp.ToolCallLocation {
 	return []libacp.ToolCallLocation{{Path: path}}
 }
 
+func diffContentFromEvent(ev taskengine.TaskEvent) *libacp.ToolCallContent {
+	if ev.ToolDiffPath != "" && ev.ToolDiffOldText != ev.ToolDiffNewText {
+		return &libacp.ToolCallContent{
+			Type:    libacp.ToolCallContentDiff,
+			Path:    ev.ToolDiffPath,
+			OldText: ev.ToolDiffOldText,
+			NewText: ev.ToolDiffNewText,
+		}
+	}
+	return diffContentFromResult(ev.Content)
+}
+
 func diffContentFromResult(content string) *libacp.ToolCallContent {
 	if content == "" {
 		return nil
 	}
-	var fw localtools.FsWriteResult
+	var fw struct {
+		Path    string `json:"path"`
+		Written bool   `json:"written"`
+		OldText string `json:"old_text"`
+		NewText string `json:"new_text"`
+	}
 	if err := json.Unmarshal([]byte(content), &fw); err != nil {
 		return nil
 	}

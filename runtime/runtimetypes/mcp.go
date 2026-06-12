@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	libdb "github.com/contenox/runtime/libdbexec"
@@ -16,6 +17,15 @@ import (
 type contextKey string
 
 const SessionIDContextKey contextKey = "contenox_session_id"
+
+// ACPMCPServerNamePrefix marks MCP servers supplied by an ACP client as
+// session-scoped runtime registrations. They may pass through the shared MCP
+// worker machinery, but they are not durable user configuration.
+const ACPMCPServerNamePrefix = "acp-"
+
+func IsACPManagedMCPServerName(name string) bool {
+	return strings.HasPrefix(name, ACPMCPServerNamePrefix)
+}
 
 // orEmptyMap returns m if non-nil, otherwise an empty map.
 func orEmptyMap(m map[string]string) map[string]string {

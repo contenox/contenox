@@ -18,15 +18,16 @@ type VLLMStreamClient struct {
 	vLLMClient
 }
 
-func NewVLLMStreamClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string, canThink bool, tracker libtracker.ActivityTracker) (modelrepo.LLMStreamClient, error) {
+func NewVLLMStreamClient(ctx context.Context, baseURL, modelName string, contextLength, maxOutputTokens int, httpClient *http.Client, apiKey string, canThink bool, tracker libtracker.ActivityTracker) (modelrepo.LLMStreamClient, error) {
 	client := &VLLMStreamClient{
 		vLLMClient: vLLMClient{
-			baseURL:    baseURL,
-			httpClient: httpClient,
-			modelName:  modelName,
-			canThink:   canThink,
-			apiKey:     apiKey,
-			tracker:    tracker,
+			baseURL:         baseURL,
+			httpClient:      httpClient,
+			modelName:       modelName,
+			maxOutputTokens: maxOutputTokens,
+			canThink:        canThink,
+			apiKey:          apiKey,
+			tracker:         tracker,
 		},
 	}
 
@@ -41,6 +42,7 @@ func (c *VLLMStreamClient) Stream(ctx context.Context, messages []modelrepo.Mess
 	// Note: We don't defer end() here because the stream is asynchronous
 
 	request := buildChatRequest(c.modelName, messages, args, c.canThink)
+	c.clampChatRequest(&request)
 	request.Stream = true
 
 	// Prepare the request

@@ -36,6 +36,12 @@ var initACPChain string
 //go:embed chain-acpx.json
 var initACPXChain string
 
+//go:embed chain-openai-compat.json
+var initOpenAICompatChain string
+
+//go:embed chain-fim-compat.json
+var initFIMCompatChain string
+
 // blessedChainHashes is a map of file basenames to a list of known-good SHA256
 // checksums from previous versions. When the --update flag is used, if a file's
 // current checksum matches one of these, it is safe to overwrite it.
@@ -111,6 +117,11 @@ var providerConfigs = map[string]providerConfig{
 		name:         "Mistral (direct)",
 		defaultModel: "mistral-large-latest",
 		envKey:       "MISTRAL_API_KEY",
+	},
+	"openrouter": {
+		name:         "OpenRouter",
+		defaultModel: "deepseek/deepseek-chat-v3-5",
+		envKey:       "OPENROUTER_API_KEY",
 	},
 	"bedrock": {
 		name:         "AWS Bedrock",
@@ -227,6 +238,12 @@ func RunGlobalInit(out io.Writer) error {
 	if err := writeFile(filepath.Join(homeDir, headlessACPChainFilename), initACPXChain); err != nil {
 		return err
 	}
+	if err := writeFile(filepath.Join(homeDir, "chain-openai-compat.json"), initOpenAICompatChain); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(homeDir, "chain-fim-compat.json"), initFIMCompatChain); err != nil {
+		return err
+	}
 	if err := writeEmbeddedHITLPolicies(homeDir, false); err != nil {
 		return err
 	}
@@ -262,7 +279,7 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 
 	pc, ok := providerConfigs[provider]
 	if !ok {
-		return fmt.Errorf("unknown provider %q — valid options: ollama, gemini, openai, local, vertex-google", provider)
+		return fmt.Errorf("unknown provider %q — valid options: ollama, openai, openrouter, gemini, anthropic, mistral, bedrock, local, vertex-google", provider)
 	}
 	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
 		return fmt.Errorf("failed to create .contenox directory: %w", err)
@@ -468,6 +485,66 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		fmt.Fprintln(out, "  The first model you pull becomes the default-model automatically.")
 		fmt.Fprintln(out, "")
 		chatStep = 2
+	case "openrouter":
+		backendRegistered := hasBackendOfType("openrouter")
+		envVal := os.Getenv(pc.envKey)
+		var kvHasKey bool
+		if envVal == "" {
+			if dbPath, gpErr := globalDBPath(); gpErr == nil {
+				if db, openErr := OpenDBAt(libtracker.WithNewRequestID(context.Background()), dbPath); openErr == nil {
+					store := runtimetypes.New(db.WithoutTransaction())
+					var cfg runtimestate.ProviderConfig
+					kvKey := runtimestate.ProviderKeyPrefix + "openrouter"
+					if err := store.GetKV(libtracker.WithNewRequestID(context.Background()), kvKey, &cfg); err == nil && cfg.APIKey != "" {
+						kvHasKey = true
+					}
+					db.Close()
+				}
+			}
+		}
+		keyReady := envVal != "" || kvHasKey
+		switch {
+		case envVal != "":
+			fmt.Fprintf(out, "  ✓ %s detected in environment.\n\n", pc.envKey)
+		case kvHasKey:
+			fmt.Fprintf(out, "  ✓ OpenRouter API key stored in local.db (set %s to use a different key).\n\n", pc.envKey)
+		default:
+			fmt.Fprintln(out, "  OpenRouter gives you access to 300+ models — DeepSeek, Qwen, Llama, Mistral,")
+			fmt.Fprintln(out, "  Gemini, Claude, GPT and many more — through a single API key. It accepts")
+			fmt.Fprintln(out, "  payment methods that are not always available on individual provider sites,")
+			fmt.Fprintln(out, "  and lets you switch models without managing multiple accounts.")
+			fmt.Fprintln(out, "")
+			fmt.Fprintf(out, "  ⚠  %s not set.\n", pc.envKey)
+			fmt.Fprintln(out, "  Get your free API key at: https://openrouter.ai/settings/keys")
+			fmt.Fprintln(out, "  Then:")
+			fmt.Fprintf(out, "       export %s=your-key-here\n\n", pc.envKey)
+		}
+		step := 1
+		if !keyReady {
+			fmt.Fprintf(out, "  1. Get an API key at https://openrouter.ai/settings/keys, then:\n")
+			fmt.Fprintf(out, "       export %s=your-key-here\n\n", pc.envKey)
+			step = 2
+		}
+		if !backendRegistered {
+			fmt.Fprintf(out, "  %d. Register the OpenRouter backend and set defaults:\n", step)
+			fmt.Fprintf(out, "       contenox backend add openrouter --type openrouter --api-key-env %s\n", pc.envKey)
+			fmt.Fprintf(out, "       contenox config set default-provider openrouter\n")
+			fmt.Fprintf(out, "       contenox config set default-model %s\n", pc.defaultModel)
+			fmt.Fprintln(out, "       contenox doctor")
+			fmt.Fprintln(out, "")
+			fmt.Fprintln(out, "  Some cost-effective starting models on OpenRouter:")
+			fmt.Fprintln(out, "       deepseek/deepseek-chat-v3-5   (excellent quality, very low cost)")
+			fmt.Fprintln(out, "       google/gemini-2.0-flash-001   (fast, cheap)")
+			fmt.Fprintln(out, "       qwen/qwen3-235b-a22b           (strong reasoning)")
+			fmt.Fprintln(out, "       meta-llama/llama-3.3-70b-instruct")
+			fmt.Fprintln(out, "")
+			fmt.Fprintln(out, "  Browse all models (with pricing): https://openrouter.ai/models")
+			fmt.Fprintln(out, "")
+			chatStep = step + 1
+		} else {
+			chatStep = step
+		}
+
 	case "ollama":
 		if base, ok := setupcheck.ProbeLocalOllamaAPI(context.Background()); ok {
 			fmt.Fprintf(out, "  Local Ollama is already reachable at %s. Skip steps 1-2 on this machine if install, ollama serve, and ollama pull (e.g. qwen2.5:7b) are already done.\n\n", base)

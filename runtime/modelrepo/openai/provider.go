@@ -10,18 +10,19 @@ import (
 )
 
 type OpenAIProvider struct {
-	id            string
-	apiKey        string
-	modelName     string
-	baseURL       string
-	httpClient    *http.Client
-	contextLength int
-	canChat       bool
-	canPrompt     bool
-	canEmbed      bool
-	canStream     bool
-	canThink      bool
-	tracker       libtracker.ActivityTracker
+	id              string
+	apiKey          string
+	modelName       string
+	baseURL         string
+	httpClient      *http.Client
+	contextLength   int
+	maxOutputTokens int
+	canChat         bool
+	canPrompt       bool
+	canEmbed        bool
+	canStream       bool
+	canThink        bool
+	tracker         libtracker.ActivityTracker
 }
 
 func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capability modelrepo.CapabilityConfig, httpClient *http.Client, tracker libtracker.ActivityTracker) modelrepo.Provider {
@@ -40,18 +41,19 @@ func NewOpenAIProvider(apiKey, modelName string, backendURLs []string, capabilit
 	id := fmt.Sprintf("openai-%s", modelName)
 
 	return &OpenAIProvider{
-		id:            id,
-		apiKey:        apiKey,
-		modelName:     modelName,
-		baseURL:       apiBaseURL,
-		httpClient:    httpClient,
-		contextLength: capability.ContextLength,
-		canChat:       capability.CanChat,
-		canPrompt:     capability.CanPrompt,
-		canEmbed:      capability.CanEmbed,
-		canStream:     capability.CanStream,
-		canThink:      capability.CanThink,
-		tracker:       tracker,
+		id:              id,
+		apiKey:          apiKey,
+		modelName:       modelName,
+		baseURL:         apiBaseURL,
+		httpClient:      httpClient,
+		contextLength:   capability.ContextLength,
+		maxOutputTokens: capability.MaxOutputTokens,
+		canChat:         capability.CanChat,
+		canPrompt:       capability.CanPrompt,
+		canEmbed:        capability.CanEmbed,
+		canStream:       capability.CanStream,
+		canThink:        capability.CanThink,
+		tracker:         tracker,
 	}
 }
 
@@ -71,9 +73,8 @@ func (p *OpenAIProvider) GetType() string {
 	return "openai"
 }
 
-func (p *OpenAIProvider) GetContextLength() int {
-	return p.contextLength
-}
+func (p *OpenAIProvider) GetContextLength() int    { return p.contextLength }
+func (p *OpenAIProvider) GetMaxOutputTokens() int  { return p.maxOutputTokens }
 
 func (p *OpenAIProvider) CanChat() bool {
 	return p.canChat
@@ -101,13 +102,14 @@ func (p *OpenAIProvider) GetChatConnection(ctx context.Context, backendID string
 	}
 	return &OpenAIChatClient{
 		openAIClient: openAIClient{
-			baseURL:       p.baseURL,
-			apiKey:        p.apiKey,
-			httpClient:    p.httpClient,
-			modelName:     p.modelName,
-			maxTokens:     p.contextLength,
-			tracker:       p.tracker,
-			supportsThink: p.CanThink(),
+			baseURL:         p.baseURL,
+			apiKey:          p.apiKey,
+			httpClient:      p.httpClient,
+			modelName:       p.modelName,
+			maxTokens:       p.contextLength,
+			maxOutputTokens: p.maxOutputTokens,
+			tracker:         p.tracker,
+			supportsThink:   p.CanThink(),
 		},
 	}, nil
 }
@@ -118,13 +120,14 @@ func (p *OpenAIProvider) GetPromptConnection(ctx context.Context, backendID stri
 	}
 	return &OpenAIPromptClient{
 		openAIClient: openAIClient{
-			baseURL:       p.baseURL,
-			apiKey:        p.apiKey,
-			httpClient:    p.httpClient,
-			modelName:     p.modelName,
-			maxTokens:     p.contextLength,
-			tracker:       p.tracker,
-			supportsThink: p.CanThink(),
+			baseURL:         p.baseURL,
+			apiKey:          p.apiKey,
+			httpClient:      p.httpClient,
+			modelName:       p.modelName,
+			maxTokens:       p.contextLength,
+			maxOutputTokens: p.maxOutputTokens,
+			tracker:         p.tracker,
+			supportsThink:   p.CanThink(),
 		},
 	}, nil
 }
@@ -151,13 +154,14 @@ func (p *OpenAIProvider) GetStreamConnection(ctx context.Context, backendID stri
 	}
 	return &OpenAIStreamClient{
 		openAIClient: openAIClient{
-			baseURL:       p.baseURL,
-			apiKey:        p.apiKey,
-			httpClient:    p.httpClient,
-			modelName:     p.modelName,
-			maxTokens:     p.contextLength,
-			tracker:       p.tracker,
-			supportsThink: p.CanThink(),
+			baseURL:         p.baseURL,
+			apiKey:          p.apiKey,
+			httpClient:      p.httpClient,
+			modelName:       p.modelName,
+			maxTokens:       p.contextLength,
+			maxOutputTokens: p.maxOutputTokens,
+			tracker:         p.tracker,
+			supportsThink:   p.CanThink(),
 		},
 	}, nil
 }

@@ -35,42 +35,56 @@ func (p *catalogProvider) Type() string {
 }
 
 func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedModel, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.baseURL(), "/")+"/models", nil)
-	if err != nil {
-		return nil, err
+	type modelItem struct {
+		ID string `json:"id"`
 	}
-	if p.spec.APIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+p.spec.APIKey)
-	}
-
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OpenAI catalog returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	type modelsPage struct {
+		Data    []modelItem `json:"data"`
+		HasMore bool        `json:"has_more"`
+		LastID  string      `json:"last_id"`
 	}
 
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("decode OpenAI catalog response: %w", err)
-	}
+	var all []modelrepo.ObservedModel
+	afterID := ""
+	for {
+		url := strings.TrimRight(p.baseURL(), "/") + "/models"
+		if afterID != "" {
+			url += "?after=" + afterID
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		if p.spec.APIKey != "" {
+			req.Header.Set("Authorization", "Bearer "+p.spec.APIKey)
+		}
 
-	models := make([]modelrepo.ObservedModel, 0, len(payload.Data))
-	for _, item := range payload.Data {
-		models = append(models, inferObservedModel(item.ID))
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("OpenAI catalog returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		var page modelsPage
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("decode OpenAI catalog response: %w", err)
+		}
+		for _, item := range page.Data {
+			all = append(all, inferObservedModel(item.ID))
+		}
+		if !page.HasMore {
+			break
+		}
+		afterID = page.LastID
 	}
-	return models, nil
+	return all, nil
 }
 
 func (p *catalogProvider) ProviderFor(model modelrepo.ObservedModel) modelrepo.Provider {
@@ -98,6 +112,7 @@ func inferObservedModel(id string) modelrepo.ObservedModel {
 		Name:          id,
 		ContextLength: 0, // unknown; resolver treats 0 as "do not filter on context"
 	}
+	observed.MaxOutputTokens = inferOpenAIMaxOutputTokens(id)
 
 	switch {
 	case strings.HasPrefix(lower, "text-embedding-"):
@@ -135,4 +150,25 @@ func inferObservedModel(id string) modelrepo.ObservedModel {
 	}
 
 	return observed
+}
+
+func inferOpenAIMaxOutputTokens(id string) int {
+	lower := strings.ToLower(strings.TrimSpace(id))
+	switch {
+	case lower == "gpt-5-chat-latest" || strings.HasPrefix(lower, "gpt-5-chat-"):
+		return 16384
+	case lower == "gpt-5-pro" || strings.HasPrefix(lower, "gpt-5-pro-"):
+		return 272000
+	case lower == "gpt-5" ||
+		strings.HasPrefix(lower, "gpt-5-202") ||
+		strings.HasPrefix(lower, "gpt-5-mini") ||
+		strings.HasPrefix(lower, "gpt-5-nano") ||
+		strings.HasPrefix(lower, "gpt-5.1") ||
+		strings.HasPrefix(lower, "gpt-5.2") ||
+		strings.HasPrefix(lower, "gpt-5.4") ||
+		strings.HasPrefix(lower, "gpt-5.5"):
+		return 128000
+	default:
+		return 0
+	}
 }

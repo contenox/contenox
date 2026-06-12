@@ -91,6 +91,19 @@ func TestUnit_BuildChatRequest_MapsThinkingLevels(t *testing.T) {
 	assert.Nil(t, req.ChatTemplateKwargs, "provider with CanThink=false must omit vLLM chat template thinking kwargs")
 }
 
+func TestUnit_VLLMClient_ClampsChatMaxTokens(t *testing.T) {
+	t.Parallel()
+
+	req := buildChatRequest("model", []modelrepo.Message{{Role: "user", Content: "hi"}}, []modelrepo.ChatArgument{
+		modelrepo.WithMaxTokens(4096),
+	})
+	client := &vLLMClient{maxOutputTokens: 1024}
+	client.clampChatRequest(&req)
+
+	require.NotNil(t, req.MaxTokens)
+	assert.Equal(t, 1024, *req.MaxTokens)
+}
+
 func TestUnit_VLLMChat_AllowsToolCallsFinishReason(t *testing.T) {
 	t.Parallel()
 

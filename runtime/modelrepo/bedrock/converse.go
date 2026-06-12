@@ -14,7 +14,7 @@ import (
 
 // buildConverseInput maps neutral messages + config into a Converse request.
 // Adjacent same-role messages are merged (Bedrock requires alternating roles).
-func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig) *bedrockruntime.ConverseInput {
+func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig, maxOutputTokens int) *bedrockruntime.ConverseInput {
 	in := &bedrockruntime.ConverseInput{ModelId: aws.String(modelName)}
 
 	var system []types.SystemContentBlock
@@ -72,8 +72,13 @@ func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *mod
 	if cfg != nil {
 		ic := &types.InferenceConfiguration{}
 		set := false
-		if cfg.MaxTokens != nil {
-			v := int32(*cfg.MaxTokens)
+		if cfg.MaxTokens != nil && *cfg.MaxTokens > 0 {
+			effective, _ := modelrepo.ClampMaxOutputTokens(*cfg.MaxTokens, maxOutputTokens)
+			const maxInt32 = int64(1<<31 - 1)
+			if int64(effective) > maxInt32 {
+				effective = int(maxInt32)
+			}
+			v := int32(effective)
 			ic.MaxTokens = &v
 			set = true
 		}

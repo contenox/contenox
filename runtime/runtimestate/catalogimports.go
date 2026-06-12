@@ -8,6 +8,7 @@ import (
 	_ "github.com/contenox/runtime/runtime/modelrepo/mistral"
 	_ "github.com/contenox/runtime/runtime/modelrepo/ollama"
 	_ "github.com/contenox/runtime/runtime/modelrepo/openai"
+	_ "github.com/contenox/runtime/runtime/modelrepo/openrouter"
 	_ "github.com/contenox/runtime/runtime/modelrepo/vertex"
 	_ "github.com/contenox/runtime/runtime/modelrepo/vllm"
 )

@@ -24,18 +24,19 @@ type BackendRuntimeState struct {
 }
 
 type ModelPullStatus struct {
-	Name          string       `json:"name" example:"Mistral 7B Instruct"`
-	Model         string       `json:"model" example:"mistral:instruct"`
-	ModifiedAt    time.Time    `json:"modifiedAt" example:"2023-11-15T14:30:45Z"`
-	Size          int64        `json:"size" example:"4709611008"`
-	Digest        string       `json:"digest" example:"sha256:9e3a6c0d3b5e7f8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a"`
-	Details       ModelDetails `json:"details" openapi_include_type:"statetype.ModelDetails"`
-	ContextLength int          `json:"contextLength" example:"4096"`
-	CanChat       bool         `json:"canChat" example:"true"`
-	CanEmbed      bool         `json:"canEmbed" example:"false"`
-	CanPrompt     bool         `json:"canPrompt" example:"true"`
-	CanStream     bool         `json:"canStream" example:"true"`
-	CanThink      bool         `json:"canThink,omitempty" example:"true"`
+	Name            string       `json:"name" example:"Mistral 7B Instruct"`
+	Model           string       `json:"model" example:"mistral:instruct"`
+	ModifiedAt      time.Time    `json:"modifiedAt" example:"2023-11-15T14:30:45Z"`
+	Size            int64        `json:"size" example:"4709611008"`
+	Digest          string       `json:"digest" example:"sha256:9e3a6c0d3b5e7f8a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a"`
+	Details         ModelDetails `json:"details" openapi_include_type:"statetype.ModelDetails"`
+	ContextLength   int          `json:"contextLength" example:"4096"`
+	MaxOutputTokens int          `json:"maxOutputTokens,omitempty" example:"8192"`
+	CanChat         bool         `json:"canChat" example:"true"`
+	CanEmbed        bool         `json:"canEmbed" example:"false"`
+	CanPrompt       bool         `json:"canPrompt" example:"true"`
+	CanStream       bool         `json:"canStream" example:"true"`
+	CanThink        bool         `json:"canThink,omitempty" example:"true"`
 }
 
 type ModelDetails struct {

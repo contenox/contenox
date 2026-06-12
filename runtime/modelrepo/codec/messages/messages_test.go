@@ -2,6 +2,7 @@ package messages
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
@@ -12,7 +13,7 @@ func TestUnit_Build_SystemExtractionAndDefaults(t *testing.T) {
 		{Role: "system", Content: "be terse"},
 		{Role: "user", Content: "hi"},
 	}
-	req := Build(msgs, nil)
+	req, _ := Build(msgs, nil)
 	if req.System != "be terse" {
 		t.Fatalf("system not extracted: %q", req.System)
 	}
@@ -31,22 +32,32 @@ func TestUnit_Build_SystemExtractionAndDefaults(t *testing.T) {
 }
 
 func TestUnit_Build_ToolUseAndToolResultRoundTrip(t *testing.T) {
+	cfg := &modelrepo.ChatConfig{
+		Tools: []modelrepo.Tool{{
+			Type: "function",
+			Function: &modelrepo.FunctionTool{Name: "fs.list", Description: "list files"},
+		}},
+	}
 	msgs := []modelrepo.Message{
 		{Role: "user", Content: "list /tmp"},
 		{Role: "assistant", ToolCalls: []modelrepo.ToolCall{tc("toolu_1", "fs.list", `{"path":"/tmp"}`)}},
 		{Role: "tool", ToolCallID: "toolu_1", Content: `{"files":["a"]}`},
 	}
-	req := Build(msgs, nil)
+	req, nameMap := Build(msgs, cfg)
 	if len(req.Messages) != 3 {
 		t.Fatalf("expected 3 messages, got %d", len(req.Messages))
 	}
-	// assistant tool_use
+	// assistant tool_use — name is sanitized on the wire
 	asst := req.Messages[1]
 	if asst.Role != "assistant" || len(asst.Content) != 1 || asst.Content[0].Type != "tool_use" {
 		t.Fatalf("assistant tool_use block wrong: %+v", asst)
 	}
-	if asst.Content[0].ID != "toolu_1" || asst.Content[0].Name != "fs.list" {
+	if asst.Content[0].ID != "toolu_1" || asst.Content[0].Name != "fs_list" {
 		t.Fatalf("tool_use id/name wrong: %+v", asst.Content[0])
+	}
+	// nameMap must restore the original name
+	if nameMap["fs_list"] != "fs.list" {
+		t.Fatalf("nameMap missing fs.list mapping: %v", nameMap)
 	}
 	if string(asst.Content[0].Input) != `{"path":"/tmp"}` {
 		t.Fatalf("tool_use input wrong: %s", asst.Content[0].Input)
@@ -64,7 +75,7 @@ func TestUnit_DecodeResponse_TextThinkingToolUse(t *testing.T) {
 		{"type":"text","text":"on it"},
 		{"type":"tool_use","id":"toolu_9","name":"fs.list","input":{"path":"/x"}}
 	]}`)
-	res, err := DecodeResponse(raw)
+	res, err := DecodeResponse(raw, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +99,7 @@ func TestUnit_DecodeResponse_TextThinkingToolUse(t *testing.T) {
 }
 
 func TestUnit_StreamDecoder_NamedEventsAndInputJSONDelta(t *testing.T) {
-	d := NewStreamDecoder()
+	d := NewStreamDecoder(nil)
 	lines := []string{
 		`{"type":"message_start","message":{"role":"assistant"}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
@@ -124,6 +135,14 @@ func TestUnit_StreamDecoder_NamedEventsAndInputJSONDelta(t *testing.T) {
 	}
 	if tcs[0].Function.Arguments != `{"path":"/x"}` {
 		t.Fatalf("assembled args: %q", tcs[0].Function.Arguments)
+	}
+}
+
+func TestUnit_DecodeResponse_RefusalReturnsErrRefused(t *testing.T) {
+	raw := []byte(`{"role":"assistant","stop_reason":"refusal","content":[]}`)
+	_, err := DecodeResponse(raw, nil)
+	if !errors.Is(err, modelrepo.ErrRefused) {
+		t.Fatalf("expected ErrRefused, got: %v", err)
 	}
 }
 

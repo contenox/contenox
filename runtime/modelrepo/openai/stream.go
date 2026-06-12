@@ -56,15 +56,15 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 	if usesResponses {
 		var req openAIResponsesRequest
 		req, responseNameMap = buildOpenAIResponsesRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
-		// We intentionally avoid SSE parsing for the responses path while keeping this
-		// call functional for GPT-5 models.
-		req.Stream = false
+		c.clampResponsesMaxOutputTokens(&req)
+		req.Stream = true
 		requestBody, err = json.Marshal(req)
 		endpoint = "/responses"
 	} else {
 		var req openAIChatRequest
 		req, _ = buildOpenAIRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
 		req.Stream = true
+		c.clampChatMaxOutputTokens(&req)
 		requestBody, err = json.Marshal(req)
 	}
 	if err != nil {
@@ -105,44 +105,7 @@ func (c *OpenAIStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 		defer end() // End tracking when the stream completes
 
 		if usesResponses {
-			body, readErr := io.ReadAll(resp.Body)
-			if readErr != nil {
-				err = fmt.Errorf("failed to read response body: %w", readErr)
-				reportErr(err)
-				select {
-				case streamCh <- &modelrepo.StreamParcel{Error: err}:
-				case <-ctx.Done():
-				}
-				return
-			}
-
-			result, parseErr := parseOpenAIResponsesResponse(responseNameMap, body)
-			if parseErr != nil {
-				reportErr(parseErr)
-				select {
-				case streamCh <- &modelrepo.StreamParcel{Error: parseErr}:
-				case <-ctx.Done():
-				}
-				return
-			}
-
-			if result.Message.Content == "" && result.Message.Thinking == "" {
-				return
-			}
-			select {
-			case streamCh <- &modelrepo.StreamParcel{
-				Data:     result.Message.Content,
-				Thinking: result.Message.Thinking,
-			}:
-			case <-ctx.Done():
-				return
-			}
-
-			reportChange("stream_completed", map[string]any{
-				"path":         "responses",
-				"content_len":  len(result.Message.Content),
-				"thinking_len": len(result.Message.Thinking),
-			})
+			streamResponsesSSE(ctx, resp.Body, responseNameMap, streamCh, reportErr, reportChange)
 			return
 		}
 
@@ -228,6 +191,106 @@ func truncateString(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// responsesSSEEvent covers the subset of Responses API SSE event types we handle.
+type responsesSSEEvent struct {
+	Type string `json:"type"`
+	// response.output_text.delta
+	Delta string `json:"delta"`
+	// response.function_call_arguments.delta
+	CallID string `json:"call_id"`
+	// response.output_item.done — the finished item
+	Item *openAIResponseOutputItem `json:"item"`
+	// response.completed — the full response (reasoning summary lives here)
+	Response *openAIResponse `json:"response"`
+	// error
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// streamResponsesSSE reads a Responses API SSE stream and forwards text parcels
+// to out. Tool call arguments are accumulated but not streamed (consistent with
+// the Chat Completions stream path). Reasoning summaries are emitted as thinking
+// parcels from the response.completed event.
+func streamResponsesSSE(
+	ctx context.Context,
+	body io.ReadCloser,
+	nameMap map[string]string,
+	out chan<- *modelrepo.StreamParcel,
+	reportErr func(error),
+	reportChange func(string, any),
+) {
+	sc := bufio.NewScanner(body)
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+	var chunkCount int
+
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+
+		var ev responsesSSEEvent
+		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+			continue
+		}
+
+		switch ev.Type {
+		case "response.output_text.delta":
+			if ev.Delta == "" {
+				continue
+			}
+			chunkCount++
+			select {
+			case out <- &modelrepo.StreamParcel{Data: ev.Delta}:
+			case <-ctx.Done():
+				return
+			}
+
+		case "response.function_call_arguments.delta":
+			// Tool call args are accumulated server-side; the final arguments
+			// appear in response.output_item.done. Nothing to emit here.
+
+		case "response.completed":
+			// Emit reasoning summary (if any) as a thinking parcel.
+			if ev.Response != nil && ev.Response.Reasoning.Summary != "" {
+				select {
+				case out <- &modelrepo.StreamParcel{Thinking: ev.Response.Reasoning.Summary}:
+				case <-ctx.Done():
+					return
+				}
+			}
+
+		case "error":
+			err := fmt.Errorf("responses stream error %s: %s", ev.Code, ev.Message)
+			reportErr(err)
+			select {
+			case out <- &modelrepo.StreamParcel{Error: err}:
+			case <-ctx.Done():
+			}
+			return
+		}
+	}
+
+	if err := sc.Err(); err != nil && err != io.EOF {
+		err = fmt.Errorf("responses: stream read: %w", err)
+		reportErr(err)
+		select {
+		case out <- &modelrepo.StreamParcel{Error: err}:
+		case <-ctx.Done():
+		}
+		return
+	}
+
+	reportChange("stream_completed", map[string]any{
+		"path":        "responses",
+		"chunk_count": chunkCount,
+	})
 }
 
 var _ modelrepo.LLMStreamClient = (*OpenAIStreamClient)(nil)

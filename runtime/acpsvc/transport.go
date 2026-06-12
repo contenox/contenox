@@ -15,13 +15,16 @@ import (
 )
 
 type Deps struct {
-	Engine          *enginesvc.Engine
-	DB              libdb.DBManager
-	ChainRegistry   *ChainRegistry
-	DefaultModel    string
-	DefaultProvider string
-	DefaultThink    string
-	WorkspaceID     string
+	Engine             *enginesvc.Engine
+	DB                 libdb.DBManager
+	ChainRegistry      *ChainRegistry
+	DefaultModel       string
+	DefaultProvider    string
+	DefaultAltModel    string
+	DefaultAltProvider string
+	DefaultMaxTokens   string
+	DefaultThink       string
+	WorkspaceID        string
 	// ContenoxDir is the active .contenox directory, used to locate auxiliary
 	// chains (e.g. chain-compact.json for the /compact command).
 	ContenoxDir string
@@ -32,6 +35,10 @@ type Deps struct {
 	// HITLDefaultPolicyName is the policy the engine falls back to when no
 	// override is set, shown by /policy so the status is accurate. Display only.
 	HITLDefaultPolicyName string
+
+	// UpdateBanner is an optional one-shot message sent to the client as an
+	// agent_message_chunk on the first session created or loaded. Empty = no banner.
+	UpdateBanner string
 }
 
 type sessionEntry struct {
@@ -41,12 +48,17 @@ type sessionEntry struct {
 	InternalSessionID string
 	Agent             agentservice.Agent
 	McpServerNames    []string
+	Provider          string
+	Model             string
 	Think             string
 }
 
 type Transport struct {
 	deps Deps
 	conn *libacp.AgentSideConnection
+	// connectionID scopes client-supplied MCP servers to this ACP connection so
+	// two clients loading the same session cannot overwrite each other's tools.
+	connectionID string
 
 	initMu     sync.Mutex
 	clientInfo *libacp.Implementation
@@ -59,13 +71,19 @@ type Transport struct {
 	// cfgMu guards the live model/provider, which the /model and /provider
 	// commands mutate while concurrent prompts read them. The values seed from
 	// Deps at construction; Deps.DefaultModel/DefaultProvider are not read again.
-	cfgMu           sync.Mutex
-	defaultModel    string
-	defaultProvider string
-	defaultThink    string
+	cfgMu              sync.Mutex
+	defaultModel       string
+	defaultProvider    string
+	defaultAltModel    string
+	defaultAltProvider string
+	defaultMaxTokens   string
+	defaultThink       string
 
 	permMu      sync.Mutex
 	permPending map[string]struct{}
+
+	bannerMu      sync.Mutex
+	pendingBanner string
 }
 
 func permKey(sid libacp.SessionID, toolCallID string) string {
@@ -99,15 +117,30 @@ func (t *Transport) sendToolCallUpdateGuarded(ctx context.Context, sid libacp.Se
 func New(deps Deps) libacp.AgentFactory {
 	return func(conn *libacp.AgentSideConnection) libacp.Agent {
 		return &Transport{
-			deps:            deps,
-			conn:            conn,
-			sessions:        make(map[libacp.SessionID]*sessionEntry),
-			contenoxToACPID: make(map[string]libacp.SessionID),
-			defaultModel:    deps.DefaultModel,
-			defaultProvider: deps.DefaultProvider,
-			defaultThink:    deps.DefaultThink,
+			deps:               deps,
+			conn:               conn,
+			connectionID:       newSessionID("conn"),
+			sessions:           make(map[libacp.SessionID]*sessionEntry),
+			contenoxToACPID:    make(map[string]libacp.SessionID),
+			defaultModel:       deps.DefaultModel,
+			defaultProvider:    deps.DefaultProvider,
+			defaultAltModel:    deps.DefaultAltModel,
+			defaultAltProvider: deps.DefaultAltProvider,
+			defaultMaxTokens:   deps.DefaultMaxTokens,
+			defaultThink:       deps.DefaultThink,
+			pendingBanner:      deps.UpdateBanner,
 		}
 	}
+}
+
+// takeBanner atomically reads and clears the pending update banner.
+// Returns "" after the first call, ensuring the banner is sent at most once.
+func (t *Transport) takeBanner() string {
+	t.bannerMu.Lock()
+	defer t.bannerMu.Unlock()
+	b := t.pendingBanner
+	t.pendingBanner = ""
+	return b
 }
 
 // model returns the live default model, which /model may have changed since
@@ -125,6 +158,24 @@ func (t *Transport) provider() string {
 	return t.defaultProvider
 }
 
+func (t *Transport) altModel() string {
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
+	return t.defaultAltModel
+}
+
+func (t *Transport) altProvider() string {
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
+	return t.defaultAltProvider
+}
+
+func (t *Transport) maxTokens() string {
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
+	return t.defaultMaxTokens
+}
+
 func (t *Transport) setModel(v string) {
 	t.cfgMu.Lock()
 	t.defaultModel = v
@@ -134,6 +185,12 @@ func (t *Transport) setModel(v string) {
 func (t *Transport) setProvider(v string) {
 	t.cfgMu.Lock()
 	t.defaultProvider = v
+	t.cfgMu.Unlock()
+}
+
+func (t *Transport) setMaxTokens(v string) {
+	t.cfgMu.Lock()
+	t.defaultMaxTokens = v
 	t.cfgMu.Unlock()
 }
 
@@ -161,6 +218,40 @@ func (s *sessionEntry) think() string {
 func (s *sessionEntry) setThink(v string) {
 	s.mu.Lock()
 	s.Think = v
+	s.mu.Unlock()
+}
+
+func (s *sessionEntry) providerOrDefault(defaultProvider string) string {
+	if s == nil {
+		return defaultProvider
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Provider == "" {
+		return defaultProvider
+	}
+	return s.Provider
+}
+
+func (s *sessionEntry) modelOrDefault(defaultModel string) string {
+	if s == nil {
+		return defaultModel
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Model == "" {
+		return defaultModel
+	}
+	return s.Model
+}
+
+func (s *sessionEntry) setModelSelection(provider, model string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.Provider = provider
+	s.Model = model
 	s.mu.Unlock()
 }
 

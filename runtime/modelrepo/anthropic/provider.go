@@ -10,17 +10,18 @@ import (
 )
 
 type anthropicProvider struct {
-	id            string
-	apiKey        string
-	modelName     string
-	baseURL       string
-	httpClient    *http.Client
-	contextLength int
-	canChat       bool
-	canPrompt     bool
-	canStream     bool
-	canThink      bool
-	tracker       libtracker.ActivityTracker
+	id              string
+	apiKey          string
+	modelName       string
+	baseURL         string
+	httpClient      *http.Client
+	contextLength   int
+	maxOutputTokens int
+	canChat         bool
+	canPrompt       bool
+	canStream       bool
+	canThink        bool
+	tracker         libtracker.ActivityTracker
 }
 
 // NewAnthropicProvider returns a modelrepo.Provider for the direct Anthropic API.
@@ -36,17 +37,18 @@ func NewAnthropicProvider(apiKey, modelName string, backendURLs []string, capabi
 		baseURL = backendURLs[0]
 	}
 	return &anthropicProvider{
-		id:            fmt.Sprintf("anthropic-%s", modelName),
-		apiKey:        apiKey,
-		modelName:     modelName,
-		baseURL:       baseURL,
-		httpClient:    httpClient,
-		contextLength: capability.ContextLength,
-		canChat:       capability.CanChat,
-		canPrompt:     capability.CanPrompt,
-		canStream:     capability.CanStream,
-		canThink:      capability.CanThink,
-		tracker:       tracker,
+		id:              fmt.Sprintf("anthropic-%s", modelName),
+		apiKey:          apiKey,
+		modelName:       modelName,
+		baseURL:         baseURL,
+		httpClient:      httpClient,
+		contextLength:   capability.ContextLength,
+		maxOutputTokens: capability.MaxOutputTokens,
+		canChat:         capability.CanChat,
+		canPrompt:       capability.CanPrompt,
+		canStream:       capability.CanStream,
+		canThink:        capability.CanThink,
+		tracker:         tracker,
 	}
 }
 
@@ -55,6 +57,7 @@ func (p *anthropicProvider) ModelName() string       { return p.modelName }
 func (p *anthropicProvider) GetID() string           { return p.id }
 func (p *anthropicProvider) GetType() string         { return "anthropic" }
 func (p *anthropicProvider) GetContextLength() int   { return p.contextLength }
+func (p *anthropicProvider) GetMaxOutputTokens() int { return p.maxOutputTokens }
 func (p *anthropicProvider) CanChat() bool           { return p.canChat }
 func (p *anthropicProvider) CanEmbed() bool          { return false }
 func (p *anthropicProvider) CanStream() bool         { return p.canStream }
@@ -63,12 +66,13 @@ func (p *anthropicProvider) CanThink() bool          { return p.canThink }
 
 func (p *anthropicProvider) base() anthropicClient {
 	return anthropicClient{
-		baseURL:    p.baseURL,
-		apiKey:     p.apiKey,
-		modelName:  p.modelName,
-		httpClient: p.httpClient,
-		canThink:   p.canThink,
-		tracker:    p.tracker,
+		baseURL:         p.baseURL,
+		apiKey:          p.apiKey,
+		modelName:       p.modelName,
+		httpClient:      p.httpClient,
+		canThink:        p.canThink,
+		maxOutputTokens: p.maxOutputTokens,
+		tracker:         p.tracker,
 	}
 }
 

@@ -89,9 +89,11 @@ export function P({ children, className, variant }: TypographyProps) {
               ? "text-sm text-text-muted dark:text-dark-text-muted"
               : variant === "body"
                 ? "text-base"
-                : variant === "caption"
-                  ? "text-xs text-text-muted uppercase tracking-wide"
-                  : "text-base",
+                : variant === "muted"
+                  ? "text-text-muted dark:text-dark-text-muted"
+                  : variant === "caption"
+                    ? "text-xs text-text-muted uppercase tracking-wide"
+                    : "text-base",
         variant === "status"
           ? "text-xs uppercase tracking-wider font-medium"
           : className,
@@ -110,7 +112,12 @@ export function Small({ children, className }: TypographyProps) {
   );
 }
 
-export function Span({ children, className, variant, ...props }: TypographyProps & React.HTMLAttributes<HTMLSpanElement>) {
+export function Span({
+  children,
+  className,
+  variant,
+  ...props
+}: TypographyProps & React.HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
       className={cn(

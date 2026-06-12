@@ -49,6 +49,7 @@ type Config struct {
 	DatabaseURL         string `json:"database_url"`
 	Port                string `json:"port"`
 	Addr                string `json:"addr"`
+	OllamaCompat        string `json:"ollama_compat"`
 	NATSURL             string `json:"nats_url"`
 	NATSUser            string `json:"nats_user"`
 	NATSPassword        string `json:"nats_password"`
@@ -83,6 +84,7 @@ type Dependencies struct {
 	DefaultProvider      string
 	AltDefaultModel      string
 	AltDefaultProvider   string
+	DefaultMaxTokens     string
 	DefaultThink         string
 }
 
@@ -118,7 +120,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	stateSvc := stateservice.New(deps.State, deps.DB, deps.WorkspaceID)
 
 	backendapi.AddStateRoutes(mux, stateSvc)
-	backendapi.AddModelRoutes(mux, stateSvc)
+	backendapi.AddModelRoutes(mux, stateSvc, deps.DefaultModel)
 	backendapi.AddBackendRoutes(mux, backendSvc, stateSvc)
 
 	registrySvc := modelregistryservice.New(deps.DB)
@@ -160,6 +162,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 			DefaultProvider:    deps.DefaultProvider,
 			AltDefaultModel:    deps.AltDefaultModel,
 			AltDefaultProvider: deps.AltDefaultProvider,
+			DefaultMaxTokens:   deps.DefaultMaxTokens,
 			DefaultThink:       deps.DefaultThink,
 		}, deps.Auth)
 	}
@@ -169,6 +172,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 			Provider:    deps.DefaultProvider,
 			AltModel:    deps.AltDefaultModel,
 			AltProvider: deps.AltDefaultProvider,
+			MaxTokens:   deps.DefaultMaxTokens,
 			Think:       deps.DefaultThink,
 		})
 	}

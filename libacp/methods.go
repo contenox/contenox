@@ -6,12 +6,13 @@ const (
 	MethodInitialize   = "initialize"
 	MethodAuthenticate = "authenticate"
 
-	MethodSessionNew    = "session/new"
-	MethodSessionLoad   = "session/load"
-	MethodSessionList   = "session/list"
-	MethodSessionPrompt = "session/prompt"
-	MethodSessionCancel = "session/cancel"
-	MethodSessionUpdate = "session/update"
+	MethodSessionNew             = "session/new"
+	MethodSessionLoad            = "session/load"
+	MethodSessionList            = "session/list"
+	MethodSessionPrompt          = "session/prompt"
+	MethodSessionCancel          = "session/cancel"
+	MethodSessionUpdate          = "session/update"
+	MethodSessionSetConfigOption = "session/set_config_option"
 
 	MethodSessionRequestPermission = "session/request_permission"
 

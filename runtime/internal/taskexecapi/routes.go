@@ -18,6 +18,7 @@ type Defaults struct {
 	Provider    string
 	AltModel    string
 	AltProvider string
+	MaxTokens   string
 	Think       string
 }
 
@@ -123,6 +124,9 @@ func (h *handler) templateVars(raw map[string]string) map[string]string {
 	}
 	if h.defaults.AltProvider != "" {
 		vars["alt_provider"] = h.defaults.AltProvider
+	}
+	if h.defaults.MaxTokens != "" {
+		vars["max_tokens"] = h.defaults.MaxTokens
 	}
 	if h.defaults.Think != "" {
 		vars["think"] = h.defaults.Think

@@ -13,15 +13,16 @@ type VLLMChatClient struct {
 	vLLMClient
 }
 
-func NewVLLMChatClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string, canThink bool, tracker libtracker.ActivityTracker) (modelrepo.LLMChatClient, error) {
+func NewVLLMChatClient(ctx context.Context, baseURL, modelName string, contextLength, maxOutputTokens int, httpClient *http.Client, apiKey string, canThink bool, tracker libtracker.ActivityTracker) (modelrepo.LLMChatClient, error) {
 	client := &VLLMChatClient{
 		vLLMClient: vLLMClient{
-			baseURL:    baseURL,
-			httpClient: httpClient,
-			modelName:  modelName,
-			canThink:   canThink,
-			apiKey:     apiKey,
-			tracker:    tracker,
+			baseURL:         baseURL,
+			httpClient:      httpClient,
+			modelName:       modelName,
+			maxOutputTokens: maxOutputTokens,
+			canThink:        canThink,
+			apiKey:          apiKey,
+			tracker:         tracker,
 		},
 	}
 
@@ -35,6 +36,7 @@ func (c *VLLMChatClient) Chat(ctx context.Context, messages []modelrepo.Message,
 	defer end()
 
 	request := buildChatRequest(c.modelName, messages, args, c.canThink)
+	c.clampChatRequest(&request)
 
 	var response chatResponse
 

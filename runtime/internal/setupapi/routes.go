@@ -61,6 +61,7 @@ type putCLIConfigRequest struct {
 	DefaultProvider    *string `json:"default-provider"`
 	DefaultAltModel    *string `json:"default-alt-model"`
 	DefaultAltProvider *string `json:"default-alt-provider"`
+	DefaultMaxTokens   *string `json:"default-max-tokens"`
 	DefaultChain       *string `json:"default-chain"`
 	HITLPolicyName     *string `json:"hitl-policy-name"`
 }
@@ -70,6 +71,7 @@ type putCLIConfigResponse struct {
 	DefaultProvider    string            `json:"defaultProvider"`
 	DefaultAltModel    string            `json:"defaultAltModel"`
 	DefaultAltProvider string            `json:"defaultAltProvider"`
+	DefaultMaxTokens   string            `json:"defaultMaxTokens"`
 	DefaultChain       string            `json:"defaultChain"`
 	HITLPolicyName     string            `json:"hitlPolicyName"`
 	ResolvedFrom       map[string]string `json:"resolvedFrom,omitempty"`
@@ -90,6 +92,7 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		body.DefaultProvider == nil &&
 		body.DefaultAltModel == nil &&
 		body.DefaultAltProvider == nil &&
+		body.DefaultMaxTokens == nil &&
 		body.DefaultChain == nil &&
 		body.HITLPolicyName == nil {
 		_ = apiframework.Error(w, r, apiframework.BadRequest("Provide at least one CLI config key."), apiframework.UpdateOperation)
@@ -100,6 +103,7 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		DefaultProvider:    body.DefaultProvider,
 		DefaultAltModel:    body.DefaultAltModel,
 		DefaultAltProvider: body.DefaultAltProvider,
+		DefaultMaxTokens:   body.DefaultMaxTokens,
 		DefaultChain:       body.DefaultChain,
 		HITLPolicyName:     body.HITLPolicyName,
 	})
@@ -112,6 +116,7 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		DefaultProvider:    snap.DefaultProvider,
 		DefaultAltModel:    snap.DefaultAltModel,
 		DefaultAltProvider: snap.DefaultAltProvider,
+		DefaultMaxTokens:   snap.DefaultMaxTokens,
 		DefaultChain:       snap.DefaultChain,
 		HITLPolicyName:     snap.HITLPolicyName,
 		ResolvedFrom:       snap.ResolvedFrom,

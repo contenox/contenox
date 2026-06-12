@@ -101,7 +101,8 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res != "ok" {
+		sed, ok := res.(localtools.FsSedResult)
+		if !ok || !sed.Written || !sed.Changed || sed.Replacements != 1 {
 			t.Errorf("unexpected result: %v", res)
 		}
 
@@ -122,6 +123,18 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 			t.Error("expected error for path outside allowed dir, got nil")
 		} else if !strings.Contains(err.Error(), "escapes allowed directory") {
 			t.Errorf("unexpected error message: %v", err)
+		}
+	})
+
+	t.Run("UnknownArgsRejected", func(t *testing.T) {
+		args := map[string]any{"path": "test.txt", "unexpected": true}
+		toolsCall := &taskengine.ToolsCall{ToolName: "read_file"}
+		_, _, err := h.Exec(ctx, now, args, false, toolsCall)
+		if err == nil {
+			t.Fatal("expected unknown argument error")
+		}
+		if !strings.Contains(err.Error(), "unexpected") {
+			t.Fatalf("expected error to name unknown argument, got %v", err)
 		}
 	})
 
@@ -253,6 +266,47 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "denied") {
 			t.Fatalf("expected denied: %v", err)
+		}
+	})
+
+	t.Run("allowedDirFromPolicy", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, "policy.txt"), []byte("policy ok"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		ctxPolicy := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
+			"_allowed_dir": root,
+		})
+		h2 := localtools.NewLocalFSTools("", nil)
+		res, dataType, err := h2.Exec(ctxPolicy, now, map[string]any{"path": "policy.txt"}, false, &taskengine.ToolsCall{ToolName: "read_file"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dataType != taskengine.DataTypeString || res.(string) != "policy ok" {
+			t.Fatalf("unexpected read result: %v (%v)", res, dataType)
+		}
+	})
+
+	t.Run("relativeAllowedDirFromPolicyUsesCwdResolver", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "workspace"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "workspace", "policy.txt"), []byte("workspace policy ok"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		ctxPolicy := taskengine.WithToolsArgs(ctx, localtools.LocalFSToolsName, map[string]string{
+			"_allowed_dir": "workspace",
+		})
+		h2 := localtools.NewLocalFSToolsWith("", nil, nil, localtools.LocalFSToolsName, func(context.Context) string {
+			return root
+		})
+		res, dataType, err := h2.Exec(ctxPolicy, now, map[string]any{"path": "policy.txt"}, false, &taskengine.ToolsCall{ToolName: "read_file"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dataType != taskengine.DataTypeString || res.(string) != "workspace policy ok" {
+			t.Fatalf("unexpected read result: %v (%v)", res, dataType)
 		}
 	})
 
@@ -523,6 +577,7 @@ func TestUnit_LocalFSTools_InjectedNamePlumbsThrough(t *testing.T) {
 	}
 	want := map[string]bool{
 		"read_file": true, "write_file": true, "list_dir": true, "grep": true,
+		"find_files": true, "search_repo": true,
 		"sed": true, "count_stats": true, "read_file_range": true, "stat_file": true,
 	}
 	if len(tools) != len(want) {

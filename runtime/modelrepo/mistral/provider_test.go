@@ -27,16 +27,17 @@ func TestUnit_MistralChat_RequestShapeAndResponse(t *testing.T) {
 	defer srv.Close()
 
 	p := NewMistralProvider("secret-key", "mistral-large-latest", []string{srv.URL},
-		modelrepo.CapabilityConfig{CanChat: true}, srv.Client(), nil)
+		modelrepo.CapabilityConfig{CanChat: true, MaxOutputTokens: 64}, srv.Client(), nil)
 	chat, err := p.GetChatConnection(context.Background(), "")
 	require.NoError(t, err)
 
-	res, err := chat.Chat(context.Background(), []modelrepo.Message{{Role: "user", Content: "hi"}})
+	res, err := chat.Chat(context.Background(), []modelrepo.Message{{Role: "user", Content: "hi"}}, modelrepo.WithMaxTokens(128))
 	require.NoError(t, err)
 
 	require.True(t, strings.HasSuffix(gotPath, "/chat/completions"), "path was %q", gotPath)
 	require.Equal(t, "Bearer secret-key", gotAuth)
 	require.Equal(t, "mistral-large-latest", gotBody["model"], "model goes in the body")
+	require.Equal(t, float64(64), gotBody["max_tokens"])
 	require.Equal(t, "hi there", res.Message.Content)
 }
 
@@ -45,7 +46,7 @@ func TestUnit_MistralCatalog_DoesNotInferThinkingFromModelName(t *testing.T) {
 		require.Equal(t, http.MethodGet, r.Method)
 		require.Equal(t, "/models", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":[{"id":"magistral-medium-latest"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"magistral-medium-latest","max_output_tokens":32768}]}`))
 	}))
 	defer srv.Close()
 
@@ -56,6 +57,7 @@ func TestUnit_MistralCatalog_DoesNotInferThinkingFromModelName(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, models, 1)
 	require.Equal(t, "magistral-medium-latest", models[0].Name)
+	require.Equal(t, 32768, models[0].MaxOutputTokens)
 	require.False(t, models[0].CanThink, "model name must not advertise Mistral thinking support")
 
 	provider := catalog.ProviderFor(models[0])

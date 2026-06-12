@@ -20,11 +20,12 @@ const defaultBaseURL = "https://api.mistral.ai/v1"
 // mistralClient is the shared transport for the direct Mistral API
 // (api.mistral.ai), which speaks the OpenAI-compatible chat/completions format.
 type mistralClient struct {
-	baseURL    string
-	apiKey     string
-	modelName  string
-	httpClient *http.Client
-	tracker    libtracker.ActivityTracker
+	baseURL         string
+	apiKey          string
+	modelName       string
+	maxOutputTokens int
+	httpClient      *http.Client
+	tracker         libtracker.ActivityTracker
 }
 
 func chatConfigFromArgs(args []modelrepo.ChatArgument) *modelrepo.ChatConfig {
@@ -96,6 +97,7 @@ func (c *mistralChatClient) Chat(ctx context.Context, messages []modelrepo.Messa
 
 	cfg := chatConfigFromArgs(args)
 	req, nameMap := chatcompletions.Build(c.modelName, messages, cfg)
+	req.MaxTokens = modelrepo.ClampMaxOutputTokensPtr(req.MaxTokens, c.maxOutputTokens)
 	raw, err := c.post(ctx, "/chat/completions", req)
 	if err != nil {
 		reportErr(err)
@@ -115,6 +117,7 @@ type mistralStreamClient struct{ mistralClient }
 func (c *mistralStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	cfg := chatConfigFromArgs(args)
 	req, nameMap := chatcompletions.Build(c.modelName, messages, cfg)
+	req.MaxTokens = modelrepo.ClampMaxOutputTokensPtr(req.MaxTokens, c.maxOutputTokens)
 	req.Stream = true
 	dec := chatcompletions.NewStreamDecoder(nameMap)
 

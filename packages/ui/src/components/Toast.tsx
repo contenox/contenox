@@ -15,8 +15,8 @@ export function Toast({ message, variant, className }: ToastProps) {
         "fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg p-4 shadow-lg",
         "flex items-center gap-3",
         variant === "success"
-          ? "bg-primary-500 text-surface-50 dark:bg-dark-primary-600"
-          : "bg-error-500 text-surface-50 dark:bg-dark-error-600",
+          ? "bg-primary-500 text-text-inverted dark:bg-dark-primary-600 dark:text-dark-text-inverted"
+          : "bg-error-500 text-text-inverted dark:bg-dark-error-600 dark:text-dark-text",
         className,
       )}
     >

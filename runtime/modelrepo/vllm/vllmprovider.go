@@ -11,18 +11,19 @@ import (
 )
 
 type vLLMProvider struct {
-	Name           string
-	ID             string
-	ContextLength  int
-	SupportsChat   bool
-	SupportsEmbed  bool
-	SupportsStream bool
-	SupportsPrompt bool
-	SupportsThink  bool
-	Backends       []string
-	authToken      string
-	client         *http.Client
-	tracker        libtracker.ActivityTracker
+	Name            string
+	ID              string
+	ContextLength   int
+	MaxOutputTokens int
+	SupportsChat    bool
+	SupportsEmbed   bool
+	SupportsStream  bool
+	SupportsPrompt  bool
+	SupportsThink   bool
+	Backends        []string
+	authToken       string
+	client          *http.Client
+	tracker         libtracker.ActivityTracker
 }
 
 func NewVLLMProvider(modelName string, backends []string, client *http.Client, caps modelrepo.CapabilityConfig, authToken string, tracker libtracker.ActivityTracker) modelrepo.Provider {
@@ -30,18 +31,19 @@ func NewVLLMProvider(modelName string, backends []string, client *http.Client, c
 		tracker = libtracker.NoopTracker{}
 	}
 	return &vLLMProvider{
-		Name:           modelName,
-		ID:             "vllm:" + modelName,
-		ContextLength:  caps.ContextLength,
-		SupportsChat:   caps.CanChat,
-		SupportsEmbed:  caps.CanEmbed,
-		SupportsStream: caps.CanStream,
-		SupportsPrompt: caps.CanPrompt,
-		SupportsThink:  caps.CanThink,
-		Backends:       backends,
-		authToken:      authToken,
-		client:         client,
-		tracker:        tracker,
+		Name:            modelName,
+		ID:              "vllm:" + modelName,
+		ContextLength:   caps.ContextLength,
+		MaxOutputTokens: caps.MaxOutputTokens,
+		SupportsChat:    caps.CanChat,
+		SupportsEmbed:   caps.CanEmbed,
+		SupportsStream:  caps.CanStream,
+		SupportsPrompt:  caps.CanPrompt,
+		SupportsThink:   caps.CanThink,
+		Backends:        backends,
+		authToken:       authToken,
+		client:          client,
+		tracker:         tracker,
 	}
 }
 
@@ -75,9 +77,8 @@ func (p *vLLMProvider) GetType() string {
 	return "vllm"
 }
 
-func (p *vLLMProvider) GetContextLength() int {
-	return p.ContextLength
-}
+func (p *vLLMProvider) GetContextLength() int   { return p.ContextLength }
+func (p *vLLMProvider) GetMaxOutputTokens() int { return p.MaxOutputTokens }
 
 func (p *vLLMProvider) CanChat() bool {
 	return p.SupportsChat
@@ -107,7 +108,7 @@ func (p *vLLMProvider) GetChatConnection(ctx context.Context, backendID string) 
 		return nil, err
 	}
 
-	return NewVLLMChatClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.CanThink(), p.tracker)
+	return NewVLLMChatClient(ctx, backendID, p.ModelName(), p.ContextLength, p.MaxOutputTokens, p.client, p.authToken, p.CanThink(), p.tracker)
 }
 
 func (p *vLLMProvider) GetPromptConnection(ctx context.Context, backendID string) (modelrepo.LLMPromptExecClient, error) {
@@ -119,7 +120,7 @@ func (p *vLLMProvider) GetPromptConnection(ctx context.Context, backendID string
 		return nil, err
 	}
 
-	return NewVLLMPromptClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.CanThink(), p.tracker)
+	return NewVLLMPromptClient(ctx, backendID, p.ModelName(), p.ContextLength, p.MaxOutputTokens, p.client, p.authToken, p.CanThink(), p.tracker)
 }
 
 func (p *vLLMProvider) GetEmbedConnection(ctx context.Context, backendID string) (modelrepo.LLMEmbedClient, error) {
@@ -135,5 +136,5 @@ func (p *vLLMProvider) GetStreamConnection(ctx context.Context, backendID string
 		return nil, err
 	}
 
-	return NewVLLMStreamClient(ctx, backendID, p.ModelName(), p.ContextLength, p.client, p.authToken, p.CanThink(), p.tracker)
+	return NewVLLMStreamClient(ctx, backendID, p.ModelName(), p.ContextLength, p.MaxOutputTokens, p.client, p.authToken, p.CanThink(), p.tracker)
 }

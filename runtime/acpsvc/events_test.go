@@ -20,13 +20,18 @@ func TestUnit_ToolCallUpdate_FsWriteResultProducesDiff(t *testing.T) {
 	}
 	raw, err := json.Marshal(fw)
 	require.NoError(t, err)
+	require.NotContains(t, string(raw), "old_text", "model-visible write_file JSON must stay compact")
+	require.NotContains(t, string(raw), "new_text", "model-visible write_file JSON must stay compact")
 
 	ev := taskengine.TaskEvent{
-		Kind:         taskengine.TaskEventToolCall,
-		ToolName:     "local_fs.write_file",
-		ApprovalID:   "call-1",
-		ApprovalArgs: map[string]any{"path": "/tmp/abc.txt", "content": "new"},
-		Content:      string(raw),
+		Kind:            taskengine.TaskEventToolCall,
+		ToolName:        "local_fs.write_file",
+		ApprovalID:      "call-1",
+		ApprovalArgs:    map[string]any{"path": "/tmp/abc.txt", "content": "new"},
+		Content:         string(raw),
+		ToolDiffPath:    fw.Path,
+		ToolDiffOldText: fw.OldText,
+		ToolDiffNewText: fw.NewText,
 	}
 
 	note := toolCallUpdateNotification(libacp.SessionID("sess-1"), ev)
@@ -167,22 +172,15 @@ func TestUnit_SummarizeToolCallArgs_LongCommandTruncates(t *testing.T) {
 }
 
 func TestUnit_ReplayToolResult_FsWriteProducesDiff(t *testing.T) {
-	fw := localtools.FsWriteResult{
-		Path:    "/tmp/a.txt",
-		OldText: "old",
-		NewText: "new",
-		Written: true,
-	}
-	raw, err := json.Marshal(fw)
-	require.NoError(t, err)
-
 	m := taskengine.Message{
 		Role:       "tool",
 		ToolCallID: "call-w",
-		Content:    string(raw),
+		Content:    `{"path":"/tmp/a.txt","old_text":"old","new_text":"new","written":true}`,
 	}
 	upd := toolCallUpdateFromResult(m)
 	require.Len(t, upd.ToolContent, 1)
 	require.Equal(t, libacp.ToolCallContentDiff, upd.ToolContent[0].Type)
 	require.Equal(t, "/tmp/a.txt", upd.ToolContent[0].Path)
+	require.Equal(t, "old", upd.ToolContent[0].OldText)
+	require.Equal(t, "new", upd.ToolContent[0].NewText)
 }

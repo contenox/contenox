@@ -212,13 +212,14 @@ func ollamaAPIError(status int, raw []byte) error {
 	return fmt.Errorf("ollama API returned %d: %s", status, msg)
 }
 
-func buildOllamaOptions(config *modelrepo.ChatConfig) map[string]any {
+func buildOllamaOptions(config *modelrepo.ChatConfig, maxOutputTokens int) map[string]any {
 	opts := make(map[string]any)
 	if config.Temperature != nil {
 		opts["temperature"] = *config.Temperature
 	}
 	if config.MaxTokens != nil {
-		opts["num_predict"] = *config.MaxTokens
+		effective, _ := modelrepo.ClampMaxOutputTokens(*config.MaxTokens, maxOutputTokens)
+		opts["num_predict"] = effective
 	}
 	if config.TopP != nil {
 		opts["top_p"] = *config.TopP

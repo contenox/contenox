@@ -83,6 +83,18 @@ func TestUnit_WebTools_Get_ReturnsTextWhenNotJSON(t *testing.T) {
 	require.Equal(t, "hello world", res)
 }
 
+func TestUnit_WebTools_RejectsUnknownArgs(t *testing.T) {
+	tools := newWebTools(t, &recTracker{})
+
+	_, _, err := execWeb(t, context.Background(), tools, "web_get", map[string]any{
+		"url":        "https://example.test/",
+		"unexpected": true,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unknown argument")
+	require.Contains(t, err.Error(), "unexpected")
+}
+
 // ── SSRF / host policy ──────────────────────────────────────────────────────
 
 func TestUnit_WebTools_Get_DeniedHostBlocked(t *testing.T) {

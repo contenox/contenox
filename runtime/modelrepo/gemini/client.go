@@ -15,13 +15,14 @@ import (
 )
 
 type geminiClient struct {
-	apiKey     string
-	modelName  string
-	baseURL    string
-	httpClient *http.Client
-	maxTokens  int
-	canThink   bool
-	tracker    libtracker.ActivityTracker
+	apiKey          string
+	modelName       string
+	baseURL         string
+	httpClient      *http.Client
+	maxTokens       int
+	maxOutputTokens int
+	canThink        bool
+	tracker         libtracker.ActivityTracker
 }
 
 type geminiGenerateContentRequest struct {
@@ -165,9 +166,14 @@ func buildGeminiRequest(modelName string, messages []modelrepo.Message, systemIn
 		}
 	}
 
+	contents := convertToGeminiMessages(messages)
+	if len(contents) == 0 {
+		return geminiGenerateContentRequest{}, fmt.Errorf("gemini: refusing to send empty contents for model %s after filtering %d message(s); provide at least one non-empty user/model/tool message, tool call, or tool response", modelName, len(messages))
+	}
+
 	req := geminiGenerateContentRequest{
 		SystemInstruction: systemInstruction,
-		Contents:          convertToGeminiMessages(messages),
+		Contents:          contents,
 		GenerationConfig:  &geminiGenerationConfig{},
 		Tools:             tools,
 	}
@@ -353,27 +359,7 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 				}
 			}
 
-			var respData any
-			if m.Content != "" {
-				// Try to unmarshal as *any* valid JSON
-				if err := json.Unmarshal([]byte(m.Content), &respData); err != nil {
-					// If it's not JSON (e.g., "it's sunny"),
-					// treat the raw string as the content.
-					respData = m.Content
-				}
-			} else {
-				// Empty content
-				respData = ""
-			}
-
-			// Gemini's FunctionResponse.Response *must* be a JSON object.
-			// If our data isn't one, wrap it.
-			respMap, ok := respData.(map[string]any)
-			if !ok {
-				// It wasn't a JSON object (e.g., string, number, array, or null).
-				// Wrap it in a standard object.
-				respMap = map[string]any{"content": respData}
-			}
+			respMap := geminiToolResponseMap(m.Content)
 
 			parts = append(parts, geminiPart{
 				FunctionResponse: &geminiFunctionResponse{
@@ -400,6 +386,52 @@ func convertToGeminiMessages(messages []modelrepo.Message) []geminiContent {
 	}
 
 	return out
+}
+
+func geminiToolResponseMap(content string) map[string]interface{} {
+	if content == "" {
+		return map[string]interface{}{"content": ""}
+	}
+
+	var respData any
+	if err := json.Unmarshal([]byte(content), &respData); err != nil {
+		return map[string]interface{}{"content": content}
+	}
+	if geminiContainsSchemaReference(respData) {
+		return map[string]interface{}{"content": content}
+	}
+	respMap, ok := respData.(map[string]any)
+	if !ok {
+		return map[string]interface{}{"content": respData}
+	}
+	return respMap
+}
+
+func geminiContainsSchemaReference(v any) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, val := range x {
+			switch k {
+			case "$schema", "$defs", "definitions":
+				return true
+			case "$ref":
+				return true
+			}
+			if strings.HasPrefix(k, "$ref") {
+				return true
+			}
+			if geminiContainsSchemaReference(val) {
+				return true
+			}
+		}
+	case []any:
+		for _, val := range x {
+			if geminiContainsSchemaReference(val) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // allowedGeminiSchemaFields lists the only JSON fields Gemini accepts in a Schema.

@@ -1,12 +1,12 @@
 {
   "id": "chain-acpx",
-  "description": "Headless / untrusted-driver ACP chain for OpenClaw and other non-device-owner drivers. Same two-stage tool-using workflow loop as chain-acp (main 10 rounds → recovery 10 rounds → summarise_failure). Containment for the untrusted driver is enforced by hitl-policy-acpx.json (local_shell denied, web mutations denied, web reads gated), not by an in-chain step.",
+  "description": "Headless / untrusted-driver ACP chain for OpenClaw and other non-device-owner drivers. Two-stage tool-using workflow loop with conservative in-chain output caps. Containment for the untrusted driver is enforced by hitl-policy-acpx.json (local_shell denied, web mutations denied, web reads gated), not by an in-chain step.",
   "tasks": [
     {
       "id": "acp_chat",
       "description": "Tool-using workflow loop — model may call driver-provided tools (transition tool_call) or finish the turn (transition default → end).",
       "handler": "chat_completion",
-      "system_instruction": "You are Contenox, a task-execution engine — not a chat-only product, a bit cheeky used as Assistant.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
+      "system_instruction": "Current date: {{date}}.\n\nYou are Contenox, a task-execution engine — not a chat-only product, a bit cheeky used as Assistant.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
       "execute_config": {
         "model": "{{var:model}}",
         "provider": "{{var:provider}}",
@@ -14,7 +14,24 @@
         "shift": true,
         "pass_clients_tools": false,
         "tools": ["*"],
-        "max_tokens": 16384,
+        "tools_policies": {
+          "local_fs": {
+            "_allowed_dir": ".",
+            "_max_read_bytes": "262144",
+            "_max_output_bytes": "131072",
+            "_max_list_depth": "5",
+            "_max_grep_matches": "1000",
+            "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
+          },
+          "webtools": {
+            "_max_response_bytes": "262144",
+            "_max_request_body_bytes": "262144",
+            "_request_timeout_seconds": "30",
+            "_max_attempts": "3"
+          }
+        },
+        "max_tokens": "{{var:max_tokens|16384}}",
         "retry_policy": {
           "max_attempts": 4,
           "initial_backoff": "1s",
@@ -50,6 +67,26 @@
       "description": "Execute tool calls from the last message and append results to chat history.",
       "handler": "execute_tool_calls",
       "input_var": "acp_chat",
+      "execute_config": {
+        "tools": ["*"],
+        "tools_policies": {
+          "local_fs": {
+            "_allowed_dir": ".",
+            "_max_read_bytes": "262144",
+            "_max_output_bytes": "131072",
+            "_max_list_depth": "5",
+            "_max_grep_matches": "1000",
+            "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
+          },
+          "webtools": {
+            "_max_response_bytes": "262144",
+            "_max_request_body_bytes": "262144",
+            "_request_timeout_seconds": "30",
+            "_max_attempts": "3"
+          }
+        }
+      },
       "transition": {
         "on_failure": "",
         "branches": [
@@ -66,15 +103,32 @@
       "description": "Recovery workflow loop — picks up the full chat history from the main loop with a fresh system instruction noting the prior workflow got stuck. Has its own tool access and 10-round budget.",
       "handler": "chat_completion",
       "input_var": "acp_chat",
-      "system_instruction": "You are Contenox, a coding assistant driven over the Agent Client Protocol by an untrusted client.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used {{edge_count:acp_chat->run_tools}} of 10 main and {{edge_count:recovery_chat->recovery_tools}} of 10 recovery tool_call rounds this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
+      "system_instruction": "Current date: {{date}}.\n\nYou are Contenox, a coding assistant driven over the Agent Client Protocol by an untrusted client.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used {{edge_count:acp_chat->run_tools}} of 10 main and {{edge_count:recovery_chat->recovery_tools}} of 10 recovery tool_call rounds this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
       "execute_config": {
-        "model": "{{var:model}}",
-        "provider": "{{var:provider}}",
+        "model": "{{var:alt_model|var:model}}",
+        "provider": "{{var:alt_provider|var:provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
         "tools": ["*"],
-        "max_tokens": 16384,
+        "tools_policies": {
+          "local_fs": {
+            "_allowed_dir": ".",
+            "_max_read_bytes": "262144",
+            "_max_output_bytes": "131072",
+            "_max_list_depth": "5",
+            "_max_grep_matches": "1000",
+            "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
+          },
+          "webtools": {
+            "_max_response_bytes": "262144",
+            "_max_request_body_bytes": "262144",
+            "_request_timeout_seconds": "30",
+            "_max_attempts": "3"
+          }
+        },
+        "max_tokens": "{{var:max_tokens|16384}}",
         "retry_policy": {
           "max_attempts": 4,
           "initial_backoff": "1s",
@@ -110,6 +164,26 @@
       "description": "Execute tool calls from the recovery step and append results to chat history.",
       "handler": "execute_tool_calls",
       "input_var": "recovery_chat",
+      "execute_config": {
+        "tools": ["*"],
+        "tools_policies": {
+          "local_fs": {
+            "_allowed_dir": ".",
+            "_max_read_bytes": "262144",
+            "_max_output_bytes": "131072",
+            "_max_list_depth": "5",
+            "_max_grep_matches": "1000",
+            "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json",
+            "_skip_dir_names": ".git,node_modules,.venv,__pycache__,.next,dist,.cache,vendor,target,.idea,.vscode,out"
+          },
+          "webtools": {
+            "_max_response_bytes": "262144",
+            "_max_request_body_bytes": "262144",
+            "_request_timeout_seconds": "30",
+            "_max_attempts": "3"
+          }
+        }
+      },
       "transition": {
         "on_failure": "",
         "branches": [
@@ -125,16 +199,16 @@
       "id": "summarise_failure",
       "description": "Final safety net. Reached when both the main and recovery workflow loops exceeded their budgets. No tools — tells the user what was tried and what would unblock the work.",
       "handler": "chat_completion",
-      "system_instruction": "You are Contenox, a coding assistant driven over the Agent Client Protocol by an untrusted client.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.\n\nGround this strictly in the actual chat history above — describe only steps that were really taken and results that actually occurred; do not invent attempts, tools, or causes.",
+      "system_instruction": "Current date: {{date}}.\n\nYou are Contenox, a coding assistant driven over the Agent Client Protocol by an untrusted client.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.\n\nGround this strictly in the actual chat history above — describe only steps that were really taken and results that actually occurred; do not invent attempts, tools, or causes.",
       "input_var": "recovery_chat",
       "execute_config": {
-        "model": "{{var:model}}",
-        "provider": "{{var:provider}}",
+        "model": "{{var:alt_model|var:model}}",
+        "provider": "{{var:alt_provider|var:provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
         "tools": [],
-        "max_tokens": 16384,
+        "max_tokens": "{{var:max_tokens|16384}}",
         "retry_policy": {
           "max_attempts": 3,
           "initial_backoff": "1s",

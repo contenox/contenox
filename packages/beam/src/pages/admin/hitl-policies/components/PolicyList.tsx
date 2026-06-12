@@ -14,7 +14,7 @@ export default function PolicyList({ names, activeName, selectedName, onSelect, 
   const { t } = useTranslation();
 
   return (
-    <div className="flex w-64 flex-col gap-1 overflow-y-auto border-r border-neutral-200 p-3 dark:border-neutral-700">
+    <div className="flex min-h-0 w-64 flex-col gap-1 overflow-y-auto border-r border-neutral-200 p-3 dark:border-neutral-700">
       {names.length === 0 && (
         <P variant="muted" className="text-sm">{t('hitl_policies.list_empty')}</P>
       )}

@@ -32,7 +32,7 @@ func openTestDB(t *testing.T) (context.Context, libdbexec.DBManager, runtimetype
 
 func TestUnit_getConfigKV_unset_returnsEmpty(t *testing.T) {
 	ctx, _, store := openTestDB(t)
-	for _, key := range []string{"default-model", "default-provider", "default-alt-model", "default-alt-provider", "default-think", "default-chain"} {
+	for _, key := range []string{"default-model", "default-provider", "default-alt-model", "default-alt-provider", "default-max-tokens", "default-think", "default-chain"} {
 		val, err := getConfigKV(ctx, store, key)
 		require.NoError(t, err, "key=%s", key)
 		assert.Equal(t, "", val, "key=%s should be empty when not set", key)
@@ -59,6 +59,7 @@ func TestUnit_getConfigKV_allConfigKeys(t *testing.T) {
 		"default-provider":     "ollama",
 		"default-alt-model":    "granite-3.2-2b",
 		"default-alt-provider": "local",
+		"default-max-tokens":   "8192",
 		"default-think":        "medium",
 		"default-chain":        "default-chain.json",
 	}
@@ -84,6 +85,22 @@ func TestUnit_getConfigKV_overwrite(t *testing.T) {
 	val, err := getConfigKV(ctx, store, "default-model")
 	require.NoError(t, err)
 	assert.Equal(t, "third", val)
+}
+
+func TestUnit_normalizeMaxTokensConfig(t *testing.T) {
+	got, err := normalizeMaxTokensConfig(" 8192 ")
+	require.NoError(t, err)
+	assert.Equal(t, "8192", got)
+
+	got, err = normalizeMaxTokensConfig("")
+	require.NoError(t, err)
+	assert.Equal(t, "", got)
+
+	_, err = normalizeMaxTokensConfig("-1")
+	require.Error(t, err)
+
+	_, err = normalizeMaxTokensConfig("many")
+	require.Error(t, err)
 }
 
 // ---------------------------------------------------------------------------

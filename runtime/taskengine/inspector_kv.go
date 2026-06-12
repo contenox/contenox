@@ -128,12 +128,13 @@ type kvStackTrace struct {
 
 func (s *kvStackTrace) RecordStep(step CapturedStateUnit) {
 	s.inner.RecordStep(step)
+	persisted := sanitizeCapturedStateForPersistence(step)
 
 	reportErr, _, end := s.tracker.Start(s.ctx, "persist_step", "state_kv",
 		"request_id", s.reqID, "task_id", step.TaskID)
 	defer end()
 
-	data, err := json.Marshal(step)
+	data, err := json.Marshal(persisted)
 	if err != nil {
 		reportErr(err)
 		return

@@ -130,6 +130,28 @@ func TestUnit_BuildOpenAIRequest_UsesMaxCompletionTokensJSON(t *testing.T) {
 	}
 }
 
+func TestUnit_OpenAIClient_ClampsChatAndResponsesMaxOutputTokens(t *testing.T) {
+	t.Parallel()
+	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}
+	client := &openAIClient{maxOutputTokens: 64}
+
+	chatReq, _ := buildOpenAIRequest("gpt-4o", msgs, []modelrepo.ChatArgument{
+		modelrepo.WithMaxTokens(128),
+	})
+	client.clampChatMaxOutputTokens(&chatReq)
+	if chatReq.MaxCompletionTokens == nil || *chatReq.MaxCompletionTokens != 64 {
+		t.Fatalf("chat max_completion_tokens = %v, want 64", chatReq.MaxCompletionTokens)
+	}
+
+	responsesReq, _ := buildOpenAIResponsesRequestWithCapabilities("gpt-5", msgs, []modelrepo.ChatArgument{
+		modelrepo.WithMaxTokens(128),
+	}, true)
+	client.clampResponsesMaxOutputTokens(&responsesReq)
+	if responsesReq.MaxOutputTokens == nil || *responsesReq.MaxOutputTokens != 64 {
+		t.Fatalf("responses max_output_tokens = %v, want 64", responsesReq.MaxOutputTokens)
+	}
+}
+
 func TestUnit_BuildOpenAIRequest_GPT4KeepsTemperature(t *testing.T) {
 	t.Parallel()
 	msgs := []modelrepo.Message{{Role: "user", Content: "hi"}}

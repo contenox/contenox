@@ -65,15 +65,16 @@ type BackendCheck struct {
 
 // Result is returned by GET /setup-status and contenox doctor.
 type Result struct {
-	DefaultModel          string            `json:"defaultModel"`
-	DefaultProvider       string            `json:"defaultProvider"`
-	DefaultChain          string            `json:"defaultChain"`
-	HITLPolicyName        string            `json:"hitlPolicyName"`
-	BackendCount          int               `json:"backendCount"`
-	ReachableBackendCount int               `json:"reachableBackendCount"`
-	Issues                []Issue           `json:"issues"`
-	BackendChecks         []BackendCheck    `json:"backendChecks,omitempty"`
-	ResolvedFrom          map[string]string `json:"resolvedFrom,omitempty"`
+	DefaultModel           string            `json:"defaultModel"`
+	DefaultProvider        string            `json:"defaultProvider"`
+	DefaultMaxOutputTokens int               `json:"defaultMaxOutputTokens,omitempty"`
+	DefaultChain           string            `json:"defaultChain"`
+	HITLPolicyName         string            `json:"hitlPolicyName"`
+	BackendCount           int               `json:"backendCount"`
+	ReachableBackendCount  int               `json:"reachableBackendCount"`
+	Issues                 []Issue           `json:"issues"`
+	BackendChecks          []BackendCheck    `json:"backendChecks,omitempty"`
+	ResolvedFrom           map[string]string `json:"resolvedFrom,omitempty"`
 }
 
 type backendErrorKind string
@@ -90,12 +91,13 @@ const (
 // Evaluate returns readiness from gathered input (no I/O).
 func Evaluate(in Input) Result {
 	r := Result{
-		DefaultModel:    strings.TrimSpace(in.DefaultModel),
-		DefaultProvider: strings.TrimSpace(in.DefaultProvider),
-		DefaultChain:    strings.TrimSpace(in.DefaultChain),
-		HITLPolicyName:  strings.TrimSpace(in.HITLPolicyName),
-		BackendCount:    len(in.RegisteredBackends),
-		ResolvedFrom:    in.ResolvedFrom,
+		DefaultModel:           strings.TrimSpace(in.DefaultModel),
+		DefaultProvider:        strings.TrimSpace(in.DefaultProvider),
+		DefaultMaxOutputTokens: ResolveMaxOutputTokens(in.States, in.DefaultProvider, in.DefaultModel),
+		DefaultChain:           strings.TrimSpace(in.DefaultChain),
+		HITLPolicyName:         strings.TrimSpace(in.HITLPolicyName),
+		BackendCount:           len(in.RegisteredBackends),
+		ResolvedFrom:           in.ResolvedFrom,
 	}
 
 	if r.BackendCount == 0 {
@@ -172,6 +174,46 @@ func Evaluate(in Input) Result {
 		addDefaultProviderIssues(&r)
 	}
 	return r
+}
+
+// ResolveMaxOutputTokens returns the known output-token ceiling for the active
+// provider/model from already-synced runtime state. It returns 0 when unknown.
+func ResolveMaxOutputTokens(states []statetype.BackendRuntimeState, provider, model string) int {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	model = strings.TrimSpace(model)
+	if provider == "" || model == "" {
+		return 0
+	}
+	normalizedModel := llmresolver.NormalizeModelName(model)
+	for _, state := range states {
+		if strings.TrimSpace(state.Error) != "" || !providerTypeMatches(provider, state.Backend.Type) {
+			continue
+		}
+		for _, pulled := range state.PulledModels {
+			name := strings.TrimSpace(pulled.Model)
+			if name == "" {
+				name = strings.TrimSpace(pulled.Name)
+			}
+			if name == "" {
+				continue
+			}
+			if name == model || llmresolver.NormalizeModelName(name) == normalizedModel {
+				if pulled.MaxOutputTokens > 0 {
+					return pulled.MaxOutputTokens
+				}
+				return 0
+			}
+		}
+	}
+	return 0
+}
+
+func providerTypeMatches(provider, backendType string) bool {
+	backendType = strings.ToLower(strings.TrimSpace(backendType))
+	if provider == backendType {
+		return true
+	}
+	return provider == "vertex" && strings.HasPrefix(backendType, "vertex-")
 }
 
 // blockingIssue reports whether an issue prevents a usable agent: any
@@ -663,7 +705,7 @@ func modelNamePresent(available []string, wanted string) bool {
 
 func providerFixPath(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "openai", "anthropic", "mistral", "bedrock", "gemini", "vertex-google":
+	case "openai", "openrouter", "anthropic", "mistral", "bedrock", "gemini", "vertex-google":
 		return "/backends?tab=cloud-providers"
 	default:
 		return "/backends?tab=backends"

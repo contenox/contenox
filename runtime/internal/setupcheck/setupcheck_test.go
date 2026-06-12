@@ -32,6 +32,30 @@ func TestSystem_Evaluate_noBackends(t *testing.T) {
 	}
 }
 
+func TestUnit_Evaluate_ResolvesDefaultMaxOutputTokens(t *testing.T) {
+	states := []statetype.BackendRuntimeState{{
+		Backend: runtimetypes.Backend{Type: "openai"},
+		PulledModels: []statetype.ModelPullStatus{{
+			Model:           "gpt-5",
+			CanChat:         true,
+			MaxOutputTokens: 128000,
+		}},
+	}}
+
+	r := Evaluate(Input{
+		DefaultModel:    "gpt-5",
+		DefaultProvider: "openai",
+		States:          states,
+	})
+
+	if r.DefaultMaxOutputTokens != 128000 {
+		t.Fatalf("DefaultMaxOutputTokens = %d, want 128000", r.DefaultMaxOutputTokens)
+	}
+	if got := ResolveMaxOutputTokens(states, "vertex", "gpt-5"); got != 0 {
+		t.Fatalf("vertex should not match openai state, got %d", got)
+	}
+}
+
 func TestSystem_Evaluate_allUnreachable(t *testing.T) {
 	r := Evaluate(Input{
 		DefaultModel:    "m",

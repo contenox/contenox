@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 
+	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/spf13/cobra"
 )
 
@@ -77,6 +81,22 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return enc.Encode(res)
 	}
 	printDoctorText(cmd.OutOrStdout(), res)
+
+	// Advisory: warn when default-max-tokens exceeds the active provider's ceiling.
+	store := runtimetypes.New(db.WithoutTransaction())
+	maxTokStr := strings.TrimSpace(clikv.Read(ctx, store, "default-max-tokens"))
+	if maxTokStr != "" {
+		ceiling := res.DefaultMaxOutputTokens
+		if ceiling > 0 {
+			if n, convErr := strconv.Atoi(maxTokStr); convErr == nil && n > ceiling {
+				fmt.Fprintf(cmd.OutOrStdout(),
+					"\n⚠️  Advisory: default-max-tokens=%d exceeds %s provider ceiling (%d).\n"+
+						"   Requests will be clamped automatically; set a lower value to silence this warning:\n"+
+						"   contenox config set default-max-tokens %d\n",
+					n, res.DefaultProvider, ceiling, ceiling)
+			}
+		}
+	}
 	return nil
 }
 

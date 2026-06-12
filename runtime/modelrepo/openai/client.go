@@ -17,13 +17,14 @@ import (
 )
 
 type openAIClient struct {
-	baseURL       string
-	apiKey        string
-	httpClient    *http.Client
-	modelName     string
-	maxTokens     int
-	tracker       libtracker.ActivityTracker
-	supportsThink bool
+	baseURL         string
+	apiKey          string
+	httpClient      *http.Client
+	modelName       string
+	maxTokens       int
+	maxOutputTokens int
+	tracker         libtracker.ActivityTracker
+	supportsThink   bool
 }
 
 type openAIChatRequest struct {
@@ -212,6 +213,20 @@ func parseRetryAfterMs(h http.Header) time.Duration {
 // sanitized before being forwarded to the API.
 func buildOpenAIRequest(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument) (openAIChatRequest, map[string]string) {
 	return buildOpenAIRequestWithCapabilities(modelName, messages, args, true)
+}
+
+func (c *openAIClient) clampChatMaxOutputTokens(req *openAIChatRequest) {
+	if req == nil {
+		return
+	}
+	req.MaxCompletionTokens = modelrepo.ClampMaxOutputTokensPtr(req.MaxCompletionTokens, c.maxOutputTokens)
+}
+
+func (c *openAIClient) clampResponsesMaxOutputTokens(req *openAIResponsesRequest) {
+	if req == nil {
+		return
+	}
+	req.MaxOutputTokens = modelrepo.ClampMaxOutputTokensPtr(req.MaxOutputTokens, c.maxOutputTokens)
 }
 
 func buildOpenAIRequestWithCapabilities(modelName string, messages []modelrepo.Message, args []modelrepo.ChatArgument, supportsThink bool) (openAIChatRequest, map[string]string) {

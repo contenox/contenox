@@ -194,6 +194,9 @@ func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (comm
 			}
 		}
 	case map[string]any:
+		if err := rejectUnknownArgs(localExecToolsName, v, "command", "args", "cwd", "timeout", "shell", "stdin"); err != nil {
+			return "", nil, "", 0, false, "", err
+		}
 		if cmd, ok := v["command"].(string); ok && command == "" {
 			command = cmd
 		}
@@ -206,11 +209,12 @@ func (h *LocalExecTools) parseArgs(tools *taskengine.ToolsCall, input any) (comm
 		} else if s, ok := v["shell"].(string); ok && !useShell {
 			useShell = strings.EqualFold(s, "true") || s == "1"
 		}
-		if a, ok := v["args"].(string); ok && len(argsSlice) == 0 {
-			argsSlice = splitShellArgs(a)
-		}
-		if a, ok := v["args"].([]string); ok && len(argsSlice) == 0 {
-			argsSlice = a
+		if a, ok := v["args"]; ok && len(argsSlice) == 0 {
+			parsed, err := stringSliceArg(localExecToolsName, "args", a)
+			if err != nil {
+				return "", nil, "", 0, false, "", err
+			}
+			argsSlice = parsed
 		}
 		if d, ok := v["cwd"].(string); ok && cwd == "" {
 			cwd = filepath.Clean(d)
@@ -357,12 +361,23 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 	outStr := strings.TrimSpace(stdout.buf.String())
 	errStr := strings.TrimSpace(stderr.buf.String())
 
-	if stdout.truncated || stderr.truncated || errors.Is(runErr, ErrOutputBudgetExceeded) {
+	if errors.Is(runErr, ErrOutputBudgetExceeded) {
+		// Backend signalled it had already truncated its own output stream.
+		// The partial bytes in the capWriter buffers are from an incomplete
+		// write and must not be forwarded to the model.
 		result.Success = false
 		result.ExitCode = -1
-		result.Error = "Error: tool execution terminated: output exceeded the remaining context budget."
-		result.Stdout = ""
-		result.Stderr = ""
+		result.Error = fmt.Sprintf("Output truncated: command exceeded the context budget (%d bytes). Re-run with a narrower scope or redirect output to a file.", limit)
+		return result, nil
+	}
+	if stdout.truncated || stderr.truncated {
+		// In-process cap fired. The capWriter holds a clean head of the stream,
+		// which is more useful than empty output.
+		result.Success = false
+		result.ExitCode = -1
+		result.Stdout = strings.TrimSpace(stdout.buf.String())
+		result.Stderr = strings.TrimSpace(stderr.buf.String())
+		result.Error = fmt.Sprintf("Output truncated: command produced more than the context budget (%d bytes). The stdout/stderr above are the first captured bytes; subsequent output was discarded.", limit)
 		return result, nil
 	}
 
@@ -487,7 +502,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 	}
 	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
 	shellDesc := h.shell.ShellModeDescription()
-	desc := "Run a terminal command on the local host. Input is passed as stdin. For inspecting or modifying files within the project, prefer the local_fs.* tools - they enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for genuine shell operations: running tests, builds, git, environment inspection, etc. " + shellDesc
+	desc := "Run a terminal command on the local host. Returns {stdout, stderr, exitCode, success, durationSeconds}. Output is capped at the remaining context budget; when truncated, stdout/stderr contain the first captured bytes and error describes the truncation. For file operations prefer local_fs.*: read_file, write_file, sed, find_files, search_repo enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for operations with no dedicated tool: running tests, builds, git commands, environment inspection. " + shellDesc
 	if len(allowedCommands) > 0 {
 		desc += " Allowed commands: " + strings.Join(allowedCommands, ", ") + "."
 	}
@@ -497,6 +512,24 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 	if len(deniedCommands) > 0 {
 		desc += " Denied commands: " + strings.Join(deniedCommands, ", ") + "."
 	}
+
+	// When any policy constraint is active, shell mode is rejected at execution
+	// time. Keep the schema provider-compatible and communicate the restriction
+	// in prose; Gemini rejects boolean enum values in tool declarations.
+	policyActive := len(allowedCommands) > 0 || allowedDir != "" || len(deniedCommands) > 0
+	var shellProp map[string]interface{}
+	if policyActive {
+		shellProp = map[string]interface{}{
+			"type":        "boolean",
+			"description": "Shell mode is disabled by the active command policy. Omit or set false; provide command and args as separate parameters.",
+		}
+	} else {
+		shellProp = map[string]interface{}{
+			"type":        "boolean",
+			"description": shellDesc,
+		}
+	}
+
 	return []taskengine.Tool{
 		{
 			Type: "function",
@@ -532,10 +565,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 							"type":        "string",
 							"description": "Duration e.g. 30s",
 						},
-						"shell": map[string]interface{}{
-							"type":        "boolean",
-							"description": shellDesc,
-						},
+						"shell": shellProp,
 					},
 					"required": []string{"command"},
 				},

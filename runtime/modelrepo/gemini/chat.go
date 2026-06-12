@@ -39,6 +39,9 @@ func (c *GeminiChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 		reportErr(err)
 		return modelrepo.ChatResult{}, err
 	}
+	if req.GenerationConfig != nil {
+		req.GenerationConfig.MaxOutputTokens = modelrepo.ClampMaxOutputTokensPtr(req.GenerationConfig.MaxOutputTokens, c.maxOutputTokens)
+	}
 
 	endpoint := fmt.Sprintf("/v1beta/models/%s:generateContent", c.modelName)
 	var resp geminiGenerateContentResponse

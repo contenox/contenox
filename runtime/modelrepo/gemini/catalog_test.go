@@ -57,9 +57,10 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 			})
 		case "/v1beta/models/gemini-flash-latest":
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"name":            "models/gemini-flash-latest",
-				"inputTokenLimit": 8192,
-				"thinking":        true,
+				"name":             "models/gemini-flash-latest",
+				"inputTokenLimit":  8192,
+				"outputTokenLimit": 2048,
+				"thinking":         true,
 				"supportedGenerationMethods": []string{
 					"generateContent",
 					"embedContent",
@@ -85,6 +86,7 @@ func TestUnit_CatalogProvider_ListModels(t *testing.T) {
 	model := models[0]
 	require.Equal(t, "models/gemini-flash-latest", model.Name)
 	require.Equal(t, 8192, model.ContextLength)
+	require.Equal(t, 2048, model.MaxOutputTokens)
 	require.True(t, model.CanChat)
 	require.True(t, model.CanPrompt)
 	require.True(t, model.CanStream)

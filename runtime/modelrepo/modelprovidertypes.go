@@ -1,6 +1,13 @@
 package modelrepo
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrRefused is returned when the model refuses to generate a response
+// (stop_reason == "refusal"), typically due to a safety filter.
+var ErrRefused = errors.New("model refused the request")
 
 type ChatResult struct {
 	Message   Message

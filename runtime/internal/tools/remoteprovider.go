@@ -93,6 +93,11 @@ func (p *PersistentRepo) Exec(
 	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
 
 	// 2. Check MCP servers from DB (transient connection per call).
+	if runtimetypes.IsACPManagedMCPServerName(args.Name) && !acpMCPServerVisible(ctx, args.Name) {
+		err := fmt.Errorf("unknown tools: %s", args.Name)
+		reportErr(err)
+		return nil, taskengine.DataTypeAny, err
+	}
 	if mcpSrv, err := store.GetMCPServerByName(ctx, args.Name); err == nil {
 		out, dt, execErr := p.execMCPTools(ctx, mcpSrv, args, input)
 		if execErr != nil {
@@ -318,6 +323,9 @@ func (p *PersistentRepo) GetToolsForToolsByName(ctx context.Context, name string
 	if tools, ok := p.localTools[name]; ok {
 		return tools.GetToolsForToolsByName(ctx, name)
 	}
+	if runtimetypes.IsACPManagedMCPServerName(name) && !acpMCPServerVisible(ctx, name) {
+		return nil, fmt.Errorf("unknown tools %q: %w", name, taskengine.ErrToolsNotFound)
+	}
 
 	store := runtimetypes.New(p.dbInstance.WithoutTransaction())
 
@@ -438,6 +446,9 @@ func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
 			return nil, fmt.Errorf("failed to list MCP servers: %w", err)
 		}
 		for _, s := range page {
+			if runtimetypes.IsACPManagedMCPServerName(s.Name) && !acpMCPServerVisible(ctx, s.Name) {
+				continue
+			}
 			names = append(names, s.Name)
 		}
 		if len(page) < limit {
@@ -463,6 +474,28 @@ func (p *PersistentRepo) Supports(ctx context.Context) ([]string, error) {
 	}
 
 	return names, nil
+}
+
+func acpMCPServerVisible(ctx context.Context, name string) bool {
+	allowlist, ok := taskengine.RuntimeToolsAllowlistFromContext(ctx)
+	if !ok {
+		return false
+	}
+	hasStar := false
+	hasExact := false
+	for _, entry := range allowlist {
+		switch {
+		case entry == "*":
+			hasStar = true
+		case strings.HasPrefix(entry, "!"):
+			if strings.TrimPrefix(entry, "!") == name {
+				return false
+			}
+		case entry == name:
+			hasExact = true
+		}
+	}
+	return hasStar || hasExact
 }
 
 // --- Helper Functions ---

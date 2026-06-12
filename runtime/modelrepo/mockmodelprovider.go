@@ -7,14 +7,15 @@ import (
 
 // MockProvider is a mock implementation of the Provider interface for testing.
 type MockProvider struct {
-	ID            string
-	Name          string
-	ContextLength int
-	CanChatFlag   bool
-	CanEmbedFlag  bool
-	CanStreamFlag bool
-	CanPromptFlag bool
-	Backends      []string
+	ID              string
+	Name            string
+	ContextLength   int
+	MaxOutputTokens int
+	CanChatFlag     bool
+	CanEmbedFlag    bool
+	CanStreamFlag   bool
+	CanPromptFlag   bool
+	Backends        []string
 }
 
 // GetBackendIDs returns the backend IDs for the mock provider.
@@ -38,9 +39,10 @@ func (m *MockProvider) GetType() string {
 }
 
 // GetContextLength returns the context length for the mock provider.
-func (m *MockProvider) GetContextLength() int {
-	return m.ContextLength
-}
+func (m *MockProvider) GetContextLength() int { return m.ContextLength }
+
+// GetMaxOutputTokens returns the max output tokens ceiling for the mock provider.
+func (m *MockProvider) GetMaxOutputTokens() int { return m.MaxOutputTokens }
 
 // CanChat returns whether the mock provider can chat.
 func (m *MockProvider) CanChat() bool {

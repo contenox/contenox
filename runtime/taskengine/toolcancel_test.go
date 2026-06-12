@@ -13,10 +13,16 @@ import (
 )
 
 type recordedOp struct {
-	op      string
-	errs    int
-	changes int
-	ended   int
+	op        string
+	errs      int
+	changes   int
+	changeLog []recordedChange
+	ended     int
+}
+
+type recordedChange struct {
+	id   string
+	data any
 }
 
 type recordingTracker struct {
@@ -30,7 +36,12 @@ func (rt *recordingTracker) Start(_ context.Context, op, _ string, _ ...any) (fu
 	rt.ops = append(rt.ops, o)
 	rt.mu.Unlock()
 	return func(error) { rt.mu.Lock(); o.errs++; rt.mu.Unlock() },
-		func(string, any) { rt.mu.Lock(); o.changes++; rt.mu.Unlock() },
+		func(id string, data any) {
+			rt.mu.Lock()
+			o.changes++
+			o.changeLog = append(o.changeLog, recordedChange{id: id, data: data})
+			rt.mu.Unlock()
+		},
 		func() { rt.mu.Lock(); o.ended++; rt.mu.Unlock() }
 }
 
@@ -40,6 +51,17 @@ func (rt *recordingTracker) find(op string) *recordedOp {
 	for _, o := range rt.ops {
 		if o.op == op {
 			return o
+		}
+	}
+	return nil
+}
+
+func (rt *recordingTracker) changesFor(op string) []recordedChange {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	for _, o := range rt.ops {
+		if o.op == op {
+			return append([]recordedChange(nil), o.changeLog...)
 		}
 	}
 	return nil

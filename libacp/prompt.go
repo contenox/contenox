@@ -34,6 +34,7 @@ const (
 	SessionUpdatePlan              SessionUpdateKind = "plan"
 	SessionUpdateAvailableCommands SessionUpdateKind = "available_commands_update"
 	SessionUpdateCurrentMode       SessionUpdateKind = "current_mode_update"
+	SessionUpdateConfigOption      SessionUpdateKind = "config_option_update"
 )
 
 type SessionUpdate struct {
@@ -55,6 +56,8 @@ type SessionUpdate struct {
 	AvailableCommands []AvailableCommand `json:"availableCommands,omitempty"`
 
 	CurrentModeID string `json:"currentModeId,omitempty"`
+
+	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
 
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }
@@ -78,6 +81,8 @@ type sessionUpdateWire struct {
 
 	CurrentModeID string `json:"currentModeId,omitempty"`
 
+	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
+
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }
 
@@ -94,6 +99,7 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		Entries:           u.Entries,
 		AvailableCommands: u.AvailableCommands,
 		CurrentModeID:     u.CurrentModeID,
+		ConfigOptions:     u.ConfigOptions,
 		Meta:              u.Meta,
 	}
 	switch u.SessionUpdate {
@@ -134,6 +140,7 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 		Entries:           w.Entries,
 		AvailableCommands: w.AvailableCommands,
 		CurrentModeID:     w.CurrentModeID,
+		ConfigOptions:     w.ConfigOptions,
 		Meta:              w.Meta,
 	}
 	if len(w.Content) == 0 {

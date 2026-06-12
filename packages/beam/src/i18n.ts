@@ -15,7 +15,7 @@ const resources = {
   en: {
     translation: {
       app: {
-        name: 'Beam',
+        name: 'Contenox Chat',
       },
       settings: {
         page_title: 'Defaults',
@@ -338,7 +338,7 @@ const resources = {
         headers_count: '{{count}} header(s)',
       },
       navbar: {
-        title: 'Beam',
+        title: 'Contenox Chat',
         hooks: 'Hooks',
         remote_hooks: 'Remote Hooks',
         monitoring: 'Monitoring',
@@ -447,7 +447,7 @@ const resources = {
       control_plane: {
         hub_title: 'Control plane',
         hub_description:
-          'Backends, hooks, chains, plans, prompt execution, and settings — same routes as in the menu.',
+          'Configure backends, hooks, chains, policies, and runtime defaults for local chat.',
         menu_aria: 'Open control plane menu',
         all_tools: 'All tools',
       },
@@ -681,6 +681,11 @@ const resources = {
         openai: {
           title: 'OpenAI',
           description: 'Direct OpenAI API backend using an API key.',
+        },
+        openrouter: {
+          title: 'OpenRouter',
+          description:
+            'Access 300+ models — DeepSeek, Qwen, Llama, Mistral, Gemini, Claude, GPT and more — through a single API key. A practical choice if individual provider accounts or payment methods are not available in your region.',
         },
         anthropic: {
           title: 'Anthropic',
@@ -1325,8 +1330,8 @@ const resources = {
         captured_state_pending: 'Captured state will appear when the chain finishes.',
         input_title: 'Message',
         error_create_chat: 'Chat creation error',
-        task_chain: 'Task Chain',
-        no_chain: 'No Chain Selected',
+        task_chain: 'Chat chain',
+        no_chain: 'No chain selected',
         no_chat_selected: 'No chat selected',
         loading_chats: 'Loading chats',
         loading_history: 'Loading chat history',
@@ -1362,7 +1367,7 @@ const resources = {
         error: 'Error',
         title: 'Chat',
         active: 'Active',
-        chain_tooltip: 'Select a task chain to process messages',
+        chain_tooltip: 'Choose how this chat routes model calls, tools, and follow-up steps',
         token_limit_tooltip: 'Context window limit for this chain. 0 = unlimited (disables compaction).',
         token_limit_label: 'Token limit (0 = unlimited)',
         mode: 'Mode',
@@ -1414,8 +1419,8 @@ const resources = {
         enter_to_send: 'Press Enter to send',
         shift_enter_newline: 'Shift + Enter for new line',
         send: 'Send',
-        run_button: 'Run',
-        workbench_placeholder: 'Instruction, spec, or pasted context…',
+        run_button: 'Send',
+        workbench_placeholder: 'Message, spec, logs, or context…',
         workbench_tab_chat: 'Chat',
         workbench_tab_chain: 'Chain',
         compiled_plan_embed_title: 'Compiled plan',
@@ -1429,20 +1434,20 @@ const resources = {
         date_today: 'Today',
         date_yesterday: 'Yesterday',
         scroll_to_latest: 'Jump to latest',
-        landing_title: 'New chat',
+        landing_title: 'New model chat',
         landing_description:
-          'Select a task chain, add the first message, and run it with the configured model.',
+          'Start with a message. The selected chat chain can route specialist steps, tools, and validation behind the turn.',
         landing_input_placeholder: 'Describe what you want to do…',
-        landing_composer_title: 'Message',
-        landing_manage_chains: 'Manage chains',
+        landing_composer_title: 'First message',
+        landing_manage_chains: 'Tune chains',
         landing_no_chains_title: 'No task chains found',
         landing_no_chains_desc: 'Create or restore a chain before starting a chat run.',
         landing_select_chain_hint: 'Choose a task chain before sending.',
-        sidebar_empty_hint: 'No chats yet. Start one with the button above.',
-        workspace_toggle_tooltip: 'Show or hide the terminal panel',
-        workspace_toggle_aria: 'Toggle terminal panel',
-        workspace_open_mobile: 'Terminal',
-        workspace_close_mobile: 'Close terminal',
+        sidebar_empty_hint: 'No chats yet. Start one from here.',
+        workspace_toggle_tooltip: 'Show optional terminal context',
+        workspace_toggle_aria: 'Toggle optional terminal context',
+        workspace_open_mobile: 'Context',
+        workspace_close_mobile: 'Close context',
       },
       users: {
         manage_title: 'Manage Users',
@@ -1599,7 +1604,7 @@ const resources = {
   de: {
     translation: {
       app: {
-        name: 'Beam',
+        name: 'Contenox Chat',
       },
       settings: {
         page_title: 'Standards',
@@ -1899,7 +1904,7 @@ const resources = {
         add_inject: 'Inject-Parameter hinzufügen',
       },
       navbar: {
-        title: 'Beam',
+        title: 'Contenox Chat',
         hooks: 'Hooks',
         telegram: 'Telegram',
         github: 'Github',
@@ -2004,7 +2009,7 @@ const resources = {
       control_plane: {
         hub_title: 'Control Plane',
         hub_description:
-          'Backends, Hooks, Ketten, Pläne, Prompt-Ausführung und Einstellungen — dieselben Routen wie im Menü.',
+          'Backends, Hooks, Ketten, Richtlinien und Laufzeit-Standards für lokalen Chat konfigurieren.',
         menu_aria: 'Control-Plane-Menü öffnen',
         all_tools: 'Alle Werkzeuge',
       },
@@ -2521,6 +2526,8 @@ const resources = {
         captured_state_pending: 'Der erfasste Zustand erscheint, wenn die Kette endet.',
         input_title: 'Nachricht',
         no_chat_selected: 'Kein Chat ausgewählt',
+        task_chain: 'Chat-Kette',
+        no_chain: 'Keine Kette ausgewählt',
         loading_chats: 'Lade Chats',
         loading_history: 'Lade Chat-Verlauf',
         list_error: 'Fehler beim Laden der Chats',
@@ -2555,7 +2562,7 @@ const resources = {
         error: 'Fehler',
         title: 'Chat',
         active: 'Aktiv',
-        chain_tooltip: 'Wählen Sie eine Aufgabenkette zur Nachrichtenverarbeitung aus',
+        chain_tooltip: 'Legt fest, wie dieser Chat Modellaufrufe, Tools und Folgeschritte routet',
         token_limit_tooltip: 'Kontextfensterlimit für diese Kette. 0 = unbegrenzt (deaktiviert Komprimierung).',
         token_limit_label: 'Token-Limit (0 = unbegrenzt)',
         mode: 'Modus',
@@ -2611,8 +2618,8 @@ const resources = {
         enter_to_send: 'Enter drücken zum Senden',
         shift_enter_newline: 'Umschalt + Enter für neue Zeile',
         send: 'Senden',
-        run_button: 'Ausführen',
-        workbench_placeholder: 'Anweisung, Spezifikation oder eingefügter Kontext…',
+        run_button: 'Senden',
+        workbench_placeholder: 'Nachricht, Spezifikation, Logs oder Kontext…',
         workbench_tab_chat: 'Chat',
         workbench_tab_chain: 'Kette',
         compiled_plan_embed_title: 'Kompilierter Plan',
@@ -2624,20 +2631,20 @@ const resources = {
           'Starten Sie eine neue Konversation oder wählen Sie einen bestehenden Chat aus',
         view_examples: 'Beispiele anzeigen',
         create_error: 'Chat-Erstellung fehlgeschlagen: {{error}}',
-        landing_title: 'Neuer Chat',
+        landing_title: 'Neuer Modellchat',
         landing_description:
-          'Wählen Sie eine Aufgabenkette, schreiben Sie die erste Nachricht und führen Sie sie mit dem konfigurierten Modell aus.',
+          'Beginnen Sie mit einer Nachricht. Die gewählte Chat-Kette kann Spezialschritte, Tools und Validierung im Hintergrund routen.',
         landing_input_placeholder: 'Beschreiben Sie, was erledigt werden soll…',
-        landing_composer_title: 'Nachricht',
-        landing_manage_chains: 'Ketten verwalten',
+        landing_composer_title: 'Erste Nachricht',
+        landing_manage_chains: 'Ketten anpassen',
         landing_no_chains_title: 'Keine Aufgabenketten gefunden',
         landing_no_chains_desc: 'Erstellen oder stellen Sie eine Kette wieder her, bevor Sie einen Chat-Lauf starten.',
         landing_select_chain_hint: 'Wählen Sie vor dem Senden eine Aufgabenkette.',
-        sidebar_empty_hint: 'Noch keine Chats. Starten Sie einen mit der Schaltfläche oben.',
-        workspace_toggle_tooltip: 'Terminal-Panel ein- oder ausblenden',
-        workspace_toggle_aria: 'Terminal-Panel umschalten',
-        workspace_open_mobile: 'Terminal',
-        workspace_close_mobile: 'Terminal schließen',
+        sidebar_empty_hint: 'Noch keine Chats. Starten Sie einen von hier.',
+        workspace_toggle_tooltip: 'Optionalen Terminal-Kontext anzeigen',
+        workspace_toggle_aria: 'Optionalen Terminal-Kontext umschalten',
+        workspace_open_mobile: 'Kontext',
+        workspace_close_mobile: 'Kontext schließen',
       },
       users: {
         manage_title: 'Benutzer verwalten',

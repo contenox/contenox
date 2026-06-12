@@ -25,6 +25,8 @@ func SubjectListTools(name string) string { return "mcp." + name + ".list-tools"
 const (
 	SubjectCreated = "mcp.servers.created"
 	SubjectDeleted = "mcp.servers.deleted"
+
+	listToolsFailureCooldown = 30 * time.Second
 )
 
 // MCPToolRequest is the JSON payload sent to mcp.{name}.execute and list-tools.
@@ -59,11 +61,13 @@ type poolEntry struct {
 
 // worker holds the multiplexed pools and NATS subscriptions for one MCP server.
 type worker struct {
-	serverName string
-	cfg        localtools.MCPServerConfig
-	pools      map[string]*poolEntry // Keyed by Contenox SessionID
-	mu         sync.Mutex
-	cancelFn   context.CancelFunc // cancels the worker's context → NATS auto-unsubscribes
+	serverName             string
+	cfg                    localtools.MCPServerConfig
+	pools                  map[string]*poolEntry // Keyed by Contenox SessionID
+	mu                     sync.Mutex
+	cancelFn               context.CancelFunc // cancels the worker's context → NATS auto-unsubscribes
+	listToolsCooldownUntil time.Time
+	listToolsLastError     string
 }
 
 // Manager keeps a persistent MCPSessionPool per registered MCP server and
@@ -99,6 +103,10 @@ func New(ctx context.Context, db runtimetypes.Store, messenger libbus.Messenger,
 		return nil, fmt.Errorf("mcpworker: load servers from DB: %w", err)
 	}
 	for _, srv := range servers {
+		if runtimetypes.IsACPManagedMCPServerName(srv.Name) {
+			report("skip_acp_scoped", map[string]any{"name": srv.Name})
+			continue
+		}
 		if err := m.StartWorker(ctx, srv); err != nil {
 			report("start_failed", map[string]any{"name": srv.Name, "error": err.Error()})
 			// non-fatal: continue with other servers
@@ -161,6 +169,36 @@ func (m *Manager) getOrCreatePool(ctx context.Context, w *worker, chatSessionID 
 	}
 	w.pools[chatSessionID] = &poolEntry{pool: pool, lastAccess: time.Now().UTC()}
 	return pool
+}
+
+func (w *worker) listToolsCooldownError(now time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.listToolsCooldownUntil.IsZero() || !now.Before(w.listToolsCooldownUntil) {
+		return nil
+	}
+	return fmt.Errorf("mcp %q: list-tools skipped; provider is cooling down until %s after previous failure: %s",
+		w.serverName,
+		w.listToolsCooldownUntil.Format(time.RFC3339),
+		w.listToolsLastError,
+	)
+}
+
+func (w *worker) markListToolsFailure(err error, now time.Time) {
+	if err == nil {
+		return
+	}
+	w.mu.Lock()
+	w.listToolsLastError = err.Error()
+	w.listToolsCooldownUntil = now.Add(listToolsFailureCooldown)
+	w.mu.Unlock()
+}
+
+func (w *worker) clearListToolsFailure() {
+	w.mu.Lock()
+	w.listToolsLastError = ""
+	w.listToolsCooldownUntil = time.Time{}
+	w.mu.Unlock()
 }
 
 // StartWorker starts a multiplexing worker for a named server.
@@ -241,11 +279,20 @@ func (m *Manager) StartWorker(ctx context.Context, srv *runtimetypes.MCPServer) 
 			_ = json.Unmarshal(data, &req)
 		}
 
+		if cooldownErr := w.listToolsCooldownError(time.Now().UTC()); cooldownErr != nil {
+			_, report, end := m.tracker.Start(ctx, "list_tools_skipped", "mcp_server", "name", srv.Name)
+			report("cooldown", cooldownErr.Error())
+			end()
+			return errorListReply(cooldownErr)
+		}
+
 		pool := m.getOrCreatePool(ctx, w, req.SessionID)
 		tools, err := pool.ListTools(ctx)
 		if err != nil {
+			w.markListToolsFailure(err, time.Now().UTC())
 			return errorListReply(err)
 		}
+		w.clearListToolsFailure()
 		var out []runtimetypes.MCPTool
 		for _, t := range tools {
 			raw, _ := json.Marshal(t.InputSchema)

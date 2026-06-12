@@ -13,19 +13,20 @@ import (
 )
 
 type vertexProvider struct {
-	id            string
-	publisher     string
-	modelName     string
-	baseURL       string
-	credJSON      string // service account JSON; empty → ADC
-	httpClient    *http.Client
-	contextLength int
-	canChat       bool
-	canPrompt     bool
-	canEmbed      bool
-	canStream     bool
-	canThink      bool
-	tracker       libtracker.ActivityTracker
+	id              string
+	publisher       string
+	modelName       string
+	baseURL         string
+	credJSON        string // service account JSON; empty → ADC
+	httpClient      *http.Client
+	contextLength   int
+	maxOutputTokens int
+	canChat         bool
+	canPrompt       bool
+	canEmbed        bool
+	canStream       bool
+	canThink        bool
+	tracker         libtracker.ActivityTracker
 
 	// Cached token source. Initialized once on first use and reused across all
 	// requests; oauth2 keeps the access token in memory until expiry, so
@@ -48,33 +49,39 @@ func NewVertexProvider(publisher, modelName string, baseURLs []string, cap model
 	if len(baseURLs) > 0 {
 		baseURL = baseURLs[0]
 	}
+	maxOut := cap.MaxOutputTokens
+	if maxOut <= 0 {
+		maxOut = 65536 // Vertex hard ceiling: exclusive upper bound is 65537
+	}
 	return &vertexProvider{
-		id:            fmt.Sprintf("vertex-%s:%s", publisher, modelName),
-		publisher:     publisher,
-		modelName:     modelName,
-		baseURL:       baseURL,
-		credJSON:      credJSON,
-		httpClient:    httpClient,
-		contextLength: cap.ContextLength,
-		canChat:       cap.CanChat,
-		canPrompt:     cap.CanPrompt,
-		canEmbed:      cap.CanEmbed,
-		canStream:     cap.CanStream,
-		canThink:      cap.CanThink,
-		tracker:       tracker,
+		id:              fmt.Sprintf("vertex-%s:%s", publisher, modelName),
+		publisher:       publisher,
+		modelName:       modelName,
+		baseURL:         baseURL,
+		credJSON:        credJSON,
+		httpClient:      httpClient,
+		contextLength:   cap.ContextLength,
+		maxOutputTokens: maxOut,
+		canChat:         cap.CanChat,
+		canPrompt:       cap.CanPrompt,
+		canEmbed:        cap.CanEmbed,
+		canStream:       cap.CanStream,
+		canThink:        cap.CanThink,
+		tracker:         tracker,
 	}
 }
 
-func (p *vertexProvider) GetBackendIDs() []string { return []string{p.baseURL} }
-func (p *vertexProvider) ModelName() string       { return p.modelName }
-func (p *vertexProvider) GetID() string           { return p.id }
-func (p *vertexProvider) GetType() string         { return "vertex-" + p.publisher }
-func (p *vertexProvider) GetContextLength() int   { return p.contextLength }
-func (p *vertexProvider) CanChat() bool           { return p.canChat }
-func (p *vertexProvider) CanEmbed() bool          { return p.canEmbed }
-func (p *vertexProvider) CanStream() bool         { return p.canStream }
-func (p *vertexProvider) CanPrompt() bool         { return p.canPrompt }
-func (p *vertexProvider) CanThink() bool          { return p.canThink }
+func (p *vertexProvider) GetBackendIDs() []string  { return []string{p.baseURL} }
+func (p *vertexProvider) ModelName() string        { return p.modelName }
+func (p *vertexProvider) GetID() string            { return p.id }
+func (p *vertexProvider) GetType() string          { return "vertex-" + p.publisher }
+func (p *vertexProvider) GetContextLength() int    { return p.contextLength }
+func (p *vertexProvider) GetMaxOutputTokens() int  { return p.maxOutputTokens }
+func (p *vertexProvider) CanChat() bool            { return p.canChat }
+func (p *vertexProvider) CanEmbed() bool           { return p.canEmbed }
+func (p *vertexProvider) CanStream() bool          { return p.canStream }
+func (p *vertexProvider) CanPrompt() bool          { return p.canPrompt }
+func (p *vertexProvider) CanThink() bool           { return p.canThink }
 
 // tokenFn returns an access token using the provider's cached oauth2 source.
 // The source is built once on first use (with context.Background so it
@@ -95,15 +102,16 @@ func (p *vertexProvider) tokenFn(_ context.Context) (string, error) {
 
 func (p *vertexProvider) client() vertexClient {
 	return vertexClient{
-		baseURL:       p.baseURL,
-		publisher:     p.publisher,
-		modelName:     p.modelName,
-		contextLength: p.contextLength,
-		credJSON:      p.credJSON,
-		httpClient:    p.httpClient,
-		canThink:      p.canThink,
-		tracker:       p.tracker,
-		tokenFn:       p.tokenFn,
+		baseURL:         p.baseURL,
+		publisher:       p.publisher,
+		modelName:       p.modelName,
+		contextLength:   p.contextLength,
+		maxOutputTokens: p.maxOutputTokens,
+		credJSON:        p.credJSON,
+		httpClient:      p.httpClient,
+		canThink:        p.canThink,
+		tracker:         p.tracker,
+		tokenFn:         p.tokenFn,
 	}
 }
 

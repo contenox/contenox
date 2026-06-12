@@ -176,3 +176,20 @@ func TestUnit_Prompt_IncludesSessionThinkTemplateVar(t *testing.T) {
 	require.Equal(t, "low", req.TemplateVars["think"])
 	requireSpan(t, rt, 0, 1)
 }
+
+func TestUnit_Prompt_IncludesAltAndMaxTokenTemplateVars(t *testing.T) {
+	agent := &fakeAgent{resp: &agentservice.PromptResponse{StopReason: agentservice.StopEndTurn}}
+	tr, sid, rt := transportWithFakeAgent(agent)
+	tr.defaultAltModel = "small-model"
+	tr.defaultAltProvider = "local"
+	tr.defaultMaxTokens = "8192"
+
+	resp, err := tr.Prompt(context.Background(), promptReq(sid))
+	require.NoError(t, err)
+	require.Equal(t, libacp.StopReasonEndTurn, resp.StopReason)
+	req := agent.lastPromptRequest()
+	require.Equal(t, "small-model", req.TemplateVars["alt_model"])
+	require.Equal(t, "local", req.TemplateVars["alt_provider"])
+	require.Equal(t, "8192", req.TemplateVars["max_tokens"])
+	requireSpan(t, rt, 0, 1)
+}

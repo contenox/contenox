@@ -41,6 +41,8 @@ A backend points at an LLM provider. Supported types:
                                 Point --url at a local GGUF file or a huggingface.co URL.
   ollama                        Local Ollama daemon (requires: ollama serve) or hosted Ollama Cloud.
   openai                        api.openai.com (requires --api-key-env).
+  openrouter                    openrouter.ai — routes 300+ models from many providers through one
+                                OpenAI-compatible endpoint (requires --api-key-env OPENROUTER_API_KEY).
   gemini                        Google Gemini (requires --api-key-env).
   vllm                          Self-hosted OpenAI-compatible endpoint (requires --url).
   vertex-google                 Google Cloud Vertex AI / Gemini (requires gcloud auth application-default
@@ -58,6 +60,9 @@ Examples:
 
   # Register OpenAI using an environment variable for the key:
   contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
+
+  # Register OpenRouter (access 300+ models via one API key):
+  contenox backend add openrouter --type openrouter --api-key-env OPENROUTER_API_KEY
 
   # Register Google Gemini:
   contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
@@ -85,6 +90,7 @@ The --type flag determines which provider protocol is used.
                                 No Ollama, no external server, no API key required. Pass --url with the
                                 path to a GGUF file or a huggingface.co URL.
   openai, gemini                Cloud providers. Base URL inferred if --url is omitted. Requires --api-key-env.
+  openrouter                    openrouter.ai — single API key for 300+ models. Base URL inferred. Requires --api-key-env.
   ollama                        Local daemon (requires 'ollama serve') or hosted Ollama Cloud (use
                                 --url https://ollama.com/api and --api-key-env OLLAMA_API_KEY).
   vllm                          Self-hosted OpenAI-compatible endpoint (requires --url).
@@ -94,12 +100,13 @@ API keys should be passed via --api-key-env (reads from environment) rather than
 --api-key (inline literal) to avoid leaking secrets into shell history.
 
 Examples:
-  contenox backend add embedded --type local  --url <path-or-hf-url>
-  contenox backend add ollama  --type ollama
-  contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
-  contenox backend add openai  --type openai  --api-key-env OPENAI_API_KEY
-  contenox backend add gemini  --type gemini  --api-key-env GEMINI_API_KEY
-  contenox backend add myvllm --type vllm    --url http://gpu-host:8000`,
+  contenox backend add embedded   --type local       --url <path-or-hf-url>
+  contenox backend add ollama     --type ollama
+  contenox backend add ollama-cloud --type ollama    --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
+  contenox backend add openai     --type openai      --api-key-env OPENAI_API_KEY
+  contenox backend add openrouter --type openrouter  --api-key-env OPENROUTER_API_KEY
+  contenox backend add gemini     --type gemini      --api-key-env GEMINI_API_KEY
+  contenox backend add myvllm    --type vllm         --url http://gpu-host:8000`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
@@ -121,6 +128,8 @@ Examples:
 				baseURL = "http://localhost:11434"
 			case "openai":
 				baseURL = "https://api.openai.com/v1"
+			case "openrouter":
+				baseURL = "https://openrouter.ai/api/v1"
 			case "anthropic":
 				baseURL = "https://api.anthropic.com"
 			case "mistral":
@@ -314,7 +323,7 @@ func globalContenoxDir() (string, error) {
 }
 
 func init() {
-	backendAddCmd.Flags().String("type", "ollama", "Backend type: local (embedded llama.cpp, no external server), ollama, openai, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: local (embedded llama.cpp, no external server), ollama, openai, openrouter, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
 	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/anthropic/mistral/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
 	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")
 	backendAddCmd.Flags().String("api-key", "", "API key literal — prefer --api-key-env to avoid leaking into shell history")

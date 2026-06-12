@@ -26,6 +26,9 @@ func (c *vertexStreamClient) Stream(ctx context.Context, messages []modelrepo.Me
 	if err != nil {
 		return nil, err
 	}
+	if request.GenerationConfig != nil {
+		request.GenerationConfig.MaxOutputTokens = modelrepo.ClampMaxOutputTokensPtr(request.GenerationConfig.MaxOutputTokens, c.maxOutputTokens)
+	}
 
 	go func() {
 		defer close(parcels)

@@ -15,15 +15,16 @@ import (
 )
 
 type vertexClient struct {
-	baseURL       string
-	publisher     string
-	modelName     string
-	contextLength int
-	credJSON      string // service account JSON; empty → ADC
-	httpClient    *http.Client
-	canThink      bool
-	tracker       libtracker.ActivityTracker
-	tokenFn       func(context.Context) (string, error) // test tools; overrides credJSON when set
+	baseURL         string
+	publisher       string
+	modelName       string
+	contextLength   int
+	maxOutputTokens int
+	credJSON        string // service account JSON; empty → ADC
+	httpClient      *http.Client
+	canThink        bool
+	tracker         libtracker.ActivityTracker
+	tokenFn         func(context.Context) (string, error) // test tools; overrides credJSON when set
 }
 
 // endpoint builds the full Vertex AI API URL for a given method (e.g. "generateContent").
@@ -187,9 +188,14 @@ func buildVertexRequest(modelName string, messages []modelrepo.Message, args []m
 		}
 	}
 
+	contents := convertToVertexContents(filtered)
+	if len(contents) == 0 {
+		return vertexRequest{}, fmt.Errorf("vertex: refusing to send empty contents for model %s after filtering %d message(s); provide at least one non-empty user/model/tool message, tool call, or tool response", modelName, len(messages))
+	}
+
 	req := vertexRequest{
 		SystemInstruction: systemInstruction,
-		Contents:          convertToVertexContents(filtered),
+		Contents:          contents,
 		GenerationConfig:  &vertexGenerationConfig{},
 		Tools:             tools,
 	}
@@ -343,18 +349,7 @@ func convertToVertexContents(messages []modelrepo.Message) []vertexContent {
 					fnName = n
 				}
 			}
-			var respData any
-			if m.Content != "" {
-				if err := json.Unmarshal([]byte(m.Content), &respData); err != nil {
-					respData = m.Content
-				}
-			} else {
-				respData = ""
-			}
-			respMap, ok := respData.(map[string]any)
-			if !ok {
-				respMap = map[string]any{"content": respData}
-			}
+			respMap := vertexToolResponseMap(m.Content)
 			parts = append(parts, vertexPart{
 				FunctionResponse: &vertexFunctionResponse{Name: fnName, Response: respMap},
 			})
@@ -372,6 +367,52 @@ func convertToVertexContents(messages []modelrepo.Message) []vertexContent {
 	}
 
 	return out
+}
+
+func vertexToolResponseMap(content string) map[string]interface{} {
+	if content == "" {
+		return map[string]interface{}{"content": ""}
+	}
+
+	var respData any
+	if err := json.Unmarshal([]byte(content), &respData); err != nil {
+		return map[string]interface{}{"content": content}
+	}
+	if vertexContainsSchemaReference(respData) {
+		return map[string]interface{}{"content": content}
+	}
+	respMap, ok := respData.(map[string]any)
+	if !ok {
+		return map[string]interface{}{"content": respData}
+	}
+	return respMap
+}
+
+func vertexContainsSchemaReference(v any) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, val := range x {
+			switch k {
+			case "$schema", "$defs", "definitions":
+				return true
+			case "$ref":
+				return true
+			}
+			if strings.HasPrefix(k, "$ref") {
+				return true
+			}
+			if vertexContainsSchemaReference(val) {
+				return true
+			}
+		}
+	case []any:
+		for _, val := range x {
+			if vertexContainsSchemaReference(val) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // sanitizeVertexSchema converts arbitrary JSON Schema to Vertex AI's accepted format.

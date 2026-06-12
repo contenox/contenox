@@ -22,12 +22,14 @@ import (
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/internal/compatapi"
 	internaltools "github.com/contenox/runtime/runtime/internal/tools"
 	internalweb "github.com/contenox/runtime/runtime/internal/web"
 	"github.com/contenox/runtime/runtime/localfileservice"
 	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/serverapi"
+	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/contenox/runtime/runtime/terminalservice"
@@ -77,6 +79,13 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	config := &serverapi.Config{}
 	if err := serverapi.LoadConfig(config); err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+	ollamaCompat := configBool(config.OllamaCompat)
+	if flag := cmd.Flags().Lookup("ollama-compat"); flag != nil {
+		flagValue, _ := cmd.Flags().GetBool("ollama-compat")
+		if flag.Changed || flagValue {
+			ollamaCompat = flagValue
+		}
 	}
 
 	addr := config.Addr
@@ -228,18 +237,40 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		DefaultProvider:      serveChatCfg.DefaultProvider,
 		AltDefaultModel:      serveChatCfg.AltDefaultModel,
 		AltDefaultProvider:   serveChatCfg.AltDefaultProvider,
+		DefaultMaxTokens:     serveChatCfg.DefaultMaxTokens,
 		DefaultThink:         serveChatCfg.DefaultThink,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}
 	defer func() { _ = cleanupAPI() }()
+
+	compatStateSvc := stateservice.New(engine.State, db, workspaceID)
+	compatDeps := compatapi.CompatDeps{
+		Agent:              agent,
+		Chains:             chains,
+		StateService:       compatStateSvc,
+		DefaultChainRef:    serveChatCfg.DefaultCompatChainRef,
+		DefaultFIMChainRef: serveChatCfg.DefaultFIMChainRef,
+		DefaultModel:       serveChatCfg.DefaultModel,
+		DefaultProvider:    serveChatCfg.DefaultProvider,
+		DefaultMaxTokens:   serveChatCfg.DefaultMaxTokens,
+		Token:              config.Token,
+		// Auth is nil: /api/openai POST routes go through ProtectMutatingAPI on apiMux.
+		// Token protects root-level mutating compat routes such as /v1/chat/completions.
+	}
+	compatapi.AddOpenAIRoutes(apiMux, compatDeps)
+	compatapi.AddRootRoutes(rootMux, compatDeps)
+	if ollamaCompat {
+		compatapi.AddOllamaRoutes(rootMux, compatDeps)
+	}
+
 	rootMux.Handle("/api/", http.StripPrefix("/api", serverapi.ProtectMutatingAPI(config.Token, apiMux)))
 	rootMux.Handle("/", internalweb.SPAHandler())
 
-	ln, err := net.Listen("tcp", net.JoinHostPort(addr, port))
+	ln, err := listenWithOllamaFallback(addr, port, config.Port, ollamaCompat)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s:%s: %w; set PORT or ADDR to override", addr, port, err)
+		return err
 	}
 	listenAddr := ln.Addr().String()
 
@@ -329,17 +360,20 @@ func startTerminalReaper(ctx context.Context, svc terminalservice.Service, inter
 }
 
 type serveChatConfig struct {
-	DefaultChainRef     string
-	DefaultModel        string
-	DefaultProvider     string
-	AltDefaultModel     string
-	AltDefaultProvider  string
-	DefaultThink        string
-	ContextLength       int
-	NoDeleteModels      bool
-	EnableLocalExec     bool
-	LocalExecAllowedDir string
-	Tracing             bool
+	DefaultChainRef       string
+	DefaultCompatChainRef string
+	DefaultFIMChainRef    string
+	DefaultModel          string
+	DefaultProvider       string
+	AltDefaultModel       string
+	AltDefaultProvider    string
+	DefaultMaxTokens      string
+	DefaultThink          string
+	ContextLength         int
+	NoDeleteModels        bool
+	EnableLocalExec       bool
+	LocalExecAllowedDir   string
+	Tracing               bool
 }
 
 func resolveServeChatConfig(ctx context.Context, cmd *cobra.Command, store runtimetypes.Store, workspaceID, contenoxDir string) (serveChatConfig, error) {
@@ -349,6 +383,12 @@ func resolveServeChatConfig(ctx context.Context, cmd *cobra.Command, store runti
 	kvProvider, _ := getConfigKV(ctx, store, "default-provider")
 	kvAltModel, _ := getConfigKV(ctx, store, "default-alt-model")
 	kvAltProvider, _ := getConfigKV(ctx, store, "default-alt-provider")
+	kvCompatChain, _ := getConfigKV(ctx, store, "default-compat-chain")
+	kvFIMChain, _ := getConfigKV(ctx, store, "default-fim-chain")
+	maxTokens, err := resolveEffectiveMaxTokens(ctx, store, flags)
+	if err != nil {
+		return serveChatConfig{}, err
+	}
 	think, err := resolveEffectiveThink(ctx, store, flags)
 	if err != nil {
 		return serveChatConfig{}, err
@@ -400,19 +440,61 @@ func resolveServeChatConfig(ctx context.Context, cmd *cobra.Command, store runti
 	localExecAllowedDir, _ := flags.GetString("local-exec-allowed-dir")
 	tracing, _ := flags.GetBool("trace")
 
+	compatChainRef := kvCompatChain
+	if compatChainRef == "" {
+		compatChainRef = "chain-openai-compat.json"
+	}
+	fimChainRef := kvFIMChain
+	if fimChainRef == "" {
+		fimChainRef = "chain-fim-compat.json"
+	}
+
 	return serveChatConfig{
-		DefaultChainRef:     chainRef,
-		DefaultModel:        model,
-		DefaultProvider:     provider,
-		AltDefaultModel:     altModel,
-		AltDefaultProvider:  altProvider,
-		DefaultThink:        think,
-		ContextLength:       contextLength,
-		NoDeleteModels:      noDeleteModels,
-		EnableLocalExec:     enableLocalExec,
-		LocalExecAllowedDir: localExecAllowedDir,
-		Tracing:             tracing,
+		DefaultChainRef:       chainRef,
+		DefaultCompatChainRef: compatChainRef,
+		DefaultFIMChainRef:    fimChainRef,
+		DefaultModel:          model,
+		DefaultProvider:       provider,
+		AltDefaultModel:       altModel,
+		AltDefaultProvider:    altProvider,
+		DefaultMaxTokens:      maxTokens,
+		DefaultThink:          think,
+		ContextLength:         contextLength,
+		NoDeleteModels:        noDeleteModels,
+		EnableLocalExec:       enableLocalExec,
+		LocalExecAllowedDir:   localExecAllowedDir,
+		Tracing:               tracing,
 	}, nil
+}
+
+const ollamaPort = "11434"
+
+// listenWithOllamaFallback binds the server. In Ollama compatibility mode, when
+// the user has not set PORT explicitly (configPort == ""), it first tries the
+// Ollama default port 11434 so that tools expecting Ollama at that address work
+// without configuration.
+// If 11434 is taken it falls back to the resolved port (default 32123).
+func listenWithOllamaFallback(addr, resolvedPort, configPort string, ollamaCompat bool) (net.Listener, error) {
+	userSetPort := strings.TrimSpace(configPort) != ""
+	if ollamaCompat && !userSetPort && resolvedPort != ollamaPort {
+		if ln, err := net.Listen("tcp", net.JoinHostPort(addr, ollamaPort)); err == nil {
+			return ln, nil
+		}
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort(addr, resolvedPort))
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen on %s:%s: %w; set PORT or ADDR to override", addr, resolvedPort, err)
+	}
+	return ln, nil
+}
+
+func configBool(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "t", "yes", "y", "on", "enabled":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeServeChainRef(contenoxDir, ref string) string {

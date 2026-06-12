@@ -4,6 +4,7 @@ import { CLOUD_PROVIDER_SETUPS, isCloudProviderType } from './providerCatalog';
 const supportedProviderTypes = new Set([
   'ollama',
   'openai',
+  'openrouter',
   'anthropic',
   'gemini',
   'mistral',
@@ -24,4 +25,3 @@ describe('providerCatalog', () => {
     expect(isCloudProviderType('vertex-mistralai')).toBe(false);
   });
 });
-

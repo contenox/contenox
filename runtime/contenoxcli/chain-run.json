@@ -6,7 +6,7 @@
       "id": "contenox_run",
       "description": "Stateless tool-using workflow step. Model may call tools (transition tool_call) or respond directly (transition default → end).",
       "handler": "chat_completion",
-      "system_instruction": "You are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess — say briefly what is missing and stop. A non-interactive caller cannot answer a clarifying question, so just refuse cleanly.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
+      "system_instruction": "Current date: {{date}}.\n\nYou are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess — say briefly what is missing and stop. A non-interactive caller cannot answer a clarifying question, so just refuse cleanly.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
       "execute_config": {
         "model": "{{var:model}}",
         "provider": "{{var:provider}}",
@@ -21,20 +21,20 @@
           },
           "local_fs": {
             "_allowed_dir": ".",
-            "_max_read_bytes": "1048576",
-            "_max_output_bytes": "524288",
+            "_max_read_bytes": "262144",
+            "_max_output_bytes": "131072",
             "_max_list_depth": "6",
-            "_max_grep_matches": "5000",
+            "_max_grep_matches": "1000",
             "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
           },
           "webtools": {
-            "_max_response_bytes": "1048576",
+            "_max_response_bytes": "262144",
             "_max_request_body_bytes": "262144",
             "_request_timeout_seconds": "30",
             "_max_attempts": "3"
           }
         },
-        "max_tokens": 16384,
+        "max_tokens": "{{var:max_tokens|16384}}",
         "retry_policy": {
           "max_attempts": 4,
           "initial_backoff": "1s",
@@ -71,6 +71,7 @@
       "handler": "execute_tool_calls",
       "input_var": "contenox_run",
       "execute_config": {
+        "tools": ["*"],
         "tools_policies": {
           "local_shell": {
             "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
@@ -78,11 +79,17 @@
           },
           "local_fs": {
             "_allowed_dir": ".",
-            "_max_read_bytes": "1048576",
-            "_max_output_bytes": "524288",
+            "_max_read_bytes": "262144",
+            "_max_output_bytes": "131072",
             "_max_list_depth": "6",
-            "_max_grep_matches": "5000",
+            "_max_grep_matches": "1000",
             "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+          },
+          "webtools": {
+            "_max_response_bytes": "262144",
+            "_max_request_body_bytes": "262144",
+            "_request_timeout_seconds": "30",
+            "_max_attempts": "3"
           }
         }
       },
@@ -102,10 +109,10 @@
       "description": "Recovery workflow loop — picks up the full chat history from the main loop with a fresh system instruction noting the prior workflow got stuck. Has its own tool access and 10-round budget.",
       "handler": "chat_completion",
       "input_var": "contenox_run",
-      "system_instruction": "You are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess — say briefly what is missing and stop. A non-interactive caller cannot answer a clarifying question, so just refuse cleanly.\n\nBUDGET: You have already used {{edge_count:contenox_run->run_tools}} of 10 main and {{edge_count:recovery_run->recovery_run_tools}} of 10 recovery tool_call rounds this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
+      "system_instruction": "Current date: {{date}}.\n\nYou are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess — say briefly what is missing and stop. A non-interactive caller cannot answer a clarifying question, so just refuse cleanly.\n\nBUDGET: You have already used {{edge_count:contenox_run->run_tools}} of 10 main and {{edge_count:recovery_run->recovery_run_tools}} of 10 recovery tool_call rounds this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
       "execute_config": {
-        "model": "{{var:model}}",
-        "provider": "{{var:provider}}",
+        "model": "{{var:alt_model|var:model}}",
+        "provider": "{{var:alt_provider|var:provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
@@ -117,20 +124,20 @@
           },
           "local_fs": {
             "_allowed_dir": ".",
-            "_max_read_bytes": "1048576",
-            "_max_output_bytes": "524288",
+            "_max_read_bytes": "262144",
+            "_max_output_bytes": "131072",
             "_max_list_depth": "6",
-            "_max_grep_matches": "5000",
+            "_max_grep_matches": "1000",
             "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
           },
           "webtools": {
-            "_max_response_bytes": "1048576",
+            "_max_response_bytes": "262144",
             "_max_request_body_bytes": "262144",
             "_request_timeout_seconds": "30",
             "_max_attempts": "3"
           }
         },
-        "max_tokens": 16384,
+        "max_tokens": "{{var:max_tokens|16384}}",
         "retry_policy": {
           "max_attempts": 4,
           "initial_backoff": "1s",
@@ -167,6 +174,7 @@
       "handler": "execute_tool_calls",
       "input_var": "recovery_run",
       "execute_config": {
+        "tools": ["*"],
         "tools_policies": {
           "local_shell": {
             "_allowed_commands": "ls,cat,echo,pwd,which,find,grep,git,go,python3,node,npm,make,cargo,curl,wget,jq",
@@ -174,11 +182,17 @@
           },
           "local_fs": {
             "_allowed_dir": ".",
-            "_max_read_bytes": "1048576",
-            "_max_output_bytes": "524288",
+            "_max_read_bytes": "262144",
+            "_max_output_bytes": "131072",
             "_max_list_depth": "6",
-            "_max_grep_matches": "5000",
+            "_max_grep_matches": "1000",
             "_denied_path_substrings": "node_modules,.git/,dist/,/.next/,/out/,package-lock.json"
+          },
+          "webtools": {
+            "_max_response_bytes": "262144",
+            "_max_request_body_bytes": "262144",
+            "_request_timeout_seconds": "30",
+            "_max_attempts": "3"
           }
         }
       },
@@ -197,16 +211,16 @@
       "id": "summarise_failure",
       "description": "Final safety net. Reached when both the main and recovery workflow loops exceeded their budgets. No tools — tells the user what was tried and what would unblock the work.",
       "handler": "chat_completion",
-      "system_instruction": "You are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.\n\nGround this strictly in the actual chat history above — describe only steps that were really taken and results that actually occurred; do not invent attempts, tools, or causes.",
+      "system_instruction": "Current date: {{date}}.\n\nYou are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nYou've exhausted the tool-call budget for this turn without completing the work. Look at the chat history above. In one short reply, tell the user: (1) what was being attempted, (2) what concrete steps were taken, (3) where things got stuck, and (4) what would unblock the work — more information from the user, a different approach, a missing tool, or that the goal as stated may not be achievable with the available tools. Do not call any tools. Do not pretend the work is complete — be honest that you gave up, and useful about why.\n\nGround this strictly in the actual chat history above — describe only steps that were really taken and results that actually occurred; do not invent attempts, tools, or causes.",
       "input_var": "recovery_run",
       "execute_config": {
-        "model": "{{var:model}}",
-        "provider": "{{var:provider}}",
+        "model": "{{var:alt_model|var:model}}",
+        "provider": "{{var:alt_provider|var:provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
         "tools": [],
-        "max_tokens": 16384,
+        "max_tokens": "{{var:max_tokens|16384}}",
         "retry_policy": {
           "max_attempts": 3,
           "initial_backoff": "1s",

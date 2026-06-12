@@ -22,6 +22,7 @@ func (p *localProvider) ModelName() string       { return p.name }
 func (p *localProvider) GetID() string           { return "local:" + p.name }
 func (p *localProvider) GetType() string         { return "local" }
 func (p *localProvider) GetContextLength() int   { return p.caps.ContextLength }
+func (p *localProvider) GetMaxOutputTokens() int { return p.caps.MaxOutputTokens }
 func (p *localProvider) CanChat() bool           { return true }
 func (p *localProvider) CanEmbed() bool          { return true }
 func (p *localProvider) CanStream() bool         { return true }
@@ -30,12 +31,12 @@ func (p *localProvider) CanThink() bool          { return p.caps.CanThink }
 
 func (p *localProvider) GetChatConnection(_ context.Context, _ string) (modelrepo.LLMChatClient, error) {
 	modelPath := filepath.Join(p.modelDir, p.name, "model.gguf")
-	return &localChatClient{modelPath: modelPath}, nil
+	return &localChatClient{modelPath: modelPath, maxOutputTokens: p.caps.MaxOutputTokens}, nil
 }
 
 func (p *localProvider) GetPromptConnection(_ context.Context, _ string) (modelrepo.LLMPromptExecClient, error) {
 	modelPath := filepath.Join(p.modelDir, p.name, "model.gguf")
-	return &localPromptClient{modelPath: modelPath}, nil
+	return &localPromptClient{modelPath: modelPath, maxOutputTokens: p.caps.MaxOutputTokens}, nil
 }
 
 func (p *localProvider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LLMEmbedClient, error) {
@@ -45,5 +46,5 @@ func (p *localProvider) GetEmbedConnection(_ context.Context, _ string) (modelre
 
 func (p *localProvider) GetStreamConnection(_ context.Context, _ string) (modelrepo.LLMStreamClient, error) {
 	modelPath := filepath.Join(p.modelDir, p.name, "model.gguf")
-	return &localStreamClient{modelPath: modelPath}, nil
+	return &localStreamClient{modelPath: modelPath, maxOutputTokens: p.caps.MaxOutputTokens}, nil
 }

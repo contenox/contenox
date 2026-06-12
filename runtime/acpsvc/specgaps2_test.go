@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/libacp"
-	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
@@ -29,14 +28,13 @@ func TestUnit_ToolCallLocations_FromPathArg(t *testing.T) {
 }
 
 func TestUnit_ToolCallLocations_PrefersResolvedDiffPath(t *testing.T) {
-	fw := localtools.FsWriteResult{Path: "/abs/resolved.go", OldText: "a", NewText: "b", Written: true}
-	raw, err := json.Marshal(fw)
-	require.NoError(t, err)
 	ev := taskengine.TaskEvent{
-		Kind:         taskengine.TaskEventToolCall,
-		ToolName:     "local_fs.write_file",
-		ApprovalArgs: map[string]any{"path": "relative.go"},
-		Content:      string(raw),
+		Kind:            taskengine.TaskEventToolCall,
+		ToolName:        "local_fs.write_file",
+		ApprovalArgs:    map[string]any{"path": "relative.go"},
+		ToolDiffPath:    "/abs/resolved.go",
+		ToolDiffOldText: "a",
+		ToolDiffNewText: "b",
 	}
 	note := toolCallUpdateNotification(libacp.SessionID("s"), ev)
 	require.Equal(t, []libacp.ToolCallLocation{{Path: "/abs/resolved.go"}}, note.Update.Locations,

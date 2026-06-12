@@ -10,25 +10,27 @@ import (
 )
 
 // NewVLLMPromptClient creates a new prompt client
-func NewVLLMPromptClient(ctx context.Context, baseURL, modelName string, contextLength int, httpClient *http.Client, apiKey string, canThink bool, tracker libtracker.ActivityTracker) (modelrepo.LLMPromptExecClient, error) {
+func NewVLLMPromptClient(ctx context.Context, baseURL, modelName string, contextLength, maxOutputTokens int, httpClient *http.Client, apiKey string, canThink bool, tracker libtracker.ActivityTracker) (modelrepo.LLMPromptExecClient, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 
 	client := &vLLMPromptClient{
 		vLLMClient: vLLMClient{
-			baseURL:    baseURL,
-			httpClient: httpClient,
-			modelName:  modelName,
-			canThink:   canThink,
-			apiKey:     apiKey,
-			tracker:    tracker,
+			baseURL:         baseURL,
+			httpClient:      httpClient,
+			modelName:       modelName,
+			maxOutputTokens: maxOutputTokens,
+			canThink:        canThink,
+			apiKey:          apiKey,
+			tracker:         tracker,
 		},
 	}
 	client.maxTokens = 2048
 	if contextLength > 0 {
 		client.maxTokens = min(contextLength, client.maxTokens)
 	}
+	client.maxTokens, _ = modelrepo.ClampMaxOutputTokens(client.maxTokens, client.maxOutputTokens)
 
 	return client, nil
 }
@@ -48,6 +50,7 @@ func (c *vLLMClient) Prompt(ctx context.Context, systemInstruction string, tempe
 		modelrepo.WithTemperature(float64(temperature)),
 		modelrepo.WithMaxTokens(c.maxTokens),
 	})
+	c.clampChatRequest(&request)
 
 	// Send request to the chat completions endpoint
 	var response chatResponse

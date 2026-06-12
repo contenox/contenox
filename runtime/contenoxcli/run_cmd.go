@@ -166,6 +166,9 @@ Examples:
 		if o.EffectiveAltDefaultProvider != "" {
 			templateVars["alt_provider"] = o.EffectiveAltDefaultProvider
 		}
+		if o.EffectiveMaxTokens != "" {
+			templateVars["max_tokens"] = o.EffectiveMaxTokens
+		}
 
 		// Set timeout
 		timeout, _ := flags.GetDuration("timeout")
@@ -338,6 +341,10 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 	kvProvider, _ := getConfigKV(ctx, store, "default-provider")
 	kvAltModel, _ := getConfigKV(ctx, store, "default-alt-model")
 	kvAltProvider, _ := getConfigKV(ctx, store, "default-alt-provider")
+	effectiveMaxTokens, err := resolveEffectiveMaxTokens(ctx, store, flags)
+	if err != nil {
+		return chatOpts{}, err
+	}
 	effectiveThink, err := resolveEffectiveThink(ctx, store, flags)
 	if err != nil {
 		return chatOpts{}, err
@@ -389,6 +396,7 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 		EffectiveDefaultProvider:     effectiveDefaultProvider,
 		EffectiveAltDefaultModel:     effectiveAltModel,
 		EffectiveAltDefaultProvider:  effectiveAltProvider,
+		EffectiveMaxTokens:           effectiveMaxTokens,
 		EffectiveNoDeleteModels:      true,
 		EffectiveEnableLocalExec:     effectiveEnableLocalExec,
 		EffectiveLocalExecAllowedDir: effectiveLocalExecAllowedDir,

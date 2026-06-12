@@ -24,6 +24,7 @@ func TestParseCommand(t *testing.T) {
 		{name: "command with trailing space", input: "/clear   ", wantName: "clear", wantOk: true},
 		{name: "leading whitespace", input: "  /provider ollama", wantName: "provider", wantArgs: "ollama", wantOk: true},
 		{name: "compact with keep", input: "/compact 12", wantName: "compact", wantArgs: "12", wantOk: true},
+		{name: "max tokens command", input: "/max-tokens 8192", wantName: "max-tokens", wantArgs: "8192", wantOk: true},
 		{name: "args with extra spaces collapse to trimmed", input: "/model   gpt-4o  ", wantName: "model", wantArgs: "gpt-4o", wantOk: true},
 
 		// Not commands:
@@ -96,6 +97,47 @@ func TestUnit_HandleThinkStatusSetAndInvalid(t *testing.T) {
 	}
 	if got := sess.think(); got != "high" {
 		t.Fatalf("invalid /think mutated session value to %q", got)
+	}
+}
+
+func TestUnit_HandleMaxTokensStatusSetAndInvalid(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "max-tokens-acp.db")
+	db, err := libdb.NewSQLiteDBManager(ctx, path, runtimetypes.SchemaSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	tr := &Transport{deps: Deps{DB: db}, defaultMaxTokens: "4096"}
+	out, err := tr.handleMaxTokens(ctx, "")
+	if err != nil {
+		t.Fatalf("handleMaxTokens status: %v", err)
+	}
+	if out != "Max tokens: 4096 | provider ceiling: unknown" {
+		t.Fatalf("status = %q, want Max tokens: 4096 | provider ceiling: unknown", out)
+	}
+
+	out, err = tr.handleMaxTokens(ctx, " 8192 ")
+	if err != nil {
+		t.Fatalf("handleMaxTokens set: %v", err)
+	}
+	if out != "Max tokens set to 8192." {
+		t.Fatalf("set output = %q", out)
+	}
+	if got := tr.maxTokens(); got != "8192" {
+		t.Fatalf("transport max tokens = %q, want 8192", got)
+	}
+	if got := ReadConfigValue(ctx, db, "default-max-tokens"); got != "8192" {
+		t.Fatalf("persisted max tokens = %q, want 8192", got)
+	}
+
+	_, err = tr.handleMaxTokens(ctx, "many")
+	if err == nil || !strings.Contains(err.Error(), "max-tokens must be") {
+		t.Fatalf("invalid max-tokens error = %v", err)
+	}
+	if got := tr.maxTokens(); got != "8192" {
+		t.Fatalf("invalid /max-tokens mutated value to %q", got)
 	}
 }
 

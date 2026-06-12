@@ -10,18 +10,19 @@ import (
 )
 
 type OllamaProvider struct {
-	Name           string
-	ID             string
-	ContextLength  int
-	SupportsChat   bool
-	SupportsEmbed  bool
-	SupportsStream bool
-	SupportsPrompt bool
-	SupportsThink  bool
-	apiKey         string
-	httpClient     *http.Client
-	Backends       []string
-	tracker        libtracker.ActivityTracker
+	Name            string
+	ID              string
+	ContextLength   int
+	MaxOutputTokens int
+	SupportsChat    bool
+	SupportsEmbed   bool
+	SupportsStream  bool
+	SupportsPrompt  bool
+	SupportsThink   bool
+	apiKey          string
+	httpClient      *http.Client
+	Backends        []string
+	tracker         libtracker.ActivityTracker
 }
 
 func NewOllamaProvider(name string, backends []string, httpClient *http.Client, caps modelrepo.CapabilityConfig, apiKey string, tracker libtracker.ActivityTracker) modelrepo.Provider {
@@ -33,18 +34,19 @@ func NewOllamaProvider(name string, backends []string, httpClient *http.Client, 
 	}
 
 	return &OllamaProvider{
-		Name:           name,
-		ID:             "ollama:" + name,
-		ContextLength:  caps.ContextLength,
-		SupportsChat:   caps.CanChat,
-		SupportsEmbed:  caps.CanEmbed,
-		SupportsStream: caps.CanStream,
-		SupportsPrompt: caps.CanPrompt,
-		SupportsThink:  caps.CanThink,
-		apiKey:         apiKey,
-		Backends:       backends,
-		httpClient:     httpClient,
-		tracker:        tracker,
+		Name:            name,
+		ID:              "ollama:" + name,
+		ContextLength:   caps.ContextLength,
+		MaxOutputTokens: caps.MaxOutputTokens,
+		SupportsChat:    caps.CanChat,
+		SupportsEmbed:   caps.CanEmbed,
+		SupportsStream:  caps.CanStream,
+		SupportsPrompt:  caps.CanPrompt,
+		SupportsThink:   caps.CanThink,
+		apiKey:          apiKey,
+		Backends:        backends,
+		httpClient:      httpClient,
+		tracker:         tracker,
 	}
 }
 
@@ -64,9 +66,8 @@ func (p *OllamaProvider) GetType() string {
 	return "ollama"
 }
 
-func (p *OllamaProvider) GetContextLength() int {
-	return p.ContextLength
-}
+func (p *OllamaProvider) GetContextLength() int   { return p.ContextLength }
+func (p *OllamaProvider) GetMaxOutputTokens() int { return p.MaxOutputTokens }
 
 func (p *OllamaProvider) CanChat() bool {
 	return p.SupportsChat
@@ -98,11 +99,12 @@ func (p *OllamaProvider) GetChatConnection(ctx context.Context, backendID string
 	}
 
 	return &OllamaChatClient{
-		ollamaClient:  client,
-		modelName:     p.ModelName(),
-		backendURL:    backendID,
-		supportsThink: p.SupportsThink,
-		tracker:       p.tracker,
+		ollamaClient:    client,
+		modelName:       p.ModelName(),
+		backendURL:      backendID,
+		maxOutputTokens: p.MaxOutputTokens,
+		supportsThink:   p.SupportsThink,
+		tracker:         p.tracker,
 	}, nil
 }
 
@@ -133,11 +135,12 @@ func (p *OllamaProvider) GetPromptConnection(ctx context.Context, backendID stri
 	}
 
 	return &OllamaPromptClient{
-		ollamaClient:  client,
-		modelName:     p.ModelName(),
-		backendURL:    backendID,
-		supportsThink: p.SupportsThink,
-		tracker:       p.tracker,
+		ollamaClient:    client,
+		modelName:       p.ModelName(),
+		backendURL:      backendID,
+		maxOutputTokens: p.MaxOutputTokens,
+		supportsThink:   p.SupportsThink,
+		tracker:         p.tracker,
 	}, nil
 }
 
@@ -150,10 +153,11 @@ func (p *OllamaProvider) GetStreamConnection(ctx context.Context, backendID stri
 		return nil, fmt.Errorf("invalid backend URL '%s' for provider %s: %w", backendID, p.GetID(), err)
 	}
 	return &OllamaStreamClient{
-		ollamaClient:  client,
-		modelName:     p.ModelName(),
-		backendURL:    backendID,
-		supportsThink: p.SupportsThink,
-		tracker:       p.tracker,
+		ollamaClient:    client,
+		modelName:       p.ModelName(),
+		backendURL:      backendID,
+		maxOutputTokens: p.MaxOutputTokens,
+		supportsThink:   p.SupportsThink,
+		tracker:         p.tracker,
 	}, nil
 }

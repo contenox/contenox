@@ -8,6 +8,7 @@ type Agent interface {
 	NewSession(ctx context.Context, req NewSessionRequest) (NewSessionResponse, error)
 	LoadSession(ctx context.Context, req LoadSessionRequest) (LoadSessionResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (ListSessionsResponse, error)
+	SetSessionConfigOption(ctx context.Context, req SetSessionConfigOptionRequest) (SetSessionConfigOptionResponse, error)
 	Prompt(ctx context.Context, req PromptRequest) (PromptResponse, error)
 	Cancel(ctx context.Context, req CancelNotification) error
 }
@@ -30,6 +31,9 @@ func (UnimplementedAgent) LoadSession(context.Context, LoadSessionRequest) (Load
 }
 func (UnimplementedAgent) ListSessions(context.Context, ListSessionsRequest) (ListSessionsResponse, error) {
 	return ListSessionsResponse{}, MethodNotFound(MethodSessionList)
+}
+func (UnimplementedAgent) SetSessionConfigOption(context.Context, SetSessionConfigOptionRequest) (SetSessionConfigOptionResponse, error) {
+	return SetSessionConfigOptionResponse{}, MethodNotFound(MethodSessionSetConfigOption)
 }
 func (UnimplementedAgent) Prompt(context.Context, PromptRequest) (PromptResponse, error) {
 	return PromptResponse{}, MethodNotFound(MethodSessionPrompt)

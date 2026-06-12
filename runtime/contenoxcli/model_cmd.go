@@ -156,9 +156,9 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 		}
 		for _, m := range e.pulled {
 			any = true
-			displayName := m
+			displayName := displayModelName(m)
 			if preferredModel != "" && m == preferredModel {
-				displayName = m + " *"
+				displayName += " *"
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
 				e.backendName, displayName,
@@ -187,6 +187,10 @@ func boolMark(b bool) string {
 		return "✓"
 	}
 	return "-"
+}
+
+func displayModelName(model string) string {
+	return strings.TrimPrefix(strings.TrimSpace(model), "models/")
 }
 
 // parseContextSize converts a human-friendly token-count string to an int.

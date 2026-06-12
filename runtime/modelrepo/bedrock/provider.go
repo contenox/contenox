@@ -13,17 +13,18 @@ import (
 )
 
 type bedrockProvider struct {
-	id            string
-	region        string
-	credBlob      string // optional stored static-credentials JSON; empty → ambient chain
-	modelName     string
-	httpClient    *http.Client
-	contextLength int
-	canChat       bool
-	canPrompt     bool
-	canStream     bool
-	canThink      bool
-	tracker       libtracker.ActivityTracker
+	id              string
+	region          string
+	credBlob        string // optional stored static-credentials JSON; empty → ambient chain
+	modelName       string
+	httpClient      *http.Client
+	contextLength   int
+	maxOutputTokens int
+	canChat         bool
+	canPrompt       bool
+	canStream       bool
+	canThink        bool
+	tracker         libtracker.ActivityTracker
 
 	// aws.Config / SDK client built once and reused (mirrors vertex tokenOnce).
 	once   sync.Once
@@ -39,17 +40,18 @@ func NewBedrockProvider(region, credBlob, modelName string, cap modelrepo.Capabi
 		tracker = libtracker.NoopTracker{}
 	}
 	return &bedrockProvider{
-		id:            fmt.Sprintf("bedrock-%s", modelName),
-		region:        region,
-		credBlob:      credBlob,
-		modelName:     modelName,
-		httpClient:    httpClient,
-		contextLength: cap.ContextLength,
-		canChat:       cap.CanChat,
-		canPrompt:     cap.CanPrompt,
-		canStream:     cap.CanStream,
-		canThink:      cap.CanThink,
-		tracker:       tracker,
+		id:              fmt.Sprintf("bedrock-%s", modelName),
+		region:          region,
+		credBlob:        credBlob,
+		modelName:       modelName,
+		httpClient:      httpClient,
+		contextLength:   cap.ContextLength,
+		maxOutputTokens: cap.MaxOutputTokens,
+		canChat:         cap.CanChat,
+		canPrompt:       cap.CanPrompt,
+		canStream:       cap.CanStream,
+		canThink:        cap.CanThink,
+		tracker:         tracker,
 	}
 }
 
@@ -58,6 +60,7 @@ func (p *bedrockProvider) ModelName() string       { return p.modelName }
 func (p *bedrockProvider) GetID() string           { return p.id }
 func (p *bedrockProvider) GetType() string         { return "bedrock" }
 func (p *bedrockProvider) GetContextLength() int   { return p.contextLength }
+func (p *bedrockProvider) GetMaxOutputTokens() int { return p.maxOutputTokens }
 func (p *bedrockProvider) CanChat() bool           { return p.canChat }
 func (p *bedrockProvider) CanEmbed() bool          { return false }
 func (p *bedrockProvider) CanStream() bool         { return p.canStream }
@@ -76,7 +79,7 @@ func (p *bedrockProvider) client(ctx context.Context) (bedrockClient, error) {
 	if p.apiErr != nil {
 		return bedrockClient{}, p.apiErr
 	}
-	return bedrockClient{api: p.api, modelName: p.modelName, tracker: p.tracker}, nil
+	return bedrockClient{api: p.api, modelName: p.modelName, maxOutputTokens: p.maxOutputTokens, tracker: p.tracker}, nil
 }
 
 func (p *bedrockProvider) GetChatConnection(ctx context.Context, _ string) (modelrepo.LLMChatClient, error) {

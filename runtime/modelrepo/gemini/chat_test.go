@@ -2,7 +2,9 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -70,6 +72,29 @@ func TestUnit_GeminiChat_NormalTextStillWorks(t *testing.T) {
 	assert.Equal(t, "hello there", res.Message.Content)
 }
 
+func TestUnit_GeminiChat_ClampsMaxOutputTokens(t *testing.T) {
+	t.Parallel()
+
+	var got geminiGenerateContentRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		require.NoError(t, json.Unmarshal(body, &got))
+		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}]}`)
+	}))
+	defer srv.Close()
+
+	client := newTestChatClient(srv)
+	client.maxOutputTokens = 128
+	_, err := client.Chat(context.Background(),
+		[]modelrepo.Message{{Role: "user", Content: "hi"}},
+		modelrepo.WithMaxTokens(999),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, got.GenerationConfig)
+	require.NotNil(t, got.GenerationConfig.MaxOutputTokens)
+	assert.Equal(t, 128, *got.GenerationConfig.MaxOutputTokens)
+}
+
 func TestUnit_GeminiChat_BlockedPromptStillErrors(t *testing.T) {
 	t.Parallel()
 
@@ -107,4 +132,75 @@ func TestUnit_BuildGeminiRequest_MapsThinkingConfig(t *testing.T) {
 	req, err = buildGeminiRequest("gemini-2.5-pro", msgs, nil, []modelrepo.ChatArgument{modelrepo.WithThink("medium")}, false)
 	require.NoError(t, err)
 	require.Nil(t, req.GenerationConfig.ThinkingConfig, "provider with CanThink=false must omit Gemini thinking config")
+}
+
+func TestUnit_BuildGeminiRequest_RejectsEmptyContents(t *testing.T) {
+	t.Parallel()
+
+	_, err := buildGeminiRequest("gemini-3.1-pro-preview",
+		[]modelrepo.Message{{Role: "system", Content: "system only"}},
+		&geminiSystemInstruction{Parts: []geminiPart{{Text: "system only"}}},
+		nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "refusing to send empty contents")
+	require.Contains(t, err.Error(), "provide at least one non-empty")
+
+	_, err = buildGeminiRequest("gemini-3.1-pro-preview",
+		[]modelrepo.Message{{Role: "user", Content: ""}},
+		nil,
+		nil,
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "refusing to send empty contents")
+}
+
+func TestUnit_BuildGeminiRequest_WrapsSchemaLikeToolResultAsText(t *testing.T) {
+	t.Parallel()
+
+	const schemaResult = `{"$defs":{"LogoutCapabilities":{"type":"object"}},"properties":{"logout":{"$ref":"#/$defs/LogoutCapabilities"}}}`
+	msgs := []modelrepo.Message{
+		{
+			Role: "assistant",
+			ToolCalls: []modelrepo.ToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				}{Name: "webtools.web_get", Arguments: `{"url":"https://example.test/schema.json"}`},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call-1", Content: schemaResult},
+	}
+
+	req, err := buildGeminiRequest("gemini-3.1-pro-preview", msgs, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, req.Contents, 2)
+	resp := req.Contents[1].Parts[0].FunctionResponse.Response
+	require.Equal(t, schemaResult, resp["content"])
+	require.NotContains(t, resp, "$defs")
+}
+
+func TestUnit_BuildGeminiRequest_KeepsNormalObjectToolResultStructured(t *testing.T) {
+	t.Parallel()
+
+	msgs := []modelrepo.Message{
+		{
+			Role: "assistant",
+			ToolCalls: []modelrepo.ToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				}{Name: "webtools.web_get", Arguments: `{"url":"https://example.test/data.json"}`},
+			}},
+		},
+		{Role: "tool", ToolCallID: "call-1", Content: `{"status":"ok"}`},
+	}
+
+	req, err := buildGeminiRequest("gemini-3.1-pro-preview", msgs, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "ok", req.Contents[1].Parts[0].FunctionResponse.Response["status"])
 }

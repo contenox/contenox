@@ -11,16 +11,17 @@ import (
 // request payloads and response parsing for the OpenAI Responses API.
 
 type openAIResponsesRequest struct {
-	Model          string                  `json:"model"`
-	Input          []openAIResponseInput   `json:"input"`
-	MaxOutputTokens *int                    `json:"max_output_tokens,omitempty"`
-	Temperature    *float64                `json:"temperature,omitempty"`
-	TopP           *float64                `json:"top_p,omitempty"`
-	Seed           *int                    `json:"seed,omitempty"`
-	Reasoning      *openAIResponsesReasoning `json:"reasoning,omitempty"`
-	Tools          []openAIResponsesTool    `json:"tools,omitempty"`
-	ToolChoice     string                  `json:"tool_choice,omitempty"`
-	Stream         bool                    `json:"stream,omitempty"`
+	Model           string                    `json:"model"`
+	Input           []openAIResponseInput     `json:"input"`
+	Instructions    string                    `json:"instructions,omitempty"`
+	MaxOutputTokens *int                      `json:"max_output_tokens,omitempty"`
+	Temperature     *float64                  `json:"temperature,omitempty"`
+	TopP            *float64                  `json:"top_p,omitempty"`
+	Seed            *int                      `json:"seed,omitempty"`
+	Reasoning       *openAIResponsesReasoning `json:"reasoning,omitempty"`
+	Tools           []openAIResponsesTool     `json:"tools,omitempty"`
+	ToolChoice      string                    `json:"tool_choice,omitempty"`
+	Stream          bool                      `json:"stream,omitempty"`
 }
 
 type openAIResponsesReasoning struct {
@@ -28,24 +29,28 @@ type openAIResponsesReasoning struct {
 }
 
 type openAIResponsesTool struct {
-	Type     string                  `json:"type"`
-	Function openAIResponsesToolFunction `json:"function"`
-}
-
-type openAIResponsesToolFunction struct {
+	Type        string `json:"type"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	Parameters  any    `json:"parameters,omitempty"`
+	Parameters  any    `json:"parameters"`
+	Strict      bool   `json:"strict"`
 }
 
 type openAIResponseInput struct {
-	Type    string `json:"type"`
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Type string `json:"type"`
+	// message fields
+	Role    string `json:"role,omitempty"`
+	Content any    `json:"content,omitempty"`
+	// function_call fields (assistant tool-call history)
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+	// function_call_output fields (tool result)
+	Output string `json:"output,omitempty"`
 }
 
 type openAIResponse struct {
-	Output   []openAIResponseOutputItem `json:"output"`
+	Output    []openAIResponseOutputItem `json:"output"`
 	Reasoning struct {
 		Effort  string `json:"effort"`
 		Summary string `json:"summary"`
@@ -53,15 +58,15 @@ type openAIResponse struct {
 }
 
 type openAIResponseOutputItem struct {
-	Type      string                    `json:"type"`
-	ID        string                    `json:"id"`
-	Role      string                    `json:"role"`
-	CallID    string                    `json:"call_id"`
-	Name      string                    `json:"name"`
-	Arguments string                    `json:"arguments"`
-	Content   []openAIResponseContent   `json:"content"`
-	Status    string                    `json:"status"`
-	Phase     string                    `json:"phase"`
+	Type      string                  `json:"type"`
+	ID        string                  `json:"id"`
+	Role      string                  `json:"role"`
+	CallID    string                  `json:"call_id"`
+	Name      string                  `json:"name"`
+	Arguments string                  `json:"arguments"`
+	Content   []openAIResponseContent `json:"content"`
+	Status    string                  `json:"status"`
+	Phase     string                  `json:"phase"`
 }
 
 type openAIResponseContent struct {
@@ -121,12 +126,11 @@ func buildOpenAIResponsesRequestWithCapabilities(modelName string, messages []mo
 			nameMap[name] = orig
 			origToSanitized[orig] = name
 			tools = append(tools, openAIResponsesTool{
-				Type: "function",
-				Function: openAIResponsesToolFunction{
-					Name:        name,
-					Description: t.Function.Description,
-					Parameters:  t.Function.Parameters,
-				},
+				Type:        "function",
+				Name:        name,
+				Description: t.Function.Description,
+				Parameters:  openAIResponsesToolParameters(t.Function.Parameters),
+				Strict:      false,
 			})
 		}
 		if len(tools) > 0 {
@@ -134,60 +138,93 @@ func buildOpenAIResponsesRequestWithCapabilities(modelName string, messages []mo
 		}
 	}
 
+	// Hoist system messages into the top-level instructions field.
+	var systemParts []string
+	for _, msg := range messages {
+		if strings.TrimSpace(msg.Role) == "system" && msg.Content != "" {
+			systemParts = append(systemParts, msg.Content)
+		}
+	}
+	if len(systemParts) > 0 {
+		req.Instructions = strings.Join(systemParts, "\n\n")
+	}
+
 	input := make([]openAIResponseInput, 0, len(messages))
 	for _, msg := range messages {
-		content := msg.Content
-
 		role := strings.TrimSpace(msg.Role)
-		switch role {
-		case "tool":
-			role = "user"
-			if strings.TrimSpace(msg.ToolCallID) != "" && strings.TrimSpace(content) != "" {
-				content = "Tool output for " + msg.ToolCallID + ": " + content
-			}
-		case "assistant", "user", "system", "developer":
-		default:
-			role = "user"
-		}
 
-		if len(msg.ToolCalls) > 0 && (msg.Content != "" || role == "assistant") {
-			var toolLines []string
-			if content != "" {
-				toolLines = append(toolLines, content)
+		switch role {
+		case "system":
+			// Already hoisted to Instructions above.
+			continue
+
+		case "tool":
+			// Tool result → function_call_output item, correlated by call_id.
+			input = append(input, openAIResponseInput{
+				Type:   "function_call_output",
+				CallID: msg.ToolCallID,
+				Output: msg.Content,
+			})
+			continue
+
+		case "assistant", "model":
+			// If there is text, emit it as a regular assistant message first.
+			if msg.Content != "" {
+				input = append(input, openAIResponseInput{
+					Type:    "message",
+					Role:    "assistant",
+					Content: msg.Content,
+				})
 			}
+			// Each tool call becomes a function_call item so the model can
+			// correlate it with the following function_call_output items.
 			for _, tc := range msg.ToolCalls {
 				name := tc.Function.Name
 				if san, ok := origToSanitized[name]; ok && san != "" {
 					name = san
-				} else if san := sanitizeToolName(name); san != "" {
-					name = san
-				}
-				if name == "" {
-					name = "tool"
+				} else {
+					name = sanitizeToolName(name)
+					if name == "" {
+						name = "tool"
+					}
 				}
 				args := strings.TrimSpace(tc.Function.Arguments)
 				if args == "" {
 					args = "{}"
 				}
-				toolLines = append(toolLines, fmt.Sprintf("Tool call %s: %s", name, args))
+				input = append(input, openAIResponseInput{
+					Type:      "function_call",
+					CallID:    tc.ID,
+					Name:      name,
+					Arguments: args,
+				})
 			}
-			content = strings.Join(toolLines, "\n")
+			continue
+
+		case "user", "developer":
+		default:
+			role = "user"
 		}
 
-	var contentAny any = content
-	if content == "" {
-		contentAny = nil
-	}
-
+		if msg.Content == "" {
+			continue
+		}
 		input = append(input, openAIResponseInput{
 			Type:    "message",
 			Role:    role,
-			Content: contentAny,
+			Content: msg.Content,
 		})
 	}
 	req.Input = input
 
 	return req, nameMap
+}
+
+func openAIResponsesToolParameters(params any) any {
+	if params == nil {
+		return map[string]any{}
+	}
+	return params
 }
 
 func parseOpenAIResponsesResponse(nameMap map[string]string, raw []byte) (modelrepo.ChatResult, error) {

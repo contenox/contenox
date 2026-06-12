@@ -147,3 +147,19 @@ func TestUnit_BuildOllamaThink_NormalizesLevels(t *testing.T) {
 		t.Fatalf("xhigh = %#v, want high", got)
 	}
 }
+
+func TestUnit_BuildOllamaOptions_ClampsPositiveNumPredictOnly(t *testing.T) {
+	cfg := &modelrepo.ChatConfig{}
+	modelrepo.WithMaxTokens(9000).Apply(cfg)
+	opts := buildOllamaOptions(cfg, 2048)
+	if got := opts["num_predict"]; got != 2048 {
+		t.Fatalf("num_predict = %#v, want 2048", got)
+	}
+
+	negative := -1
+	cfg = &modelrepo.ChatConfig{MaxTokens: &negative}
+	opts = buildOllamaOptions(cfg, 2048)
+	if got := opts["num_predict"]; got != -1 {
+		t.Fatalf("negative num_predict sentinel = %#v, want -1", got)
+	}
+}

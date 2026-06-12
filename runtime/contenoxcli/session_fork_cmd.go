@@ -113,7 +113,10 @@ func runSessionFork(cmd *cobra.Command, args []string) error {
 }
 
 func summarizeForFork(ctx context.Context, cmd *cobra.Command, db libdb.DBManager, contenoxDir string, history []taskengine.Message, keep int) ([]taskengine.Message, error) {
-	model, provider, altModel, altProvider := resolveDefaultModelProvider(cmd, db)
+	model, provider, altModel, altProvider, maxTokens, err := resolveDefaultModelProvider(cmd, db)
+	if err != nil {
+		return nil, err
+	}
 	if model == "" {
 		return nil, fmt.Errorf("no default model configured; run 'contenox config set default-model <model>'")
 	}
@@ -129,6 +132,7 @@ func summarizeForFork(ctx context.Context, cmd *cobra.Command, db libdb.DBManage
 		EffectiveDefaultProvider:    provider,
 		EffectiveAltDefaultModel:    altModel,
 		EffectiveAltDefaultProvider: altProvider,
+		EffectiveMaxTokens:          maxTokens,
 		EffectiveNoDeleteModels:     noDeleteModels,
 		ContenoxDir:                 contenoxDir,
 	}
@@ -203,7 +207,7 @@ func lookupSystemFile(contenoxDir, name string) (string, error) {
 	return "", fmt.Errorf("file %q not found in workspace %q or ~/.contenox; run 'contenox init' to populate it", name, contenoxDir)
 }
 
-func resolveDefaultModelProvider(cmd *cobra.Command, db libdb.DBManager) (model, provider, altModel, altProvider string) {
+func resolveDefaultModelProvider(cmd *cobra.Command, db libdb.DBManager) (model, provider, altModel, altProvider, maxTokens string, err error) {
 	flags := cmd.Root().Flags()
 	store := runtimetypes.New(db.WithoutTransaction())
 	ctx := libtracker.WithNewRequestID(context.Background())
@@ -236,5 +240,9 @@ func resolveDefaultModelProvider(cmd *cobra.Command, db libdb.DBManager) (model,
 			altProvider = v
 		}
 	}
-	return model, provider, altModel, altProvider
+	maxTokens, err = resolveEffectiveMaxTokens(ctx, store, flags)
+	if err != nil {
+		return "", "", "", "", "", err
+	}
+	return model, provider, altModel, altProvider, maxTokens, nil
 }

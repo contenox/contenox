@@ -47,14 +47,18 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 }
 
 type modelListResponse struct {
-	Data []modelInfo `json:"data"`
+	Data    []modelInfo `json:"data"`
+	HasMore bool        `json:"has_more"`
+	LastID  string      `json:"last_id"`
 }
 
 type modelInfo struct {
-	ID             string             `json:"id"`
-	CreatedAt      string             `json:"created_at"`
-	MaxInputTokens int                `json:"max_input_tokens"`
-	Capabilities   *modelCapabilities `json:"capabilities"`
+	ID              string             `json:"id"`
+	CreatedAt       string             `json:"created_at"`
+	MaxInputTokens  int                `json:"max_input_tokens"`
+	MaxOutputTokens int                `json:"max_output_tokens"`
+	MaxTokens       int                `json:"max_tokens"`
+	Capabilities    *modelCapabilities `json:"capabilities"`
 }
 
 type modelCapabilities struct {
@@ -86,49 +90,64 @@ type capabilitySupport struct {
 }
 
 func (p *catalogProvider) listModels(ctx context.Context, path string) ([]modelrepo.ObservedModel, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(p.baseURL(), "/")+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	if p.spec.APIKey != "" {
-		req.Header.Set("x-api-key", p.spec.APIKey)
-	}
-	req.Header.Set("anthropic-version", anthropicAPIVersion)
+	var all []modelrepo.ObservedModel
+	afterID := ""
+	for {
+		url := strings.TrimRight(p.baseURL(), "/") + path
+		if afterID != "" {
+			url += "?after_id=" + afterID
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		if p.spec.APIKey != "" {
+			req.Header.Set("x-api-key", p.spec.APIKey)
+		}
+		req.Header.Set("anthropic-version", anthropicAPIVersion)
 
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("anthropic catalog %s returned %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	var payload modelListResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, fmt.Errorf("decode anthropic catalog response: %w", err)
-	}
-	models := make([]modelrepo.ObservedModel, 0, len(payload.Data))
-	for _, item := range payload.Data {
-		// All Claude models are chat models with streaming.
-		modifiedAt, _ := time.Parse(time.RFC3339, item.CreatedAt)
-		models = append(models, modelrepo.ObservedModel{
-			Name:          item.ID,
-			ContextLength: item.MaxInputTokens,
-			ModifiedAt:    modifiedAt,
-			CapabilityConfig: modelrepo.CapabilityConfig{
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("anthropic catalog %s returned %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		var payload modelListResponse
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return nil, fmt.Errorf("decode anthropic catalog response: %w", err)
+		}
+		for _, item := range payload.Data {
+			modifiedAt, _ := time.Parse(time.RFC3339, item.CreatedAt)
+			maxOutputTokens := item.MaxOutputTokens
+			if maxOutputTokens <= 0 {
+				maxOutputTokens = item.MaxTokens
+			}
+			all = append(all, modelrepo.ObservedModel{
+				Name:          item.ID,
 				ContextLength: item.MaxInputTokens,
-				CanChat:       true,
-				CanStream:     true,
-				CanPrompt:     true,
-				CanThink:      anthropicCapabilitiesCanThink(item.Capabilities),
-			},
-		})
+				ModifiedAt:    modifiedAt,
+				CapabilityConfig: modelrepo.CapabilityConfig{
+					ContextLength:   item.MaxInputTokens,
+					MaxOutputTokens: maxOutputTokens,
+					CanChat:         true,
+					CanStream:       true,
+					CanPrompt:       true,
+					CanThink:        anthropicCapabilitiesCanThink(item.Capabilities),
+				},
+			})
+		}
+		if !payload.HasMore {
+			break
+		}
+		afterID = payload.LastID
 	}
-	return models, nil
+	return all, nil
 }
 
 func anthropicCapabilitiesCanThink(caps *modelCapabilities) bool {

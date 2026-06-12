@@ -22,6 +22,7 @@ type chatOpts struct {
 	EffectiveDefaultProvider     string
 	EffectiveAltDefaultModel     string
 	EffectiveAltDefaultProvider  string
+	EffectiveMaxTokens           string
 	EffectiveContext             int
 	EffectiveNoDeleteModels      bool
 	EffectiveEnableLocalExec     bool
@@ -110,6 +111,9 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 	}
 	if opts.EffectiveAltDefaultProvider != "" {
 		templateVars["alt_provider"] = opts.EffectiveAltDefaultProvider
+	}
+	if opts.EffectiveMaxTokens != "" {
+		templateVars["max_tokens"] = opts.EffectiveMaxTokens
 	}
 
 	// Create agent using new Engine-based Deps.

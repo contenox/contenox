@@ -47,6 +47,7 @@ type setupProvider struct {
 var setupProviders = []setupProvider{
 	{key: "ollama", label: "Ollama (local daemon)", defaultModel: "qwen2.5:7b", needsAPIKey: false},
 	{key: "openai", label: "OpenAI", defaultModel: "gpt-5-mini", envKey: "OPENAI_API_KEY", needsAPIKey: true},
+	{key: "openrouter", label: "OpenRouter (300+ models, one API key — deepseek, qwen, llama, gemini, gpt and more)", defaultModel: "deepseek/deepseek-chat-v3-5", envKey: "OPENROUTER_API_KEY", needsAPIKey: true},
 	{key: "gemini", label: "Google Gemini", defaultModel: "gemini-flash-latest", envKey: "GEMINI_API_KEY", needsAPIKey: true},
 	{key: "local", label: "Local (embedded llama.cpp — no server, no API key)", defaultModel: "", needsAPIKey: false},
 }
@@ -247,6 +248,8 @@ func registerSetupBackend(ctx context.Context, db libdb.DBManager, providerType,
 		}
 	case "openai":
 		backendURL = "https://api.openai.com/v1"
+	case "openrouter":
+		backendURL = "https://openrouter.ai/api/v1"
 	case "gemini":
 		backendURL = "https://generativelanguage.googleapis.com"
 	}

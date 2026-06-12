@@ -28,7 +28,8 @@ const (
 
 // localChatClient implements modelrepo.LLMChatClient using llama.cpp in-process.
 type localChatClient struct {
-	modelPath string
+	modelPath       string
+	maxOutputTokens int
 }
 
 func (c *localChatClient) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
@@ -38,7 +39,7 @@ func (c *localChatClient) Chat(ctx context.Context, messages []modelrepo.Message
 	}
 
 	prompt := buildPrompt(messages)
-	text, err := generate(ctx, c.modelPath, prompt, cfg)
+	text, err := generate(ctx, c.modelPath, prompt, cfg, c.maxOutputTokens)
 	if err != nil {
 		return modelrepo.ChatResult{}, err
 	}
@@ -49,7 +50,8 @@ func (c *localChatClient) Chat(ctx context.Context, messages []modelrepo.Message
 
 // localPromptClient implements modelrepo.LLMPromptExecClient.
 type localPromptClient struct {
-	modelPath string
+	modelPath       string
+	maxOutputTokens int
 }
 
 func (c *localPromptClient) Prompt(ctx context.Context, systemInstruction string, temperature float32, prompt string) (string, error) {
@@ -59,7 +61,7 @@ func (c *localPromptClient) Prompt(ctx context.Context, systemInstruction string
 	}
 	temp := float64(temperature)
 	cfg := &modelrepo.ChatConfig{Temperature: &temp}
-	return generate(ctx, c.modelPath, buildPrompt(messages), cfg)
+	return generate(ctx, c.modelPath, buildPrompt(messages), cfg, c.maxOutputTokens)
 }
 
 // buildPrompt converts messages to a simple chat-ML format.
@@ -83,7 +85,7 @@ func buildPrompt(messages []modelrepo.Message) string {
 	return b.String()
 }
 
-func generate(ctx context.Context, modelPath, prompt string, cfg *modelrepo.ChatConfig) (text string, err error) {
+func generate(ctx context.Context, modelPath, prompt string, cfg *modelrepo.ChatConfig, maxOutputTokens int) (text string, err error) {
 	// The prompt is decoded in a single fixed-size batch (defaultBatch); a
 	// prompt longer than that overflows batch.Add, which panics with an
 	// out-of-range index (a recoverable Go bounds panic — allocSize matches the
@@ -153,6 +155,7 @@ func generate(ctx context.Context, modelPath, prompt string, cfg *modelrepo.Chat
 	if cfg != nil && cfg.MaxTokens != nil && *cfg.MaxTokens > 0 {
 		maxTokens = *cfg.MaxTokens
 	}
+	maxTokens, _ = modelrepo.ClampMaxOutputTokens(maxTokens, maxOutputTokens)
 
 	var out strings.Builder
 	for pos := len(tokens); pos < len(tokens)+maxTokens; pos++ {
@@ -183,7 +186,8 @@ func generate(ctx context.Context, modelPath, prompt string, cfg *modelrepo.Chat
 
 // localStreamClient implements modelrepo.LLMStreamClient using llama.cpp in-process.
 type localStreamClient struct {
-	modelPath string
+	modelPath       string
+	maxOutputTokens int
 }
 
 func (c *localStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
@@ -259,6 +263,7 @@ func (c *localStreamClient) Stream(ctx context.Context, messages []modelrepo.Mes
 		if cfg.MaxTokens != nil && *cfg.MaxTokens > 0 {
 			maxTokens = *cfg.MaxTokens
 		}
+		maxTokens, _ = modelrepo.ClampMaxOutputTokens(maxTokens, c.maxOutputTokens)
 
 		for pos := len(tokens); pos < len(tokens)+maxTokens; pos++ {
 			select {

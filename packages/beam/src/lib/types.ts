@@ -219,6 +219,7 @@ export type StatusResponse = {
 export type CloudProviderType =
   | 'ollama'
   | 'openai'
+  | 'openrouter'
   | 'anthropic'
   | 'gemini'
   | 'mistral'

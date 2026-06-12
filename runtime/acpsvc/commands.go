@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
 	libacp "github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/contenox/runtime/runtime/modelcapability"
 	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -26,6 +28,7 @@ func acpCommands() []libacp.AvailableCommand {
 		{Name: "compact", Description: "Summarize older history into a single message to reclaim context.", Input: &libacp.AvailableCommandInput{Hint: "[keep]"}},
 		{Name: "model", Description: "Show the current model, or set it: /model <name>.", Input: &libacp.AvailableCommandInput{Hint: "[model-name]"}},
 		{Name: "provider", Description: "Show the current provider, or set it: /provider <name>.", Input: &libacp.AvailableCommandInput{Hint: "[provider-name]"}},
+		{Name: "max-tokens", Description: "Show or set the default response token cap: /max-tokens <count>.", Input: &libacp.AvailableCommandInput{Hint: "[count]"}},
 		{Name: "think", Description: "Show or set this session's reasoning level: /think <level|off|auto>.", Input: &libacp.AvailableCommandInput{Hint: "[level|off|auto]"}},
 		{Name: "capability", Description: "Show or set persistent provider/model capability overrides.", Input: &libacp.AvailableCommandInput{Hint: "set|show|unset <provider> <model> [--think true|false]"}},
 		{Name: "policy", Description: "Show the active HITL policy, or switch it: /policy <name>.", Input: &libacp.AvailableCommandInput{Hint: "[policy-name]"}},
@@ -82,6 +85,8 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 		out, err = t.handleModel(ctx, args)
 	case "provider":
 		out, err = t.handleProvider(ctx, args)
+	case "max-tokens":
+		out, err = t.handleMaxTokens(ctx, args)
 	case "think":
 		out, err = t.handleThink(sess, args)
 	case "capability":
@@ -110,7 +115,31 @@ func (t *Transport) dispatchCommand(ctx context.Context, sid libacp.SessionID, s
 			Update:    libacp.NewAgentMessageChunk(out),
 		})
 	}
+	if commandUpdatesSessionModel(name) {
+		sess.setModelSelection(t.provider(), t.model())
+	}
+	if commandUpdatesConfigOptions(name) {
+		t.sendConfigOptionUpdate(ctx, sid, sess)
+	}
 	return libacp.PromptResponse{StopReason: libacp.StopReasonEndTurn}, nil
+}
+
+func commandUpdatesSessionModel(name string) bool {
+	switch name {
+	case "model", "provider":
+		return true
+	default:
+		return false
+	}
+}
+
+func commandUpdatesConfigOptions(name string) bool {
+	switch name {
+	case "model", "provider", "policy", "think":
+		return true
+	default:
+		return false
+	}
 }
 
 // sendAvailableCommands advertises the admin command set for a session. The
@@ -149,7 +178,21 @@ func (t *Transport) handleDoctor(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("readiness check failed: %w", err)
 	}
-	return res.Summary(), nil
+	summary := res.Summary()
+
+	// Advisory: warn when default-max-tokens exceeds the active provider's ceiling.
+	ceiling := res.DefaultMaxOutputTokens
+	if ceiling > 0 {
+		maxTok := t.maxTokens()
+		if maxTok != "" {
+			if n, convErr := strconv.Atoi(maxTok); convErr == nil && n > ceiling {
+				summary += fmt.Sprintf(
+					"\n⚠️  Advisory: default-max-tokens=%d exceeds %s provider ceiling (%d). Requests will be clamped automatically.",
+					n, t.provider(), ceiling)
+			}
+		}
+	}
+	return summary, nil
 }
 
 func (t *Transport) handleModel(ctx context.Context, args string) (string, error) {
@@ -178,6 +221,67 @@ func (t *Transport) handleProvider(ctx context.Context, args string) (string, er
 	}
 	t.setProvider(value)
 	return fmt.Sprintf("Provider set to %s.", value), nil
+}
+
+func (t *Transport) handleMaxTokens(ctx context.Context, args string) (string, error) {
+	ceiling := t.maxOutputTokensCeiling(ctx)
+	value := strings.TrimSpace(args)
+	if value == "" {
+		current := t.maxTokens()
+		if current == "" {
+			return fmt.Sprintf("Max tokens: (chain default) | provider ceiling: %s", ceilingLabel(ceiling)), nil
+		}
+		return fmt.Sprintf("Max tokens: %s | provider ceiling: %s", current, ceilingLabel(ceiling)), nil
+	}
+	normalized, err := normalizeMaxTokensValue(value)
+	if err != nil {
+		return "", err
+	}
+	if err := t.persistConfig(ctx, "default-max-tokens", normalized); err != nil {
+		return "", err
+	}
+	t.setMaxTokens(normalized)
+	if normalized == "" {
+		return "Max tokens reset to chain default.", nil
+	}
+	msg := fmt.Sprintf("Max tokens set to %s.", normalized)
+	if ceiling > 0 {
+		n, _ := strconv.Atoi(normalized)
+		if n > ceiling {
+			msg += fmt.Sprintf(" ⚠️  Exceeds provider ceiling (%d) — requests will be clamped.", ceiling)
+		}
+	}
+	return msg, nil
+}
+
+func (t *Transport) maxOutputTokensCeiling(ctx context.Context) int {
+	if t.deps.Engine == nil || t.deps.Engine.State == nil {
+		return 0
+	}
+	states := setupcheck.StatesFromMap(t.deps.Engine.State.Get(ctx))
+	return setupcheck.ResolveMaxOutputTokens(states, t.provider(), t.model())
+}
+
+func ceilingLabel(ceiling int) string {
+	if ceiling > 0 {
+		return strconv.Itoa(ceiling)
+	}
+	return "unknown"
+}
+
+func normalizeMaxTokensValue(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return "", fmt.Errorf("max-tokens must be a non-negative integer, got %q", value)
+	}
+	if n < 0 {
+		return "", fmt.Errorf("max-tokens must be non-negative, got %d", n)
+	}
+	return strconv.Itoa(n), nil
 }
 
 func (t *Transport) handleThink(sess *sessionEntry, args string) (string, error) {

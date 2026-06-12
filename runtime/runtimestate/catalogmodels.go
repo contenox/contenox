@@ -30,12 +30,13 @@ func observedModelFromPullStatus(model statetype.ModelPullStatus) modelrepo.Obse
 		Size:          model.Size,
 		Digest:        model.Digest,
 		CapabilityConfig: modelrepo.CapabilityConfig{
-			ContextLength: model.ContextLength,
-			CanChat:       model.CanChat,
-			CanEmbed:      model.CanEmbed,
-			CanPrompt:     model.CanPrompt,
-			CanStream:     model.CanStream,
-			CanThink:      model.CanThink,
+			ContextLength:   model.ContextLength,
+			MaxOutputTokens: model.MaxOutputTokens,
+			CanChat:         model.CanChat,
+			CanEmbed:        model.CanEmbed,
+			CanPrompt:       model.CanPrompt,
+			CanStream:       model.CanStream,
+			CanThink:        model.CanThink,
 		},
 		Meta: meta,
 	}
@@ -50,16 +51,17 @@ func pullStatusFromObservedModel(model modelrepo.ObservedModel) statetype.ModelP
 	}
 
 	return statetype.ModelPullStatus{
-		Name:          displayName,
-		Model:         model.Name,
-		ModifiedAt:    model.ModifiedAt,
-		Size:          model.Size,
-		Digest:        model.Digest,
-		ContextLength: model.ContextLength,
-		CanChat:       model.CanChat,
-		CanEmbed:      model.CanEmbed,
-		CanPrompt:     model.CanPrompt,
-		CanStream:     model.CanStream,
-		CanThink:      model.CanThink,
+		Name:            displayName,
+		Model:           model.Name,
+		ModifiedAt:      model.ModifiedAt,
+		Size:            model.Size,
+		Digest:          model.Digest,
+		ContextLength:   model.ContextLength,
+		MaxOutputTokens: model.MaxOutputTokens,
+		CanChat:         model.CanChat,
+		CanEmbed:        model.CanEmbed,
+		CanPrompt:       model.CanPrompt,
+		CanStream:       model.CanStream,
+		CanThink:        model.CanThink,
 	}
 }

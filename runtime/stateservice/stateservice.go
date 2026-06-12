@@ -3,6 +3,7 @@ package stateservice
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/contenox/runtime/libdbexec"
@@ -31,6 +32,7 @@ type CLIConfigPatch struct {
 	DefaultProvider    *string
 	DefaultAltModel    *string
 	DefaultAltProvider *string
+	DefaultMaxTokens   *string
 	DefaultChain       *string
 	HITLPolicyName     *string
 }
@@ -41,6 +43,7 @@ type CLIConfigSnapshot struct {
 	DefaultProvider    string
 	DefaultAltModel    string
 	DefaultAltProvider string
+	DefaultMaxTokens   string
 	DefaultChain       string
 	HITLPolicyName     string
 	ResolvedFrom       map[string]string
@@ -89,6 +92,7 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 		patch.DefaultProvider == nil &&
 		patch.DefaultAltModel == nil &&
 		patch.DefaultAltProvider == nil &&
+		patch.DefaultMaxTokens == nil &&
 		patch.DefaultChain == nil &&
 		patch.HITLPolicyName == nil {
 		return CLIConfigSnapshot{}, fmt.Errorf("provide at least one CLI config key")
@@ -114,6 +118,15 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-alt-provider: %w", err)
 		}
 	}
+	if patch.DefaultMaxTokens != nil {
+		maxTokens, err := normalizeDefaultMaxTokens(*patch.DefaultMaxTokens)
+		if err != nil {
+			return CLIConfigSnapshot{}, err
+		}
+		if err := clikv.SetString(ctx, store, "default-max-tokens", maxTokens); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set default-max-tokens: %w", err)
+		}
+	}
 	if patch.DefaultChain != nil {
 		if err := clikv.WriteConfig(ctx, store, s.workspaceID, "default-chain", strings.TrimSpace(*patch.DefaultChain)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-chain: %w", err)
@@ -131,6 +144,7 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 		DefaultProvider:    clikv.Read(ctx, store, "default-provider"),
 		DefaultAltModel:    clikv.Read(ctx, store, "default-alt-model"),
 		DefaultAltProvider: clikv.Read(ctx, store, "default-alt-provider"),
+		DefaultMaxTokens:   clikv.Read(ctx, store, "default-max-tokens"),
 		DefaultChain:       defaultChain,
 		HITLPolicyName:     hitlPolicy,
 		ResolvedFrom: map[string]string{
@@ -138,6 +152,21 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 			"hitlPolicyName": policyFrom,
 		},
 	}, nil
+}
+
+func normalizeDefaultMaxTokens(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return "", fmt.Errorf("default-max-tokens must be a non-negative integer, got %q", value)
+	}
+	if n < 0 {
+		return "", fmt.Errorf("default-max-tokens must be non-negative, got %d", n)
+	}
+	return strconv.Itoa(n), nil
 }
 
 // New returns a state service backed by runtime state and the same DB used for backends + CLI KV.

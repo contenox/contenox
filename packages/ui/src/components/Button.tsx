@@ -40,13 +40,13 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         "focus:ring-primary-300 dark:focus:ring-dark-primary-300",
       ),
       secondary: cn(
-        "text-text-inverted dark:text-dark-text-inverted",
+        "text-text-inverted dark:text-dark-text",
         variant !== "text" && "bg-secondary dark:bg-dark-secondary",
         "hover:bg-secondary-600 dark:hover:bg-dark-secondary-600",
         "focus:ring-secondary-300 dark:focus:ring-dark-secondary-300",
       ),
       accent: cn(
-        "text-text-inverted dark:text-dark-text-inverted",
+        "text-text-inverted dark:text-dark-text",
         variant !== "text" && "bg-accent dark:bg-dark-accent",
         "hover:bg-accent-600 dark:hover:bg-dark-accent-600",
         "focus:ring-accent-300 dark:focus:ring-dark-accent-300",

@@ -184,7 +184,7 @@ export default function McpServersSection() {
         </Span>
         <P variant="muted" className="text-sm">{t('mcp_servers.description')}</P>
 
-        <div className="max-h-[600px] space-y-4 overflow-y-auto">
+        <div className="max-h-[min(600px,60vh)] space-y-4 overflow-y-auto">
           {servers && servers.length > 0 ? (
             servers.map(srv => (
               <McpServerCard

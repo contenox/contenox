@@ -21,6 +21,9 @@ func NewEchoTools() taskengine.ToolsRepo {
 func (e *EchoTools) Exec(ctx context.Context, startTime time.Time, input any, debug bool, toolsCall *taskengine.ToolsCall) (any, taskengine.DataType, error) {
 	switch v := input.(type) {
 	case map[string]any:
+		if err := rejectUnknownArgs("echo", v, "input"); err != nil {
+			return nil, taskengine.DataTypeAny, err
+		}
 		if raw, ok := v["input"]; ok {
 			switch x := raw.(type) {
 			case string:

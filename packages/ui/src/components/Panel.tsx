@@ -39,7 +39,7 @@ export const Panel = forwardRef<HTMLDivElement, PanelProps>(
             variant === "warning",
           "p-4 bg-info-50 dark:bg-dark-surface-200 text-info-900 dark:text-dark-text border border-info-200 dark:border-dark-surface-500":
             variant === "info",
-          "p-4 bg-gradient-to-br from-primary-600 to-accent-700 !text-white":
+          "p-4 bg-gradient-to-br from-primary-600 to-accent-700 text-text-inverted dark:from-dark-primary-500 dark:to-dark-primary-700 dark:text-dark-text-inverted":
             variant === "gradient",
           "p-4 bg-surface-50 dark:bg-dark-surface-100 border border-surface-200 dark:border-dark-surface-700":
             variant === "surface",

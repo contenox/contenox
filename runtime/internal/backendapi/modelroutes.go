@@ -6,14 +6,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	apiframework "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/statetype"
 )
 
-func AddModelRoutes(mux *http.ServeMux, stateService stateservice.Service) {
+func AddModelRoutes(mux *http.ServeMux, stateService stateservice.Service, defaultModels ...string) {
 	s := &service{stateService: stateService}
+	if len(defaultModels) > 0 {
+		s.defaultModel = strings.TrimSpace(defaultModels[0])
+	}
 
 	mux.HandleFunc("GET /openai/v1/models", s.listModels)
 	mux.HandleFunc("GET /openai/{chainID}/v1/models", s.listModels)
@@ -22,6 +26,7 @@ func AddModelRoutes(mux *http.ServeMux, stateService stateservice.Service) {
 
 type service struct {
 	stateService stateservice.Service
+	defaultModel string
 }
 
 type ObservedModel struct {
@@ -62,19 +67,9 @@ func (s *service) listModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	observedModels := listObservedModels(internalModels)
-	if limit < len(observedModels) {
-		observedModels = observedModels[:limit]
-	}
-
-	openAIModels := make([]OpenAIModel, len(observedModels))
-	for i, model := range observedModels {
-		openAIModels[i] = OpenAIModel{
-			ID:      model.Model,
-			Object:  "model",
-			Created: 0,
-			OwnedBy: "runtime",
-		}
+	openAIModels := OpenAIModelsFromObserved(ListObservedModels(internalModels), s.defaultModel, time.Now().Unix())
+	if limit < len(openAIModels) {
+		openAIModels = openAIModels[:limit]
 	}
 
 	response := OpenAICompatibleModelList{
@@ -100,7 +95,7 @@ func (s *service) listInternal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	models := listObservedModels(states)
+	models := ListObservedModels(states)
 	if limit < len(models) {
 		models = models[:limit]
 	}
@@ -124,7 +119,7 @@ func parseObservedModelLimit(limitStr string) (int, error) {
 	return i, nil
 }
 
-func listObservedModels(states []statetype.BackendRuntimeState) []ObservedModel {
+func ListObservedModels(states []statetype.BackendRuntimeState) []ObservedModel {
 	byName := map[string]ObservedModel{}
 
 	for _, state := range sanitizeRuntimeStates(states) {
@@ -166,6 +161,36 @@ func listObservedModels(states []statetype.BackendRuntimeState) []ObservedModel 
 	models := make([]ObservedModel, 0, len(names))
 	for _, name := range names {
 		models = append(models, byName[name])
+	}
+	return models
+}
+
+func OpenAIModelsFromObserved(observed []ObservedModel, defaultModel string, created int64) []OpenAIModel {
+	seen := map[string]struct{}{}
+	models := make([]OpenAIModel, 0, len(observed)+2)
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		models = append(models, OpenAIModel{
+			ID:      id,
+			Object:  "model",
+			Created: created,
+			OwnedBy: "runtime",
+		})
+	}
+
+	if strings.TrimSpace(defaultModel) != "" {
+		add("default")
+		add(defaultModel)
+	}
+	for _, model := range observed {
+		add(model.Model)
 	}
 	return models
 }

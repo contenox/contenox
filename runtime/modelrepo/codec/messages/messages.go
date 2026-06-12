@@ -195,6 +195,9 @@ func DecodeResponse(raw []byte, nameMap map[string]string) (modelrepo.ChatResult
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return modelrepo.ChatResult{}, fmt.Errorf("messages: decode response: %w", err)
 	}
+	if resp.StopReason == "refusal" {
+		return modelrepo.ChatResult{}, modelrepo.ErrRefused
+	}
 	if len(resp.Content) == 0 {
 		return modelrepo.ChatResult{}, fmt.Errorf("messages: empty content (stop_reason=%s)", resp.StopReason)
 	}

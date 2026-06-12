@@ -3,6 +3,8 @@ package taskengine
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/contenox/runtime/runtime/taskengine/llmretry"
@@ -251,12 +253,165 @@ type LLMExecutionConfig struct {
 	// input+output context window, not an output cap, and conflating them trips
 	// per-model output limits, e.g. Vertex Gemini 2.5 Pro's 65536 cap).
 	MaxTokens *int `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty" example:"8192"`
+	// MaxTokensTemplate stores a string max_tokens macro from chain JSON until
+	// MacroEnv expands it into MaxTokens. It is not emitted as a separate field.
+	MaxTokensTemplate string `yaml:"-" json:"-"`
 	// Shift allows the context window to slide on overflow instead of erroring.
 	Shift bool `yaml:"shift,omitempty" json:"shift,omitempty"`
 	// RetryPolicy wraps the underlying chat/prompt call with classified retry
 	// (rate-limit / server-error / timeout) and an optional model fallback.
 	// Nil or zero-value disables retry — current default. See [llmretry.Do].
 	RetryPolicy *llmretry.RetryPolicy `yaml:"retry_policy,omitempty" json:"retry_policy,omitempty"`
+}
+
+func (c *LLMExecutionConfig) UnmarshalJSON(data []byte) error {
+	type noMethods LLMExecutionConfig
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+
+	maxTokensRaw, hasMaxTokens := fields["max_tokens"]
+	delete(fields, "max_tokens")
+
+	rest, err := json.Marshal(fields)
+	if err != nil {
+		return err
+	}
+	var out noMethods
+	if err := json.Unmarshal(rest, &out); err != nil {
+		return err
+	}
+	*c = LLMExecutionConfig(out)
+
+	if !hasMaxTokens {
+		return nil
+	}
+	return c.unmarshalMaxTokens(maxTokensRaw)
+}
+
+func (c *LLMExecutionConfig) UnmarshalYAML(value *yaml.Node) error {
+	type noMethods LLMExecutionConfig
+	if value == nil {
+		return nil
+	}
+
+	var maxTokensNode *yaml.Node
+	decodeNode := value
+	if value.Kind == yaml.MappingNode {
+		clone := *value
+		clone.Content = make([]*yaml.Node, 0, len(value.Content))
+		for i := 0; i+1 < len(value.Content); i += 2 {
+			key, val := value.Content[i], value.Content[i+1]
+			if key.Value == "max_tokens" {
+				maxTokensNode = val
+				continue
+			}
+			clone.Content = append(clone.Content, key, val)
+		}
+		decodeNode = &clone
+	}
+
+	var out noMethods
+	if err := decodeNode.Decode(&out); err != nil {
+		return err
+	}
+	*c = LLMExecutionConfig(out)
+
+	if maxTokensNode == nil {
+		return nil
+	}
+	return c.unmarshalMaxTokensYAML(maxTokensNode)
+}
+
+func (c LLMExecutionConfig) MarshalJSON() ([]byte, error) {
+	type noMethods LLMExecutionConfig
+	data, err := json.Marshal(noMethods(c))
+	if err != nil {
+		return nil, err
+	}
+	fields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(c.MaxTokensTemplate) != "" {
+		b, err := json.Marshal(c.MaxTokensTemplate)
+		if err != nil {
+			return nil, err
+		}
+		fields["max_tokens"] = b
+	}
+	return json.Marshal(fields)
+}
+
+func (c *LLMExecutionConfig) unmarshalMaxTokens(raw json.RawMessage) error {
+	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "null" {
+		c.MaxTokens = nil
+		c.MaxTokensTemplate = ""
+		return nil
+	}
+
+	var n int
+	if err := json.Unmarshal(raw, &n); err == nil {
+		c.MaxTokens = &n
+		c.MaxTokensTemplate = ""
+		return nil
+	}
+
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			c.MaxTokens = nil
+			c.MaxTokensTemplate = ""
+			return nil
+		}
+		if parsed, err := strconv.Atoi(s); err == nil {
+			c.MaxTokens = &parsed
+			c.MaxTokensTemplate = ""
+			return nil
+		}
+		c.MaxTokens = nil
+		c.MaxTokensTemplate = s
+		return nil
+	}
+
+	return fmt.Errorf("max_tokens must be an integer or string macro")
+}
+
+func (c *LLMExecutionConfig) unmarshalMaxTokensYAML(value *yaml.Node) error {
+	if value == nil || value.Tag == "!!null" {
+		c.MaxTokens = nil
+		c.MaxTokensTemplate = ""
+		return nil
+	}
+
+	var n int
+	if err := value.Decode(&n); err == nil {
+		c.MaxTokens = &n
+		c.MaxTokensTemplate = ""
+		return nil
+	}
+
+	var s string
+	if err := value.Decode(&s); err == nil {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			c.MaxTokens = nil
+			c.MaxTokensTemplate = ""
+			return nil
+		}
+		if parsed, err := strconv.Atoi(s); err == nil {
+			c.MaxTokens = &parsed
+			c.MaxTokensTemplate = ""
+			return nil
+		}
+		c.MaxTokens = nil
+		c.MaxTokensTemplate = s
+		return nil
+	}
+
+	return fmt.Errorf("max_tokens must be an integer or string macro")
 }
 
 // ToolsCall configures a `tools` task — a direct, deterministic call to one tool

@@ -52,6 +52,10 @@ type TaskEvent struct {
 	ToolName     string         `json:"tool_name,omitempty"`
 	ApprovalArgs map[string]any `json:"approval_args,omitempty"`
 	ApprovalDiff string         `json:"approval_diff,omitempty"`
+
+	ToolDiffPath    string `json:"tool_diff_path,omitempty"`
+	ToolDiffOldText string `json:"tool_diff_old_text,omitempty"`
+	ToolDiffNewText string `json:"tool_diff_new_text,omitempty"`
 }
 
 type TaskEventScope struct {

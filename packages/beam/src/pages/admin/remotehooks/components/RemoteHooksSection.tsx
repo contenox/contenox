@@ -90,7 +90,7 @@ export default function RemoteHooksSection() {
           {t('remote_hooks.count', { count: hooks?.length || 0 })}
         </Span>
 
-        <div className="max-h-[600px] space-y-4 overflow-y-auto">
+        <div className="max-h-[min(600px,60vh)] space-y-4 overflow-y-auto">
           {hooks && hooks.length > 0 ? (
             hooks.map(hook => (
               <RemoteHookCard

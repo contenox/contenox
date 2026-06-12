@@ -63,7 +63,9 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 	}
 	var payload struct {
 		Data []struct {
-			ID string `json:"id"`
+			ID              string `json:"id"`
+			MaxOutputTokens int    `json:"max_output_tokens"`
+			MaxTokens       int    `json:"max_tokens"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
@@ -71,7 +73,12 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 	}
 	models := make([]modelrepo.ObservedModel, 0, len(payload.Data))
 	for _, item := range payload.Data {
-		models = append(models, inferObservedModel(item.ID))
+		model := inferObservedModel(item.ID)
+		model.MaxOutputTokens = item.MaxOutputTokens
+		if model.MaxOutputTokens <= 0 {
+			model.MaxOutputTokens = item.MaxTokens
+		}
+		models = append(models, model)
 	}
 	return models, nil
 }

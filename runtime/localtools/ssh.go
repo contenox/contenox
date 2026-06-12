@@ -374,6 +374,12 @@ func (h *SSHTools) parseSSHConfig(tools *taskengine.ToolsCall, input any) (*SSHC
 	// Handle different input types
 	switch v := input.(type) {
 	case map[string]any:
+		if err := rejectUnknownArgs("ssh.execute_remote_command", v,
+			"host", "port", "user", "password", "private_key", "private_key_file",
+			"command", "timeout", "host_key", "strict_host_key",
+		); err != nil {
+			return nil, "", err
+		}
 		// Tool call with structured parameters
 		if cmd, ok := v["command"].(string); ok {
 			command = cmd
@@ -414,8 +420,10 @@ func (h *SSHTools) parseSSHConfig(tools *taskengine.ToolsCall, input any) (*SSHC
 		return nil, "", fmt.Errorf("unsupported input type: %T", input)
 	}
 
-	// Override with tools arguments (higher priority)
-	h.applyToolsArgs(config, tools.Args)
+	// Override with static tools arguments (higher priority).
+	if tools != nil && tools.Args != nil {
+		h.applyToolsArgs(config, tools.Args)
+	}
 
 	// Validate required fields
 	if config.Host == "" {

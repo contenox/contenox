@@ -25,12 +25,13 @@ const (
 
 // anthropicClient is the shared transport for the direct Anthropic API.
 type anthropicClient struct {
-	baseURL    string
-	apiKey     string
-	modelName  string
-	httpClient *http.Client
-	canThink   bool
-	tracker    libtracker.ActivityTracker
+	baseURL         string
+	apiKey          string
+	modelName       string
+	httpClient      *http.Client
+	canThink        bool
+	maxOutputTokens int
+	tracker         libtracker.ActivityTracker
 }
 
 func chatConfigFromArgs(args []modelrepo.ChatArgument) *modelrepo.ChatConfig {
@@ -172,6 +173,7 @@ func anthropicUsesAdaptiveThinking(modelName string) bool {
 		strings.Contains(m, "claude-opus-4-7") ||
 		strings.Contains(m, "claude-opus-4-6") ||
 		strings.Contains(m, "claude-sonnet-4-6") ||
+		strings.Contains(m, "claude-fable-5") ||
 		anthropicMythos(m)
 }
 
@@ -179,12 +181,23 @@ func anthropicRequiresAdaptiveThinking(modelName string) bool {
 	m := strings.ToLower(modelName)
 	return strings.Contains(m, "claude-opus-4-8") ||
 		strings.Contains(m, "claude-opus-4-7") ||
+		strings.Contains(m, "claude-fable-5") ||
 		anthropicMythos(m)
 }
 
 func anthropicSupportsXHighEffort(modelName string) bool {
 	m := strings.ToLower(modelName)
-	return strings.Contains(m, "claude-opus-4-8") || strings.Contains(m, "claude-opus-4-7")
+	return strings.Contains(m, "claude-opus-4-8") ||
+		strings.Contains(m, "claude-opus-4-7") ||
+		strings.Contains(m, "claude-fable-5")
+}
+
+func anthropicStripsTemperatureParams(modelName string) bool {
+	m := strings.ToLower(modelName)
+	return strings.Contains(m, "claude-opus-4-7") ||
+		strings.Contains(m, "claude-opus-4-8") ||
+		strings.Contains(m, "claude-fable-5") ||
+		anthropicMythos(m)
 }
 
 func anthropicMythos(modelName string) bool {
@@ -200,6 +213,11 @@ func (c *anthropicChatClient) Chat(ctx context.Context, messages []modelrepo.Mes
 	cfg := chatConfigFromArgs(args)
 	req, nameMap := msgcodec.Build(messages, cfg)
 	req.Model = c.modelName // direct: model in body, version via header
+	if anthropicStripsTemperatureParams(c.modelName) {
+		req.Temperature = nil
+		req.TopP = nil
+	}
+	req.MaxTokens, _ = modelrepo.ClampMaxOutputTokens(req.MaxTokens, c.maxOutputTokens)
 	if c.canThink {
 		applyAnthropicThinking(&req, c.modelName, cfg)
 	}
@@ -224,6 +242,11 @@ func (c *anthropicStreamClient) Stream(ctx context.Context, messages []modelrepo
 	cfg := chatConfigFromArgs(args)
 	req, nameMap := msgcodec.Build(messages, cfg)
 	req.Model = c.modelName
+	if anthropicStripsTemperatureParams(c.modelName) {
+		req.Temperature = nil
+		req.TopP = nil
+	}
+	req.MaxTokens, _ = modelrepo.ClampMaxOutputTokens(req.MaxTokens, c.maxOutputTokens)
 	if c.canThink {
 		applyAnthropicThinking(&req, c.modelName, cfg)
 	}
@@ -289,7 +312,11 @@ func (c *anthropicPromptClient) Prompt(ctx context.Context, systemInstruction st
 		msgs = append([]modelrepo.Message{{Role: "system", Content: s}}, msgs...)
 	}
 	chat := &anthropicChatClient{anthropicClient: c.anthropicClient}
-	res, err := chat.Chat(ctx, msgs, modelrepo.WithTemperature(float64(temperature)))
+	var chatArgs []modelrepo.ChatArgument
+	if !anthropicStripsTemperatureParams(c.modelName) {
+		chatArgs = append(chatArgs, modelrepo.WithTemperature(float64(temperature)))
+	}
+	res, err := chat.Chat(ctx, msgs, chatArgs...)
 	if err != nil {
 		return "", err
 	}

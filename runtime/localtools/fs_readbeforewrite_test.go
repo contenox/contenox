@@ -130,7 +130,10 @@ func TestUnit_ReadBeforeWrite_SedAllowedAfterRangeRead(t *testing.T) {
 		"replacement": "ALPHA",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "ok", res, "read_file_range must satisfy the read-before-write contract")
+	sed, ok := res.(localtools.FsSedResult)
+	require.True(t, ok, "expected FsSedResult, got %T", res)
+	require.True(t, sed.Written, "read_file_range must satisfy the read-before-write contract")
+	require.Equal(t, 1, sed.Replacements)
 
 	got, err := os.ReadFile(filepath.Join(dir, "a.txt"))
 	require.NoError(t, err)
@@ -326,7 +329,10 @@ func TestUnit_ReadBeforeWrite_SedInvalidation(t *testing.T) {
 		"replacement": "ALPHA",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "ok", res)
+	sed, ok := res.(localtools.FsSedResult)
+	require.True(t, ok, "expected FsSedResult, got %T", res)
+	require.True(t, sed.Written)
+	require.Equal(t, 1, sed.Replacements)
 
 	// Second sed without re-read – denied
 	res, err = execTool(t, ctx, tools, "sed", map[string]any{

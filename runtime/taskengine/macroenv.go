@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,6 +19,9 @@ import (
 //   - {{toolservice:tools}}             -> JSON array of tools names
 //   - {{toolservice:tools <tools_name>}} -> JSON array of tool names for that tools
 //   - {{var:<name>}}                    -> value from context template vars (set by caller via WithTemplateVars; engine never reads env); errors if key is missing
+//   - {{var:<name>|<fallback>}}         -> value from context template vars, or fallback when the var is missing or empty
+//   - {{var:<name>|var:<fallback-name>}} -> value from context template vars, or another template var when the first is missing or empty
+//   - {{date}} or {{date:<layout>}}     -> current local date (default 2006-01-02)
 //   - {{now}} or {{now:<layout>}}       -> current time (default RFC3339; layout e.g. 2006-01-02)
 //   - {{chain:id}}                      -> chain ID of the chain being executed
 //
@@ -130,8 +134,8 @@ func (m *MacroEnv) ExecEnv(
 			}
 		}
 
-		// Expand {{var:*}} in execute_config model/provider/think so chains can use
-		// {{var:model}}, {{var:provider}}, and {{var:think}} without callers doing manual string replacement.
+		// Expand {{var:*}} in execute_config fields so chains can use caller
+		// payload values without callers doing manual string replacement.
 		if t.ExecuteConfig != nil {
 			if t.ExecuteConfig.Model != "" {
 				t.ExecuteConfig.Model, err = m.expandSpecialTemplates(ctx, &clone, allowlist, t.ExecuteConfig.Model)
@@ -150,6 +154,18 @@ func (m *MacroEnv) ExecEnv(
 				if err != nil {
 					return nil, DataTypeAny, nil, fmt.Errorf("task %s: execute_config.think macro error: %w", t.ID, err)
 				}
+			}
+			if t.ExecuteConfig.MaxTokensTemplate != "" {
+				expanded, err := m.expandSpecialTemplates(ctx, &clone, allowlist, t.ExecuteConfig.MaxTokensTemplate)
+				if err != nil {
+					return nil, DataTypeAny, nil, fmt.Errorf("task %s: execute_config.max_tokens macro error: %w", t.ID, err)
+				}
+				maxTokens, err := parseMacroInt("max_tokens", expanded)
+				if err != nil {
+					return nil, DataTypeAny, nil, fmt.Errorf("task %s: execute_config.max_tokens macro error: %w", t.ID, err)
+				}
+				t.ExecuteConfig.MaxTokens = maxTokens
+				t.ExecuteConfig.MaxTokensTemplate = ""
 			}
 		}
 	}
@@ -223,14 +239,21 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, al
 			return original, nil
 		}
 	case "var":
+		name, fallback, hasFallback := splitVarPayload(payload)
 		vars, err := TemplateVarsFromContext(ctx)
 		if err != nil {
-			return "", fmt.Errorf("{{var:%s}}: %w", payload, err)
+			if hasFallback {
+				return resolveVarFallback(nil, fallback)
+			}
+			return "", fmt.Errorf("{{var:%s}}: %w", name, err)
 		}
-		if v, ok := vars[payload]; ok {
+		if v, ok := lookupTemplateVar(vars, name); ok && v != "" {
 			return v, nil
 		}
-		return "", fmt.Errorf("template var %q is not set", payload)
+		if hasFallback {
+			return resolveVarFallback(vars, fallback)
+		}
+		return "", fmt.Errorf("template var %q is not set", name)
 	case "host":
 		switch payload {
 		case "os":
@@ -243,6 +266,12 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, al
 		default:
 			return original, nil
 		}
+	case "date":
+		layout := "2006-01-02"
+		if payload != "" {
+			layout = payload
+		}
+		return time.Now().Format(layout), nil
 	case "now":
 		layout := time.RFC3339
 		if payload != "" {
@@ -262,6 +291,62 @@ func (m *MacroEnv) expandOne(ctx context.Context, chain *TaskChainDefinition, al
 	default:
 		return original, nil
 	}
+}
+
+func splitVarPayload(payload string) (name, fallback string, hasFallback bool) {
+	parts := strings.SplitN(payload, "|", 2)
+	name = strings.TrimSpace(parts[0])
+	if len(parts) == 2 {
+		return name, strings.TrimSpace(parts[1]), true
+	}
+	return name, "", false
+}
+
+func resolveVarFallback(vars map[string]string, fallback string) (string, error) {
+	fallback = strings.TrimSpace(fallback)
+	if strings.HasPrefix(fallback, "var:") {
+		name := strings.TrimSpace(strings.TrimPrefix(fallback, "var:"))
+		if v, ok := lookupTemplateVar(vars, name); ok && v != "" {
+			return v, nil
+		}
+		return "", fmt.Errorf("template fallback var %q is not set", name)
+	}
+	return fallback, nil
+}
+
+func lookupTemplateVar(vars map[string]string, name string) (string, bool) {
+	if vars == nil {
+		return "", false
+	}
+	name = strings.TrimSpace(name)
+	if v, ok := vars[name]; ok {
+		return v, true
+	}
+	switch {
+	case strings.Contains(name, "-"):
+		v, ok := vars[strings.ReplaceAll(name, "-", "_")]
+		return v, ok
+	case strings.Contains(name, "_"):
+		v, ok := vars[strings.ReplaceAll(name, "_", "-")]
+		return v, ok
+	default:
+		return "", false
+	}
+}
+
+func parseMacroInt(field, value string) (*int, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return nil, fmt.Errorf("%s must expand to an integer, got %q", field, value)
+	}
+	if n < 0 {
+		return nil, fmt.Errorf("%s must be non-negative, got %d", field, n)
+	}
+	return &n, nil
 }
 
 // containsAll reports whether names contains every required entry.

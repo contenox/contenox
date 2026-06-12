@@ -10,11 +10,12 @@ import (
 )
 
 type OllamaPromptClient struct {
-	ollamaClient  *ollamaHTTPClient
-	modelName     string
-	backendURL    string
-	supportsThink bool
-	tracker       libtracker.ActivityTracker
+	ollamaClient    *ollamaHTTPClient
+	modelName       string
+	backendURL      string
+	maxOutputTokens int
+	supportsThink   bool
+	tracker         libtracker.ActivityTracker
 }
 
 // Prompt implements LLMPromptExecClient interface
@@ -35,7 +36,7 @@ func (o *OllamaPromptClient) Prompt(ctx context.Context, systemInstruction strin
 		Prompt:  prompt,
 		System:  systemInstruction,
 		Stream:  &stream,
-		Options: buildOllamaOptions(config),
+		Options: buildOllamaOptions(config, o.maxOutputTokens),
 		Think:   think,
 	}
 

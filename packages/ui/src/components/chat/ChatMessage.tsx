@@ -30,13 +30,13 @@ function defaultAvatarLetter(role: ChatMessageBaseProps["role"]): string {
 function avatarRingClass(role: ChatMessageBaseProps["role"]): string {
   switch (role) {
     case "user":
-      return "bg-primary-600 text-white";
+      return "bg-primary-600 text-text-inverted dark:bg-dark-primary-600 dark:text-dark-text-inverted";
     case "system":
-      return "bg-accent-600 text-white";
+      return "bg-accent-600 text-text-inverted dark:bg-dark-accent-600 dark:text-dark-text";
     case "tool":
-      return "bg-secondary-600 text-white";
+      return "bg-secondary-600 text-text-inverted dark:bg-dark-secondary-600 dark:text-dark-text";
     default:
-      return "bg-secondary-600 text-white";
+      return "bg-secondary-600 text-text-inverted dark:bg-dark-secondary-600 dark:text-dark-text";
   }
 }
 
@@ -214,13 +214,15 @@ export function ChatMessage({
                   type="button"
                   aria-label={
                     copied
-                      ? (copiedLabel != null ? String(copiedLabel) : "Copied")
-                      : (copyLabel != null ? String(copyLabel) : "Copy")
+                      ? copiedLabel != null
+                        ? String(copiedLabel)
+                        : "Copied"
+                      : copyLabel != null
+                        ? String(copyLabel)
+                        : "Copy"
                   }
                 >
-                  {copied
-                    ? (copiedLabel ?? "Copied!")
-                    : (copyLabel ?? "Copy")}
+                  {copied ? (copiedLabel ?? "Copied!") : (copyLabel ?? "Copy")}
                 </Button>
               )}
               {secondaryActions}
@@ -319,13 +321,15 @@ export function ChatMessage({
                   type="button"
                   aria-label={
                     copied
-                      ? (copiedLabel != null ? String(copiedLabel) : "Copied")
-                      : (copyLabel != null ? String(copyLabel) : "Copy")
+                      ? copiedLabel != null
+                        ? String(copiedLabel)
+                        : "Copied"
+                      : copyLabel != null
+                        ? String(copyLabel)
+                        : "Copy"
                   }
                 >
-                  {copied
-                    ? (copiedLabel ?? "Copied!")
-                    : (copyLabel ?? "Copy")}
+                  {copied ? (copiedLabel ?? "Copied!") : (copyLabel ?? "Copy")}
                 </Button>
               )}
               {secondaryActions}

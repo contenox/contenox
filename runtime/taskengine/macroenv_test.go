@@ -3,6 +3,7 @@ package taskengine_test
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/getkin/kin-openapi/openapi3"
+	"gopkg.in/yaml.v3"
 )
 
 // stubToolsRepo is a minimal ToolsRepo for macro expansion tests.
@@ -318,6 +320,16 @@ func TestUnit_MacroEnv_HostFacts_AutoAppendedAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestUnit_MacroEnv_DateMacro_ExpandsToDateOnly(t *testing.T) {
+	out := runSysInstrExpand(t, fsAndShellRepo(), "today={{date}} custom={{date:2006/01/02}}", []string{})
+	if !regexp.MustCompile(`today=\d{4}-\d{2}-\d{2}`).MatchString(out) {
+		t.Fatalf("{{date}} not expanded to YYYY-MM-DD: %s", out)
+	}
+	if !regexp.MustCompile(`custom=\d{4}/\d{2}/\d{2}`).MatchString(out) {
+		t.Fatalf("{{date:<layout>}} not expanded with custom layout: %s", out)
+	}
+}
+
 type execConfigThinkEnv struct{}
 
 func (n *execConfigThinkEnv) ExecEnv(_ context.Context, chain *taskengine.TaskChainDefinition, input any, _ taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
@@ -374,5 +386,198 @@ func TestUnit_MacroEnv_ExecuteConfigThink_MissingVarErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "execute_config.think macro error") {
 		t.Fatalf("error = %q, want execute_config.think macro context", err.Error())
+	}
+}
+
+func TestUnit_MacroEnv_VarFallbackCanReferenceAnotherVar(t *testing.T) {
+	ctx := taskengine.WithTemplateVars(libtracker.WithNewRequestID(context.Background()), map[string]string{
+		"model": "primary-model",
+	})
+	env, err := taskengine.NewMacroEnv(&noopEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := newMacroChain("{{var:alt_model|var:model}}", nil)
+
+	raw, _, _, err := env.ExecEnv(ctx, chain, "", taskengine.DataTypeString)
+	if err != nil {
+		t.Fatalf("ExecEnv: %v", err)
+	}
+	if raw != "primary-model" {
+		t.Fatalf("fallback var expansion = %v, want primary-model", raw)
+	}
+}
+
+func TestUnit_MacroEnv_VarFallbackSupportsHyphenAlias(t *testing.T) {
+	ctx := taskengine.WithTemplateVars(libtracker.WithNewRequestID(context.Background()), map[string]string{
+		"alt_model": "small-model",
+	})
+	env, err := taskengine.NewMacroEnv(&noopEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := newMacroChain("{{var:model|var:alt-model}}", nil)
+
+	raw, _, _, err := env.ExecEnv(ctx, chain, "", taskengine.DataTypeString)
+	if err != nil {
+		t.Fatalf("ExecEnv: %v", err)
+	}
+	if raw != "small-model" {
+		t.Fatalf("hyphen fallback var expansion = %v, want small-model", raw)
+	}
+}
+
+func TestUnit_MacroEnv_VarFallbackMissingReferenceErrors(t *testing.T) {
+	env, err := taskengine.NewMacroEnv(&noopEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := newMacroChain("{{var:alt_model|var:model}}", nil)
+
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "", taskengine.DataTypeString)
+	if err == nil {
+		t.Fatal("missing fallback var should error")
+	}
+	if !strings.Contains(err.Error(), "template fallback var") {
+		t.Fatalf("error = %q, want fallback var context", err.Error())
+	}
+}
+
+type execConfigMaxTokensEnv struct{}
+
+func (n *execConfigMaxTokensEnv) ExecEnv(_ context.Context, chain *taskengine.TaskChainDefinition, input any, _ taskengine.DataType) (any, taskengine.DataType, []taskengine.CapturedStateUnit, error) {
+	if len(chain.Tasks) > 0 && chain.Tasks[0].ExecuteConfig != nil && chain.Tasks[0].ExecuteConfig.MaxTokens != nil {
+		return *chain.Tasks[0].ExecuteConfig.MaxTokens, taskengine.DataTypeInt, nil, nil
+	}
+	return -1, taskengine.DataTypeInt, nil, nil
+}
+
+func maxTokensMacroChain(t *testing.T) *taskengine.TaskChainDefinition {
+	t.Helper()
+	raw := `{
+  "id": "test-chain",
+  "tasks": [
+    {
+      "id": "task1",
+      "handler": "chat_completion",
+      "execute_config": {
+        "model": "test",
+        "max_tokens": "{{var:max_tokens|256}}"
+      },
+      "transition": {
+        "branches": [
+          {"operator": "default", "goto": "end"}
+        ]
+      }
+    }
+  ]
+}`
+	var chain taskengine.TaskChainDefinition
+	if err := json.Unmarshal([]byte(raw), &chain); err != nil {
+		t.Fatalf("unmarshal chain with max_tokens macro: %v", err)
+	}
+	if got := chain.Tasks[0].ExecuteConfig.MaxTokensTemplate; got != "{{var:max_tokens|256}}" {
+		t.Fatalf("MaxTokensTemplate = %q, want macro", got)
+	}
+	encoded, err := json.Marshal(&chain)
+	if err != nil {
+		t.Fatalf("marshal chain: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"max_tokens":"{{var:max_tokens|256}}"`) {
+		t.Fatalf("marshal did not preserve max_tokens macro: %s", encoded)
+	}
+	return &chain
+}
+
+func TestUnit_MacroEnv_ExecuteConfigMaxTokens_ExpandsYAMLTemplateVar(t *testing.T) {
+	rawChain := `
+id: test-chain
+tasks:
+  - id: task1
+    handler: chat_completion
+    execute_config:
+      model: test
+      max_tokens: "{{var:max_tokens|512}}"
+    transition:
+      branches:
+        - operator: default
+          goto: end
+`
+	var chain taskengine.TaskChainDefinition
+	if err := yaml.Unmarshal([]byte(rawChain), &chain); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	if got := chain.Tasks[0].ExecuteConfig.MaxTokensTemplate; got != "{{var:max_tokens|512}}" {
+		t.Fatalf("MaxTokensTemplate = %q, want macro", got)
+	}
+
+	env, err := taskengine.NewMacroEnv(&execConfigMaxTokensEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	ctx := taskengine.WithTemplateVars(libtracker.WithNewRequestID(context.Background()), map[string]string{"max_tokens": "2048"})
+
+	raw, _, _, err := env.ExecEnv(ctx, &chain, "", taskengine.DataTypeString)
+	if err != nil {
+		t.Fatalf("ExecEnv: %v", err)
+	}
+	if raw != 2048 {
+		t.Fatalf("expanded yaml max_tokens = %v, want 2048", raw)
+	}
+}
+
+func TestUnit_MacroEnv_ExecuteConfigMaxTokens_ExpandsTemplateVar(t *testing.T) {
+	env, err := taskengine.NewMacroEnv(&execConfigMaxTokensEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := maxTokensMacroChain(t)
+	ctx := taskengine.WithTemplateVars(libtracker.WithNewRequestID(context.Background()), map[string]string{"max_tokens": "64"})
+
+	raw, _, _, err := env.ExecEnv(ctx, chain, "", taskengine.DataTypeString)
+	if err != nil {
+		t.Fatalf("ExecEnv: %v", err)
+	}
+	if raw != 64 {
+		t.Fatalf("expanded max_tokens = %v, want 64", raw)
+	}
+	if chain.Tasks[0].ExecuteConfig.MaxTokens != nil {
+		t.Fatalf("MacroEnv mutated original chain MaxTokens: %#v", chain.Tasks[0].ExecuteConfig.MaxTokens)
+	}
+	if chain.Tasks[0].ExecuteConfig.MaxTokensTemplate != "{{var:max_tokens|256}}" {
+		t.Fatalf("MacroEnv mutated original chain MaxTokensTemplate: %q", chain.Tasks[0].ExecuteConfig.MaxTokensTemplate)
+	}
+}
+
+func TestUnit_MacroEnv_ExecuteConfigMaxTokens_UsesFallback(t *testing.T) {
+	env, err := taskengine.NewMacroEnv(&execConfigMaxTokensEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := maxTokensMacroChain(t)
+
+	raw, _, _, err := env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, "", taskengine.DataTypeString)
+	if err != nil {
+		t.Fatalf("ExecEnv: %v", err)
+	}
+	if raw != 256 {
+		t.Fatalf("fallback max_tokens = %v, want 256", raw)
+	}
+}
+
+func TestUnit_MacroEnv_ExecuteConfigMaxTokens_InvalidVarErrors(t *testing.T) {
+	env, err := taskengine.NewMacroEnv(&execConfigMaxTokensEnv{}, nil)
+	if err != nil {
+		t.Fatalf("NewMacroEnv: %v", err)
+	}
+	chain := maxTokensMacroChain(t)
+	ctx := taskengine.WithTemplateVars(libtracker.WithNewRequestID(context.Background()), map[string]string{"max_tokens": "many"})
+
+	_, _, _, err = env.ExecEnv(ctx, chain, "", taskengine.DataTypeString)
+	if err == nil {
+		t.Fatal("invalid max_tokens template var should error")
+	}
+	if !strings.Contains(err.Error(), "execute_config.max_tokens macro error") {
+		t.Fatalf("error = %q, want execute_config.max_tokens macro context", err.Error())
 	}
 }

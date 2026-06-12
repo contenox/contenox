@@ -22,7 +22,7 @@ export const LayoutControls: React.FC<LayoutControlsProps> = ({
         aria-label="Horizontal layout"
         className={`${
           direction === "horizontal"
-            ? "bg-primary-500 dark:bg-dark-primary-500 text-white hover:bg-primary-600 dark:hover:bg-dark-primary-600"
+            ? "bg-primary-500 text-text-inverted hover:bg-primary-600 dark:bg-dark-primary-500 dark:text-dark-text-inverted dark:hover:bg-dark-primary-600"
             : "bg-surface-100 dark:bg-dark-surface-100 text-text dark:text-dark-text hover:bg-surface-200 dark:hover:bg-dark-surface-200"
         }`}
       >
@@ -35,7 +35,7 @@ export const LayoutControls: React.FC<LayoutControlsProps> = ({
         aria-label="Vertical layout"
         className={`${
           direction === "vertical"
-            ? "bg-primary-500 dark:bg-dark-primary-500 text-white hover:bg-primary-600 dark:hover:bg-dark-primary-600"
+            ? "bg-primary-500 text-text-inverted hover:bg-primary-600 dark:bg-dark-primary-500 dark:text-dark-text-inverted dark:hover:bg-dark-primary-600"
             : "bg-surface-100 dark:bg-dark-surface-100 text-text dark:text-dark-text hover:bg-surface-200 dark:hover:bg-dark-surface-200"
         }`}
       >

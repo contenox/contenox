@@ -28,6 +28,7 @@ type ChatDeps struct {
 	DefaultProvider    string
 	AltDefaultModel    string
 	AltDefaultProvider string
+	DefaultMaxTokens   string
 	DefaultThink       string
 }
 
@@ -311,6 +312,9 @@ func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.deps.AltDefaultProvider != "" {
 		templateVars["alt_provider"] = h.deps.AltDefaultProvider
+	}
+	if h.deps.DefaultMaxTokens != "" {
+		templateVars["max_tokens"] = h.deps.DefaultMaxTokens
 	}
 	if think != "" {
 		templateVars["think"] = think

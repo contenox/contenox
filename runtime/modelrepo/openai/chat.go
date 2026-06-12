@@ -46,6 +46,7 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 
 	if openAIUsesResponsesEndpoint(c.modelName) {
 		req, nameMap := buildOpenAIResponsesRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
+		c.clampResponsesMaxOutputTokens(&req)
 		var response openAIResponse
 		if err := c.sendRequest(ctx, "/responses", req, &response); err != nil {
 			reportErr(err)
@@ -61,6 +62,7 @@ func (c *OpenAIChatClient) Chat(ctx context.Context, messages []modelrepo.Messag
 	}
 
 	req, nameMap := buildOpenAIRequestWithCapabilities(c.modelName, messages, args, c.supportsThink)
+	c.clampChatMaxOutputTokens(&req)
 	var response openAIChatCompletionResponse
 
 	if err := c.sendRequest(ctx, "/chat/completions", req, &response); err != nil {

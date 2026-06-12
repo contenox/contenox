@@ -51,12 +51,13 @@ type busStackTrace struct {
 
 func (s *busStackTrace) RecordStep(step CapturedStateUnit) {
 	s.inner.RecordStep(step)
+	published := sanitizeCapturedStateForPersistence(step)
 
 	reportErr, _, end := s.tracker.Start(s.ctx, "publish_step", "state_bus",
 		"subject", s.subject, "task_id", step.TaskID)
 	defer end()
 
-	data, err := json.Marshal(step)
+	data, err := json.Marshal(published)
 	if err != nil {
 		reportErr(err)
 		return

@@ -80,7 +80,7 @@ func TestPutCLIConfigAllowsExplicitEmptyWorkspaceValues(t *testing.T) {
 	mux := http.NewServeMux()
 	AddSetupRoutes(mux, svc, nil)
 
-	req := httptest.NewRequest(http.MethodPut, "/cli-config", strings.NewReader(`{"default-chain":"","hitl-policy-name":""}`))
+	req := httptest.NewRequest(http.MethodPut, "/cli-config", strings.NewReader(`{"default-chain":"","hitl-policy-name":"","default-max-tokens":"8192"}`))
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
@@ -88,8 +88,10 @@ func TestPutCLIConfigAllowsExplicitEmptyWorkspaceValues(t *testing.T) {
 	require.True(t, svc.setCalled)
 	require.NotNil(t, svc.setPatch.DefaultChain)
 	require.NotNil(t, svc.setPatch.HITLPolicyName)
+	require.NotNil(t, svc.setPatch.DefaultMaxTokens)
 	require.Equal(t, "", *svc.setPatch.DefaultChain)
 	require.Equal(t, "", *svc.setPatch.HITLPolicyName)
+	require.Equal(t, "8192", *svc.setPatch.DefaultMaxTokens)
 
 	var got putCLIConfigResponse
 	require.NoError(t, json.NewDecoder(rr.Body).Decode(&got))

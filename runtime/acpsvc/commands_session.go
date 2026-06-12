@@ -64,9 +64,18 @@ func (t *Transport) handleCompact(ctx context.Context, _ libacp.SessionID, sess 
 	}
 
 	templateVars := map[string]string{
-		"model":    t.model(),
-		"provider": t.provider(),
+		"model":    sess.modelOrDefault(t.model()),
+		"provider": sess.providerOrDefault(t.provider()),
 		"chain":    chain.ID,
+	}
+	if altModel := t.altModel(); altModel != "" {
+		templateVars["alt_model"] = altModel
+	}
+	if altProvider := t.altProvider(); altProvider != "" {
+		templateVars["alt_provider"] = altProvider
+	}
+	if maxTokens := t.maxTokens(); maxTokens != "" {
+		templateVars["max_tokens"] = maxTokens
 	}
 	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
 

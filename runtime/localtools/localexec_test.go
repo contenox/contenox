@@ -34,7 +34,8 @@ func TestUnit_LocalExecTools_CapWriterAppliesRegardlessOfRunner(t *testing.T) {
 	assert.False(t, res.Success, "output over budget must fail regardless of which backend produced it")
 	assert.Equal(t, -1, res.ExitCode)
 	assert.Contains(t, res.Error, "context budget")
-	assert.Empty(t, res.Stdout)
+	// capWriter returns the clean head of the stream, not empty.
+	assert.NotEmpty(t, res.Stdout)
 }
 
 type budgetSignalRunner struct{}
@@ -154,6 +155,16 @@ func TestUnit_LocalExecTools_GetToolsForToolsByName_ContextPolicy_Description(t 
 	assert.Contains(t, desc, "git")
 	assert.Contains(t, desc, "ls")
 	assert.Contains(t, desc, "rm")
+
+	params, ok := tools[0].Function.Parameters.(map[string]interface{})
+	require.True(t, ok)
+	props, ok := params["properties"].(map[string]interface{})
+	require.True(t, ok)
+	shellProp, ok := props["shell"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "boolean", shellProp["type"])
+	assert.NotContains(t, shellProp, "enum", "Gemini rejects boolean enum values in tool declarations")
+	assert.Contains(t, shellProp["description"], "Omit or set false")
 }
 
 func TestUnit_LocalExecTools_Exec_ContextPolicy_Enforced(t *testing.T) {
@@ -213,6 +224,45 @@ func TestUnit_LocalExecTools_Exec_Success(t *testing.T) {
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "hello world", res.Stdout)
 	assert.GreaterOrEqual(t, res.DurationSeconds, 0.0)
+}
+
+func TestUnit_LocalExecTools_Exec_AcceptsJSONDecodedArgsArray(t *testing.T) {
+	ctx := context.Background()
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
+
+	out, dt, err := h.Exec(ctx, time.Now().UTC(), map[string]any{
+		"command": "echo",
+		"args":    []any{"json", "array"},
+	}, false, &taskengine.ToolsCall{Name: "local_shell"})
+	require.NoError(t, err)
+	assert.Equal(t, taskengine.DataTypeJSON, dt)
+	res, ok := out.(*localtools.LocalExecResult)
+	require.True(t, ok)
+	assert.True(t, res.Success)
+	assert.Equal(t, "json array", res.Stdout)
+}
+
+func TestUnit_LocalExecTools_Exec_RejectsUnknownArgs(t *testing.T) {
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
+
+	_, _, err := h.Exec(context.Background(), time.Now().UTC(), map[string]any{
+		"command": "echo",
+		"argv":    "hello",
+	}, false, &taskengine.ToolsCall{Name: "local_shell"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown argument")
+	assert.Contains(t, err.Error(), "argv")
+}
+
+func TestUnit_LocalExecTools_Exec_RejectsNonStringArgsArrayItem(t *testing.T) {
+	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
+
+	_, _, err := h.Exec(context.Background(), time.Now().UTC(), map[string]any{
+		"command": "echo",
+		"args":    []any{"ok", 123},
+	}, false, &taskengine.ToolsCall{Name: "local_shell"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "args[1] must be a string")
 }
 
 func TestUnit_LocalExecTools_Exec_Success_InputAsStdin(t *testing.T) {

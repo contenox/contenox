@@ -8,12 +8,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/contenox/runtime/libacp"
+	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/acpsvc"
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/internal/updatecheck"
 	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -159,6 +162,12 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 
 	defaultModel := acpsvc.ReadConfigValue(ctx, db, "default-model")
 	defaultProvider := acpsvc.ReadConfigValue(ctx, db, "default-provider")
+	defaultAltModel := acpsvc.ReadConfigValue(ctx, db, "default-alt-model")
+	defaultAltProvider := acpsvc.ReadConfigValue(ctx, db, "default-alt-provider")
+	defaultMaxTokens, err := normalizeMaxTokensConfig(acpsvc.ReadConfigValue(ctx, db, "default-max-tokens"))
+	if err != nil {
+		return err
+	}
 	defaultThink := reasoning.Default
 	if configuredThink := acpsvc.ReadConfigValue(ctx, db, "default-think"); configuredThink != "" {
 		level, err := reasoning.Normalize(configuredThink)
@@ -208,15 +217,20 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	// the "Setup Contenox" terminal auth method (`acp --setup`) to configure one.
 	// Session creation returns an actionable error until then (see acpsvc).
 	var engine *enginesvc.Engine
+	if err := acpsvc.CleanupStaleACPManagedMCPServers(ctx, db); err != nil {
+		return fmt.Errorf("cleanup stale ACP MCP servers: %w", err)
+	}
 	if defaultModel == "" {
 		fmt.Fprintln(os.Stderr, "contenox acp: no default-model configured; serving setup-only. Run the \"Setup Contenox\" auth method or `contenox acp --setup` to configure a provider and model.")
 	} else {
 		cfg := enginesvc.Config{
-			DefaultModel:    defaultModel,
-			DefaultProvider: defaultProvider,
-			LocalTools:      tools,
-			Tracker:         tracker,
-			WorkspaceID:     workspaceID,
+			DefaultModel:       defaultModel,
+			DefaultProvider:    defaultProvider,
+			AltDefaultModel:    defaultAltModel,
+			AltDefaultProvider: defaultAltProvider,
+			LocalTools:         tools,
+			Tracker:            tracker,
+			WorkspaceID:        workspaceID,
 		}
 		if enableHITL {
 			cfg.EnableHITL = true
@@ -232,17 +246,23 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		defer engine.Stop()
 	}
 
+	updateBanner := acpUpdateBanner(dbCtx, db, contenoxDir)
+
 	transportFactory := acpsvc.New(acpsvc.Deps{
 		Engine:                engine,
 		DB:                    db,
 		ChainRegistry:         chains,
 		DefaultModel:          defaultModel,
 		DefaultProvider:       defaultProvider,
+		DefaultAltModel:       defaultAltModel,
+		DefaultAltProvider:    defaultAltProvider,
+		DefaultMaxTokens:      defaultMaxTokens,
 		DefaultThink:          defaultThink,
 		WorkspaceID:           workspaceID,
 		ContenoxDir:           contenoxDir,
 		KnownPolicies:         embeddedPolicyNames(),
 		HITLDefaultPolicyName: profile.hitlPolicy,
+		UpdateBanner:          updateBanner,
 	})
 
 	conn := libacp.NewAgentSideConnection(acpStdio{}, func(c *libacp.AgentSideConnection) libacp.Agent {
@@ -267,4 +287,39 @@ func acpPolicySource() hitlservice.PolicySource {
 		return hitlservice.NewFSPolicySource()
 	}
 	return hitlservice.NewFSPolicySource(filepath.Join(home, ".contenox"))
+}
+
+// acpUpdateBanner checks for a newer contenox version and returns a one-line
+// banner to surface in the ACP session, or "" when no update is available or
+// the user has opted out via `contenox config set update-check false`.
+// The check is non-blocking: it waits at most 500 ms so a cache hit is instant
+// and a slow network call is silently skipped (will appear next session from cache).
+func acpUpdateBanner(ctx context.Context, db libdb.DBManager, contenoxDir string) string {
+	if acpsvc.ReadConfigValue(ctx, db, "update-check") == "false" {
+		return ""
+	}
+
+	type result struct {
+		tag       string
+		available bool
+	}
+	ch := make(chan result, 1)
+	go func() {
+		tag, avail, err := updatecheck.IsAvailable(ctx, CLIVersion(), contenoxDir)
+		if err != nil {
+			ch <- result{}
+			return
+		}
+		ch <- result{tag, avail}
+	}()
+
+	select {
+	case r := <-ch:
+		if !r.available {
+			return ""
+		}
+		return fmt.Sprintf("contenox %s is available (current: %s) — run `contenox update` to upgrade.", r.tag, CLIVersion())
+	case <-time.After(500 * time.Millisecond):
+		return ""
+	}
 }

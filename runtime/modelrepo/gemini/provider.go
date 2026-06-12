@@ -11,18 +11,19 @@ import (
 )
 
 type GeminiProvider struct {
-	id            string
-	apiKey        string
-	modelName     string
-	baseURL       string
-	httpClient    *http.Client
-	contextLength int
-	canChat       bool
-	canPrompt     bool
-	canEmbed      bool
-	canStream     bool
-	canThink      bool
-	tracker       libtracker.ActivityTracker
+	id              string
+	apiKey          string
+	modelName       string
+	baseURL         string
+	httpClient      *http.Client
+	contextLength   int
+	maxOutputTokens int
+	canChat         bool
+	canPrompt       bool
+	canEmbed        bool
+	canStream       bool
+	canThink        bool
+	tracker         libtracker.ActivityTracker
 }
 
 func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap modelrepo.CapabilityConfig, httpClient *http.Client, tracker libtracker.ActivityTracker) modelrepo.Provider {
@@ -39,31 +40,33 @@ func NewGeminiProvider(apiKey string, modelName string, baseURLs []string, cap m
 	id := fmt.Sprintf("gemini-%s", modelName)
 	modelName, _ = strings.CutPrefix(modelName, "models/")
 	return &GeminiProvider{
-		id:            id,
-		apiKey:        apiKey,
-		modelName:     modelName,
-		baseURL:       apiBaseURL,
-		httpClient:    httpClient,
-		contextLength: cap.ContextLength,
-		canChat:       cap.CanChat,
-		canPrompt:     cap.CanPrompt,
-		canEmbed:      cap.CanEmbed,
-		canStream:     cap.CanStream,
-		canThink:      cap.CanThink,
-		tracker:       tracker,
+		id:              id,
+		apiKey:          apiKey,
+		modelName:       modelName,
+		baseURL:         apiBaseURL,
+		httpClient:      httpClient,
+		contextLength:   cap.ContextLength,
+		maxOutputTokens: cap.MaxOutputTokens,
+		canChat:         cap.CanChat,
+		canPrompt:       cap.CanPrompt,
+		canEmbed:        cap.CanEmbed,
+		canStream:       cap.CanStream,
+		canThink:        cap.CanThink,
+		tracker:         tracker,
 	}
 }
 
 func (p *GeminiProvider) GetBackendIDs() []string { return []string{p.baseURL} }
-func (p *GeminiProvider) ModelName() string       { return p.modelName }
-func (p *GeminiProvider) GetID() string           { return p.id }
-func (p *GeminiProvider) GetType() string         { return "gemini" }
-func (p *GeminiProvider) GetContextLength() int   { return p.contextLength }
-func (p *GeminiProvider) CanChat() bool           { return p.canChat }
-func (p *GeminiProvider) CanEmbed() bool          { return p.canEmbed }
-func (p *GeminiProvider) CanStream() bool         { return p.canStream }
-func (p *GeminiProvider) CanPrompt() bool         { return p.canPrompt }
-func (p *GeminiProvider) CanThink() bool          { return p.canThink }
+func (p *GeminiProvider) ModelName() string        { return p.modelName }
+func (p *GeminiProvider) GetID() string            { return p.id }
+func (p *GeminiProvider) GetType() string          { return "gemini" }
+func (p *GeminiProvider) GetContextLength() int    { return p.contextLength }
+func (p *GeminiProvider) GetMaxOutputTokens() int  { return p.maxOutputTokens }
+func (p *GeminiProvider) CanChat() bool            { return p.canChat }
+func (p *GeminiProvider) CanEmbed() bool           { return p.canEmbed }
+func (p *GeminiProvider) CanStream() bool          { return p.canStream }
+func (p *GeminiProvider) CanPrompt() bool          { return p.canPrompt }
+func (p *GeminiProvider) CanThink() bool           { return p.canThink }
 
 func (p *GeminiProvider) GetChatConnection(ctx context.Context, backendID string) (modelrepo.LLMChatClient, error) {
 	if !p.CanChat() {
@@ -71,13 +74,14 @@ func (p *GeminiProvider) GetChatConnection(ctx context.Context, backendID string
 	}
 	return &GeminiChatClient{
 		geminiClient: geminiClient{
-			modelName:  p.modelName,
-			baseURL:    p.baseURL,
-			httpClient: p.httpClient,
-			maxTokens:  p.contextLength,
-			canThink:   p.canThink,
-			apiKey:     p.apiKey,
-			tracker:    p.tracker,
+			modelName:       p.modelName,
+			baseURL:         p.baseURL,
+			httpClient:      p.httpClient,
+			maxTokens:       p.contextLength,
+			maxOutputTokens: p.maxOutputTokens,
+			canThink:        p.canThink,
+			apiKey:          p.apiKey,
+			tracker:         p.tracker,
 		},
 	}, nil
 }
@@ -88,13 +92,14 @@ func (p *GeminiProvider) GetPromptConnection(ctx context.Context, backendID stri
 	}
 	return &GeminiPromptClient{
 		geminiClient: geminiClient{
-			modelName:  p.modelName,
-			baseURL:    p.baseURL,
-			httpClient: p.httpClient,
-			maxTokens:  p.contextLength,
-			canThink:   p.canThink,
-			apiKey:     p.apiKey,
-			tracker:    p.tracker,
+			modelName:       p.modelName,
+			baseURL:         p.baseURL,
+			httpClient:      p.httpClient,
+			maxTokens:       p.contextLength,
+			maxOutputTokens: p.maxOutputTokens,
+			canThink:        p.canThink,
+			apiKey:          p.apiKey,
+			tracker:         p.tracker,
 		},
 	}, nil
 }
@@ -120,13 +125,14 @@ func (p *GeminiProvider) GetStreamConnection(ctx context.Context, backendID stri
 	}
 	return &GeminiStreamClient{
 		geminiClient: geminiClient{
-			modelName:  p.modelName,
-			baseURL:    p.baseURL,
-			httpClient: p.httpClient,
-			maxTokens:  p.contextLength,
-			canThink:   p.canThink,
-			apiKey:     p.apiKey,
-			tracker:    p.tracker,
+			modelName:       p.modelName,
+			baseURL:         p.baseURL,
+			httpClient:      p.httpClient,
+			maxTokens:       p.contextLength,
+			maxOutputTokens: p.maxOutputTokens,
+			canThink:        p.canThink,
+			apiKey:          p.apiKey,
+			tracker:         p.tracker,
 		},
 	}, nil
 }

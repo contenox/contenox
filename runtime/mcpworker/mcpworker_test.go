@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,6 +183,29 @@ func TestUnit_MCPWorker_StopNonExistentWorker(t *testing.T) {
 	assert.NotContains(t, mgr.ActiveWorkers(), "ghost-server")
 }
 
+func TestUnit_MCPWorker_ListToolsFailureCooldownSkipsImmediateRetry(t *testing.T) {
+	ctx := t.Context()
+	bus := libbus.NewInMem()
+	mgr := newTestManager(ctx, t, bus)
+	srv := fakeMCPServer("cooldown-server")
+	require.NoError(t, mgr.StartWorker(ctx, srv))
+
+	replyData, err := bus.Request(ctx, mcpworker.SubjectListTools(srv.Name), nil)
+	require.NoError(t, err)
+	_, firstErr := mcpworker.DecodeListToolsReply(replyData)
+	require.Error(t, firstErr)
+	require.NotContains(t, firstErr.Error(), "cooling down")
+
+	replyData, err = bus.Request(ctx, mcpworker.SubjectListTools(srv.Name), nil)
+	require.NoError(t, err)
+	_, secondErr := mcpworker.DecodeListToolsReply(replyData)
+	require.Error(t, secondErr)
+	require.Contains(t, secondErr.Error(), "list-tools skipped")
+	require.Contains(t, secondErr.Error(), "cooling down")
+	require.Contains(t, secondErr.Error(), "previous failure")
+	require.True(t, strings.Contains(secondErr.Error(), firstErr.Error()) || strings.Contains(secondErr.Error(), srv.Name))
+}
+
 func contains(ss []string, s string) bool {
 	for _, v := range ss {
 		if v == s {
@@ -200,8 +224,10 @@ func TestUnit_MCPWorker_BootLoadsFromDB(t *testing.T) {
 	preloaded := []*runtimetypes.MCPServer{
 		fakeMCPServer("boot-server-a"),
 		fakeMCPServer("boot-server-b"),
+		fakeMCPServer("acp-stale"),
 	}
 	preloaded[1].ID = "00000000-0000-0000-0000-000000000002"
+	preloaded[2].ID = "00000000-0000-0000-0000-000000000003"
 
 	store := &preloadedStore{servers: preloaded}
 	mgr, err := mcpworker.New(ctx, store, bus, libtracker.NoopTracker{})
@@ -210,6 +236,7 @@ func TestUnit_MCPWorker_BootLoadsFromDB(t *testing.T) {
 	workers := mgr.ActiveWorkers()
 	assert.Contains(t, workers, "boot-server-a")
 	assert.Contains(t, workers, "boot-server-b")
+	assert.NotContains(t, workers, "acp-stale")
 }
 
 // preloadedStore returns a fixed list from ListMCPServers.

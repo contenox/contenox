@@ -7,6 +7,7 @@ import (
 	"github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
@@ -66,16 +67,35 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	}
 
 	templateVars := map[string]string{
-		"model":    t.model(),
-		"provider": t.provider(),
+		"model":    sess.modelOrDefault(t.model()),
+		"provider": sess.providerOrDefault(t.provider()),
 		"think":    sess.think(),
+	}
+	if altModel := t.altModel(); altModel != "" {
+		templateVars["alt_model"] = altModel
+	}
+	if altProvider := t.altProvider(); altProvider != "" {
+		templateVars["alt_provider"] = altProvider
+	}
+	if maxTokens := t.maxTokens(); maxTokens != "" {
+		templateVars["max_tokens"] = maxTokens
+	}
+	var toolsAllowlist []string
+	if t.deps.DB != nil {
+		var err error
+		toolsAllowlist, err = t.runtimeToolsAllowlist(promptCtx, runtimetypes.New(t.deps.DB.WithoutTransaction()), sess.McpServerNames)
+		if err != nil {
+			reportErr(err)
+			return libacp.PromptResponse{}, libacp.InternalError(err.Error())
+		}
 	}
 
 	resp, err := sess.Agent.Prompt(promptCtx, agentservice.PromptRequest{
-		SessionID:    sess.InternalSessionID,
-		Input:        input,
-		Chain:        t.deps.ChainRegistry.Default(),
-		TemplateVars: templateVars,
+		SessionID:      sess.InternalSessionID,
+		Input:          input,
+		Chain:          t.deps.ChainRegistry.Default(),
+		TemplateVars:   templateVars,
+		ToolsAllowlist: toolsAllowlist,
 	})
 	if err != nil {
 		cancelled := (resp != nil && resp.StopReason == agentservice.StopCancelled) ||
