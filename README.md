@@ -1,13 +1,19 @@
 # Contenox
-**A local runtime for packaged, auditable AI workflows.**
+**AI workflows you can run, review, and own.**
+
+Contenox is an open-source, local-first AI workflow runtime for developers. It
+turns repeatable coding and tool workflows into versioned Chains: files that
+declare prompts, model/provider routing, tool allowlists, retries, branches,
+budgets, and human approval gates. Run the same workflow from the CLI, VS Code,
+or any ACP-compatible client, using local models, Ollama, or hosted providers
+while sessions, config, telemetry, and runtime state stay on your machine.
 
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/contenox/runtime?label=version&logo=github)](https://github.com/contenox/runtime/releases)
 
-Contenox is an Apache 2 runtime for turning repeatable knowledge/tool workflows into versioned chains. A chain makes the important parts explicit: system prompts, model routing, tool allowlists, retries, pauses, branch conditions, and human approval gates. Edit it, review it, commit it, and run it on your machine with the models and tools you choose.
-
-The useful unit is a known workflow with examples, tools, acceptance rules, and review points, not a vague promise of fully delegated work.
+It is built for specific, reviewable AI work, not vague promises of fully
+autonomous agents.
 
 📖 **[contenox.com](https://contenox.com)**
 
@@ -39,20 +45,6 @@ contenox chat -e                        # open $EDITOR to compose a prompt
 ```
 
 That's it. No API key, no external server, no `backend add` ceremony — `init` registers the local llama.cpp backend pointed at `~/.contenox/models/`, `model pull` populates it. Resume past sessions with `contenox session list` and `contenox session switch <name>`. To use a cloud provider instead, see [Backends](#backends) below.
-
----
-
-## Local UI
-
-Start the local HTTP server and Beam UI:
-
-```bash
-contenox serve
-```
-
-By default it listens on `127.0.0.1:32123` and serves the UI at the printed URL.
-Use `PORT=32125 contenox serve` or `ADDR=127.0.0.1 PORT=32125 contenox serve`
-to override the bind address.
 
 ---
 
@@ -135,6 +127,21 @@ Gate: shell/filesystem approval and human merge
 ```
 
 State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Anthropic, Mistral, Gemini, AWS Bedrock, vLLM, Vertex (Gemini), or in-process llama.cpp. Use a cloud model, a local server, or a local GGUF model depending on the workflow and data boundary.
+
+---
+
+## Where it fits
+
+Contenox is the agent layer you control from terminal to editor. The category is
+local-first AI workflow runtime; the architecture is developer agent runtime.
+
+| Nearby world | Why Contenox is different |
+|--------------|---------------------------|
+| Cursor / IDE copilots | Runtime-first, not editor-first. The same engine works from the terminal, VS Code, and ACP clients. |
+| Aider / CLI coding agents | Broader workflow, session, tool policy, and provider scope than a single coding loop. |
+| LangChain / agent frameworks | End-user executable product, not just a library you wire into an app. |
+| Dify / n8n / web AI workflow tools | Local desktop/workspace-first, not web-app/SaaS-first. |
+| Ollama wrappers | Provider-neutral and workflow/tool/HITL-oriented, with local and hosted models. |
 
 ---
 

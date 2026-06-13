@@ -95,7 +95,9 @@ func (s *service) Evaluate(ctx context.Context, toolsName, toolName string, args
 		p = defaultPolicy()
 	}
 	reportChange("policy", policyPath)
-	return evaluate(p, toolsName, toolName, args), nil
+	result := evaluate(p, toolsName, toolName, args)
+	result.PolicyName = policyPath
+	return result, nil
 }
 
 func (s *service) RequestApproval(ctx context.Context, req ApprovalRequest, sink taskengine.TaskEventSink) (bool, error) {

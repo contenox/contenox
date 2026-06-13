@@ -357,18 +357,18 @@ make test-contenox-help
 
 This rebuilds the binary and smoke-tests `contenox <command> --help` for each primary subcommand. If you maintain a second copy of this reference elsewhere, keep behavior descriptions aligned when you change defaults or chain resolution.
 
-### Check the local HTTP API
+### Check editor-facing paths
 
-After changing `contenox serve` or any `/api/*` route, run:
+After changing ACP, VS Code bridge behavior, or packaged extension metadata, run the narrow checks first:
 
 ```bash
-make test-api
+go test ./runtime/contenoxcli ./runtime/vscodeagent
+make package-vscode
 ```
 
-This builds the local binary, starts `contenox serve` with an isolated temporary
-HOME/workspace/DB, runs the recovered Python API smoke tests, and shuts the
-server down. Use `PYTEST_ARGS` to narrow the run, for example:
+For Marketplace packaging, inspect the package with the extension-local check:
 
 ```bash
-make test-api PYTEST_ARGS="-k mcp"
+cd packages/vscode
+npm run package:check -- runtime-$(tr -d '\r\n' < ../../runtime/version/version.txt).vsix
 ```

@@ -112,6 +112,7 @@ type EvaluationResult struct {
 	Reason      string // ReasonMatchedRule or ReasonDefaultAction
 	TimeoutS    int
 	OnTimeout   Action
+	PolicyName  string
 }
 
 // evaluate returns the EvaluationResult for the given tools, tool name, and call args.

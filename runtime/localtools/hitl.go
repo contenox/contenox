@@ -40,21 +40,27 @@ type AskApproval func(ctx context.Context, req hitlservice.ApprovalRequest) (boo
 // ActionDeny returns a soft denial string so the LLM can propose an alternative.
 // ActionApprove calls Ask and blocks until the human decides.
 type HITLWrapper struct {
-	inner   taskengine.ToolsRepo
-	ask     AskApproval
-	policy  hitlservice.PolicyEvaluator
-	tracker libtracker.ActivityTracker
+	inner     taskengine.ToolsRepo
+	ask       AskApproval
+	policy    hitlservice.PolicyEvaluator
+	tracker   libtracker.ActivityTracker
+	eventSink taskengine.TaskEventSink
 }
 
-func NewHITLWrapper(inner taskengine.ToolsRepo, ask AskApproval, policy hitlservice.PolicyEvaluator, tracker libtracker.ActivityTracker) *HITLWrapper {
+func NewHITLWrapper(inner taskengine.ToolsRepo, ask AskApproval, policy hitlservice.PolicyEvaluator, tracker libtracker.ActivityTracker, eventSinks ...taskengine.TaskEventSink) *HITLWrapper {
 	if tracker == nil {
 		tracker = libtracker.NoopTracker{}
 	}
+	var eventSink taskengine.TaskEventSink
+	if len(eventSinks) > 0 {
+		eventSink = eventSinks[0]
+	}
 	return &HITLWrapper{
-		inner:   inner,
-		ask:     ask,
-		policy:  policy,
-		tracker: tracker,
+		inner:     inner,
+		ask:       ask,
+		policy:    policy,
+		tracker:   tracker,
+		eventSink: eventSink,
 	}
 }
 
@@ -88,14 +94,20 @@ func (h *HITLWrapper) Exec(
 	result, err := h.policy.Evaluate(ctx, tools.Name, toolName, args)
 	if err != nil {
 		reportErr(fmt.Errorf("hitl: policy evaluation failed, denying: %w", err))
+		h.publishDecision(ctx, tools.Name, toolName, args, hitlservice.EvaluationResult{
+			Action: hitlservice.ActionDeny,
+			Reason: "policy_error",
+		}, false)
 		return DenyMessage, taskengine.DataTypeString, nil
 	}
 
 	switch result.Action {
 	case hitlservice.ActionAllow:
+		h.publishDecision(ctx, tools.Name, toolName, args, result, false)
 		return h.inner.Exec(ctx, startTime, input, debug, tools)
 
 	case hitlservice.ActionDeny:
+		h.publishDecision(ctx, tools.Name, toolName, args, result, false)
 		return DenyMessage, taskengine.DataTypeString, nil
 
 	case hitlservice.ActionApprove:
@@ -118,6 +130,7 @@ func (h *HITLWrapper) Exec(
 			DiffOld:    oldContent,
 			DiffNew:    newContent,
 		}
+		h.publishDecision(ctx, tools.Name, toolName, args, result, true)
 
 		askCtx := ctx
 		var askCancel context.CancelFunc
@@ -156,8 +169,51 @@ func (h *HITLWrapper) Exec(
 		return h.inner.Exec(ctx, startTime, input, debug, tools)
 
 	default:
+		h.publishDecision(ctx, tools.Name, toolName, args, result, false)
 		return h.inner.Exec(ctx, startTime, input, debug, tools)
 	}
+}
+
+func (h *HITLWrapper) publishDecision(ctx context.Context, toolsName, toolName string, args map[string]any, result hitlservice.EvaluationResult, approvalRequested bool) {
+	if h.eventSink == nil || !h.eventSink.Enabled() {
+		return
+	}
+	ev := taskengine.NewTaskEvent(ctx, taskengine.TaskEventHITLDecision)
+	ev.HookName = toolsName
+	ev.ToolName = toolName
+	ev.HITLAction = string(result.Action)
+	ev.HITLReason = result.Reason
+	ev.HITLPolicyName = result.PolicyName
+	ev.HITLArgsSummary = hitlArgsSummary(args)
+	ev.HITLMatchedRule = result.MatchedRule
+	ev.HITLTimeoutS = result.TimeoutS
+	ev.HITLApprovalRequested = boolPtr(approvalRequested)
+	if err := h.eventSink.PublishTaskEvent(ctx, ev); err != nil {
+		reportErr, _, end := h.tracker.Start(ctx, "publish", "hitl_decision", "tool_name", toolName)
+		reportErr(err)
+		end()
+	}
+}
+
+func hitlArgsSummary(args map[string]any) string {
+	for _, key := range []string{"path", "command", "url", "pattern"} {
+		if v, ok := args[key].(string); ok && strings.TrimSpace(v) != "" {
+			return trimHITLSummary(v)
+		}
+	}
+	return ""
+}
+
+func trimHITLSummary(s string) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	if len([]rune(s)) > 96 {
+		return string([]rune(s)[:95]) + "..."
+	}
+	return s
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 // Supports delegates to the inner repo.

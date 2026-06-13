@@ -25,6 +25,7 @@ const (
 	TaskEventChainFailed    TaskEventKind = "chain_failed"
 
 	TaskEventApprovalRequested TaskEventKind = "approval_requested"
+	TaskEventHITLDecision      TaskEventKind = "hitl_decision"
 	TaskEventToolCallPending   TaskEventKind = "tool_call_pending"
 	TaskEventToolCall          TaskEventKind = "tool_call"
 	TaskEventPrint             TaskEventKind = "print"
@@ -52,6 +53,15 @@ type TaskEvent struct {
 	ToolName     string         `json:"tool_name,omitempty"`
 	ApprovalArgs map[string]any `json:"approval_args,omitempty"`
 	ApprovalDiff string         `json:"approval_diff,omitempty"`
+
+	HITLAction            string `json:"hitl_action,omitempty"`
+	HITLReason            string `json:"hitl_reason,omitempty"`
+	HITLPolicyName        string `json:"hitl_policy_name,omitempty"`
+	HITLPolicyPath        string `json:"hitl_policy_path,omitempty"`
+	HITLArgsSummary       string `json:"hitl_args_summary,omitempty"`
+	HITLMatchedRule       *int   `json:"hitl_matched_rule,omitempty"`
+	HITLTimeoutS          int    `json:"hitl_timeout_s,omitempty"`
+	HITLApprovalRequested *bool  `json:"hitl_approval_requested,omitempty"`
 
 	ToolDiffPath    string `json:"tool_diff_path,omitempty"`
 	ToolDiffOldText string `json:"tool_diff_old_text,omitempty"`

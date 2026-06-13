@@ -32,7 +32,7 @@ func openTestDB(t *testing.T) (context.Context, libdbexec.DBManager, runtimetype
 
 func TestUnit_getConfigKV_unset_returnsEmpty(t *testing.T) {
 	ctx, _, store := openTestDB(t)
-	for _, key := range []string{"default-model", "default-provider", "default-alt-model", "default-alt-provider", "default-max-tokens", "default-think", "default-chain"} {
+	for _, key := range []string{"default-model", "default-provider", "default-alt-model", "default-alt-provider", "default-autocomplete-model", "default-autocomplete-provider", "default-max-tokens", "default-think", "default-chain"} {
 		val, err := getConfigKV(ctx, store, key)
 		require.NoError(t, err, "key=%s", key)
 		assert.Equal(t, "", val, "key=%s should be empty when not set", key)
@@ -55,13 +55,15 @@ func TestUnit_getConfigKV_allConfigKeys(t *testing.T) {
 	ctx, _, store := openTestDB(t)
 
 	pairs := map[string]string{
-		"default-model":        "phi3:3.8b",
-		"default-provider":     "ollama",
-		"default-alt-model":    "granite-3.2-2b",
-		"default-alt-provider": "local",
-		"default-max-tokens":   "8192",
-		"default-think":        "medium",
-		"default-chain":        "default-chain.json",
+		"default-model":                 "phi3:3.8b",
+		"default-provider":              "ollama",
+		"default-alt-model":             "granite-3.2-2b",
+		"default-alt-provider":          "local",
+		"default-autocomplete-model":    "mistral-code-fim-latest",
+		"default-autocomplete-provider": "mistral",
+		"default-max-tokens":            "8192",
+		"default-think":                 "medium",
+		"default-chain":                 "default-chain.json",
 	}
 	for k, v := range pairs {
 		data, _ := json.Marshal(v)

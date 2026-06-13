@@ -85,6 +85,85 @@ func TestUnit_ToolCallUpdate_ErrorMarksFailed(t *testing.T) {
 	require.Equal(t, libacp.ToolKindExecute, note.Update.Kind)
 }
 
+func TestUnit_NormalizeToolCallNotification_PromotesUnknownUpdate(t *testing.T) {
+	tr := &Transport{}
+	note := libacp.SessionNotification{
+		SessionID: "sess-1",
+		Update: libacp.SessionUpdate{
+			SessionUpdate: libacp.SessionUpdateToolCallUpdate,
+			ToolCallID:    "call-1",
+			Title:         "local_fs.read_file",
+			Kind:          libacp.ToolKindRead,
+			Status:        libacp.ToolCallStatusFailed,
+			Meta:          json.RawMessage(`{"error":"not allowed"}`),
+		},
+	}
+
+	got := tr.normalizeToolCallNotification(note)
+
+	require.Equal(t, libacp.SessionUpdateToolCall, got.Update.SessionUpdate,
+		"Zed reports 'Tool call not found' when the first notification for an id is tool_call_update")
+	require.Equal(t, "call-1", got.Update.ToolCallID)
+	require.Equal(t, "local_fs.read_file", got.Update.Title)
+	require.Equal(t, libacp.ToolKindRead, got.Update.Kind)
+	require.Equal(t, libacp.ToolCallStatusFailed, got.Update.Status)
+	require.JSONEq(t, `{"error":"not allowed"}`, string(got.Update.Meta))
+
+	next := tr.normalizeToolCallNotification(libacp.SessionNotification{
+		SessionID: "sess-1",
+		Update: libacp.SessionUpdate{
+			SessionUpdate: libacp.SessionUpdateToolCallUpdate,
+			ToolCallID:    "call-1",
+			Status:        libacp.ToolCallStatusFailed,
+		},
+	})
+	require.Equal(t, libacp.SessionUpdateToolCallUpdate, next.Update.SessionUpdate,
+		"once the id is known, normal updates should stay compact")
+}
+
+func TestUnit_NormalizeToolCallNotification_UnknownUpdateGetsSchemaFallbacks(t *testing.T) {
+	tr := &Transport{}
+	got := tr.normalizeToolCallNotification(libacp.SessionNotification{
+		SessionID: "sess-1",
+		Update: libacp.SessionUpdate{
+			SessionUpdate: libacp.SessionUpdateToolCallUpdate,
+			ToolCallID:    "orphan-result",
+			Status:        libacp.ToolCallStatusCompleted,
+			RawOutput:     json.RawMessage(`"ok"`),
+		},
+	})
+
+	require.Equal(t, libacp.SessionUpdateToolCall, got.Update.SessionUpdate)
+	require.Equal(t, "orphan-result", got.Update.Title,
+		"promoted tool_call notifications need a title for ACP clients that validate create/update shape")
+	require.Equal(t, libacp.ToolKindOther, got.Update.Kind)
+	require.JSONEq(t, `"ok"`, string(got.Update.RawOutput))
+}
+
+func TestUnit_NormalizeToolCallNotification_DoesNotDowngradeStatus(t *testing.T) {
+	tr := &Transport{}
+	inProgress := terminalAttachNotification("sess-1", "call-1", "term-1", "local_shell: go test")
+	got := tr.normalizeToolCallNotification(inProgress)
+	require.Equal(t, libacp.ToolCallStatusInProgress, got.Update.Status)
+
+	pending := tr.normalizeToolCallNotification(libacp.SessionNotification{
+		SessionID: "sess-1",
+		Update: libacp.SessionUpdate{
+			SessionUpdate: libacp.SessionUpdateToolCall,
+			ToolCallID:    "call-1",
+			Title:         "local_shell.local_shell: go test",
+			Kind:          libacp.ToolKindExecute,
+			Status:        libacp.ToolCallStatusPending,
+			RawInput:      json.RawMessage(`{"command":"go","args":["test"]}`),
+		},
+	})
+
+	require.Equal(t, libacp.SessionUpdateToolCall, pending.Update.SessionUpdate)
+	require.Equal(t, libacp.ToolCallStatusInProgress, pending.Update.Status,
+		"terminal embedding can reach the client before the pending event; later pending metadata must not rewind the card")
+	require.JSONEq(t, `{"command":"go","args":["test"]}`, string(pending.Update.RawInput))
+}
+
 func TestUnit_IsToolBearingHandler(t *testing.T) {
 	require.True(t, isToolBearingHandler(string(taskengine.HandleChatCompletion)))
 	require.True(t, isToolBearingHandler(string(taskengine.HandleExecuteToolCalls)))

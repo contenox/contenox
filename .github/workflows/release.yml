@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.vars.outputs.TAG }}
+      extension_version: ${{ steps.vars.outputs.EXTENSION_VERSION }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -18,7 +19,9 @@ jobs:
 
       - name: Extract tag
         id: vars
-        run: echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "EXTENSION_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Verify version matches tag
         run: |
@@ -35,38 +38,8 @@ jobs:
           fi
           echo "✓ Version verification passed: $VERSION_IN_FILE matches tag"
 
-  web:
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            packages/ui/package-lock.json
-            packages/beam/package-lock.json
-
-      - name: Build, test, and verify Beam UI
-        run: make build-ui test-ui verify-ui-embed
-
-      - name: Upload Beam dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: beam-dist
-          path: runtime/internal/web/beam/dist
-
   build:
-    needs: [verify, web]
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -100,12 +73,6 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
-      - name: Download Beam dist
-        uses: actions/download-artifact@v4
-        with:
-          name: beam-dist
-          path: runtime/internal/web/beam/dist
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -177,8 +144,162 @@ jobs:
           name: contenox-${{ matrix.goos }}-${{ matrix.goarch }}
           path: bin/contenox-${{ matrix.goos }}-${{ matrix.goarch }}*
 
+  vscode:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            cc: gcc
+            cxx: g++
+            smoke: true
+          - target: linux-arm64
+            os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            cc: aarch64-linux-gnu-gcc
+            cxx: aarch64-linux-gnu-g++
+            linux_arm64_cross: true
+          - target: darwin-arm64
+            os: macos-15
+            goos: darwin
+            goarch: arm64
+            cc: clang
+            cxx: clang++
+            smoke: true
+          - target: darwin-x64
+            os: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            cc: clang
+            cxx: clang++
+          - target: win32-x64
+            os: ubuntu-latest
+            goos: windows
+            goarch: amd64
+            cc: x86_64-w64-mingw32-gcc-posix
+            cxx: x86_64-w64-mingw32-g++-posix
+            windows_cross: true
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: packages/vscode/package-lock.json
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y gcc g++ nlohmann-json3-dev unzip file
+          if [ "${{ matrix.linux_arm64_cross || false }}" = "true" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          fi
+          if [ "${{ matrix.windows_cross || false }}" = "true" ]; then
+            sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
+          fi
+
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install nlohmann-json
+          NLOHMANN_PREFIX="$(brew --prefix nlohmann-json)"
+          echo "CGO_CFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
+          echo "CGO_CXXFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
+
+      - name: Fetch missing llama.cpp headers
+        run: scripts/prepare_ollama_llama_headers.sh
+
+      - name: Prepare Windows cross-build includes
+        if: matrix.windows_cross == true
+        shell: bash
+        run: |
+          set -euo pipefail
+          INCLUDE_DIR="$(scripts/prepare_windows_cross_includes.sh)"
+          echo "CGO_CXXFLAGS=-I${INCLUDE_DIR}" >> "$GITHUB_ENV"
+
+      - name: Install extension dependencies
+        working-directory: packages/vscode
+        run: npm ci
+
+      - name: Sync extension metadata
+        working-directory: packages/vscode
+        run: npm run sync:metadata
+
+      - name: Verify synced metadata is committed
+        run: git diff --exit-code -- packages/vscode/package.json packages/vscode/package-lock.json packages/vscode/README.md
+
+      - name: Type-check extension
+        working-directory: packages/vscode
+        run: npm run check
+
+      - name: Compile extension
+        working-directory: packages/vscode
+        run: npm run compile
+
+      - name: Build target Contenox binary
+        working-directory: packages/vscode
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+          CONTENOX_VERSION: ${{ needs.verify.outputs.tag }}
+        run: node scripts/build-binary.js
+
+      - name: Inspect target binary
+        working-directory: packages/vscode
+        shell: bash
+        run: |
+          set -euo pipefail
+          file bin/contenox*
+          if [ "${{ matrix.smoke || false }}" = "true" ]; then
+            ./bin/contenox --version
+          fi
+
+      - name: Package target VSIX
+        working-directory: packages/vscode
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          npx vsce package \
+            --target "${{ matrix.target }}" \
+            --out "artifacts/runtime-${{ matrix.target }}-${{ needs.verify.outputs.extension_version }}.vsix"
+
+      - name: Verify target VSIX contents
+        working-directory: packages/vscode
+        run: npm run package:check -- artifacts/*.vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-${{ matrix.target }}
+          path: packages/vscode/artifacts/*.vsix
+          if-no-files-found: error
+
   release:
-    needs: [verify, build]
+    needs: [verify, build, vscode]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -186,16 +307,25 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download runtime artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: contenox-*
           merge-multiple: true
+          path: release-assets
+
+      - name: Download VS Code extension artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vscode-*
+          merge-multiple: true
+          path: release-assets
 
       - name: Create GitHub Release and upload assets
         run: |
           TAG="${{ needs.verify.outputs.tag }}"
-          gh release create "$TAG" contenox-linux-* contenox-darwin-* contenox-windows-* \
+          cd release-assets
+          gh release create "$TAG" contenox-linux-* contenox-darwin-* contenox-windows-* runtime-*.vsix \
             --title "$TAG" \
             --notes "" \
             --latest \

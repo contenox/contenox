@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	libacp "github.com/contenox/runtime/libacp"
+	"github.com/contenox/runtime/runtime/approvalflow"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
@@ -13,7 +14,7 @@ func TestUnit_DiffContent_CarriesRawOldNewNotRenderedString(t *testing.T) {
 	oldText := "line one\nline two\n"
 	newText := "line one\nline two\nline three\n"
 
-	content := diffContent("README.md", oldText, newText)
+	content := approvalflow.DiffContent("README.md", oldText, newText)
 
 	require.Len(t, content, 1)
 	require.Equal(t, libacp.ToolCallContentDiff, content[0].Type)
@@ -25,8 +26,9 @@ func TestUnit_DiffContent_CarriesRawOldNewNotRenderedString(t *testing.T) {
 }
 
 func TestUnit_DiffContent_NoChangeOrNoPathYieldsNil(t *testing.T) {
-	require.Nil(t, diffContent("README.md", "same\n", "same\n"))
-	require.Nil(t, diffContent("", "old", "new"))
+	require.Nil(t, approvalflow.DiffContent("README.md", "same\n", "same\n"))
+	require.Nil(t, approvalflow.DiffContent("", "old", "new"))
+	require.Nil(t, approvalflow.DiffContent("README.md", "", ""))
 }
 
 func TestUnit_ToolCallUpdate_DeniedShellRetainsCommand(t *testing.T) {

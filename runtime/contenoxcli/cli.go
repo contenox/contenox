@@ -52,7 +52,7 @@ const (
 )
 
 // reservedSubcommands are first-arg names that must not be treated as run input (Cobra or our subcommands).
-var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "setup": true, "cache": true, "serve": true, "update": true}
+var reservedSubcommands = map[string]bool{"init": true, "chat": true, "help": true, "completion": true, "session": true, "run": true, "tools": true, "mcp": true, "backend": true, "config": true, "model": true, "models": true, "doctor": true, "version": true, "state": true, "acp": true, "acpx": true, "vscode-agent": true, "setup": true, "cache": true, "serve": true, "update": true}
 
 // Main runs the contenox CLI: init subcommand or run (default) with optional positional input.
 func Main() {
@@ -169,7 +169,7 @@ and human approval gates. No daemon, no cloud required. State is stored in SQLit
   Or register an LLM backend manually:
     # Fully embedded (no external server, no network, no API key):
     #   llama.cpp inference is compiled into the contenox binary.
-    contenox backend add embedded --type local --url <path-to-gguf-or-hf-url>
+    contenox backend add embedded --type local --url <path-to-gguf-hf-url-or-models-dir>
     contenox config set default-provider local
     contenox config set default-model <model-name>
 
@@ -192,6 +192,11 @@ and human approval gates. No daemon, no cloud required. State is stored in SQLit
     contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
     contenox config set default-model    gpt-4o-mini
     contenox config set default-provider openai
+
+    # OpenRouter
+    contenox backend add openrouter --type openrouter --api-key-env OPENROUTER_API_KEY
+    contenox config set default-model    deepseek/deepseek-chat-v3-5
+    contenox config set default-provider openrouter
 
   Scope note:
     Backends and config are GLOBAL (stored in ~/.contenox/local.db).
@@ -283,6 +288,10 @@ After init, register a backend, make sure the runtime can see a model, then set 
   contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
   contenox config set default-model gemini-3.1-pro-preview
 
+  # OpenRouter:
+  contenox backend add openrouter --type openrouter --api-key-env OPENROUTER_API_KEY
+  contenox config set default-model deepseek/deepseek-chat-v3-5
+
 Use --force to overwrite existing files, or --update to refresh unchanged default files to the latest version.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runInitCmd,
@@ -307,11 +316,11 @@ func init() {
 
 	// Run flags on root so "contenox --input x" and "contenox hi" both work.
 	f := rootCmd.PersistentFlags()
-	f.String("db", "", "SQLite database path (default: .contenox/local.db)")
+	f.String("db", "", "SQLite database path (default: ~/.contenox/local.db)")
 	f.String("data-dir", "", "Override the .contenox data directory path")
 	f.String("ollama", defaultOllama, "Ollama base URL")
 	f.String("model", defaultModel, "Model name (task/chat/embed)")
-	f.String("provider", "", "Provider type override (ollama, openai, vllm, gemini). Overrides config default_provider.")
+	f.String("provider", "", "Provider type override. See 'contenox backend add --help' for supported backend types.")
 	f.String("alt-model", "", "Alt model name (chains referencing {{var:alt_model}}). Overrides config default-alt-model.")
 	f.String("alt-provider", "", "Alt provider type (chains referencing {{var:alt_provider}}). Overrides config default-alt-provider.")
 	f.Int("max-tokens", 0, "Response token cap for chains referencing {{var:max_tokens}}. Overrides config default-max-tokens when set.")
@@ -338,14 +347,13 @@ func init() {
 	rootCmd.AddCommand(stateCmd)
 	rootCmd.AddCommand(acpCmd)
 	rootCmd.AddCommand(acpxCmd)
+	rootCmd.AddCommand(vscodeAgentCmd)
 	rootCmd.AddCommand(setupCmd)
-	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(updateCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")
 	initCmd.Flags().Bool("update", false, "Update unchanged default files to the latest version")
-	serveCmd.Flags().Bool("ollama-compat", false, "Enable native Ollama-compatible /api/tags, /api/chat, and /api/generate routes.")
 
 	// Chat-specific local flags (not exposed globally).
 	chatCmd.Flags().Int("trim", 0, "Only send the last N messages from session history to the model (0 = send all)")

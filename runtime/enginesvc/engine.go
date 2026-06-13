@@ -159,15 +159,17 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 		return nil, fmt.Errorf("failed to create model manager: %w", err)
 	}
 
+	eventSink := cfg.TaskEventSink
+	if eventSink == nil {
+		eventSink = taskengine.NewBusTaskEventSink(bus)
+	}
+	cfg.TaskEventSink = eventSink
+
 	mgr, localToolNames, toolsRepo, err := buildTools(engineCtx, cfg, db, tracker, bus)
 	if err != nil {
 		return nil, err
 	}
 
-	eventSink := cfg.TaskEventSink
-	if eventSink == nil {
-		eventSink = taskengine.NewBusTaskEventSink(bus)
-	}
 	execCtx := taskengine.WithTaskEventSink(engineCtx, eventSink)
 
 	exec, err := taskengine.NewExec(execCtx, repo, toolsRepo, tracker)
@@ -233,7 +235,7 @@ func buildTools(engineCtx context.Context, cfg Config, db libdbexec.DBManager, t
 			}
 			hitlSvc = hitlservice.NewWithDefaultPolicy(cfg.HITLPolicySource, hitlTenant, store, tracker, cfg.HITLDefaultPolicyName)
 		}
-		toolsRepo = localtools.NewHITLWrapper(toolsRepo, cfg.AskApproval, hitlSvc, tracker)
+		toolsRepo = localtools.NewHITLWrapper(toolsRepo, cfg.AskApproval, hitlSvc, tracker, cfg.TaskEventSink)
 	}
 
 	return mgr, localToolNames, toolsRepo, nil

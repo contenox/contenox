@@ -1,0 +1,186 @@
+package vscodeagent
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+
+	"github.com/contenox/runtime/runtime/taskengine"
+)
+
+type bridgeEventSink struct {
+	server *Server
+}
+
+func (s *bridgeEventSink) Enabled() bool { return s != nil && s.server != nil }
+
+func (s *bridgeEventSink) PublishTaskEvent(ctx context.Context, ev taskengine.TaskEvent) error {
+	if !s.Enabled() {
+		return nil
+	}
+	s.server.publishTaskEvent(ctx, ev)
+	return nil
+}
+
+func (s *Server) publishTaskEvent(ctx context.Context, ev taskengine.TaskEvent) {
+	turn, ok := s.turnByRequestID(ev.RequestID)
+	if !ok {
+		return
+	}
+	switch ev.Kind {
+	case taskengine.TaskEventStepChunk:
+		if !isUserVisibleChunk(ev) {
+			return
+		}
+		if ev.Content != "" || ev.Thinking != "" {
+			_ = s.notify("chatDelta", chatDeltaEvent{
+				SessionID: turn.SessionID,
+				TurnID:    turn.TurnID,
+				Content:   ev.Content,
+				Thinking:  ev.Thinking,
+			})
+		}
+	case taskengine.TaskEventPrint:
+		if ev.Content != "" {
+			_ = s.notify("chatDelta", chatDeltaEvent{
+				SessionID: turn.SessionID,
+				TurnID:    turn.TurnID,
+				Content:   ev.Content,
+			})
+		}
+	case taskengine.TaskEventToolCallPending:
+		s.notifyToolCallGuarded(turn, ev, "pending")
+	case taskengine.TaskEventToolCall:
+		status := "completed"
+		if ev.Error != "" {
+			status = "failed"
+		}
+		s.notifyToolCallGuarded(turn, ev, status)
+	case taskengine.TaskEventHITLDecision:
+		_ = s.notify("hitlDecision", s.hitlDecisionEventFromTaskEvent(ctx, turn, ev))
+	case taskengine.TaskEventStepStarted:
+		if !isToolBearingHandler(ev.TaskHandler) {
+			_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "started"))
+		}
+	case taskengine.TaskEventStepCompleted:
+		if !isToolBearingHandler(ev.TaskHandler) {
+			_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "completed"))
+		}
+	case taskengine.TaskEventStepFailed:
+		if !isToolBearingHandler(ev.TaskHandler) {
+			_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "failed"))
+		}
+	}
+}
+
+func (s *Server) notifyToolCallGuarded(turn turnInfo, ev taskengine.TaskEvent, status string) {
+	event := toolCallEventFromTaskEvent(turn, ev, status)
+	if s.isPermissionPending(turn.SessionID, event.ToolCallID) {
+		return
+	}
+	_ = s.notify("toolCall", event)
+}
+
+func (s *Server) hitlDecisionEventFromTaskEvent(ctx context.Context, turn turnInfo, ev taskengine.TaskEvent) hitlDecisionEvent {
+	policyName := ev.HITLPolicyName
+	policyPath := ev.HITLPolicyPath
+	if policyName == "" || policyPath == "" {
+		active := s.activeHITLPolicy(ctx)
+		if policyName == "" {
+			policyName = active.Name
+		}
+		if policyPath == "" {
+			policyPath = active.Path
+		}
+	}
+	approvalRequested := false
+	if ev.HITLApprovalRequested != nil {
+		approvalRequested = *ev.HITLApprovalRequested
+	}
+	return hitlDecisionEvent{
+		SessionID:         turn.SessionID,
+		TurnID:            turn.TurnID,
+		ToolsName:         ev.HookName,
+		ToolName:          ev.ToolName,
+		Action:            ev.HITLAction,
+		Reason:            ev.HITLReason,
+		PolicyName:        policyName,
+		PolicyPath:        policyPath,
+		ArgsSummary:       ev.HITLArgsSummary,
+		MatchedRule:       ev.HITLMatchedRule,
+		TimeoutS:          ev.HITLTimeoutS,
+		ApprovalRequested: approvalRequested,
+	}
+}
+
+func isUserVisibleChunk(ev taskengine.TaskEvent) bool {
+	return taskengine.TaskHandler(ev.TaskHandler) == taskengine.HandleChatCompletion
+}
+
+func isToolBearingHandler(handler string) bool {
+	switch taskengine.TaskHandler(handler) {
+	case taskengine.HandleExecuteToolCalls, taskengine.HandleTools, taskengine.HandleChatCompletion, taskengine.HandleRoute:
+		return true
+	default:
+		return false
+	}
+}
+
+func toolCallEventFromTaskEvent(turn turnInfo, ev taskengine.TaskEvent, status string) toolCallEvent {
+	id := ev.ApprovalID
+	if id == "" {
+		id = ev.ToolName
+	}
+	if id == "" {
+		id = ev.TaskID
+	}
+	title := ev.ToolName
+	if title == "" {
+		title = ev.TaskID
+	}
+	if title == "" {
+		title = ev.TaskHandler
+	}
+	if summary := summarizeArgs(ev.ApprovalArgs); summary != "" && !strings.Contains(title, summary) {
+		title += ": " + summary
+	}
+	return toolCallEvent{
+		SessionID:  turn.SessionID,
+		TurnID:     turn.TurnID,
+		ToolCallID: id,
+		Title:      title,
+		Status:     status,
+		ToolName:   ev.ToolName,
+		TaskID:     ev.TaskID,
+		Input:      ev.ApprovalArgs,
+		Output:     ev.Content,
+		Error:      ev.Error,
+		DiffPath:   ev.ToolDiffPath,
+		DiffOld:    ev.ToolDiffOldText,
+		DiffNew:    ev.ToolDiffNewText,
+	}
+}
+
+func summarizeArgs(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	for _, key := range []string{"path", "command", "url", "pattern"} {
+		if v, ok := args[key].(string); ok && strings.TrimSpace(v) != "" {
+			return trimSummary(v)
+		}
+	}
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return ""
+	}
+	return trimSummary(string(raw))
+}
+
+func trimSummary(s string) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	if len([]rune(s)) > 96 {
+		return string([]rune(s)[:95]) + "..."
+	}
+	return s
+}

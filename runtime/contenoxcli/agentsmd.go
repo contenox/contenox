@@ -2,42 +2,23 @@ package contenoxcli
 
 import (
 	"os"
-	"path/filepath"
 
-	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/agentsmd"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 const (
-	agentsMDFilename  = "AGENTS.md"
-	maxAgentsMDBytes  = 64 * 1024
-	agentsMDTruncated = "\n\n[AGENTS.md truncated to 64 KiB; remove this limit by editing maxAgentsMDBytes]"
+	agentsMDFilename  = agentsmd.Filename
+	maxAgentsMDBytes  = agentsmd.MaxBytes
+	agentsMDTruncated = agentsmd.TruncatedNotice
 )
 
 func LoadAgentsMD(startDir string) (string, string, bool) {
-	dir, err := filepath.Abs(startDir)
-	if err != nil {
-		return "", "", false
-	}
-	for {
-		candidate := filepath.Join(dir, agentsMDFilename)
-		if data, err := os.ReadFile(candidate); err == nil {
-			content := string(data)
-			if len(content) > maxAgentsMDBytes {
-				content = content[:maxAgentsMDBytes] + agentsMDTruncated
-			}
-			return content, candidate, true
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", "", false
-		}
-		dir = parent
-	}
+	return agentsmd.Load(startDir)
 }
 
 func AgentsMDMessage(content, path string) taskengine.Message {
-	return agentservice.AgentsMDMessage(content, path)
+	return agentsmd.Message(content, path)
 }
 
 func loadAgentsMDFromCwd() (string, string) {

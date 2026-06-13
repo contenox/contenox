@@ -113,6 +113,7 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.contenoxToACPID[contenoxSessionID] = req.SessionID
 	t.sessionMu.Unlock()
 
+	t.clearToolCallState(req.SessionID)
 	t.replayMessages(ctx, req.SessionID, messages)
 	// Emit the slash-command menu only after the session/load result is on the
 	// wire (see sendAvailableCommands) so the client can resolve the session.
@@ -288,6 +289,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	t.sessions[sessionID] = entry
 	t.contenoxToACPID[contenoxSessionID] = sessionID
 	t.sessionMu.Unlock()
+	t.clearToolCallState(sessionID)
 
 	// A client learns this new session's id only from the session/new result;
 	// emitting available_commands_update before that result makes the client drop

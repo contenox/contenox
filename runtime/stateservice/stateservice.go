@@ -21,32 +21,36 @@ type Service interface {
 	SetupStatus(ctx context.Context) (setupcheck.Result, error)
 	// Refresh reconciles registered backends/models, then returns the updated setup status.
 	Refresh(ctx context.Context) (setupcheck.Result, error)
-	// SetCLIConfig updates CLI default keys (model, provider, chain, hitl-policy-name) in SQLite KV (same as contenox config set / PUT /cli-config).
+	// SetCLIConfig updates CLI default keys in SQLite KV (same as contenox config set / PUT /cli-config).
 	// Nil fields in the patch are left unchanged. Empty string fields are written and can clear a resolved setting.
 	SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLIConfigSnapshot, error)
 }
 
 // CLIConfigPatch selects which CLI default keys to write; nil means "do not change".
 type CLIConfigPatch struct {
-	DefaultModel       *string
-	DefaultProvider    *string
-	DefaultAltModel    *string
-	DefaultAltProvider *string
-	DefaultMaxTokens   *string
-	DefaultChain       *string
-	HITLPolicyName     *string
+	DefaultModel                *string
+	DefaultProvider             *string
+	DefaultAltModel             *string
+	DefaultAltProvider          *string
+	DefaultAutocompleteModel    *string
+	DefaultAutocompleteProvider *string
+	DefaultMaxTokens            *string
+	DefaultChain                *string
+	HITLPolicyName              *string
 }
 
 // CLIConfigSnapshot is the resolved KV values after an update.
 type CLIConfigSnapshot struct {
-	DefaultModel       string
-	DefaultProvider    string
-	DefaultAltModel    string
-	DefaultAltProvider string
-	DefaultMaxTokens   string
-	DefaultChain       string
-	HITLPolicyName     string
-	ResolvedFrom       map[string]string
+	DefaultModel                string
+	DefaultProvider             string
+	DefaultAltModel             string
+	DefaultAltProvider          string
+	DefaultAutocompleteModel    string
+	DefaultAutocompleteProvider string
+	DefaultMaxTokens            string
+	DefaultChain                string
+	HITLPolicyName              string
+	ResolvedFrom                map[string]string
 }
 
 type service struct {
@@ -92,6 +96,8 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 		patch.DefaultProvider == nil &&
 		patch.DefaultAltModel == nil &&
 		patch.DefaultAltProvider == nil &&
+		patch.DefaultAutocompleteModel == nil &&
+		patch.DefaultAutocompleteProvider == nil &&
 		patch.DefaultMaxTokens == nil &&
 		patch.DefaultChain == nil &&
 		patch.HITLPolicyName == nil {
@@ -118,6 +124,16 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-alt-provider: %w", err)
 		}
 	}
+	if patch.DefaultAutocompleteModel != nil {
+		if err := clikv.SetString(ctx, store, "default-autocomplete-model", strings.TrimSpace(*patch.DefaultAutocompleteModel)); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set default-autocomplete-model: %w", err)
+		}
+	}
+	if patch.DefaultAutocompleteProvider != nil {
+		if err := clikv.SetString(ctx, store, "default-autocomplete-provider", strings.TrimSpace(*patch.DefaultAutocompleteProvider)); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set default-autocomplete-provider: %w", err)
+		}
+	}
 	if patch.DefaultMaxTokens != nil {
 		maxTokens, err := normalizeDefaultMaxTokens(*patch.DefaultMaxTokens)
 		if err != nil {
@@ -140,13 +156,15 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 	defaultChain, chainFrom := clikv.ReadConfig(ctx, store, s.workspaceID, "default-chain")
 	hitlPolicy, policyFrom := clikv.ReadConfig(ctx, store, s.workspaceID, "hitl-policy-name")
 	return CLIConfigSnapshot{
-		DefaultModel:       clikv.Read(ctx, store, "default-model"),
-		DefaultProvider:    clikv.Read(ctx, store, "default-provider"),
-		DefaultAltModel:    clikv.Read(ctx, store, "default-alt-model"),
-		DefaultAltProvider: clikv.Read(ctx, store, "default-alt-provider"),
-		DefaultMaxTokens:   clikv.Read(ctx, store, "default-max-tokens"),
-		DefaultChain:       defaultChain,
-		HITLPolicyName:     hitlPolicy,
+		DefaultModel:                clikv.Read(ctx, store, "default-model"),
+		DefaultProvider:             clikv.Read(ctx, store, "default-provider"),
+		DefaultAltModel:             clikv.Read(ctx, store, "default-alt-model"),
+		DefaultAltProvider:          clikv.Read(ctx, store, "default-alt-provider"),
+		DefaultAutocompleteModel:    clikv.Read(ctx, store, "default-autocomplete-model"),
+		DefaultAutocompleteProvider: clikv.Read(ctx, store, "default-autocomplete-provider"),
+		DefaultMaxTokens:            clikv.Read(ctx, store, "default-max-tokens"),
+		DefaultChain:                defaultChain,
+		HITLPolicyName:              hitlPolicy,
 		ResolvedFrom: map[string]string{
 			"defaultChain":   chainFrom,
 			"hitlPolicyName": policyFrom,

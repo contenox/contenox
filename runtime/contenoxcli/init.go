@@ -36,11 +36,8 @@ var initACPChain string
 //go:embed chain-acpx.json
 var initACPXChain string
 
-//go:embed chain-openai-compat.json
-var initOpenAICompatChain string
-
-//go:embed chain-fim-compat.json
-var initFIMCompatChain string
+//go:embed chain-fim.json
+var initFIMChain string
 
 // blessedChainHashes is a map of file basenames to a list of known-good SHA256
 // checksums from previous versions. When the --update flag is used, if a file's
@@ -236,12 +233,6 @@ func RunGlobalInit(out io.Writer) error {
 		return err
 	}
 	if err := writeFile(filepath.Join(homeDir, headlessACPChainFilename), initACPXChain); err != nil {
-		return err
-	}
-	if err := writeFile(filepath.Join(homeDir, "chain-openai-compat.json"), initOpenAICompatChain); err != nil {
-		return err
-	}
-	if err := writeFile(filepath.Join(homeDir, "chain-fim-compat.json"), initFIMCompatChain); err != nil {
 		return err
 	}
 	if err := writeEmbeddedHITLPolicies(homeDir, false); err != nil {

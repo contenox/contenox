@@ -1,0 +1,26 @@
+{
+  "id": "chain-fim",
+  "description": "Default fill-in-middle completion chain for editor autocomplete.",
+  "tasks": [
+    {
+      "id": "fim_complete",
+      "handler": "chat_completion",
+      "system_instruction": "Current date: {{date}}.\n\nYou are a code completion engine. The user message uses FIM sentinel tokens (<fim_prefix>, <fim_suffix>, <fim_middle>). Output ONLY the code that fills the middle section. No commentary, no markdown fences, no explanation.",
+      "execute_config": {
+        "model": "{{var:model}}",
+        "provider": "{{var:provider}}",
+        "tools": [],
+        "max_tokens": "{{var:max_tokens|256}}"
+      },
+      "transition": {
+        "branches": [
+          {
+            "operator": "default",
+            "when": "",
+            "goto": "end"
+          }
+        ]
+      }
+    }
+  ]
+}

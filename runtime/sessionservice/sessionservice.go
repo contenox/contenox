@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -23,6 +24,7 @@ type SessionInfo struct {
 	Name         string
 	MessageCount int
 	IsActive     bool
+	UpdatedAt    time.Time
 }
 
 // Service is the session management interface.
@@ -102,15 +104,14 @@ func (s *service) List(ctx context.Context, identity string) ([]*SessionInfo, er
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
 	}
 	activeID, _ := s.GetActiveID(ctx)
-	store := messagestore.New(exec, s.workspaceID)
 	out := make([]*SessionInfo, 0, len(sessions))
 	for _, sess := range sessions {
-		count, _ := store.CountMessages(ctx, sess.ID)
 		out = append(out, &SessionInfo{
 			ID:           sess.ID,
 			Name:         sess.Name,
-			MessageCount: count,
+			MessageCount: sess.MessageCount,
 			IsActive:     sess.ID == activeID,
+			UpdatedAt:    sess.UpdatedAt,
 		})
 	}
 	return out, nil

@@ -56,6 +56,11 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		}
 	}
 
+	askApproval := opts.EffectiveAskApproval
+	if askApproval == nil {
+		askApproval = NewCLIAskApproval(os.Stderr)
+	}
+
 	return enginesvc.Build(ctx, db, enginesvc.Config{
 		DefaultModel:       opts.EffectiveDefaultModel,
 		DefaultProvider:    opts.EffectiveDefaultProvider,
@@ -65,12 +70,13 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		NoDeleteModels:     opts.EffectiveNoDeleteModels,
 		LocalTools:         tools,
 		EnableHITL:         opts.EffectiveHITL,
-		AskApproval:        NewCLIAskApproval(os.Stderr),
+		AskApproval:        askApproval,
 		Tracker:            tracker,
 		Tracing:            opts.EffectiveTracing,
 		SkipBackendCycle:   opts.EffectiveSkipBackendCycle,
 		WorkspaceID:        ResolveWorkspaceID(opts.ContenoxDir),
 		HITLPolicySource:   hitlPolicySource(opts.ContenoxDir),
+		TaskEventSink:      opts.EffectiveTaskEventSink,
 	})
 }
 

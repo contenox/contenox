@@ -247,8 +247,7 @@ func TestUnit_BuiltinChains_LLMTasksIncludeDateMacro(t *testing.T) {
 		{name: "compact", raw: initCompactChain},
 		{name: "acp", raw: initACPChain},
 		{name: "acpx", raw: initACPXChain},
-		{name: "openai-compat", raw: initOpenAICompatChain},
-		{name: "fim-compat", raw: initFIMCompatChain},
+		{name: "fim", raw: initFIMChain},
 	}
 
 	for _, tc := range cases {

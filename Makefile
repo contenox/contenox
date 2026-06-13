@@ -24,6 +24,11 @@ export OLLAMA_HOST
 
 AIR ?= $(shell command -v air 2>/dev/null || echo "$(shell go env GOPATH)/bin/air")
 DEV_CONTENOX_BIN := $(HOME)/.local/bin/contenox
+VSCODE_DIR := $(PROJECT_ROOT)/packages/vscode
+VSCODE_VERSION := $(patsubst v%,%,$(shell tr -d '\r\n' < $(PROJECT_ROOT)/runtime/version/version.txt))
+VSCODE_TARGET ?= $(shell cd $(VSCODE_DIR) && node -e "console.log(require('./scripts/vscode-targets').targetFromEnv().name)")
+VSCODE_VSIX := $(VSCODE_DIR)/artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix
+VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
 WINDOWS_CC ?= $(shell command -v x86_64-w64-mingw32-gcc-posix 2>/dev/null || command -v x86_64-w64-mingw32-gcc 2>/dev/null || echo x86_64-w64-mingw32-gcc)
 WINDOWS_CXX ?= $(shell command -v x86_64-w64-mingw32-g++-posix 2>/dev/null || command -v x86_64-w64-mingw32-g++ 2>/dev/null || echo x86_64-w64-mingw32-g++)
 WINDOWS_NLOHMANN_INCLUDE ?= $(PROJECT_ROOT)/.build/windows/include
@@ -31,21 +36,20 @@ WINDOWS_CGO_CFLAGS ?=
 WINDOWS_CGO_CXXFLAGS ?= -I$(WINDOWS_NLOHMANN_INCLUDE)
 
 .PHONY: help \
-	build-contenox build-contenox-windows deps-ollama-headers \
-	clean \
-	deps-go-watch deps-ui \
-	dev-install dev-link dev-unlink \
+	build-contenox build-contenox-windows build-vscode package-vscode package-vscode-proposed deps-ollama-headers \
+	clean clean-vscode \
+	deps-go-watch deps-vscode \
+	dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
 	dev-go-watch \
-	test test-unit test-system test-api test-contenox-verbose test-contenox-help test-ui \
-	build-ui verify-ui-embed
+	test test-unit test-system test-contenox-verbose test-contenox-help
 
 # -----------------------------------------------------------------------------
 help:
-	@echo "build-*    build-contenox build-contenox-windows build-ui"
-	@echo "test-*     test test-unit test-system test-api test-contenox-verbose test-contenox-help test-ui"
-	@echo "dev-*      dev-install dev-link dev-unlink dev-go-watch"
-	@echo "deps-*     deps-go-watch deps-ollama-headers deps-ui"
-	@echo "verify-*   verify-ui-embed"
+	@echo "build-*    build-contenox build-contenox-windows build-vscode"
+	@echo "package-*  package-vscode package-vscode-proposed"
+	@echo "test-*     test test-unit test-system test-contenox-verbose test-contenox-help"
+	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink dev-go-watch"
+	@echo "deps-*     deps-go-watch deps-ollama-headers deps-vscode"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
 
@@ -61,9 +65,22 @@ build-contenox-windows:
 	@WINDOWS_CROSS_INCLUDE="$(WINDOWS_NLOHMANN_INCLUDE)" $(PROJECT_ROOT)/scripts/prepare_windows_cross_includes.sh >/dev/null
 	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC="$(WINDOWS_CC)" CXX="$(WINDOWS_CXX)" CGO_CFLAGS="$(WINDOWS_CGO_CFLAGS)" CGO_CXXFLAGS="$(WINDOWS_CGO_CXXFLAGS)" go build -o $(PROJECT_ROOT)/bin/contenox-windows-amd64.exe $(PROJECT_ROOT)/cmd/contenox
 
-build-ui: deps-ui
-	cd $(PROJECT_ROOT)/packages/ui && npm run build
-	cd $(PROJECT_ROOT)/packages/beam && npm run build
+build-vscode: deps-vscode
+	cd $(VSCODE_DIR) && npm run build
+
+package-vscode: deps-vscode
+	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
+	cd $(VSCODE_DIR) && npm run package
+	@test -f "$(VSCODE_VSIX)" || { echo "expected VSIX was not created: $(VSCODE_VSIX)"; exit 1; }
+	cd $(VSCODE_DIR) && npm run package:check -- "artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix"
+	@echo "Built VS Code extension: $(VSCODE_VSIX)"
+
+package-vscode-proposed: deps-vscode
+	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
+	cd $(VSCODE_DIR) && npm run package:proposed
+	@test -f "$(VSCODE_PROPOSED_VSIX)" || { echo "expected proposed VSIX was not created: $(VSCODE_PROPOSED_VSIX)"; exit 1; }
+	cd $(VSCODE_DIR) && CONTENOX_ALLOW_PROPOSED=1 npm run package:check -- "artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix"
+	@echo "Built proposed VS Code extension: $(VSCODE_PROPOSED_VSIX)"
 
 # —— test ————————————————————————————————————————————————————————————————
 test:
@@ -75,9 +92,6 @@ test-unit:
 test-system:
 	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -run '^TestSystem_' ./...
 
-test-api: build-contenox
-	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/run_apitests.sh $(PYTEST_ARGS)
-
 test-contenox-verbose:
 	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -v ./runtime/contenoxcli/...
 
@@ -85,15 +99,36 @@ test-contenox-help: build-contenox
 	@chmod +x $(PROJECT_ROOT)/scripts/verify_cli_help.sh
 	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/verify_cli_help.sh
 
-test-ui: deps-ui
-	cd $(PROJECT_ROOT)/packages/beam && npm test
-
-verify-ui-embed:
-	@test -f "$(PROJECT_ROOT)/runtime/internal/web/beam/dist/index.html" || { echo "missing Beam dist; run: make build-ui"; exit 1; }
-	go test -C $(PROJECT_ROOT) ./runtime/internal/web
-
 # —— dev —————————————————————————————————————————————————————————————————
 dev-install: build-contenox dev-link
+
+dev-install-vscode: package-vscode
+	@command -v code >/dev/null 2>&1 || { echo "missing VS Code CLI 'code' on PATH"; exit 1; }
+	@code --uninstall-extension contenox.runtime >/dev/null 2>&1 || true
+	@code --uninstall-extension contenox.contenox-vscode >/dev/null 2>&1 || true
+	@code --uninstall-extension contenox.contenox >/dev/null 2>&1 || true
+	@rm -rf "$(HOME)/.vscode/extensions/contenox.runtime-"*
+	code --install-extension "$(VSCODE_VSIX)" --force
+	cd $(VSCODE_DIR) && node scripts/assert-installed-dev.js "$(VSCODE_VERSION)"
+	@code --list-extensions --show-versions | grep -E '^contenox\.runtime@$(VSCODE_VERSION)$$'
+	@echo "Installed Contenox VS Code extension from $(VSCODE_VSIX)"
+	@echo "Reload the VS Code window, then run: Contenox: Run Setup"
+
+dev-install-vscode-proposed: package-vscode-proposed
+	@command -v code >/dev/null 2>&1 || { echo "missing VS Code CLI 'code' on PATH"; exit 1; }
+	@code --uninstall-extension contenox.runtime >/dev/null 2>&1 || true
+	@code --uninstall-extension contenox.contenox-vscode >/dev/null 2>&1 || true
+	@code --uninstall-extension contenox.contenox >/dev/null 2>&1 || true
+	@rm -rf "$(HOME)/.vscode/extensions/contenox.runtime-"*
+	code --install-extension "$(VSCODE_PROPOSED_VSIX)" --force
+	cd $(VSCODE_DIR) && node scripts/assert-installed-dev.js "$(VSCODE_VERSION)"
+	@code --list-extensions --show-versions | grep -E '^contenox\.runtime@$(VSCODE_VERSION)$$'
+	@echo "Installed proposed Contenox VS Code extension from $(VSCODE_PROPOSED_VSIX)"
+	@echo "Launch VS Code with proposed APIs enabled:"
+	@echo "  code --enable-proposed-api contenox.runtime $(PROJECT_ROOT)"
+	@echo "Then run: Contenox: Open Agent Session"
+
+vscode-dev-install: dev-install-vscode
 
 dev-link: build-contenox
 	@mkdir -p $(dir $(DEV_CONTENOX_BIN))
@@ -115,10 +150,12 @@ deps-go-watch:
 deps-ollama-headers:
 	@$(PROJECT_ROOT)/scripts/prepare_ollama_llama_headers.sh
 
-deps-ui:
-	cd $(PROJECT_ROOT)/packages/ui && npm ci
-	cd $(PROJECT_ROOT)/packages/beam && npm ci
+deps-vscode:
+	cd $(PROJECT_ROOT)/packages/vscode && npm ci
 
 # —— clean ———————————————————————————————————————————————————————————————
 clean:
 	rm -rf $(PROJECT_ROOT)/bin
+
+clean-vscode:
+	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/*.vsix

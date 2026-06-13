@@ -11,6 +11,7 @@ import (
 
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/localtools"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
@@ -39,6 +40,12 @@ type chatOpts struct {
 	ContenoxDir                  string
 	// EffectiveSkipBackendCycle skips state.RunBackendCycle (e.g. contenox-runtime doctor --skip-cycle).
 	EffectiveSkipBackendCycle bool
+	// EffectiveAskApproval lets editor integrations reuse BuildEngine while
+	// supplying their own HITL UI instead of the CLI tty prompt.
+	EffectiveAskApproval localtools.AskApproval
+	// EffectiveTaskEventSink lets editor integrations receive task events
+	// directly without subscribing to the engine bus.
+	EffectiveTaskEventSink taskengine.TaskEventSink
 }
 
 // execChat runs the full chat pipeline and returns any error encountered.

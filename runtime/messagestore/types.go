@@ -15,9 +15,11 @@ type Message struct {
 
 // SessionInfo represents a chat session index row.
 type SessionInfo struct {
-	ID       string
-	Identity string
-	Name     string // empty if unnamed
+	ID           string
+	Identity     string
+	Name         string // empty if unnamed
+	MessageCount int
+	UpdatedAt    time.Time
 }
 
 // Store defines the data access interface for messages.

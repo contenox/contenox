@@ -97,10 +97,16 @@ func (s *store) listMessageIndicesByIdentity(ctx context.Context, identity strin
 // ListAllSessions lists all session info rows for an identity.
 func (s *store) ListAllSessions(ctx context.Context, identity string) ([]SessionInfo, error) {
 	rows, err := s.Exec.QueryContext(ctx, `
-		SELECT id, identity, COALESCE(name, '')
-		FROM message_indices
-		WHERE identity = $1 AND workspace_id = $2
-		ORDER BY id ASC`,
+		SELECT mi.id, mi.identity, COALESCE(mi.name, ''), COUNT(m.id), MAX(m.added_at)
+		FROM message_indices mi
+		LEFT JOIN messages m ON m.idx_id = mi.id
+		WHERE mi.identity = $1 AND mi.workspace_id = $2
+		GROUP BY mi.id, mi.identity, mi.name
+		ORDER BY
+			CASE WHEN MAX(m.added_at) IS NULL THEN 1 ELSE 0 END ASC,
+			MAX(m.added_at) DESC,
+			COALESCE(mi.name, mi.id) ASC,
+			mi.id ASC`,
 		identity, s.workspaceID,
 	)
 	if err != nil {
@@ -111,8 +117,16 @@ func (s *store) ListAllSessions(ctx context.Context, identity string) ([]Session
 	var sessions []SessionInfo
 	for rows.Next() {
 		var si SessionInfo
-		if err := rows.Scan(&si.ID, &si.Identity, &si.Name); err != nil {
+		var updatedAt any
+		if err := rows.Scan(&si.ID, &si.Identity, &si.Name, &si.MessageCount, &updatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan session: %w", err)
+		}
+		parsed, err := nullableTime(updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan session updated_at: %w", err)
+		}
+		if !parsed.IsZero() {
+			si.UpdatedAt = parsed.UTC()
 		}
 		sessions = append(sessions, si)
 	}
@@ -120,6 +134,41 @@ func (s *store) ListAllSessions(ctx context.Context, identity string) ([]Session
 		return nil, fmt.Errorf("rows iteration error: %w", err)
 	}
 	return sessions, nil
+}
+
+func nullableTime(value any) (time.Time, error) {
+	switch v := value.(type) {
+	case nil:
+		return time.Time{}, nil
+	case time.Time:
+		return v, nil
+	case string:
+		return parseTimeString(v)
+	case []byte:
+		return parseTimeString(string(v))
+	default:
+		return time.Time{}, fmt.Errorf("unsupported time value %T", value)
+	}
+}
+
+func parseTimeString(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, nil
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999Z07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02 15:04:05",
+	} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cannot parse %q", value)
 }
 
 // GetSessionByName returns the session with the given name for an identity.

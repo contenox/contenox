@@ -15,12 +15,12 @@ func TestUnit_acpxIsReservedSubcommand(t *testing.T) {
 	}
 }
 
-func TestUnit_serveIsReservedSubcommand(t *testing.T) {
+func TestUnit_retiredServeIsReservedSubcommand(t *testing.T) {
 	if !reservedSubcommands["serve"] {
-		t.Fatal(`"serve" must be reserved so it is dispatched as a subcommand, not injected as run input`)
+		t.Fatal(`"serve" must stay reserved so the retired command is not injected as run input`)
 	}
 	if !firstNonFlagIsReserved([]string{"serve"}) {
-		t.Fatal(`expected "serve" to be recognized as a reserved subcommand`)
+		t.Fatal(`expected "serve" to be recognized as a retired reserved subcommand`)
 	}
 }
 

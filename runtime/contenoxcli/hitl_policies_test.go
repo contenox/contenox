@@ -132,3 +132,22 @@ func TestUnit_SeededACPXPolicy_SecretInvariantAndHeavyDeltas(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, hitlservice.ActionDeny, r.Action, "acpx default_action must be deny (untrusted driver, least privilege)")
 }
+
+func TestUnit_InteractivePoliciesRequireApprovalForPlainShellFallback(t *testing.T) {
+	t.Parallel()
+	for name, content := range map[string]string{
+		"hitl-policy-default.json": hitlPolicyDefault,
+		"hitl-policy-dev.json":     hitlPolicyDev,
+		"hitl-policy-acp.json":     hitlPolicyACP,
+		"hitl-policy-strict.json":  hitlPolicyStrict,
+	} {
+		name, content := name, content
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			svc := seededPolicyService(t, name, content)
+			r, err := svc.Evaluate(context.Background(), "local_shell", "local_shell", map[string]any{"command": "python3"})
+			require.NoError(t, err)
+			assert.Equal(t, hitlservice.ActionApprove, r.Action, "%s must not auto-allow plain shell fallback", name)
+		})
+	}
+}

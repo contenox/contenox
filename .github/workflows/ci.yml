@@ -1,4 +1,4 @@
-# CI: Beam build/test/embed smoke, contenox compile smoke, and cheap TestUnit_* Go tests.
+# CI: contenox compile smoke, Windows cross-compile smoke, and cheap TestUnit_* Go tests.
 # No TestSystem_* / Docker / LLM integration tests.
 name: CI
 
@@ -22,14 +22,6 @@ jobs:
         with:
           go-version: "1.25"
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            packages/ui/package-lock.json
-            packages/beam/package-lock.json
-
       - name: Install CGo dependencies
         run: |
           sudo apt-get update -qq
@@ -37,9 +29,6 @@ jobs:
 
       - name: Fetch missing llama.cpp headers
         run: scripts/prepare_ollama_llama_headers.sh
-
-      - name: Build, test, and verify Beam UI
-        run: make build-ui test-ui verify-ui-embed
 
       - name: Build contenox (compile smoke)
         run: make build-contenox

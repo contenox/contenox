@@ -82,6 +82,9 @@ type Transport struct {
 	permMu      sync.Mutex
 	permPending map[string]struct{}
 
+	toolCallMu     sync.Mutex
+	toolCallStatus map[string]libacp.ToolCallStatus
+
 	bannerMu      sync.Mutex
 	pendingBanner string
 }
@@ -122,6 +125,7 @@ func New(deps Deps) libacp.AgentFactory {
 			connectionID:       newSessionID("conn"),
 			sessions:           make(map[libacp.SessionID]*sessionEntry),
 			contenoxToACPID:    make(map[string]libacp.SessionID),
+			toolCallStatus:     make(map[string]libacp.ToolCallStatus),
 			defaultModel:       deps.DefaultModel,
 			defaultProvider:    deps.DefaultProvider,
 			defaultAltModel:    deps.DefaultAltModel,
@@ -283,6 +287,7 @@ func (t *Transport) workspaceID() string {
 }
 
 func (t *Transport) sendUpdate(ctx context.Context, notif libacp.SessionNotification) {
+	notif = t.normalizeToolCallNotification(notif)
 	kind := string(notif.Update.SessionUpdate)
 	kv := []any{"kind", kind, "session_id", string(notif.SessionID)}
 	if notif.Update.ToolCallID != "" {
@@ -295,6 +300,67 @@ func (t *Transport) sendUpdate(ctx context.Context, notif libacp.SessionNotifica
 	defer end()
 	if err := t.conn.SessionUpdate(notif); err != nil {
 		reportErr(err)
+	}
+}
+
+func (t *Transport) normalizeToolCallNotification(notif libacp.SessionNotification) libacp.SessionNotification {
+	upd := &notif.Update
+	if upd.ToolCallID == "" {
+		return notif
+	}
+	if upd.SessionUpdate != libacp.SessionUpdateToolCall && upd.SessionUpdate != libacp.SessionUpdateToolCallUpdate {
+		return notif
+	}
+
+	t.toolCallMu.Lock()
+	defer t.toolCallMu.Unlock()
+	if t.toolCallStatus == nil {
+		t.toolCallStatus = make(map[string]libacp.ToolCallStatus)
+	}
+
+	key := permKey(notif.SessionID, upd.ToolCallID)
+	previousStatus, seen := t.toolCallStatus[key]
+	if upd.SessionUpdate == libacp.SessionUpdateToolCallUpdate && !seen {
+		upd.SessionUpdate = libacp.SessionUpdateToolCall
+		if upd.Title == "" {
+			upd.Title = upd.ToolCallID
+		}
+		if upd.Kind == "" {
+			upd.Kind = libacp.ToolKindOther
+		}
+	}
+
+	if seen && toolCallStatusRank(upd.Status) < toolCallStatusRank(previousStatus) {
+		upd.Status = previousStatus
+	}
+	t.toolCallStatus[key] = upd.Status
+	return notif
+}
+
+func (t *Transport) clearToolCallState(sid libacp.SessionID) {
+	t.toolCallMu.Lock()
+	defer t.toolCallMu.Unlock()
+	if len(t.toolCallStatus) == 0 {
+		return
+	}
+	prefix := string(sid) + "\x00"
+	for key := range t.toolCallStatus {
+		if strings.HasPrefix(key, prefix) {
+			delete(t.toolCallStatus, key)
+		}
+	}
+}
+
+func toolCallStatusRank(status libacp.ToolCallStatus) int {
+	switch status {
+	case libacp.ToolCallStatusPending:
+		return 1
+	case libacp.ToolCallStatusInProgress:
+		return 2
+	case libacp.ToolCallStatusCompleted, libacp.ToolCallStatusFailed:
+		return 3
+	default:
+		return 0
 	}
 }
 

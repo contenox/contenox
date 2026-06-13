@@ -51,6 +51,17 @@ func (m *mockInnerTools) GetToolsForToolsByName(_ context.Context, _ string) ([]
 	return nil, nil
 }
 
+type captureTaskEventSink struct {
+	events []taskengine.TaskEvent
+}
+
+func (s *captureTaskEventSink) PublishTaskEvent(_ context.Context, event taskengine.TaskEvent) error {
+	s.events = append(s.events, event)
+	return nil
+}
+
+func (s *captureTaskEventSink) Enabled() bool { return true }
+
 func allowPolicy() *mockPolicyEval {
 	return &mockPolicyEval{result: hitlservice.EvaluationResult{Action: hitlservice.ActionAllow}}
 }
@@ -89,6 +100,52 @@ func TestUnit_HITLWrapper_Allow_PassesThrough(t *testing.T) {
 	}
 	if len(inner.calls) != 1 || inner.calls[0] != "read_file" {
 		t.Errorf("expected inner called once with read_file, got %v", inner.calls)
+	}
+}
+
+func TestUnit_HITLWrapper_Allow_PublishesDecision(t *testing.T) {
+	inner := &mockInnerTools{}
+	sink := &captureTaskEventSink{}
+	matchedRule := 3
+	policy := &mockPolicyEval{result: hitlservice.EvaluationResult{
+		Action:      hitlservice.ActionAllow,
+		Reason:      hitlservice.ReasonMatchedRule,
+		MatchedRule: &matchedRule,
+		PolicyName:  "hitl-policy-dev.json",
+	}}
+	w := localtools.NewHITLWrapper(inner, alwaysApprove, policy, nil, sink)
+
+	_, _, err := w.Exec(context.Background(), time.Now(),
+		map[string]any{"command": "python3"}, false,
+		&taskengine.ToolsCall{Name: "local_shell", ToolName: "local_shell"})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sink.events) != 1 {
+		t.Fatalf("expected one HITL decision event, got %d", len(sink.events))
+	}
+	event := sink.events[0]
+	if event.Kind != taskengine.TaskEventHITLDecision {
+		t.Fatalf("expected HITL decision event, got %s", event.Kind)
+	}
+	if event.HookName != "local_shell" || event.ToolName != "local_shell" {
+		t.Fatalf("unexpected tool identity: %s.%s", event.HookName, event.ToolName)
+	}
+	if event.HITLAction != "allow" || event.HITLReason != hitlservice.ReasonMatchedRule {
+		t.Fatalf("unexpected HITL decision: action=%s reason=%s", event.HITLAction, event.HITLReason)
+	}
+	if event.HITLPolicyName != "hitl-policy-dev.json" {
+		t.Fatalf("expected policy name, got %q", event.HITLPolicyName)
+	}
+	if event.HITLArgsSummary != "python3" {
+		t.Fatalf("expected command summary, got %q", event.HITLArgsSummary)
+	}
+	if event.HITLMatchedRule == nil || *event.HITLMatchedRule != matchedRule {
+		t.Fatalf("expected matched rule %d, got %v", matchedRule, event.HITLMatchedRule)
+	}
+	if event.HITLApprovalRequested == nil || *event.HITLApprovalRequested {
+		t.Fatalf("expected approvalRequested=false, got %v", event.HITLApprovalRequested)
 	}
 }
 

@@ -1,98 +1,160 @@
 # Contributing to Contenox
 
-Thank you for your interest in contributing to Contenox! Whether you want to fix a bug, improve documentation, or propose a new feature, your help is welcome.
+Thanks for helping improve Contenox. This repository is being shaped around the
+V1 runtime surface: local CLI usage, ACP over stdio, and the VS Code extension
+that embeds the same Go runtime.
 
 ## Code of Conduct
 
-Please treat all contributors with respect. Engage in constructive discussions and assume good intentions.
-
+Treat contributors with respect. Keep technical disagreements concrete and
+actionable.
 
 ## Architecture
 
-Contenox is a CLI-first Go application with clear layering:
+Contenox is a local-first Go runtime with a thin set of host adapters:
 
-```
-CLI (runtime/contenoxcli/)
-    ↓
+```text
+CLI / ACP / VS Code stdio bridge
+    ->
 Service Layer (runtime/*service/)
-    ↓
+    ->
 Task Engine (runtime/taskengine/)
-    ↓
-Data + Integrations (lib*/ + runtime/runtimetypes/)
+    ->
+Data + Integrations (lib*/ + runtime/runtimetypes/ + runtime/localtools/)
 ```
+
+The Go runtime owns chains, execution state, model routing, tools, MCP worker
+sessions, human-in-the-loop policy, session history, and local state. Editor
+integrations should stay adapters around that runtime. They should not re-create
+chain semantics in TypeScript or a separate UI server.
+
+### V1 product boundary
+
+The V1 public surface is:
+
+- `contenox` CLI
+- `contenox acp` for ACP clients such as Zed, JetBrains, and AionUi
+- `contenox vscode-agent --stdio` through the VS Code extension
+
+The current V1 direction explicitly does not include `contenox serve`, Beam, a
+browser UI, OpenAI/Ollama-compatible proxy routes, or generated local OpenAPI
+docs. Do not reintroduce those surfaces without updating `ROADMAP.md` and the
+blueprints first.
 
 ### Abstraction layers
 
-**Service Layer** — each domain gets its own interface + implementation package (`execservice`, `backendservice`, `mcpserverservice`, `stateservice`, `hitlservice`, `terminalservice`, `localfileservice`, etc.). Services don't call each other directly; they communicate through the shared `runtimetypes.Store` interface and bus events.
+**Service Layer** - each domain gets its own interface and implementation
+package (`execservice`, `backendservice`, `mcpserverservice`, `stateservice`,
+`hitlservice`, `localfileservice`, etc.). Services communicate through the
+shared `runtimetypes.Store` interface and bus events rather than depending on
+each other directly.
 
-**Task Engine** (`runtime/taskengine/`) — the core execution model. Chains are JSON DAGs with typed I/O (`DataType`: String, Int, JSON, ChatHistory). Task handlers (`chat_completion`, `execute_tool_calls`, `tools`, `route`, `raise_error`, `noop`) are an enum. Branch conditions (`equals`, `contains`, `starts_with`, `ends_with`, `default`, `edge_traversed_at_least`) are declarative — no Go code lives inside chain definitions.
+**Task Engine** (`runtime/taskengine/`) - the core execution model. Chains are
+JSON/YAML DAGs with typed I/O (`DataType`: String, Int, JSON, ChatHistory, Any).
+Task handlers (`chat_completion`, `execute_tool_calls`, `tools`, `route`,
+`raise_error`, `noop`) and branch operators (`equals`, `contains`,
+`starts_with`, `ends_with`, `default`, `edge_traversed_at_least`) are
+declarative. New Go primitives should be rare.
 
-**LLM Resolution** — two-level indirection: `llmrepo.ModelRepo` handles request-side selection (pick by capability or context length); `modelrepo.Provider` handles provider-side calls (Ollama, OpenAI, Gemini, Vertex, vLLM, local llama.cpp). `runtimestate` reconciles live backend capabilities every 10 s.
+**LLM Resolution** - `llmrepo.ModelRepo` handles request-side selection by
+capability, provider, model, and context length. `modelrepo.Provider`
+implementations handle provider-side calls for local llama.cpp, Ollama/Ollama
+Cloud, OpenAI, OpenRouter, Anthropic, Mistral, Gemini, AWS Bedrock, Vertex, and
+vLLM. Runtime state catalogs configured backend capabilities for selectors and
+diagnostics.
 
-**Hook System** — chains invoke tools by name; resolution happens at runtime. Tool providers include `local_shell`, `local_fs`, `webtools`, `mcp`, HITL approval, and `print`. MCP tools route via managed worker sessions. Adding a new integration does not require touching the engine.
+**Tool System** - chains invoke tools by name and resolution happens at runtime.
+Built-in providers include `local_shell`, `local_fs`, `webtools`, `echo`,
+`print`, OpenAPI-backed remote tools, and MCP-backed tools. HITL policy wraps
+tool execution where approval is required.
 
-**Event-driven async** — `libbus` abstracts an in-memory SQLite-backed bus. Services publish typed events (e.g. `task.events.step_completed`) that other services subscribe to. Coupling between services is through events, not direct calls.
+**Event-driven async** - `libbus` abstracts the local event bus. Services publish
+typed events such as `task.events.step_completed`, and other services subscribe
+without direct package coupling.
 
 **Key files to orient yourself:**
 
 | File | What it shows |
 |------|---------------|
-| `runtime/taskengine/tasktype.go` | Task types, handlers, branch operators |
-| `runtime/runtimestate/state.go` | Backend state sync |
+| `runtime/taskengine/tasktype.go` | Chain schema, task handlers, branch operators |
+| `runtime/taskengine/taskenv.go` | Runtime tool resolution and chain execution context |
 | `runtime/contenoxcli/cli.go` | CLI dispatch |
 | `runtime/contenoxcli/engine.go` | CLI-local engine bootstrap |
-
+| `runtime/modelrepo/` | Provider drivers |
+| `runtime/vscodeagent/` | VS Code stdio bridge |
+| `packages/vscode/` | VS Code extension host adapter |
 
 ## Repository structure
 
-The **`contenox`** binary is the main entrypoint: `setup`, `init`, `chat`, `run`, `serve`, `tools`, `mcp`, `backend`, `config`, `model`, `doctor`, `session`, `acp`, and `acpx`.
+The `contenox` binary is the main entrypoint. Current commands include `setup`,
+`init`, `chat`, `run`, `tools`, `mcp`, `backend`, `config`, `model`, `doctor`,
+`session`, `acp`, `acpx`, and `vscode-agent`.
 
-All AI/LLM orchestration packages live under **`runtime/`**. Infrastructure libraries (`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libroutine`, `libtracker`) stay at the module root.
+All AI workflow packages live under `runtime/`. Infrastructure libraries
+(`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libroutine`,
+`libtracker`) stay at the module root.
 
-```
-runtime/              ← AI/LLM orchestration (taskengine, execservice, runtimetypes, …)
-  internal/           ← model repo drivers, hooks, state reconciler
-runtime/contenoxcli/  ← CLI command implementations
-runtime/errdefs/      ← shared error sentinels
-runtime/version/      ← embedded version string
-cmd/contenox/         ← contenox binary entry point
-lib*/                 ← infrastructure libraries (no LLM dependencies)
+```text
+cmd/contenox/          contenox binary entry point
+runtime/contenoxcli/  CLI command implementations
+runtime/taskengine/   chain schema and execution engine
+runtime/modelrepo/    provider drivers
+runtime/llmrepo/      provider/model selection
+runtime/localtools/   local shell, local filesystem, web, echo, print tools
+runtime/*service/     runtime services
+runtime/vscodeagent/  stdio bridge used by the VS Code extension
+packages/vscode/      VS Code extension
+docs/blueprints/      release, product, and pruning plans
+lib*/                 infrastructure libraries with no LLM dependency
 ```
 
 ### Makefile overview
 
-The root **`Makefile`** groups targets by prefix:
+Run `make help` at the repo root for the full list.
 
 | Prefix | Purpose |
 |--------|---------|
-| **`build-*`** | `build-contenox` |
-| **`test-*`** | Go, API smoke, UI, and CLI help checks |
-| **`dev-*`** | `dev-install` / `dev-link` / `dev-unlink`, `dev-go-watch` (Air live reload) |
-| **`deps-*`** | `deps-go-watch` (Air), `deps-ui` |
-| **`clean`** | Remove `bin/` |
+| `build-*` | `build-contenox`, `build-contenox-windows`, `build-vscode` |
+| `package-*` | `package-vscode`, `package-vscode-proposed` |
+| `test-*` | Go unit/system tests and CLI help checks |
+| `dev-*` | local binary and VS Code extension install helpers |
+| `deps-*` | Air, Ollama/llama.cpp headers, VS Code extension dependencies |
+| `clean*` | remove generated binaries and VS Code packaging artifacts |
 
-Run **`make help`** at the repo root for the full list (default goal).
+Version bumps and release notes for maintainers live in `Makefile.version`
+(`make -f Makefile.version help`).
 
-Version bumps and release notes for maintainers live in **`Makefile.version`** (`make -f Makefile.version help`).
+### Planning docs
+
+Keep these files in sync when changing public surface area:
+
+- `ROADMAP.md`
+- `docs/blueprints/v1-feature-map.md`
+- `docs/blueprints/vscode-marketplace-release.md`
+- `docs/blueprints/runtime-prune-http-ui-proxy.md`
 
 ## Local development setup
 
 ### Prerequisites
 
 - [Go](https://go.dev/doc/install) 1.25+
-- Access to an LLM provider (e.g. OpenAI API key, or locally via [Ollama](https://ollama.ai/), [vLLM](https://docs.vllm.ai/), etc.)
 - `make`
-- **Optional:** [Air](https://github.com/air-verse/air) for Go live reload (`make deps-go-watch`)
+- C/C++ toolchain for the local llama.cpp backend
+- `nlohmann-json3-dev` on Debian/Ubuntu, or `nlohmann-json` through Homebrew on macOS
+- Node.js 22+ and npm for the VS Code extension
+- Optional: [Air](https://github.com/air-verse/air) for Go live reload (`make deps-go-watch`)
+- Optional: an LLM provider key or local server. The default local path is a GGUF model under `~/.contenox/models/`.
 
 ### Go binary path
 
-`go install` puts binaries in `$GOPATH/bin` (typically `~/go/bin`). Add it to your shell:
+`go install` puts binaries in `$GOPATH/bin`, usually `~/go/bin`. Add it to your
+shell:
 
 ```bash
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
-Add this line to `~/.bashrc` or `~/.zshrc` to make it permanent.
+Add that line to `~/.bashrc` or `~/.zshrc` if you want it permanently.
 
 ### Building the CLI
 
@@ -101,106 +163,135 @@ Add this line to `~/.bashrc` or `~/.zshrc` to make it permanent.
 make build-contenox
 
 # Run an example
-./bin/contenox "list files in my home directory"
+./bin/contenox "list files in this repository"
 ```
 
-Optional: **`make dev-install`** (or **`make dev-link`** after a build) symlinks `contenox` to `~/.local/bin/contenox` for development.
+Optional: `make dev-install` symlinks `contenox` to
+`~/.local/bin/contenox` for development.
 
-### Building with local LLM inference (CGo)
+### Building with local LLM inference
 
-The `runtime/modelrepo/local` package embeds llama.cpp inference directly into the binary via `github.com/ollama/ollama/llama` (CGo). This is **required** to build the full binary — `CGO_ENABLED=0` no longer works.
+The `runtime/modelrepo/local` package embeds llama.cpp inference through
+`github.com/ollama/ollama/llama`, so the full binary requires CGo.
 
-**System packages (Ubuntu/Debian):**
+On Debian/Ubuntu:
 
 ```bash
 sudo apt-get install -y gcc g++ nlohmann-json3-dev
 ```
 
-`nlohmann-json3-dev` provides `nlohmann/json_fwd.hpp`, which llama.cpp's v0.17.5 C++ tools require.
-
-**Missing headers in the Go module cache:**
-
-The ollama module at v0.17.5 includes multimodal C++ code (`mtmd`) that depends on two single-file libraries not bundled with the module. Download them manually:
+Then fetch the llama.cpp multimodal headers expected by the vendored Ollama
+module and build:
 
 ```bash
-OLLAMA_MOD="$(go env GOPATH)/pkg/mod/github.com/ollama/ollama@v0.17.5"
-MTMD="$OLLAMA_MOD/llama/llama.cpp/tools/mtmd"
-
-# Make module cache writable (read-only by default)
-chmod -R u+w "$OLLAMA_MOD/llama"
-
-# miniaudio — audio I/O library
-mkdir -p "$MTMD/miniaudio"
-curl -fsSL https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h \
-     -o "$MTMD/miniaudio/miniaudio.h"
-
-# stb_image — image loading library
-mkdir -p "$MTMD/stb"
-curl -fsSL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h \
-     -o "$MTMD/stb/stb_image.h"
+make deps-ollama-headers
+make build-contenox
 ```
 
-These steps are one-time per machine. After that, `make build-contenox` (which sets `CGO_ENABLED=1`) will compile cleanly.
+The header target is safe to re-run. It downloads the missing `miniaudio.h` and
+`stb_image.h` files into the Go module cache for the Ollama version used by this
+module.
+
+### VS Code extension development
+
+The extension packages a platform-specific `bin/contenox` runtime and talks to it
+over header-framed JSON-RPC stdio.
+
+Common local checks:
+
+```bash
+make deps-vscode
+make package-vscode
+```
+
+Lower-level extension checks:
+
+```bash
+cd packages/vscode
+npm ci
+npm run check
+npm run package
+npm run package:check -- runtime-$(tr -d '\r\n' < ../../runtime/version/version.txt).vsix
+```
+
+Install the local VSIX into VS Code:
+
+```bash
+make dev-install-vscode
+```
+
+The Marketplace build and publish workflow is `.github/workflows/vscode-marketplace.yml`.
+It expects `VSCE_PAT` to be present as a GitHub Actions secret until Marketplace
+publishing moves away from PATs.
 
 ## Running tests
 
-Before submitting a pull request, ensure tests pass.
+Before submitting a pull request, run the checks that match your change.
 
-**Fast path (matches CI):** tests whose names start with `TestUnit_`, with `-short` and a 15-minute cap:
+Fast path, matching CI:
 
 ```bash
 make test-unit
 ```
 
-**Full Go suite:** includes `TestSystem_*` integration tests (Docker, Ollama, vLLM containers, etc.) — slower and needs those tools:
+Full Go suite, including slower `TestSystem_*` integration tests:
 
 ```bash
-make test              # GOMAXPROCS=1 go test ./...
-make test-system       # only TestSystem_*
+make test
+make test-system
 ```
 
-**CLI package (verbose):**
+CLI package and help drift checks:
 
 ```bash
 make test-contenox-verbose
-```
-
-**Local HTTP API smoke tests:** builds `bin/contenox`, starts `contenox serve`
-with a temporary HOME/workspace/DB, runs pytest against the local API, then
-shuts the server down:
-
-```bash
-make test-api
-make test-api PYTEST_ARGS="-k taskchain"
-```
-
-These tests avoid real providers and model downloads by default. The optional
-download smoke can be enabled with `APITEST_RUN_DOWNLOAD=1`.
-
-**CLI help drift check** (after changing Cobra commands or flags): build first, then:
-
-```bash
 make test-contenox-help
 ```
 
-**Race detector (optional):**
+Optional race detector:
 
 ```bash
 go test -race ./... -run '^TestUnit_'
 ```
 
+For VS Code extension changes, run:
+
+```bash
+make package-vscode
+```
+
+If command names, flags, README examples, or user-facing help changed, also run
+`make test-contenox-help` and update the relevant docs.
+
 ## Pull request guidelines
 
-1. **Create an issue:** If you're adding a major feature or changing the architecture, please open an issue first to discuss the design.
-2. **Branch naming:** Create a branch from `main` with a descriptive name (`feature/xyz`, `fix/abc`, `docs/def`).
-3. **Commit messages:** Follow [Conventional Commits](https://www.conventionalcommits.org/). For example, `feat: add support for local mode`, `fix: correct token count logic`, `docs: clarify CLI usage`.
-4. **Style checks:** Ensure your code runs successfully through `gofmt` and standard linters like `golangci-lint` if available.
+1. Open an issue first for major feature or architecture changes.
+2. Branch from `main` with a descriptive name such as `feature/xyz`,
+   `fix/abc`, or `docs/def`.
+3. Use clear commit messages. Conventional Commit prefixes are preferred.
+4. Run `gofmt` on Go changes.
+5. Keep docs and blueprints in sync with public-surface changes.
+6. Keep generated artifacts out of commits unless the release process requires
+   them.
 
 ## Code conventions
 
 ### Go style
 
-- **No comments.** Do not add doc comments, function-level comments, or inline comments. Well-named identifiers are self-documenting; the git log is the changelog.
-- **Interfaces, not implementations.** Service constructors accept interfaces. Wire concrete types in `runtime/contenoxcli/engine.go`.
-- **Declarative chains over Go code.** Business logic belongs in JSON task-chain definitions, not in new Go functions. Extend `taskengine` only when you need a new primitive that cannot be expressed as a chain.
-- **Wide interfaces are a smell.** `runtimetypes.Store` is intentionally broad for historical reasons; new code should accept the narrowest interface slice it actually needs.
+- Prefer self-documenting code. Add short comments only for non-obvious
+  invariants, protocol behavior, security boundaries, or tricky edge cases.
+- Service constructors accept interfaces. Wire concrete implementations in
+  `runtime/contenoxcli/engine.go`.
+- Keep chain behavior declarative. Business logic belongs in chain definitions
+  unless a new primitive is genuinely needed in `taskengine`.
+- Tool exposure must be explicit. `execute_config.tools` omitted, `null`, or
+  `[]` exposes no registry tools. Use `["*"]` only when a chain intentionally
+  opts into all registered tools, and prefer narrow allowlists such as
+  `["local_fs"]`.
+- Runtime allowlists may restrict task allowlists but must not expand them.
+- Wide interfaces are a smell. `runtimetypes.Store` is broad for historical
+  reasons; new code should accept the narrowest interface slice it actually
+  needs.
+- Do not reintroduce `contenox serve`, Beam/browser UI, HTTP model proxy
+  compatibility routes, generated local OpenAPI docs, or API test harnesses
+  without an explicit roadmap change.
