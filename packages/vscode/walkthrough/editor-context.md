@@ -10,5 +10,5 @@ Common entry points:
 - Run `Contenox: Review Workspace Changes`
 - Run `Contenox: Draft Commit Message`
 
-Tool and file operations still pass through Contenox runtime policy and HITL
-approval.
+Tool and file operations still pass through Contenox runtime policy and
+human-in-the-loop approval.

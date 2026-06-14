@@ -45,12 +45,12 @@ class ContenoxMCPServerProvider implements vscode.McpServerDefinitionProvider {
     try {
       const state = await this.bridge.ensureStarted();
       if (!state.initialize.capabilities.mcp) {
-        this.telemetry.warn("mcp.provider.skipped", { reason: "bridge_capability_missing" });
+        this.telemetry.warn("mcp.provider.skipped", { reason: "runtime_capability_missing" });
         return [];
       }
       const client = this.bridge.currentClient;
       if (!client) {
-        this.telemetry.warn("mcp.provider.skipped", { reason: "bridge_client_missing" });
+        this.telemetry.warn("mcp.provider.skipped", { reason: "runtime_connection_missing" });
         return [];
       }
       const result = await client.listMCPServers();
@@ -79,12 +79,12 @@ export async function showMCPServers(bridge: BridgeProcess, output: ContenoxOutp
   try {
     const state = await bridge.ensureStarted();
     if (!state.initialize.capabilities.mcp) {
-      vscode.window.showWarningMessage("The active Contenox bridge does not expose MCP server definitions.");
+      vscode.window.showWarningMessage("The active Contenox runtime does not expose MCP server definitions.");
       return;
     }
     const client = bridge.currentClient;
     if (!client) {
-      throw new Error("Bridge client is not available");
+      throw new Error("Contenox runtime connection is not available");
     }
     const result = await client.listMCPServers();
     telemetry.event("mcp.servers.show", { count: result.servers.length });

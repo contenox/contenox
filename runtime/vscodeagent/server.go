@@ -41,9 +41,6 @@ type Server struct {
 	clientReqNextID  int64
 	clientReqPending map[string]chan clientResponse
 
-	permMu      sync.Mutex
-	permPending map[string]struct{}
-
 	sessionCfgMu sync.Mutex
 	sessionThink map[string]string
 
@@ -87,10 +84,9 @@ func New(cfg ServerConfig) (*Server, error) {
 		requestTo:        make(map[string]turnInfo),
 		rpcCancels:       make(map[string]context.CancelFunc),
 		clientReqPending: make(map[string]chan clientResponse),
-		permPending:      make(map[string]struct{}),
 		policyNames:      append([]string(nil), cfg.PolicyNames...),
 	}
-	s.approvals = NewApprovalBroker(s.requestPermission, s.activeHITLPolicy, s.sessionIDFromContext, s.markPermissionPending, s.clearPermissionPending)
+	s.approvals = NewApprovalBroker(s.requestPermission, s.activeHITLPolicy, s.sessionIDFromContext)
 	s.events = &bridgeEventSink{server: s}
 	return s, nil
 }
@@ -329,6 +325,16 @@ func (s *Server) handle(ctx context.Context, req request) (any, *responseError, 
 			return nil, &responseError{Code: ErrInvalidParams, Message: err.Error()}, false
 		}
 		return result, nil, false
+	case "sessionRead":
+		var params sessionReadParams
+		if err := strictDecode(req.Params, &params); err != nil {
+			return nil, invalidParams(err), false
+		}
+		result, err := s.sessionRead(ctx, params)
+		if err != nil {
+			return nil, &responseError{Code: ErrInvalidParams, Message: err.Error()}, false
+		}
+		return result, nil, false
 	case "sessionDelete":
 		var params sessionDeleteParams
 		if err := strictDecode(req.Params, &params); err != nil {
@@ -355,16 +361,6 @@ func (s *Server) handle(ctx context.Context, req request) (any, *responseError, 
 			return nil, invalidParams(err), false
 		}
 		return s.chatCancel(params), nil, false
-	case "approvalRespond":
-		var params approvalRespondParams
-		if err := strictDecode(req.Params, &params); err != nil {
-			return nil, invalidParams(err), false
-		}
-		result, err := s.approvalRespond(params)
-		if err != nil {
-			return nil, &responseError{Code: ErrInvalidParams, Message: err.Error()}, false
-		}
-		return result, nil, false
 	case "autocomplete":
 		var params autocompleteParams
 		if err := strictDecode(req.Params, &params); err != nil {

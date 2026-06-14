@@ -1,11 +1,8 @@
 import { Readable, Writable } from "node:stream";
-import { CancellationToken, Disposable } from "vscode";
+import { CancellationToken, CancellationTokenSource, Disposable } from "vscode";
 import { JsonRpcFramer } from "./JsonRpcFramer";
 import {
   ConfigSnapshot,
-  ApprovalRequestedEvent,
-  ApprovalRespondParams,
-  ApprovalRespondResult,
   AutocompleteParams,
   AutocompleteResult,
   ChatCancelParams,
@@ -36,6 +33,7 @@ import {
   SessionDeleteResult,
   SessionListResult,
   SessionLoadParams,
+  SessionReadParams,
   SessionResult,
   SetConfigParams,
   ToolCallEvent,
@@ -52,7 +50,18 @@ interface PendingRequest<T> {
   reject: (reason: Error) => void;
 }
 
-export type PermissionRequestHandler = (params: RequestPermissionParams) => Promise<RequestPermissionResponse>;
+interface PermissionRequestHandlerEntry {
+  sessionId: string;
+  handler: PermissionRequestHandler;
+}
+
+interface PendingServerRequest {
+  method: string;
+  startedAt: number;
+  cancellation: CancellationTokenSource;
+}
+
+export type PermissionRequestHandler = (params: RequestPermissionParams, token: CancellationToken) => Promise<RequestPermissionResponse>;
 
 export class BridgeRpcError extends Error {
   public constructor(
@@ -68,9 +77,10 @@ export class BridgeClient implements Disposable {
   private nextID = 1;
   private disposed = false;
   private readonly pending = new Map<JsonRpcID, PendingRequest<unknown>>();
+  private readonly serverRequests = new Map<JsonRpcID, PendingServerRequest>();
   private readonly ignoredResponses = new Set<JsonRpcID>();
   private readonly listeners = new Map<string, Set<(params: unknown) => void>>();
-  private readonly permissionHandlers: PermissionRequestHandler[] = [];
+  private readonly permissionHandlers: PermissionRequestHandlerEntry[] = [];
   private readonly framer: JsonRpcFramer;
 
   public constructor(
@@ -84,7 +94,7 @@ export class BridgeClient implements Disposable {
     this.framer = new JsonRpcFramer(
       stdin,
       (message) => this.handleMessage(message),
-      (error) => this.output.error(`Bridge protocol parse error: ${error.message}`),
+      (error) => this.output.error(`Contenox runtime protocol parse error: ${error.message}`),
     );
     stdout.on("data", (chunk: Buffer) => this.framer.accept(chunk));
   }
@@ -137,6 +147,10 @@ export class BridgeClient implements Disposable {
     return this.request<SessionResult>("sessionLoad", params);
   }
 
+  public sessionRead(params: SessionReadParams): Promise<SessionResult> {
+    return this.request<SessionResult>("sessionRead", params);
+  }
+
   public sessionDelete(params: SessionDeleteParams): Promise<SessionDeleteResult> {
     return this.request<SessionDeleteResult>("sessionDelete", params);
   }
@@ -147,10 +161,6 @@ export class BridgeClient implements Disposable {
 
   public chatCancel(params: ChatCancelParams): Promise<ChatCancelResult> {
     return this.request<ChatCancelResult>("chatCancel", params);
-  }
-
-  public approvalRespond(params: ApprovalRespondParams): Promise<ApprovalRespondResult> {
-    return this.request<ApprovalRespondResult>("approvalRespond", params);
   }
 
   public autocomplete(params: AutocompleteParams, token?: CancellationToken): Promise<AutocompleteResult> {
@@ -204,15 +214,12 @@ export class BridgeClient implements Disposable {
     return this.onNotification("hitlDecision", listener);
   }
 
-  public onApprovalRequested(listener: (params: ApprovalRequestedEvent) => void): Disposable {
-    return this.onNotification("approvalRequested", listener);
-  }
-
-  public pushPermissionRequestHandler(handler: PermissionRequestHandler): Disposable {
-    this.permissionHandlers.push(handler);
+  public pushPermissionRequestHandler(sessionId: string, handler: PermissionRequestHandler): Disposable {
+    const entry = { sessionId, handler };
+    this.permissionHandlers.push(entry);
     return {
       dispose: () => {
-        const index = this.permissionHandlers.lastIndexOf(handler);
+        const index = this.permissionHandlers.lastIndexOf(entry);
         if (index >= 0) {
           this.permissionHandlers.splice(index, 1);
         }
@@ -226,10 +233,10 @@ export class BridgeClient implements Disposable {
 
   public request<T>(method: string, params?: unknown, timeoutMs = this.requestTimeoutMs, token?: CancellationToken): Promise<T> {
     if (this.disposed) {
-      return Promise.reject(new Error("Contenox bridge client is disposed"));
+      return Promise.reject(new Error("Contenox runtime connection is closed"));
     }
     if (token?.isCancellationRequested) {
-      return Promise.reject(new Error(`Contenox bridge request cancelled before send: ${method}`));
+      return Promise.reject(new Error(`Contenox runtime request cancelled before send: ${method}`));
     }
 
     const id = this.nextID++;
@@ -251,12 +258,12 @@ export class BridgeClient implements Disposable {
         this.pending.delete(id);
         this.ignoredResponses.add(id);
         this.sendCancel(id);
-        this.telemetry.warn("bridge.rpc.timeout", {
+        this.telemetry.warn("runtime.rpc.timeout", {
           id,
           method,
           durationMs: Date.now() - startedAt,
         });
-        reject(new Error(`Contenox bridge request timed out: ${method}`));
+        reject(new Error(`Contenox runtime request timed out: ${method}`));
       }, timeoutMs);
       const cancellation = token?.onCancellationRequested(() => {
         const pending = this.pending.get(id);
@@ -269,7 +276,7 @@ export class BridgeClient implements Disposable {
         this.ignoredResponses.add(id);
         this.sendCancel(id);
         this.logCancellation(id, method, Date.now() - pending.startedAt);
-        reject(new Error(`Contenox bridge request cancelled: ${method}`));
+        reject(new Error(`Contenox runtime request cancelled: ${method}`));
       });
 
       const startedAt = Date.now();
@@ -283,7 +290,7 @@ export class BridgeClient implements Disposable {
       });
 
       this.logRequest(method, id);
-      this.telemetry.event("bridge.rpc.start", {
+      this.telemetry.event("runtime.rpc.start", {
         id,
         method,
         timeoutMs,
@@ -294,22 +301,31 @@ export class BridgeClient implements Disposable {
 
   public dispose(): void {
     this.disposed = true;
+    for (const [id, pending] of this.serverRequests) {
+      pending.cancellation.cancel();
+      pending.cancellation.dispose();
+      this.serverRequests.delete(id);
+    }
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timer);
       pending.cancellation?.dispose();
       this.sendCancel(id);
-      this.telemetry.warn("bridge.rpc.closed", {
+      this.telemetry.warn("runtime.rpc.closed", {
         id,
         method: pending.method,
         durationMs: Date.now() - pending.startedAt,
       });
-      pending.reject(new Error(`Contenox bridge closed before ${pending.method} completed`));
+      pending.reject(new Error(`Contenox runtime connection closed before ${pending.method} completed`));
       this.pending.delete(id);
     }
   }
 
   private handleMessage(message: unknown): void {
     if (isNotification(message)) {
+      if (message.method === "$/cancelRequest") {
+        this.handleServerCancellation(message.params);
+        return;
+      }
       this.logNotification(message.method, message.params);
       this.emitNotification(message.method, message.params);
       return;
@@ -319,7 +335,7 @@ export class BridgeClient implements Disposable {
       return;
     }
     if (!isResponse(message)) {
-      this.output.warn("Ignoring bridge message without a JSON-RPC response shape");
+      this.output.warn("Ignoring unexpected runtime message");
       return;
     }
     const id = message.id ?? null;
@@ -328,8 +344,8 @@ export class BridgeClient implements Disposable {
       if (this.ignoredResponses.delete(id)) {
         return;
       }
-      this.telemetry.warn("bridge.rpc.unmatched_response", { id });
-      this.output.warn(`Ignoring bridge response with no pending request: ${String(id)}`);
+      this.telemetry.warn("runtime.rpc.unmatched_response", { id });
+      this.output.warn(`Ignoring runtime response with no pending request: ${String(id)}`);
       return;
     }
     this.pending.delete(id);
@@ -338,7 +354,7 @@ export class BridgeClient implements Disposable {
 
     if (message.error) {
       this.logResponse(pending.method, id, message.error);
-      this.telemetry.error("bridge.rpc.error", message.error.message, {
+      this.telemetry.error("runtime.rpc.error", message.error.message, {
         id,
         method: pending.method,
         code: message.error.code,
@@ -349,7 +365,7 @@ export class BridgeClient implements Disposable {
     }
 
     this.logResponse(pending.method, id);
-    this.telemetry.event("bridge.rpc.ok", {
+    this.telemetry.event("runtime.rpc.ok", {
       id,
       method: pending.method,
       durationMs: Date.now() - pending.startedAt,
@@ -359,25 +375,32 @@ export class BridgeClient implements Disposable {
 
   private async handleServerRequest(message: JsonRpcRequest): Promise<void> {
     this.logServerRequest(message.method, message.id);
-    this.telemetry.event("bridge.server_request.start", {
+    this.telemetry.event("runtime.server_request.start", {
       id: message.id,
       method: message.method,
+    });
+    const cancellation = new CancellationTokenSource();
+    this.serverRequests.set(message.id, {
+      method: message.method,
+      startedAt: Date.now(),
+      cancellation,
     });
     try {
       switch (message.method) {
         case "session/request_permission": {
           const params = parseRequestPermissionParams(message.params);
-          const handler = this.permissionHandlers[this.permissionHandlers.length - 1];
-          const result = handler ? await handler(params) : cancelledPermissionResponse();
+          const handler = this.permissionHandlerForSession(params.sessionId);
+          const result = handler ? await handler(params, cancellation.token) : cancelledPermissionResponse();
           if (!handler) {
-            this.telemetry.warn("bridge.permission.no_handler", {
+            this.telemetry.warn("runtime.permission.no_handler", {
               id: message.id,
               sessionId: params.sessionId,
               toolCallId: params.toolCall.toolCallId,
+              registeredSessionIds: this.permissionHandlers.map((entry) => entry.sessionId),
             });
           }
           this.sendResult(message.id, result);
-          this.telemetry.event("bridge.server_request.ok", {
+          this.telemetry.event("runtime.server_request.ok", {
             id: message.id,
             method: message.method,
             outcome: result.outcome.outcome,
@@ -387,25 +410,57 @@ export class BridgeClient implements Disposable {
         }
         default:
           this.sendError(message.id, -32601, `method not found: ${message.method}`);
-          this.telemetry.warn("bridge.server_request.unknown", { id: message.id, method: message.method });
+          this.telemetry.warn("runtime.server_request.unknown", { id: message.id, method: message.method });
           return;
       }
     } catch (error) {
       this.sendError(message.id, -32603, error instanceof Error ? error.message : String(error));
-      this.telemetry.error("bridge.server_request.error", error, {
+      this.telemetry.error("runtime.server_request.error", error, {
         id: message.id,
         method: message.method,
       });
+    } finally {
+      this.serverRequests.delete(message.id);
+      cancellation.dispose();
+    }
+  }
+
+  private permissionHandlerForSession(sessionId: string): PermissionRequestHandler | undefined {
+    for (let i = this.permissionHandlers.length - 1; i >= 0; i--) {
+      const entry = this.permissionHandlers[i];
+      if (entry.sessionId === sessionId) {
+        return entry.handler;
+      }
+    }
+    return undefined;
+  }
+
+  private handleServerCancellation(params: unknown): void {
+    try {
+      const id = parseCancelRequestParams(params);
+      const pending = this.serverRequests.get(id);
+      if (!pending) {
+        this.telemetry.warn("runtime.server_request.cancel.unmatched", { id });
+        return;
+      }
+      pending.cancellation.cancel();
+      this.telemetry.warn("runtime.server_request.cancelled", {
+        id,
+        method: pending.method,
+        durationMs: Date.now() - pending.startedAt,
+      });
+    } catch (error) {
+      this.telemetry.error("runtime.server_request.cancel.invalid", error);
     }
   }
 
   private logCancellation(id: JsonRpcID, method: string, durationMs: number): void {
     const fields = { id, method, durationMs };
     if (method === "autocomplete") {
-      this.telemetry.event("bridge.rpc.cancelled.expected", fields);
+      this.telemetry.event("runtime.rpc.cancelled.expected", fields);
       return;
     }
-    this.telemetry.warn("bridge.rpc.cancelled", fields);
+    this.telemetry.warn("runtime.rpc.cancelled", fields);
   }
 
   private logRequest(method: string, id: JsonRpcID): void {
@@ -435,7 +490,7 @@ export class BridgeClient implements Disposable {
     if (this.logProtocol) {
       this.output.protocol(`<-- notification ${method}`);
     }
-    this.telemetry.event("bridge.notification", { method });
+    this.telemetry.event("runtime.notification", { method });
     if (method === "hitlDecision" && isHitlDecisionEvent(params)) {
       this.telemetry.event("hitl.decision", {
         sessionId: params.sessionId,
@@ -555,6 +610,21 @@ function parseRequestPermissionParams(value: unknown): RequestPermissionParams {
     throw new Error("permission request options are required");
   }
   return candidate as RequestPermissionParams;
+}
+
+function parseCancelRequestParams(value: unknown): JsonRpcID {
+  if (!value || typeof value !== "object") {
+    throw new Error("cancel params must be an object");
+  }
+  const candidate = value as { id?: unknown };
+  if (
+    typeof candidate.id === "number" ||
+    typeof candidate.id === "string" ||
+    candidate.id === null
+  ) {
+    return candidate.id;
+  }
+  throw new Error("cancel params id is required");
 }
 
 function cancelledPermissionResponse(): RequestPermissionResponse {

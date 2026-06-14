@@ -30,11 +30,11 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
     try {
       const state = await this.bridge.ensureStarted();
       if (!state.initialize.capabilities.sessionList) {
-        return [{ kind: "message", label: "Sessions are not supported by this bridge" }];
+        return [{ kind: "message", label: "Sessions are not supported by this Contenox runtime" }];
       }
       const client = this.bridge.currentClient;
       if (!client) {
-        return [{ kind: "message", label: "Bridge client is not available" }];
+        return [{ kind: "message", label: "Contenox runtime connection is not available" }];
       }
       const [config, result] = await Promise.all([client.getConfig(), client.sessionList()]);
       const nodes: SessionTreeNode[] = [...configNodes(config)];
@@ -45,7 +45,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
       nodes.push(...result.sessions.map((session) => ({ kind: "session" as const, session })));
       return nodes;
     } catch (error) {
-      return [{ kind: "message", label: "Bridge unavailable", description: errorMessage(error) }];
+      return [{ kind: "message", label: "Contenox runtime unavailable", description: errorMessage(error) }];
     }
   }
 
@@ -105,9 +105,9 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
     try {
       const client = this.bridge.currentClient;
       if (!client) {
-        return [{ kind: "message", label: "Bridge client is not available" }];
+        return [{ kind: "message", label: "Contenox runtime connection is not available" }];
       }
-      const result = await client.sessionLoad({ sessionId: session.id });
+      const result = await client.sessionRead({ sessionId: session.id });
       const messages = result.messages.filter((message) => Boolean(message.content?.trim() || message.toolCalls?.length));
       if (messages.length === 0) {
         return [{ kind: "message", label: "No messages in this session" }];

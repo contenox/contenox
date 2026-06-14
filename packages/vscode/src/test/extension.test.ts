@@ -5,9 +5,11 @@ import { PassThrough } from "node:stream";
 import * as vscode from "vscode";
 import { approvalToolName } from "../approval/nativeTool";
 import { BridgeClient } from "../bridge/BridgeClient";
+import type { BridgeProcess } from "../bridge/BridgeProcess";
 import { JsonRpcFramer } from "../bridge/JsonRpcFramer";
 import type { RequestPermissionParams } from "../bridge/protocol";
 import { approvalEventFromPermissionRequest } from "../chat/participant";
+import { SessionTreeProvider } from "../chat/SessionTreeProvider";
 import { ContenoxOutput } from "../logging/output";
 import { TelemetryLogger } from "../logging/telemetry";
 
@@ -23,6 +25,8 @@ suite("Contenox VS Code extension", () => {
       "contenox.openChat",
       "contenox.runSetup",
       "contenox.showStatus",
+      "contenox.showExtensionRuntimeInfo",
+      "contenox.restartRuntime",
       "contenox.testAutocompleteAtCursor",
     ]) {
       assert.ok(commands.includes(command), `${command} should be registered`);
@@ -46,6 +50,12 @@ suite("Contenox VS Code extension", () => {
 
     const commandTitles = new Map(contributes.commands.map((command) => [command.command, command.title]));
     assert.equal(commandTitles.get("contenox.openWalkthrough"), "Open Walkthrough");
+    assert.equal(commandTitles.get("contenox.showExtensionRuntimeInfo"), "Show Runtime Info");
+    assert.equal(commandTitles.get("contenox.restartRuntime"), "Restart Runtime");
+    assert.equal(commandTitles.has("contenox.restartBridge"), false);
+    assert.equal(commandTitles.get("contenox.openAgentSession"), "Open Native Agent Session (Proposed)");
+    assert.equal(commandTitles.get("contenox.diagnoseAgentSessions"), "Diagnose Native Agent Sessions");
+    assert.equal(commandTitles.has("contenox.selectModel"), false);
     for (const [command, title] of commandTitles) {
       assert.ok(!title.startsWith("Contenox:"), `${command} should not duplicate the Contenox category prefix`);
     }
@@ -65,6 +75,48 @@ suite("Contenox VS Code extension", () => {
     }
   });
 
+  test("sessions tree keeps runtime config rows before sessions", async () => {
+    const bridge = {
+      ensureStarted: async () => ({
+        initialize: {
+          capabilities: {
+            sessionList: true,
+          },
+        },
+      }),
+      currentClient: {
+        getConfig: async () => ({
+          defaultProvider: "ollama",
+          defaultModel: "qwen",
+          defaultThink: "medium",
+          hitlPolicyName: "hitl-policy-strict.json",
+        }),
+        sessionList: async () => ({
+          sessions: [
+            {
+              id: "session-1",
+              name: "First session",
+              messageCount: 1,
+              isActive: true,
+            },
+          ],
+        }),
+      },
+    } as unknown as BridgeProcess;
+    const provider = new SessionTreeProvider(bridge);
+    try {
+      const children = (await provider.getChildren()) as Array<{ kind: string; label?: string }>;
+      assert.equal(children.length, 5);
+      assert.deepEqual(
+        children.slice(0, 4).map((node) => node.label ?? ""),
+        ["Provider", "Model", "Thinking", "HITL Policy"],
+      );
+      assert.equal(children[4].kind, "session");
+    } finally {
+      provider.dispose();
+    }
+  });
+
   test("bridge answers ACP-shaped permission requests", async () => {
     const outbound = new PassThrough();
     const inbound = new PassThrough();
@@ -77,7 +129,7 @@ suite("Contenox VS Code extension", () => {
     });
     outbound.on("data", (chunk: Buffer) => responseFramer.accept(chunk));
 
-    const disposable = client.pushPermissionRequestHandler(async (params) => {
+    const disposable = client.pushPermissionRequestHandler("session-1", async (params) => {
       assert.equal(params.sessionId, "session-1");
       assert.equal(params.toolCall.toolCallId, "call-1");
       return { outcome: { outcome: "selected", optionId: "allow" } };
@@ -108,6 +160,89 @@ suite("Contenox VS Code extension", () => {
         jsonrpc: "2.0",
         id: 99,
         result: { outcome: { outcome: "selected", optionId: "allow" } },
+      });
+    } finally {
+      disposable.dispose();
+      client.dispose();
+      telemetry.dispose();
+      output.dispose();
+    }
+  });
+
+  test("bridge routes permission requests by session", async () => {
+    const outbound = new PassThrough();
+    const inbound = new PassThrough();
+    const output = new ContenoxOutput();
+    const telemetry = new TelemetryLogger("test");
+    const client = new BridgeClient(outbound, inbound, output, 1000, false, telemetry);
+    const responses: unknown[] = [];
+    const responseFramer = new JsonRpcFramer(new PassThrough(), (message) => responses.push(message), (error) => {
+      throw error;
+    });
+    outbound.on("data", (chunk: Buffer) => responseFramer.accept(chunk));
+
+    const calls: string[] = [];
+    const disposableA = client.pushPermissionRequestHandler("session-a", async () => {
+      calls.push("a");
+      return { outcome: { outcome: "selected", optionId: "deny" } };
+    });
+    const disposableB = client.pushPermissionRequestHandler("session-b", async () => {
+      calls.push("b");
+      return { outcome: { outcome: "selected", optionId: "allow" } };
+    });
+    try {
+      writeFramed(inbound, permissionRequest(100, "session-a", "call-a"));
+      await eventually(() => responses.length === 1);
+      assert.deepEqual(calls, ["a"]);
+      assert.deepEqual(responses[0], {
+        jsonrpc: "2.0",
+        id: 100,
+        result: { outcome: { outcome: "selected", optionId: "deny" } },
+      });
+    } finally {
+      disposableA.dispose();
+      disposableB.dispose();
+      client.dispose();
+      telemetry.dispose();
+      output.dispose();
+    }
+  });
+
+  test("bridge cancels in-flight permission handlers from server cancel notification", async () => {
+    const outbound = new PassThrough();
+    const inbound = new PassThrough();
+    const output = new ContenoxOutput();
+    const telemetry = new TelemetryLogger("test");
+    const client = new BridgeClient(outbound, inbound, output, 1000, false, telemetry);
+    const responses: unknown[] = [];
+    const responseFramer = new JsonRpcFramer(new PassThrough(), (message) => responses.push(message), (error) => {
+      throw error;
+    });
+    outbound.on("data", (chunk: Buffer) => responseFramer.accept(chunk));
+
+    let cancelled = false;
+    const disposable = client.pushPermissionRequestHandler(
+      "session-cancel",
+      (_params, token) =>
+        new Promise((resolve) => {
+          token.onCancellationRequested(() => {
+            cancelled = true;
+            resolve({ outcome: { outcome: "cancelled" } });
+          });
+        }),
+    );
+    try {
+      writeFramed(inbound, permissionRequest(101, "session-cancel", "call-cancel"));
+      writeFramed(inbound, {
+        jsonrpc: "2.0",
+        method: "$/cancelRequest",
+        params: { id: 101 },
+      });
+      await eventually(() => cancelled && responses.length === 1);
+      assert.deepEqual(responses[0], {
+        jsonrpc: "2.0",
+        id: 101,
+        result: { outcome: { outcome: "cancelled" } },
       });
     } finally {
       disposable.dispose();
@@ -195,6 +330,32 @@ suite("Contenox VS Code extension", () => {
     assert.equal(event.diffOld, undefined);
     assert.equal(event.diffNew, undefined);
   });
+
+  test("permission request conversion preserves ACP content as fallback details", () => {
+    const event = approvalEventFromPermissionRequest({
+      sessionId: "session-1",
+      toolCall: {
+        toolCallId: "call-content",
+        title: "custom.tool",
+        content: [
+          {
+            type: "content",
+            path: "README.md",
+            content: {
+              type: "text",
+              text: "This action will update README metadata.",
+            },
+          },
+        ],
+      },
+      options: [
+        { optionId: "allow", name: "Allow", kind: "allow_once" },
+        { optionId: "deny", name: "Deny", kind: "reject_once" },
+      ],
+    });
+
+    assert.equal(event.details, "README.md\nThis action will update README metadata.");
+  });
 });
 
 interface ExtensionManifest {
@@ -234,6 +395,28 @@ function extensionRoot(): string {
 
 function isString(value: unknown): value is string {
   return typeof value === "string";
+}
+
+function permissionRequest(id: number, sessionId: string, toolCallId: string): unknown {
+  return {
+    jsonrpc: "2.0",
+    id,
+    method: "session/request_permission",
+    params: {
+      sessionId,
+      toolCall: {
+        toolCallId,
+        title: `local_shell.local_shell: ${toolCallId}`,
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: toolCallId },
+      },
+      options: [
+        { optionId: "allow", name: "Allow", kind: "allow_once" },
+        { optionId: "deny", name: "Deny", kind: "reject_once" },
+      ],
+    },
+  };
 }
 
 function writeFramed(stream: PassThrough, message: unknown): void {

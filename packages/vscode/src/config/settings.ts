@@ -42,7 +42,7 @@ export function readAutocompleteSettings(): AutocompleteSettings {
   const model = normalize(config.get<string>("autocompleteModel"), "");
   const maxOutputTokens = config.get<number>("maxOutputTokens", 0);
   return {
-    enabled: config.get<boolean>("autocomplete.enabled", true),
+    enabled: config.get<boolean>("autocomplete.enabled", false),
     provider: provider || undefined,
     model: model || undefined,
     maxPrefixChars: clamp(config.get<number>("autocomplete.maxPrefixChars", 6000), 256, 200000),

@@ -1,12 +1,20 @@
 # Contenox for VS Code
 
-Run local, reviewable AI workflows in VS Code.
+Run local, reviewable AI workflows in VS Code. Use it to:
 
-Use it for codebase chat, source-aware explanations, diagnostics help, commit
-drafts, workspace review, inline autocomplete, and tool-assisted workflows that
-stay under your control. The extension is the VS Code frontend for the Contenox
-runtime: it uses the models and providers you configure, keeps state on your
-machine, and asks for approval before crossing policy boundaries.
+- **Chat about your code** with `@contenox` — workspace questions and source-aware
+  explanations, no GitHub Copilot sign-in required.
+- **Fix problems** — explain or fix diagnostics from the lightbulb or command palette.
+- **Review before you push** — summarize your workspace changes and draft a commit
+  message from the current diff.
+- **Get inline autocomplete** from a local or cloud model you choose (needs a
+  separate autocomplete model — see [Autocomplete](#autocomplete) below).
+- **Run tool workflows you approve** — MCP, OpenAPI, and shell tools gated by
+  human-in-the-loop approval.
+
+The extension is the VS Code frontend for the Contenox runtime: it uses the models
+and providers you configure, keeps state on your machine, and asks for approval
+before crossing policy boundaries.
 
 ## Why Contenox
 
@@ -29,7 +37,8 @@ terminal, project state, tools, sessions, and model/provider configuration.
 - Ask about selected code or open files with editor context attached.
 - Explain and fix diagnostics from the command palette or lightbulb menu.
 - Review workspace changes and draft commit messages from the current diff.
-- Use inline autocomplete powered by your configured Contenox model/provider.
+- Use inline autocomplete powered by a separate, FIM-capable autocomplete model
+  you configure (see [Autocomplete](#autocomplete)).
 - Connect local or external models, including local GGUF models and common cloud
   providers.
 - Use MCP, OpenAPI, and local tools through Contenox runtime policies.
@@ -64,16 +73,35 @@ Contenox is designed around:
 2. Run `Contenox: Run Setup` from the command palette.
 3. Choose or configure a model/provider.
 4. Run `Contenox: Open Chat`.
-5. Ask `@contenox` about your code, selected text, diagnostics, or workspace
-   changes.
+5. Ask `@contenox` about your code, or use the editor actions (`Ask About
+   Selection`, `Explain Diagnostics`, `Review Workspace Changes`, `Draft Commit
+   Message`) from the command palette and lightbulb menu.
 
-For inline suggestions, make sure `contenox.autocomplete.enabled` is enabled and
-run `Contenox: Trigger Autocomplete` or `Contenox: Test Autocomplete At Cursor`.
+## Autocomplete
+
+Contenox can provide inline ghost-text suggestions as you type. It is disabled
+by default; enable it after choosing an autocomplete model.
+
+Autocomplete uses a **separate model from chat**, and that model must be
+FIM-capable (fill-in-the-middle). Set it from the CLI:
+
+```sh
+contenox config set default-autocomplete-provider mistral
+contenox config set default-autocomplete-model codestral-latest
+```
+
+or override it per workspace with `contenox.autocompleteModel` /
+`contenox.autocompleteProvider`. If no autocomplete model is configured, no
+suggestions appear and the reason is only logged to the output channel.
+
+Enable autocomplete from the status bar or with `Contenox: Enable Autocomplete`.
+If nothing shows up after enabling it, run `Contenox: Test Autocomplete At Cursor`
+— it reports whether the model returned usable text.
 
 ## Remote Development
 
 Contenox declares itself as a VS Code workspace extension so workspace files,
-git state, terminals, tools, and the runtime bridge live on the same machine as
+git state, terminals, tools, and the Contenox runtime live on the same machine as
 the checked-out code.
 
 Remote behavior to expect:
@@ -86,7 +114,7 @@ Remote behavior to expect:
 - Use `Developer: Show Running Extensions` to confirm Contenox is running in the
   remote extension host.
 
-If the bridge cannot start, run `Contenox: Show Output`; the log includes the
+If the runtime cannot start, run `Contenox: Show Output`; the log includes the
 remote name, platform, architecture, runtime path, and the exact spawn error.
 
 ## CLI Compatibility

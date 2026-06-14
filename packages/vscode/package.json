@@ -1,7 +1,7 @@
 {
   "name": "runtime",
   "displayName": "Contenox",
-  "description": "Run local, reviewable AI workflows in VS Code with chat, autocomplete, sessions, tools, and HITL approvals.",
+  "description": "Run local, reviewable AI workflows in VS Code with chat, autocomplete, sessions, tools, and human approval gates.",
   "version": "0.28.14",
   "publisher": "contenox",
   "license": "Apache-2.0",
@@ -48,6 +48,8 @@
     "onStartupFinished",
     "onCommand:contenox.openChat",
     "onCommand:contenox.openWalkthrough",
+    "onCommand:contenox.openAgentSession",
+    "onCommand:contenox.diagnoseAgentSessions",
     "onCommand:contenox.askSelection",
     "onCommand:contenox.fixSelection",
     "onCommand:contenox.addSelectionToChat",
@@ -59,10 +61,10 @@
     "onCommand:contenox.openSession",
     "onCommand:contenox.deleteSession",
     "onCommand:contenox.showStatus",
-    "onCommand:contenox.restartBridge",
+    "onCommand:contenox.showExtensionRuntimeInfo",
+    "onCommand:contenox.restartRuntime",
     "onCommand:contenox.runSetup",
     "onCommand:contenox.selectProvider",
-    "onCommand:contenox.selectModel",
     "onCommand:contenox.selectChatModel",
     "onCommand:contenox.selectAutocompleteProvider",
     "onCommand:contenox.selectAutocompleteModel",
@@ -86,7 +88,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Contenox can show bridge status and configuration in Restricted Mode. Runtime actions that read or modify workspace files should stay disabled until the workspace is trusted.",
+      "description": "Contenox can show runtime status and configuration in Restricted Mode. Runtime actions that read or modify workspace files should stay disabled until the workspace is trusted.",
       "restrictedConfigurations": [
         "contenox.binaryPath",
         "contenox.dataDir",
@@ -121,7 +123,7 @@
     "viewsWelcome": [
       {
         "view": "contenox.controls",
-        "contents": "Runtime controls are available after the Contenox bridge starts.\n[Run Setup](command:contenox.runSetup)\n[Show Status](command:contenox.showStatus)"
+        "contents": "Runtime controls are available after the Contenox runtime starts.\n[Run Setup](command:contenox.runSetup)\n[Show Status](command:contenox.showStatus)"
       },
       {
         "view": "contenox.sessions",
@@ -142,7 +144,7 @@
               "markdown": "walkthrough/setup.md"
             },
             "completionEvents": [
-              "onCommand:contenox.runSetup"
+              "onCommand:contenox.internal.setupComplete"
             ]
           },
           {
@@ -177,7 +179,7 @@
               "markdown": "walkthrough/sessions.md"
             },
             "completionEvents": [
-              "onView:contenox.sessions"
+              "onCommand:contenox.openSession"
             ]
           },
           {
@@ -204,6 +206,16 @@
       {
         "command": "contenox.openWalkthrough",
         "title": "Open Walkthrough",
+        "category": "Contenox"
+      },
+      {
+        "command": "contenox.openAgentSession",
+        "title": "Open Native Agent Session (Proposed)",
+        "category": "Contenox"
+      },
+      {
+        "command": "contenox.diagnoseAgentSessions",
+        "title": "Diagnose Native Agent Sessions",
         "category": "Contenox"
       },
       {
@@ -264,8 +276,13 @@
         "category": "Contenox"
       },
       {
-        "command": "contenox.restartBridge",
-        "title": "Restart Bridge",
+        "command": "contenox.showExtensionRuntimeInfo",
+        "title": "Show Runtime Info",
+        "category": "Contenox"
+      },
+      {
+        "command": "contenox.restartRuntime",
+        "title": "Restart Runtime",
         "category": "Contenox"
       },
       {
@@ -276,11 +293,6 @@
       {
         "command": "contenox.selectProvider",
         "title": "Select Provider",
-        "category": "Contenox"
-      },
-      {
-        "command": "contenox.selectModel",
-        "title": "Select Model",
         "category": "Contenox"
       },
       {
@@ -305,7 +317,7 @@
       },
       {
         "command": "contenox.selectThinkLevel",
-        "title": "Select Think Level",
+        "title": "Select Thinking Level",
         "category": "Contenox"
       },
       {
@@ -409,7 +421,7 @@
           },
           {
             "name": "websearch",
-            "description": "Search the web through the Contenox bridge"
+            "description": "Search the web through the Contenox runtime"
           }
         ]
       }
@@ -426,8 +438,8 @@
         "name": "approve_contenox_tool_call",
         "displayName": "Approve Contenox Tool Call",
         "toolReferenceName": "approveContenoxToolCall",
-        "modelDescription": "Requests native VS Code confirmation for a Contenox HITL policy gated tool call. The tool only records the user's approval decision; the Contenox runtime executes or denies the original tool call after the approval result is returned.",
-        "userDescription": "Review a Contenox HITL policy gated tool call before it runs.",
+        "modelDescription": "Requests native VS Code confirmation for a Contenox HITL policy-gated tool call. The tool only records the user's approval decision; the Contenox runtime executes or denies the original tool call after the approval result is returned.",
+        "userDescription": "Review a Contenox HITL policy-gated tool call before it runs.",
         "canBeReferencedInPrompt": false,
         "tags": [
           "contenox",
@@ -510,23 +522,23 @@
         "contenox.dataDir": {
           "type": "string",
           "default": "",
-          "description": "Optional Contenox data directory passed as --data-dir before vscode-agent."
+          "description": "Optional Contenox data directory passed to the runtime command."
         },
         "contenox.startOnActivation": {
           "type": "boolean",
           "default": true,
-          "description": "Start the Contenox bridge when the VS Code extension activates."
+          "description": "Start the Contenox runtime connection when the VS Code extension activates."
         },
         "contenox.requestTimeoutMs": {
           "type": "number",
           "default": 15000,
           "minimum": 1000,
-          "description": "Timeout in milliseconds for bridge JSON-RPC requests."
+          "description": "Timeout in milliseconds for Contenox runtime requests."
         },
         "contenox.logProtocol": {
           "type": "boolean",
           "default": false,
-          "description": "Write redacted bridge protocol traffic to the Contenox Protocol output channel."
+          "description": "Write redacted runtime protocol traffic to the Contenox Protocol output channel."
         },
         "contenox.telemetry.enabled": {
           "type": "boolean",
@@ -551,8 +563,8 @@
         },
         "contenox.autocomplete.enabled": {
           "type": "boolean",
-          "default": true,
-          "description": "Request Contenox inline completions from VS Code editors."
+          "default": false,
+          "description": "Request Contenox inline completions from VS Code editors. Disabled by default; enable deliberately after choosing an autocomplete provider/model."
         },
         "contenox.autocomplete.maxPrefixChars": {
           "type": "number",
@@ -591,6 +603,12 @@
         }
       }
     },
+    "submenus": [
+      {
+        "id": "contenox.editor",
+        "label": "Contenox"
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
@@ -598,6 +616,12 @@
         },
         {
           "command": "contenox.openWalkthrough"
+        },
+        {
+          "command": "contenox.openAgentSession"
+        },
+        {
+          "command": "contenox.diagnoseAgentSessions"
         },
         {
           "command": "contenox.askSelection"
@@ -624,16 +648,18 @@
           "command": "contenox.showStatus"
         },
         {
-          "command": "contenox.restartBridge"
+          "command": "contenox.showExtensionRuntimeInfo"
         },
         {
-          "command": "contenox.runSetup"
+          "command": "contenox.restartRuntime",
+          "when": "!contenox.turnInProgress"
+        },
+        {
+          "command": "contenox.runSetup",
+          "when": "!contenox.turnInProgress"
         },
         {
           "command": "contenox.selectProvider"
-        },
-        {
-          "command": "contenox.selectModel"
         },
         {
           "command": "contenox.selectChatModel"
@@ -686,52 +712,62 @@
       ],
       "editor/context": [
         {
+          "submenu": "contenox.editor",
+          "when": "isWorkspaceTrusted",
+          "group": "navigation@80"
+        }
+      ],
+      "contenox.editor": [
+        {
           "command": "contenox.askSelection",
-          "when": "editorHasSelection",
+          "when": "editorHasSelection && isWorkspaceTrusted",
           "group": "contenox@1"
         },
         {
           "command": "contenox.fixSelection",
-          "when": "editorHasSelection && !editorReadonly",
+          "when": "editorHasSelection && !editorReadonly && isWorkspaceTrusted",
           "group": "contenox@2"
         },
         {
           "command": "contenox.addSelectionToChat",
-          "when": "editorHasSelection",
+          "when": "editorHasSelection && isWorkspaceTrusted",
           "group": "contenox@3"
         },
         {
           "command": "contenox.fixDiagnostics",
+          "when": "contenox.hasDiagnostics && isWorkspaceTrusted",
           "group": "contenox@4"
         },
         {
           "command": "contenox.explainDiagnostics",
+          "when": "contenox.hasDiagnostics && isWorkspaceTrusted",
           "group": "contenox@5"
         }
       ],
       "editor/context/chat": [
         {
           "command": "contenox.fixSelection",
-          "when": "editorHasSelection && !editorReadonly",
+          "when": "editorHasSelection && !editorReadonly && isWorkspaceTrusted",
           "group": "contenoxAction@1"
         },
         {
           "command": "contenox.askSelection",
-          "when": "editorHasSelection",
+          "when": "editorHasSelection && isWorkspaceTrusted",
           "group": "contenoxAction@2"
         },
         {
           "command": "contenox.addSelectionToChat",
-          "when": "editorHasSelection",
+          "when": "editorHasSelection && isWorkspaceTrusted",
           "group": "contenoxAction@3"
         },
         {
           "command": "contenox.fixDiagnostics",
-          "when": "!editorReadonly",
+          "when": "!editorReadonly && contenox.hasDiagnostics && isWorkspaceTrusted",
           "group": "contenoxAction@4"
         },
         {
           "command": "contenox.explainDiagnostics",
+          "when": "contenox.hasDiagnostics && isWorkspaceTrusted",
           "group": "contenoxAction@5"
         }
       ],
@@ -743,7 +779,7 @@
         },
         {
           "command": "contenox.refreshSessions",
-          "when": "view == contenox.sessions",
+          "when": "view == contenox.sessions && contenox.connected",
           "group": "navigation@2"
         }
       ],

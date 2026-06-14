@@ -135,7 +135,7 @@ export async function selectThinkLevel(bridge: BridgeProcess): Promise<string | 
       level,
     })),
     {
-      title: "Select Contenox Think Level",
+      title: "Select Contenox Thinking Level",
       placeHolder: "Reasoning level",
     },
   );
@@ -145,7 +145,7 @@ export async function selectThinkLevel(bridge: BridgeProcess): Promise<string | 
 
   await client.setConfig({ defaultThink: selected.level });
   await bridge.refreshHealth();
-  vscode.window.showInformationMessage(`Contenox think level set to ${selected.level}`);
+  vscode.window.showInformationMessage(`Contenox thinking level set to ${selected.level}`);
   return selected.level;
 }
 
@@ -153,7 +153,7 @@ async function requireClient(bridge: BridgeProcess) {
   await bridge.ensureStarted();
   const client = bridge.currentClient;
   if (!client) {
-    throw new Error("Bridge client is not available");
+    throw new Error("Contenox runtime connection is not available");
   }
   return client;
 }

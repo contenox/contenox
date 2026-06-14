@@ -216,6 +216,11 @@ export interface SessionLoadParams {
   name?: string;
 }
 
+export interface SessionReadParams {
+  sessionId?: string;
+  name?: string;
+}
+
 export interface SessionDeleteParams {
   sessionId?: string;
   name?: string;
@@ -252,16 +257,6 @@ export interface ChatCancelParams {
 
 export interface ChatCancelResult {
   cancelled: boolean;
-}
-
-export interface ApprovalRespondParams {
-  approvalId: string;
-  optionId: string;
-  approved?: boolean;
-}
-
-export interface ApprovalRespondResult {
-  accepted: boolean;
 }
 
 export interface AutocompleteParams {
@@ -332,6 +327,7 @@ export interface ApprovalRequestedEvent {
   policyName?: string;
   policyPath?: string;
   args?: Record<string, unknown>;
+  details?: string;
   diff?: string;
   diffOld?: string;
   diffNew?: string;

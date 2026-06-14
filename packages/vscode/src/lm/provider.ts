@@ -139,17 +139,13 @@ class ContenoxLanguageModelProvider implements vscode.LanguageModelChatProvider<
             progress.report(new vscode.LanguageModelTextPart(content));
           }
         },
-        onApprovalRequested: (client, event) => {
+        onPermissionRequested: async (_client, event) => {
           this.telemetry.warn("lm.approval.auto_denied", {
-            approvalId: event.approvalId,
-            toolName: event.toolName,
-            title: event.title,
+            approvalId: event.toolCall.toolCallId,
+            toolName: event.toolCall._meta?.toolName,
+            title: event.toolCall.title,
           });
-          void client.approvalRespond({
-            approvalId: event.approvalId,
-            optionId: "deny",
-            approved: false,
-          });
+          return { outcome: { outcome: "cancelled" } };
         },
       },
     );

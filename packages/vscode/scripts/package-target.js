@@ -22,18 +22,21 @@ const out =
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.rmSync(out, { force: true });
 
-run(npx(), [
+const vsceArgs = [
   "vsce",
   "package",
   "--target",
   target.name,
   "--no-dependencies",
   "--no-yarn",
-  "--allow-package-all-secrets",
-  "--allow-package-env-file",
   "--out",
   out,
-]);
+];
+if (process.env.CONTENOX_VSCODE_SKIP_VSCE_SECRET_SCAN === "1") {
+  vsceArgs.splice(vsceArgs.indexOf("--out"), 0, "--allow-package-all-secrets", "--allow-package-env-file");
+}
+
+run(npx(), vsceArgs);
 console.log(`Built ${target.name} VS Code extension: ${path.relative(extensionRoot, out)}`);
 
 function run(command, args, extraEnv = {}) {

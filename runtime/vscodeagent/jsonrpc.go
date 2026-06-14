@@ -11,6 +11,7 @@ import (
 )
 
 const jsonrpcVersion = "2.0"
+const maxJSONRPCContentLength = 64 * 1024 * 1024
 
 const (
 	ErrParseError     = -32700
@@ -74,6 +75,9 @@ func (f *framer) readPayload() ([]byte, error) {
 			n, err := strconv.Atoi(strings.TrimSpace(value))
 			if err != nil || n < 0 {
 				return nil, fmt.Errorf("invalid Content-Length %q", strings.TrimSpace(value))
+			}
+			if n > maxJSONRPCContentLength {
+				return nil, fmt.Errorf("Content-Length %d exceeds maximum %d", n, maxJSONRPCContentLength)
 			}
 			contentLength = n
 		}

@@ -197,7 +197,7 @@ export async function openAgentSession(telemetry: TelemetryLogger): Promise<void
   }
 
   vscode.window.showWarningMessage(
-    "Contenox Agent Sessions are only available from the proposed VS Code build path. Run make dev-install-vscode-proposed and launch VS Code with --enable-proposed-api contenox.runtime.",
+    "Contenox native agent sessions require the proposed VS Code build path. Run make dev-install-vscode-proposed and launch VS Code with --enable-proposed-api contenox.runtime.",
   );
 }
 
@@ -216,7 +216,7 @@ export async function diagnoseAgentSessions(context: vscode.ExtensionContext, te
     vscodeVersion: vscode.version,
   };
   telemetry.event("agent_sessions.diagnose", report);
-  vscode.window.showInformationMessage(`Contenox Agent Sessions: ${JSON.stringify(report)}`);
+  vscode.window.showInformationMessage(`Contenox native agent session diagnostics: ${JSON.stringify(report)}`);
 }
 
 class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider, vscode.Disposable {
@@ -368,7 +368,7 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
 
   private async loadSession(sessionId: string, token: vscode.CancellationToken) {
     const client = await this.client(token);
-    return client.sessionLoad({ sessionId });
+    return client.sessionRead({ sessionId });
   }
 
   private async sessionExists(sessionId: string, token: vscode.CancellationToken): Promise<boolean> {
@@ -389,11 +389,11 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
     }
     const state = await this.bridge.ensureStarted();
     if (!state.initialize.capabilities.sessionList) {
-      throw new Error("Bridge does not advertise session list capability");
+      throw new Error("This Contenox runtime does not support session lists");
     }
     const client = this.bridge.currentClient;
     if (!client) {
-      throw new Error("Bridge client is not available");
+      throw new Error("Contenox runtime connection is not available");
     }
     return client;
   }

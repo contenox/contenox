@@ -1,6 +1,7 @@
 import { Writable } from "node:stream";
 
 const headerSeparator = Buffer.from("\r\n\r\n", "ascii");
+const maxContentLength = 64 * 1024 * 1024;
 
 export class JsonRpcFramer {
   private buffer = Buffer.alloc(0);
@@ -63,6 +64,9 @@ function parseContentLength(header: string): number {
     }
     const value = Number.parseInt(rawValue, 10);
     if (!Number.isFinite(value) || value < 0) {
+      throw new Error(`Invalid Content-Length header: ${line}`);
+    }
+    if (value > maxContentLength) {
       throw new Error(`Invalid Content-Length header: ${line}`);
     }
     return value;

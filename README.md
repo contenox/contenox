@@ -19,6 +19,22 @@ autonomous agents.
 
 ---
 
+## What would I use this for?
+
+Package a repeatable AI task as a chain, then run it the same way every time:
+
+- **Review a diff** — run the tests, summarize the risk, and gate on your approval before it acts.
+- **Draft release evidence** — turn git log, PRs, and CI output into a changelog and reviewer packet.
+- **Wrap an internal API** — expose a safe, curated tool subset with approval required on mutating calls.
+- **Automate repo chores** — take an issue, produce a patch, run the tests, write the PR description.
+- **Ask a local model** — codebase chat and one-off prompts from the CLI or your editor, no API key required.
+
+The same chains run from the CLI, VS Code, or any ACP client, against local or hosted
+models, with sessions and state staying on your machine. Detailed examples are in
+[What it is good for](#what-it-is-good-for) below.
+
+---
+
 ## Install
 
 <!-- Release tooling: keep next line in sync with runtime/version/version.txt (updated by `make -f Makefile.version bump-*`). -->

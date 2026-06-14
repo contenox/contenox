@@ -265,6 +265,34 @@ func TestSessionListOrdersByLatestMessageActivity(t *testing.T) {
 	require.True(t, listed.Sessions[1].IsActive)
 }
 
+func TestSessionReadDoesNotChangeActiveSession(t *testing.T) {
+	ctx, server, _ := newTestServer(t)
+
+	older, err := server.sessionCreate(ctx, sessionCreateParams{Name: "Older session"})
+	require.NoError(t, err)
+	newer, err := server.sessionCreate(ctx, sessionCreateParams{Name: "Newer session"})
+	require.NoError(t, err)
+	require.NoError(t, server.sessionSvc().SetActiveID(ctx, older.Session.ID))
+
+	read, err := server.sessionRead(ctx, sessionReadParams{SessionID: newer.Session.ID})
+	require.NoError(t, err)
+	require.Equal(t, newer.Session.ID, read.Session.ID)
+
+	listed, err := server.sessionList(ctx)
+	require.NoError(t, err)
+	requireSessionActiveState(t, listed.Sessions, older.Session.ID, true)
+	requireSessionActiveState(t, listed.Sessions, newer.Session.ID, false)
+
+	loaded, err := server.sessionLoad(ctx, sessionLoadParams{SessionID: newer.Session.ID})
+	require.NoError(t, err)
+	require.Equal(t, newer.Session.ID, loaded.Session.ID)
+
+	listed, err = server.sessionList(ctx)
+	require.NoError(t, err)
+	requireSessionActiveState(t, listed.Sessions, older.Session.ID, false)
+	requireSessionActiveState(t, listed.Sessions, newer.Session.ID, true)
+}
+
 func TestPublishTaskEventHidesRouteChunks(t *testing.T) {
 	ctx, server, _ := newTestServer(t)
 	var output bytes.Buffer
@@ -335,26 +363,13 @@ func TestPublishTaskEventForwardsHITLDecision(t *testing.T) {
 	require.False(t, event.ApprovalRequested)
 }
 
-func TestPublishTaskEventSuppressesToolCallWhilePermissionPending(t *testing.T) {
+func TestPublishTaskEventForwardsToolCallEvents(t *testing.T) {
 	ctx, server, _ := newTestServer(t)
 	var output bytes.Buffer
 	server.framer = newFramer(bytes.NewReader(nil), &output)
 	server.registerTurn("request-1", "turn-1", "session-1", func() {})
 	defer server.unregisterTurn("request-1", "turn-1")
 
-	server.markPermissionPending("session-1", "call-1")
-	server.publishTaskEvent(ctx, taskengine.TaskEvent{
-		Kind:       taskengine.TaskEventToolCallPending,
-		RequestID:  "request-1",
-		ApprovalID: "call-1",
-		ToolName:   "local_shell.local_shell",
-		ApprovalArgs: map[string]any{
-			"command": "python3",
-		},
-	})
-	require.Empty(t, decodeNotifications(t, output.Bytes()))
-
-	server.clearPermissionPending("session-1", "call-1")
 	server.publishTaskEvent(ctx, taskengine.TaskEvent{
 		Kind:       taskengine.TaskEventToolCallPending,
 		RequestID:  "request-1",
@@ -496,8 +511,6 @@ func TestListHITLPoliciesIncludesPolicyFileMetadata(t *testing.T) {
 func TestApprovalBrokerRequestsACPPermissionWithActivePolicyMetadata(t *testing.T) {
 	ctx := context.Background()
 	var got libacp.RequestPermissionRequest
-	var marked []string
-	var cleared []string
 	broker := NewApprovalBroker(
 		func(_ context.Context, req libacp.RequestPermissionRequest) (libacp.RequestPermissionResponse, error) {
 			got = req
@@ -512,8 +525,6 @@ func TestApprovalBrokerRequestsACPPermissionWithActivePolicyMetadata(t *testing.
 			return hitlPolicyRef{Name: "hitl-policy-strict.json", Path: "/tmp/contenox/hitl-policy-strict.json"}
 		},
 		func(context.Context) string { return "session-1" },
-		func(sessionID, toolCallID string) { marked = append(marked, sessionID+":"+toolCallID) },
-		func(sessionID, toolCallID string) { cleared = append(cleared, sessionID+":"+toolCallID) },
 	)
 
 	approved, err := broker.AskApproval(ctx, hitlservice.ApprovalRequest{
@@ -536,8 +547,6 @@ func TestApprovalBrokerRequestsACPPermissionWithActivePolicyMetadata(t *testing.
 	require.Equal(t, "write_file", meta.ToolName)
 	require.Equal(t, "hitl-policy-strict.json", meta.PolicyName)
 	require.Equal(t, "/tmp/contenox/hitl-policy-strict.json", meta.PolicyPath)
-	require.Equal(t, []string{"session-1:call-1"}, marked)
-	require.Equal(t, []string{"session-1:call-1"}, cleared)
 }
 
 func TestListModelsDoesNotInventProviderForObservedModels(t *testing.T) {
@@ -623,6 +632,25 @@ func TestAutocompleteCancelNotificationCancelsInFlightRequest(t *testing.T) {
 	var shutdown map[string]bool
 	require.NoError(t, json.Unmarshal(responseByID(responses, "10").Result, &shutdown))
 	require.True(t, shutdown["ok"])
+}
+
+func TestCallClientSendsCancelNotificationWhenContextEnds(t *testing.T) {
+	ctx, server, _ := newTestServer(t)
+	var output bytes.Buffer
+	server.framer = newFramer(bytes.NewReader(nil), &output)
+
+	reqCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	err := server.callClient(reqCtx, "session/request_permission", map[string]any{"sessionId": "session-1"}, nil)
+	require.ErrorIs(t, err, context.Canceled)
+
+	messages := decodeRawMessages(t, output.Bytes())
+	require.Len(t, messages, 2)
+	require.Equal(t, "session/request_permission", messages[0]["method"])
+	require.Equal(t, "$/cancelRequest", messages[1]["method"])
+	params, ok := messages[1]["params"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(1), params["id"])
 }
 
 func TestAutocompletePreservesLeadingWhitespace(t *testing.T) {
@@ -781,6 +809,23 @@ func decodeNotifications(t *testing.T, raw []byte) []rpcTestNotification {
 	return notifications
 }
 
+func decodeRawMessages(t *testing.T, raw []byte) []map[string]any {
+	t.Helper()
+	reader := newFramer(bytes.NewReader(raw), io.Discard)
+	messages := []map[string]any{}
+	for {
+		payload, err := reader.readPayload()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		var message map[string]any
+		require.NoError(t, json.Unmarshal(payload, &message))
+		messages = append(messages, message)
+	}
+	return messages
+}
+
 func rpcRequest(id any, method string, params any) map[string]any {
 	req := map[string]any{
 		"jsonrpc": "2.0",
@@ -803,6 +848,17 @@ func requireModel(t *testing.T, models []modelInfo, name, provider, source strin
 		}
 	}
 	require.Failf(t, "model not found", "missing model %q in %+v", name, models)
+}
+
+func requireSessionActiveState(t *testing.T, sessions []sessionInfo, sessionID string, active bool) {
+	t.Helper()
+	for _, session := range sessions {
+		if session.ID == sessionID {
+			require.Equal(t, active, session.IsActive)
+			return
+		}
+	}
+	require.Failf(t, "session not found", "missing session %q in %+v", sessionID, sessions)
 }
 
 func commandNames(commands []slashCommand) []string {

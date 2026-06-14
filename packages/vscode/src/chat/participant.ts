@@ -17,6 +17,7 @@ import { collectGitChangeContext } from "../editor/gitContext";
 import { ContenoxOutput } from "../logging/output";
 import { TelemetryLogger } from "../logging/telemetry";
 import { requestNativeApproval } from "../approval/nativeTool";
+import { setTurnContext } from "../status/contextKeys";
 import { sessionTitleFromInput } from "./sessionTitle";
 import { ChatTurnRunner, TurnResult } from "./turnRunner";
 
@@ -187,6 +188,12 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     source: "native-chat" | "agent-session",
     sessionIdOverride?: string,
   ): Promise<vscode.ChatResult> {
+    if (!vscode.workspace.isTrusted) {
+      this.telemetry.warn("chat.request.blocked_untrusted_workspace", { source });
+      response.markdown("Contenox runtime actions are disabled until this workspace is trusted.");
+      return { errorDetails: { message: "Workspace is not trusted" } };
+    }
+
     const startedAt = Date.now();
     const command = request.command ?? "";
     const prompt = request.prompt.trim();
@@ -241,6 +248,7 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     toolInvocationToken: vscode.ChatParticipantToolToken | undefined,
     sessionIdOverride?: string,
   ) {
+    void setTurnContext(true);
     try {
       const runOptions = {
         sessionId: sessionIdOverride ?? this.sessionId,
@@ -261,11 +269,8 @@ export class ContenoxChatParticipant implements vscode.Disposable {
           }
         },
         onToolCall: (event: ToolCallEvent) => this.renderToolCall(event, response),
-        onApprovalRequested: (client: BridgeClient, event: ApprovalRequestedEvent) => {
-          void this.handleApproval(client, event, response, toolInvocationToken, token);
-        },
-        onPermissionRequested: (_client: BridgeClient, event: RequestPermissionParams) =>
-          this.handlePermissionRequest(event, response, toolInvocationToken, token),
+        onPermissionRequested: (_client: BridgeClient, event: RequestPermissionParams, permissionToken: vscode.CancellationToken) =>
+          this.handlePermissionRequest(event, response, toolInvocationToken, token, permissionToken),
         onCompletedWithoutDelta: (_event: ChatLifecycleEvent, content: string | undefined) => {
           if (content) {
             response.markdown(content);
@@ -306,6 +311,7 @@ export class ContenoxChatParticipant implements vscode.Disposable {
       }
       return result;
     } finally {
+      void setTurnContext(false);
       this.onSessionsChanged();
     }
   }
@@ -314,7 +320,8 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     event: RequestPermissionParams,
     response: vscode.ChatResponseStream,
     toolInvocationToken: vscode.ChatParticipantToolToken | undefined,
-    token: vscode.CancellationToken,
+    turnToken: vscode.CancellationToken,
+    permissionToken: vscode.CancellationToken,
   ): Promise<RequestPermissionResponse> {
     const approval = approvalEventFromPermissionRequest(event);
     response.progress(`Approval required: ${approval.title}`);
@@ -334,7 +341,13 @@ export class ContenoxChatParticipant implements vscode.Disposable {
       return { outcome: { outcome: "cancelled" } };
     }
 
-    const approved = await requestNativeApproval(approval, toolInvocationToken, token, this.telemetry);
+    const linkedToken = linkedCancellationToken(turnToken, permissionToken);
+    let approved: boolean;
+    try {
+      approved = await requestNativeApproval(approval, toolInvocationToken, linkedToken.token, this.telemetry);
+    } finally {
+      linkedToken.dispose();
+    }
     const option = selectedPermissionOption(event, approved);
     if (!option) {
       this.telemetry.warn("chat.approval.no_matching_option", {
@@ -371,39 +384,6 @@ export class ContenoxChatParticipant implements vscode.Disposable {
       default:
         return [];
     }
-  }
-
-  private async handleApproval(
-    client: BridgeClient,
-    event: ApprovalRequestedEvent,
-    response: vscode.ChatResponseStream,
-    toolInvocationToken: vscode.ChatParticipantToolToken | undefined,
-    token: vscode.CancellationToken,
-  ): Promise<void> {
-    response.progress(`Approval required: ${event.title}`);
-    this.telemetry.event("chat.approval.requested", {
-      approvalId: event.approvalId,
-      toolName: event.toolName,
-      title: event.title,
-      optionCount: event.options.length,
-    });
-    renderApprovalSummary(event, response);
-    const approved = await requestNativeApproval(event, toolInvocationToken, token, this.telemetry);
-    const option = approved
-      ? event.options.find((candidate) => candidate.id === "allow" || candidate.kind.startsWith("approve")) ?? event.options[0]
-      : event.options.find((candidate) => candidate.id === "deny" || candidate.kind.startsWith("reject")) ??
-        event.options[event.options.length - 1];
-    await client.approvalRespond({
-      approvalId: event.approvalId,
-      optionId: option?.id ?? (approved ? "allow" : "deny"),
-      approved,
-    });
-    this.telemetry.event("chat.approval.responded", {
-      approvalId: event.approvalId,
-      optionId: option?.id ?? (approved ? "allow" : "deny"),
-      approved,
-    });
-    response.progress(`${approved ? "Approved" : "Denied"}: ${event.title}`);
   }
 
   private renderToolCall(event: ToolCallEvent, response: vscode.ChatResponseStream): void {
@@ -480,6 +460,7 @@ export function approvalEventFromPermissionRequest(event: RequestPermissionParam
 		policyName: stringValue(meta.policyName),
 		policyPath: stringValue(meta.policyPath),
 		args,
+		details: contentDetails(toolCall.content),
 		diff: nonBlankString(meta.diff),
 		diffOld: hasContentDiff ? rawDiffOld ?? "" : undefined,
 		diffNew: hasContentDiff ? rawDiffNew ?? "" : undefined,
@@ -501,8 +482,44 @@ function selectedPermissionOption(event: RequestPermissionParams, approved: bool
   );
 }
 
+interface LinkedCancellationToken extends vscode.Disposable {
+  token: vscode.CancellationToken;
+}
+
+function linkedCancellationToken(...tokens: vscode.CancellationToken[]): LinkedCancellationToken {
+  const source = new vscode.CancellationTokenSource();
+  const disposables = tokens.map((token) => token.onCancellationRequested(() => source.cancel()));
+  if (tokens.some((token) => token.isCancellationRequested)) {
+    source.cancel();
+  }
+  return {
+    token: source.token,
+    dispose: () => {
+      for (const disposable of disposables) {
+        disposable.dispose();
+      }
+      source.dispose();
+    },
+  };
+}
+
 function firstDiffContent(content: readonly ToolCallContent[] | undefined): ToolCallContent | undefined {
 	return content?.find((entry) => entry.type === "diff" && (isNonBlank(entry.oldText) || isNonBlank(entry.newText)));
+}
+
+function contentDetails(content: readonly ToolCallContent[] | undefined): string | undefined {
+	const parts =
+		content
+			?.filter((entry) => entry.type !== "diff")
+			.map((entry) => {
+				const text = stringValue(entry.content?.text) ?? stringValue((entry as { text?: unknown }).text);
+				if (!isNonBlank(text)) {
+					return undefined;
+				}
+				return entry.path ? `${entry.path}\n${text}` : text;
+			})
+			.filter(isNonBlank) ?? [];
+	return parts.length > 0 ? parts.join("\n\n") : undefined;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {

@@ -68,6 +68,7 @@ func (s *Server) callClient(ctx context.Context, method string, params any, resu
 	select {
 	case <-ctx.Done():
 		s.removeClientRequest(key)
+		_ = s.notify("$/cancelRequest", map[string]any{"id": id})
 		return ctx.Err()
 	case resp, ok := <-ch:
 		if !ok {
@@ -151,39 +152,4 @@ func (s *Server) sessionIDFromContext(ctx context.Context) string {
 		}
 	}
 	return ""
-}
-
-func permissionKey(sessionID, toolCallID string) string {
-	return sessionID + "\x00" + toolCallID
-}
-
-func (s *Server) markPermissionPending(sessionID, toolCallID string) {
-	if toolCallID == "" {
-		return
-	}
-	s.permMu.Lock()
-	if s.permPending == nil {
-		s.permPending = make(map[string]struct{})
-	}
-	s.permPending[permissionKey(sessionID, toolCallID)] = struct{}{}
-	s.permMu.Unlock()
-}
-
-func (s *Server) clearPermissionPending(sessionID, toolCallID string) {
-	if toolCallID == "" {
-		return
-	}
-	s.permMu.Lock()
-	delete(s.permPending, permissionKey(sessionID, toolCallID))
-	s.permMu.Unlock()
-}
-
-func (s *Server) isPermissionPending(sessionID, toolCallID string) bool {
-	if toolCallID == "" {
-		return false
-	}
-	s.permMu.Lock()
-	_, ok := s.permPending[permissionKey(sessionID, toolCallID)]
-	s.permMu.Unlock()
-	return ok
 }

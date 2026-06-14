@@ -754,7 +754,7 @@ Features:
 - Select provider/model/chat model.
 - Select autocomplete provider/model.
 - Select HITL policy.
-- Select think level.
+- Select thinking level.
 - Trigger/test/enable/disable/toggle autocomplete.
 - Show output.
 - Show/clear telemetry log.

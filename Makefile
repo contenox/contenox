@@ -27,6 +27,11 @@ DEV_CONTENOX_BIN := $(HOME)/.local/bin/contenox
 VSCODE_DIR := $(PROJECT_ROOT)/packages/vscode
 VSCODE_VERSION := $(patsubst v%,%,$(shell tr -d '\r\n' < $(PROJECT_ROOT)/runtime/version/version.txt))
 VSCODE_TARGET ?= $(shell cd $(VSCODE_DIR) && node -e "console.log(require('./scripts/vscode-targets').targetFromEnv().name)")
+VSCODE_CLI ?= code
+VSCODE_EXTENSIONS_DIR ?=
+VSCODE_CLI_EXTENSION_ARGS = $(if $(strip $(VSCODE_EXTENSIONS_DIR)),--extensions-dir "$(VSCODE_EXTENSIONS_DIR)",)
+VSCODE_DEFAULT_EXTENSIONS_DIR := $(if $(findstring insiders,$(notdir $(VSCODE_CLI))),$(HOME)/.vscode-insiders/extensions,$(HOME)/.vscode/extensions)
+VSCODE_INSTALL_EXTENSIONS_DIR := $(if $(strip $(VSCODE_EXTENSIONS_DIR)),$(VSCODE_EXTENSIONS_DIR),$(VSCODE_DEFAULT_EXTENSIONS_DIR))
 VSCODE_VSIX := $(VSCODE_DIR)/artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix
 VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
 WINDOWS_CC ?= $(shell command -v x86_64-w64-mingw32-gcc-posix 2>/dev/null || command -v x86_64-w64-mingw32-gcc 2>/dev/null || echo x86_64-w64-mingw32-gcc)
@@ -36,7 +41,7 @@ WINDOWS_CGO_CFLAGS ?=
 WINDOWS_CGO_CXXFLAGS ?= -I$(WINDOWS_NLOHMANN_INCLUDE)
 
 .PHONY: help \
-	build-contenox build-contenox-windows build-vscode package-vscode package-vscode-proposed deps-ollama-headers \
+	build-contenox build-contenox-windows build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev deps-ollama-headers \
 	clean clean-vscode \
 	deps-go-watch deps-vscode \
 	dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
@@ -46,7 +51,7 @@ WINDOWS_CGO_CXXFLAGS ?= -I$(WINDOWS_NLOHMANN_INCLUDE)
 # -----------------------------------------------------------------------------
 help:
 	@echo "build-*    build-contenox build-contenox-windows build-vscode"
-	@echo "package-*  package-vscode package-vscode-proposed"
+	@echo "package-*  package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
 	@echo "test-*     test test-unit test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink dev-go-watch"
 	@echo "deps-*     deps-go-watch deps-ollama-headers deps-vscode"
@@ -75,12 +80,26 @@ package-vscode: deps-vscode
 	cd $(VSCODE_DIR) && npm run package:check -- "artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix"
 	@echo "Built VS Code extension: $(VSCODE_VSIX)"
 
+package-vscode-dev: deps-vscode
+	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
+	cd $(VSCODE_DIR) && CONTENOX_VSCODE_SKIP_VSCE_SECRET_SCAN=1 npm run package
+	@test -f "$(VSCODE_VSIX)" || { echo "expected VSIX was not created: $(VSCODE_VSIX)"; exit 1; }
+	cd $(VSCODE_DIR) && npm run package:check -- "artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix"
+	@echo "Built dev VS Code extension: $(VSCODE_VSIX)"
+
 package-vscode-proposed: deps-vscode
 	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
 	cd $(VSCODE_DIR) && npm run package:proposed
 	@test -f "$(VSCODE_PROPOSED_VSIX)" || { echo "expected proposed VSIX was not created: $(VSCODE_PROPOSED_VSIX)"; exit 1; }
 	cd $(VSCODE_DIR) && CONTENOX_ALLOW_PROPOSED=1 npm run package:check -- "artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix"
 	@echo "Built proposed VS Code extension: $(VSCODE_PROPOSED_VSIX)"
+
+package-vscode-proposed-dev: deps-vscode
+	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
+	cd $(VSCODE_DIR) && CONTENOX_VSCODE_SKIP_VSCE_SECRET_SCAN=1 npm run package:proposed
+	@test -f "$(VSCODE_PROPOSED_VSIX)" || { echo "expected proposed VSIX was not created: $(VSCODE_PROPOSED_VSIX)"; exit 1; }
+	cd $(VSCODE_DIR) && CONTENOX_ALLOW_PROPOSED=1 npm run package:check -- "artifacts/runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix"
+	@echo "Built proposed dev VS Code extension: $(VSCODE_PROPOSED_VSIX)"
 
 # —— test ————————————————————————————————————————————————————————————————
 test:
@@ -102,31 +121,33 @@ test-contenox-help: build-contenox
 # —— dev —————————————————————————————————————————————————————————————————
 dev-install: build-contenox dev-link
 
-dev-install-vscode: package-vscode
-	@command -v code >/dev/null 2>&1 || { echo "missing VS Code CLI 'code' on PATH"; exit 1; }
-	@code --uninstall-extension contenox.runtime >/dev/null 2>&1 || true
-	@code --uninstall-extension contenox.contenox-vscode >/dev/null 2>&1 || true
-	@code --uninstall-extension contenox.contenox >/dev/null 2>&1 || true
-	@rm -rf "$(HOME)/.vscode/extensions/contenox.runtime-"*
-	code --install-extension "$(VSCODE_VSIX)" --force
-	cd $(VSCODE_DIR) && node scripts/assert-installed-dev.js "$(VSCODE_VERSION)"
-	@code --list-extensions --show-versions | grep -E '^contenox\.runtime@$(VSCODE_VERSION)$$'
+dev-install-vscode: package-vscode-dev
+	@command -v "$(VSCODE_CLI)" >/dev/null 2>&1 || { echo "missing VS Code CLI '$(VSCODE_CLI)' on PATH"; exit 1; }
+	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.runtime >/dev/null 2>&1 || true
+	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.contenox-vscode >/dev/null 2>&1 || true
+	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.contenox >/dev/null 2>&1 || true
+	@EXT_ROOT="$(VSCODE_INSTALL_EXTENSIONS_DIR)"; rm -rf "$$EXT_ROOT"/contenox.runtime-*
+	"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --install-extension "$(VSCODE_VSIX)" --force
+	cd $(VSCODE_DIR) && VSCODE_CLI="$(VSCODE_CLI)" VSCODE_EXTENSIONS_DIR="$(VSCODE_EXTENSIONS_DIR)" node scripts/assert-installed-dev.js "$(VSCODE_VERSION)"
+	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --list-extensions --show-versions | grep -E '^contenox\.runtime@$(VSCODE_VERSION)$$'
 	@echo "Installed Contenox VS Code extension from $(VSCODE_VSIX)"
-	@echo "Reload the VS Code window, then run: Contenox: Run Setup"
+	@echo "Reload Window required before VS Code uses the new extension code."
+	@echo "Then run: Contenox: Show Runtime Info"
 
-dev-install-vscode-proposed: package-vscode-proposed
-	@command -v code >/dev/null 2>&1 || { echo "missing VS Code CLI 'code' on PATH"; exit 1; }
-	@code --uninstall-extension contenox.runtime >/dev/null 2>&1 || true
-	@code --uninstall-extension contenox.contenox-vscode >/dev/null 2>&1 || true
-	@code --uninstall-extension contenox.contenox >/dev/null 2>&1 || true
-	@rm -rf "$(HOME)/.vscode/extensions/contenox.runtime-"*
-	code --install-extension "$(VSCODE_PROPOSED_VSIX)" --force
-	cd $(VSCODE_DIR) && node scripts/assert-installed-dev.js "$(VSCODE_VERSION)"
-	@code --list-extensions --show-versions | grep -E '^contenox\.runtime@$(VSCODE_VERSION)$$'
+dev-install-vscode-proposed: package-vscode-proposed-dev
+	@command -v "$(VSCODE_CLI)" >/dev/null 2>&1 || { echo "missing VS Code CLI '$(VSCODE_CLI)' on PATH"; exit 1; }
+	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.runtime >/dev/null 2>&1 || true
+	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.contenox-vscode >/dev/null 2>&1 || true
+	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.contenox >/dev/null 2>&1 || true
+	@EXT_ROOT="$(VSCODE_INSTALL_EXTENSIONS_DIR)"; rm -rf "$$EXT_ROOT"/contenox.runtime-*
+	"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --install-extension "$(VSCODE_PROPOSED_VSIX)" --force
+	cd $(VSCODE_DIR) && VSCODE_CLI="$(VSCODE_CLI)" VSCODE_EXTENSIONS_DIR="$(VSCODE_EXTENSIONS_DIR)" node scripts/assert-installed-dev.js "$(VSCODE_VERSION)"
+	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --list-extensions --show-versions | grep -E '^contenox\.runtime@$(VSCODE_VERSION)$$'
 	@echo "Installed proposed Contenox VS Code extension from $(VSCODE_PROPOSED_VSIX)"
+	@echo "Reload Window required before VS Code uses the new extension code."
 	@echo "Launch VS Code with proposed APIs enabled:"
-	@echo "  code --enable-proposed-api contenox.runtime $(PROJECT_ROOT)"
-	@echo "Then run: Contenox: Open Agent Session"
+	@echo "  $(VSCODE_CLI) --enable-proposed-api contenox.runtime $(PROJECT_ROOT)"
+	@echo "Then run: Contenox: Show Runtime Info"
 
 vscode-dev-install: dev-install-vscode
 

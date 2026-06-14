@@ -50,7 +50,7 @@ export class BridgeProcess implements vscode.Disposable {
     if (this.state && this.client) {
       return Promise.resolve(this.state);
     }
-    this.telemetry.event("bridge.ensure_started", {
+    this.telemetry.event("runtime.ensure_started", {
       alreadyStarting: Boolean(this.starting),
     });
     if (this.starting) {
@@ -63,14 +63,14 @@ export class BridgeProcess implements vscode.Disposable {
   }
 
   public async restart(): Promise<BridgeState> {
-    this.telemetry.event("bridge.restart");
+    this.telemetry.event("runtime.restart");
     await this.stop();
     return this.ensureStarted();
   }
 
   public async refreshHealth(): Promise<HealthResult> {
     if (!this.client) {
-      throw new Error("Bridge client is not available");
+      throw new Error("Contenox runtime connection is not available");
     }
     const health = await this.client.health();
     if (this.state) {
@@ -88,13 +88,13 @@ export class BridgeProcess implements vscode.Disposable {
     this.child = undefined;
     this.stoppingChild = child;
     this.status.setStopped();
-    this.telemetry.event("bridge.stop", { hadChild: Boolean(child), hadClient: Boolean(client) });
+    this.telemetry.event("runtime.stop", { hadChild: Boolean(child), hadClient: Boolean(client) });
 
     if (client) {
       try {
         await client.shutdown();
       } catch (error) {
-        this.output.warn(`Bridge shutdown request failed: ${errorMessage(error)}`);
+        this.output.warn(`Runtime shutdown request failed: ${errorMessage(error)}`);
       }
       client.dispose();
     }
@@ -110,7 +110,7 @@ export class BridgeProcess implements vscode.Disposable {
 
   private async start(): Promise<BridgeState> {
     if (this.disposed) {
-      throw new Error("Contenox bridge process is disposed");
+      throw new Error("Contenox runtime process is disposed");
     }
 
     const settings = readBridgeSettings();
@@ -119,8 +119,8 @@ export class BridgeProcess implements vscode.Disposable {
     const binaryPath = resolveBinaryPath(settings.binaryPath, this.extensionUri);
 
     this.status.setStarting();
-    this.output.info(`Starting Contenox bridge: ${binaryPath} ${args.join(" ")}`);
-    this.telemetry.event("bridge.spawn.start", {
+    this.output.info(`Starting Contenox runtime: ${binaryPath} ${args.join(" ")}`);
+    this.telemetry.event("runtime.spawn.start", {
       binaryPath,
       args,
       cwd,
@@ -142,13 +142,13 @@ export class BridgeProcess implements vscode.Disposable {
       windowsHide: true,
     });
     this.child = child;
-    this.telemetry.event("bridge.spawn.pid", { pid: child.pid });
+    this.telemetry.event("runtime.spawn.pid", { pid: child.pid });
 
     child.stderr.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8").trimEnd();
       if (text) {
-        this.output.info(`[bridge stderr] ${text}`);
-        this.telemetry.warn("bridge.stderr", {
+        this.output.info(`[runtime stderr] ${text}`);
+        this.telemetry.warn("runtime.stderr", {
           bytes: chunk.byteLength,
           lineCount: text.split(/\r?\n/).length,
           sample: text.slice(0, 512),
@@ -159,12 +159,12 @@ export class BridgeProcess implements vscode.Disposable {
       const detail = signal ? `signal ${signal}` : `code ${String(code)}`;
       if (this.stoppingChild === child) {
         this.stoppingChild = undefined;
-        this.output.info(`Contenox bridge stopped with ${detail}`);
-        this.telemetry.event("bridge.exit.expected", { code, signal });
+        this.output.info(`Contenox runtime stopped with ${detail}`);
+        this.telemetry.event("runtime.exit.expected", { code, signal });
         return;
       }
-      this.output.warn(`Contenox bridge exited with ${detail}`);
-      this.telemetry.warn("bridge.exit.unexpected", { code, signal });
+      this.output.warn(`Contenox runtime exited with ${detail}`);
+      this.telemetry.warn("runtime.exit.unexpected", { code, signal });
       if (this.child === child) {
         this.client?.dispose();
         this.child = undefined;
@@ -209,7 +209,7 @@ export class BridgeProcess implements vscode.Disposable {
       const health = await client.health();
       this.state = { initialize, health };
       this.status.setReady(health);
-      this.telemetry.event("bridge.spawn.ready", {
+      this.telemetry.event("runtime.spawn.ready", {
         protocolVersion: initialize.protocolVersion,
         serverVersion: initialize.serverVersion,
         stateDir: initialize.stateDir,
@@ -231,8 +231,8 @@ export class BridgeProcess implements vscode.Disposable {
       }
       this.client = undefined;
       this.child = undefined;
-      this.telemetry.error("bridge.spawn.failed", error, { binaryPath, cwd });
-      throw new Error(`Failed to start Contenox bridge: ${errorMessage(error)}`);
+      this.telemetry.error("runtime.spawn.failed", error, { binaryPath, cwd });
+      throw new Error(`Failed to start Contenox runtime: ${errorMessage(error)}`);
     }
   }
 }

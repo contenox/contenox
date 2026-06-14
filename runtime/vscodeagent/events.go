@@ -49,13 +49,13 @@ func (s *Server) publishTaskEvent(ctx context.Context, ev taskengine.TaskEvent) 
 			})
 		}
 	case taskengine.TaskEventToolCallPending:
-		s.notifyToolCallGuarded(turn, ev, "pending")
+		_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "pending"))
 	case taskengine.TaskEventToolCall:
 		status := "completed"
 		if ev.Error != "" {
 			status = "failed"
 		}
-		s.notifyToolCallGuarded(turn, ev, status)
+		_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, status))
 	case taskengine.TaskEventHITLDecision:
 		_ = s.notify("hitlDecision", s.hitlDecisionEventFromTaskEvent(ctx, turn, ev))
 	case taskengine.TaskEventStepStarted:
@@ -71,14 +71,6 @@ func (s *Server) publishTaskEvent(ctx context.Context, ev taskengine.TaskEvent) 
 			_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "failed"))
 		}
 	}
-}
-
-func (s *Server) notifyToolCallGuarded(turn turnInfo, ev taskengine.TaskEvent, status string) {
-	event := toolCallEventFromTaskEvent(turn, ev, status)
-	if s.isPermissionPending(turn.SessionID, event.ToolCallID) {
-		return
-	}
-	_ = s.notify("toolCall", event)
 }
 
 func (s *Server) hitlDecisionEventFromTaskEvent(ctx context.Context, turn turnInfo, ev taskengine.TaskEvent) hitlDecisionEvent {

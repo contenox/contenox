@@ -39,7 +39,7 @@ VS Code extension:
 - diagnostics explanation and fixes
 - workspace review and commit-message drafting
 - model/provider selection backed by Contenox config
-- HITL approvals for gated tool actions
+- HITL approval prompts for gated tool actions
 - inspectable local output and telemetry
 
 It should not fork the Contenox engine into Kotlin. The plugin should be an IDE
@@ -110,8 +110,16 @@ extension:
 - `sessionDelete`
 - `chatSend`
 - `chatCancel`
-- `approvalRespond`
 - `listMCPServers`
+
+Reverse runtime-to-client requests to support:
+
+- `session/request_permission`
+
+The plugin must answer this request synchronously with the selected permission
+option or a cancelled outcome. Tool names and arguments are supplied by the
+runtime; the plugin should render them and must not hardcode the Contenox tool
+catalog.
 
 Notifications to support:
 
@@ -121,7 +129,6 @@ Notifications to support:
 - `chatCancelled`
 - `chatFailed`
 - `toolCall`
-- `approvalRequested`
 - `configChanged`
 
 The bridge must preserve streaming text exactly as received from chat-completion
@@ -192,7 +199,8 @@ Publishing options:
    Wire selection actions, diagnostics explanation/fix actions, workspace review,
    and commit-message drafting.
 5. Add approvals and tool-call UI.
-   Render `toolCall` events and block on `approvalRequested` dialogs.
+   Render `toolCall` events and answer blocking `session/request_permission`
+   requests with allow/deny/cancel outcomes.
 6. Add settings and setup.
    Expose runtime path, data directory, provider/model selection, autocomplete
    defaults, and HITL policy.

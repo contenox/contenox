@@ -14,6 +14,7 @@ interface ApprovalToolInput {
   summary: string;
   input?: Record<string, unknown>;
   inputJson?: string;
+  details?: string;
   diff?: string;
   currentContent?: string;
   proposedContent?: string;
@@ -54,11 +55,12 @@ export async function requestNativeApproval(
     toolName: event.toolName,
     toolsName: event.toolsName,
     argKeyCount: input.input ? Object.keys(input.input).length : 0,
+    detailChars: input.details?.length ?? 0,
     diffChars: input.diff?.length ?? 0,
     currentChars: input.currentContent?.length ?? 0,
     proposedChars: input.proposedContent?.length ?? 0,
   });
-  if (!input.inputJson && !input.diff && input.currentContent === undefined && input.proposedContent === undefined) {
+  if (!input.inputJson && !input.details && !input.diff && input.currentContent === undefined && input.proposedContent === undefined) {
     telemetry.warn("approval.native.payload.missing_details", {
       approvalId: event.approvalId,
       toolName: event.toolName,
@@ -166,6 +168,7 @@ function approvalInputFromEvent(event: ApprovalRequestedEvent): ApprovalToolInpu
     summary: approvalSummary(event),
     input: event.args,
     inputJson,
+    details: nonBlankString(event.details),
     diff,
     currentContent: hasContentPair ? event.diffOld ?? "" : undefined,
     proposedContent: hasContentPair ? event.diffNew ?? "" : undefined,
@@ -202,13 +205,16 @@ function approvalMarkdown(input: ApprovalToolInput): vscode.MarkdownString {
   if (input.inputJson) {
     sections.push("", "**Input:**", codeBlock(input.inputJson, "json", 6000));
   }
+  if (input.details) {
+    sections.push("", "**Details:**", codeBlock(input.details, "", 6000));
+  }
   const diff = nonBlankString(input.diff);
   if (diff) {
     sections.push("", "**Proposed change:**", codeBlock(diff, "diff", 12000));
   } else if (input.currentContent !== undefined || input.proposedContent !== undefined) {
     sections.push("", "**Current content:**", codeBlock(input.currentContent ?? "", "", 6000));
     sections.push("", "**Proposed content:**", codeBlock(input.proposedContent ?? "", "", 6000));
-  } else if (!input.inputJson) {
+  } else if (!input.inputJson && !input.details) {
     sections.push("", "**Details:** No structured tool input or diff was provided by the runtime.");
   }
   markdown.value = sections.join("\n");

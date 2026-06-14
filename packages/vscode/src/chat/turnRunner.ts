@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { BridgeClient } from "../bridge/BridgeClient";
 import { BridgeProcess } from "../bridge/BridgeProcess";
 import {
-  ApprovalRequestedEvent,
   ChatDeltaEvent,
   ChatLifecycleEvent,
   EditorContextAttachment,
@@ -34,8 +33,11 @@ export interface ChatTurnHandlers {
   onStarted?: (event: ChatLifecycleEvent) => void;
   onDelta?: (event: ChatDeltaEvent) => void;
   onToolCall?: (event: ToolCallEvent) => void;
-  onApprovalRequested?: (client: BridgeClient, event: ApprovalRequestedEvent) => void;
-  onPermissionRequested?: (client: BridgeClient, event: RequestPermissionParams) => Promise<RequestPermissionResponse>;
+  onPermissionRequested?: (
+    client: BridgeClient,
+    event: RequestPermissionParams,
+    token: vscode.CancellationToken,
+  ) => Promise<RequestPermissionResponse>;
   onCompletedWithoutDelta?: (event: ChatLifecycleEvent, content: string | undefined) => void;
 }
 
@@ -51,11 +53,11 @@ export class ChatTurnRunner {
   public async run(options: ChatTurnOptions, handlers: ChatTurnHandlers = {}): Promise<TurnResult> {
     const state = await this.bridge.ensureStarted();
     if (!state.initialize.capabilities.chat) {
-      throw new Error("Bridge does not advertise chat capability");
+      throw new Error("This Contenox runtime does not support chat");
     }
     const client = this.bridge.currentClient;
     if (!client) {
-      throw new Error("Bridge client is not available");
+      throw new Error("Contenox runtime connection is not available");
     }
 
     const sessionId = await this.resolveSession(client, options);
@@ -122,11 +124,10 @@ export class ChatTurnRunner {
         expectedTurnId = event.turnId;
         handlers.onToolCall?.(event);
       }),
-      client.onApprovalRequested((event) => {
-        handlers.onApprovalRequested?.(client, event);
-      }),
       handlers.onPermissionRequested
-        ? client.pushPermissionRequestHandler((event) => handlers.onPermissionRequested?.(client, event) ?? Promise.resolve({ outcome: { outcome: "cancelled" } }))
+        ? client.pushPermissionRequestHandler(expectedSessionId, (event, permissionToken) =>
+            handlers.onPermissionRequested?.(client, event, permissionToken) ?? Promise.resolve({ outcome: { outcome: "cancelled" } }),
+          )
         : undefined,
       client.onChatCompleted((event) => {
         if (!matchesTurn(event, expectedSessionId, expectedTurnId) || settled) {

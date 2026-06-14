@@ -57,7 +57,7 @@ or:
 
 1. Add shared ACP permission builders in Go so `acpsvc` and `vscodeagent` use the same `libacp.RequestPermissionRequest` construction for titles, raw input, diff content, and tool kind.
 2. Add server-initiated request support to `runtime/vscodeagent.Server`: numeric ids, pending response map, response routing in `Run`, context cleanup, and fail-closed behavior on write/close/cancel.
-3. Change `ApprovalBroker` to call `session/request_permission` synchronously instead of sending `approvalRequested` notifications. Keep old `approvalRespond` only as a temporary compatibility no-op until the TypeScript path no longer uses it.
+3. Change `ApprovalBroker` to call `session/request_permission` synchronously instead of sending `approvalRequested` notifications. Delete the old `approvalRespond` compatibility path once the TypeScript bridge uses the blocking request.
 4. Add VS Code `BridgeClient` handling for incoming JSON-RPC requests. Dispatch `session/request_permission`, call an active chat approval handler, and send a JSON-RPC response. If no handler exists or the UI fails, answer `cancelled`.
 5. Wire the chat turn's `toolInvocationToken` into the active approval handler for the duration of the turn. This keeps native VS Code approval UI tied to the current chat request and prevents approvals outside a chat turn from silently succeeding.
 6. Add a VS Code agent permission-pending guard mirroring ACP so normal `toolCall` notifications do not render over the approval request for the same session/tool call.
@@ -74,7 +74,7 @@ or:
 3. Ask `@contenox` to create a file in the workspace. A permission card should block before execution.
 4. Deny it. The file must not appear, and the assistant must report that the tool was denied.
 5. Ask `@contenox` to create a file in `/tmp` or `$HOME`. A shell fallback must also ask for approval, not silently run `python3`.
-6. Check `~/.contenox/vscode-telemetry.log` for `bridge.server_request.start`, `chat.approval.requested`, and `chat.approval.responded` entries.
+6. Check `~/.contenox/vscode-telemetry.log` for `runtime.server_request.start`, `chat.approval.requested`, and `chat.approval.responded` entries.
 
 ## Non-Goals
 

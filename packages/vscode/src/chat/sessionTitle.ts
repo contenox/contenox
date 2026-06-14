@@ -58,7 +58,7 @@ function titleFromSlashCommand(command: string, args: string): string {
     case "max-tokens":
       return titleWithFallback(cleanArgs ? `Max tokens: ${cleanArgs}` : "Show max tokens");
     case "think":
-      return titleWithFallback(cleanArgs ? `Think: ${cleanArgs}` : "Show think level");
+      return titleWithFallback(cleanArgs ? `Thinking: ${cleanArgs}` : "Show thinking level");
     case "capability":
       return titleWithFallback(cleanArgs ? `Capability: ${cleanArgs}` : "Show model capability");
     case "policy":

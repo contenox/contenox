@@ -31,7 +31,7 @@ export async function testAutocompleteAtCursor(
   output.show();
 
   if (!settings.enabled) {
-    output.warn("Contenox autocomplete is disabled; running direct bridge test anyway.");
+    output.warn("Contenox autocomplete is disabled; running a direct runtime test anyway.");
   }
   if (!vscode.workspace.isTrusted) {
     telemetry.event("autocomplete.debug.skipped", { ...common, reason: "untrusted_workspace" });
@@ -138,12 +138,12 @@ class ContenoxInlineCompletionProvider implements vscode.InlineCompletionItemPro
     try {
       const state = await this.bridge.ensureStarted();
       if (!state.initialize.capabilities.autocomplete) {
-        this.telemetry.event("autocomplete.provider.skipped", { ...common, reason: "bridge_capability_missing" });
+        this.telemetry.event("autocomplete.provider.skipped", { ...common, reason: "runtime_capability_missing" });
         return undefined;
       }
       const client = this.bridge.currentClient;
       if (!client) {
-        this.telemetry.event("autocomplete.provider.skipped", { ...common, reason: "bridge_client_missing" });
+        this.telemetry.event("autocomplete.provider.skipped", { ...common, reason: "runtime_connection_missing" });
         return undefined;
       }
 
@@ -239,11 +239,11 @@ async function requestRawCompletion(
 ): Promise<RawCompletionResult> {
   const state = await bridge.ensureStarted();
   if (!state.initialize.capabilities.autocomplete) {
-    throw new Error("Bridge does not advertise autocomplete capability");
+    throw new Error("This Contenox runtime does not support autocomplete");
   }
   const client = bridge.currentClient;
   if (!client) {
-    throw new Error("Bridge client is not available");
+    throw new Error("Contenox runtime connection is not available");
   }
   const { prefix, suffix } = documentWindow(document, position, settings.maxPrefixChars, settings.maxSuffixChars);
   if (prefix.length === 0 && suffix.length === 0) {
@@ -349,5 +349,5 @@ function errorMessage(error: unknown): string {
 }
 
 function isBridgeAutocompleteCancellation(error: unknown): boolean {
-  return errorMessage(error).includes("Contenox bridge request cancelled: autocomplete");
+  return errorMessage(error).includes("Contenox runtime request cancelled: autocomplete");
 }

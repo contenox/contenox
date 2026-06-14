@@ -55,7 +55,7 @@ staged.contributes.chatSessions = [
     canDelegate: true,
     inputPlaceholder: "Ask Contenox to work in this workspace",
     welcomeTitle: "Contenox",
-    welcomeMessage: "Local Contenox runtime session. Requests run through the bundled contenox vscode-agent bridge.",
+    welcomeMessage: "Local Contenox runtime session. Requests run through the bundled Contenox runtime process.",
     commands: chatParticipantCommands(staged),
   },
 ];
@@ -65,24 +65,23 @@ writeJson(stagedPackagePath, staged);
 fs.rmSync(output, { force: true });
 fs.mkdirSync(path.dirname(output), { recursive: true });
 
-const result = spawnSync(
-  vsce,
-  [
-    "package",
-    "--target",
-    target.name,
-    "--no-dependencies",
-    "--no-yarn",
-    "--allow-package-all-secrets",
-    "--allow-package-env-file",
-    "--out",
-    output,
-  ],
-  {
-    cwd: stageRoot,
-    stdio: "inherit",
-  },
-);
+const vsceArgs = [
+  "package",
+  "--target",
+  target.name,
+  "--no-dependencies",
+  "--no-yarn",
+  "--out",
+  output,
+];
+if (process.env.CONTENOX_VSCODE_SKIP_VSCE_SECRET_SCAN === "1") {
+  vsceArgs.splice(vsceArgs.indexOf("--out"), 0, "--allow-package-all-secrets", "--allow-package-env-file");
+}
+
+const result = spawnSync(vsce, vsceArgs, {
+  cwd: stageRoot,
+  stdio: "inherit",
+});
 
 fs.rmSync(stageRoot, { recursive: true, force: true });
 

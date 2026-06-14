@@ -254,7 +254,7 @@ async function requireClient(bridge: BridgeProcess) {
   await bridge.ensureStarted();
   const client = bridge.currentClient;
   if (!client) {
-    throw new Error("Bridge client is not available");
+    throw new Error("Contenox runtime connection is not available");
   }
   return client;
 }

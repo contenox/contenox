@@ -13,7 +13,7 @@ export class ContenoxStatusBar implements vscode.Disposable {
 
   public setStarting(): void {
     this.item.text = "$(sync~spin) Contenox";
-    this.item.tooltip = "Contenox bridge is starting";
+    this.item.tooltip = "Contenox runtime is starting";
     void setBridgeContext(false, false);
   }
 
@@ -26,13 +26,13 @@ export class ContenoxStatusBar implements vscode.Disposable {
 
   public setCrashed(): void {
     this.item.text = "$(warning) Contenox";
-    this.item.tooltip = "Contenox bridge crashed. Click to view status.";
+    this.item.tooltip = "Contenox runtime stopped unexpectedly. Click to restart and view status.";
     void setBridgeContext(false, false);
   }
 
   public setStopped(): void {
     this.item.text = "$(circle-slash) Contenox";
-    this.item.tooltip = "Contenox bridge is stopped. Click to start.";
+    this.item.tooltip = "Contenox runtime is stopped. Click to start.";
     void setBridgeContext(false, false);
   }
 
@@ -44,5 +44,5 @@ export class ContenoxStatusBar implements vscode.Disposable {
 function statusTooltip(health: HealthResult): string {
   const provider = health.defaultProvider || "no provider";
   const model = health.defaultModel || "no model";
-  return `Contenox bridge: ${health.status}\nProvider: ${provider}\nModel: ${model}`;
+  return `Contenox runtime: ${health.status}\nProvider: ${provider}\nModel: ${model}`;
 }

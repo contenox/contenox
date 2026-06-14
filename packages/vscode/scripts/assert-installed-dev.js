@@ -5,6 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 const extensionID = process.env.CONTENOX_VSCODE_EXTENSION_ID || "contenox.runtime";
+const vscodeCli = process.env.VSCODE_CLI || "code";
 const version = process.argv[2];
 
 if (!version) {
@@ -12,7 +13,8 @@ if (!version) {
   process.exit(2);
 }
 
-const extensionDir = path.join(os.homedir(), ".vscode", "extensions", `${extensionID}-${version}`);
+const extensionRoot = process.env.VSCODE_EXTENSIONS_DIR || defaultExtensionsDir(vscodeCli);
+const extensionDir = path.join(extensionRoot, `${extensionID}-${version}`);
 const checks = [
   ["package.json", "file"],
   ["dist/extension.js", "file"],
@@ -64,6 +66,15 @@ if (approvalTool.includes("Contenox requests permission:")) {
 }
 
 console.log(`Installed extension verified: ${extensionDir}`);
+console.log("Reload Window required before VS Code uses this extension build.");
+
+function defaultExtensionsDir(cli) {
+  const command = path.basename(cli).toLowerCase();
+  if (command.includes("insiders")) {
+    return path.join(os.homedir(), ".vscode-insiders", "extensions");
+  }
+  return path.join(os.homedir(), ".vscode", "extensions");
+}
 
 function readJson(file) {
   return JSON.parse(readText(file));

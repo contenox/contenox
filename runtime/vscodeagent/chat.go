@@ -37,6 +37,11 @@ type sessionLoadParams struct {
 	Name      string `json:"name,omitempty"`
 }
 
+type sessionReadParams struct {
+	SessionID string `json:"sessionId,omitempty"`
+	Name      string `json:"name,omitempty"`
+}
+
 type sessionDeleteParams struct {
 	SessionID string `json:"sessionId,omitempty"`
 	Name      string `json:"name,omitempty"`
@@ -153,16 +158,6 @@ type hitlDecisionEvent struct {
 	MatchedRule       *int   `json:"matchedRule,omitempty"`
 	TimeoutS          int    `json:"timeoutS,omitempty"`
 	ApprovalRequested bool   `json:"approvalRequested"`
-}
-
-type approvalRespondParams struct {
-	ApprovalID string `json:"approvalId"`
-	OptionID   string `json:"optionId"`
-	Approved   *bool  `json:"approved,omitempty"`
-}
-
-type approvalRespondResult struct {
-	Accepted bool `json:"accepted"`
 }
 
 type autocompleteParams struct {
@@ -294,6 +289,14 @@ func (s *Server) sessionLoad(ctx context.Context, params sessionLoadParams) (ses
 		return sessionResult{}, err
 	}
 	if err := s.sessionSvc().SetActiveID(ctx, session.ID); err != nil {
+		return sessionResult{}, err
+	}
+	return s.sessionByID(ctx, session.ID)
+}
+
+func (s *Server) sessionRead(ctx context.Context, params sessionReadParams) (sessionResult, error) {
+	session, err := s.resolveSession(ctx, params.SessionID, params.Name)
+	if err != nil {
 		return sessionResult{}, err
 	}
 	return s.sessionByID(ctx, session.ID)
@@ -439,20 +442,6 @@ func (s *Server) chatCancel(params chatCancelParams) chatCancelResult {
 	}
 	cancel()
 	return chatCancelResult{Cancelled: true}
-}
-
-func (s *Server) approvalRespond(params approvalRespondParams) (approvalRespondResult, error) {
-	approvalID := strings.TrimSpace(params.ApprovalID)
-	if approvalID == "" {
-		return approvalRespondResult{}, fmt.Errorf("approvalId is required")
-	}
-	approved := false
-	if params.Approved != nil {
-		approved = *params.Approved
-	} else {
-		approved = params.OptionID == "allow"
-	}
-	return approvalRespondResult{Accepted: s.approvals.Respond(approvalID, approved)}, nil
 }
 
 func (s *Server) autocomplete(ctx context.Context, params autocompleteParams) (autocompleteResult, error) {
