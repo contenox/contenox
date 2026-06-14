@@ -83,7 +83,7 @@ function updateReadme(pkg) {
 
   const expected = `${pkg.name}-${pkg.version}.vsix`;
   const current = fs.readFileSync(readmePath, "utf8");
-  const updated = current.replace(/(?:contenox|runtime)(?:-vscode)?-[0-9A-Za-z.+-]+\.vsix/g, expected);
+  const updated = current.replace(/(?:contenox-runtime|contenox|runtime)(?:-vscode)?-[0-9A-Za-z.+-]+\.vsix/g, expected);
   writeIfChanged(readmePath, updated);
 }
 

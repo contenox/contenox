@@ -4,7 +4,7 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const expectedID = process.env.CONTENOX_VSCODE_EXTENSION_ID || "contenox.runtime";
+const expectedID = process.env.CONTENOX_VSCODE_EXTENSION_ID || "contenox.contenox-runtime";
 const expectedTarget = process.env.CONTENOX_VSCODE_TARGET || "";
 const allowProposed = process.env.CONTENOX_ALLOW_PROPOSED === "1";
 const allowUntargeted = process.env.CONTENOX_ALLOW_UNTARGETED === "1";

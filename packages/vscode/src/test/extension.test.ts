@@ -15,7 +15,7 @@ import { TelemetryLogger } from "../logging/telemetry";
 
 suite("Contenox VS Code extension", () => {
   test("activates and registers core commands", async () => {
-    const extension = vscode.extensions.getExtension("contenox.runtime");
+    const extension = vscode.extensions.getExtension("contenox.contenox-runtime");
     assert.ok(extension, "extension should be available in the Extension Development Host");
     await extension.activate();
 

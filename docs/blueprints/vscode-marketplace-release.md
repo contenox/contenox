@@ -1,6 +1,6 @@
 # VS Code Marketplace Release Blueprint
 
-Target extension ID: `contenox.runtime`
+Target extension ID: `contenox.contenox-runtime`
 
 The VS Code extension is a thin adapter around the existing Contenox Go runtime.
 Each Marketplace package should be platform-specific and contain exactly one
@@ -14,15 +14,16 @@ bin/contenox.exe   Windows
 ## Identity
 
 - Publisher: `contenox`
-- Extension name: `runtime`
-- Extension ID: `contenox.runtime`
+- Extension name: `contenox-runtime`
+- Extension ID: `contenox.contenox-runtime`
 - Display name: `Contenox`
 - Homepage: `https://contenox.com`
 - Repository: `https://github.com/contenox/runtime`
-- Stable package: `packages/vscode/runtime-<version>.vsix`
-- Proposed local package: `packages/vscode/runtime-<version>-proposed.vsix`
+- Stable package: `packages/vscode/contenox-runtime-<target>-<version>.vsix`
+- Proposed local package: `packages/vscode/contenox-runtime-<target>-<version>-proposed.vsix`
 
-Do not publish under legacy IDs such as `contenox.contenox`.
+Do not publish under rejected or legacy IDs such as `contenox.runtime` or
+`contenox.contenox`.
 
 ## Publisher Profile Copy
 
@@ -81,7 +82,7 @@ Local target package smoke:
 
 ```sh
 CONTENOX_VSCODE_TARGET=linux-x64 npm run package
-CONTENOX_VSCODE_TARGET=linux-x64 npm run package:check -- artifacts/runtime-linux-x64-<version>.vsix
+CONTENOX_VSCODE_TARGET=linux-x64 npm run package:check -- artifacts/contenox-runtime-linux-x64-<version>.vsix
 ```
 
 Remote Development and Codespaces use the workspace extension host. Contenox is
@@ -93,7 +94,7 @@ environment.
 ## First Publish Steps
 
 1. Create the Visual Studio Marketplace publisher with ID `contenox`.
-2. Confirm `packages/vscode/package.json` resolves to `contenox.runtime`.
+2. Confirm `packages/vscode/package.json` resolves to `contenox.contenox-runtime`.
 3. Add `VSCE_PAT` as a GitHub Actions secret.
 4. Create and protect the `vscode-marketplace` GitHub environment.
 5. Run `VS Code Marketplace` manually with `publish=false`.
@@ -107,7 +108,7 @@ environment.
 
 - [ ] Publisher ID is `contenox`
 - [ ] Publisher profile description uses the approved local-first workflow copy
-- [ ] Extension ID is `contenox.runtime`
+- [ ] Extension ID is `contenox.contenox-runtime`
 - [ ] Display name is `Contenox`
 - [ ] `private` is absent from `packages/vscode/package.json`
 - [ ] `pricing` is `Free`

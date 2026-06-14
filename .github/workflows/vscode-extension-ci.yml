@@ -85,7 +85,7 @@ jobs:
           CONTENOX_VSCODE_TARGET: linux-x64
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          npm run package:check -- "artifacts/runtime-linux-x64-${VERSION}.vsix"
+          npm run package:check -- "artifacts/contenox-runtime-linux-x64-${VERSION}.vsix"
 
       - name: Smoke bundled runtime
         working-directory: packages/vscode
@@ -95,5 +95,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vscode-extension-linux-smoke
-          path: packages/vscode/artifacts/runtime-linux-x64-*.vsix
+          path: packages/vscode/artifacts/contenox-runtime-linux-x64-*.vsix
           if-no-files-found: error

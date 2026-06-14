@@ -285,7 +285,7 @@ jobs:
           mkdir -p artifacts
           npx vsce package \
             --target "${{ matrix.target }}" \
-            --out "artifacts/runtime-${{ matrix.target }}-${{ needs.verify.outputs.extension_version }}.vsix"
+            --out "artifacts/contenox-runtime-${{ matrix.target }}-${{ needs.verify.outputs.extension_version }}.vsix"
 
       - name: Verify target VSIX contents
         working-directory: packages/vscode
@@ -325,7 +325,7 @@ jobs:
         run: |
           TAG="${{ needs.verify.outputs.tag }}"
           cd release-assets
-          gh release create "$TAG" contenox-linux-* contenox-darwin-* contenox-windows-* runtime-*.vsix \
+          gh release create "$TAG" contenox-linux-* contenox-darwin-* contenox-windows-* contenox-runtime-*.vsix \
             --title "$TAG" \
             --notes "" \
             --latest \

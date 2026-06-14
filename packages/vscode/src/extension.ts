@@ -155,7 +155,7 @@ function updateDiagnosticsContext(): void {
 
 function openWalkthrough(telemetry: TelemetryLogger): Thenable<unknown> {
   telemetry.event("command.open_walkthrough");
-  return vscode.commands.executeCommand("workbench.action.openWalkthrough", "contenox.runtime#getStarted", false);
+  return vscode.commands.executeCommand("workbench.action.openWalkthrough", "contenox.contenox-runtime#getStarted", false);
 }
 
 export function deactivate(): void {

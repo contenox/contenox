@@ -197,7 +197,7 @@ export async function openAgentSession(telemetry: TelemetryLogger): Promise<void
   }
 
   vscode.window.showWarningMessage(
-    "Contenox native agent sessions require the proposed VS Code build path. Run make dev-install-vscode-proposed and launch VS Code with --enable-proposed-api contenox.runtime.",
+    "Contenox native agent sessions require the proposed VS Code build path. Run make dev-install-vscode-proposed and launch VS Code with --enable-proposed-api contenox.contenox-runtime.",
   );
 }
 

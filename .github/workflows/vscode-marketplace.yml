@@ -71,8 +71,8 @@ jobs:
             echo "package.json version ${PACKAGE_VERSION} does not match runtime version ${RUNTIME_VERSION}" >&2
             exit 1
           fi
-          if [ "${PACKAGE_ID}" != "contenox.runtime" ]; then
-            echo "package id ${PACKAGE_ID} is not contenox.runtime" >&2
+          if [ "${PACKAGE_ID}" != "contenox.contenox-runtime" ]; then
+            echo "package id ${PACKAGE_ID} is not contenox.contenox-runtime" >&2
             exit 1
           fi
           if [[ "${GITHUB_REF}" == refs/tags/* ]] && [ "${GITHUB_REF_NAME}" != "${RUNTIME_VERSION}" ]; then
@@ -223,7 +223,7 @@ jobs:
           mkdir -p artifacts
           npx vsce package \
             --target "${{ matrix.target }}" \
-            --out "artifacts/runtime-${{ matrix.target }}-${{ needs.verify.outputs.extension_version }}.vsix"
+            --out "artifacts/contenox-runtime-${{ matrix.target }}-${{ needs.verify.outputs.extension_version }}.vsix"
 
       - name: Verify target VSIX contents
         working-directory: packages/vscode
@@ -273,7 +273,11 @@ jobs:
             flags+=(--pre-release)
           fi
 
-          for file in dist-vsix/*.vsix; do
-            echo "Publishing ${file}"
-            vsce publish --packagePath "${file}" "${flags[@]}" -p "${VSCE_PAT}"
-          done
+          shopt -s nullglob
+          files=(dist-vsix/*.vsix)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No VSIX artifacts found in dist-vsix" >&2
+            exit 1
+          fi
+          printf 'Publishing %s\n' "${files[@]}"
+          vsce publish "${flags[@]}" --packagePath "${files[@]}" -p "${VSCE_PAT}"

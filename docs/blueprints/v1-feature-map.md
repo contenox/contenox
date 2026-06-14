@@ -724,8 +724,8 @@ Features:
 ### Extension identity
 
 - Publisher: `contenox`
-- Extension name: `runtime`
-- Extension ID: `contenox.runtime`
+- Extension name: `contenox-runtime`
+- Extension ID: `contenox.contenox-runtime`
 - Display name: `Contenox`
 - Extension kind: `workspace`
 
@@ -953,7 +953,7 @@ Features:
   binaries, and HITL UX need real interaction.
 - CI artifacts should be inspected before publish.
 - GitHub Release assets should be inspected for CLI binaries and
-  `runtime-<target>-<version>.vsix` files.
+  `contenox-runtime-<target>-<version>.vsix` files.
 - Pre-release Marketplace install should be tested before stable tag publish.
 - Release testing should include at least:
   - Linux x64.

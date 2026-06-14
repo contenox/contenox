@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const extensionID = process.env.CONTENOX_VSCODE_EXTENSION_ID || "contenox.runtime";
+const extensionID = process.env.CONTENOX_VSCODE_EXTENSION_ID || "contenox.contenox-runtime";
 const vscodeCli = process.env.VSCODE_CLI || "code";
 const version = process.argv[2];
 
