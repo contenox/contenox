@@ -124,6 +124,12 @@ func bumpVersion(bumpType string) error {
 	}
 	tx.readmeUpdated = true
 
+	// 7. Sync generated VS Code package metadata before creating the release commit.
+	if err := updateVSCodePackageMetadata(); err != nil {
+		return fmt.Errorf("failed to sync VS Code package metadata: %w", err)
+	}
+	tx.vscodeMetadataUpdated = true
+
 	// 8. Commit changes
 	if err := commitVersionFile(newVersion); err != nil {
 		return fmt.Errorf("failed to commit version changes: %w", err)
@@ -247,9 +253,17 @@ func updateVersionFile(newVersion string) error {
 }
 
 func commitVersionFile(newVersion string) error {
-	fmt.Println("📦 Committing version and README...")
+	fmt.Println("📦 Committing version, README, and generated VS Code metadata...")
 
-	cmd := exec.Command("git", "add", getVersionFile(), "README.md")
+	cmd := exec.Command(
+		"git",
+		"add",
+		getVersionFile(),
+		"README.md",
+		"packages/vscode/package.json",
+		"packages/vscode/package-lock.json",
+		"packages/vscode/README.md",
+	)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to stage version files: %w\nOutput: %s", err, string(output))
 	}
@@ -260,6 +274,17 @@ func commitVersionFile(newVersion string) error {
 		return fmt.Errorf("failed to commit version file: %w\nOutput: %s", err, string(output))
 	}
 
+	return nil
+}
+
+func updateVSCodePackageMetadata() error {
+	fmt.Println("📝 Syncing VS Code package metadata...")
+	cmd := exec.Command("node", "packages/vscode/scripts/sync-package-metadata.js")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("node packages/vscode/scripts/sync-package-metadata.js failed: %w\nOutput: %s", err, string(output))
+	} else if len(output) > 0 {
+		fmt.Print(string(output))
+	}
 	return nil
 }
 
@@ -298,14 +323,15 @@ func updateReadmeTag(newVersion string) error {
 
 // BumpTransaction represents a version bump operation with state tracking for proper cleanup
 type bumpTransaction struct {
-	currentVersion     string
-	newVersion         string
-	versionFileUpdated bool
-	readmeUpdated      bool
-	commitCreated      bool
-	tagCreated         bool
-	hasError           bool
-	successful         bool
+	currentVersion        string
+	newVersion            string
+	versionFileUpdated    bool
+	readmeUpdated         bool
+	vscodeMetadataUpdated bool
+	commitCreated         bool
+	tagCreated            bool
+	hasError              bool
+	successful            bool
 }
 
 // newBumpTransaction creates a new transaction context
@@ -349,6 +375,13 @@ func (tx *bumpTransaction) Rollback() {
 		fmt.Println("   Restoring README TAG...")
 		if err := updateReadmeTag(tx.currentVersion); err != nil {
 			fmt.Printf("   Failed to restore README: %v\n", err)
+		}
+	}
+
+	if tx.vscodeMetadataUpdated {
+		fmt.Println("   Restoring VS Code package metadata...")
+		if err := updateVSCodePackageMetadata(); err != nil {
+			fmt.Printf("   Failed to restore VS Code package metadata: %v\n", err)
 		}
 	}
 
