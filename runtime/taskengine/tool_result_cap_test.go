@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/libtracker"
+	libmodelprovider "github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/runtime/internal/tools"
 	"github.com/contenox/runtime/runtime/llmrepo"
 	"github.com/contenox/runtime/runtime/localtools"
-	libmodelprovider "github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	libdb "github.com/contenox/runtime/libdbexec"
-	"github.com/contenox/runtime/runtime/modelrepo"
+	modelrepo "github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 

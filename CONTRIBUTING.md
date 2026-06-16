@@ -80,7 +80,7 @@ without direct package coupling.
 | `runtime/taskengine/taskenv.go` | Runtime tool resolution and chain execution context |
 | `runtime/contenoxcli/cli.go` | CLI dispatch |
 | `runtime/contenoxcli/engine.go` | CLI-local engine bootstrap |
-| `runtime/modelrepo/` | Provider drivers |
+| `modeld/` | Provider drivers and local model daemon transport |
 | `runtime/vscodeagent/` | VS Code stdio bridge |
 | `packages/vscode/` | VS Code extension host adapter |
 
@@ -98,7 +98,7 @@ All AI workflow packages live under `runtime/`. Infrastructure libraries
 cmd/contenox/          contenox binary entry point
 runtime/contenoxcli/  CLI command implementations
 runtime/taskengine/   chain schema and execution engine
-runtime/modelrepo/    provider drivers
+modeld/               provider drivers and model daemon transport
 runtime/llmrepo/      provider/model selection
 runtime/localtools/   local shell, local filesystem, web, echo, print tools
 runtime/*service/     runtime services
@@ -171,7 +171,7 @@ Optional: `make dev-install` symlinks `contenox` to
 
 ### Building with local LLM inference
 
-The `runtime/modelrepo/llama` package owns embedded GGUF inference. The default
+The `modeld/llama` package owns embedded GGUF inference. The default
 build stays CGo-free through a stub backend. Native llama.cpp inference is
 enabled with the `llamanode` build tag and currently uses
 `github.com/ollama/ollama/llama` while the Contenox-owned shim is pending.

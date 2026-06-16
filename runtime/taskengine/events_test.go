@@ -8,9 +8,9 @@ import (
 
 	"github.com/contenox/runtime/libbus"
 	"github.com/contenox/runtime/libtracker"
+	libmodelprovider "github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/runtime/internal/tools"
 	"github.com/contenox/runtime/runtime/llmrepo"
-	libmodelprovider "github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

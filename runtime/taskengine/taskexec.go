@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/libtracker"
+	libmodelprovider "github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/runtime/llmrepo"
-	libmodelprovider "github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/taskengine/llmretry"
 	"github.com/google/uuid"
 )

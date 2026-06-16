@@ -3,6 +3,7 @@ package libacp
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,8 +12,10 @@ import (
 )
 
 const (
-	defaultScanBuf = 64 * 1024
-	maxScanBuf     = 16 * 1024 * 1024
+	defaultReadBuf    = 64 * 1024
+	maxNDJSONFrame    = 64 * 1024 * 1024
+	maxWireDumpBytes  = 256 * 1024
+	wireDumpTruncated = " [contenox wire log truncated"
 )
 
 var (
@@ -32,37 +35,68 @@ func wireDump(dir string, b []byte) {
 	if wireOut == nil {
 		return
 	}
+	originalLen := len(b)
+	truncated := originalLen > maxWireDumpBytes
+	if truncated {
+		b = b[:maxWireDumpBytes]
+	}
 	wireMu.Lock()
 	defer wireMu.Unlock()
+	if truncated {
+		fmt.Fprintf(wireOut, "%s %s %s%s original_bytes=%d]\n", time.Now().Format(time.RFC3339Nano), dir, b, wireDumpTruncated, originalLen)
+		return
+	}
 	fmt.Fprintf(wireOut, "%s %s %s\n", time.Now().Format(time.RFC3339Nano), dir, b)
 }
 
 type ndjsonReader struct {
-	scanner *bufio.Scanner
+	reader *bufio.Reader
 }
 
 func newNDJSONReader(r io.Reader) *ndjsonReader {
-	s := bufio.NewScanner(r)
-	s.Buffer(make([]byte, defaultScanBuf), maxScanBuf)
-	return &ndjsonReader{scanner: s}
+	return &ndjsonReader{reader: bufio.NewReaderSize(r, defaultReadBuf)}
 }
 
 func (r *ndjsonReader) Next() ([]byte, error) {
 	for {
-		if !r.scanner.Scan() {
-			if err := r.scanner.Err(); err != nil {
-				return nil, err
-			}
-			return nil, io.EOF
+		line, err := r.readLine()
+		if err != nil {
+			return nil, err
 		}
-		line := r.scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
-		out := make([]byte, len(line))
-		copy(out, line)
-		wireDump("<-", out)
-		return out, nil
+		wireDump("<-", line)
+		return line, nil
+	}
+}
+
+func (r *ndjsonReader) readLine() ([]byte, error) {
+	var line []byte
+	for {
+		frag, err := r.reader.ReadSlice('\n')
+		if len(frag) > 0 {
+			if len(line)+len(frag) > maxNDJSONFrame {
+				return nil, fmt.Errorf("libacp: ndjson frame too large: exceeds %d bytes", maxNDJSONFrame)
+			}
+			line = append(line, frag...)
+		}
+		switch {
+		case err == nil:
+			if len(line) > 0 && line[len(line)-1] == '\n' {
+				line = line[:len(line)-1]
+			}
+			return line, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF):
+			if len(line) == 0 {
+				return nil, io.EOF
+			}
+			return line, nil
+		default:
+			return nil, err
+		}
 	}
 }
 

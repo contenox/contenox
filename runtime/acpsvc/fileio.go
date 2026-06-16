@@ -29,10 +29,11 @@ func (a *acpFileIO) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	if !t.getClientCaps().FS.ReadTextFile {
 		return osFallback.ReadFile(ctx, path)
 	}
-	req := libacp.ReadTextFileRequest{Path: path}
-	if sid := resolveACPSessionID(ctx, t); sid != "" {
-		req.SessionID = sid
+	sid := resolveACPSessionID(ctx, t)
+	if sid == "" {
+		return nil, errors.New("acpsvc: ACP session is no longer active")
 	}
+	req := libacp.ReadTextFileRequest{SessionID: sid, Path: path}
 	resp, err := t.conn.ReadTextFile(ctx, req)
 	if err != nil {
 		return nil, mapACPNotExist(err)
@@ -48,10 +49,11 @@ func (a *acpFileIO) WriteFile(ctx context.Context, path string, data []byte) err
 	if !t.getClientCaps().FS.WriteTextFile {
 		return osFallback.WriteFile(ctx, path, data)
 	}
-	req := libacp.WriteTextFileRequest{Path: path, Content: string(data)}
-	if sid := resolveACPSessionID(ctx, t); sid != "" {
-		req.SessionID = sid
+	sid := resolveACPSessionID(ctx, t)
+	if sid == "" {
+		return errors.New("acpsvc: ACP session is no longer active")
 	}
+	req := libacp.WriteTextFileRequest{SessionID: sid, Path: path, Content: string(data)}
 	if _, err := t.conn.WriteTextFile(ctx, req); err != nil {
 		return mapACPNotExist(err)
 	}
@@ -65,6 +67,11 @@ func mapACPNotExist(err error) error {
 	var e *libacp.Error
 	if errors.As(err, &e) {
 		if e.Code == libacp.ErrResourceNotFound || strings.Contains(strings.ToLower(e.Message), "not found") {
+			return fmt.Errorf("%w: %v", os.ErrNotExist, err)
+		}
+		// Clients (e.g. Zed) reject binary files; treat them as unreadable text
+		// so bulk reads skip them instead of failing, matching search_repo.
+		if strings.Contains(strings.ToLower(string(e.Data)), "binary") {
 			return fmt.Errorf("%w: %v", os.ErrNotExist, err)
 		}
 		return err

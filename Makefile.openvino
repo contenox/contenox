@@ -56,7 +56,7 @@ test: model
 	LD_LIBRARY_PATH="$(OPENVINO_PKG)/libs" \
 	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
-	go test -tags openvino -run 'Test(System_OpenVINOSession|Unit_OpenVINO)' -v ./runtime/modelrepo/openvino/...
+	go test -tags openvino -run 'Test(System_OpenVINOSession|Unit_OpenVINO)' -v ./modeld/openvino/...
 
 test-s1: model deps-genai genai-src
 	CGO_ENABLED=1 \
@@ -66,7 +66,7 @@ test-s1: model deps-genai genai-src
 	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
 	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
-	go test -tags 'openvino openvino_genai' -run TestSystem_OpenVINOGenAI_SchedulerControlsReachable -v ./runtime/modelrepo/openvino/ovsession
+	go test -tags 'openvino openvino_genai' -run TestSystem_OpenVINOGenAI_SchedulerControlsReachable -v ./modeld/openvino/ovsession
 
 test-s1-5: model deps-genai genai-src
 	CGO_ENABLED=1 \
@@ -76,7 +76,7 @@ test-s1-5: model deps-genai genai-src
 	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
 	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
-	go test -tags 'openvino openvino_genai' -v ./runtime/modelrepo/openvino/...
+	go test -tags 'openvino openvino_genai' -v ./modeld/openvino/...
 
 test-s2: model deps-genai genai-src
 	CGO_ENABLED=1 \
@@ -86,7 +86,7 @@ test-s2: model deps-genai genai-src
 	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
 	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
-	go test -tags 'openvino openvino_genai' -run TestSystem_OpenVINOGenAI_PrefixReuseWarmsPrefill -v ./runtime/modelrepo/openvino/ovsession
+	go test -tags 'openvino openvino_genai' -run TestSystem_OpenVINOGenAI_PrefixReuseWarmsPrefill -v ./modeld/openvino/ovsession
 
 test-s2-5: model deps-genai genai-src
 	CGO_ENABLED=1 \
@@ -96,7 +96,7 @@ test-s2-5: model deps-genai genai-src
 	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
 	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
-	go test -tags 'openvino openvino_genai' -run 'TestSystem_OpenVINOSegments_AssemblerDrivesPrefixCache|TestSystem_OpenVINOChatContext_ClassifierWarmsChatPath' -v ./runtime/modelrepo/openvino/
+	go test -tags 'openvino openvino_genai' -run 'TestSystem_OpenVINOSegments_AssemblerDrivesPrefixCache|TestSystem_OpenVINOChatContext_ClassifierWarmsChatPath' -v ./modeld/openvino/
 
 clean:
 	rm -rf "$(OPENVINO_WORKDIR)"
