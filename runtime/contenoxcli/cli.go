@@ -167,10 +167,9 @@ and human approval gates. No daemon, no cloud required. State is stored in SQLit
     contenox "list files in my home dir"   # one-shot chain run using your configured policy
 
   Or register an LLM backend manually:
-    # Fully embedded (no external server, no network, no API key):
-    #   llama.cpp inference is compiled into the contenox binary.
-    contenox backend add embedded --type local --url <path-to-gguf-hf-url-or-models-dir>
-    contenox config set default-provider local
+    # Fully embedded llama.cpp GGUF (no external server, no network, no API key):
+    contenox backend add llama --type llama --url <models-dir>
+    contenox config set default-provider llama
     contenox config set default-model <model-name>
 
     # Local Ollama daemon

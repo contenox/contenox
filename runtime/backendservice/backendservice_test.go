@@ -20,6 +20,41 @@ func TestUnit_BackendService_ValidateRejectsUnknownTypes(t *testing.T) {
 	}
 }
 
+func TestUnit_BackendService_ValidateAcceptsLlama(t *testing.T) {
+	err := validate(&runtimetypes.Backend{
+		Name:    "llama",
+		BaseURL: "/tmp/models",
+		Type:    "llama",
+	})
+	if err != nil {
+		t.Fatalf("expected llama backend type to be accepted, got: %v", err)
+	}
+}
+
+func TestUnit_BackendService_ValidateAcceptsLocalAsLlamaAlias(t *testing.T) {
+	err := validate(&runtimetypes.Backend{
+		Name:    "local",
+		BaseURL: "/tmp/models",
+		Type:    "local",
+	})
+	if err != nil {
+		t.Fatalf("expected local backend type alias to be accepted, got: %v", err)
+	}
+}
+
+func TestUnit_BackendService_ValidateRejectsRetiredLocalNodeType(t *testing.T) {
+	for _, typ := range []string{"localnode"} {
+		err := validate(&runtimetypes.Backend{
+			Name:    typ,
+			BaseURL: "/tmp/models",
+			Type:    typ,
+		})
+		if err == nil {
+			t.Fatalf("expected retired backend type %q to be rejected", typ)
+		}
+	}
+}
+
 func TestUnit_BackendService_ValidateRequiresNameAndURL(t *testing.T) {
 	err := validate(&runtimetypes.Backend{BaseURL: "http://host", Type: "ollama"})
 	if err == nil || !strings.Contains(err.Error(), "name is required") {

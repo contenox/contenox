@@ -12,6 +12,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/vscodeagent"
 	"github.com/spf13/cobra"
@@ -47,6 +48,11 @@ func runVSCodeAgent(cmd *cobra.Command, _ []string) error {
 	}
 	ctx, stop := signal.NotifyContext(parentCtx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// Deferred before the runtime is built so it runs after runtime teardown
+	// (LIFO): drain registered model-backend shutdown hooks (e.g. native
+	// in-process inference sessions) deterministically on exit. No-op when no
+	// hook is registered.
+	defer func() { _ = modelrepo.Shutdown() }()
 
 	contenoxDir, err := resolveVSCodeAgentContenoxDir(cmd)
 	if err != nil {

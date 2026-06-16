@@ -19,7 +19,7 @@ import (
 // validConfigKeys lists the keys users can set via `contenox config set`.
 var validConfigKeys = map[string]string{
 	"default-model":                 "Default LLM model name (e.g. qwen2.5:7b)",
-	"default-provider":              "Default LLM provider type (e.g. local, ollama, openrouter, openai, gemini)",
+	"default-provider":              "Default LLM provider type (e.g. llama, ollama, openrouter, openai, gemini; local aliases llama)",
 	"default-alt-model":             "Optional alt LLM model name. Used by chains referencing {{var:alt_model}}.",
 	"default-alt-provider":          "Optional alt LLM provider type. Used by chains referencing {{var:alt_provider}}.",
 	"default-autocomplete-model":    "Optional autocomplete model name. Used by chains referencing {{var:autocomplete_model}}.",
@@ -42,7 +42,7 @@ Workspace keys (scoped to current project): default-chain, hitl-policy-name
 
 Supported keys:
   default-model                  Default LLM model name (e.g. qwen2.5:7b)
-  default-provider               Default LLM provider type (e.g. local, ollama, openrouter, openai, gemini)
+  default-provider               Default LLM provider type (e.g. llama, ollama, openrouter, openai, gemini; local aliases llama)
   default-alt-model              Optional alt LLM model name (chains using {{var:alt_model}})
   default-alt-provider           Optional alt LLM provider (chains using {{var:alt_provider}})
   default-autocomplete-model     Optional autocomplete model (chains using {{var:autocomplete_model}})

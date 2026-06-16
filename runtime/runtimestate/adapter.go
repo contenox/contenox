@@ -19,7 +19,7 @@ func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracke
 			continue
 		}
 
-		backendType := state.Backend.Type
+		backendType := modelrepo.CanonicalBackendType(state.Backend.Type)
 		catalog, err := modelrepo.NewCatalogProvider(
 			modelrepo.BackendSpec{
 				Type:    backendType,
@@ -63,6 +63,7 @@ func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracke
 		}
 		var providers []modelrepo.Provider
 		for _, backendType := range backendTypes {
+			backendType = modelrepo.CanonicalBackendType(backendType)
 			if typeProviders, ok := providersByType[backendType]; ok {
 				providers = append(providers, typeProviders...)
 			}

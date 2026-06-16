@@ -107,7 +107,7 @@ func NewCatalogProvider(spec BackendSpec, opts ...CatalogOption) (CatalogProvide
 }
 
 func (registryCatalogFactory) NewCatalogProvider(spec BackendSpec, opts ...CatalogOption) (CatalogProvider, error) {
-	normalized := strings.ToLower(strings.TrimSpace(spec.Type))
+	normalized := CanonicalBackendType(spec.Type)
 	if normalized == "" {
 		return nil, fmt.Errorf("catalog provider type is required")
 	}

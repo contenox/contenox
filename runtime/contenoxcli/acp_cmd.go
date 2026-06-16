@@ -18,6 +18,7 @@ import (
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/internal/updatecheck"
 	"github.com/contenox/runtime/runtime/localtools"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/taskengine"
@@ -109,6 +110,11 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	}
 	ctx, stop := signal.NotifyContext(parentCtx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// Deferred before the engine is built so it runs after engine teardown
+	// (LIFO): drain registered model-backend shutdown hooks (e.g. native
+	// in-process inference sessions) deterministically on exit. No-op when no
+	// hook is registered.
+	defer func() { _ = modelrepo.Shutdown() }()
 
 	autoMode, _ := cmd.Flags().GetBool("auto")
 	enableHITL := !autoMode

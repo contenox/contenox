@@ -171,8 +171,10 @@ Optional: `make dev-install` symlinks `contenox` to
 
 ### Building with local LLM inference
 
-The `runtime/modelrepo/local` package embeds llama.cpp inference through
-`github.com/ollama/ollama/llama`, so the full binary requires CGo.
+The `runtime/modelrepo/llama` package owns embedded GGUF inference. The default
+build stays CGo-free through a stub backend. Native llama.cpp inference is
+enabled with the `llamanode` build tag and currently uses
+`github.com/ollama/ollama/llama` while the Contenox-owned shim is pending.
 
 On Debian/Ubuntu:
 
@@ -181,11 +183,11 @@ sudo apt-get install -y gcc g++ nlohmann-json3-dev
 ```
 
 Then fetch the llama.cpp multimodal headers expected by the vendored Ollama
-module and build:
+module and build with the native tag:
 
 ```bash
 make deps-ollama-headers
-make build-contenox
+go build -tags llamanode ./cmd/contenox
 ```
 
 The header target is safe to re-run. It downloads the missing `miniaudio.h` and

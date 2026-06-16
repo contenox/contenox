@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/runtime/internal/llmresolver"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/statetype"
 )
@@ -179,7 +180,7 @@ func Evaluate(in Input) Result {
 // ResolveMaxOutputTokens returns the known output-token ceiling for the active
 // provider/model from already-synced runtime state. It returns 0 when unknown.
 func ResolveMaxOutputTokens(states []statetype.BackendRuntimeState, provider, model string) int {
-	provider = strings.ToLower(strings.TrimSpace(provider))
+	provider = modelrepo.CanonicalBackendType(provider)
 	model = strings.TrimSpace(model)
 	if provider == "" || model == "" {
 		return 0
@@ -209,7 +210,8 @@ func ResolveMaxOutputTokens(states []statetype.BackendRuntimeState, provider, mo
 }
 
 func providerTypeMatches(provider, backendType string) bool {
-	backendType = strings.ToLower(strings.TrimSpace(backendType))
+	provider = modelrepo.CanonicalBackendType(provider)
+	backendType = modelrepo.CanonicalBackendType(backendType)
 	if provider == backendType {
 		return true
 	}
@@ -278,13 +280,13 @@ func (r Result) Summary() string {
 }
 
 func addDefaultProviderIssues(r *Result) {
-	defaultProvider := strings.ToLower(strings.TrimSpace(r.DefaultProvider))
+	defaultProvider := modelrepo.CanonicalBackendType(r.DefaultProvider)
 	if defaultProvider == "" {
 		return
 	}
 
 	defaultChecks := filterBackendChecks(r.BackendChecks, func(check BackendCheck) bool {
-		return strings.ToLower(strings.TrimSpace(check.Type)) == defaultProvider
+		return modelrepo.CanonicalBackendType(check.Type) == defaultProvider
 	})
 	if len(defaultChecks) == 0 && r.BackendCount > 0 {
 		addIssue(r, Issue{
@@ -411,7 +413,7 @@ func buildBackendChecks(registered []runtimetypes.Backend, states []statetype.Ba
 			Name:            backend.Name,
 			Type:            backend.Type,
 			BaseURL:         backend.BaseURL,
-			DefaultProvider: strings.EqualFold(strings.TrimSpace(backend.Type), strings.TrimSpace(defaultProvider)),
+			DefaultProvider: modelrepo.CanonicalBackendType(backend.Type) == modelrepo.CanonicalBackendType(defaultProvider),
 			Status:          "pending",
 			Hint:            pendingBackendHint(backend),
 		}
@@ -572,7 +574,7 @@ func classifyBackendError(err string) backendErrorKind {
 func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
 	switch kind {
 	case backendErrorAPIKeyMissing:
-		switch strings.ToLower(strings.TrimSpace(backend.Type)) {
+		switch modelrepo.CanonicalBackendType(backend.Type) {
 		case "openai", "anthropic", "mistral", "gemini":
 			return fmt.Sprintf("Save credentials on Cloud providers, or re-add backend %q after exporting the provider API key.", backend.Name)
 		case "vertex-google":
@@ -588,7 +590,7 @@ func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
 			return fmt.Sprintf("Store credentials for backend %q, then rerun the backend cycle.", backend.Name)
 		}
 	case backendErrorAuth:
-		switch strings.ToLower(strings.TrimSpace(backend.Type)) {
+		switch modelrepo.CanonicalBackendType(backend.Type) {
 		case "openai", "anthropic", "mistral", "gemini":
 			return fmt.Sprintf("The stored API key for backend %q was rejected. Update the key on Cloud providers.", backend.Name)
 		case "vertex-google":
@@ -604,7 +606,7 @@ func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
 			return fmt.Sprintf("Check credentials or auth headers for backend %q.", backend.Name)
 		}
 	case backendErrorUnreachable:
-		switch strings.ToLower(strings.TrimSpace(backend.Type)) {
+		switch modelrepo.CanonicalBackendType(backend.Type) {
 		case "vertex-google":
 			return fmt.Sprintf("Check connectivity to Vertex AI and confirm GOOGLE_CLOUD_PROJECT is set. Backend %q URL: %s", backend.Name, backend.BaseURL)
 		case "bedrock":
@@ -616,7 +618,7 @@ func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
 			return fmt.Sprintf("Verify that %s is running at %s.", providerDisplayName(backend.Type), backend.BaseURL)
 		case "vllm":
 			return fmt.Sprintf("Verify that %s is running at %s.", providerDisplayName(backend.Type), backend.BaseURL)
-		case "local":
+		case "llama":
 			return fmt.Sprintf("Verify the model directory exists and contains at least one .gguf file: ls %s", backend.BaseURL)
 		default:
 			return fmt.Sprintf("Check connectivity and base URL for backend %q (%s).", backend.Name, backend.BaseURL)
@@ -704,7 +706,7 @@ func modelNamePresent(available []string, wanted string) bool {
 }
 
 func providerFixPath(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+	switch modelrepo.CanonicalBackendType(provider) {
 	case "openai", "openrouter", "anthropic", "mistral", "bedrock", "gemini", "vertex-google":
 		return "/backends?tab=cloud-providers"
 	default:
@@ -713,7 +715,7 @@ func providerFixPath(provider string) string {
 }
 
 func providerFixPathForChecks(provider string, checks []BackendCheck) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+	switch modelrepo.CanonicalBackendType(provider) {
 	case "openai", "anthropic", "mistral", "bedrock", "gemini", "vertex-google":
 		return "/backends?tab=cloud-providers"
 	case "ollama":
@@ -725,7 +727,7 @@ func providerFixPathForChecks(provider string, checks []BackendCheck) string {
 }
 
 func providerAddCommand(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+	switch modelrepo.CanonicalBackendType(provider) {
 	case "openai":
 		return "contenox backend add openai --type openai --api-key-env OPENAI_API_KEY"
 	case "anthropic":
@@ -734,8 +736,8 @@ func providerAddCommand(provider string) string {
 		return "contenox backend add mistral --type mistral --api-key-env MISTRAL_API_KEY"
 	case "gemini":
 		return "contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY"
-	case "local":
-		return "contenox backend add local --type local --url ~/.contenox/models/"
+	case "llama":
+		return "contenox backend add llama --type llama --url ~/.contenox/models/"
 	case "vertex-google":
 		return fmt.Sprintf("gcloud auth application-default login && contenox backend add %s --type %s --url \"https://us-central1-aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/us-central1\"", provider, provider)
 	case "bedrock":
@@ -746,14 +748,14 @@ func providerAddCommand(provider string) string {
 }
 
 func noChatModelsCommand(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+	switch modelrepo.CanonicalBackendType(provider) {
 	case "openai", "anthropic", "mistral", "gemini":
 		return "contenox model list   # confirm which chat models the provider exposes"
 	case "vertex-google":
 		return "contenox model list   # Gemini models from AI Studio metadata; set default-model to a gemini-* name"
 	case "bedrock":
 		return "Enable the model in the AWS Bedrock console (Model access), then: contenox model list   # Bedrock returns AccessDeniedException until the model is enabled for your account"
-	case "local":
+	case "llama":
 		return "contenox model pull granite-3.2-2b   # or: contenox model registry-list for full list"
 	default:
 		return "contenox model list   # if empty, pull a chat model (e.g. ollama pull " + DefaultOllamaSuggestModel + ")"
@@ -761,14 +763,14 @@ func noChatModelsCommand(provider string) string {
 }
 
 func primaryDiagnosticCommand(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+	switch modelrepo.CanonicalBackendType(provider) {
 	case "openai", "anthropic", "mistral", "gemini":
 		return "contenox doctor --json   # inspect backendChecks.error for the provider backend"
 	case "vertex-google":
 		return "gcloud auth application-default print-access-token   # verify ADC is working; also check GOOGLE_CLOUD_PROJECT is set"
 	case "bedrock":
 		return "aws sts get-caller-identity   # verify AWS creds resolve; then check model access in the Bedrock console"
-	case "local":
+	case "llama":
 		return "ls ~/.contenox/models/   # confirm at least one *.gguf model exists; run 'contenox model pull <name>' if empty"
 	default:
 		return "contenox backend list   # verify URL, then inspect runtime errors on the backend"
@@ -780,7 +782,7 @@ func repairBackendCommand(check *BackendCheck) string {
 		return ""
 	}
 
-	backendType := strings.ToLower(strings.TrimSpace(check.Type))
+	backendType := modelrepo.CanonicalBackendType(check.Type)
 	switch backendType {
 	case "ollama":
 		if isHostedOllamaCheck(*check) {
@@ -832,7 +834,7 @@ func chooseBaseURL(baseURL, fallback string) string {
 }
 
 func providerDisplayName(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
+	switch modelrepo.CanonicalBackendType(provider) {
 	case "ollama":
 		return "Ollama"
 	case "openai":
@@ -847,8 +849,8 @@ func providerDisplayName(provider string) string {
 		return "Gemini"
 	case "vllm":
 		return "vLLM"
-	case "local":
-		return "Local (GGUF)"
+	case "llama":
+		return "Llama.cpp (GGUF)"
 	case "vertex-google":
 		return "Vertex AI (Google)"
 	default:

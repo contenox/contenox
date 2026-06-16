@@ -36,9 +36,10 @@ var backendCmd = &cobra.Command{
 	Long: `Register and manage LLM backend endpoints.
 
 A backend points at an LLM provider. Supported types:
-  local                         Embedded llama.cpp inference — NO external server, NO network, NO API key.
-                                The contenox binary runs the model in-process on CPU (or GPU where available).
-                                Point --url at a local GGUF file, a huggingface.co URL, or a models directory.
+  llama                         Embedded llama.cpp GGUF runtime — NO external server, NO network, NO API key.
+                                Uses persistent sessions, explicit profiles, embeddings, and live prefix reuse
+                                when built with -tags llamanode. Point --url at the models directory.
+                                Compatibility: --type local maps to this provider.
   ollama                        Local Ollama daemon (requires: ollama serve) or hosted Ollama Cloud.
   openai                        api.openai.com (requires --api-key-env).
   openrouter                    openrouter.ai — routes 300+ models from many providers through one
@@ -49,8 +50,8 @@ A backend points at an LLM provider. Supported types:
                                 login and GOOGLE_CLOUD_PROJECT).
 
 Examples:
-  # Fully embedded inference — no daemon, no network:
-  contenox backend add local --type local --url <path-to-gguf-hf-url-or-models-dir>
+  # Fully embedded llama.cpp inference — no daemon, no network:
+  contenox backend add llama --type llama --url <models-dir>
 
   # Register a local Ollama server (default URL inferred):
   contenox backend add ollama --type ollama
@@ -86,9 +87,11 @@ var backendAddCmd = &cobra.Command{
 	Long: `Register a named LLM backend endpoint in the local SQLite database.
 
 The --type flag determines which provider protocol is used.
-  local                         Embedded llama.cpp inference compiled into the contenox binary.
-                                No Ollama, no external server, no API key required. Pass --url with the
-                                path to a GGUF file, a huggingface.co URL, or the default models directory.
+  llama                         Embedded llama.cpp GGUF runtime compiled into the contenox binary.
+                                No Ollama, no external server, no API key required. Persistent sessions,
+                                explicit runtime profiles, embeddings, and live prefix reuse when built
+                                with -tags llamanode.
+                                Compatibility: --type local maps to this provider.
   openai, anthropic, mistral,
   gemini                        Cloud providers. Base URL inferred if --url is omitted. Requires --api-key-env.
   openrouter                    openrouter.ai — single API key for 300+ models. Base URL inferred. Requires --api-key-env.
@@ -101,7 +104,7 @@ API keys should be passed via --api-key-env (reads from environment) rather than
 --api-key (inline literal) to avoid leaking secrets into shell history.
 
 Examples:
-  contenox backend add embedded   --type local       --url <path-hf-url-or-models-dir>
+  contenox backend add llama      --type llama       --url <models-dir>
   contenox backend add ollama     --type ollama
   contenox backend add ollama-cloud --type ollama    --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
   contenox backend add openai     --type openai      --api-key-env OPENAI_API_KEY
@@ -324,7 +327,7 @@ func globalContenoxDir() (string, error) {
 }
 
 func init() {
-	backendAddCmd.Flags().String("type", "ollama", "Backend type: local (embedded llama.cpp, no external server), ollama, openai, openrouter, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: llama (embedded llama.cpp GGUF, no external server; local alias accepted), ollama, openai, openrouter, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
 	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/openrouter/anthropic/mistral/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
 	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")
 	backendAddCmd.Flags().String("api-key", "", "API key literal — prefer --api-key-env to avoid leaking into shell history")

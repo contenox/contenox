@@ -58,7 +58,7 @@ func TestUnit_getConfigKV_allConfigKeys(t *testing.T) {
 		"default-model":                 "phi3:3.8b",
 		"default-provider":              "ollama",
 		"default-alt-model":             "granite-3.2-2b",
-		"default-alt-provider":          "local",
+		"default-alt-provider":          "llama",
 		"default-autocomplete-model":    "mistral-code-fim-latest",
 		"default-autocomplete-provider": "mistral",
 		"default-max-tokens":            "8192",

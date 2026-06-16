@@ -1,0 +1,9 @@
+test-abi-link:
+	@echo "--- Running L0 Unsafe ABI Linkage Test ---"
+	@go test -v -x -work -tags 'llamanode llama_unsafe_abi' ./runtime/modelrepo/localnode/llamaabi 2>&1 | tee /tmp/llamaabi-build.log
+	@go test -c -tags 'llamanode llama_unsafe_abi' -o /tmp/llamaabi.test ./runtime/modelrepo/localnode/llamaabi
+	@echo "--- Checking symbols in /tmp/llamaabi.test ---"
+	nm -A /tmp/llamaabi.test | grep 'llama_state_seq_get_data' || echo "llama_state_seq_get_data not found in binary!"
+	nm -A /tmp/llamaabi.test | grep 'llama_free' || echo "llama_free not found in binary!"
+	ldd /tmp/llamaabi.test || true
+	@echo "--- Linkage Test Complete ---"

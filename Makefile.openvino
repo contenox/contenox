@@ -1,0 +1,102 @@
+PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+OPENVINO_WORKDIR ?= $(PROJECT_ROOT).openvino
+OPENVINO_VENV ?= $(OPENVINO_WORKDIR)/venv
+OPENVINO_MODEL ?= $(OPENVINO_WORKDIR)/models/qwen-coder-0.5b-int4
+OPENVINO_REPO ?= OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov
+OPENVINO_DEVICE ?= CPU
+OPENVINO_GENAI_VERSION ?= 2026.2.0.0
+OPENVINO_GENAI_REPO ?= $(HOME)/src/github.com/openvinotoolkit/openvino.genai
+OPENVINO_GENAI_SRC ?= $(HOME)/src/github.com/openvinotoolkit/openvino.genai-$(OPENVINO_GENAI_VERSION)
+PYTHON ?= python3
+
+OPENVINO_PKG = $(shell test -x "$(OPENVINO_VENV)/bin/python" && "$(OPENVINO_VENV)/bin/python" -c 'import openvino, os; print(os.path.dirname(openvino.__file__))' 2>/dev/null)
+OPENVINO_GENAI_PKG = $(shell test -x "$(OPENVINO_VENV)/bin/python" && "$(OPENVINO_VENV)/bin/python" -c 'import openvino_genai, os; print(os.path.dirname(openvino_genai.__file__))' 2>/dev/null)
+OPENVINO_TOKENIZERS_PKG = $(shell test -x "$(OPENVINO_VENV)/bin/python" && "$(OPENVINO_VENV)/bin/python" -c 'import openvino_tokenizers, os; print(os.path.dirname(openvino_tokenizers.__file__))' 2>/dev/null)
+OPENVINO_TOKENIZERS_LIB = $(OPENVINO_TOKENIZERS_PKG)/lib
+OPENVINO_TOKENIZERS_SO = $(OPENVINO_TOKENIZERS_LIB)/libopenvino_tokenizers.so
+OPENVINO_CGO_CXXFLAGS = -std=c++17 -I$(OPENVINO_PKG)/include
+OPENVINO_CGO_LDFLAGS = -L$(OPENVINO_PKG)/libs -l:libopenvino.so.2620 -lstdc++ -Wl,-rpath,$(OPENVINO_PKG)/libs
+OPENVINO_GENAI_CGO_CXXFLAGS = $(OPENVINO_CGO_CXXFLAGS) -I$(OPENVINO_GENAI_SRC)/src/cpp/include
+OPENVINO_GENAI_CGO_LDFLAGS = -L$(OPENVINO_PKG)/libs -L$(OPENVINO_GENAI_PKG) -L$(OPENVINO_TOKENIZERS_LIB) -l:libopenvino_genai.so.2620 -l:libopenvino.so.2620 -lstdc++ -Wl,-rpath,$(OPENVINO_PKG)/libs -Wl,-rpath,$(OPENVINO_GENAI_PKG) -Wl,-rpath,$(OPENVINO_TOKENIZERS_LIB)
+
+.PHONY: help deps deps-genai genai-src model test test-s1 test-s1-5 test-s2 test-s2-5 clean
+
+help:
+	@echo "deps       create .openvino venv and install OpenVINO SDK"
+	@echo "deps-genai install OpenVINO GenAI into the .openvino venv"
+	@echo "genai-src  fetch matching OpenVINO GenAI C++ headers"
+	@echo "model      download the tiny OpenVINO IR test model"
+	@echo "test       run the build-tagged OpenVINO S0 KV round-trip test"
+	@echo "test-s1    run the GenAI SchedulerConfig control-surface proof"
+	@echo "test-s1-5  run the GenAI session/provider prompt-chat-stream proof"
+	@echo "test-s2    prove prefix-cache warm reuse makes a repeated prefix cheap"
+	@echo "test-s2-5  prove the context assembler drives the prefix cache end to end"
+	@echo "clean      remove .openvino"
+
+deps:
+	$(PYTHON) -m venv "$(OPENVINO_VENV)"
+	"$(OPENVINO_VENV)/bin/pip" install -q --upgrade pip
+	"$(OPENVINO_VENV)/bin/pip" install -q openvino huggingface_hub
+
+deps-genai: deps
+	"$(OPENVINO_VENV)/bin/pip" install -q openvino-genai
+
+genai-src:
+	test -d "$(OPENVINO_GENAI_REPO)/.git" || git clone https://github.com/openvinotoolkit/openvino.genai.git "$(OPENVINO_GENAI_REPO)"
+	git -C "$(OPENVINO_GENAI_REPO)" fetch --tags --force
+	test -d "$(OPENVINO_GENAI_SRC)" || git -C "$(OPENVINO_GENAI_REPO)" worktree add --detach "$(OPENVINO_GENAI_SRC)" "$(OPENVINO_GENAI_VERSION)"
+
+model: deps
+	"$(OPENVINO_VENV)/bin/python" -c 'from huggingface_hub import snapshot_download; snapshot_download(repo_id="$(OPENVINO_REPO)", local_dir="$(OPENVINO_MODEL)")'
+
+test: model
+	CGO_ENABLED=1 \
+	CGO_CXXFLAGS="$(OPENVINO_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="$(OPENVINO_CGO_LDFLAGS)" \
+	LD_LIBRARY_PATH="$(OPENVINO_PKG)/libs" \
+	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
+	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
+	go test -tags openvino -run 'Test(System_OpenVINOSession|Unit_OpenVINO)' -v ./runtime/modelrepo/openvino/...
+
+test-s1: model deps-genai genai-src
+	CGO_ENABLED=1 \
+	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
+	LD_LIBRARY_PATH="$(OPENVINO_PKG)/libs:$(OPENVINO_GENAI_PKG):$(OPENVINO_TOKENIZERS_LIB)" \
+	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
+	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
+	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
+	go test -tags 'openvino openvino_genai' -run TestSystem_OpenVINOGenAI_SchedulerControlsReachable -v ./runtime/modelrepo/openvino/ovsession
+
+test-s1-5: model deps-genai genai-src
+	CGO_ENABLED=1 \
+	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
+	LD_LIBRARY_PATH="$(OPENVINO_PKG)/libs:$(OPENVINO_GENAI_PKG):$(OPENVINO_TOKENIZERS_LIB)" \
+	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
+	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
+	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
+	go test -tags 'openvino openvino_genai' -v ./runtime/modelrepo/openvino/...
+
+test-s2: model deps-genai genai-src
+	CGO_ENABLED=1 \
+	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
+	LD_LIBRARY_PATH="$(OPENVINO_PKG)/libs:$(OPENVINO_GENAI_PKG):$(OPENVINO_TOKENIZERS_LIB)" \
+	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
+	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
+	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
+	go test -tags 'openvino openvino_genai' -run TestSystem_OpenVINOGenAI_PrefixReuseWarmsPrefill -v ./runtime/modelrepo/openvino/ovsession
+
+test-s2-5: model deps-genai genai-src
+	CGO_ENABLED=1 \
+	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
+	LD_LIBRARY_PATH="$(OPENVINO_PKG)/libs:$(OPENVINO_GENAI_PKG):$(OPENVINO_TOKENIZERS_LIB)" \
+	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
+	CONTENOX_OPENVINO_TEST_MODEL="$(OPENVINO_MODEL)" \
+	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
+	go test -tags 'openvino openvino_genai' -run 'TestSystem_OpenVINOSegments_AssemblerDrivesPrefixCache|TestSystem_OpenVINOChatContext_ClassifierWarmsChatPath' -v ./runtime/modelrepo/openvino/
+
+clean:
+	rm -rf "$(OPENVINO_WORKDIR)"

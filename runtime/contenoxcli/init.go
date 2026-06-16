@@ -16,6 +16,7 @@ import (
 	"github.com/contenox/runtime/runtime/backendservice"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
@@ -125,8 +126,8 @@ var providerConfigs = map[string]providerConfig{
 		defaultModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
 		envKey:       "", // ambient AWS credential chain
 	},
-	"local": {
-		name:         "Local (GGUF)",
+	"llama": {
+		name:         "Llama.cpp (GGUF)",
 		defaultModel: "",
 		envKey:       "",
 	},
@@ -137,11 +138,11 @@ var providerConfigs = map[string]providerConfig{
 	},
 }
 
-// ensureLocalBackend creates the implicit local-type backend if none exists.
-// The local backend is always-present infrastructure pointed at ~/.contenox/models/;
+// ensureLlamaBackend creates the implicit llama backend if none exists.
+// The llama backend is always-present infrastructure pointed at ~/.contenox/models/;
 // the user only needs to populate it via `contenox model pull`. Idempotent.
-func ensureLocalBackend(out io.Writer) error {
-	if hasBackendOfType("local") {
+func ensureLlamaBackend(out io.Writer) error {
+	if hasBackendOfType("llama") || hasBackendOfType("local") {
 		return nil
 	}
 	homeDir, err := globalContenoxDir()
@@ -165,13 +166,13 @@ func ensureLocalBackend(out io.Writer) error {
 	svc := backendservice.New(db)
 	if err := svc.Create(ctx, &runtimetypes.Backend{
 		ID:      uuid.NewString(),
-		Name:    "local",
+		Name:    "llama",
 		BaseURL: modelsDir,
-		Type:    "local",
+		Type:    "llama",
 	}); err != nil {
-		return fmt.Errorf("create local backend: %w", err)
+		return fmt.Errorf("create llama backend: %w", err)
 	}
-	fmt.Fprintf(out, "  Registered local backend → %s\n", modelsDir)
+	fmt.Fprintf(out, "  Registered llama backend -> %s\n", modelsDir)
 	return nil
 }
 
@@ -200,7 +201,7 @@ func hasBackendOfType(providerType string) bool {
 	return false
 }
 
-// RunGlobalInit ensures ~/.contenox/ has chain files, HITL policies, and a local backend.
+// RunGlobalInit ensures ~/.contenox/ has chain files, HITL policies, and a llama backend.
 // Unlike RunInit it does NOT create a workspace-scoped .contenox/ directory.
 func RunGlobalInit(out io.Writer) error {
 	homeDir, err := globalContenoxDir()
@@ -238,17 +239,17 @@ func RunGlobalInit(out io.Writer) error {
 	if err := writeEmbeddedHITLPolicies(homeDir, false); err != nil {
 		return err
 	}
-	if err := ensureLocalBackend(out); err != nil {
-		fmt.Fprintf(out, "  warning: could not register local backend: %v\n", err)
+	if err := ensureLlamaBackend(out); err != nil {
+		fmt.Fprintf(out, "  warning: could not register llama backend: %v\n", err)
 	}
 	return nil
 }
 
 // RunInit scaffolds .contenox/ with default chain files.
-// provider is "" (defaults to the already-configured provider or "local"), "ollama", "gemini", "openai", or "local".
+// provider is "" (defaults to the already-configured provider or "llama"), "ollama", "gemini", "openai", or "llama".
 // contenoxDir is the target data directory (e.g. from --data-dir or the default .contenox/).
 func RunInit(out, errOut io.Writer, force, update bool, provider string, contenoxDir string) error {
-	provider = strings.ToLower(strings.TrimSpace(provider))
+	provider = modelrepo.CanonicalBackendType(provider)
 	if provider == "" {
 		// Default to the provider already configured in the database so that
 		// re-running init doesn't show irrelevant setup steps.
@@ -256,6 +257,7 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 			if db, openErr := OpenDBAt(libtracker.WithNewRequestID(context.Background()), dbPath); openErr == nil {
 				store := runtimetypes.New(db.WithoutTransaction())
 				if cur, err := getConfigKV(libtracker.WithNewRequestID(context.Background()), store, "default-provider"); err == nil && cur != "" {
+					cur = modelrepo.CanonicalBackendType(cur)
 					if _, known := providerConfigs[cur]; known {
 						provider = cur
 					}
@@ -264,13 +266,13 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 			}
 		}
 		if provider == "" {
-			provider = "local"
+			provider = "llama"
 		}
 	}
 
 	pc, ok := providerConfigs[provider]
 	if !ok {
-		return fmt.Errorf("unknown provider %q — valid options: ollama, openai, openrouter, gemini, anthropic, mistral, bedrock, local, vertex-google", provider)
+		return fmt.Errorf("unknown provider %q — valid options: ollama, openai, openrouter, gemini, anthropic, mistral, bedrock, llama, vertex-google", provider)
 	}
 	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
 		return fmt.Errorf("failed to create .contenox directory: %w", err)
@@ -354,21 +356,21 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		return err
 	}
 
-	// The local backend is always-present infrastructure. Create it if missing
+	// The llama backend is always-present infrastructure. Create it if missing
 	// so the user only ever needs to pull a model — never wire up a backend.
-	if err := ensureLocalBackend(out); err != nil {
-		fmt.Fprintf(errOut, "  warning: could not register local backend: %v\n", err)
+	if err := ensureLlamaBackend(out); err != nil {
+		fmt.Fprintf(errOut, "  warning: could not register llama backend: %v\n", err)
 	}
 
-	// Make local the default provider when nothing else is configured.
+	// Make llama the default provider when nothing else is configured.
 	// User-set values are not overwritten.
 	if dbPath, gpErr := globalDBPath(); gpErr == nil {
 		if db, openErr := OpenDBAt(libtracker.WithNewRequestID(context.Background()), dbPath); openErr == nil {
 			ctx := libtracker.WithNewRequestID(context.Background())
 			store := runtimetypes.New(db.WithoutTransaction())
-			if cur, _ := getConfigKV(ctx, store, "default-provider"); cur == "" && provider == "local" {
+			if cur, _ := getConfigKV(ctx, store, "default-provider"); cur == "" && provider == "llama" {
 				workspaceID := ResolveWorkspaceID(contenoxDir)
-				_ = clikv.WriteConfig(ctx, store, workspaceID, "default-provider", "local")
+				_ = clikv.WriteConfig(ctx, store, workspaceID, "default-provider", "llama")
 			}
 			db.Close()
 		}
@@ -459,7 +461,7 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		fmt.Fprintln(out, "  Get started with Vertex AI: https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstarts")
 		fmt.Fprintln(out, "")
 		chatStep = 4
-	case "local":
+	case "llama":
 		fmt.Fprintln(out, "  1. Pull a model (choose by available VRAM):")
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "       VRAM     Model              Q4 size   Notes")
@@ -472,7 +474,7 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")
 		fmt.Fprintln(out, "       contenox model pull granite-3.2-2b")
 		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "  The local backend is already registered and set as default.")
+		fmt.Fprintln(out, "  The llama backend is already registered and set as default.")
 		fmt.Fprintln(out, "  The first model you pull becomes the default-model automatically.")
 		fmt.Fprintln(out, "")
 		chatStep = 2
@@ -558,8 +560,8 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		fmt.Fprintln(out, "       contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY")
 		fmt.Fprintln(out, "  Get an Ollama API key for direct cloud access: https://ollama.com/settings/keys")
 		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "  Optional: run fully local models via the local provider:")
-		fmt.Fprintln(out, "       contenox init local")
+		fmt.Fprintln(out, "  Optional: run fully local GGUF models via the llama provider:")
+		fmt.Fprintln(out, "       contenox init llama")
 		fmt.Fprintln(out, "")
 		chatStep = 4
 	default:

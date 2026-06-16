@@ -30,11 +30,20 @@ Do not publish under rejected or legacy IDs such as `contenox.runtime` or
 Use this for the Visual Studio Marketplace publisher profile description:
 
 ```text
-Contenox builds local-first AI workflows for engineers.
+Use Contenox for local, reviewable AI work in your editor and terminal: ask
+about a codebase, review a diff before pushing, fix diagnostics, draft commit
+messages, run approved tool workflows, and turn repeated work into reusable
+Chains.
 
-The open-source Contenox runtime helps developers turn repeatable AI-assisted work into versioned, auditable workflows that can run from the terminal and editor. It is designed around model choice, local ownership, inspectable execution, tool policies, and human-in-the-loop approval.
+Contenox is an open-source, local-first AI workflow runtime for developers. It
+keeps sessions, configuration, telemetry, and workflow state on your machine
+while letting you choose local or hosted models and define explicit tool and
+approval boundaries.
 
-Contenox for VS Code brings that runtime into the editor for codebase chat, code actions, autocomplete, review workflows, and controlled automation without making a hosted chat product the source of truth.
+The VS Code extension brings the runtime into the editor for codebase chat,
+code actions, autocomplete, review workflows, and human-in-the-loop tool use.
+The same workflows can also run from the CLI or any ACP-compatible client, so
+useful AI work can graduate from chat into versioned, auditable automation.
 ```
 
 ## GitHub Setup

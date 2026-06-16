@@ -42,7 +42,7 @@ Curated models — run 'contenox model registry-list' to see full list with size
 Or provide an explicit URL:
   contenox model pull my-model --url https://huggingface.co/.../model.gguf
 
-After downloading, the model is ready to use immediately. The local backend is
+After downloading, the model is ready to use immediately. The llama backend is
 registered by 'contenox init' and the first pulled model becomes the default:
   contenox model list
   contenox "hello, what can you do?"`,

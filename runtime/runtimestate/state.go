@@ -280,7 +280,7 @@ func (s *State) processBackends(ctx context.Context, backends []*runtimetypes.Ba
 // including any errors encountered for unsupported types.
 // Helper method to process backends and collect their IDs
 func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backend, declaredModels []*runtimetypes.Model) {
-	switch strings.ToLower(backend.Type) {
+	switch modelrepo.CanonicalBackendType(backend.Type) {
 	case "ollama":
 		s.processOllamaBackend(ctx, backend, declaredModels)
 	case "vllm":
@@ -291,7 +291,7 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 		// Direct cloud, API-key + OpenAI-style model listing. processOpenAIBackend
 		// is generic over backend.Type (keys, catalog), so it serves all of them.
 		s.processOpenAIBackend(ctx, backend, declaredModels)
-	case "local":
+	case "llama":
 		s.processLocalBackend(ctx, backend, declaredModels)
 	case "vertex-google":
 		s.processVertexBackend(ctx, backend, declaredModels)
@@ -394,7 +394,7 @@ func (s *State) processOllamaBackend(ctx context.Context, backend *runtimetypes.
 	s.state.Store(backend.ID, stateservice)
 }
 
-// processLocalBackend handles state reconciliation for a local llama.cpp backend.
+// processLocalBackend handles state reconciliation for a llama.cpp backend.
 // It scans the model directory (stored in backend.BaseURL) for GGUF model subdirectories.
 func (s *State) processLocalBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
 	catalog, err := s.newCatalogProvider(backend, "")

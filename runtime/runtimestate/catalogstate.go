@@ -63,7 +63,7 @@ func ClearModelCache(ctx context.Context, kv libkvstore.KVManager) (int, error) 
 }
 
 func providerConfigKey(backendType string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(backendType)) {
+	switch modelrepo.CanonicalBackendType(backendType) {
 	case "ollama":
 		return OllamaKey, true
 	case "openai":
@@ -159,6 +159,7 @@ func observedModelNames(models []modelrepo.ObservedModel) []string {
 }
 
 func (s *State) applyCapabilityOverrides(ctx context.Context, provider string, model statetype.ModelPullStatus) statetype.ModelPullStatus {
+	provider = modelrepo.CanonicalBackendType(provider)
 	name := strings.TrimSpace(model.Model)
 	if name == "" {
 		name = strings.TrimSpace(model.Name)

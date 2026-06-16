@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 )
 
@@ -76,10 +76,10 @@ func validate(backend *runtimetypes.Backend) error {
 	if backend.BaseURL == "" {
 		return fmt.Errorf("%w: baseURL is required", ErrInvalidBackend)
 	}
-	switch strings.ToLower(backend.Type) {
-	case "ollama", "vllm", "openai", "anthropic", "mistral", "bedrock", "gemini", "local", "vertex-google":
+	switch modelrepo.CanonicalBackendType(backend.Type) {
+	case "ollama", "vllm", "openai", "anthropic", "mistral", "bedrock", "gemini", "llama", "vertex-google":
 	default:
-		return fmt.Errorf("%w: Type must be ollama, vllm, openai, anthropic, mistral, bedrock, gemini, local, or vertex-google", ErrInvalidBackend)
+		return fmt.Errorf("%w: Type must be ollama, vllm, openai, anthropic, mistral, bedrock, gemini, llama (local alias accepted), or vertex-google", ErrInvalidBackend)
 	}
 
 	return nil

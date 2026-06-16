@@ -247,3 +247,39 @@ func TestUnit_ModelProviderAdapter_CreatesOpenAIProviderViaCatalog(t *testing.T)
 	require.True(t, provider.CanPrompt())
 	require.True(t, provider.CanStream())
 }
+
+func TestUnit_ModelProviderAdapter_LocalAliasResolvesLlamaProvider(t *testing.T) {
+	ctx := context.Background()
+	backendID := "local-backend"
+	runtime := map[string]statetype.BackendRuntimeState{
+		backendID: {
+			ID:   backendID,
+			Name: "Local Alias Backend",
+			Backend: runtimetypes.Backend{
+				ID:      backendID,
+				Name:    "local",
+				Type:    "local",
+				BaseURL: t.TempDir(),
+			},
+			PulledModels: []statetype.ModelPullStatus{
+				{
+					Name:          "coder",
+					Model:         "coder",
+					CanChat:       true,
+					CanPrompt:     true,
+					CanStream:     true,
+					ContextLength: 8192,
+				},
+			},
+		},
+	}
+
+	adapterFunc := runtimestate.LocalProviderAdapter(ctx, nil, runtime)
+	for _, requested := range []string{"local", "llama"} {
+		providers, err := adapterFunc(ctx, requested)
+		require.NoError(t, err)
+		require.Len(t, providers, 1, "requested=%s", requested)
+		require.Equal(t, "llama", providers[0].GetType())
+		require.Equal(t, "coder", providers[0].ModelName())
+	}
+}
