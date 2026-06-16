@@ -473,3 +473,12 @@ handoff (P6) as opt-in later steps that do not change the protocol.
 - SQLite WAL: https://sqlite.org/wal.html
 - SQLite isolation: https://sqlite.org/isolation.html
 ```
+
+## Current Implementation Gaps (TODOs)
+
+As of the current implementation, the foundational primitives have been built, but they are not yet wired together to fulfill the "in-process owner" design. The following gaps remain:
+
+- **[ ] P1: In-process Lease Election:** The `runtime/enginesvc` does not yet import or use `liblease`. The lease acquisition and renew loop is currently isolated in the standalone `cmd/modeld` daemon. We need to embed the lease logic into `enginesvc.Build` so that multiple instances coordinate cleanly, with followers deferring resident model work.
+- **[ ] P2: Single-writer Fencing for SQLite:** While the SQLite storage is implemented (`runtimestate`/`runtimetypes`), there is no lease-based fencing protecting these writes in the runtime. Followers currently might act as concurrent writers.
+- **[ ] P3a: Canonical Model Package Cutover:** The resolver and execution logic remain in `runtime/llmrepo` rather than being fully consolidated into the top-level `modeld` package.
+- **[ ] P3b: Execution RPCs (Chat/Stream/Embed):** The gRPC service (`modeld/transport/grpc/modeld.proto`) only implements catalog and control methods (`RegisterBackend`, `ListModels`, etc.). Inference/execution RPCs must be added to allow followers to route work to the owner's warm state.
