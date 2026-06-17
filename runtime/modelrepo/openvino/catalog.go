@@ -2,6 +2,7 @@ package openvino
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -16,7 +17,7 @@ func init() {
 		if tracker == nil {
 			tracker = libtracker.NoopTracker{}
 		}
-		return &catalogProvider{dir: spec.BaseURL, tracker: tracker}, nil
+		return nil, fmt.Errorf("openvino backend is temporarily disabled pending modeld local runtime transition")
 	})
 	// Native GenAI sessions hold process-lifetime KV/pipeline state; register a
 	// drain so the runtime can release them on shutdown without importing this
