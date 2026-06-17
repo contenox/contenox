@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/modeld"
-	"github.com/contenox/runtime/modeld/contextasm"
+	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
 	"github.com/stretchr/testify/require"
 )

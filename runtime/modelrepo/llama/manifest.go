@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"runtime/debug"
 
-	"github.com/contenox/runtime/runtime/modelrepo/contextasm"
+	"github.com/contenox/runtime/runtime/contextasm"
 )
 
 const backendName = "llamacpp"

@@ -17,7 +17,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/contenox/runtime/runtime/modelrepo/contextasm"
+	"github.com/contenox/runtime/runtime/contextasm"
 )
 
 // ContextManifest is the shared, backend-neutral cache key: profile, model,

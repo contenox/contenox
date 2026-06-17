@@ -1,6 +1,6 @@
 package openvino
 
-import "github.com/contenox/runtime/runtime/modelrepo/contextasm"
+import "github.com/contenox/runtime/runtime/contextasm"
 
 // Kept as local aliases while OpenVINO call sites finish migrating to the
 // backend-neutral contextasm package.

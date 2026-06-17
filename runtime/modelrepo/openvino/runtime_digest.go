@@ -3,7 +3,7 @@ package openvino
 import (
 	"encoding/json"
 
-	"github.com/contenox/runtime/runtime/modelrepo/contextasm"
+	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/modelrepo/openvino/ovsession"
 )
 

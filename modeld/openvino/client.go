@@ -9,7 +9,7 @@ import (
 
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/modeld"
-	"github.com/contenox/runtime/modeld/contextasm"
+	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
 )
 

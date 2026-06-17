@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/modeld"
-	"github.com/contenox/runtime/modeld/contextasm"
+	"github.com/contenox/runtime/runtime/contextasm"
 )
 
 type classifiedChatContext struct {
