@@ -38,7 +38,7 @@ models, with sessions and state staying on your machine. Detailed examples are i
 ## Install
 
 <!-- Release tooling: keep next line in sync with runtime/version/version.txt (updated by `make -f Makefile.version bump-*`). -->
-<!-- TAG=v0.32.0 -->
+<!-- TAG=v0.32.1 -->
 
 ```bash
 curl -fsSL https://contenox.com/install.sh | sh
