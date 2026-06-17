@@ -22,7 +22,7 @@ import (
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libkvstore"
-	modelrepo "github.com/contenox/runtime/modeld"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/statetype"
 )

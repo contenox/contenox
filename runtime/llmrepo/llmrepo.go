@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/contenox/runtime/libtracker"
-	libmodelprovider "github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/runtime/internal/llmresolver"
+	libmodelprovider "github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/ollamatokenizer"
 	"github.com/contenox/runtime/runtime/runtimestate"
 )

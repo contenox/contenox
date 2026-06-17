@@ -11,8 +11,8 @@ import (
 
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
-	modelrepo "github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/vscodeagent"
 	"github.com/spf13/cobra"

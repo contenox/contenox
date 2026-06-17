@@ -3,7 +3,7 @@ package runtimestate
 import (
 	"strings"
 
-	modelrepo "github.com/contenox/runtime/modeld"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/statetype"
 )
 

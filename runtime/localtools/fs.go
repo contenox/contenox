@@ -1,16 +1,13 @@
 package localtools
 
 import (
-	"bufio"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -340,7 +337,7 @@ func (h *LocalFSTools) maxListDepthFromPolicy(ctx context.Context) int {
 var defaultSkipDirNames = []string{
 	".git", "node_modules", ".venv", "__pycache__",
 	".next", "dist", ".cache", "vendor", "target",
-	".idea", ".vscode", ".vscode-test",
+	".idea", ".vscode",
 }
 
 // skipDirNamesFromPolicy returns the set of directory basenames that list_dir
@@ -1014,23 +1011,15 @@ func (h *LocalFSTools) searchRepo(ctx context.Context, args map[string]any) (any
 	if !ok || pattern == "" {
 		return nil, taskengine.DataTypeAny, errors.New("local_fs: pattern required for search_repo")
 	}
-	if len(pattern) > 8192 {
-		return nil, taskengine.DataTypeAny, errors.New("local_fs: pattern exceeds 8192 characters")
-	}
-
 	rootArg, _ := args["path"].(string)
 	if rootArg == "" {
 		rootArg = "."
 	}
-
 	globFilter, _ := args["glob"].(string)
 	useRegex, _ := argBool(args, "regex")
 
 	absRoot, err := h.checkPath(ctx, filepath.Clean(rootArg))
 	if err != nil {
-		return nil, taskengine.DataTypeAny, err
-	}
-	if err := h.checkDeniedSubstrings(ctx, absRoot); err != nil {
 		return nil, taskengine.DataTypeAny, err
 	}
 
@@ -1045,125 +1034,71 @@ func (h *LocalFSTools) searchRepo(ctx context.Context, args map[string]any) (any
 	skipDirs := h.skipDirNamesFromPolicy(ctx)
 	maxMatches := h.maxGrepMatchesFromPolicy(ctx)
 
-	outputLimit, outputUnlimited := h.maxOutputBytesFromPolicy(ctx)
-
-	var sb strings.Builder
-	matches := 0
+	var lines []string
 	truncated := false
 
-	appendOut := func(s string) error {
-		if outputUnlimited {
-			_, _ = sb.WriteString(s)
+	walkErr := filepath.WalkDir(absRoot, func(walkPath string, d os.DirEntry, err error) error {
+		if err != nil {
 			return nil
 		}
-		nextSize := sb.Len() + len(s)
-		if int64(nextSize) > outputLimit {
-			return fmt.Errorf(
-				"local_fs: search_repo output is %d bytes (max %d); narrow the path, glob, pattern, or set _max_output_bytes in tools_policies.local_fs",
-				nextSize,
-				outputLimit,
-			)
-		}
-		_, _ = sb.WriteString(s)
-		return nil
-	}
-
-	walkErr := filepath.WalkDir(absRoot, func(walkPath string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil // Preserve previous behavior: skip unreadable entries.
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if truncated {
-			return filepath.SkipAll
-		}
-
 		if d.IsDir() {
 			if skipDirs[d.Name()] {
 				return filepath.SkipDir
 			}
-
-			checkedDir, err := h.checkPath(ctx, walkPath)
-			if err != nil {
-				return filepath.SkipDir
+			return nil
+		}
+		if truncated {
+			return filepath.SkipAll
+		}
+		if globFilter != "" {
+			if matched, _ := filepath.Match(globFilter, d.Name()); !matched {
+				return nil
 			}
-			if err := h.checkDeniedSubstrings(ctx, checkedDir); err != nil {
-				return filepath.SkipDir
-			}
+		}
+
+		content, readErr := h.fileIO.ReadFile(ctx, walkPath)
+		if readErr != nil {
+			return nil // skip unreadable files
+		}
+		if isBinaryContent(content) {
 			return nil
 		}
 
-		// Do not follow symlinked files. checkPath would catch escapes, but
-		// skipping symlinks entirely keeps repo search predictable and cheap.
-		if d.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-
-		checkedPath, err := h.checkPath(ctx, walkPath)
-		if err != nil {
-			return nil
-		}
-		if err := h.checkDeniedSubstrings(ctx, checkedPath); err != nil {
-			return nil
-		}
-
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-
-		rel, err := filepath.Rel(absRoot, checkedPath)
-		if err != nil {
-			return nil
-		}
+		rel, _ := filepath.Rel(absRoot, walkPath)
 		rel = filepath.ToSlash(rel)
 
-		if globFilter != "" && !searchRepoGlobMatches(globFilter, rel, d.Name()) {
-			return nil
+		for lineNo, line := range strings.Split(string(content), "\n") {
+			var matched bool
+			if useRegex {
+				matched = re.MatchString(line)
+			} else {
+				matched = strings.Contains(line, pattern)
+			}
+			if !matched {
+				continue
+			}
+			if len(line) > 500 {
+				line = line[:500] + "…"
+			}
+			lines = append(lines, fmt.Sprintf("%s:%d: %s", rel, lineNo+1, line))
+			if len(lines) >= maxMatches {
+				truncated = true
+				return filepath.SkipAll
+			}
 		}
-
-		binary, err := searchRepoLooksBinary(checkedPath)
-		if err != nil {
-			return nil // Preserve previous behavior: skip unreadable files.
-		}
-		if binary {
-			return nil
-		}
-
-		// Important: repo search used to bypass the per-file read limit. That is
-		// the main OOM/crash footgun.
-		if err := h.checkFileSizeLimit(ctx, checkedPath); err != nil {
-			return err
-		}
-
-		return h.searchRepoFile(
-			ctx,
-			checkedPath,
-			rel,
-			pattern,
-			re,
-			useRegex,
-			maxMatches,
-			&matches,
-			&truncated,
-			appendOut,
-		)
+		return nil
 	})
 	if walkErr != nil {
 		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: search_repo: %w", walkErr)
 	}
 
-	if matches == 0 {
-		if err := appendOut("No matches found."); err != nil {
-			return nil, taskengine.DataTypeAny, err
-		}
-	} else if truncated {
-		if err := appendOut(fmt.Sprintf("\n[Truncated at %d matches. Use path, glob, or regex to narrow the search.]", maxMatches)); err != nil {
-			return nil, taskengine.DataTypeAny, err
+	var sb strings.Builder
+	if len(lines) == 0 {
+		sb.WriteString("No matches found.")
+	} else {
+		sb.WriteString(strings.Join(lines, "\n"))
+		if truncated {
+			fmt.Fprintf(&sb, "\n[Truncated at %d matches. Use path, glob, or regex to narrow the search.]", maxMatches)
 		}
 	}
 
@@ -1172,106 +1107,6 @@ func (h *LocalFSTools) searchRepo(ctx context.Context, args map[string]any) (any
 		return nil, taskengine.DataTypeAny, err
 	}
 	return out, taskengine.DataTypeString, nil
-}
-
-func (h *LocalFSTools) searchRepoFile(
-	ctx context.Context,
-	absPath string,
-	rel string,
-	pattern string,
-	re *regexp.Regexp,
-	useRegex bool,
-	maxMatches int,
-	matches *int,
-	truncated *bool,
-	appendOut func(string) error,
-) error {
-	f, err := os.Open(absPath)
-	if err != nil {
-		return nil // Preserve previous behavior: skip unreadable files.
-	}
-	defer f.Close()
-
-	reader := bufio.NewReader(f)
-	lineNo := 0
-
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		line, readErr := reader.ReadString('\n')
-		if len(line) > 0 {
-			lineNo++
-
-			// Match the previous strings.Split(..., "\n") behavior: remove LF
-			// but leave any CR from CRLF files intact.
-			line = strings.TrimSuffix(line, "\n")
-
-			var matched bool
-			if useRegex {
-				matched = re.MatchString(line)
-			} else {
-				matched = strings.Contains(line, pattern)
-			}
-
-			if matched {
-				if len(line) > 500 {
-					line = line[:500] + "…"
-				}
-
-				if *matches > 0 {
-					if err := appendOut("\n"); err != nil {
-						return err
-					}
-				}
-				if err := appendOut(fmt.Sprintf("%s:%d: %s", rel, lineNo, line)); err != nil {
-					return err
-				}
-
-				*matches++
-				if *matches >= maxMatches {
-					*truncated = true
-					return filepath.SkipAll
-				}
-			}
-		}
-
-		if readErr == io.EOF {
-			return nil
-		}
-		if readErr != nil {
-			return nil // Preserve previous behavior: skip files that cannot be read fully.
-		}
-	}
-}
-
-func searchRepoLooksBinary(absPath string) (bool, error) {
-	f, err := os.Open(absPath)
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-
-	buf := make([]byte, 8192)
-	n, err := f.Read(buf)
-	if err != nil && err != io.EOF {
-		return false, err
-	}
-	return isBinaryContent(buf[:n]), nil
-}
-
-func searchRepoGlobMatches(globFilter, rel, name string) bool {
-	globFilter = filepath.ToSlash(globFilter)
-	rel = filepath.ToSlash(rel)
-
-	if strings.Contains(globFilter, "/") {
-		matched, err := path.Match(globFilter, rel)
-		return err == nil && matched
-	}
-
-	matched, err := filepath.Match(globFilter, name)
-	return err == nil && matched
 }
 
 // isBinaryContent reports whether content is likely binary by scanning the first

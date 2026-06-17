@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/contenox/runtime/libkvstore"
-	modelrepo "github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/runtime/modelcapability"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/statetype"
 )
