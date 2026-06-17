@@ -49,16 +49,47 @@ The daemon accepts arrays of Tokens, but remains stateless. The frontend tokeniz
 *   *Pros:* Moves tokenization and templating out of the daemon.
 *   *Cons:* Still stateless; the daemon has to guess what the frontend is trying to do with the KV cache. No explicit session management.
 
-### Option C: The "Compute & Context Allocator" (Recommended)
+### Option C: The "Compute & Context Allocator" (token-level — superseded, see Update)
 The daemon exposes a highly stateful, low-level API. The frontend explicitly allocates a Session (KV cache slot). On subsequent turns, the frontend only sends the *delta* tokens to the daemon for that specific Session. 
-*   *Pros:* Perfect mapping to how local inference hardware actually works (llama.cpp `llama_context`, OpenVINO state). Allows advanced features like Session cloning/forking (evaluating three different tool calls without re-evaluating the prompt). 
-*   *Cons:* The `runtime` wrapper becomes more complex, as it has to manage Session IDs and track token offsets across conversation turns.
+*   *Pros:* Maps to how llama.cpp hardware works (`llama_context`, KV seq ops). 
+*   *Cons:* Assumes every backend exposes raw token KV ops. It does not — see Update.
+
+## Update: Boundary Raised to the Session Contract
+
+Option C (a token-level `Evaluate([]Token)` / `Generate` API) was implemented as
+an in-memory noop and **stress-checked against the real backends**. The finding:
+both `llama.Session` and OpenVINO's `GenAISession` sit at a *higher* altitude
+than raw tokens. OpenVINO GenAI holds the tokenizer and chat template
+**internally** and caches a **string** prefix (the proven S2 reuse), so a
+token-only daemon could not honor it; and llama's own neutral contract is already
+`EnsurePrefix` / `PrefillSuffix` / `Decode`, not raw tokens.
+
+So the boundary was **raised to the manifest-keyed Session contract**, now
+implemented in `runtime/transport/session.go` (the source of truth):
+
+```go
+type Service interface {
+    OpenSession(ctx, OpenSessionRequest) (Session, error) // fence supplied here; session is owner-bound
+}
+
+type Session interface {
+    EnsurePrefix(ctx, PrefixInput) (PrefixStatus, error)   // keep the stable prefix's KV hot
+    PrefillSuffix(ctx, SuffixInput) (SuffixStatus, error)  // re-prefill only the changed suffix
+    Decode(ctx, DecodeConfig) (<-chan StreamChunk, error)
+    ExplainContext() ContextReport
+    Close() error
+}
+```
+
+Reuse is keyed on the shared `contextasm.ContextManifest` (profile/template/
+runtime digests + stable hash), not byte equality. The token-level Go draft at the
+bottom of this doc is kept for history; it is **superseded** by the above.
 
 ## Recommended Path
 
 1.  **Revert Cloud Providers:** Keep all remote, stateless API providers (OpenAI, Gemini, Anthropic) in `runtime/modelrepo`. They bypass `modeld` entirely.
-2.  **Redesign `modeld` Interface:** Design `modeld/transport` around **Option C**. The interface should deal in `LoadModel`, `CreateSession`, `Evaluate(Tokens)`, and `Generate(Tokens)`. 
-3.  **Build the Translation Layer:** Create a specific `modelprovider` implementation in the runtime that bridges the stateless `Chat()` request to the highly stateful `modeld` token API.
+2.  **Define the Compute Contract in `runtime/transport`:** owned by the runtime (the consumer) and implemented by modeld, so runtime never imports modeld. The boundary is the **manifest-keyed Session contract** (`OpenSession` → `EnsurePrefix` / `PrefillSuffix` / `Decode`) in `runtime/transport/session.go`.
+3.  **Build the Translation Layer:** a `modelprovider` implementation in the runtime that bridges the stateless `Chat()` request to the stateful Session contract.
 
 ## Implementation & Safety Guidelines
 
@@ -72,9 +103,11 @@ To prevent system lockups, state corruption, or split-brain execution, the imple
 6. **SQLite Owner Guard:** Wrap SQLite writes behind an explicit `OwnerGuard` interface (`AssertOwner(ctx) error`). Do not rely on convention. If an instance thinks it is a follower, the codebase should make it impossible for it to accidentally write coordination metadata.
 7. **Phased Rollout:** Before wiring real backends (OpenVINO/llama.cpp), implement a *fake in-memory ComputeService* and build the `runtime/modelrepo/local` wrapper against it. This proves out the offset tracking, clone, truncate, and lease lifecycle before hardware complexity leaks in.
 
-## Proposed Go Interfaces (Draft)
+## Proposed Go Interfaces (Superseded token-level draft — see "Update" above)
 
-To implement Option C, `modeld/transport` should expose an interface akin to the following:
+> This is the original token-level draft (Option C). It was implemented as a noop,
+> stress-checked, and **replaced by the Session contract** in
+> `runtime/transport/session.go`. Kept for history only.
 
 ```go
 package transport
@@ -94,6 +127,16 @@ type SessionHandle string
 
 // Token represents a single model-specific integer token.
 type Token int32
+
+// Fence carries the owner identity a client expects to be serving its call.
+// Every request embeds it; the daemon rejects a call whose fence does not match
+// the current owner with ErrStaleFence, so a client can never act against a
+// stale owner after a takeover. It is a freshness check, not an authentication
+// secret (guideline 3). This satisfies the owner-coordination invariant that
+// every call is fenced by the instance UUID.
+type Fence struct {
+	OwnerInstanceID string
+}
 
 // ComputeService defines the low-level, stateful IPC boundary for local hardware.
 // This is the interface the daemon implements and the runtime calls over gRPC.

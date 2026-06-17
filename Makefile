@@ -34,11 +34,6 @@ VSCODE_DEFAULT_EXTENSIONS_DIR := $(if $(findstring insiders,$(notdir $(VSCODE_CL
 VSCODE_INSTALL_EXTENSIONS_DIR := $(if $(strip $(VSCODE_EXTENSIONS_DIR)),$(VSCODE_EXTENSIONS_DIR),$(VSCODE_DEFAULT_EXTENSIONS_DIR))
 VSCODE_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix
 VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
-WINDOWS_CC ?= $(shell command -v x86_64-w64-mingw32-gcc-posix 2>/dev/null || command -v x86_64-w64-mingw32-gcc 2>/dev/null || echo x86_64-w64-mingw32-gcc)
-WINDOWS_CXX ?= $(shell command -v x86_64-w64-mingw32-g++-posix 2>/dev/null || command -v x86_64-w64-mingw32-g++ 2>/dev/null || echo x86_64-w64-mingw32-g++)
-WINDOWS_NLOHMANN_INCLUDE ?= $(PROJECT_ROOT)/.build/windows/include
-WINDOWS_CGO_CFLAGS ?=
-WINDOWS_CGO_CXXFLAGS ?= -I$(WINDOWS_NLOHMANN_INCLUDE)
 
 .PHONY: help \
 	build-contenox build-contenox-windows build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev deps-ollama-headers \
@@ -59,16 +54,14 @@ help:
 	@echo "clean"
 
 # —— build ————————————————————————————————————————————————————————————————
-# Contenox binary: CLI entrypoint (cmd/contenox).
+# Contenox binary: CLI entrypoint (cmd/contenox). Pure Go (CGO_ENABLED=0): the
+# native inference backends live in the separate modeld binary, so the runtime
+# cross-compiles with no C toolchain. See docs/blueprints/modeld-interface-boundary.md.
 build-contenox:
-	CGO_ENABLED=1 go build -o $(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/cmd/contenox
+	CGO_ENABLED=0 go build -o $(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/cmd/contenox
 
 build-contenox-windows:
-	@command -v "$(WINDOWS_CC)" >/dev/null 2>&1 || { echo "missing Windows C compiler: $(WINDOWS_CC). Install a MinGW-w64 x86_64 POSIX toolchain, e.g. gcc-mingw-w64-x86-64-posix and g++-mingw-w64-x86-64-posix."; exit 1; }
-	@command -v "$(WINDOWS_CXX)" >/dev/null 2>&1 || { echo "missing Windows C++ compiler: $(WINDOWS_CXX). Install a MinGW-w64 x86_64 POSIX toolchain, e.g. gcc-mingw-w64-x86-64-posix and g++-mingw-w64-x86-64-posix."; exit 1; }
-	@$(PROJECT_ROOT)/scripts/prepare_ollama_llama_headers.sh
-	@WINDOWS_CROSS_INCLUDE="$(WINDOWS_NLOHMANN_INCLUDE)" $(PROJECT_ROOT)/scripts/prepare_windows_cross_includes.sh >/dev/null
-	CGO_ENABLED=1 GOOS=windows GOARCH=amd64 CC="$(WINDOWS_CC)" CXX="$(WINDOWS_CXX)" CGO_CFLAGS="$(WINDOWS_CGO_CFLAGS)" CGO_CXXFLAGS="$(WINDOWS_CGO_CXXFLAGS)" go build -o $(PROJECT_ROOT)/bin/contenox-windows-amd64.exe $(PROJECT_ROOT)/cmd/contenox
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o $(PROJECT_ROOT)/bin/contenox-windows-amd64.exe $(PROJECT_ROOT)/cmd/contenox
 
 build-vscode: deps-vscode
 	cd $(VSCODE_DIR) && npm run build

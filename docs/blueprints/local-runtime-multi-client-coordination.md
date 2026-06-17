@@ -41,11 +41,6 @@ by the first client**, with frontends attaching over local IPC. It is not a
 helper-model sidecar and not a multi-tenant server. It is the one Contenox
 runtime process that owns expensive resident state for the current user.
 
-If we refuse any separate runtime owner process, the next best option is
-per-workspace embedded leader election. That keeps the first editor process as
-the owner and makes later clients attach to it, but it is harder to make robust
-across editor restarts, remote workspaces, and long-running model sessions.
-
 Plain file locks or SQLite leases are not enough. They are useful for discovery,
 metadata, and model-store safety, but they cannot own a llama.cpp/OpenVINO
 context, live KV cache, GPU residency, cancellation, or streaming decode.
@@ -304,38 +299,6 @@ heartbeats
 
 Use SQLite for metadata and leases, not as the owner of runtime state.
 
-## Option D: Per-Workspace Embedded Leader
-
-The first frontend for a workspace becomes the runtime owner. Later frontends
-discover it and attach to it:
-
-```text
-VS Code A starts owner for /repo
-Zed attaches to VS Code A's owner socket
-CLI attaches to the same workspace owner
-```
-
-### Benefits
-
-- Avoids a global always-on process.
-- Natural scoping: one owner per workspace.
-- A crash in one workspace does not kill another workspace's session.
-- Easier to reason about write leases for one repo.
-
-### Costs
-
-- The owner may live inside an editor process that users close casually.
-- Multiple workspaces using the same model duplicate model memory.
-- Cross-workspace model reuse is poor.
-- Remote workspaces complicate discovery.
-- If the owner is VS Code but the user keeps working in Zed, ownership feels
-  arbitrary.
-
-### Verdict
-
-Viable if we refuse a per-user owner. It is not the best default for expensive
-local model residency.
-
 ## Option E: Per-User Local Runtime Owner
 
 One Contenox process owns local model sessions for the current user and data
@@ -420,7 +383,6 @@ protocol.
 | A. Every frontend owns runtime | Low | Low | Medium | Low | Dev fallback only |
 | B. File locks only | Low | Medium | Medium | Low | Supporting primitive |
 | C. SQLite leases only | Low | Medium | Medium | Medium | Supporting primitive |
-| D. Per-workspace embedded leader | Medium | High | Medium | Medium | Fallback architecture |
 | E. Per-user local runtime owner | High | High | High | Medium-high | **Default path** |
 | F. OS-managed user service | High | High | High | High | Later packaging |
 
@@ -937,11 +899,8 @@ backend_cancel_state:
 Adopt **Option E: per-user local runtime owner**, implemented on demand and
 backed by model-store locks plus SQLite lease metadata.
 
-Keep **Option D: per-workspace embedded leader** only as a fallback if the
-separate owner process is rejected for UX or packaging reasons.
-
 Use **Option F: OS-managed user service** later, after the protocol and owner
-lifecycle work in-process/on-demand.
+lifecycle work on demand.
 
 Do not ship the graduated llama/OpenVINO local node with Option A as default.
 That would make the cache/session work correct only in the narrow case where the

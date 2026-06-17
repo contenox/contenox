@@ -5,7 +5,6 @@ import (
 	_ "github.com/contenox/runtime/runtime/modelrepo/bedrock"
 	_ "github.com/contenox/runtime/runtime/modelrepo/gemini"
 	_ "github.com/contenox/runtime/runtime/modelrepo/llama"
-	_ "github.com/contenox/runtime/runtime/modelrepo/llama/llamasession"
 	_ "github.com/contenox/runtime/runtime/modelrepo/mistral"
 	_ "github.com/contenox/runtime/runtime/modelrepo/ollama"
 	_ "github.com/contenox/runtime/runtime/modelrepo/openai"

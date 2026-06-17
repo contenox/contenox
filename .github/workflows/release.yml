@@ -44,31 +44,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # ── Linux ──────────────────────────────────────────────────────────
-          - os: ubuntu-latest
-            goos: linux
+          # contenox is pure Go (CGO_ENABLED=0); every target cross-compiles from
+          # one Linux runner with no C toolchain. The native inference backends
+          # live in the separate modeld binary, which has its own CGo release.
+          - goos: linux
             goarch: amd64
-            cc: gcc
-            cxx: g++
-          - os: ubuntu-latest
-            goos: linux
+          - goos: linux
             goarch: arm64
-            cc: aarch64-linux-gnu-gcc
-            cxx: aarch64-linux-gnu-g++
-            cross: true
-          # ── macOS ──────────────────────────────────────────────────────────
-          - os: macos-15
-            goos: darwin
+          - goos: darwin
             goarch: arm64
-            cc: clang
-            cxx: clang++
-          # ── Windows ────────────────────────────────────────────────────────
-          - os: ubuntu-latest
-            goos: windows
+          - goos: windows
             goarch: amd64
-            cc: x86_64-w64-mingw32-gcc-posix
-            cxx: x86_64-w64-mingw32-g++-posix
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout source
@@ -79,38 +66,15 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Install CGo dependencies (Linux only)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y gcc g++ nlohmann-json3-dev zip
-          ${{ matrix.cross && 'sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu' || 'true' }}
-          ${{ matrix.goos == 'windows' && 'sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix' || 'true' }}
-
-      - name: Install CGo dependencies (macOS only)
-        if: runner.os == 'macOS'
-        run: |
-          brew install nlohmann-json
-          NLOHMANN_PREFIX="$(brew --prefix nlohmann-json)"
-          echo "CGO_CFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
-          echo "CGO_CXXFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
-
-      - name: Fetch missing llama.cpp headers
-        run: scripts/prepare_ollama_llama_headers.sh
-
-      - name: Prepare Windows cross-build includes
+      - name: Install zip (Windows packaging)
         if: matrix.goos == 'windows'
-        run: |
-          INCLUDE_DIR="$(scripts/prepare_windows_cross_includes.sh)"
-          echo "CGO_CXXFLAGS=-I${INCLUDE_DIR}" >> "$GITHUB_ENV"
+        run: sudo apt-get update -qq && sudo apt-get install -y zip
 
       - name: Build contenox binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "1"
-          CC: ${{ matrix.cc }}
-          CXX: ${{ matrix.cxx }}
+          CGO_ENABLED: "0"
         run: |
           TAG="${{ needs.verify.outputs.tag }}"
           LDFLAGS="-X github.com/contenox/runtime/runtime/contenoxcli.Version=${TAG}"

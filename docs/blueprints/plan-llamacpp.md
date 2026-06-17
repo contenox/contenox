@@ -8,6 +8,12 @@
 > should now implement that design quickly on accessible hardware, then the
 > validated runtime shape ports back to OpenVINO. Owning both backends is
 > deliberate — see "Why both".
+>
+> **Binary boundary:** the CGO llama.cpp work lives in the `modeld` daemon
+> (`modeld/llama`). `runtime` stays pure Go and reaches it as a client over the
+> `modeld` transport (`modeld-interface-boundary.md`). The pure-Go context
+> assembler (`AssembleContext`), model catalog, and backend management stay in
+> `runtime`; `modeld` owns device memory, KV cache, and sessions.
 
 ---
 
@@ -38,12 +44,13 @@ The workspace-context design is already proven on OpenVINO:
 The OpenVINO track is **paused mid-S5** (constrained tool calls). We pivot to
 llama.cpp to prove the **design goals** faster, because GGUF models are
 ubiquitous and GPU offload (CUDA/Metal/Vulkan) is practical on developer
-machines. The retired `runtime/modelrepo/local` implementation only proved that
-we could call llama.cpp in-process: fixed 4096-token context, 512-token batch,
-Flash Attention disabled, zero GPU layers, fresh context per request, and full
-prompt prefill every turn. The merged `runtime/modelrepo/llama` package is the
-graduated path: persistent sessions, explicit profile/config, embeddings, live
-prefix reuse, and a `local` keyword shim for old config/DB rows.
+machines. The retired `runtime/modelrepo/local` toy only proved that llama.cpp
+could be called at all: fixed 4096-token context, 512-token batch, Flash
+Attention disabled, zero GPU layers, fresh context per request, and full prompt
+prefill every turn. The graduated path is the CGO `modeld/llama` backend, owned
+by the `modeld` daemon: persistent sessions, explicit profile/config,
+embeddings, and live prefix reuse. `runtime` reaches it as a client and keeps the
+`local` keyword shim for old config/DB rows.
 
 ## Graduation target
 
@@ -192,7 +199,7 @@ pin seed and sampler config before comparing warm output to cold output.
 
 ## The binding architecture: Contenox-owned minimal binding
 
-`runtime/modelrepo/llama` uses ollama's `github.com/ollama/ollama` `llama`
+`modeld/llama` uses ollama's `github.com/ollama/ollama` `llama`
 binding (v0.17.5). The binding **exposes the sequence KV ops** (`KvCacheSeqRm/Cp/Add/...`)
 but **not** state save/restore, and it lacks fine-grained context lifecycle control (like `llama_free(ctx)`).
 
@@ -205,8 +212,9 @@ More critically, Ollama's wrapper collapses all positive `llama_decode` return c
 
 A serious llama runtime requires precise cancellation and recovery semantics. If a decode is aborted mid-prefill, the session might be poisoned with partial ubatches. Collapsing this into "KV Full" breaks the correctness of the workspace state.
 
-**The decision:** build a minimal **Contenox-owned llama.cpp shim** now. The
-shim is the L0 path, not a post-spike cleanup. We treat the Ollama wrapper purely
+**The decision:** build a minimal **Contenox-owned llama.cpp shim** now, in
+`modeld/llama` (the owned ABI subpackage). The shim is the L0 path, not a
+post-spike cleanup. We treat the Ollama wrapper purely
 as a bring-up dependency, not the permanent llama substrate. We will not use
 server sidecars, unsafe ABI access to Ollama's private Go layout, or a long-term
 fork of Ollama's wrapper.
@@ -254,10 +262,10 @@ See `llamacpp-binding-ownership-options.md` for the final decision record.
   schemas, and repo instructions for the workspace session; treat repo map,
   pinned files, active-task summary, diffs, test output, logs, and user turns
   according to the priority policy in `local-coding-node-goals.md`.
-- **L3 — replace the toy surface.** Route product-facing embedded GGUF inference
-  through `runtime/modelrepo/llama`. `--type llama` is the real backend type;
-  `--type local` canonicalizes to `llama` for compatibility; `localnode` is
-  retired.
+- **L3 — replace the toy surface.** Route product-facing GGUF inference through
+  the `modeld/llama` backend; `runtime` resolves `--type llama` and dials the
+  daemon. `--type llama` is the real backend type; `--type local` canonicalizes
+  to `llama` for compatibility; `localnode` is retired.
 
 ## Reaching the goals on the 6 GB test bench
 
@@ -313,12 +321,14 @@ with citations.
 
 ## Structure
 
-- **Single `runtime/modelrepo/llama/` package.** The old `local` and `localnode`
-  packages are deleted after their useful behavior is absorbed. The `llama`
-  package mirrors the OpenVINO package shape: `provider.go` / `catalog.go` /
-  `client.go` plus build-tagged deep-binding subpackages (`llamasession/` now,
-  owned shim next) behind a `Session` abstraction for prefix, suffix, decode,
-  explain-context, and later snapshot/restore/branch.
+- **CGO session work in `modeld/llama/`.** The old `local` and `localnode`
+  packages are deleted after their useful behavior is absorbed. `modeld/llama`
+  holds the build-tagged deep-binding subpackages (`llamasession/` now, owned
+  shim next) behind a `Session` abstraction for prefix, suffix, decode,
+  explain-context, and later snapshot/restore/branch. Model catalog, backend
+  registration, and the `modelprovider` wrapper that bridges stateless `Chat()`
+  to the daemon stay in `runtime` (pure Go), mirroring the package shape with
+  `provider.go` / `catalog.go` / `client.go`.
 - **Current llama state:** `EnsurePrefix`, `PrefillSuffix`, and `Decode` are
   wired as live-session primitives. Prefix/suffix inputs now carry a
   `ContextManifest` with profile ID, backend version, model digest, prompt
@@ -341,11 +351,13 @@ with citations.
   and avoids freeing the model while an unfreed context exists. Full
   deterministic cleanup now belongs to the Contenox-owned shim exposing
   `llama_free(ctx)` and exact decode status mapping.
-- **Lift `AssembleContext`** (segments.go + segments_test.go) out of
-  `modelrepo/openvino` into a shared package (e.g.
-  `runtime/modelrepo/contextasm`) imported by both backends. Add tokenization
-  cache, manifest generation, profile compatibility checks, and
-  `explain-context`. This refactor is the concrete proof the workspace-context layer is
+- **Lift `AssembleContext`** (segments.go + segments_test.go) into a shared
+  pure-Go package in `runtime` (e.g. `runtime/contextasm`), imported by the
+  runtime wrappers that drive both the `modeld/llama` and `modeld/openvino`
+  backends. Add tokenization cache, manifest generation, profile compatibility
+  checks, and `explain-context`. The assembler is non-CGO and stays in
+  `runtime`; it feeds segments and tokens to `modeld` over the transport. This
+  refactor is the concrete proof the workspace-context layer is
   substrate-independent.
 - **`Makefile.llamacpp`** with `model` / `test-l0` / `test-l2` targets, mirroring
   `Makefile.openvino`. It must fetch or point at the pinned llama.cpp source used

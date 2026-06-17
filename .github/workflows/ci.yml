@@ -22,20 +22,11 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Install CGo dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y gcc g++ nlohmann-json3-dev
-
-      - name: Fetch missing llama.cpp headers
-        run: scripts/prepare_ollama_llama_headers.sh
-
+      # contenox is pure Go (CGO_ENABLED=0); the native inference backends live
+      # in the separate modeld binary, which has its own CGo CI. No C toolchain,
+      # llama.cpp headers, or MinGW cross-toolchain is needed here.
       - name: Build contenox (compile smoke)
         run: make build-contenox
-
-      - name: Install Windows cross-build dependencies
-        run: |
-          sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
 
       - name: Build contenox for Windows (compile smoke)
         run: make build-contenox-windows

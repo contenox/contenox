@@ -2,7 +2,8 @@
 // owner of resident model state. This first cut establishes single-owner
 // lifecycle only — it claims a cross-platform lease, renews it, and shuts down
 // cleanly. The wire transport that serves the modelrepo API mounts in a later
-// phase (see modeld/transport); until then the process owns the lease and the
+// phase (modeld implements the runtime/transport contract); until then the
+// process owns the lease and the
 // in-process Daemon but exposes no API.
 //
 // Usage:
@@ -28,8 +29,6 @@ import (
 	"github.com/contenox/runtime/liblease"
 	"github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/modeld/owner"
-	"github.com/contenox/runtime/modeld/transport"
-	modeldgrpc "github.com/contenox/runtime/modeld/transport/grpc"
 )
 
 func main() {
@@ -108,37 +107,24 @@ func serve(leasePath string, ttl time.Duration, listen string) error {
 	fmt.Printf("modeld owner started: instance=%s pid=%d endpoint=%s ttl=%s\n", o.InstanceID(), os.Getpid(), endpoint, ttl)
 
 	daemon := modeld.Default()
-	grpcServer := modeldgrpc.NewServer(transport.FromDaemon(daemon), modeldgrpc.WithOwnerToken(o.InstanceID()))
-	serveErr := make(chan error, 1)
-	go func() {
-		if err := grpcServer.Serve(lis); err != nil {
-			serveErr <- err
-		}
-		close(serveErr)
-	}()
 
-	var runErr error
+	// The wire transport (the runtime/transport.ComputeService contract) is not served yet.
+	// This cut owns the lease and the in-process Daemon and exposes no API; the
+	// reserved endpoint is advertised in the lease for the serving phase.
 	select {
 	case <-ctx.Done(): // signal -> graceful shutdown
 	case <-o.Lost(): // self-fenced: lost the lease, stop touching state
 		fmt.Fprintln(os.Stderr, "modeld: lost lease, shutting down:", o.LostErr())
-	case err := <-serveErr:
-		if err != nil {
-			runErr = fmt.Errorf("serve grpc: %w", err)
-		}
 	}
 
 	// Drain backend resources, then release the lease so a successor can take
 	// over immediately rather than waiting out the TTL.
-	grpcServer.Stop()
+	_ = lis.Close()
 	if err := daemon.Stop(); err != nil {
 		fmt.Fprintln(os.Stderr, "modeld: shutdown hooks:", err)
 	}
 	if err := o.Release(); err != nil {
 		return fmt.Errorf("release lease: %w", err)
-	}
-	if runErr != nil {
-		return runErr
 	}
 	fmt.Println("modeld owner stopped")
 	return nil

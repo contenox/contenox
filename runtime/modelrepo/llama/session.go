@@ -3,11 +3,12 @@
 // re-prefills only the changed suffix (the live warm-reuse hot path), distinct
 // from the toy fixed-constant `local` provider.
 //
-// This package defines the backend-neutral session contract. Backend adapters
-// implement it — llama.cpp now (./llamasession), OpenVINO later. Product code
-// talks to Session, never to llama.cpp or OpenVINO concepts. Snapshot/restore
-// (durability, branching, crash recovery) is a separate, later concern; the hot
-// coding loop is EnsurePrefix -> PrefillSuffix -> Decode on a live session.
+// This package defines the backend-neutral session contract. The native
+// adapter (the CGO llama.cpp session) now lives behind the modeld boundary and
+// implements runtime/transport; no backend is registered in this build, so
+// SessionAvailable reports false and the provider returns "unavailable". Product
+// code talks to Session, never to llama.cpp or OpenVINO concepts. The hot coding
+// loop is EnsurePrefix -> PrefillSuffix -> Decode on a live session.
 package llama
 
 import (
@@ -133,10 +134,9 @@ type SessionFactory func(modelPath string, cfg Config) (Session, error)
 
 var sessionFactory SessionFactory
 
-// SetSessionFactory registers the backend that creates sessions. The llama.cpp
-// adapter (./llamasession) calls this from its init when built with the
-// 'llamanode' tag, so the provider never imports the CGo package directly (no
-// import cycle, default build stays CGo-free).
+// SetSessionFactory registers the backend that creates sessions. The native
+// CGO adapter has moved behind the modeld boundary; nothing registers a factory
+// in this build, so the indirection stays but SessionAvailable reports false.
 func SetSessionFactory(f SessionFactory) { sessionFactory = f }
 
 // SessionAvailable reports whether a session backend is compiled into this build.
