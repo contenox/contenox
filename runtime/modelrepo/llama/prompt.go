@@ -1,6 +1,7 @@
 package llama
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -47,26 +48,6 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 	var segments []ManifestSegment
 	seenVolatile := false
 
-	appendSegment := func(kind string, isStable bool, text string) {
-		var start, end int
-		if isStable {
-			start = stable.Len()
-			stable.WriteString(text)
-			end = stable.Len()
-		} else {
-			start = stable.Len() + volatile.Len()
-			volatile.WriteString(text)
-			end = stable.Len() + volatile.Len()
-		}
-		segments = append(segments, ManifestSegment{
-			Kind:      kind,
-			Stable:    isStable,
-			ByteStart: start,
-			ByteEnd:   end,
-			ByteHash:  hashString(text),
-		})
-	}
-
 	for _, m := range messages {
 		if err := validateMessage(m); err != nil {
 			return promptPlan{}, err
@@ -78,7 +59,35 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 		if !isStable {
 			seenVolatile = true
 		}
-		appendSegment(segmentKindForRole(m.Role), isStable, m.Content)
+		var tcJSON string
+		if len(m.ToolCalls) > 0 {
+			b, err := json.Marshal(m.ToolCalls)
+			if err != nil {
+				return promptPlan{}, fmt.Errorf("llama: marshal tool calls: %w", err)
+			}
+			tcJSON = string(b)
+		}
+		
+		var start, end int
+		text := m.Content
+		if isStable {
+			start = stable.Len()
+			stable.WriteString(text)
+			end = stable.Len()
+		} else {
+			start = stable.Len() + volatile.Len()
+			volatile.WriteString(text)
+			end = stable.Len() + volatile.Len()
+		}
+		segments = append(segments, ManifestSegment{
+			Kind:          segmentKindForRole(m.Role),
+			Stable:        isStable,
+			ByteStart:     start,
+			ByteEnd:       end,
+			ByteHash:      hashString(text),
+			ToolCallsJSON: tcJSON,
+			ToolCallID:    m.ToolCallID,
+		})
 	}
 
 	stableText := stable.String()
@@ -104,11 +113,8 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 }
 
 func validateMessage(m modelrepo.Message) error {
-	if len(m.ToolCalls) > 0 || m.ToolCallID != "" || m.Role == "tool" {
-		return NewUnsupportedFeatureError("tool-call message history")
-	}
 	switch m.Role {
-	case "system", "user", "assistant":
+	case "system", "user", "assistant", "tool":
 		return nil
 	default:
 		if strings.TrimSpace(m.Role) == "" {
@@ -172,6 +178,8 @@ func segmentKindForRole(role string) string {
 		return segmentSystem
 	case "assistant":
 		return segmentAssistant
+	case "tool":
+		return "tool"
 	default:
 		return segmentUser
 	}

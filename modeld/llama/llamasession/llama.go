@@ -398,7 +398,12 @@ func stableMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessage
 		if role == "" || seg.ByteStart < 0 || seg.ByteEnd > len(text) || seg.ByteStart > seg.ByteEnd {
 			continue
 		}
-		msgs = append(msgs, llamaabi.ChatMessage{Role: role, Content: text[seg.ByteStart:seg.ByteEnd]})
+		msgs = append(msgs, llamaabi.ChatMessage{
+			Role:       role,
+			Content:    text[seg.ByteStart:seg.ByteEnd],
+			ToolCalls:  seg.ToolCallsJSON,
+			ToolCallID: seg.ToolCallID,
+		})
 	}
 	return msgs
 }
@@ -420,14 +425,19 @@ func volatileMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessa
 		if lo < 0 || hi > len(text) || lo > hi {
 			continue
 		}
-		msgs = append(msgs, llamaabi.ChatMessage{Role: role, Content: text[lo:hi]})
+		msgs = append(msgs, llamaabi.ChatMessage{
+			Role:       role,
+			Content:    text[lo:hi],
+			ToolCalls:  seg.ToolCallsJSON,
+			ToolCallID: seg.ToolCallID,
+		})
 	}
 	return msgs
 }
 
 func chatRole(kind string) string {
 	switch kind {
-	case "system", "user", "assistant":
+	case "system", "user", "assistant", "tool":
 		return kind
 	default:
 		return ""
@@ -538,14 +548,22 @@ func (s *session) renderTemplate(msgs []llamaabi.ChatMessage, tools string, addA
 }
 
 // chatMessagesJSON marshals chat turns to the JSON array minja expects.
+// tool_calls is embedded as a raw JSON value (not re-encoded as a string) so
+// Jinja sees it as a proper list; tool_call_id is a plain string.
 func chatMessagesJSON(msgs []llamaabi.ChatMessage) (string, error) {
 	type wireMsg struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
+		Role       string              `json:"role"`
+		Content    string              `json:"content"`
+		ToolCalls  json.RawMessage     `json:"tool_calls,omitempty"`
+		ToolCallID string              `json:"tool_call_id,omitempty"`
 	}
 	out := make([]wireMsg, len(msgs))
 	for i, m := range msgs {
-		out[i] = wireMsg{Role: m.Role, Content: m.Content}
+		wm := wireMsg{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID}
+		if m.ToolCalls != "" {
+			wm.ToolCalls = json.RawMessage(m.ToolCalls)
+		}
+		out[i] = wm
 	}
 	b, err := json.Marshal(out)
 	if err != nil {

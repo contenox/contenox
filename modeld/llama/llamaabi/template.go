@@ -77,9 +77,16 @@ func ApplyChatTemplateTools(m *llama.Model, messagesJSON, toolsJSON string, addA
 }
 
 // ChatMessage is one role/content turn for chat-template application.
+// ToolCalls is a raw JSON string (the model's own tool_calls array) and is
+// only populated for role=="assistant" turns that triggered a tool call.
+// ToolCallID is only populated for role=="tool" result turns.
+// Both fields are passed through to minja as-is; the C llama_chat_apply_template
+// path (ApplyChatTemplate) ignores them because that API only accepts role/content.
 type ChatMessage struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	ToolCalls  string // raw JSON array, e.g. [{"id":"...","type":"function",...}]
+	ToolCallID string // for role=="tool" result turns
 }
 
 // modelPtr extracts the upstream *llama_model from the ollama wrapper, whose

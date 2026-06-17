@@ -44,6 +44,11 @@ type ManifestSegment struct {
 	TokenStart int    `json:"token_start,omitempty"`
 	TokenEnd   int    `json:"token_end,omitempty"`
 	TokenHash  string `json:"token_hash,omitempty"`
+	// ToolCallsJSON is a raw JSON array of tool_calls for role=="assistant" turns
+	// that triggered a tool invocation. Nil/empty means a plain text assistant turn.
+	ToolCallsJSON string `json:"tool_calls_json,omitempty"`
+	// ToolCallID is the tool call ID for role=="tool" result turns.
+	ToolCallID string `json:"tool_call_id,omitempty"`
 }
 
 // ContextManifest is the cache identity. A warm hit is valid only when the
