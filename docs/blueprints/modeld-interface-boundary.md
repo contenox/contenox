@@ -57,8 +57,20 @@ The daemon exposes a highly stateful, low-level API. The frontend explicitly all
 ## Recommended Path
 
 1.  **Revert Cloud Providers:** Keep all remote, stateless API providers (OpenAI, Gemini, Anthropic) in `runtime/modelrepo`. They bypass `modeld` entirely.
-2.  **Redesign `modeld` Interface:** Design `modeld/transport` around **Option C**. The interface should deal in `LoadModel`, `CreateSession`, `Evaluate(Tokens)`, and `Sample(Tokens)`. 
+2.  **Redesign `modeld` Interface:** Design `modeld/transport` around **Option C**. The interface should deal in `LoadModel`, `CreateSession`, `Evaluate(Tokens)`, and `Generate(Tokens)`. 
 3.  **Build the Translation Layer:** Create a specific `modelprovider` implementation in the runtime that bridges the stateless `Chat()` request to the highly stateful `modeld` token API.
+
+## Implementation & Safety Guidelines
+
+To prevent system lockups, state corruption, or split-brain execution, the implementation of Option C must follow these strict guidelines:
+
+1. **Lazy Ownership:** Do not acquire the local runtime owner lease at startup. Wait until the first *resident local model* operation occurs. Eager election causes idle frontends (e.g. an empty VS Code window) to hold the lease and block other instances.
+2. **Explicit Offsets:** The compute API must be offset-based to prevent desyncs. `Evaluate` and `Generate` must specify the expected offset. If the daemon and the client disagree on the current token offset of a session, the request must fail.
+3. **Fencing != Authentication:** Do not use the lease's instance UUID as the IPC authentication secret. The lease UUID is for fencing (rejecting stale owners); gRPC authentication should use a separate ephemeral token.
+4. **Owner-Scoped Handles:** `ModelHandle` and `SessionHandle` strings must encode the owner's Instance ID (or an epoch timestamp). This prevents stale clients from accidentally reusing a handle if the owner crashes and a new instance takes over.
+5. **Session Identity Hints:** The stateless `modelprovider.Request` must include an optional `SessionKey` and `ParentKey` hint to help the local wrapper map stateless requests back to the correct stateful `SessionHandle` without falling back to expensive token-prefix matching.
+6. **SQLite Owner Guard:** Wrap SQLite writes behind an explicit `OwnerGuard` interface (`AssertOwner(ctx) error`). Do not rely on convention. If an instance thinks it is a follower, the codebase should make it impossible for it to accidentally write coordination metadata.
+7. **Phased Rollout:** Before wiring real backends (OpenVINO/llama.cpp), implement a *fake in-memory ComputeService* and build the `runtime/modelrepo/local` wrapper against it. This proves out the offset tracking, clone, truncate, and lease lifecycle before hardware complexity leaks in.
 
 ## Proposed Go Interfaces (Draft)
 
@@ -67,12 +79,17 @@ To implement Option C, `modeld/transport` should expose an interface akin to the
 ```go
 package transport
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // ModelHandle uniquely identifies a loaded set of weights in VRAM.
+// Must be scoped to an Owner Epoch (e.g. OwnerInstanceID_LocalID)
 type ModelHandle string
 
 // SessionHandle uniquely identifies an allocated KV cache slot on the device.
+// Must be scoped to an Owner Epoch.
 type SessionHandle string
 
 // Token represents a single model-specific integer token.
@@ -84,7 +101,7 @@ type ComputeService interface {
 	// --- Hardware Lifecycle (VRAM) ---
 
 	// LoadModel ensures the weights are resident in device memory.
-	LoadModel(ctx context.Context, req LoadModelRequest) (ModelHandle, error)
+	LoadModel(ctx context.Context, req LoadModelRequest) (*LoadModelResponse, error)
 
 	// EvictModel frees the device memory for a given model.
 	EvictModel(ctx context.Context, req EvictModelRequest) error
@@ -92,28 +109,39 @@ type ComputeService interface {
 	// --- Context Lifecycle (KV Cache) ---
 
 	// CreateSession allocates a new context window / KV cache slot on the device.
-	CreateSession(ctx context.Context, req CreateSessionRequest) (SessionHandle, error)
+	CreateSession(ctx context.Context, req CreateSessionRequest) (*CreateSessionResponse, error)
 
 	// CloneSession forks an existing session's KV cache. 
-	// Crucial for evaluating multiple tool call paths without re-evaluating the prompt prefix.
-	CloneSession(ctx context.Context, req CloneSessionRequest) (SessionHandle, error)
+	// The optional Offset allows branching from a historical checkpoint.
+	CloneSession(ctx context.Context, req CloneSessionRequest) (*CloneSessionResponse, error)
+
+	// TruncateSession rolls the session's context back to a specific offset.
+	// Essential for recovering from dropped streams or abandoned tool-call branches.
+	TruncateSession(ctx context.Context, req TruncateSessionRequest) error
 
 	// ReleaseSession frees the KV cache slot.
 	ReleaseSession(ctx context.Context, req ReleaseSessionRequest) error
 
+	// GetSession retrieves the current state (e.g. token offset) of the session.
+	GetSession(ctx context.Context, req GetSessionRequest) (*SessionState, error)
+
 	// --- Compute Engine (Math) ---
 
 	// Evaluate ingests delta tokens into the session's KV cache. 
-	// It performs the forward pass but does not generate new tokens.
+	// It performs the forward pass and mutates the session state, returning the new offset.
 	Evaluate(ctx context.Context, req EvaluateRequest) (*EvaluateResponse, error)
 
-	// Sample generates the next N tokens based on the current session state.
-	Sample(ctx context.Context, req SampleRequest) (<-chan SampleResponse, error)
+	// Generate samples the next tokens and automatically appends them to the KV cache.
+	Generate(ctx context.Context, req GenerateRequest) (<-chan GenerateResponse, error)
 }
 
 type LoadModelRequest struct {
 	ModelID string          // e.g., local disk path or HuggingFace repo
 	Options HardwareOptions // e.g., GPU layers, precision, max context
+}
+
+type LoadModelResponse struct {
+	ModelHandle ModelHandle
 }
 
 type HardwareOptions struct {
@@ -122,11 +150,27 @@ type HardwareOptions struct {
 
 type CreateSessionRequest struct {
 	ModelHandle ModelHandle
+	ClientID    string        // Identifies the connected frontend
+	IdleTTL     time.Duration // Time before the daemon garbage-collects this session
 	ContextSize int
+}
+
+type CreateSessionResponse struct {
+	SessionHandle SessionHandle
 }
 
 type CloneSessionRequest struct {
 	SourceHandle SessionHandle
+	Offset       int64 // If > 0, clones the source session up to this offset
+}
+
+type CloneSessionResponse struct {
+	SessionHandle SessionHandle
+}
+
+type TruncateSessionRequest struct {
+	SessionHandle SessionHandle
+	Offset        int64
 }
 
 type ReleaseSessionRequest struct {
@@ -137,25 +181,49 @@ type EvictModelRequest struct {
 	ModelHandle ModelHandle
 }
 
-type EvaluateRequest struct {
+type GetSessionRequest struct {
 	SessionHandle SessionHandle
-	Tokens        []Token
+}
+
+type SessionState struct {
+	Offset int64
+}
+
+type EvaluateRequest struct {
+	SessionHandle  SessionHandle
+	ExpectedOffset int64   // Prevents silent corruption if frontend and daemon desync
+	Tokens         []Token
 }
 
 type EvaluateResponse struct {
-	// Usage metrics, timing, etc.
+	NewOffset int64
+	Evaluated int
 }
 
-type SampleRequest struct {
-	SessionHandle SessionHandle
-	MaxTokens     int
-	Temperature   float32
-	TopP          float32
-	StopTokens    []Token
+type GenerateRequest struct {
+	SessionHandle  SessionHandle
+	ExpectedOffset int64
+	MaxTokens      int
+	Temperature    float32
+	TopP           float32
+	StopSequences  [][]Token
 }
 
-type SampleResponse struct {
-	Token Token
-	Error error
+type GenerateResponse struct {
+	Token        Token
+	NewOffset    int64
+	FinishReason string
+	Error        error
 }
+
+// Canonical Errors to be expected over the IPC boundary
+var (
+	ErrNotOwner              = errors.New("instance is not the local runtime owner")
+	ErrStaleFence            = errors.New("stale owner fence token")
+	ErrModelNotLoaded        = errors.New("model not loaded in memory")
+	ErrSessionNotFound       = errors.New("session not found or expired")
+	ErrSessionOffsetMismatch = errors.New("evaluate offset does not match session head")
+	ErrResourceExhausted     = errors.New("insufficient hardware resources")
+	ErrContextOverflow       = errors.New("exceeded maximum context window")
+)
 ```
