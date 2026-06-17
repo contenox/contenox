@@ -49,7 +49,7 @@ The daemon accepts arrays of Tokens, but remains stateless. The frontend tokeniz
 *   *Pros:* Moves tokenization and templating out of the daemon.
 *   *Cons:* Still stateless; the daemon has to guess what the frontend is trying to do with the KV cache. No explicit session management.
 
-### Option C: The "Compute \u0026 Context Allocator" (Recommended)
+### Option C: The "Compute & Context Allocator" (Recommended)
 The daemon exposes a highly stateful, low-level API. The frontend explicitly allocates a Session (KV cache slot). On subsequent turns, the frontend only sends the *delta* tokens to the daemon for that specific Session. 
 *   *Pros:* Perfect mapping to how local inference hardware actually works (llama.cpp `llama_context`, OpenVINO state). Allows advanced features like Session cloning/forking (evaluating three different tool calls without re-evaluating the prompt). 
 *   *Cons:* The `runtime` wrapper becomes more complex, as it has to manage Session IDs and track token offsets across conversation turns.
@@ -59,3 +59,103 @@ The daemon exposes a highly stateful, low-level API. The frontend explicitly all
 1.  **Revert Cloud Providers:** Keep all remote, stateless API providers (OpenAI, Gemini, Anthropic) in `runtime/modelrepo`. They bypass `modeld` entirely.
 2.  **Redesign `modeld` Interface:** Design `modeld/transport` around **Option C**. The interface should deal in `LoadModel`, `CreateSession`, `Evaluate(Tokens)`, and `Sample(Tokens)`. 
 3.  **Build the Translation Layer:** Create a specific `modelprovider` implementation in the runtime that bridges the stateless `Chat()` request to the highly stateful `modeld` token API.
+
+## Proposed Go Interfaces (Draft)
+
+To implement Option C, `modeld/transport` should expose an interface akin to the following:
+
+```go
+package transport
+
+import "context"
+
+// ModelHandle uniquely identifies a loaded set of weights in VRAM.
+type ModelHandle string
+
+// SessionHandle uniquely identifies an allocated KV cache slot on the device.
+type SessionHandle string
+
+// Token represents a single model-specific integer token.
+type Token int32
+
+// ComputeService defines the low-level, stateful IPC boundary for local hardware.
+// This is the interface the daemon implements and the runtime calls over gRPC.
+type ComputeService interface {
+	// --- Hardware Lifecycle (VRAM) ---
+
+	// LoadModel ensures the weights are resident in device memory.
+	LoadModel(ctx context.Context, req LoadModelRequest) (ModelHandle, error)
+
+	// EvictModel frees the device memory for a given model.
+	EvictModel(ctx context.Context, req EvictModelRequest) error
+
+	// --- Context Lifecycle (KV Cache) ---
+
+	// CreateSession allocates a new context window / KV cache slot on the device.
+	CreateSession(ctx context.Context, req CreateSessionRequest) (SessionHandle, error)
+
+	// CloneSession forks an existing session's KV cache. 
+	// Crucial for evaluating multiple tool call paths without re-evaluating the prompt prefix.
+	CloneSession(ctx context.Context, req CloneSessionRequest) (SessionHandle, error)
+
+	// ReleaseSession frees the KV cache slot.
+	ReleaseSession(ctx context.Context, req ReleaseSessionRequest) error
+
+	// --- Compute Engine (Math) ---
+
+	// Evaluate ingests delta tokens into the session's KV cache. 
+	// It performs the forward pass but does not generate new tokens.
+	Evaluate(ctx context.Context, req EvaluateRequest) (*EvaluateResponse, error)
+
+	// Sample generates the next N tokens based on the current session state.
+	Sample(ctx context.Context, req SampleRequest) (<-chan SampleResponse, error)
+}
+
+type LoadModelRequest struct {
+	ModelID string          // e.g., local disk path or HuggingFace repo
+	Options HardwareOptions // e.g., GPU layers, precision, max context
+}
+
+type HardwareOptions struct {
+	// Hardware-specific loading constraints
+}
+
+type CreateSessionRequest struct {
+	ModelHandle ModelHandle
+	ContextSize int
+}
+
+type CloneSessionRequest struct {
+	SourceHandle SessionHandle
+}
+
+type ReleaseSessionRequest struct {
+	SessionHandle SessionHandle
+}
+
+type EvictModelRequest struct {
+	ModelHandle ModelHandle
+}
+
+type EvaluateRequest struct {
+	SessionHandle SessionHandle
+	Tokens        []Token
+}
+
+type EvaluateResponse struct {
+	// Usage metrics, timing, etc.
+}
+
+type SampleRequest struct {
+	SessionHandle SessionHandle
+	MaxTokens     int
+	Temperature   float32
+	TopP          float32
+	StopTokens    []Token
+}
+
+type SampleResponse struct {
+	Token Token
+	Error error
+}
+```
