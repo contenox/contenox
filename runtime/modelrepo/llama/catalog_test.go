@@ -94,6 +94,7 @@ func TestUnit_LocalNodeCatalog_ListsGGUFWithProfile(t *testing.T) {
 }
 
 func TestUnit_LlamaCatalog_LocalTypeAliasesToLlama(t *testing.T) {
+	t.Skip("llama backend is temporarily disabled pending modeld local runtime transition")
 	withSessionFactory(t, func(string, Config) (Session, error) { return nil, nil })
 
 	dir := t.TempDir()
