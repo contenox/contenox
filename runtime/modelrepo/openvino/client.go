@@ -228,3 +228,16 @@ var (
 	_ modelrepo.LLMStreamClient     = (*client)(nil)
 	_ modelrepo.LLMPromptExecClient = (*client)(nil)
 )
+
+type embedClient struct {
+	modelPath string
+	device    string
+}
+
+func (c *embedClient) Embed(ctx context.Context, prompt string) ([]float64, error) {
+	// The native OpenVINO embeddings backend is in modeld. For now, the client
+	// returns unsupported. Once we transport embeddings, this will call modeldconn.
+	return nil, NewUnsupportedFeatureError("embed client (not implemented over transport)")
+}
+
+var _ modelrepo.LLMEmbedClient = (*embedClient)(nil)

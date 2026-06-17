@@ -291,6 +291,9 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 		}
 		defer C.free(errbuf)
 
+		cParserProtocols := C.CString(strings.Join(opts.ParserProtocols, "\n"))
+		defer C.free(unsafe.Pointer(cParserProtocols))
+
 		var cmetrics C.cx_genai_metrics
 		var temp C.float
 		var useTemp C.int
@@ -323,6 +326,7 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 			useTemp,
 			topP,
 			useTopP,
+			cParserProtocols,
 			stream,
 			&cmetrics,
 			(*C.char)(errbuf),
@@ -414,8 +418,10 @@ func (s *GenAISession) mustClose() {
 
 // ChatMessage is one role/content turn for chat-template rendering.
 type ChatMessage struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	ToolCalls  string // raw JSON array, e.g. [{"id":"...","type":"function",...}]
+	ToolCallID string // for role=="tool" result turns
 }
 
 // ApplyChatTemplate renders messages with the model's own chat template
@@ -435,14 +441,28 @@ func (s *GenAISession) ApplyChatTemplate(messages []ChatMessage, toolsJSON strin
 
 	roles := make([]*C.char, len(messages))
 	contents := make([]*C.char, len(messages))
+	toolCalls := make([]*C.char, len(messages))
+	toolCallIDs := make([]*C.char, len(messages))
 	for i, m := range messages {
 		roles[i] = C.CString(m.Role)
 		contents[i] = C.CString(m.Content)
+		if m.ToolCalls != "" {
+			toolCalls[i] = C.CString(m.ToolCalls)
+		}
+		if m.ToolCallID != "" {
+			toolCallIDs[i] = C.CString(m.ToolCallID)
+		}
 	}
 	defer func() {
 		for i := range messages {
 			C.free(unsafe.Pointer(roles[i]))
 			C.free(unsafe.Pointer(contents[i]))
+			if toolCalls[i] != nil {
+				C.free(unsafe.Pointer(toolCalls[i]))
+			}
+			if toolCallIDs[i] != nil {
+				C.free(unsafe.Pointer(toolCallIDs[i]))
+			}
 		}
 	}()
 
@@ -468,6 +488,8 @@ func (s *GenAISession) ApplyChatTemplate(messages []ChatMessage, toolsJSON strin
 		s.ptr,
 		(**C.char)(unsafe.Pointer(&roles[0])),
 		(**C.char)(unsafe.Pointer(&contents[0])),
+		(**C.char)(unsafe.Pointer(&toolCalls[0])),
+		(**C.char)(unsafe.Pointer(&toolCallIDs[0])),
 		C.size_t(len(messages)),
 		cTools,
 		(*C.char)(out),

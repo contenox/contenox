@@ -282,6 +282,38 @@ static std::shared_ptr<ov::genai::Parser> parser_for_protocol(const std::string 
     throw std::runtime_error("unsupported OpenVINO parser protocol: " + protocol);
 }
 
+static std::shared_ptr<ov::genai::IncrementalParser> incremental_parser_for_protocol(const std::string &protocol) {
+    if (protocol == "openvino:reasoning_incremental_parser") {
+        return std::make_shared<ov::genai::ReasoningIncrementalParser>();
+    }
+    if (protocol == "openvino:deepseek_r1_reasoning_incremental_parser") {
+        return std::make_shared<ov::genai::DeepSeekR1ReasoningIncrementalParser>();
+    }
+    if (protocol == "openvino:phi4_reasoning_incremental_parser") {
+        return std::make_shared<ov::genai::Phi4ReasoningIncrementalParser>();
+    }
+    if (protocol == "openvino:llama3_pythonic_tool_parser" ||
+        protocol == "openvino:llama3_json_tool_parser" ||
+        protocol == "openvino:reasoning_parser" ||
+        protocol == "openvino:deepseek_r1_reasoning_parser" ||
+        protocol == "openvino:phi4_reasoning_parser") {
+        throw std::runtime_error(protocol + " requires the complete-output parser bridge; stream generation accepts incremental Parser protocols only");
+    }
+    if (protocol == "openvino:vllm_parser_wrapper") {
+        throw std::runtime_error("openvino:vllm_parser_wrapper is a Python OpenVINO GenAI binding and is not available in the native C++ session bridge");
+    }
+    throw std::runtime_error("unsupported OpenVINO incremental parser protocol: " + protocol);
+}
+
+static std::vector<std::shared_ptr<ov::genai::IncrementalParser>> incremental_parsers_for_protocols(const std::vector<std::string> &protocols) {
+    std::vector<std::shared_ptr<ov::genai::IncrementalParser>> parsers;
+    parsers.reserve(protocols.size());
+    for (const auto &protocol : protocols) {
+        parsers.push_back(incremental_parser_for_protocol(protocol));
+    }
+    return parsers;
+}
+
 static std::vector<std::shared_ptr<ov::genai::Parser>> parsers_for_protocols(const std::vector<std::string> &protocols) {
     std::vector<std::shared_ptr<ov::genai::Parser>> parsers;
     parsers.reserve(protocols.size());
@@ -398,6 +430,8 @@ int cx_genai_session_cancel(cx_genai_session *s) {
 int cx_genai_apply_chat_template(cx_genai_session *s,
                                  const char **roles,
                                  const char **contents,
+                                 const char **tool_calls,
+                                 const char **tool_call_ids,
                                  size_t n,
                                  const char *tools_json,
                                  char *out,
@@ -420,7 +454,14 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
             for (size_t i = 0; i < n; i++) {
                 std::string role = (roles && roles[i]) ? std::string(roles[i]) : std::string();
                 std::string content = (contents && contents[i]) ? std::string(contents[i]) : std::string();
-                msgs.push_back(ov::AnyMap{{"role", role}, {"content", content}});
+                ov::AnyMap msg{{"role", role}, {"content", content}};
+                if (tool_calls && tool_calls[i] && tool_calls[i][0] != ' ') {
+                    msg["tool_calls"] = ov::genai::JsonContainer::from_json_string(std::string(tool_calls[i]));
+                }
+                if (tool_call_ids && tool_call_ids[i] && tool_call_ids[i][0] != ' ') {
+                    msg["tool_call_id"] = std::string(tool_call_ids[i]);
+                }
+                msgs.push_back(msg);
             }
             ov::genai::ChatHistory history(msgs);
             std::optional<ov::genai::JsonContainer> tools;
@@ -646,6 +687,7 @@ int cx_genai_generate_stream(cx_genai_session *s,
                              int use_temperature,
                              float top_p,
                              int use_top_p,
+                             const char *parser_protocols,
                              cx_genai_stream *stream,
                              cx_genai_metrics *metrics,
                              char *err,
@@ -669,6 +711,16 @@ int cx_genai_generate_stream(cx_genai_session *s,
         ov::genai::PipelineMetrics latest_metrics;
         std::string prompt_text(prompt);
         bool canceled = false;
+        std::vector<std::string> protocols;
+        if (parser_protocols && parser_protocols[0] != '\0') {
+            std::stringstream ss(parser_protocols);
+            std::string item;
+            while (std::getline(ss, item, '\n')) {
+                if (!item.empty()) {
+                    protocols.push_back(item);
+                }
+            }
+        }
 
         s->run([&] {
             if (!s->pipe) {
@@ -676,10 +728,19 @@ int cx_genai_generate_stream(cx_genai_session *s,
             }
             s->cancel_requested.store(false);
 
+            auto inc_parsers = incremental_parsers_for_protocols(protocols);
+
             auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p);
+            
             ov::genai::StreamerVariant streamer_variant = std::function<ov::genai::StreamingStatus(std::string)>(
-                [s, stream](std::string chunk) {
-                    stream->push(chunk);
+                [s, stream, inc_parsers](std::string chunk) mutable {
+                    ov::genai::JsonContainer dummy_msg; // We only need the filtered chunk
+                    for (auto &parser : inc_parsers) {
+                        chunk = parser->parse(dummy_msg, chunk);
+                    }
+                    if (!chunk.empty()) {
+                        stream->push(chunk);
+                    }
                     if (s->cancel_requested.load()) {
                         return ov::genai::StreamingStatus::CANCEL;
                     }

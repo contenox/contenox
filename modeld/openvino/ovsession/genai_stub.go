@@ -92,8 +92,10 @@ func (s *GenAISession) Close() error {
 
 // ChatMessage is one role/content turn for chat-template rendering.
 type ChatMessage struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	ToolCall   string `json:",omitempty"`
+	ToolCallID string `json:",omitempty"`
 }
 
 // ApplyChatTemplate reports that the native GenAI backend is not compiled in.

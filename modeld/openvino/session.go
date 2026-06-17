@@ -28,6 +28,13 @@ type genaiBackend interface {
 // holds in every build because the no-CGO stub mirrors its method set.
 var _ genaiBackend = (*ovsession.GenAISession)(nil)
 
+type EmbedSessionBackend interface {
+	Embed(ctx context.Context, prompt string) ([]float32, error)
+	Close() error
+}
+
+var _ EmbedSessionBackend = (*ovsession.EmbedSession)(nil)
+
 // genaiSession adapts OpenVINO GenAI to the runtime's transport.Session contract.
 //
 // OpenVINO GenAI is string-prompt based: its ContinuousBatchingPipeline holds
@@ -54,6 +61,10 @@ type genaiSession struct {
 
 func newGenaiSession(backend genaiBackend, numCtx int) *genaiSession {
 	return &genaiSession{backend: backend, numCtx: numCtx}
+}
+
+func newEmbedSession(modelPath, device string) (EmbedSessionBackend, error) {
+	return ovsession.NewEmbed(modelPath, device)
 }
 
 var _ transport.Session = (*genaiSession)(nil)
@@ -252,14 +263,19 @@ func chatMessagesFromManifest(fullText string, m transport.ContextManifest) []ov
 		if seg.ByteStart < 0 || seg.ByteEnd > len(fullText) || seg.ByteStart > seg.ByteEnd {
 			continue
 		}
-		msgs = append(msgs, ovsession.ChatMessage{Role: role, Content: fullText[seg.ByteStart:seg.ByteEnd]})
+		msgs = append(msgs, ovsession.ChatMessage{
+			Role:       role,
+			Content:    fullText[seg.ByteStart:seg.ByteEnd],
+			ToolCall:   seg.ToolCallsJSON,
+			ToolCallID: seg.ToolCallID,
+		})
 	}
 	return msgs
 }
 
 func chatRole(kind string) string {
 	switch kind {
-	case "system", "user", "assistant":
+	case "system", "user", "assistant", "tool":
 		return kind
 	default:
 		return ""

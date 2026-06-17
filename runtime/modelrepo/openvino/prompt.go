@@ -2,6 +2,7 @@ package openvino
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/contenox/runtime/runtime/contextasm"
@@ -62,8 +63,26 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 	var segments []ManifestSegment
 	seenVolatile := false
 
-	appendSegment := func(kind string, isStable bool, text string) {
+	for _, m := range messages {
+		if err := validateMessage(m); err != nil {
+			return promptPlan{}, err
+		}
+		// Raw content keyed by role: modeld applies the model's own chat template.
+		isStable := m.Role == "system" && !seenVolatile
+		if !isStable {
+			seenVolatile = true
+		}
+		var tcJSON string
+		if len(m.ToolCalls) > 0 {
+			b, err := json.Marshal(m.ToolCalls)
+			if err != nil {
+				return promptPlan{}, fmt.Errorf("openvino: marshal tool calls: %w", err)
+			}
+			tcJSON = string(b)
+		}
+
 		var start, end int
+		text := m.Content
 		if isStable {
 			start = stable.Len()
 			stable.WriteString(text)
@@ -74,25 +93,14 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 			end = stable.Len() + volatile.Len()
 		}
 		segments = append(segments, ManifestSegment{
-			Kind:      kind,
-			Stable:    isStable,
-			ByteStart: start,
-			ByteEnd:   end,
-			ByteHash:  hashString(text),
+			Kind:          segmentKindForRole(m.Role),
+			Stable:        isStable,
+			ByteStart:     start,
+			ByteEnd:       end,
+			ByteHash:      hashString(text),
+			ToolCallsJSON: tcJSON,
+			ToolCallID:    m.ToolCallID,
 		})
-	}
-
-	for _, m := range messages {
-		if err := validateMessage(m); err != nil {
-			return promptPlan{}, err
-		}
-		// Raw content: modeld applies the model's own chat template using the
-		// per-segment roles. The runtime must NOT pre-wrap in a generic chatml.
-		isStable := m.Role == "system" && !seenVolatile
-		if !isStable {
-			seenVolatile = true
-		}
-		appendSegment(segmentKindForRole(m.Role), isStable, m.Content)
 	}
 
 	stableText := stable.String()
@@ -117,11 +125,8 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 }
 
 func validateMessage(m modelrepo.Message) error {
-	if len(m.ToolCalls) > 0 || m.ToolCallID != "" || m.Role == "tool" {
-		return NewUnsupportedFeatureError("tool-call message history")
-	}
 	switch m.Role {
-	case "system", "user", "assistant":
+	case "system", "user", "assistant", "tool":
 		return nil
 	default:
 		if strings.TrimSpace(m.Role) == "" {
@@ -137,6 +142,8 @@ func segmentKindForRole(role string) string {
 		return "system"
 	case "assistant":
 		return "assistant"
+	case "tool":
+		return "tool"
 	default:
 		return "user"
 	}
