@@ -7,20 +7,25 @@
 // shared facts are the lease file name and the endpoint metadata key, mirrored
 // here as constants (see cmd/modeld and modeld/owner.EndpointMetaKey).
 //
-// Liveness via lease freshness is a proxy, not a health check: a wedged process
-// can still hold a fresh lease. A real reachability ping rides on the IPC
-// transport and is added when that exists. See
+// Detect() reports lease-based liveness, a network-free proxy: a wedged process
+// can still hold a fresh lease. Probe() adds the real reachability ping over the
+// runtime's gRPC transport — it confirms the lease holder actually answers and
+// is the instance serving the endpoint, downgrading a wedged owner to
+// unreachable. Probe imports the runtime transport client (not modeld). See
 // docs/blueprints/modeld-provisioning-detection.md.
 package modeldprobe
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/contenox/runtime/liblease"
+	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
 )
 
 // Convention shared with the daemon; kept local so runtime does not depend on
@@ -46,6 +51,11 @@ const (
 	StateStale
 	// StateRunning means a live owner holds a fresh lease.
 	StateRunning
+	// StateUnreachable means a fresh lease names a live owner, but its advertised
+	// endpoint does not answer a health probe: the daemon is wedged, still
+	// bringing up its transport, or the advertised endpoint is wrong. Only Probe
+	// (not Detect) can report this, because it requires a network round-trip.
+	StateUnreachable
 )
 
 func (s State) String() string {
@@ -58,6 +68,8 @@ func (s State) String() string {
 		return "stale"
 	case StateRunning:
 		return "running"
+	case StateUnreachable:
+		return "unreachable"
 	default:
 		return "unknown"
 	}
@@ -69,6 +81,7 @@ var (
 	ErrNotInstalled = errors.New("modeld is not installed")
 	ErrNotRunning   = errors.New("modeld is not running")
 	ErrStale        = errors.New("modeld owner is stale (the daemon may have crashed)")
+	ErrUnreachable  = errors.New("modeld holds a lease but does not answer a health probe")
 )
 
 // Status is the result of a detection.
@@ -90,6 +103,8 @@ func (s Status) Err() error {
 		return ErrNotRunning
 	case StateStale:
 		return ErrStale
+	case StateUnreachable:
+		return ErrUnreachable
 	default:
 		return nil
 	}
@@ -103,6 +118,9 @@ type Detector struct {
 	lookPath       func(string) (string, error)
 	statBinary     func(string) bool
 	now            func() time.Time
+	// health performs the reachability ping; injectable for tests. nil disables
+	// the ping (Probe then behaves like Detect).
+	health func(ctx context.Context, endpoint, expectedInstance string) error
 }
 
 // New returns a Detector for the given data root (where the owner lease lives).
@@ -117,7 +135,48 @@ func New(dataRoot string) *Detector {
 		lookPath:       exec.LookPath,
 		statBinary:     fileExists,
 		now:            time.Now,
+		health:         grpcHealthCheck,
 	}
+}
+
+// Probe resolves the state and, when a fresh lease names a live owner, confirms
+// the owner actually answers a health ping on its advertised endpoint. A lease
+// is only a liveness proxy; this downgrades a wedged owner (fresh lease, dead
+// transport) or a stale/mismatched endpoint from running to unreachable. Pass a
+// ctx with a deadline — the ping dials the network. Detect() remains the cheap,
+// network-free check for callers that only need lease state.
+func (d *Detector) Probe(ctx context.Context) Status {
+	st := d.Detect()
+	if st.State != StateRunning || d.health == nil {
+		return st
+	}
+	if st.Endpoint == "" || d.health(ctx, st.Endpoint, st.Instance) != nil {
+		st.State = StateUnreachable
+	}
+	return st
+}
+
+// grpcHealthCheck dials the advertised endpoint and pings the owner. It confirms
+// the process answering is the lease holder (instance match) and is ready, so a
+// takeover-in-progress or a stale endpoint reads as unreachable rather than
+// healthy. It is not fenced: liveness must be observable without owning a token.
+func grpcHealthCheck(ctx context.Context, endpoint, expectedInstance string) error {
+	c, err := transportgrpc.DialLeader(endpoint, "")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = c.Close() }()
+	h, err := c.Health(ctx)
+	if err != nil {
+		return err
+	}
+	if !h.Ready {
+		return errors.New("modeld reports not ready")
+	}
+	if expectedInstance != "" && h.InstanceID != expectedInstance {
+		return fmt.Errorf("owner mismatch: lease=%s serving=%s", expectedInstance, h.InstanceID)
+	}
+	return nil
 }
 
 // Detect resolves the current modeld state. A live lease takes precedence (the

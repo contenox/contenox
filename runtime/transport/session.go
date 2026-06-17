@@ -92,6 +92,10 @@ type Session interface {
 type PrefixInput struct {
 	Text     string
 	Manifest ContextManifest
+	// Tools is a JSON array of tool definitions to render into the prompt via the
+	// model's own GGUF chat template (model-native tool calls). "" means no tools.
+	// The daemon renders it; the runtime never sees the model's tool format.
+	Tools string `json:",omitempty"`
 }
 
 // SuffixInput is the volatile text appended after the stable prefix. It carries

@@ -36,7 +36,7 @@ type promptRenderer struct {
 	renderAssistantCue func() string
 }
 
-func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity) (promptPlan, error) {
+func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity, toolsJSON string) (promptPlan, error) {
 	cfg = normalizeConfig(cfg)
 	renderer, err := rendererForFormat(cfg.PromptFormat, cfg.PromptTemplateDigest)
 	if err != nil {
@@ -67,26 +67,19 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 		})
 	}
 
-	if !cfg.DisableBOS {
-		appendSegment(segmentBOS, true, "")
-	}
-
 	for _, m := range messages {
 		if err := validateMessage(m); err != nil {
 			return promptPlan{}, err
 		}
-		text, err := renderer.renderMessage(m)
-		if err != nil {
-			return promptPlan{}, err
-		}
+		// Raw content keyed by role: modeld applies the model's OWN chat template
+		// (read from the GGUF). The runtime must not render a hardcoded format. BOS
+		// and the assistant cue are added by the model template + tokenizer.
 		isStable := m.Role == "system" && !seenVolatile
 		if !isStable {
 			seenVolatile = true
 		}
-		appendSegment(segmentKindForRole(m.Role), isStable, text)
+		appendSegment(segmentKindForRole(m.Role), isStable, m.Content)
 	}
-
-	appendSegment(segmentAssistantPrompt, false, renderer.renderAssistantCue())
 
 	stableText := stable.String()
 	volatileText := volatile.String()
@@ -105,7 +98,7 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 		Segments:             segments,
 	}
 	return promptPlan{
-		Stable:   PrefixInput{Text: stableText, Manifest: manifest},
+		Stable:   PrefixInput{Text: stableText, Manifest: manifest, Tools: toolsJSON},
 		Volatile: SuffixInput{Text: volatileText, Manifest: manifest},
 	}, nil
 }

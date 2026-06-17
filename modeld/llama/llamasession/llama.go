@@ -1,4 +1,4 @@
-//go:build llamanode
+//go:build llamanode && llama_unsafe_abi
 
 // Package llamasession is the llama.cpp adapter for llama.Session. It
 // implements the live warm-reuse hot path using only the sequence/KV ops the
@@ -9,12 +9,16 @@ package llamasession
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/contenox/runtime/modeld/llama"
+	"github.com/contenox/runtime/modeld/llama/llamaabi"
+	"github.com/contenox/runtime/runtime/contextasm"
 	llamacpp "github.com/ollama/ollama/llama"
 	"github.com/ollama/ollama/ml"
 )
@@ -36,7 +40,9 @@ type session struct {
 	addBOS     bool
 	resident   []int // token IDs currently in the KV (seq 0), in order
 	prefixLen  int   // how many of resident are the stable prefix
-	prefixText string
+	prefixText string // the templated stable text whose tokens are resident
+	stableMsgs []llamaabi.ChatMessage
+	tools      string // JSON tool definitions rendered into the prompt (model-native)
 	manifest   llama.ContextManifest
 	closed     bool
 }
@@ -63,7 +69,9 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 	if nBatch <= 0 {
 		nBatch = 512
 	}
-	addBOS := !cfg.DisableBOS
+	// BOS policy is model-driven (the GGUF's add_bos_token), not a config guess; an
+	// explicit DisableBOS can still force it off.
+	addBOS := llamaabi.AddBOS(model) && !cfg.DisableBOS
 	nThreads := cfg.NumThreads
 	if nThreads <= 0 {
 		nThreads = runtime.NumCPU()
@@ -99,23 +107,32 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		return llama.PrefixStatus{}, err
 	}
 
-	toks, err := s.tokenize(prefix.Text, s.addBOS)
+	// Render the stable turns with the model's OWN chat template (read from the
+	// GGUF), not a hardcoded format. The runtime sends raw content + per-segment
+	// roles in the manifest; modeld owns the tokenizer and template.
+	stableMsgs := stableMessages(prefix.Text, prefix.Manifest)
+	text := prefix.Text
+	if len(stableMsgs) > 0 {
+		templated, err := s.renderTemplate(stableMsgs, prefix.Tools, false)
+		if err != nil {
+			return llama.PrefixStatus{}, fmt.Errorf("llamasession: apply chat template: %w", err)
+		}
+		text = templated
+	}
+
+	toks, err := s.tokenize(text, s.addBOS)
 	if err != nil {
 		return llama.PrefixStatus{}, fmt.Errorf("llamasession: tokenize prefix: %w", err)
 	}
 	if len(toks) > s.numCtx {
 		return llama.PrefixStatus{}, llama.NewContextOverflowError("prefix", 0, len(toks), s.numCtx)
 	}
-	manifest, err := prefix.Manifest.WithStableTokenization(prefix.Text, toks, s.tokenize, s.addBOS)
-	if err != nil {
-		return llama.PrefixStatus{}, err
-	}
 
 	// Longest common token prefix with what is already resident. Everything after
 	// it (divergent prefix tail, old suffix, generated tokens) is dropped.
 	oldResident := len(s.resident)
 	reuse := 0
-	if ok, _ := s.manifest.CompatibleRuntime(manifest); !ok {
+	if ok, _ := s.manifest.CompatibleRuntime(prefix.Manifest); !ok {
 		if err := s.removeKV(0, -1); err != nil {
 			return llama.PrefixStatus{}, err
 		}
@@ -153,8 +170,14 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	}
 	s.resident = toks
 	s.prefixLen = len(toks)
-	s.prefixText = prefix.Text
-	s.manifest = manifest
+	s.prefixText = text
+	s.stableMsgs = stableMsgs
+	s.tools = prefix.Tools
+	enriched, err := s.enrichStableSegments(prefix.Manifest, stableMsgs, toks)
+	if err != nil {
+		return llama.PrefixStatus{}, err
+	}
+	s.manifest = enriched
 
 	return llama.PrefixStatus{
 		ReusedTokens:    reuse,
@@ -163,9 +186,9 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		PrefixTokens:    len(toks),
 		ResidentTokens:  len(s.resident),
 		AvailableTokens: s.numCtx - len(s.resident),
-		StableByteHash:  manifest.StableByteHash,
-		StableTokenHash: manifest.StableTokenHash,
-		ManifestDigest:  manifest.Digest(),
+		StableByteHash:  prefix.Manifest.StableByteHash,
+		StableTokenHash: contextasm.HashTokenIDs(toks),
+		ManifestDigest:  prefix.Manifest.Digest(),
 	}, nil
 }
 
@@ -184,20 +207,32 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	if !s.manifest.IsZero() && !suffix.Manifest.IsZero() && s.manifest.StableByteHash != suffix.Manifest.StableByteHash {
 		return llama.SuffixStatus{}, llama.NewManifestMismatchError("stable prefix changed between EnsurePrefix and PrefillSuffix")
 	}
-	// addSpecial=false: the suffix is mid-context, no second BOS.
-	stoks, err := s.tokenize(suffix.Text, false)
+	// Template the FULL conversation with the model's own template and take the
+	// part after the resident templated stable prefix. The stable KV stays warm;
+	// only this suffix is (re)prefilled.
+	volatileMsgs := volatileMessages(suffix.Text, suffix.Manifest)
+	suffixText := suffix.Text
+	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
+		all := append(append([]llamaabi.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
+		full, err := s.renderTemplate(all, s.tools, true)
+		if err != nil {
+			return llama.SuffixStatus{}, fmt.Errorf("llamasession: apply chat template: %w", err)
+		}
+		if !strings.HasPrefix(full, s.prefixText) {
+			return llama.SuffixStatus{}, llama.NewManifestMismatchError("model template is not prefix-stable across the suffix")
+		}
+		suffixText = full[len(s.prefixText):]
+	}
+
+	// When the stable prefix is empty, the BOS (if the model adds one) belongs to
+	// these first tokens; otherwise the suffix is mid-context with no second BOS.
+	addSpecial := s.prefixLen == 0 && s.addBOS
+	stoks, err := s.tokenize(suffixText, addSpecial)
 	if err != nil {
 		return llama.SuffixStatus{}, fmt.Errorf("llamasession: tokenize suffix: %w", err)
 	}
 	if len(s.resident)+len(stoks) > s.numCtx {
 		return llama.SuffixStatus{}, llama.NewContextOverflowError("suffix", len(s.resident), len(stoks), s.numCtx)
-	}
-	if err := suffix.Manifest.ValidateSplitTokenization(s.prefixText, suffix.Text, s.resident[:s.prefixLen], stoks, s.tokenize, s.addBOS); err != nil {
-		return llama.SuffixStatus{}, err
-	}
-	manifest, err := suffix.Manifest.WithVolatileTokenization(s.manifest, s.prefixLen, suffix.Text, stoks, s.tokenize)
-	if err != nil {
-		return llama.SuffixStatus{}, err
 	}
 	// logitsOnLast=true so the final token's logits are ready for the first sample.
 	beforeLen := len(s.resident)
@@ -212,7 +247,9 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 		return llama.SuffixStatus{}, prefillFailureError("suffix", err)
 	}
 	s.resident = append(s.resident, stoks...)
-	s.manifest = manifest
+	if err := s.enrichVolatileSegments(s.prefixLen, volatileMsgs, stoks); err != nil {
+		return llama.SuffixStatus{}, err
+	}
 	return llama.SuffixStatus{
 		SuffixTokens:    len(stoks),
 		PrefixTokens:    s.prefixLen,
@@ -345,6 +382,176 @@ func (s *session) closeLocked() {
 	s.manifest = llama.ContextManifest{}
 	// NOTE: this binding version exposes llama_model_free but not llama_free(ctx).
 	// We cannot safely free the model while an unfreed context still references it.
+}
+
+// stableMessages reconstructs the stable role/content turns from the manifest
+// segments (the runtime sends raw content keyed by role), for the model's own
+// chat template. Control segments (BOS, the assistant cue) carry no role and are
+// skipped — the template adds them.
+func stableMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessage {
+	var msgs []llamaabi.ChatMessage
+	for _, seg := range m.Segments {
+		if !seg.Stable {
+			continue
+		}
+		role := chatRole(seg.Kind)
+		if role == "" || seg.ByteStart < 0 || seg.ByteEnd > len(text) || seg.ByteStart > seg.ByteEnd {
+			continue
+		}
+		msgs = append(msgs, llamaabi.ChatMessage{Role: role, Content: text[seg.ByteStart:seg.ByteEnd]})
+	}
+	return msgs
+}
+
+// volatileMessages reconstructs the volatile turns; their segment byte ranges are
+// global (after the stable bytes), so they are offset into the suffix text.
+func volatileMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessage {
+	var msgs []llamaabi.ChatMessage
+	base := m.StableBytes
+	for _, seg := range m.Segments {
+		if seg.Stable {
+			continue
+		}
+		role := chatRole(seg.Kind)
+		if role == "" {
+			continue
+		}
+		lo, hi := seg.ByteStart-base, seg.ByteEnd-base
+		if lo < 0 || hi > len(text) || lo > hi {
+			continue
+		}
+		msgs = append(msgs, llamaabi.ChatMessage{Role: role, Content: text[lo:hi]})
+	}
+	return msgs
+}
+
+func chatRole(kind string) string {
+	switch kind {
+	case "system", "user", "assistant":
+		return kind
+	default:
+		return ""
+	}
+}
+
+// enrichStableSegments fills the stored manifest with backend-resolved stable
+// token ranges/hashes. modeld owns the tokenizer/template, so a segment's token
+// boundary is recovered by tokenizing the model's chat template applied to the
+// leading message prefix it ends. The final role segment's boundary is the full
+// stable tokenization, so the common single-segment case adds no template calls.
+// Control segments (e.g. BOS) carry no message text and get a zero-width range.
+func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []llamaabi.ChatMessage, toks []int) (llama.ContextManifest, error) {
+	m.Segments = append([]llama.ManifestSegment(nil), m.Segments...)
+	m.StableTokenHash = contextasm.HashTokenIDs(toks)
+	prevEnd, msgIdx := 0, 0
+	for i := range m.Segments {
+		seg := &m.Segments[i]
+		if !seg.Stable {
+			continue
+		}
+		if chatRole(seg.Kind) == "" {
+			seg.TokenStart, seg.TokenEnd = prevEnd, prevEnd
+			seg.TokenHash = contextasm.HashTokenIDs(toks[prevEnd:prevEnd])
+			continue
+		}
+		msgIdx++
+		end := len(toks)
+		if msgIdx < len(stableMsgs) {
+			rendered, err := llamaabi.ApplyChatTemplate(s.model, stableMsgs[:msgIdx], false)
+			if err != nil {
+				return llama.ContextManifest{}, fmt.Errorf("llamasession: stable segment template: %w", err)
+			}
+			cum, err := s.tokenize(rendered, s.addBOS)
+			if err != nil {
+				return llama.ContextManifest{}, fmt.Errorf("llamasession: stable segment tokenize: %w", err)
+			}
+			end = len(cum)
+		}
+		if end < prevEnd || end > len(toks) {
+			return llama.ContextManifest{}, llama.NewManifestMismatchError("stable segment token boundary out of range")
+		}
+		seg.TokenStart, seg.TokenEnd = prevEnd, end
+		seg.TokenHash = contextasm.HashTokenIDs(toks[prevEnd:end])
+		prevEnd = end
+	}
+	return m, nil
+}
+
+// enrichVolatileSegments fills the stored manifest's volatile segment token
+// ranges/hashes after the stable prefix, using the same incremental-template
+// boundary recovery. Token positions are offset by prefixTokens. A trailing
+// control segment (the assistant cue) absorbs any remaining suffix tokens.
+func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []llamaabi.ChatMessage, stoks []int) error {
+	s.manifest.Segments = append([]llama.ManifestSegment(nil), s.manifest.Segments...)
+	s.manifest.VolatileTokenHash = contextasm.HashTokenIDs(stoks)
+	allMsgs := append(append([]llamaabi.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
+	prevEnd, msgIdx := 0, len(s.stableMsgs)
+	for i := range s.manifest.Segments {
+		seg := &s.manifest.Segments[i]
+		if seg.Stable {
+			continue
+		}
+		if chatRole(seg.Kind) == "" {
+			seg.TokenStart = prefixTokens + prevEnd
+			seg.TokenEnd = prefixTokens + len(stoks)
+			seg.TokenHash = contextasm.HashTokenIDs(stoks[prevEnd:])
+			prevEnd = len(stoks)
+			continue
+		}
+		msgIdx++
+		end := len(stoks)
+		if msgIdx < len(allMsgs) {
+			rendered, err := llamaabi.ApplyChatTemplate(s.model, allMsgs[:msgIdx], false)
+			if err != nil {
+				return fmt.Errorf("llamasession: volatile segment template: %w", err)
+			}
+			cum, err := s.tokenize(rendered, s.addBOS)
+			if err != nil {
+				return fmt.Errorf("llamasession: volatile segment tokenize: %w", err)
+			}
+			end = len(cum) - prefixTokens
+		}
+		if end < prevEnd || end > len(stoks) {
+			return llama.NewManifestMismatchError("volatile segment token boundary out of range")
+		}
+		seg.TokenStart = prefixTokens + prevEnd
+		seg.TokenEnd = prefixTokens + end
+		seg.TokenHash = contextasm.HashTokenIDs(stoks[prevEnd:end])
+		prevEnd = end
+	}
+	return nil
+}
+
+// renderTemplate applies the model's own chat template. When tool definitions are
+// present it routes through minja (ApplyChatTemplateTools) so the GGUF's Jinja tool
+// block is rendered model-natively; the legacy llama_chat_apply_template (used for
+// the no-tools path) cannot do that.
+func (s *session) renderTemplate(msgs []llamaabi.ChatMessage, tools string, addAssistant bool) (string, error) {
+	if tools != "" {
+		msgsJSON, err := chatMessagesJSON(msgs)
+		if err != nil {
+			return "", err
+		}
+		return llamaabi.ApplyChatTemplateTools(s.model, msgsJSON, tools, addAssistant)
+	}
+	return llamaabi.ApplyChatTemplate(s.model, msgs, addAssistant)
+}
+
+// chatMessagesJSON marshals chat turns to the JSON array minja expects.
+func chatMessagesJSON(msgs []llamaabi.ChatMessage) (string, error) {
+	type wireMsg struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	out := make([]wireMsg, len(msgs))
+	for i, m := range msgs {
+		out[i] = wireMsg{Role: m.Role, Content: m.Content}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 func (s *session) tokenize(text string, addSpecial bool) ([]int, error) {

@@ -2,40 +2,27 @@ package openvino
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/modelrepo"
-	"github.com/contenox/runtime/runtime/modelrepo/openvino/ovsession"
 )
 
 func init() {
-	modelrepo.RegisterCatalogProvider("openvino", func(spec modelrepo.BackendSpec, opts modelrepo.CatalogOptions) (modelrepo.CatalogProvider, error) {
-		tracker := opts.Tracker
-		if tracker == nil {
-			tracker = libtracker.NoopTracker{}
-		}
-		return nil, fmt.Errorf("openvino backend is temporarily disabled pending modeld local runtime transition")
+	modelrepo.RegisterCatalogProvider("openvino", func(spec modelrepo.BackendSpec, _ modelrepo.CatalogOptions) (modelrepo.CatalogProvider, error) {
+		return &catalogProvider{dir: spec.BaseURL}, nil
 	})
-	// Native GenAI sessions hold process-lifetime KV/pipeline state; register a
-	// drain so the runtime can release them on shutdown without importing this
-	// backend directly. No-op in builds without the native backend.
-	modelrepo.RegisterShutdownHook(ShutdownGenAISessions)
 }
 
 type catalogProvider struct {
-	dir     string
-	tracker libtracker.ActivityTracker
+	dir string
 }
 
 func (c *catalogProvider) Type() string { return "openvino" }
 
 func (c *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedModel, error) {
-	// When the native backend isn't compiled in, advertise nothing rather than
-	// list models that cannot run.
-	if !ovsession.Available {
+	// Advertise nothing unless modeld is available to serve these models.
+	if !SessionAvailable() {
 		return nil, nil
 	}
 	entries, err := os.ReadDir(c.dir)
@@ -61,9 +48,9 @@ func (c *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedMod
 			CapabilityConfig: profile.capabilityConfig(),
 			ModifiedAt:       info.ModTime(),
 			Meta: map[string]string{
-				"format":         "openvino-ir",
-				"native_session": "true",
-				"profile":        "defaults-or-" + profileFileName,
+				"format":  "openvino-ir",
+				"runtime": "openvino-genai",
+				"node":    "openvino",
 			},
 		})
 	}
@@ -71,5 +58,5 @@ func (c *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedMod
 }
 
 func (c *catalogProvider) ProviderFor(model modelrepo.ObservedModel) modelrepo.Provider {
-	return newProvider(model.Name, c.dir, model.CapabilityConfig, c.tracker)
+	return newProvider(model.Name, c.dir, model.CapabilityConfig)
 }

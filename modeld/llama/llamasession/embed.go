@@ -1,4 +1,4 @@
-//go:build llamanode
+//go:build llamanode && llama_unsafe_abi
 
 // Native embedding path for the llama backend. One-shot, non-causal: the whole
 // input is tokenized and processed in a single batch, then the sequence

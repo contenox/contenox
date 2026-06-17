@@ -1,18 +1,17 @@
-// Package openvino contains the modelrepo catalog/provider shell for in-process
-// OpenVINO (Intel) inference.
+// Package openvino implements the runtime/transport.Service boundary for the
+// OpenVINO (Intel) backend: it opens persistent, manifest-keyed sessions on the
+// owned device (CPU / GPU / NPU) that the runtime drives over the transport. It
+// is not a modelprovider — the stateless modelprovider lives in the runtime; this
+// package is the daemon-side compute implementation.
 //
-// The actual native backend lives in the isolated sub-package ./ovsession and is
-// gated behind the 'openvino' build tag, so the default build and CI never
-// require OpenVINO or a C++ toolchain. Without the tag, ovsession reports
-// Available == false and this provider advertises no models.
+// session.go adapts OpenVINO GenAI (string-prompt based, with the tokenizer,
+// chat template, and prefix cache held inside the ContinuousBatchingPipeline) to
+// the EnsurePrefix/PrefillSuffix/Decode contract. The native backend lives in the
+// isolated sub-package ./ovsession behind the 'openvino' and 'openvino_genai'
+// build tags, so the default build and CI never require OpenVINO or a C++
+// toolchain; without the tags ovsession reports Available == false and
+// OpenSession returns the not-compiled-in error.
 //
-// The native session layer currently proves token-ID-level KV snapshot/restore.
-// Text chat, prompt, stream, embedding, tokenizer, and chat-template wiring are
-// still explicit follow-up work.
-//
-// Build and test the native backend with Makefile.openvino:
-//
-//	make -f Makefile.openvino deps   # one-time: venv + OpenVINO SDK
-//	make -f Makefile.openvino model  # pull the tiny KV round-trip model
-//	make -f Makefile.openvino test   # build + run the S0 KV snapshot test
+// Build and benchmark the native path with Makefile.openvino (the CGO flags are
+// derived from the OpenVINO wheels; CONTENOX_OPENVINO_DEVICE selects CPU/GPU/NPU).
 package openvino

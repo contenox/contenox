@@ -2,7 +2,6 @@ package llama
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -11,7 +10,7 @@ import (
 
 func init() {
 	modelrepo.RegisterCatalogProvider("llama", func(spec modelrepo.BackendSpec, _ modelrepo.CatalogOptions) (modelrepo.CatalogProvider, error) {
-		return nil, fmt.Errorf("llama backend is temporarily disabled pending modeld local runtime transition")
+		return &catalogProvider{dir: spec.BaseURL}, nil
 	})
 }
 

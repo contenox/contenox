@@ -20,9 +20,17 @@ type modelProfile struct {
 	ModelDigest     string         `json:"model_digest,omitempty"`
 	ContextLength   int            `json:"context_length,omitempty"`
 	MaxOutputTokens int            `json:"max_output_tokens,omitempty"`
-	CanThink        bool           `json:"can_think,omitempty"`
-	Prompt          promptProfile  `json:"prompt,omitempty"`
-	Runtime         runtimeProfile `json:"runtime,omitempty"`
+	CanThink        bool             `json:"can_think,omitempty"`
+	Prompt          promptProfile    `json:"prompt,omitempty"`
+	Runtime         runtimeProfile   `json:"runtime,omitempty"`
+	ToolCalls       toolCallsProfile `json:"tool_calls,omitempty"`
+}
+
+// toolCallsProfile declares how this model emits tool calls. The protocol must be
+// a registered parser name (e.g. "hermes"); tool calls are rejected when unset, so
+// the runtime never guesses a model's tool format.
+type toolCallsProfile struct {
+	Protocol string `json:"protocol,omitempty"`
 }
 
 type promptProfile struct {
@@ -59,6 +67,9 @@ func loadModelProfile(profileDir string) (modelProfile, error) {
 	}
 	if _, err := rendererForFormat(p.Prompt.Format, p.Prompt.TemplateDigest); err != nil {
 		return modelProfile{}, fmt.Errorf("llama profile prompt %s: %w", path, err)
+	}
+	if p.ToolCalls.Protocol != "" && !toolCallProtocolKnown(p.ToolCalls.Protocol) {
+		return modelProfile{}, fmt.Errorf("llama profile %s: unknown tool_calls.protocol %q", path, p.ToolCalls.Protocol)
 	}
 	return p, nil
 }

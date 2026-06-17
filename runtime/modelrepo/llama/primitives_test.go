@@ -148,18 +148,18 @@ func TestUnit_LocalNodePromptPlan_BuildsManifestAndStablePrefix(t *testing.T) {
 		ProfileID:      "coder",
 		ModelDigest:    "sha256:model",
 		BackendVersion: "v0.17.5",
-	})
+	}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plan.Stable.Text, "<|system|>\nsystem rules\n") {
-		t.Fatalf("stable prefix = %q", plan.Stable.Text)
+	if plan.Stable.Text != "system rules" {
+		t.Fatalf("stable prefix = %q, want raw %q", plan.Stable.Text, "system rules")
 	}
 	if strings.Contains(plan.Stable.Text, "do work") {
 		t.Fatalf("user turn leaked into stable prefix: %q", plan.Stable.Text)
 	}
-	if !strings.Contains(plan.Volatile.Text, "<|user|>\ndo work\n<|assistant|>\n") {
-		t.Fatalf("volatile suffix = %q", plan.Volatile.Text)
+	if plan.Volatile.Text != "do work" {
+		t.Fatalf("volatile suffix = %q, want raw %q", plan.Volatile.Text, "do work")
 	}
 	if plan.Stable.Manifest.ProfileID != "coder" ||
 		plan.Stable.Manifest.ModelDigest != "sha256:model" ||
@@ -175,36 +175,21 @@ func TestUnit_LocalNodePromptPlan_BuildsManifestAndStablePrefix(t *testing.T) {
 	}
 }
 
-func TestUnit_LlamaPromptPlan_DefaultBOSHasSyntheticStableSegment(t *testing.T) {
+func TestUnit_LlamaPromptPlan_UserOnlyHasEmptyStablePrefix(t *testing.T) {
 	plan, err := buildPromptPlan([]modelrepo.Message{
 		{Role: "user", Content: "hello"},
-	}, Config{}, promptIdentity{ProfileID: "coder"})
+	}, Config{}, promptIdentity{ProfileID: "coder"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	// No system turn => empty stable prefix; the user turn is volatile. BOS is no
+	// longer a synthetic manifest segment — it is added by the model tokenizer in
+	// modeld (llamaabi.AddBOS), proven by the end-to-end test.
 	if plan.Stable.Text != "" {
 		t.Fatalf("stable text = %q, want empty user-only stable prefix", plan.Stable.Text)
 	}
-	stableTokens, err := byteTokenizer(plan.Stable.Text, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stableManifest, err := plan.Stable.Manifest.WithStableTokenization(plan.Stable.Text, stableTokens, byteTokenizer, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var found bool
-	for _, seg := range stableManifest.Segments {
-		if seg.Kind != segmentBOS {
-			continue
-		}
-		found = true
-		if !seg.Stable || seg.ByteStart != 0 || seg.ByteEnd != 0 || seg.TokenStart != 0 || seg.TokenEnd != len(stableTokens) || seg.TokenHash == "" {
-			t.Fatalf("BOS segment not populated correctly: %+v tokens=%v", seg, stableTokens)
-		}
-	}
-	if !found {
-		t.Fatalf("missing synthetic BOS segment: %+v", stableManifest.Segments)
+	if plan.Volatile.Text != "hello" {
+		t.Fatalf("volatile text = %q, want raw %q", plan.Volatile.Text, "hello")
 	}
 }
 
@@ -212,7 +197,7 @@ func TestUnit_LocalNodeManifest_FillsStableAndVolatileTokenRanges(t *testing.T) 
 	plan, err := buildPromptPlan([]modelrepo.Message{
 		{Role: "system", Content: "rules"},
 		{Role: "user", Content: "hello"},
-	}, Config{DisableBOS: true}, promptIdentity{ProfileID: "coder"})
+	}, Config{DisableBOS: true}, promptIdentity{ProfileID: "coder"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,32 +323,39 @@ func TestUnit_LocalNodeManifest_RejectsVolatileTokenizationWithoutStableRanges(t
 	}
 }
 
-func TestUnit_LocalNodePromptPlan_Llama3ProfileFormat(t *testing.T) {
+func TestUnit_LocalNodePromptPlan_SendsRawContentForModelTemplate(t *testing.T) {
 	plan, err := buildPromptPlan([]modelrepo.Message{
 		{Role: "system", Content: "rules"},
 		{Role: "user", Content: "hello"},
-	}, Config{PromptFormat: promptFormatLlama3}, promptIdentity{})
+	}, Config{PromptFormat: promptFormatLlama3}, promptIdentity{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(plan.Stable.Text, "<|start_header_id|>system<|end_header_id|>\n\nrules<|eot_id|>") {
-		t.Fatalf("stable prefix = %q", plan.Stable.Text)
+	// The runtime sends RAW content keyed by role; modeld applies the model's own
+	// chat template (from the GGUF), so no format tokens appear in the plan here.
+	if plan.Stable.Text != "rules" {
+		t.Fatalf("stable (raw) = %q, want %q", plan.Stable.Text, "rules")
 	}
-	if !strings.HasSuffix(plan.Volatile.Text, "<|start_header_id|>assistant<|end_header_id|>\n\n") {
-		t.Fatalf("volatile suffix = %q", plan.Volatile.Text)
+	if plan.Volatile.Text != "hello" {
+		t.Fatalf("volatile (raw) = %q, want %q", plan.Volatile.Text, "hello")
 	}
-	if plan.Stable.Manifest.PromptFormat != promptFormatLlama3 {
-		t.Fatalf("prompt format = %q", plan.Stable.Manifest.PromptFormat)
+	// Roles ride in the manifest segments for modeld to reconstruct the turns.
+	roles := map[string]bool{}
+	for _, seg := range plan.Stable.Manifest.Segments {
+		roles[seg.Kind] = true
+	}
+	if !roles[segmentSystem] || !roles[segmentUser] {
+		t.Fatalf("segments missing system/user roles: %+v", plan.Stable.Manifest.Segments)
 	}
 }
 
 func TestUnit_LocalNodePromptPlan_RejectsUnsupportedPromptAndToolHistory(t *testing.T) {
-	_, err := buildPromptPlan(nil, Config{PromptFormat: "unknown"}, promptIdentity{})
+	_, err := buildPromptPlan(nil, Config{PromptFormat: "unknown"}, promptIdentity{}, "")
 	if !errors.Is(err, ErrUnsupportedFeature) {
 		t.Fatalf("unsupported prompt format error = %v, want ErrUnsupportedFeature", err)
 	}
 
-	_, err = buildPromptPlan([]modelrepo.Message{{Role: "tool", Content: "{}"}}, Config{}, promptIdentity{})
+	_, err = buildPromptPlan([]modelrepo.Message{{Role: "tool", Content: "{}"}}, Config{}, promptIdentity{}, "")
 	if !errors.Is(err, ErrUnsupportedFeature) {
 		t.Fatalf("tool history error = %v, want ErrUnsupportedFeature", err)
 	}

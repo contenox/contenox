@@ -1,4 +1,4 @@
-//go:build !llamanode
+//go:build !llamanode || !llama_unsafe_abi
 
 package llamasession
 

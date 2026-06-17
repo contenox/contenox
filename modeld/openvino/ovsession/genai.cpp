@@ -190,13 +190,21 @@ struct cx_genai_stream {
     }
 };
 
-static ov::genai::GenerationConfig generation_config_from(size_t max_new_tokens,
+// Seed from the model's own generation config (eos_token_id, sampling defaults,
+// repetition_penalty from generation_config.json) so model behavior is honored;
+// override only the fields the caller specifies. apply_chat_template stays false
+// because the prompt is already templated with the model's own template upstream.
+static ov::genai::GenerationConfig generation_config_from(ov::genai::GenerationConfig gen,
+                                                          size_t max_new_tokens,
                                                           float temperature,
                                                           int use_temperature,
                                                           float top_p,
                                                           int use_top_p) {
-    ov::genai::GenerationConfig gen;
-    gen.max_new_tokens = max_new_tokens > 0 ? max_new_tokens : 256;
+    if (max_new_tokens > 0) {
+        gen.max_new_tokens = max_new_tokens;
+    } else if (gen.max_new_tokens == 0 || gen.max_new_tokens == SIZE_MAX) {
+        gen.max_new_tokens = 256;
+    }
     gen.apply_chat_template = false;
     if (use_temperature) {
         gen.temperature = temperature;
@@ -525,7 +533,7 @@ int cx_genai_generate(cx_genai_session *s,
             }
             s->cancel_requested.store(false);
 
-            auto gen = generation_config_from(max_new_tokens, temperature, use_temperature, top_p, use_top_p);
+            auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p);
             apply_structured_output(gen, structured_protocol, structured_payload);
             auto parsers = parsers_for_protocols(protocols);
             gen.parsers = parsers;
@@ -668,7 +676,7 @@ int cx_genai_generate_stream(cx_genai_session *s,
             }
             s->cancel_requested.store(false);
 
-            auto gen = generation_config_from(max_new_tokens, temperature, use_temperature, top_p, use_top_p);
+            auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p);
             ov::genai::StreamerVariant streamer_variant = std::function<ov::genai::StreamingStatus(std::string)>(
                 [s, stream](std::string chunk) {
                     stream->push(chunk);

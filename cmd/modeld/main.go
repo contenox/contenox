@@ -1,10 +1,10 @@
 // Command modeld is the contenox model daemon: the per-user, per-data-root
-// owner of resident model state. This first cut establishes single-owner
-// lifecycle only — it claims a cross-platform lease, renews it, and shuts down
-// cleanly. The wire transport that serves the modelrepo API mounts in a later
-// phase (modeld implements the runtime/transport contract); until then the
-// process owns the lease and the
-// in-process Daemon but exposes no API.
+// owner of resident model state. It claims a cross-platform lease, renews it,
+// and while it holds the lease it serves the runtime/transport.Service contract
+// over gRPC (fenced by the owner instance id) so the runtime can open sessions
+// and probe health. The served inference backend is selected at build time
+// (-tags 'openvino openvino_genai' or -tags llamanode); a build with no local
+// backend still owns the lease and answers health probes.
 //
 // Usage:
 //
@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/liblease"
-	"github.com/contenox/runtime/modeld"
 	"github.com/contenox/runtime/modeld/owner"
+	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
 )
 
 func main() {
@@ -106,23 +106,30 @@ func serve(leasePath string, ttl time.Duration, listen string) error {
 	}
 	fmt.Printf("modeld owner started: instance=%s pid=%d endpoint=%s ttl=%s\n", o.InstanceID(), os.Getpid(), endpoint, ttl)
 
-	daemon := modeld.Default()
+	// Serve the runtime/transport.Service contract over gRPC, fenced by the owner
+	// instance id, while we hold the lease. The served backend is selected at
+	// build time; a build with no local backend still answers health probes so
+	// the runtime's detector reports the daemon running.
+	svc, backend := selectBackend()
+	fmt.Printf("modeld serving transport: backend=%s\n", backend)
+	serveCtx, serveCancel := context.WithCancel(ctx)
+	defer serveCancel()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- transportgrpc.Serve(serveCtx, lis, svc, o.InstanceID()) }()
 
-	// The wire transport (the runtime/transport.ComputeService contract) is not served yet.
-	// This cut owns the lease and the in-process Daemon and exposes no API; the
-	// reserved endpoint is advertised in the lease for the serving phase.
 	select {
 	case <-ctx.Done(): // signal -> graceful shutdown
 	case <-o.Lost(): // self-fenced: lost the lease, stop touching state
 		fmt.Fprintln(os.Stderr, "modeld: lost lease, shutting down:", o.LostErr())
+	case err := <-serveErr: // the transport server stopped on its own
+		if err != nil {
+			return fmt.Errorf("transport server: %w", err)
+		}
 	}
 
-	// Drain backend resources, then release the lease so a successor can take
-	// over immediately rather than waiting out the TTL.
-	_ = lis.Close()
-	if err := daemon.Stop(); err != nil {
-		fmt.Fprintln(os.Stderr, "modeld: shutdown hooks:", err)
-	}
+	// Stop serving (GracefulStop closes the listener), then release the lease so a
+	// successor can take over immediately rather than waiting out the TTL.
+	serveCancel()
 	if err := o.Release(); err != nil {
 		return fmt.Errorf("release lease: %w", err)
 	}

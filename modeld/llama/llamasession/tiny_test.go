@@ -118,6 +118,50 @@ func TestSystem_LlamaSessionTiny_WarmSuffixEqualsColdOneToken(t *testing.T) {
 	}
 }
 
+// TestSystem_LlamaSessionTiny_ToolsRenderThroughSession proves the PrefixInput.Tools
+// field reaches the model-native (minja) renderer in the daemon session: the same
+// stable prefix rendered WITH tool definitions resolves to more resident tokens than
+// without, because the model's GGUF chat template emits the tool block.
+func TestSystem_LlamaSessionTiny_ToolsRenderThroughSession(t *testing.T) {
+	modelPath := os.Getenv("CONTENOX_LLAMA_TINY_GGUF")
+	requireTinyGGUF(t, modelPath)
+
+	cfg := llama.Config{NumCtx: 512, NumBatch: 16, NumThreads: 1, DisableBOS: true}
+	stable := "system\nYou are a helpful assistant.\n"
+	manifest := tinyManifest(stable, "")
+	tools := `[{"type":"function","function":{"name":"get_weather","description":"Get the current weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}]`
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	bare, err := New(modelPath, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bare.Close()
+	noTools, err := bare.EnsurePrefix(ctx, llama.PrefixInput{Text: stable, Manifest: manifest})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	withTools, err := New(modelPath, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer withTools.Close()
+	tooled, err := withTools.EnsurePrefix(ctx, llama.PrefixInput{Text: stable, Manifest: manifest, Tools: tools})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if tooled.PrefixTokens <= noTools.PrefixTokens {
+		t.Fatalf("tools did not reach the renderer: with-tools tokens=%d, no-tools tokens=%d",
+			tooled.PrefixTokens, noTools.PrefixTokens)
+	}
+	t.Logf("prefix tokens: no-tools=%d with-tools=%d (+%d for the rendered tool block)",
+		noTools.PrefixTokens, tooled.PrefixTokens, tooled.PrefixTokens-noTools.PrefixTokens)
+}
+
 func requireTinyGGUF(t *testing.T, modelPath string) {
 	t.Helper()
 	if modelPath == "" {

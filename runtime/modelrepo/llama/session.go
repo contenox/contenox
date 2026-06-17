@@ -15,6 +15,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 // Config is the explicit runtime configuration for a local session. The toy
@@ -41,6 +44,9 @@ type Config struct {
 type PrefixInput struct {
 	Text     string
 	Manifest ContextManifest
+	// Tools is a JSON array of tool definitions rendered into the prompt via the
+	// model's own GGUF chat template (model-native tool calls) by the daemon.
+	Tools string `json:",omitempty"`
 }
 
 // SuffixInput is the volatile text appended after the stable prefix. It carries
@@ -139,15 +145,80 @@ var sessionFactory SessionFactory
 // in this build, so the indirection stays but SessionAvailable reports false.
 func SetSessionFactory(f SessionFactory) { sessionFactory = f }
 
-// SessionAvailable reports whether a session backend is compiled into this build.
-func SessionAvailable() bool { return sessionFactory != nil }
+// SessionAvailable reports whether local llama inference can be served: either a
+// test factory is registered, or the modeld daemon holds a fresh lease (the
+// cheap offline check). The actual open confirms reachability.
+func SessionAvailable() bool { return sessionFactory != nil || modeldconn.Available() }
 
-// newSession creates a session through the registered backend.
+// newSession opens a session. A registered factory (tests) wins; otherwise the
+// session is opened on the modeld daemon over runtime/transport and adapted to
+// the package-local Session contract. The CGO llama.cpp backend lives in modeld.
 func newSession(modelPath string, cfg Config) (Session, error) {
-	if sessionFactory == nil {
-		return nil, fmt.Errorf("%w: build with -tags llamanode", ErrSessionUnavailable)
+	if sessionFactory != nil {
+		return sessionFactory(modelPath, cfg)
 	}
-	return sessionFactory(modelPath, cfg)
+	s, err := modeldconn.OpenSession(context.Background(), modelPath, transport.Config(cfg))
+	if err != nil {
+		// Preserve the ErrSessionUnavailable contract callers branch on, while
+		// keeping the actionable modeld detail (not installed / unreachable / ...).
+		return nil, fmt.Errorf("%w: %v", ErrSessionUnavailable, err)
+	}
+	return remoteSession{s: s}, nil
+}
+
+// remoteSession adapts a runtime/transport.Session (resident in modeld) to the
+// package-local Session interface. The two type families are field-identical, so
+// inputs and outputs convert directly; sentinel errors are remapped so the
+// session cache evicts a closed/stale/fatal session and reopens against the
+// current leader.
+type remoteSession struct{ s transport.Session }
+
+func (r remoteSession) EnsurePrefix(ctx context.Context, p PrefixInput) (PrefixStatus, error) {
+	st, err := r.s.EnsurePrefix(ctx, transport.PrefixInput(p))
+	return PrefixStatus(st), mapSessionErr(err)
+}
+
+func (r remoteSession) PrefillSuffix(ctx context.Context, s SuffixInput) (SuffixStatus, error) {
+	st, err := r.s.PrefillSuffix(ctx, transport.SuffixInput(s))
+	return SuffixStatus(st), mapSessionErr(err)
+}
+
+func (r remoteSession) Decode(ctx context.Context, cfg DecodeConfig) (<-chan StreamChunk, error) {
+	src, err := r.s.Decode(ctx, transport.DecodeConfig(cfg))
+	if err != nil {
+		return nil, mapSessionErr(err)
+	}
+	out := make(chan StreamChunk, 16)
+	go func() {
+		defer close(out)
+		for c := range src {
+			out <- StreamChunk{Text: c.Text, Error: mapSessionErr(c.Error)}
+		}
+	}()
+	return out, nil
+}
+
+func (r remoteSession) ExplainContext() ContextReport { return ContextReport(r.s.ExplainContext()) }
+
+func (r remoteSession) Close() error { return mapSessionErr(r.s.Close()) }
+
+// mapSessionErr translates transport sentinels to this package's, so the session
+// cache's fatal-eviction keeps working over the wire. A stale fence (the owner
+// changed under us) is fatal: drop the cached session and reopen on the new
+// leader.
+func mapSessionErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, transport.ErrSessionClosed):
+		return ErrSessionClosed
+	case errors.Is(err, transport.ErrStaleFence):
+		return fmt.Errorf("%w: %v", ErrSessionFatal, err)
+	case errors.Is(err, transport.ErrContextOverflow):
+		return fmt.Errorf("%w: %v", ErrContextOverflow, err)
+	default:
+		return err
+	}
 }
 
 // EmbedFunc computes a single embedding via the native backend. The llama.cpp

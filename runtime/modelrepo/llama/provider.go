@@ -91,6 +91,7 @@ func (p *provider) newClient() (*client, error) {
 		backendVersion:  backendVersion(),
 		cfg:             profile.config(),
 		maxOutputTokens: p.caps.MaxOutputTokens,
+		toolProtocol:    profile.ToolCalls.Protocol,
 	}, nil
 }
 
