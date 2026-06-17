@@ -249,6 +249,7 @@ func TestUnit_ModelProviderAdapter_CreatesOpenAIProviderViaCatalog(t *testing.T)
 }
 
 func TestUnit_ModelProviderAdapter_LocalAliasResolvesLlamaProvider(t *testing.T) {
+	t.Skip("llama backend is temporarily disabled pending modeld local runtime transition")
 	ctx := context.Background()
 	backendID := "local-backend"
 	runtime := map[string]statetype.BackendRuntimeState{
