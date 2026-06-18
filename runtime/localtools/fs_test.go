@@ -2,6 +2,7 @@ package localtools_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,72 @@ func TestUnit_LocalFSTools_Exec(t *testing.T) {
 		}
 		if !strings.Contains(files, "test.txt") {
 			t.Errorf("unexpected files: %q", files)
+		}
+	})
+
+	t.Run("findFiles", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(tempDir, "main.go"), []byte("package main\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.MkdirAll(filepath.Join(tempDir, "subdir"), 0755)
+		if err := os.WriteFile(filepath.Join(tempDir, "subdir", "lib.go"), []byte("package sub\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tempDir, "subdir", "data.txt"), []byte("x\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		args := map[string]any{"pattern": "*.go"}
+		toolsCall := &taskengine.ToolsCall{ToolName: "find_files"}
+		res, dataType, err := h.Exec(ctx, now, args, false, toolsCall)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dataType != taskengine.DataTypeJSON {
+			t.Fatalf("unexpected data type: %v", dataType)
+		}
+		var out struct {
+			Matches   []string `json:"matches"`
+			Count     int      `json:"count"`
+			Truncated bool     `json:"truncated"`
+		}
+		if err := json.Unmarshal([]byte(res.(string)), &out); err != nil {
+			t.Fatalf("invalid find_files JSON output: %v", err)
+		}
+		if out.Count != len(out.Matches) {
+			t.Fatalf("count mismatch: count=%d matches=%d", out.Count, len(out.Matches))
+		}
+		if len(out.Matches) != 2 {
+			t.Fatalf("expected 2 go files, got %d: %v", len(out.Matches), out.Matches)
+		}
+		if !(contains(out.Matches, "main.go") && contains(out.Matches, "subdir/lib.go")) {
+			t.Fatalf("expected go file matches, got %v", out.Matches)
+		}
+		if out.Truncated {
+			t.Fatalf("did not expect truncation for small result set")
+		}
+
+		args = map[string]any{"pattern": "subdir/*.go", "path": "."}
+		res, _, err = h.Exec(ctx, now, args, false, toolsCall)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(res.(string)), &out); err != nil {
+			t.Fatalf("invalid scoped find_files JSON output: %v", err)
+		}
+		if len(out.Matches) != 1 || out.Matches[0] != "subdir/lib.go" {
+			t.Fatalf("expected only subdir/lib.go, got %v", out.Matches)
+		}
+	})
+
+	t.Run("searchRepoNoLongerAvailable", func(t *testing.T) {
+		toolsCall := &taskengine.ToolsCall{ToolName: "search_repo"}
+		_, _, err := h.Exec(ctx, now, map[string]any{"pattern": "x"}, false, toolsCall)
+		if err == nil {
+			t.Fatal("expected search_repo to be unavailable")
+		}
+		if !strings.Contains(err.Error(), "unknown tool search_repo") {
+			t.Fatalf("unexpected dispatch error: %v", err)
 		}
 	})
 
@@ -577,8 +644,8 @@ func TestUnit_LocalFSTools_InjectedNamePlumbsThrough(t *testing.T) {
 	}
 	want := map[string]bool{
 		"read_file": true, "write_file": true, "list_dir": true, "grep": true,
-		"find_files": true, "search_repo": true,
-		"sed": true, "count_stats": true, "read_file_range": true, "stat_file": true,
+		"find_files": true,
+		"sed":        true, "count_stats": true, "read_file_range": true, "stat_file": true,
 	}
 	if len(tools) != len(want) {
 		t.Fatalf("expected %d tools, got %d", len(want), len(tools))
@@ -592,4 +659,13 @@ func TestUnit_LocalFSTools_InjectedNamePlumbsThrough(t *testing.T) {
 	if _, err := h.GetToolsForToolsByName(ctx, "local_fs"); err == nil {
 		t.Fatalf("a renamed instance must not answer to the old name local_fs")
 	}
+}
+
+func contains(ss []string, v string) bool {
+	for _, s := range ss {
+		if s == v {
+			return true
+		}
+	}
+	return false
 }

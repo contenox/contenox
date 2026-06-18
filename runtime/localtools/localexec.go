@@ -502,7 +502,7 @@ func (h *LocalExecTools) GetToolsForToolsByName(ctx context.Context, name string
 	}
 	allowedCommands, allowedDir, deniedCommands := h.resolvePolicy(ctx)
 	shellDesc := h.shell.ShellModeDescription()
-	desc := "Run a terminal command on the local host. Returns {stdout, stderr, exitCode, success, durationSeconds}. Output is capped at the remaining context budget; when truncated, stdout/stderr contain the first captured bytes and error describes the truncation. For file operations prefer local_fs.*: read_file, write_file, sed, find_files, search_repo enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for operations with no dedicated tool: running tests, builds, git commands, environment inspection. " + shellDesc
+	desc := "Run a terminal command on the local host. Returns {stdout, stderr, exitCode, success, durationSeconds}. Output is capped at the remaining context budget; when truncated, stdout/stderr contain the first captured bytes and error describes the truncation. For file operations prefer local_fs.* tools: read_file, write_file, sed, find_files. They enforce sandbox boundaries, size limits, and a read-before-write contract that local_shell does not. Use local_shell for operations with no dedicated tool: running tests, builds, git commands, environment inspection. " + shellDesc
 	if len(allowedCommands) > 0 {
 		desc += " Allowed commands: " + strings.Join(allowedCommands, ", ") + "."
 	}

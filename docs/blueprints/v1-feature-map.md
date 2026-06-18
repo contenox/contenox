@@ -491,7 +491,6 @@ Functions:
 - `list_dir`
 - `grep`
 - `find_files`
-- `search_repo`
 - `sed`
 - `count_stats`
 - `stat_file`

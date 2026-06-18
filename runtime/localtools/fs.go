@@ -130,11 +130,6 @@ func (h *LocalFSTools) Exec(ctx context.Context, startTime time.Time, input any,
 			return nil, taskengine.DataTypeAny, err
 		}
 		return h.findFiles(ctx, args)
-	case "search_repo":
-		if err := rejectUnknownArgs("local_fs.search_repo", args, "pattern", "path", "glob", "regex"); err != nil {
-			return nil, taskengine.DataTypeAny, err
-		}
-		return h.searchRepo(ctx, args)
 	case "sed":
 		if err := rejectUnknownArgs("local_fs.sed", args, "path", "pattern", "replacement"); err != nil {
 			return nil, taskengine.DataTypeAny, err
@@ -1002,113 +997,6 @@ func (h *LocalFSTools) findFiles(ctx context.Context, args map[string]any) (any,
 	return s, taskengine.DataTypeJSON, nil
 }
 
-// searchRepo implements search_repo: multi-file content search under the project root.
-// Returns matching lines in "path:line: text" format, capped by _max_grep_matches.
-// Lines longer than 500 characters are truncated to prevent context flooding from
-// minified or generated files.
-func (h *LocalFSTools) searchRepo(ctx context.Context, args map[string]any) (any, taskengine.DataType, error) {
-	pattern, ok := args["pattern"].(string)
-	if !ok || pattern == "" {
-		return nil, taskengine.DataTypeAny, errors.New("local_fs: pattern required for search_repo")
-	}
-	rootArg, _ := args["path"].(string)
-	if rootArg == "" {
-		rootArg = "."
-	}
-	globFilter, _ := args["glob"].(string)
-	useRegex, _ := argBool(args, "regex")
-
-	absRoot, err := h.checkPath(ctx, filepath.Clean(rootArg))
-	if err != nil {
-		return nil, taskengine.DataTypeAny, err
-	}
-
-	var re *regexp.Regexp
-	if useRegex {
-		re, err = regexp.Compile(pattern)
-		if err != nil {
-			return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: invalid regex: %w", err)
-		}
-	}
-
-	skipDirs := h.skipDirNamesFromPolicy(ctx)
-	maxMatches := h.maxGrepMatchesFromPolicy(ctx)
-
-	var lines []string
-	truncated := false
-
-	walkErr := filepath.WalkDir(absRoot, func(walkPath string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if skipDirs[d.Name()] {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if truncated {
-			return filepath.SkipAll
-		}
-		if globFilter != "" {
-			if matched, _ := filepath.Match(globFilter, d.Name()); !matched {
-				return nil
-			}
-		}
-
-		content, readErr := h.fileIO.ReadFile(ctx, walkPath)
-		if readErr != nil {
-			return nil // skip unreadable files
-		}
-		if isBinaryContent(content) {
-			return nil
-		}
-
-		rel, _ := filepath.Rel(absRoot, walkPath)
-		rel = filepath.ToSlash(rel)
-
-		for lineNo, line := range strings.Split(string(content), "\n") {
-			var matched bool
-			if useRegex {
-				matched = re.MatchString(line)
-			} else {
-				matched = strings.Contains(line, pattern)
-			}
-			if !matched {
-				continue
-			}
-			if len(line) > 500 {
-				line = line[:500] + "…"
-			}
-			lines = append(lines, fmt.Sprintf("%s:%d: %s", rel, lineNo+1, line))
-			if len(lines) >= maxMatches {
-				truncated = true
-				return filepath.SkipAll
-			}
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return nil, taskengine.DataTypeAny, fmt.Errorf("local_fs: search_repo: %w", walkErr)
-	}
-
-	var sb strings.Builder
-	if len(lines) == 0 {
-		sb.WriteString("No matches found.")
-	} else {
-		sb.WriteString(strings.Join(lines, "\n"))
-		if truncated {
-			fmt.Fprintf(&sb, "\n[Truncated at %d matches. Use path, glob, or regex to narrow the search.]", maxMatches)
-		}
-	}
-
-	out := sb.String()
-	if err := h.checkToolOutputLimit(ctx, "search_repo", out); err != nil {
-		return nil, taskengine.DataTypeAny, err
-	}
-	return out, taskengine.DataTypeString, nil
-}
-
 // isBinaryContent reports whether content is likely binary by scanning the first
 // 8 KB for NUL bytes, which are absent in well-formed UTF-8 text files.
 func isBinaryContent(content []byte) bool {
@@ -1307,7 +1195,7 @@ func (h *LocalFSTools) statFile(ctx context.Context, args map[string]any) (any, 
 }
 
 func (h *LocalFSTools) Supports(ctx context.Context) ([]string, error) {
-	return []string{h.name, "read_file", "write_file", "list_dir", "grep", "find_files", "search_repo", "sed", "count_stats", "read_file_range", "stat_file"}, nil
+	return []string{h.name, "read_file", "write_file", "list_dir", "grep", "find_files", "sed", "count_stats", "read_file_range", "stat_file"}, nil
 }
 
 func (h *LocalFSTools) GetSchemasForSupportedTools(ctx context.Context) (map[string]*openapi3.T, error) {
@@ -1373,7 +1261,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "grep",
-				Description: "Search a single file for a pattern. Default: literal substring match. Set regex true for RE2 regex. Optional start_line and end_line (1-based, inclusive) limit the search to a line range. Output: matching lines as 'N: text'. For multi-file or repo-wide search use search_repo instead.",
+				Description: "Search a single file for a pattern. Default: literal substring match. Set regex true for RE2 regex. Optional start_line and end_line (1-based, inclusive) limit the search to a line range. Output: matching lines as 'N: text'.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1403,7 +1291,7 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 			Type: "function",
 			Function: taskengine.FunctionTool{
 				Name:        "find_files",
-				Description: "Find files by name pattern under the project root. Uses Go filepath.Match glob syntax: * matches any sequence of non-separator characters, ? matches one character, [range] matches a character class. Note: ** (double-star cross-directory wildcard) is NOT supported. Without a slash in the pattern, the pattern is matched against the file basename only (e.g. \"*.go\" finds all Go files anywhere in the tree). With a slash, the pattern is matched against the relative path. Returns JSON: {matches: [...], count: N, truncated: true|false}. Results are capped at 200 by default (policy: _max_find_results). High-noise directories (.git, node_modules, .venv, etc.) are skipped automatically. To search file contents use search_repo.",
+				Description: "Find files by name pattern under the project root. Uses Go filepath.Match glob syntax: * matches any sequence of non-separator characters, ? matches one character, [range] matches a character class. Note: ** (double-star cross-directory wildcard) is NOT supported. Without a slash in the pattern, the pattern is matched against the file basename only (e.g. \"*.go\" finds all Go files anywhere in the tree). With a slash, the pattern is matched against the relative path. Returns JSON: {matches: [...], count: N, truncated: true|false}. Results are capped at 200 by default (policy: _max_find_results). High-noise directories (.git, node_modules, .venv, etc.) are skipped automatically.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1414,35 +1302,6 @@ func (h *LocalFSTools) GetToolsForToolsByName(ctx context.Context, name string) 
 						"path": map[string]interface{}{
 							"type":        "string",
 							"description": "Root directory to search from (relative to project root, default: project root)",
-						},
-					},
-					"required": []string{"pattern"},
-				},
-			},
-		},
-		{
-			Type: "function",
-			Function: taskengine.FunctionTool{
-				Name:        "search_repo",
-				Description: "Search for a pattern across all text files under the project root. Returns matching lines as \"path:line_number: text\". Binary files are skipped automatically. Lines longer than 500 characters are truncated in the output. High-noise directories (.git, node_modules, .venv, etc.) are skipped automatically. Results are capped at 5000 matches by default (policy: _max_grep_matches); when the result is truncated a notice is appended — narrow with path, glob, or a more specific pattern. Use glob to restrict by filename (e.g. \"*.go\"). Use regex:true for RE2 regular expressions. Prefer this over running grep or rg via local_shell.",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"pattern": map[string]interface{}{
-							"type":        "string",
-							"description": "Substring to search for, or RE2 regex when regex is true",
-						},
-						"path": map[string]interface{}{
-							"type":        "string",
-							"description": "Root directory to search from (relative to project root, default: project root)",
-						},
-						"glob": map[string]interface{}{
-							"type":        "string",
-							"description": "Glob pattern to filter files by name (e.g. \"*.go\", \"*.ts\")",
-						},
-						"regex": map[string]interface{}{
-							"type":        "boolean",
-							"description": "If true, pattern is a Go RE2 regular expression matched per line",
 						},
 					},
 					"required": []string{"pattern"},
