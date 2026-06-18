@@ -358,8 +358,8 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 	exitCode, runErr := h.runner.Run(runCtx, spec, stdout, stderr)
 	result.DurationSeconds = time.Since(start).Seconds()
 
-	outStr := strings.TrimSpace(stdout.buf.String())
-	errStr := strings.TrimSpace(stderr.buf.String())
+	outStr := strings.TrimRight(stdout.buf.String(), "\r\n")
+	errStr := strings.TrimRight(stderr.buf.String(), "\r\n")
 
 	if errors.Is(runErr, ErrOutputBudgetExceeded) {
 		// Backend signalled it had already truncated its own output stream.
@@ -375,8 +375,8 @@ func (h *LocalExecTools) run(ctx context.Context, command string, argsSlice []st
 		// which is more useful than empty output.
 		result.Success = false
 		result.ExitCode = -1
-		result.Stdout = strings.TrimSpace(stdout.buf.String())
-		result.Stderr = strings.TrimSpace(stderr.buf.String())
+		result.Stdout = strings.TrimRight(stdout.buf.String(), "\r\n")
+		result.Stderr = strings.TrimRight(stderr.buf.String(), "\r\n")
 		result.Error = fmt.Sprintf("Output truncated: command produced more than the context budget (%d bytes). The stdout/stderr above are the first captured bytes; subsequent output was discarded.", limit)
 		return result, nil
 	}

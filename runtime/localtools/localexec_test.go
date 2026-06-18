@@ -416,6 +416,22 @@ func TestUnit_LocalExecTools_Exec_Timeout(t *testing.T) {
 	assert.NotEmpty(t, res.Error, "expected some error on timeout")
 }
 
+func TestUnit_LocalExecTools_Exec_NoTrimWhitespace(t *testing.T) {
+	ctx := context.Background()
+	h := localtools.NewLocalExecTools().(*localtools.LocalExecTools)
+	start := time.Now().UTC()
+	out, _, err := h.Exec(ctx, start, map[string]any{
+		"command": "echo",
+		"args":    []any{"  spaced  "},
+	}, false, &taskengine.ToolsCall{Name: "local_shell"})
+	require.NoError(t, err)
+	res, ok := out.(*localtools.LocalExecResult)
+	require.True(t, ok)
+	assert.True(t, res.Success)
+	// We expect trailing \n to be removed, but leading spaces and trailing spaces should be preserved.
+	assert.Equal(t, "  spaced  ", res.Stdout)
+}
+
 func TestUnit_LocalExecTools_Exec_MissingCommand(t *testing.T) {
 	ctx := context.Background()
 	h := localtools.NewLocalExecTools(localtools.WithLocalExecAllowedCommands(testAllowedCommands)).(*localtools.LocalExecTools)
