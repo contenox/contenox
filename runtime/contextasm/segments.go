@@ -23,6 +23,55 @@ const (
 
 const volatileFrom = KindDiff
 
+// CacheClass is the coding-aware retention priority of a segment, coarser than
+// SegmentKind. It is the seam a budget-aware admission/eviction policy uses to
+// decide what to keep warm when context exceeds the window: drop higher
+// (more-evictable) classes first, pin lower ones. Wiring a producer of rich
+// segments + the drop policy is gated on the T3 context planner (#7); this type
+// is the foundation it builds on.
+type CacheClass int
+
+const (
+	// ClassTaskPinned is the task-defining core (system/developer instructions,
+	// tool schemas, repo conventions): pinned hardest, evicted last.
+	ClassTaskPinned CacheClass = iota
+	// ClassRepoMap is workspace structure (repo/symbol map, pinned files).
+	ClassRepoMap
+	// ClassVolatile is churning material (diff, terminal output, the user turn):
+	// admitted only when likely reused, evicted first.
+	ClassVolatile
+)
+
+// CacheClass maps a segment kind to its retention class.
+func (k SegmentKind) CacheClass() CacheClass {
+	switch k {
+	case KindSystem, KindTools, KindRepoRules:
+		return ClassTaskPinned
+	case KindRepoMap, KindPinned:
+		return ClassRepoMap
+	default: // KindDiff, KindTerminal, KindUserTurn
+		return ClassVolatile
+	}
+}
+
+// Tag returns the stable string form used in manifests.
+func (c CacheClass) Tag() string {
+	switch c {
+	case ClassTaskPinned:
+		return "task_pinned"
+	case ClassRepoMap:
+		return "repo_map"
+	case ClassVolatile:
+		return "volatile"
+	default:
+		return "unknown"
+	}
+}
+
+// MoreEvictableThan reports whether c should be dropped before other when trimming
+// context to fit a budget (higher class = lower priority = evicted first).
+func (c CacheClass) MoreEvictableThan(other CacheClass) bool { return c > other }
+
 // Segment is one deterministic, hashable piece of workspace context.
 type Segment struct {
 	Kind    SegmentKind
@@ -72,11 +121,12 @@ func AssembleManifest(segs []Segment, id ManifestIdentity) (prompt string, manif
 			stableLen = end
 		}
 		manifestSegments = append(manifestSegments, ManifestSegment{
-			Kind:      s.Kind.Tag(),
-			Stable:    stable,
-			ByteStart: start,
-			ByteEnd:   end,
-			ByteHash:  HashString(text),
+			Kind:       s.Kind.Tag(),
+			Stable:     stable,
+			CacheClass: s.Kind.CacheClass().Tag(),
+			ByteStart:  start,
+			ByteEnd:    end,
+			ByteHash:   HashString(text),
 		})
 	}
 

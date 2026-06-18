@@ -1,0 +1,166 @@
+package modelrepo
+
+import (
+	"sync"
+	"time"
+)
+
+// Tunables for the warm session cache (package vars so tests can override). They
+// bound how many local backend sessions stay resident at once: each cached
+// session keeps its model resident in modeld, so an unbounded cache leaks
+// VRAM/RAM as the caller switches models. Mirrors the OpenVINO modeld-side pool.
+var (
+	WarmCacheMaxResident = 2
+	WarmCacheIdleTTL     = 5 * time.Minute
+)
+
+// WarmSession is the minimal contract the cache needs: closing a session releases
+// the resident model in modeld.
+type WarmSession interface{ Close() error }
+
+// WarmEntry is one resident session kept warm across turns. Turn serializes a
+// whole EnsurePrefix -> PrefillSuffix -> Decode sequence so concurrent requests
+// on the same session do not corrupt its resident KV. Hold Turn for the duration
+// of a turn; the cache will not evict an entry whose Turn is held.
+type WarmEntry[S WarmSession] struct {
+	Sess S
+	Turn sync.Mutex
+
+	key      string
+	lastUsed time.Time
+}
+
+// WarmCache is a bounded, idle-reaped cache of warm backend sessions keyed by a
+// model+config identity. It evicts by idle TTL and a max-resident cap (LRU),
+// never evicting a session that is mid-turn, and closes evicted sessions so
+// modeld releases the underlying model. Construct with NewWarmCache.
+type WarmCache[S WarmSession] struct {
+	mu  sync.Mutex
+	m   map[string]*WarmEntry[S]
+	now func() time.Time
+}
+
+// NewWarmCache returns an empty cache.
+func NewWarmCache[S WarmSession]() *WarmCache[S] {
+	return &WarmCache[S]{m: map[string]*WarmEntry[S]{}, now: time.Now}
+}
+
+// Acquire returns the warm entry for key, opening one via open on a miss. The
+// caller must Turn.Lock() the returned entry for the duration of a turn. After
+// admitting a new entry the cache reaps idle and over-cap sessions (closing them
+// outside the lock).
+func (c *WarmCache[S]) Acquire(key string, open func() (S, error)) (*WarmEntry[S], error) {
+	c.mu.Lock()
+	if e, ok := c.m[key]; ok {
+		e.lastUsed = c.now()
+		c.mu.Unlock()
+		return e, nil
+	}
+	c.mu.Unlock()
+
+	s, err := open()
+	if err != nil {
+		return nil, err
+	}
+
+	c.mu.Lock()
+	if e, ok := c.m[key]; ok { // lost the open race: reuse the winner, drop ours
+		c.mu.Unlock()
+		_ = s.Close()
+		return e, nil
+	}
+	e := &WarmEntry[S]{Sess: s, key: key, lastUsed: c.now()}
+	c.m[key] = e
+	victims := c.selectVictimsLocked(e)
+	c.mu.Unlock()
+
+	closeAll(victims)
+	return e, nil
+}
+
+// Drop evicts an entry whose session became unusable (closed/stale/fatal) so the
+// next call reopens. Safe to call with a stale entry already replaced in the map.
+func (c *WarmCache[S]) Drop(e *WarmEntry[S]) {
+	if e == nil {
+		return
+	}
+	c.mu.Lock()
+	if c.m[e.key] == e {
+		delete(c.m, e.key)
+	}
+	c.mu.Unlock()
+	_ = e.Sess.Close()
+}
+
+// Reap closes idle-past-TTL sessions and trims the cache down to the resident
+// cap, never touching mid-turn sessions. Acquire reaps automatically; this is
+// exported for callers (and tests) that want to force it.
+func (c *WarmCache[S]) Reap() {
+	c.mu.Lock()
+	victims := c.selectVictimsLocked(nil)
+	c.mu.Unlock()
+	closeAll(victims)
+}
+
+// Clear evicts and closes every session (test cleanup / shutdown).
+func (c *WarmCache[S]) Clear() {
+	c.mu.Lock()
+	m := c.m
+	c.m = map[string]*WarmEntry[S]{}
+	c.mu.Unlock()
+	for _, e := range m {
+		_ = e.Sess.Close()
+	}
+}
+
+// selectVictimsLocked removes idle-past-TTL and over-cap (LRU) entries from the
+// map and returns them for closing outside the lock. keep (may be nil) is never
+// evicted — it is the just-acquired entry. A victim's Turn is left locked so a
+// concurrent holder can never resurrect it; the entry is discarded afterward.
+func (c *WarmCache[S]) selectVictimsLocked(keep *WarmEntry[S]) []*WarmEntry[S] {
+	var victims []*WarmEntry[S]
+	now := c.now()
+
+	if WarmCacheIdleTTL > 0 {
+		for k, e := range c.m {
+			if e == keep {
+				continue
+			}
+			if now.Sub(e.lastUsed) >= WarmCacheIdleTTL && e.Turn.TryLock() {
+				delete(c.m, k)
+				victims = append(victims, e)
+			}
+		}
+	}
+
+	// Trim to the resident cap by least-recently-used, skipping mid-turn entries.
+	skip := map[*WarmEntry[S]]bool{}
+	for WarmCacheMaxResident > 0 && len(c.m) > WarmCacheMaxResident {
+		var lru *WarmEntry[S]
+		var lruKey string
+		for k, e := range c.m {
+			if e == keep || skip[e] {
+				continue
+			}
+			if lru == nil || e.lastUsed.Before(lru.lastUsed) {
+				lru, lruKey = e, k
+			}
+		}
+		if lru == nil {
+			break // nothing evictable (only keep / busy entries remain)
+		}
+		if !lru.Turn.TryLock() {
+			skip[lru] = true // busy: leave resident, reap when idle
+			continue
+		}
+		delete(c.m, lruKey)
+		victims = append(victims, lru)
+	}
+	return victims
+}
+
+func closeAll[S WarmSession](victims []*WarmEntry[S]) {
+	for _, e := range victims {
+		_ = e.Sess.Close()
+	}
+}

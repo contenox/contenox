@@ -455,10 +455,10 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
                 std::string role = (roles && roles[i]) ? std::string(roles[i]) : std::string();
                 std::string content = (contents && contents[i]) ? std::string(contents[i]) : std::string();
                 ov::AnyMap msg{{"role", role}, {"content", content}};
-                if (tool_calls && tool_calls[i] && tool_calls[i][0] != ' ') {
+                if (tool_calls && tool_calls[i] && tool_calls[i][0] != '\0') {
                     msg["tool_calls"] = ov::genai::JsonContainer::from_json_string(std::string(tool_calls[i]));
                 }
-                if (tool_call_ids && tool_call_ids[i] && tool_call_ids[i][0] != ' ') {
+                if (tool_call_ids && tool_call_ids[i] && tool_call_ids[i][0] != '\0') {
                     msg["tool_call_id"] = std::string(tool_call_ids[i]);
                 }
                 msgs.push_back(msg);

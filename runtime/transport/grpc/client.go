@@ -38,6 +38,7 @@ func (c *Client) Close() error { return c.cc.Close() }
 type HealthStatus struct {
 	InstanceID string // the owner instance actually serving this endpoint
 	Ready      bool
+	Backend    string // inference backend the owner serves ("llama"/"openvino"/"none")
 }
 
 // Health pings the owner for liveness. It is not fenced — the caller uses the
@@ -47,7 +48,7 @@ func (c *Client) Health(ctx context.Context) (HealthStatus, error) {
 	if err := c.invoke(ctx, "Health", &healthReq{}, out); err != nil {
 		return HealthStatus{}, err
 	}
-	return HealthStatus{InstanceID: out.InstanceID, Ready: out.Ready}, nil
+	return HealthStatus{InstanceID: out.InstanceID, Ready: out.Ready, Backend: out.Backend}, nil
 }
 
 func (c *Client) invoke(ctx context.Context, name string, in, out any) error {
@@ -62,7 +63,14 @@ func (c *Client) OpenSession(ctx context.Context, req transport.OpenSessionReque
 		owner = c.owner
 	}
 	out := new(openSessionResp)
-	in := &openSessionReq{OwnerInstanceID: owner, ModelID: req.ModelID, Config: req.Config}
+	in := &openSessionReq{
+		OwnerInstanceID: owner,
+		ModelName:       req.ModelName,
+		Type:            req.Type,
+		Digest:          req.Digest,
+		Path:            req.Path,
+		Config:          req.Config,
+	}
 	if err := c.invoke(ctx, "OpenSession", in, out); err != nil {
 		return nil, err
 	}

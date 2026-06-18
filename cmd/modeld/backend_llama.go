@@ -11,5 +11,6 @@ import (
 	"github.com/contenox/runtime/runtime/transport"
 )
 
-// selectBackend serves the llama.cpp backend when built with -tags llamanode.
-func selectBackend() (transport.Service, string) { return &llama.Service{}, "llama" }
+// Register the llama.cpp backend; selectBackend (backend.go) serves it when it
+// is the only one compiled in or when CONTENOX_MODELD_BACKEND=llama.
+func init() { registerBackend("llama", func() transport.Service { return &llama.Service{} }) }

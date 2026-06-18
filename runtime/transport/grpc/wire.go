@@ -31,7 +31,10 @@ type computeServer interface {
 
 type openSessionReq struct {
 	OwnerInstanceID string           `json:"owner_instance_id,omitempty"`
-	ModelID         string           `json:"model_id,omitempty"`
+	ModelName       string           `json:"model_name,omitempty"`
+	Type            string           `json:"type,omitempty"`
+	Digest          string           `json:"digest,omitempty"`
+	Path            string           `json:"path,omitempty"`
 	Config          transport.Config `json:"config"`
 }
 
@@ -73,6 +76,7 @@ type healthReq struct{}
 type healthResp struct {
 	InstanceID string `json:"instance_id,omitempty"`
 	Ready      bool   `json:"ready"`
+	Backend    string `json:"backend,omitempty"`
 }
 
 // wireChunk is the JSON-safe form of transport.StreamChunk (error -> string).

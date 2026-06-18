@@ -94,7 +94,7 @@ func (s *GenAISession) Close() error {
 type ChatMessage struct {
 	Role       string
 	Content    string
-	ToolCall   string `json:",omitempty"`
+	ToolCalls  string `json:",omitempty"`
 	ToolCallID string `json:",omitempty"`
 }
 

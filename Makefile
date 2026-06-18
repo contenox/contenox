@@ -4,6 +4,17 @@
 PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 .DEFAULT_GOAL := help
 
+# modeld links two native backends. The OpenVINO CGO flags are shared with the
+# OpenVINO test targets via this fragment (single source of truth); the llama
+# backend reads minja + llama.cpp single-header deps from the vendored tree.
+# All deps are reproducible from a clean checkout via `make deps-modeld`.
+include $(PROJECT_ROOT)mk/openvino-flags.mk
+include $(PROJECT_ROOT)mk/llama-flags.mk
+# Cap concurrent compiles for the modeld build: the llama.cpp and OpenVINO C++
+# translation units are memory-heavy, so the default all-cores fan-out can
+# exhaust RAM and lock the machine. Raise on a box with more headroom.
+MODELD_BUILD_JOBS ?= 4
+
 EMBED_MODEL ?= nomic-embed-text:latest
 EMBED_PROVIDER ?= ollama
 EMBED_MODEL_CONTEXT_LENGTH ?= 2048
@@ -22,7 +33,6 @@ export CHAT_MODEL CHAT_MODEL_CONTEXT_LENGTH CHAT_PROVIDER
 export TENANCY
 export OLLAMA_HOST
 
-AIR ?= $(shell command -v air 2>/dev/null || echo "$(shell go env GOPATH)/bin/air")
 DEV_CONTENOX_BIN := $(HOME)/.local/bin/contenox
 VSCODE_DIR := $(PROJECT_ROOT)/packages/vscode
 VSCODE_VERSION := $(patsubst v%,%,$(shell tr -d '\r\n' < $(PROJECT_ROOT)/runtime/version/version.txt))
@@ -36,20 +46,20 @@ VSCODE_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCOD
 VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
 
 .PHONY: help \
-	build-contenox build-contenox-windows build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev deps-ollama-headers \
+	build-contenox build-contenox-windows build-modeld build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
 	clean clean-vscode \
-	deps-go-watch deps-vscode \
+	deps-modeld deps-llama-headers deps-openvino deps-ollama-headers deps-vscode \
 	dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
-	dev-go-watch \
+	run-modeld \
 	test test-unit test-system test-contenox-verbose test-contenox-help
 
 # -----------------------------------------------------------------------------
 help:
-	@echo "build-*    build-contenox build-contenox-windows build-vscode"
+	@echo "build-*    build-contenox build-contenox-windows build-modeld build-vscode"
 	@echo "package-*  package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
 	@echo "test-*     test test-unit test-system test-contenox-verbose test-contenox-help"
-	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink dev-go-watch"
-	@echo "deps-*     deps-go-watch deps-ollama-headers deps-vscode"
+	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
+	@echo "deps-*     deps-modeld deps-llama-headers deps-openvino deps-ollama-headers deps-vscode"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
 
@@ -62,6 +72,20 @@ build-contenox:
 
 build-contenox-windows:
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o $(PROJECT_ROOT)/bin/contenox-windows-amd64.exe $(PROJECT_ROOT)/cmd/contenox
+
+# modeld binary: native inference backends (llama.cpp owned-ABI shim + OpenVINO
+# GenAI), built with CGO. Needs the vendored llama headers, the OpenVINO SDK and
+# the OpenVINO GenAI C++ headers — run `make deps-modeld` once on a fresh checkout.
+# The CGO flags come from mk/openvino-flags.mk (shared with the OpenVINO tests).
+build-modeld:
+	@test -f "$(LLAMA_VENDOR)/minja/chat-template.hpp" || { echo "missing llama.cpp vendored headers ($(LLAMA_VENDOR)) — run: make deps-modeld"; exit 1; }
+	@test -n "$(OPENVINO_PKG)" || { echo "missing OpenVINO SDK in $(OPENVINO_VENV) — run: make deps-modeld"; exit 1; }
+	@test -d "$(OPENVINO_GENAI_SRC)/src/cpp/include" || { echo "missing OpenVINO GenAI C++ headers ($(OPENVINO_GENAI_SRC)) — run: make deps-modeld"; exit 1; }
+	CGO_ENABLED=1 \
+	CGO_CPPFLAGS="-I$(LLAMA_VENDOR)" \
+	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
+	go build -p $(MODELD_BUILD_JOBS) -tags 'llamanode llama_unsafe_abi openvino openvino_genai' -o $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/cmd/modeld
 
 build-vscode: deps-vscode
 	cd $(VSCODE_DIR) && npm run build
@@ -155,13 +179,22 @@ dev-link: build-contenox
 dev-unlink:
 	@rm -f $(DEV_CONTENOX_BIN)
 
-dev-go-watch:
-	@test -x "$(AIR)" || { echo "run: make deps-go-watch"; exit 1; }
-	cd $(PROJECT_ROOT) && "$(AIR)" -c .air.toml
+run-modeld: build-modeld
+	LD_LIBRARY_PATH="$(OPENVINO_PKG)/libs:$(OPENVINO_GENAI_PKG):$(OPENVINO_TOKENIZERS_LIB)" \
+	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
+	$(PROJECT_ROOT)/bin/modeld serve
 
 # —— deps ———————————————————————————————————————————————————————————————
-deps-go-watch:
-	go install github.com/air-verse/air@latest
+# Everything build-modeld links against, reproducible from a clean checkout:
+# llama.cpp vendored single-header deps + minja, the ollama llama.cpp headers,
+# and the OpenVINO SDK + GenAI C++ API (venv under .openvino, C++ source worktree).
+deps-modeld: deps-llama-headers deps-ollama-headers deps-openvino
+
+deps-llama-headers:
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp vendor-headers
+
+deps-openvino:
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.openvino deps-genai genai-src
 
 deps-ollama-headers:
 	@$(PROJECT_ROOT)/scripts/prepare_ollama_llama_headers.sh

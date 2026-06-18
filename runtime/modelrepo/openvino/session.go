@@ -32,14 +32,16 @@ var (
 	ErrUnsupportedFeature = errors.New("openvino: unsupported feature")
 )
 
-// SessionAvailable reports whether the modeld daemon holds a fresh lease to
-// serve openvino sessions (the cheap offline check).
-func SessionAvailable() bool { return modeldconn.Available() }
+// SessionAvailable reports whether the modeld daemon holds a fresh lease AND is
+// serving the openvino backend (the cheap offline check). A daemon running in a
+// different mode (e.g. llama) advertises no openvino capability.
+func SessionAvailable() bool { return modeldconn.Backend() == "openvino" }
 
 // newSession opens an openvino session on the modeld daemon over the transport.
-// The model id is the OpenVINO IR directory; modeld makes it resident.
-func newSession(modelDir string, cfg Config) (Session, error) {
-	s, err := modeldconn.OpenSession(context.Background(), modelDir, cfg)
+// ref.Path is the OpenVINO IR directory; modeld makes it resident after checking
+// the model type matches the served backend.
+func newSession(ref modeldconn.ModelRef, cfg Config) (Session, error) {
+	s, err := modeldconn.OpenSession(context.Background(), ref, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrSessionUnavailable, err)
 	}

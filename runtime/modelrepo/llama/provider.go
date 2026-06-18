@@ -85,6 +85,7 @@ func (p *provider) newClient() (*client, error) {
 		profileID = p.name
 	}
 	return &client{
+		modelName:       p.name,
 		modelPath:       modelPath,
 		profileID:       profileID,
 		modelDigest:     modelDigest,

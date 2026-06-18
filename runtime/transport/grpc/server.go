@@ -18,6 +18,7 @@ import (
 type Server struct {
 	svc        transport.Service
 	instanceID string
+	backend    string
 
 	mu       sync.Mutex
 	seq      uint64
@@ -26,8 +27,10 @@ type Server struct {
 
 // NewServer wraps a transport.Service. instanceID is the owner's lease instance
 // id used for fencing; pass "" to disable fencing (the unwired/local path).
-func NewServer(svc transport.Service, instanceID string) *Server {
-	return &Server{svc: svc, instanceID: instanceID, sessions: map[string]transport.Session{}}
+// backend is the served inference backend ("llama"/"openvino"/"none"/"") echoed
+// on the health probe so the runtime learns the daemon's mode over the wire.
+func NewServer(svc transport.Service, instanceID, backend string) *Server {
+	return &Server{svc: svc, instanceID: instanceID, backend: backend, sessions: map[string]transport.Session{}}
 }
 
 // Register mounts the service on a gRPC server.
@@ -35,9 +38,9 @@ func (s *Server) Register(reg grpclib.ServiceRegistrar) { reg.RegisterService(&s
 
 // Serve runs a gRPC server for svc on lis until ctx is cancelled, then stops it
 // gracefully. This is the entry point modeld calls once it holds the lease.
-func Serve(ctx context.Context, lis net.Listener, svc transport.Service, instanceID string) error {
+func Serve(ctx context.Context, lis net.Listener, svc transport.Service, instanceID, backend string) error {
 	gs := grpclib.NewServer()
-	NewServer(svc, instanceID).Register(gs)
+	NewServer(svc, instanceID, backend).Register(gs)
 	go func() {
 		<-ctx.Done()
 		gs.GracefulStop()
@@ -73,7 +76,7 @@ func (s *Server) lookup(handle string) (transport.Session, error) {
 // owner token so a detector can learn which instance is actually serving (and
 // compare it against the lease holder).
 func (s *Server) health(_ context.Context, _ *healthReq) (*healthResp, error) {
-	return &healthResp{InstanceID: s.instanceID, Ready: true}, nil
+	return &healthResp{InstanceID: s.instanceID, Ready: true, Backend: s.backend}, nil
 }
 
 func (s *Server) openSession(ctx context.Context, in *openSessionReq) (*openSessionResp, error) {
@@ -81,9 +84,12 @@ func (s *Server) openSession(ctx context.Context, in *openSessionReq) (*openSess
 		return nil, encodeError(err)
 	}
 	sess, err := s.svc.OpenSession(ctx, transport.OpenSessionRequest{
-		Fence:   transport.Fence{OwnerInstanceID: in.OwnerInstanceID},
-		ModelID: in.ModelID,
-		Config:  in.Config,
+		Fence:     transport.Fence{OwnerInstanceID: in.OwnerInstanceID},
+		ModelName: in.ModelName,
+		Type:      in.Type,
+		Digest:    in.Digest,
+		Path:      in.Path,
+		Config:    in.Config,
 	})
 	if err != nil {
 		return nil, encodeError(err)

@@ -2,6 +2,7 @@ package contenoxcli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,8 +11,10 @@ import (
 	"sort"
 
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/backendservice"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/modelregistry"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -19,8 +22,11 @@ import (
 
 var modelPullCmd = &cobra.Command{
 	Use:   "pull <name>",
-	Short: "Download a GGUF model for local inference.",
-	Long: `Download a GGUF model from HuggingFace and store it under ~/.contenox/models/<name>/.
+	Short: "Download a model (GGUF or OpenVINO IR) for local inference.",
+	Long: `Download a model from HuggingFace for local inference. GGUF models are stored
+under ~/.contenox/models/llama/<name>/model.gguf; OpenVINO IR models (curated
+names ending in -ov) are fetched as a multi-file repo into
+~/.contenox/models/openvino/<name>/.
 
 Curated models — run 'contenox model registry-list' to see full list with sizes.
   By GPU size (approximate Q4_K_M VRAM needed):
@@ -54,7 +60,8 @@ registered by 'contenox init' and the first pulled model becomes the default:
 		// Registry is the single source of truth for curated model URLs.
 		reg := modelregistry.New(nil)
 
-		var name, downloadURL string
+		var name, downloadURL, repo string
+		modelBackend := "llama" // GGUF single-file by default; --url pulls are GGUF
 		switch {
 		case rawURL != "" && len(args) == 1:
 			name = args[0]
@@ -74,33 +81,46 @@ registered by 'contenox init' and the first pulled model becomes the default:
 				return fmt.Errorf("unknown model %q\n\nRun 'contenox model registry-list' to see all curated models.\nOr specify --url to download any GGUF file.", name)
 			}
 			downloadURL = d.SourceURL
+			modelBackend = d.BackendType()
+			repo = d.Repo
 		default:
 			return cmd.Help()
 		}
 
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("resolve home directory: %w", err)
-		}
-		modelDir := filepath.Join(homeDir, ".contenox", "models", name)
+		// Deposit into the registered backend's models directory so `model pull`
+		// and the catalog scanner agree — this honors a custom `backend add --url`
+		// dir and the legacy flat "local" backend, not just the default per-type
+		// layout (models/<type>/). Falls back to the default if none is registered.
+		modelDir := localBackendModelDir(ctx, modelBackend, name)
 		if err := os.MkdirAll(modelDir, 0755); err != nil {
 			return fmt.Errorf("create model directory: %w", err)
 		}
 
-		destPath := filepath.Join(modelDir, "model.gguf")
-		alreadyPresent := false
-		if _, err := os.Stat(destPath); err == nil {
-			fmt.Fprintf(cmd.OutOrStdout(), "Model %q already downloaded at %s\n", name, destPath)
-			alreadyPresent = true
-		}
-
-		if !alreadyPresent {
-			fmt.Fprintf(cmd.OutOrStdout(), "Downloading %s...\n  → %s\n", name, destPath)
-			if err := downloadGGUF(downloadURL, destPath, cmd.OutOrStdout()); err != nil {
-				_ = os.Remove(destPath)
-				return fmt.Errorf("download failed: %w", err)
+		if modelBackend == "openvino" {
+			if repo == "" {
+				return fmt.Errorf("openvino model %q has no source repo in the registry", name)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "\nDone.")
+			if _, err := os.Stat(filepath.Join(modelDir, "openvino_model.xml")); err == nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "Model %q already downloaded at %s\n", name, modelDir)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "Downloading OpenVINO IR %s (repo %s)...\n  → %s\n", name, repo, modelDir)
+				if err := downloadOpenVINOIR(ctx, repo, modelDir, cmd.OutOrStdout()); err != nil {
+					return fmt.Errorf("download failed: %w", err)
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "Done.")
+			}
+		} else {
+			destPath := filepath.Join(modelDir, "model.gguf")
+			if _, err := os.Stat(destPath); err == nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "Model %q already downloaded at %s\n", name, destPath)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "Downloading %s...\n  → %s\n", name, destPath)
+				if err := downloadGGUF(downloadURL, destPath, cmd.OutOrStdout()); err != nil {
+					_ = os.Remove(destPath)
+					return fmt.Errorf("download failed: %w", err)
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "\nDone.")
+			}
 		}
 
 		// Persist to local model registry and, on a fresh install, claim
@@ -167,6 +187,104 @@ func downloadGGUF(url, destPath string, out io.Writer) error {
 	}
 	fmt.Fprintln(out)
 	return f.Sync()
+}
+
+// hfModelInfo is the subset of the Hugging Face Hub model-info API we need: the
+// list of files in the repo.
+type hfModelInfo struct {
+	Siblings []struct {
+		RFilename string `json:"rfilename"`
+	} `json:"siblings"`
+}
+
+// downloadOpenVINOIR fetches every file of an OpenVINO IR repo from the Hugging
+// Face Hub HTTP API (no Python, no git-lfs) into destDir, mirroring the repo
+// layout, then verifies the IR entrypoint so the openvino catalog scanner finds
+// <destDir>/openvino_model.xml.
+func downloadOpenVINOIR(ctx context.Context, repo, destDir string, out io.Writer) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://huggingface.co/api/models/"+repo, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HF model info HTTP %s for %s", resp.Status, repo)
+	}
+	var info hfModelInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return fmt.Errorf("decode HF model info: %w", err)
+	}
+	if len(info.Siblings) == 0 {
+		return fmt.Errorf("no files listed for repo %s", repo)
+	}
+	for _, s := range info.Siblings {
+		if s.RFilename == "" {
+			continue
+		}
+		dest := filepath.Join(destDir, filepath.FromSlash(s.RFilename))
+		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "  %s\n", s.RFilename)
+		if err := downloadFile(ctx, "https://huggingface.co/"+repo+"/resolve/main/"+s.RFilename, dest); err != nil {
+			return fmt.Errorf("download %s: %w", s.RFilename, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(destDir, "openvino_model.xml")); err != nil {
+		return fmt.Errorf("repo %s did not yield openvino_model.xml (not an OpenVINO IR model?)", repo)
+	}
+	return nil
+}
+
+// downloadFile streams url to dest.
+func downloadFile(ctx context.Context, url, dest string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %s", resp.Status)
+	}
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return err
+	}
+	return f.Sync()
+}
+
+// localBackendModelDir returns where to deposit a pulled model of the given local
+// backend type so the catalog scanner finds it: the BaseURL of the first
+// registered backend whose canonical type matches (covers the legacy flat "local"
+// backend and custom --url dirs), else the default ~/.contenox/models/<type>/.
+func localBackendModelDir(ctx context.Context, modelBackend, name string) string {
+	want := modelrepo.CanonicalBackendType(modelBackend)
+	if dbPath, err := globalDBPath(); err == nil {
+		if db, err := OpenDBAt(ctx, dbPath); err == nil {
+			defer db.Close()
+			if backends, err := backendservice.New(db).List(ctx, nil, 1000); err == nil {
+				for _, b := range backends {
+					if b.BaseURL != "" && modelrepo.CanonicalBackendType(b.Type) == want {
+						return filepath.Join(b.BaseURL, name)
+					}
+				}
+			}
+		}
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".contenox", "models", modelBackend, name)
 }
 
 func init() {

@@ -28,6 +28,18 @@ func detector() *modeldprobe.Detector { return modeldprobe.New(dataRoot) }
 // capability advertisement without a round-trip per call.
 func Available() bool { return detector().Detect().State == modeldprobe.StateRunning }
 
+// Backend is the cheap, offline check for the inference backend the running
+// modeld owner serves ("llama"/"openvino"/"none"), read from the lease. Empty
+// when no owner holds a fresh lease. Providers gate on this so the backend modeld
+// is NOT in advertises no local capability instead of failing deep in the engine.
+func Backend() string {
+	st := detector().Detect()
+	if st.State != modeldprobe.StateRunning {
+		return ""
+	}
+	return st.Backend
+}
+
 // connection caches a single dialed client to the current leader, keyed by
 // endpoint+instance so a takeover re-dials.
 var (
@@ -55,11 +67,23 @@ func dial(endpoint, instance string) (*transportgrpc.Client, error) {
 	return c, nil
 }
 
+// ModelRef is the typed model handle the runtime passes to modeld: a logical
+// Name + backend Type + content Digest form the cache identity, and Path is the
+// runtime-resolved on-disk location (GGUF file or IR directory) the daemon loads
+// from. Type lets the daemon reject a model it does not serve.
+type ModelRef struct {
+	Name   string
+	Type   string
+	Digest string
+	Path   string
+}
+
 // OpenSession resolves the modeld leader, confirms it actually answers a health
 // probe, and opens a session on it. The returned session is resident in modeld;
 // the caller drives EnsurePrefix/PrefillSuffix/Decode over the wire. A
-// not-running/unreachable owner surfaces the probe's typed error.
-func OpenSession(ctx context.Context, modelID string, cfg transport.Config) (transport.Session, error) {
+// not-running/unreachable owner surfaces the probe's typed error; a model typed
+// for a backend the daemon does not serve surfaces transport.ErrBackendMismatch.
+func OpenSession(ctx context.Context, ref ModelRef, cfg transport.Config) (transport.Session, error) {
 	st := detector().Probe(ctx)
 	if st.State != modeldprobe.StateRunning {
 		return nil, st.Err()
@@ -69,8 +93,11 @@ func OpenSession(ctx context.Context, modelID string, cfg transport.Config) (tra
 		return nil, err
 	}
 	return c.OpenSession(ctx, transport.OpenSessionRequest{
-		Fence:   transport.Fence{OwnerInstanceID: st.Instance},
-		ModelID: modelID,
-		Config:  cfg,
+		Fence:     transport.Fence{OwnerInstanceID: st.Instance},
+		ModelName: ref.Name,
+		Type:      ref.Type,
+		Digest:    ref.Digest,
+		Path:      ref.Path,
+		Config:    cfg,
 	})
 }

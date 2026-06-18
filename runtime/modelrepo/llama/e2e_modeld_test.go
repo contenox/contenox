@@ -32,7 +32,7 @@ func TestE2E_RuntimeLlamaDialsModeld(t *testing.T) {
 
 	dataRoot := t.TempDir()
 	leasePath := filepath.Join(dataRoot, "modeld.lease")
-	lease, err := liblease.Acquire(leasePath, 30*time.Second, liblease.WithMeta(map[string]string{"endpoint": endpoint}))
+	lease, err := liblease.Acquire(leasePath, 30*time.Second, liblease.WithMeta(map[string]string{"endpoint": endpoint, "backend": "llama"}))
 	if err != nil {
 		t.Fatalf("acquire lease: %v", err)
 	}
@@ -44,14 +44,14 @@ func TestE2E_RuntimeLlamaDialsModeld(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = transportgrpc.Serve(ctx, lis, transport.NewMemoryService(), rec.InstanceID) }()
+	go func() { _ = transportgrpc.Serve(ctx, lis, transport.NewMemoryService(), rec.InstanceID, "llama") }()
 
 	modeldconn.SetDataRoot(dataRoot)
 	t.Cleanup(func() { modeldconn.SetDataRoot("") })
 
 	// Runtime side: open a session purely through the package API. newSession
 	// dials modeld; the returned Session is resident in the daemon.
-	sess, err := newSession("/models/foo/model.gguf", Config{NumCtx: 100})
+	sess, err := newSession(modeldconn.ModelRef{Name: "foo", Type: "llama", Path: "/models/foo/model.gguf"}, Config{NumCtx: 100})
 	if err != nil {
 		t.Fatalf("newSession (dial modeld): %v", err)
 	}

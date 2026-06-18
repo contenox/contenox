@@ -116,7 +116,36 @@ product/why context is `local-coding-node-goals.md` and `plan-openvino.md`.
 - Tagged native verification not run in this turn; it requires OpenVINO native
   libs and `CONTENOX_OPENVINO_TEST_MODEL`.
 
-### TODO — Steps 5–8
+### DONE — Step 7: Go-native IR model pull (2026-06-18)
+
+- `runtime/modelregistry`: `ModelDescriptor` gained `Backend` + `Repo`; curated
+  OpenVINO IR entries added (`qwen2.5-coder-{0.5b,1.5b}-ov`, repo
+  `OpenVINO/Qwen2.5-Coder-*-int4-ov`). `BackendType()` defaults empty → `"llama"`.
+- `runtime/contenoxcli/model_pull_cmd.go`: `model pull` branches by descriptor
+  backend. GGUF stays a single-file download; OpenVINO IR is fetched as a
+  **multi-file repo over the HF Hub HTTP API** (`/api/models/<repo>` → siblings,
+  `/resolve/main/<file>`, no Python), verifying `openvino_model.xml`.
+- **Layout changed to per-backend subdirs** (supersedes the original
+  `~/.contenox/models/<name>/`): GGUF → `~/.contenox/models/llama/<name>/`,
+  IR → `~/.contenox/models/openvino/<name>/`. `contenox init` now registers BOTH
+  local backends (`ensureLocalBackends`), each `BaseURL` at its subdir.
+- **OpenVINO is now a first-class backend type:** accepted by
+  `backendservice` validation and routed in `runtimestate.processBackend`
+  (reuses the generic catalog path). Catalog/adapter were already type-generic.
+- Untagged verification: `go test ./runtime/modelregistry ./runtime/contenoxcli`.
+
+### Enabling plumbing landed alongside (2026-06-18)
+
+These cross-cutting changes make the single-backend daemon coherent (detail in
+`remaining-work.md` status note):
+- **modeld mode awareness:** the owner lease + gRPC health advertise the served
+  backend; `modeldprobe.Status.Backend` / `modeldconn.Backend()` expose it; each
+  provider's `SessionAvailable()` gates on the daemon's mode.
+- **Typed transport handle:** `transport.OpenSessionRequest` carries
+  `{ModelName, Type, Digest, Path}` (was a raw `ModelID` path); modeld rejects a
+  foreign model `Type` with `transport.ErrBackendMismatch` before loading.
+
+### TODO — Steps 5, 6, 8
 
 5. **Stream/tool-history parity.** `client.go`: carry
    `ToolCalls`/`ToolCallID`/`Thinking` into `ChatMessage`→`ApplyChatTemplate`;
@@ -125,11 +154,11 @@ product/why context is `local-coding-node-goals.md` and `plan-openvino.md`.
 6. **Embeddings.** ABI + provider embed path; implement
    `GetEmbedConnection`/`Embed`; flip `CanEmbed()` when an embed model/profile
    exists. (No-sidecar rule: must come from OpenVINO.)
-7. **Go-native IR model pull.** `contenox model pull` fetches OpenVINO IR over the
-   HF Hub HTTP API (no Python), verifies, lays out `~/.contenox/models/<name>/`
-   matching the catalog scanner (`openvino_model.xml`).
 8. **Distribution.** Vendor `.so` + RPATH (or static link); drop the venv +
    checked-out `openvino.genai` header-worktree dependency; reproducible tagged CI.
+   `make build-modeld` is now wired (CGO flags via `mk/openvino-flags.mk` +
+   `mk/llama-flags.mk`, deps via `make deps-modeld`), but still RPATHs into the
+   `.openvino` venv — this step makes it self-contained.
 
 ## Deferred
 

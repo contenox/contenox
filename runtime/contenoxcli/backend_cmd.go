@@ -36,10 +36,14 @@ var backendCmd = &cobra.Command{
 	Long: `Register and manage LLM backend endpoints.
 
 A backend points at an LLM provider. Supported types:
-  llama                         Embedded llama.cpp GGUF runtime — NO external server, NO network, NO API key.
-                                Uses persistent sessions, explicit profiles, embeddings, and live prefix reuse
-                                when built with -tags llamanode. Point --url at the models directory.
-                                Compatibility: --type local maps to this provider.
+  llama                         Local llama.cpp GGUF runtime served by the modeld daemon — NO external
+                                server, NO network, NO API key. Persistent sessions, explicit profiles,
+                                embeddings, and live prefix reuse. Point --url at the models directory.
+                                Registered automatically by 'contenox init'. --type local maps here.
+  openvino                      Local OpenVINO IR runtime served by the modeld daemon (CPU / GPU / NPU) —
+                                NO external server, NO network, NO API key. Point --url at the models
+                                directory. Registered automatically by 'contenox init'. modeld serves one
+                                local backend at a time (its mode); the inactive one lists no models.
   ollama                        Local Ollama daemon (requires: ollama serve) or hosted Ollama Cloud.
   openai                        api.openai.com (requires --api-key-env).
   openrouter                    openrouter.ai — routes 300+ models from many providers through one

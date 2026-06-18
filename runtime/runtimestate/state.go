@@ -291,7 +291,10 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 		// Direct cloud, API-key + OpenAI-style model listing. processOpenAIBackend
 		// is generic over backend.Type (keys, catalog), so it serves all of them.
 		s.processOpenAIBackend(ctx, backend, declaredModels)
-	case "llama":
+	case "llama", "openvino":
+		// Both local backends scan their BaseURL model directory via the registered
+		// catalog provider (GGUF for llama, OpenVINO IR for openvino); the handler is
+		// generic over the backend type.
 		s.processLocalBackend(ctx, backend, declaredModels)
 	case "vertex-google":
 		s.processVertexBackend(ctx, backend, declaredModels)

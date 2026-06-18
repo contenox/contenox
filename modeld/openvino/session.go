@@ -266,7 +266,7 @@ func chatMessagesFromManifest(fullText string, m transport.ContextManifest) []ov
 		msgs = append(msgs, ovsession.ChatMessage{
 			Role:       role,
 			Content:    fullText[seg.ByteStart:seg.ByteEnd],
-			ToolCall:   seg.ToolCallsJSON,
+			ToolCalls:  seg.ToolCallsJSON,
 			ToolCallID: seg.ToolCallID,
 		})
 	}

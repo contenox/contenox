@@ -86,9 +86,10 @@ func (p *openvinoProvider) newClient() (*client, error) {
 	// template, which modeld applies via the IR tokenizer.
 	modelDigest, templateDigest := modelIdentity(dir)
 	return &client{
-		modelPath:       dir,
-		profileID:       p.name,
-		modelDigest:     modelDigest,
+		modelName:   p.name,
+		modelPath:   dir,
+		profileID:   p.name,
+		modelDigest: modelDigest,
 		cfg: Config{
 			NumCtx:               numCtx,
 			PromptFormat:         "openvino-chat-template",

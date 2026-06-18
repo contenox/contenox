@@ -6,56 +6,36 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 )
 
-// cachedSession is a persistent session kept warm across turns. The turn mutex
-// serializes a whole EnsurePrefix -> PrefillSuffix -> Decode sequence so
-// concurrent requests on the same model do not corrupt the resident KV.
-type cachedSession struct {
-	key  string
-	sess Session
-	turn sync.Mutex
+// warm holds resident sessions across turns. It is bounded (idle TTL + resident
+// cap, see modelrepo.WarmCache): switching models evicts and closes the LRU
+// session so modeld releases its model instead of stacking them.
+var warm = modelrepo.NewWarmCache[Session]()
+
+// acquire returns the warm entry for this client's model+config, opening a modeld
+// session on a miss. The caller must hold the entry's Turn for the whole turn.
+func (c *client) acquire() (*modelrepo.WarmEntry[Session], error) {
+	ref := c.ref()
+	cfg := normalizeConfig(c.cfg)
+	return warm.Acquire(sessionCacheKey(ref, cfg), func() (Session, error) {
+		return newSession(ref, cfg)
+	})
 }
 
-var sessionCache = struct {
-	sync.Mutex
-	m map[string]*cachedSession
-}{m: map[string]*cachedSession{}}
-
-func acquireCachedSession(modelPath, modelDigest string, cfg Config) (*cachedSession, error) {
-	cfg = normalizeConfig(cfg)
-	key := sessionCacheKey(modelPath, modelDigest, cfg)
-	sessionCache.Lock()
-	if cs, ok := sessionCache.m[key]; ok {
-		sessionCache.Unlock()
-		return cs, nil
-	}
-	sessionCache.Unlock()
-
-	s, err := newSession(modelPath, cfg)
-	if err != nil {
-		return nil, err
-	}
-	sessionCache.Lock()
-	defer sessionCache.Unlock()
-	if cs, ok := sessionCache.m[key]; ok {
-		_ = s.Close()
-		return cs, nil
-	}
-	cs := &cachedSession{key: key, sess: s}
-	sessionCache.m[key] = cs
-	return cs, nil
-}
-
-func sessionCacheKey(modelPath, modelDigest string, cfg Config) string {
+// sessionCacheKey identifies a resident session by the model's logical identity
+// (name + type + content digest) and the runtime config — NOT the raw filesystem
+// path, so two names resolving to the same bytes share warm KV and a path change
+// alone never silently reuses a stale model.
+func sessionCacheKey(ref modeldconn.ModelRef, cfg Config) string {
 	cfg = normalizeConfig(cfg)
 	var b strings.Builder
-	b.WriteString(modelPath)
+	fmt.Fprintf(&b, "%s/%s", ref.Type, ref.Name)
 	fmt.Fprintf(&b, "\x00model=%s\x00ctx=%d\x00batch=%d\x00threads=%d\x00gpu=%d\x00flash=%t\x00kv=%s",
-		modelDigest, cfg.NumCtx, cfg.NumBatch, cfg.NumThreads, cfg.NumGpuLayers, cfg.FlashAttn, cfg.KVCacheType)
+		ref.Digest, cfg.NumCtx, cfg.NumBatch, cfg.NumThreads, cfg.NumGpuLayers, cfg.FlashAttn, cfg.KVCacheType)
 	b.WriteString("\x00split=")
 	for i, v := range cfg.TensorSplit {
 		if i > 0 {
@@ -68,30 +48,11 @@ func sessionCacheKey(modelPath, modelDigest string, cfg Config) string {
 	return b.String()
 }
 
-func dropCachedSession(cs *cachedSession) {
-	if cs == nil {
-		return
-	}
-	sessionCache.Lock()
-	if sessionCache.m[cs.key] == cs {
-		delete(sessionCache.m, cs.key)
-	}
-	sessionCache.Unlock()
-	_ = cs.sess.Close()
-}
-
 // closeCachedSessionsForTest releases all cached sessions (test cleanup).
-func closeCachedSessionsForTest() {
-	sessionCache.Lock()
-	m := sessionCache.m
-	sessionCache.m = map[string]*cachedSession{}
-	sessionCache.Unlock()
-	for _, cs := range m {
-		_ = cs.sess.Close()
-	}
-}
+func closeCachedSessionsForTest() { warm.Clear() }
 
 type client struct {
+	modelName       string
 	modelPath       string
 	profileID       string
 	modelDigest     string
@@ -99,6 +60,12 @@ type client struct {
 	cfg             Config
 	maxOutputTokens int
 	toolProtocol    string // profile-declared tool-call protocol ("" = tools unsupported)
+}
+
+// ref is the typed model handle this client opens sessions with: logical name +
+// backend type + content digest for identity, plus the resolved on-disk path.
+func (c *client) ref() modeldconn.ModelRef {
+	return modeldconn.ModelRef{Name: c.modelName, Type: "llama", Digest: c.modelDigest, Path: c.modelPath}
 }
 
 func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
@@ -156,24 +123,24 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	if len(cfg.Tools) > 0 {
 		return nil, NewUnsupportedFeatureError("tool calls")
 	}
-	cs, err := acquireCachedSession(c.modelPath, c.modelDigest, c.cfg)
+	cs, err := c.acquire()
 	if err != nil {
 		return nil, err
 	}
 
-	cs.turn.Lock()
+	cs.Turn.Lock()
 	if err := c.prime(ctx, cs, messages, ""); err != nil {
-		cs.turn.Unlock()
+		cs.Turn.Unlock()
 		if fatalSessionError(err) {
-			dropCachedSession(cs)
+			warm.Drop(cs)
 		}
 		return nil, err
 	}
-	chunks, err := cs.sess.Decode(ctx, decodeConfig(cfg, c.maxOutputTokens))
+	chunks, err := cs.Sess.Decode(ctx, decodeConfig(cfg, c.maxOutputTokens))
 	if err != nil {
-		cs.turn.Unlock()
+		cs.Turn.Unlock()
 		if fatalSessionError(err) {
-			dropCachedSession(cs)
+			warm.Drop(cs)
 		}
 		return nil, err
 	}
@@ -181,12 +148,12 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	out := make(chan *modelrepo.StreamParcel, 16)
 	go func() {
 		defer close(out)
-		defer cs.turn.Unlock()
+		defer cs.Turn.Unlock()
 		for chunk := range chunks {
 			if chunk.Error != nil {
 				out <- &modelrepo.StreamParcel{Error: chunk.Error}
 				if fatalSessionError(chunk.Error) {
-					dropCachedSession(cs)
+					warm.Drop(cs)
 				}
 				return
 			}
@@ -199,20 +166,20 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 }
 
 func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string) (string, error) {
-	cs, err := acquireCachedSession(c.modelPath, c.modelDigest, c.cfg)
+	cs, err := c.acquire()
 	if err != nil {
 		return "", err
 	}
-	cs.turn.Lock()
-	defer cs.turn.Unlock()
+	cs.Turn.Lock()
+	defer cs.Turn.Unlock()
 
 	if err := c.prime(ctx, cs, messages, toolsJSON); err != nil {
 		if fatalSessionError(err) {
-			dropCachedSession(cs)
+			warm.Drop(cs)
 		}
 		return "", err
 	}
-	chunks, err := cs.sess.Decode(ctx, dc)
+	chunks, err := cs.Sess.Decode(ctx, dc)
 	if err != nil {
 		return "", err
 	}
@@ -220,7 +187,7 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 	for chunk := range chunks {
 		if chunk.Error != nil {
 			if fatalSessionError(chunk.Error) {
-				dropCachedSession(cs)
+				warm.Drop(cs)
 			}
 			return "", chunk.Error
 		}
@@ -230,8 +197,8 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 }
 
 // prime ensures the warm stable prefix and prefills the volatile suffix. Caller
-// holds cs.turn.
-func (c *client) prime(ctx context.Context, cs *cachedSession, messages []modelrepo.Message, toolsJSON string) error {
+// holds cs.Turn.
+func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string) error {
 	plan, err := buildPromptPlan(messages, c.cfg, promptIdentity{
 		ProfileID:      c.profileID,
 		ModelDigest:    c.modelDigest,
@@ -240,10 +207,10 @@ func (c *client) prime(ctx context.Context, cs *cachedSession, messages []modelr
 	if err != nil {
 		return err
 	}
-	if _, err := cs.sess.EnsurePrefix(ctx, plan.Stable); err != nil {
+	if _, err := cs.Sess.EnsurePrefix(ctx, plan.Stable); err != nil {
 		return err
 	}
-	_, err = cs.sess.PrefillSuffix(ctx, plan.Volatile)
+	_, err = cs.Sess.PrefillSuffix(ctx, plan.Volatile)
 	return err
 }
 

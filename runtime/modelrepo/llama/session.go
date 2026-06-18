@@ -146,18 +146,20 @@ var sessionFactory SessionFactory
 func SetSessionFactory(f SessionFactory) { sessionFactory = f }
 
 // SessionAvailable reports whether local llama inference can be served: either a
-// test factory is registered, or the modeld daemon holds a fresh lease (the
-// cheap offline check). The actual open confirms reachability.
-func SessionAvailable() bool { return sessionFactory != nil || modeldconn.Available() }
+// test factory is registered, or the modeld daemon holds a fresh lease AND is
+// serving the llama backend (the cheap offline check). A daemon running in a
+// different mode (e.g. openvino) advertises no llama capability. The actual open
+// confirms reachability.
+func SessionAvailable() bool { return sessionFactory != nil || modeldconn.Backend() == "llama" }
 
 // newSession opens a session. A registered factory (tests) wins; otherwise the
 // session is opened on the modeld daemon over runtime/transport and adapted to
 // the package-local Session contract. The CGO llama.cpp backend lives in modeld.
-func newSession(modelPath string, cfg Config) (Session, error) {
+func newSession(ref modeldconn.ModelRef, cfg Config) (Session, error) {
 	if sessionFactory != nil {
-		return sessionFactory(modelPath, cfg)
+		return sessionFactory(ref.Path, cfg)
 	}
-	s, err := modeldconn.OpenSession(context.Background(), modelPath, transport.Config(cfg))
+	s, err := modeldconn.OpenSession(context.Background(), ref, transport.Config(cfg))
 	if err != nil {
 		// Preserve the ErrSessionUnavailable contract callers branch on, while
 		// keeping the actionable modeld detail (not installed / unreachable / ...).

@@ -18,6 +18,22 @@ type ModelDescriptor struct {
 	SourceURL string `json:"sourceUrl" example:"https://huggingface.co/Qwen/..."`
 	SizeBytes int64  `json:"sizeBytes" example:"934000000"`
 	Curated   bool   `json:"curated" example:"true"`
+	// Backend is the local backend this model targets: "" or "llama" for GGUF,
+	// "openvino" for an OpenVINO IR model. It selects the models/<backend>/
+	// directory and the pull strategy (single GGUF file vs multi-file IR repo).
+	Backend string `json:"backend,omitempty" example:"openvino"`
+	// Repo is the Hugging Face repo id for multi-file pulls (OpenVINO IR). For
+	// GGUF models SourceURL points at the single file and Repo is empty.
+	Repo string `json:"repo,omitempty" example:"OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov"`
+}
+
+// BackendType returns the local backend this model targets, defaulting empty to
+// "llama" (the historical GGUF default).
+func (d ModelDescriptor) BackendType() string {
+	if d.Backend == "" {
+		return "llama"
+	}
+	return d.Backend
 }
 
 type Registry interface {

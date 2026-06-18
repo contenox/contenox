@@ -58,3 +58,45 @@ func TestUnit_ContextasmManifest_CompatibilityIgnoresStableByteHash(t *testing.T
 		t.Fatalf("model digest change should block compatibility, ok=%t reason=%q", ok, reason)
 	}
 }
+
+func TestUnit_ContextasmCacheClass_MapsKindsAndOrders(t *testing.T) {
+	cases := map[SegmentKind]CacheClass{
+		KindSystem:    ClassTaskPinned,
+		KindTools:     ClassTaskPinned,
+		KindRepoRules: ClassTaskPinned,
+		KindRepoMap:   ClassRepoMap,
+		KindPinned:    ClassRepoMap,
+		KindDiff:      ClassVolatile,
+		KindTerminal:  ClassVolatile,
+		KindUserTurn:  ClassVolatile,
+	}
+	for k, want := range cases {
+		if got := k.CacheClass(); got != want {
+			t.Errorf("%s.CacheClass() = %s, want %s", k.Tag(), got.Tag(), want.Tag())
+		}
+	}
+	// Volatile is evicted before repo-map, which is evicted before task-pinned.
+	if !ClassVolatile.MoreEvictableThan(ClassRepoMap) || !ClassRepoMap.MoreEvictableThan(ClassTaskPinned) {
+		t.Fatal("eviction ordering must be volatile > repo_map > task_pinned")
+	}
+	if ClassTaskPinned.MoreEvictableThan(ClassVolatile) {
+		t.Fatal("task_pinned must not be more evictable than volatile")
+	}
+}
+
+func TestUnit_ContextasmAssembleManifest_PopulatesCacheClass(t *testing.T) {
+	_, m := AssembleManifest([]Segment{
+		{Kind: KindSystem, Content: "sys"},
+		{Kind: KindUserTurn, Content: "hi"},
+	}, ManifestIdentity{})
+	byKind := map[string]string{}
+	for _, s := range m.Segments {
+		byKind[s.Kind] = s.CacheClass
+	}
+	if byKind["system"] != "task_pinned" {
+		t.Errorf("system cache_class = %q, want task_pinned", byKind["system"])
+	}
+	if byKind["user"] != "volatile" {
+		t.Errorf("user cache_class = %q, want volatile", byKind["user"])
+	}
+}

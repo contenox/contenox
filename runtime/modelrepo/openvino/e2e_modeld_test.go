@@ -30,7 +30,7 @@ func TestE2E_RuntimeOpenVINODialsModeld(t *testing.T) {
 
 	dataRoot := t.TempDir()
 	leasePath := filepath.Join(dataRoot, "modeld.lease")
-	lease, err := liblease.Acquire(leasePath, 30*time.Second, liblease.WithMeta(map[string]string{"endpoint": endpoint}))
+	lease, err := liblease.Acquire(leasePath, 30*time.Second, liblease.WithMeta(map[string]string{"endpoint": endpoint, "backend": "openvino"}))
 	if err != nil {
 		t.Fatalf("acquire lease: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestE2E_RuntimeOpenVINODialsModeld(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = transportgrpc.Serve(ctx, lis, transport.NewMemoryService(), rec.InstanceID) }()
+	go func() { _ = transportgrpc.Serve(ctx, lis, transport.NewMemoryService(), rec.InstanceID, "openvino") }()
 
 	modeldconn.SetDataRoot(dataRoot)
 	t.Cleanup(func() { modeldconn.SetDataRoot("") })

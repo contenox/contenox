@@ -32,8 +32,10 @@ func TestSystem_OpenVINOGenAIAdapter_GeneratesAndReusesPrefix(t *testing.T) {
 	ctx := context.Background()
 
 	sess, err := (&Service{}).OpenSession(ctx, transport.OpenSessionRequest{
-		ModelID: modelDir,
-		Config:  transport.Config{NumCtx: 4096},
+		ModelName: "test",
+		Type:      "openvino",
+		Path:      modelDir,
+		Config:    transport.Config{NumCtx: 4096},
 	})
 	if err != nil {
 		t.Fatalf("OpenSession on %s: %v", resolveDevice(), err)

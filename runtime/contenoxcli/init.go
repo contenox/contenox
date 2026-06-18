@@ -138,20 +138,16 @@ var providerConfigs = map[string]providerConfig{
 	},
 }
 
-// ensureLlamaBackend creates the implicit llama backend if none exists.
-// The llama backend is always-present infrastructure pointed at ~/.contenox/models/;
-// the user only needs to populate it via `contenox model pull`. Idempotent.
-func ensureLlamaBackend(out io.Writer) error {
-	if hasBackendOfType("llama") || hasBackendOfType("local") {
-		return nil
-	}
+// ensureLocalBackends registers the implicit local inference backends (llama +
+// openvino) if missing, each pointed at its own per-type directory under
+// ~/.contenox/models/<type>/ so GGUF and OpenVINO IR models never collide. They
+// are always-present infrastructure; the user populates them via
+// `contenox model pull`. modeld serves one backend at a time, so both are
+// registered and the daemon's mode decides which is live. Idempotent.
+func ensureLocalBackends(out io.Writer) error {
 	homeDir, err := globalContenoxDir()
 	if err != nil {
 		return err
-	}
-	modelsDir := filepath.Join(homeDir, "models")
-	if err := os.MkdirAll(modelsDir, 0o755); err != nil {
-		return fmt.Errorf("create models dir: %w", err)
 	}
 	dbPath, err := globalDBPath()
 	if err != nil {
@@ -164,15 +160,48 @@ func ensureLlamaBackend(out io.Writer) error {
 	}
 	defer db.Close()
 	svc := backendservice.New(db)
+
+	present := map[string]bool{}
+	backends, err := svc.List(ctx, nil, 1000)
+	if err != nil {
+		return fmt.Errorf("list backends: %w", err)
+	}
+	for _, b := range backends {
+		present[strings.ToLower(b.Type)] = true
+	}
+
+	// A legacy flat ~/.contenox/models backend (type "llama" or its "local" alias)
+	// counts as the llama backend — leave it and its files in place. New per-type
+	// pulls land under models/<type>/.
+	if !present["llama"] && !present["local"] {
+		if err := registerLocalBackend(ctx, out, svc, homeDir, "llama"); err != nil {
+			return err
+		}
+	}
+	if !present["openvino"] {
+		if err := registerLocalBackend(ctx, out, svc, homeDir, "openvino"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// registerLocalBackend creates one local backend of the given type pointed at
+// ~/.contenox/models/<type>/, creating the directory.
+func registerLocalBackend(ctx context.Context, out io.Writer, svc backendservice.Service, homeDir, typ string) error {
+	modelsDir := filepath.Join(homeDir, "models", typ)
+	if err := os.MkdirAll(modelsDir, 0o755); err != nil {
+		return fmt.Errorf("create %s models dir: %w", typ, err)
+	}
 	if err := svc.Create(ctx, &runtimetypes.Backend{
 		ID:      uuid.NewString(),
-		Name:    "llama",
+		Name:    typ,
 		BaseURL: modelsDir,
-		Type:    "llama",
+		Type:    typ,
 	}); err != nil {
-		return fmt.Errorf("create llama backend: %w", err)
+		return fmt.Errorf("create %s backend: %w", typ, err)
 	}
-	fmt.Fprintf(out, "  Registered llama backend -> %s\n", modelsDir)
+	fmt.Fprintf(out, "  Registered %s backend -> %s\n", typ, modelsDir)
 	return nil
 }
 
@@ -239,8 +268,8 @@ func RunGlobalInit(out io.Writer) error {
 	if err := writeEmbeddedHITLPolicies(homeDir, false); err != nil {
 		return err
 	}
-	if err := ensureLlamaBackend(out); err != nil {
-		fmt.Fprintf(out, "  warning: could not register llama backend: %v\n", err)
+	if err := ensureLocalBackends(out); err != nil {
+		fmt.Fprintf(out, "  warning: could not register local backends: %v\n", err)
 	}
 	return nil
 }
@@ -356,10 +385,11 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		return err
 	}
 
-	// The llama backend is always-present infrastructure. Create it if missing
-	// so the user only ever needs to pull a model — never wire up a backend.
-	if err := ensureLlamaBackend(out); err != nil {
-		fmt.Fprintf(errOut, "  warning: could not register llama backend: %v\n", err)
+	// The local backends (llama + openvino) are always-present infrastructure.
+	// Create them if missing so the user only ever needs to pull a model — never
+	// wire up a backend.
+	if err := ensureLocalBackends(out); err != nil {
+		fmt.Fprintf(errOut, "  warning: could not register local backends: %v\n", err)
 	}
 
 	// Make llama the default provider when nothing else is configured.

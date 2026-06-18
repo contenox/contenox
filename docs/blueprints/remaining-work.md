@@ -13,28 +13,53 @@
 > OpenVINO: model at `.openvino/models/qwen-coder-0.5b-int4`; flags resolved from the
 > `.openvino/venv` like `Makefile.openvino` (`make -f Makefile.openvino test-s1-5`).
 
+> Update (2026-06-18): landed + verified (pure-Go build/vet/tests green) —
+> - **`make build-modeld` wired:** CGO flags via shared `mk/openvino-flags.mk` +
+>   `mk/llama-flags.mk`; `make deps-modeld` reproduces deps; `.llamacpp-vendor`
+>   gitignored. Parallelism capped (`-p`) to avoid OOM.
+> - **modeld single-backend made coherent:** `cmd/modeld` registry picks one
+>   backend (`CONTENOX_MODELD_BACKEND` / preference); the owner lease + gRPC health
+>   advertise it; `modeldprobe.Status.Backend` + `modeldconn.Backend()` let the
+>   runtime detect the daemon's mode and gate each provider's `SessionAvailable()`.
+> - **Typed transport handle:** `transport.OpenSessionRequest` now carries
+>   `{ModelName, Type, Digest, Path}` (was a raw `ModelID` path); modeld validates
+>   `Type` against its served backend (`transport.ErrBackendMismatch`).
+> - **Both local backends registered:** `contenox init` registers `llama` AND
+>   `openvino` at per-type dirs `~/.contenox/models/<type>/`; `openvino` is a
+>   first-class backend type (validation + `runtimestate` dispatch).
+> - **OpenVINO IR `model pull`** (handover Step 7): curated `-ov` registry entries +
+>   multi-file HF-Hub HTTP fetch into `models/openvino/<name>/`.
+> - **#6 below: eviction + class foundation done** (admission policy deferred to #7).
+
 The remaining tracks are independent unless noted. Each lists where to work and how.
 
 ---
 
-## #6 Semantic cache admission/eviction  (pure-Go, verifiable here — recommended next)
+## #6 Semantic cache admission/eviction  (PARTIALLY DONE 2026-06-18)
 
 **Goal:** replace plain-LRU with the coding-aware priority from
 `local-coding-node-goals.md` (highest: system/tool schemas/repo instructions … low:
 stale logs/old turns). Pin core segments for the workspace session; admit volatile
 suffix material only when likely reused.
 
-**Where:**
-- `runtime/contextasm/manifest.go` (`ManifestSegment`) — add a `CacheClass` field
-  (e.g. `task_pinned`, `repo_map`, `volatile`) + an `Invalidation` hint.
-- A new policy type in `contextasm` (or `runtime/modelrepo/llama/client.go`'s
-  `sessionCache`) that decides admit/evict by class, not recency.
+**DONE — eviction + class foundation:**
+- **Bounded session cache** (`runtime/modelrepo/warmcache.go`, generic
+  `WarmCache[S]`): idle-TTL reap + resident cap + LRU, never evicting a mid-turn
+  session, closing evicted sessions so modeld releases the model. Both providers'
+  previously-unbounded `sessionCache` in `{llama,openvino}/client.go` now share it.
+  This fixed the model-switch leak (every distinct model used to stay resident in
+  modeld until OOM). Verified in `warmcache_test.go`.
+- **Cache-class types** (`runtime/contextasm/segments.go`): `CacheClass`
+  (`task_pinned`/`repo_map`/`volatile`), `SegmentKind.CacheClass()`,
+  `MoreEvictableThan`; `ManifestSegment` carries `CacheClass` + `Invalidation`
+  (`manifest.go`), populated by `AssembleManifest` (additive; byte hashes unchanged).
 
-**Hints:** the session cache today is `client.go: sessionCache` (keyed by
-model+config). The eviction decision is a good seam. Keep it backend-neutral by
-putting the policy in `contextasm` and having both backends consult it. Verify with
-unit tests + the Phase 3 `benchreport` `hit_rate` improving on a repeated-workspace
-scenario vs an LRU baseline.
+**DEFERRED to #7 (no producer yet):** the budget-aware **admission** policy —
+`AdmitSegments(segs, tokenBudget)` dropping highest-evictable classes first to fit
+the window — plus its wiring into the chat assembler. Nothing produces the rich
+segment kinds (`KindRepoMap`/`KindDiff`/`KindTerminal`) today; the chat providers
+use a coarse role-based stable/volatile split. The #7 T3 planner is the producer;
+only then can the policy be exercised + benched (`benchreport` `hit_rate` vs LRU).
 
 ---
 
@@ -85,7 +110,10 @@ go/no-go needs the budget GPU; correctness/selection can be evaluated on CPU + t
 
 ## #4 OpenVINO capability gaps  (model-gated — need extra models to verify here)
 
-Done: deterministic in-flight cancel test (`modeld/openvino/ovsession/genai_test.go`).
+Done: deterministic in-flight cancel test (`modeld/openvino/ovsession/genai_test.go`);
+**OpenVINO is now a first-class registrable backend type** (2026-06-18) — `contenox
+init` registers it, `backendservice` validation accepts it, `runtimestate` dispatches
+it, and `contenox model pull` fetches curated IR models (see handover Step 7).
 Remaining, each blocked on a model this env doesn't have:
 
 - **Embeddings** — wire `TextEmbeddingPipeline` in `modeld/openvino/ovsession` for
@@ -100,9 +128,10 @@ Remaining, each blocked on a model this env doesn't have:
   explicit native-bridge error, documented (per `openvino-s2-7-protocol-registry.md`).
 - **Per-model-family profiles** — ship `contenox-openvino.json` files declaring the
   right tool/reasoning protocol per shipped model.
-- **Idle session GC** — confirm the daemon garbage-collects idle daemon-held sessions
-  (the old in-process pool was removed in the refactor; lifecycle is now via
-  `OpenSession`/`Close`).
+- **Idle session GC** — the *runtime* side is now handled (#6): the bounded
+  `modelrepo.WarmCache` reaps idle/over-cap sessions and `Close()`s them, so modeld
+  releases the model. Still worth confirming the *daemon* side frees promptly on
+  `Close` (lifecycle is via `OpenSession`/`Close` since the in-process pool was removed).
 
 **Hint:** to verify locally, `make -f Makefile.openvino model` downloads the chat model;
 embeddings/reasoning need their own `snapshot_download` of an appropriate IR.

@@ -21,7 +21,7 @@ func startServer(t *testing.T, ownerFence, expectedOwner string) *transportgrpc.
 	}
 	svc := transport.NewMemoryService(transport.WithOwnerFence(ownerFence))
 	ctx, cancel := context.WithCancel(context.Background())
-	go func() { _ = transportgrpc.Serve(ctx, lis, svc, ownerFence) }()
+	go func() { _ = transportgrpc.Serve(ctx, lis, svc, ownerFence, "test") }()
 
 	client, err := transportgrpc.DialLeader(lis.Addr().String(), expectedOwner)
 	if err != nil {
@@ -47,9 +47,10 @@ func TestRoundTripContractOverWire(t *testing.T) {
 	ctx := context.Background()
 
 	sess, err := client.OpenSession(ctx, transport.OpenSessionRequest{
-		Fence:   transport.Fence{OwnerInstanceID: "owner-1"},
-		ModelID: "m",
-		Config:  transport.Config{NumCtx: 100},
+		Fence:     transport.Fence{OwnerInstanceID: "owner-1"},
+		ModelName: "m",
+		Path:      "m",
+		Config:    transport.Config{NumCtx: 100},
 	})
 	if err != nil {
 		t.Fatalf("OpenSession: %v", err)
@@ -106,7 +107,7 @@ func TestRoundTripContractOverWire(t *testing.T) {
 
 func TestStaleFenceRejectedOverWire(t *testing.T) {
 	client := startServer(t, "owner-1", "wrong-owner")
-	_, err := client.OpenSession(context.Background(), transport.OpenSessionRequest{ModelID: "m"})
+	_, err := client.OpenSession(context.Background(), transport.OpenSessionRequest{ModelName: "m", Path: "m"})
 	if !errors.Is(err, transport.ErrStaleFence) {
 		t.Fatalf("OpenSession with wrong owner = %v, want ErrStaleFence", err)
 	}

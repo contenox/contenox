@@ -41,9 +41,23 @@ func TestOpenSessionWithoutBackendIsUnavailable(t *testing.T) {
 	if llama.SessionAvailable() {
 		t.Fatal("no backend should be available after clearing the factory")
 	}
-	_, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{ModelID: "x"})
+	_, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{Path: "x", Type: "llama"})
 	if !errors.Is(err, llama.ErrSessionUnavailable) {
 		t.Fatalf("want ErrSessionUnavailable, got %v", err)
+	}
+}
+
+func TestOpenSessionRejectsForeignBackend(t *testing.T) {
+	llama.SetSessionFactory(func(string, transport.Config) (transport.Session, error) {
+		t.Fatal("backend must not be reached for a foreign model type")
+		return nil, nil
+	})
+	t.Cleanup(func() { llama.SetSessionFactory(nil) })
+	_, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
+		Path: "/ir/coder", Type: "openvino",
+	})
+	if !errors.Is(err, transport.ErrBackendMismatch) {
+		t.Fatalf("want ErrBackendMismatch, got %v", err)
 	}
 }
 
@@ -59,8 +73,10 @@ func TestOpenSessionRoutesModelAndConfigToBackend(t *testing.T) {
 
 	cfg := transport.Config{NumCtx: 4096, NumGpuLayers: 99, PromptFormat: "chatml"}
 	sess, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
-		ModelID: "/models/foo/model.gguf",
-		Config:  cfg,
+		ModelName: "foo",
+		Type:      "llama",
+		Path:      "/models/foo/model.gguf",
+		Config:    cfg,
 	})
 	if err != nil {
 		t.Fatalf("OpenSession: %v", err)

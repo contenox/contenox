@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 )
 
 func TestUnit_LocalNodeErrors_AreTyped(t *testing.T) {
@@ -49,7 +50,7 @@ func TestUnit_LocalNodeNewSession_ReportsUnavailableWhenNoBackendRegistered(t *t
 	sessionFactory = nil
 	t.Cleanup(func() { sessionFactory = old })
 
-	_, err := newSession("/tmp/model.gguf", Config{})
+	_, err := newSession(modeldconn.ModelRef{Name: "m", Type: "llama", Path: "/tmp/model.gguf"}, Config{})
 	if !errors.Is(err, ErrSessionUnavailable) {
 		t.Fatalf("newSession error = %v, want ErrSessionUnavailable", err)
 	}
@@ -65,8 +66,9 @@ func TestUnit_LocalNodeSessionCacheKey_IncludesRuntimeIdentity(t *testing.T) {
 		FlashAttn:    true,
 		KVCacheType:  "q8_0",
 	}
+	refA := modeldconn.ModelRef{Name: "a", Type: "llama", Digest: "digest-a", Path: "/models/a.gguf"}
 	same := base
-	if sessionCacheKey("/models/a.gguf", "digest-a", base) != sessionCacheKey("/models/a.gguf", "digest-a", same) {
+	if sessionCacheKey(refA, base) != sessionCacheKey(refA, same) {
 		t.Fatal("same config should produce same cache key")
 	}
 
@@ -82,18 +84,22 @@ func TestUnit_LocalNodeSessionCacheKey_IncludesRuntimeIdentity(t *testing.T) {
 		func() Config { c := base; c.PromptTemplateDigest = "custom-template"; return c }(),
 		func() Config { c := base; c.DisableBOS = true; return c }(),
 	}
-	seen := map[string]struct{}{sessionCacheKey("/models/a.gguf", "digest-a", base): {}}
+	seen := map[string]struct{}{sessionCacheKey(refA, base): {}}
 	for _, cfg := range cases {
-		key := sessionCacheKey("/models/a.gguf", "digest-a", cfg)
+		key := sessionCacheKey(refA, cfg)
 		if _, ok := seen[key]; ok {
 			t.Fatalf("runtime config was not represented in cache key: %+v", cfg)
 		}
 		seen[key] = struct{}{}
 	}
-	if sessionCacheKey("/models/a.gguf", "digest-a", base) == sessionCacheKey("/models/b.gguf", "digest-a", base) {
-		t.Fatal("model path should be part of cache key")
+	refB := refA
+	refB.Name = "b"
+	if sessionCacheKey(refA, base) == sessionCacheKey(refB, base) {
+		t.Fatal("model name should be part of cache key")
 	}
-	if sessionCacheKey("/models/a.gguf", "digest-a", base) == sessionCacheKey("/models/a.gguf", "digest-b", base) {
+	refAd := refA
+	refAd.Digest = "digest-b"
+	if sessionCacheKey(refA, base) == sessionCacheKey(refAd, base) {
 		t.Fatal("model digest should be part of cache key")
 	}
 }

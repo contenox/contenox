@@ -92,7 +92,13 @@ func serve(leasePath string, ttl time.Duration, listen string) error {
 	}
 	endpoint := lis.Addr().String()
 
-	o, err := owner.Join(ctx, owner.Config{LeasePath: leasePath, TTL: ttl, Endpoint: endpoint})
+	// Resolve the served backend before joining so the lease advertises the mode
+	// (llama / openvino / none); the runtime's detector reads it without a
+	// network round-trip. A build with no local backend still owns the lease and
+	// answers health probes so detection reports the daemon running.
+	svc, backend := selectBackend()
+
+	o, err := owner.Join(ctx, owner.Config{LeasePath: leasePath, TTL: ttl, Endpoint: endpoint, Backend: backend})
 	if err != nil {
 		_ = lis.Close()
 		return err
@@ -100,22 +106,19 @@ func serve(leasePath string, ttl time.Duration, listen string) error {
 	if !o.IsOwner() {
 		_ = lis.Close()
 		h := o.Holder()
-		fmt.Printf("another modeld owns this data root: instance=%s pid=%d endpoint=%s until=%s\n",
-			h.InstanceID, h.PID, h.Meta[owner.EndpointMetaKey], h.ExpiresAt().Format(time.RFC3339))
+		fmt.Printf("another modeld owns this data root: instance=%s pid=%d endpoint=%s backend=%s until=%s\n",
+			h.InstanceID, h.PID, h.Meta[owner.EndpointMetaKey], h.Meta[owner.BackendMetaKey], h.ExpiresAt().Format(time.RFC3339))
 		return nil
 	}
 	fmt.Printf("modeld owner started: instance=%s pid=%d endpoint=%s ttl=%s\n", o.InstanceID(), os.Getpid(), endpoint, ttl)
 
 	// Serve the runtime/transport.Service contract over gRPC, fenced by the owner
-	// instance id, while we hold the lease. The served backend is selected at
-	// build time; a build with no local backend still answers health probes so
-	// the runtime's detector reports the daemon running.
-	svc, backend := selectBackend()
+	// instance id, while we hold the lease.
 	fmt.Printf("modeld serving transport: backend=%s\n", backend)
 	serveCtx, serveCancel := context.WithCancel(ctx)
 	defer serveCancel()
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- transportgrpc.Serve(serveCtx, lis, svc, o.InstanceID()) }()
+	go func() { serveErr <- transportgrpc.Serve(serveCtx, lis, svc, o.InstanceID(), backend) }()
 
 	select {
 	case <-ctx.Done(): // signal -> graceful shutdown

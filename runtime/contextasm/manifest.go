@@ -36,14 +36,20 @@ func NewManifestMismatchError(reason string) error {
 // available before tokenization; token hashes are filled only when a backend can
 // tokenize under the actual model/profile.
 type ManifestSegment struct {
-	Kind       string `json:"kind"`
-	Stable     bool   `json:"stable"`
-	ByteStart  int    `json:"byte_start"`
-	ByteEnd    int    `json:"byte_end"`
-	ByteHash   string `json:"byte_hash"`
-	TokenStart int    `json:"token_start,omitempty"`
-	TokenEnd   int    `json:"token_end,omitempty"`
-	TokenHash  string `json:"token_hash,omitempty"`
+	Kind   string `json:"kind"`
+	Stable bool   `json:"stable"`
+	// CacheClass is the coding-aware retention priority (see contextasm.CacheClass):
+	// "task_pinned" / "repo_map" / "volatile". Drives budget-aware admission/eviction.
+	CacheClass string `json:"cache_class,omitempty"`
+	// Invalidation is an optional hint for when this segment's KV must be dropped
+	// (e.g. "on_edit", "on_turn"); empty until a producer sets it (gated on #7).
+	Invalidation string `json:"invalidation,omitempty"`
+	ByteStart    int    `json:"byte_start"`
+	ByteEnd      int    `json:"byte_end"`
+	ByteHash     string `json:"byte_hash"`
+	TokenStart   int    `json:"token_start,omitempty"`
+	TokenEnd     int    `json:"token_end,omitempty"`
+	TokenHash    string `json:"token_hash,omitempty"`
 	// ToolCallsJSON is a raw JSON array of tool_calls for role=="assistant" turns
 	// that triggered a tool invocation. Nil/empty means a plain text assistant turn.
 	ToolCallsJSON string `json:"tool_calls_json,omitempty"`

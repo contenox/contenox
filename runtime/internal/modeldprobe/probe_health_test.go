@@ -23,7 +23,7 @@ func serveModeld(t *testing.T, instanceID string) string {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = transportgrpc.Serve(ctx, lis, transport.NewMemoryService(), instanceID) }()
+	go func() { _ = transportgrpc.Serve(ctx, lis, transport.NewMemoryService(), instanceID, "llama") }()
 	return lis.Addr().String()
 }
 
@@ -42,7 +42,7 @@ func detectorFor(leasePath string) *Detector {
 // leaseAt writes a fresh lease advertising endpoint, and returns its instance id.
 func leaseAt(t *testing.T, leasePath, endpoint string) string {
 	t.Helper()
-	l, err := liblease.Acquire(leasePath, 30*time.Second, liblease.WithMeta(map[string]string{endpointMetaKey: endpoint}))
+	l, err := liblease.Acquire(leasePath, 30*time.Second, liblease.WithMeta(map[string]string{endpointMetaKey: endpoint, backendMetaKey: "llama"}))
 	if err != nil {
 		t.Fatalf("acquire lease: %v", err)
 	}
@@ -67,11 +67,14 @@ func TestProbe_HealthyOwnerIsRunning(t *testing.T) {
 	instance := leaseAt(t, leasePath, endpoint)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = transportgrpc.Serve(ctx, lis, transport.NewMemoryService(), instance) }()
+	go func() { _ = transportgrpc.Serve(ctx, lis, transport.NewMemoryService(), instance, "llama") }()
 
 	st := detectorFor(leasePath).Probe(context.Background())
 	if st.State != StateRunning {
 		t.Fatalf("state = %s, want running; err=%v", st.State, st.Err())
+	}
+	if st.Backend != "llama" {
+		t.Fatalf("backend = %q, want llama", st.Backend)
 	}
 }
 

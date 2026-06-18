@@ -56,11 +56,18 @@ type Service interface {
 	OpenSession(ctx context.Context, req OpenSessionRequest) (Session, error)
 }
 
-// OpenSessionRequest asks the owner to open a session for a model.
+// OpenSessionRequest asks the owner to open a session for a model. The model is
+// identified by a typed handle, not an opaque path: ModelName + Type + Digest is
+// the cache identity, and Type lets the daemon reject a model it does not serve
+// (see ErrBackendMismatch) instead of failing deep in the engine. Path is the
+// runtime-resolved on-disk location the daemon loads from — a hint, not identity.
 type OpenSessionRequest struct {
 	Fence
-	ModelID string
-	Config  Config
+	ModelName string // logical model name, e.g. "qwen2.5-1.5b"
+	Type      string // backend type the model targets: "llama" | "openvino"
+	Digest    string // content digest; part of the cache identity
+	Path      string // runtime-resolved filesystem location (GGUF file or IR dir)
+	Config    Config
 }
 
 // Session is a persistent, workspace-scoped inference session. The hot coding
@@ -163,4 +170,7 @@ var (
 	ErrStaleFence      = errors.New("stale owner fence token")
 	ErrSessionClosed   = errors.New("session is closed")
 	ErrContextOverflow = errors.New("exceeded the session context window")
+	// ErrBackendMismatch means the requested model Type is not the backend this
+	// daemon serves (e.g. a llama model requested from an openvino-mode modeld).
+	ErrBackendMismatch = errors.New("model type not served by this modeld backend")
 )

@@ -14,8 +14,9 @@ type memHarness struct{ svc *transport.MemoryService }
 
 func (h memHarness) OpenSession(ctx context.Context) (transport.Session, error) {
 	return h.svc.OpenSession(ctx, transport.OpenSessionRequest{
-		ModelID: "tiny",
-		Config:  transport.Config{NumCtx: 4096},
+		ModelName: "tiny",
+		Path:      "tiny",
+		Config:    transport.Config{NumCtx: 4096},
 	})
 }
 

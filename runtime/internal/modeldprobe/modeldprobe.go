@@ -33,6 +33,7 @@ import (
 const (
 	leaseFileName   = "modeld.lease" // mirrors cmd/modeld resolveLeasePath
 	endpointMetaKey = "endpoint"     // mirrors modeld/owner.EndpointMetaKey
+	backendMetaKey  = "backend"      // mirrors modeld/owner.BackendMetaKey
 	binaryName      = "modeld"
 	binaryEnv       = "CONTENOX_MODELD_BIN" // explicit override (VS Code/extension installs)
 	dataRootEnv     = "CONTENOX_DATA_ROOT"
@@ -90,6 +91,7 @@ type Status struct {
 	Binary   string // resolved binary path, when located
 	Endpoint string // advertised IPC endpoint, when running
 	Instance string // owner instance UUID, when a lease is present
+	Backend  string // inference backend the owner serves ("llama"/"openvino"/"none"), when running
 }
 
 // Err maps the status to a typed error, or nil when the daemon is running. A nil
@@ -197,6 +199,7 @@ func (d *Detector) Detect() Status {
 			Binary:   binary,
 			Endpoint: rec.Meta[endpointMetaKey],
 			Instance: rec.InstanceID,
+			Backend:  rec.Meta[backendMetaKey],
 		}
 	case binary == "":
 		return Status{State: StateNotInstalled}

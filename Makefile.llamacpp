@@ -1,15 +1,13 @@
-# The ollama Go module strips llama.cpp's vendored single-header deps
-# (nlohmann/json, miniaudio, stb), so CGO can't compile it as-is. Fetch them
-# locally and feed via CGO_CPPFLAGS. Required to build anything under -tags
-# llamanode (the CGO llama.cpp backend / owned-ABI shim).
-LLAMA_VENDOR ?= $(CURDIR)/.llamacpp-vendor
+PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+include $(PROJECT_ROOT)mk/llama-flags.mk
 
-# Pin minja to the SAME llama.cpp commit ollama@v0.17.5 vendors (LLAMA_COMMIT in
-# its build-info.cpp), so the model-native Jinja chat-template engine matches the
-# linked llama.cpp. minja is the header-only engine llama.cpp itself uses to render
-# a model's own chat template (including tool definitions) — the legacy
-# llama_chat_apply_template cannot, so this is what enables model-native tool calls.
-LLAMA_CPP_COMMIT ?= ec98e2002
+.PHONY: help vendor-headers test-shim test-abi-link clean
+
+help:
+	@echo "vendor-headers fetch llama.cpp single-header deps + minja into $(LLAMA_VENDOR)"
+	@echo "test-shim      build + run the owned-ABI shim test (set CONTENOX_LLAMA_TINY_GGUF)"
+	@echo "test-abi-link  prove the unsafe-ABI symbols link into the test binary"
+	@echo "clean          remove the vendored header tree"
 
 vendor-headers:
 	@mkdir -p "$(LLAMA_VENDOR)/nlohmann" "$(LLAMA_VENDOR)/miniaudio" "$(LLAMA_VENDOR)/stb" "$(LLAMA_VENDOR)/minja"
@@ -36,3 +34,6 @@ test-abi-link: vendor-headers
 	nm -A /tmp/llamaabi.test | grep 'llama_free' || echo "llama_free not found in binary!"
 	ldd /tmp/llamaabi.test || true
 	@echo "--- Linkage Test Complete ---"
+
+clean:
+	rm -rf "$(LLAMA_VENDOR)"

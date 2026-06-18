@@ -47,11 +47,32 @@ type Config struct {
 	// Endpoint, if set, is advertised to followers via the lease record so they
 	// can reach the owner once it serves a transport (P3). Empty = not serving.
 	Endpoint string
+	// Backend, if set, is the inference backend this owner serves ("llama" /
+	// "openvino" / "none"), advertised via the lease so the runtime can tell which
+	// mode the daemon is in without a network round-trip.
+	Backend string
 }
 
 // EndpointMetaKey is the lease metadata key used to advertise the owner's
 // transport endpoint.
 const EndpointMetaKey = "endpoint"
+
+// BackendMetaKey is the lease metadata key used to advertise the inference
+// backend the owner serves (mirrored by runtime/internal/modeldprobe).
+const BackendMetaKey = "backend"
+
+// leaseMeta builds the lease metadata advertised to followers. Empty values are
+// omitted so a non-serving owner publishes no endpoint/backend.
+func leaseMeta(cfg Config) map[string]string {
+	meta := map[string]string{}
+	if cfg.Endpoint != "" {
+		meta[EndpointMetaKey] = cfg.Endpoint
+	}
+	if cfg.Backend != "" {
+		meta[BackendMetaKey] = cfg.Backend
+	}
+	return meta
+}
 
 // Owner is the result of a Join: either this instance (RoleOwner) with a running
 // renew loop, or a handle describing the current owner (RoleFollower).
@@ -88,8 +109,8 @@ func Join(ctx context.Context, cfg Config) (*Owner, error) {
 	}
 
 	var opts []liblease.Option
-	if cfg.Endpoint != "" {
-		opts = append(opts, liblease.WithMeta(map[string]string{EndpointMetaKey: cfg.Endpoint}))
+	if meta := leaseMeta(cfg); len(meta) > 0 {
+		opts = append(opts, liblease.WithMeta(meta))
 	}
 
 	l, err := liblease.Acquire(cfg.LeasePath, cfg.TTL, opts...)
@@ -159,6 +180,9 @@ func (o *Owner) Holder() liblease.Record { return o.holder }
 
 // Endpoint returns the owner's advertised endpoint, or "" if none.
 func (o *Owner) Endpoint() string { return o.holder.Meta[EndpointMetaKey] }
+
+// Backend returns the inference backend the owner serves, or "" if none.
+func (o *Owner) Backend() string { return o.holder.Meta[BackendMetaKey] }
 
 // Lost is closed when the owner can no longer renew the lease (taken over or an
 // I/O failure). The caller must stop touching owned state when it fires. It

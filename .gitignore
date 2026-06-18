@@ -1,4 +1,7 @@
+# Reproducible native-backend build deps (fetched by `make deps-modeld`):
+# OpenVINO SDK + GenAI venv, and llama.cpp/minja vendored headers.
 .openvino
+.llamacpp-vendor/
 .zed
 
 # ==============================
