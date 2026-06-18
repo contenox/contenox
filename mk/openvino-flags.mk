@@ -20,6 +20,20 @@ OPENVINO_TOKENIZERS_PKG = $(shell test -x "$(OPENVINO_VENV)/bin/python" && "$(OP
 OPENVINO_TOKENIZERS_LIB = $(OPENVINO_TOKENIZERS_PKG)/lib
 OPENVINO_TOKENIZERS_SO = $(OPENVINO_TOKENIZERS_LIB)/libopenvino_tokenizers.so
 OPENVINO_CGO_CXXFLAGS = -std=c++17 -I$(OPENVINO_PKG)/include
-OPENVINO_CGO_LDFLAGS = -L$(OPENVINO_PKG)/libs -l:libopenvino.so.2620 -lstdc++ -Wl,-rpath,$(OPENVINO_PKG)/libs
+# --disable-new-dtags makes the -rpath entries a DT_RPATH (not DT_RUNPATH).
+# RUNPATH is NOT searched for transitively-loaded libraries, so libopenvino's own
+# deps (libtbb.so.12, etc., which live in openvino/libs) fail to load when the
+# binary is run without LD_LIBRARY_PATH. DT_RPATH is searched transitively, so the
+# daemon is self-contained — `./bin/modeld serve` works with no env.
+OPENVINO_RPATH_DTAGS = -Wl,--disable-new-dtags
+OPENVINO_CGO_LDFLAGS = -L$(OPENVINO_PKG)/libs -l:libopenvino.so.2620 -lstdc++ $(OPENVINO_RPATH_DTAGS) -Wl,-rpath,$(OPENVINO_PKG)/libs
 OPENVINO_GENAI_CGO_CXXFLAGS = $(OPENVINO_CGO_CXXFLAGS) -I$(OPENVINO_GENAI_SRC)/src/cpp/include
-OPENVINO_GENAI_CGO_LDFLAGS = -L$(OPENVINO_PKG)/libs -L$(OPENVINO_GENAI_PKG) -L$(OPENVINO_TOKENIZERS_LIB) -l:libopenvino_genai.so.2620 -l:libopenvino.so.2620 -lstdc++ -Wl,-rpath,$(OPENVINO_PKG)/libs -Wl,-rpath,$(OPENVINO_GENAI_PKG) -Wl,-rpath,$(OPENVINO_TOKENIZERS_LIB)
+
+# Link flags (compiler search paths + libs), WITHOUT a runtime rpath. The OpenVINO
+# test targets append absolute venv rpaths (OPENVINO_GENAI_CGO_LDFLAGS); the
+# packaged modeld build appends a $ORIGIN-relative rpath into its own lib bundle.
+# -rpath-link is link-time only (NOT recorded in the binary): it lets ld resolve
+# the transitive deps of the .so we link (e.g. libtbb, needed by libopenvino_genai)
+# without baking the venv path — the runtime rpath does that separately.
+OPENVINO_GENAI_LINK_FLAGS = -L$(OPENVINO_PKG)/libs -L$(OPENVINO_GENAI_PKG) -L$(OPENVINO_TOKENIZERS_LIB) -l:libopenvino_genai.so.2620 -l:libopenvino.so.2620 -lstdc++ $(OPENVINO_RPATH_DTAGS) -Wl,-rpath-link,$(OPENVINO_PKG)/libs -Wl,-rpath-link,$(OPENVINO_GENAI_PKG) -Wl,-rpath-link,$(OPENVINO_TOKENIZERS_LIB)
+OPENVINO_GENAI_CGO_LDFLAGS = $(OPENVINO_GENAI_LINK_FLAGS) -Wl,-rpath,$(OPENVINO_PKG)/libs -Wl,-rpath,$(OPENVINO_GENAI_PKG) -Wl,-rpath,$(OPENVINO_TOKENIZERS_LIB)

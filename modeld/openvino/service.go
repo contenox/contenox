@@ -2,12 +2,42 @@ package openvino
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
 	"github.com/contenox/runtime/runtime/transport"
 )
+
+// bakedTokenizersPath is the build-time fallback path to libopenvino_tokenizers.so
+// (set via build-modeld -ldflags -X) for an in-place dev build whose libs live in
+// the venv. OpenVINO GenAI loads that extension via OPENVINO_TOKENIZERS_PATH_GENAI.
+var bakedTokenizersPath string
+
+// tokenizersLibName is the extension file the bundle/venv provides.
+const tokenizersLibName = "libopenvino_tokenizers.so"
+
+// init points OpenVINO GenAI at the tokenizers extension without requiring the
+// caller to set OPENVINO_TOKENIZERS_PATH_GENAI. It prefers a bundle next to the
+// binary (bin/modeld + bin/modeld-libs/ — relocatable, the packaged daemon) and
+// falls back to the build-time baked venv path (the in-place dev build).
+func init() {
+	if os.Getenv("OPENVINO_TOKENIZERS_PATH_GENAI") != "" {
+		return
+	}
+	if exe, err := os.Executable(); err == nil {
+		cand := filepath.Join(filepath.Dir(exe), "modeld-libs", tokenizersLibName)
+		if _, err := os.Stat(cand); err == nil {
+			_ = os.Setenv("OPENVINO_TOKENIZERS_PATH_GENAI", cand)
+			return
+		}
+	}
+	if bakedTokenizersPath != "" {
+		_ = os.Setenv("OPENVINO_TOKENIZERS_PATH_GENAI", bakedTokenizersPath)
+	}
+}
 
 // Service implements the runtime/transport.Service boundary for the OpenVINO
 // GenAI backend. It opens persistent, manifest-keyed sessions on the owned
@@ -36,6 +66,32 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 		return nil, err
 	}
 	return newGenaiSession(backend, req.Config.NumCtx), nil
+}
+
+// Describe reports the model's trained context window read from the IR's
+// config.json (max_position_embeddings) — no pipeline load. The runtime consumes
+// this as the model's capacity; it never reads the IR files itself.
+func (s *Service) Describe(_ context.Context, req transport.OpenSessionRequest) (transport.ModelInfo, error) {
+	if req.Type != "" && req.Type != "openvino" {
+		return transport.ModelInfo{}, fmt.Errorf("%w: requested %q, this daemon serves openvino", transport.ErrBackendMismatch, req.Type)
+	}
+	return transport.ModelInfo{EffectiveContext: openvinoContextLength(req.Path)}, nil
+}
+
+// openvinoContextLength reads max_position_embeddings from an OpenVINO IR model's
+// config.json. Returns 0 when absent/unreadable.
+func openvinoContextLength(modelDir string) int {
+	b, err := os.ReadFile(filepath.Join(modelDir, "config.json"))
+	if err != nil {
+		return 0
+	}
+	var cfg struct {
+		MaxPositionEmbeddings int `json:"max_position_embeddings"`
+	}
+	if json.Unmarshal(b, &cfg) != nil {
+		return 0
+	}
+	return cfg.MaxPositionEmbeddings
 }
 
 // resolveDevice selects the OpenVINO inference device. CONTENOX_OPENVINO_DEVICE

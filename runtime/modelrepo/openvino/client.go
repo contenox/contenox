@@ -7,6 +7,7 @@ import (
 
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
+	"github.com/contenox/runtime/runtime/modelrepo/toolcalls"
 )
 
 // warm holds resident sessions across turns. It is bounded (idle TTL + resident
@@ -43,6 +44,7 @@ type client struct {
 	modelDigest     string
 	cfg             Config
 	maxOutputTokens int
+	toolProtocol    string // profile-declared tool-call protocol ("" = tools unsupported)
 }
 
 // ref is the typed model handle this client opens sessions with: logical name +
@@ -53,14 +55,42 @@ func (c *client) ref() modeldconn.ModelRef {
 
 func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
 	cfg := applyChatArgs(args)
+
+	var toolsJSON string
+	var parser toolcalls.Parser
 	if len(cfg.Tools) > 0 {
-		return modelrepo.ChatResult{}, NewUnsupportedFeatureError("tool calls")
+		// Tools require a profile-declared protocol: modeld renders the tool
+		// definitions via the model's own chat template (model-native), and the
+		// declared protocol parses the model's tool-call output. No protocol means
+		// no guessing — tool calls are unsupported for this model.
+		p, err := toolcalls.ParserFor(c.toolProtocol)
+		if err != nil {
+			return modelrepo.ChatResult{}, err
+		}
+		if p == nil {
+			return modelrepo.ChatResult{}, NewUnsupportedFeatureError("tool calls (model declares no tool_calls.protocol)")
+		}
+		parser = p
+		if toolsJSON, err = toolcalls.SerializeToolDefs(cfg.Tools); err != nil {
+			return modelrepo.ChatResult{}, err
+		}
 	}
-	text, err := c.generate(ctx, messages, decodeConfig(cfg, c.maxOutputTokens))
+
+	text, err := c.generate(ctx, messages, decodeConfig(cfg, c.maxOutputTokens), toolsJSON)
 	if err != nil {
 		return modelrepo.ChatResult{}, err
 	}
-	return modelrepo.ChatResult{Message: modelrepo.Message{Role: "assistant", Content: text}}, nil
+
+	msg := modelrepo.Message{Role: "assistant", Content: text}
+	if parser != nil {
+		calls, content, perr := parser(text)
+		if perr != nil {
+			return modelrepo.ChatResult{}, perr
+		}
+		msg.Content = content
+		msg.ToolCalls = calls
+	}
+	return modelrepo.ChatResult{Message: msg}, nil
 }
 
 func (c *client) Prompt(ctx context.Context, systemInstruction string, temperature float32, prompt string) (string, error) {
@@ -70,7 +100,7 @@ func (c *client) Prompt(ctx context.Context, systemInstruction string, temperatu
 	}
 	messages = append(messages, modelrepo.Message{Role: "user", Content: prompt})
 	temp := float64(temperature)
-	return c.generate(ctx, messages, decodeConfig(&modelrepo.ChatConfig{Temperature: &temp}, c.maxOutputTokens))
+	return c.generate(ctx, messages, decodeConfig(&modelrepo.ChatConfig{Temperature: &temp}, c.maxOutputTokens), "")
 }
 
 func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
@@ -84,7 +114,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	}
 
 	cs.Turn.Lock()
-	if err := c.prime(ctx, cs, messages); err != nil {
+	if err := c.prime(ctx, cs, messages, ""); err != nil {
 		cs.Turn.Unlock()
 		if fatalSessionError(err) {
 			warm.Drop(cs)
@@ -120,7 +150,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	return out, nil
 }
 
-func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig) (string, error) {
+func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string) (string, error) {
 	cs, err := c.acquire()
 	if err != nil {
 		return "", err
@@ -128,7 +158,7 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 	cs.Turn.Lock()
 	defer cs.Turn.Unlock()
 
-	if err := c.prime(ctx, cs, messages); err != nil {
+	if err := c.prime(ctx, cs, messages, toolsJSON); err != nil {
 		if fatalSessionError(err) {
 			warm.Drop(cs)
 		}
@@ -152,12 +182,13 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 }
 
 // prime ensures the warm stable prefix and prefills the volatile suffix. Caller
-// holds cs.Turn.
-func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message) error {
+// holds cs.Turn. toolsJSON (model-native tool definitions) rides on the stable
+// prefix so modeld renders it via the model's own chat template.
+func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string) error {
 	plan, err := buildPromptPlan(messages, c.cfg, promptIdentity{
 		ProfileID:   c.profileID,
 		ModelDigest: c.modelDigest,
-	})
+	}, toolsJSON)
 	if err != nil {
 		return err
 	}

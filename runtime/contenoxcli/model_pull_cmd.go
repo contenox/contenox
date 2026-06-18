@@ -60,7 +60,7 @@ registered by 'contenox init' and the first pulled model becomes the default:
 		// Registry is the single source of truth for curated model URLs.
 		reg := modelregistry.New(nil)
 
-		var name, downloadURL, repo string
+		var name, downloadURL, repo, toolProtocol string
 		modelBackend := "llama" // GGUF single-file by default; --url pulls are GGUF
 		switch {
 		case rawURL != "" && len(args) == 1:
@@ -83,6 +83,7 @@ registered by 'contenox init' and the first pulled model becomes the default:
 			downloadURL = d.SourceURL
 			modelBackend = d.BackendType()
 			repo = d.Repo
+			toolProtocol = d.ToolProtocol
 		default:
 			return cmd.Help()
 		}
@@ -108,6 +109,14 @@ registered by 'contenox init' and the first pulled model becomes the default:
 					return fmt.Errorf("download failed: %w", err)
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "Done.")
+			}
+			// Certified curated models declare their tool-call protocol; write it
+			// into the model's profile so the local provider enables model-native
+			// tool calls out of the box. Never overwrite a user-edited profile.
+			if toolProtocol != "" {
+				if err := writeOpenVINOToolProfile(modelDir, toolProtocol); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write tool-call profile: %v\n", err)
+				}
 			}
 		} else {
 			destPath := filepath.Join(modelDir, "model.gguf")
@@ -238,6 +247,18 @@ func downloadOpenVINOIR(ctx context.Context, repo, destDir string, out io.Writer
 		return fmt.Errorf("repo %s did not yield openvino_model.xml (not an OpenVINO IR model?)", repo)
 	}
 	return nil
+}
+
+// writeOpenVINOToolProfile writes a minimal contenox-openvino.json declaring the
+// model-native tool-call protocol, so the openvino provider enables tool calls.
+// It does not overwrite an existing profile (a user may have customized it).
+func writeOpenVINOToolProfile(modelDir, protocol string) error {
+	path := filepath.Join(modelDir, "contenox-openvino.json")
+	if _, err := os.Stat(path); err == nil {
+		return nil // keep an existing (possibly user-edited) profile
+	}
+	body := fmt.Sprintf("{\n  \"tool_calls\": { \"protocol\": %q }\n}\n", protocol)
+	return os.WriteFile(path, []byte(body), 0o644)
 }
 
 // downloadFile streams url to dest.

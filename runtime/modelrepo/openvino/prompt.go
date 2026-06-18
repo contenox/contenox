@@ -56,7 +56,7 @@ type promptPlan struct {
 // turns, kept warm) and a volatile suffix (everything from the first non-system
 // turn onward), with a manifest keyed on the openvino runtime identity. modeld's
 // GenAI adapter reuses the stable prefix's KV via its internal prefix cache.
-func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity) (promptPlan, error) {
+func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity, toolsJSON string) (promptPlan, error) {
 	cfg = normalizeConfig(cfg)
 
 	var stable, volatile strings.Builder
@@ -119,7 +119,7 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 		Segments:             segments,
 	}
 	return promptPlan{
-		Stable:   PrefixInput{Text: stableText, Manifest: manifest},
+		Stable:   PrefixInput{Text: stableText, Manifest: manifest, Tools: toolsJSON},
 		Volatile: SuffixInput{Text: volatileText, Manifest: manifest},
 	}, nil
 }

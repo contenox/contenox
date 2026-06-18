@@ -55,6 +55,7 @@ type genaiSession struct {
 	manifest     transport.ContextManifest
 	stable       string
 	suffix       string
+	tools        string // model-native tool definitions JSON, rendered via the chat template
 	stableTokens int
 	suffixTokens int
 }
@@ -125,12 +126,15 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 		dropped = oldResident
 	}
 
-	// EnsurePrefix replaces the stable prefix and drops any prior suffix.
+	// EnsurePrefix replaces the stable prefix and drops any prior suffix. The tool
+	// definitions ride on the prefix so Decode renders them via the model's own
+	// chat template (model-native tool calls).
 	s.stable = prefix.Text
 	s.suffix = ""
 	s.suffixTokens = 0
 	s.stableTokens = tokens
 	s.manifest = prefix.Manifest
+	s.tools = prefix.Tools
 
 	return transport.PrefixStatus{
 		ReusedTokens:    reused,
@@ -186,15 +190,17 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 	fullText := s.stable + s.suffix
 	manifest := s.manifest
 	backend := s.backend
+	tools := s.tools
 	s.mu.Unlock()
 
 	// Apply the model's own chat template when the manifest carries the role
-	// structure, so the model sees its native format and emits a clean EOS the
-	// pipeline stops on. Fall back to the raw text when there are no role
-	// segments (e.g. direct callers without an assembled manifest).
+	// structure, so the model sees its native format (including tool definitions
+	// and tool-call history) and emits a clean EOS the pipeline stops on. Fall back
+	// to the raw text when there are no role segments (e.g. direct callers without
+	// an assembled manifest).
 	prompt := fullText
 	if msgs := chatMessagesFromManifest(fullText, manifest); len(msgs) > 0 {
-		if templated, err := backend.ApplyChatTemplate(msgs, ""); err == nil && strings.TrimSpace(templated) != "" {
+		if templated, err := backend.ApplyChatTemplate(msgs, tools); err == nil && strings.TrimSpace(templated) != "" {
 			prompt = templated
 		}
 	}

@@ -97,6 +97,29 @@ func (s *Server) openSession(ctx context.Context, in *openSessionReq) (*openSess
 	return &openSessionResp{Handle: s.register(sess)}, nil
 }
 
+func (s *Server) describe(ctx context.Context, in *openSessionReq) (*describeResp, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	info, err := s.svc.Describe(ctx, transport.OpenSessionRequest{
+		Fence:     transport.Fence{OwnerInstanceID: in.OwnerInstanceID},
+		ModelName: in.ModelName,
+		Type:      in.Type,
+		Digest:    in.Digest,
+		Path:      in.Path,
+	})
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	return &describeResp{
+		ModelMaxContext:  info.ModelMaxContext,
+		EffectiveContext: info.EffectiveContext,
+		KVBytesPerToken:  info.KVBytesPerToken,
+		FreeBytes:        info.FreeBytes,
+		WeightsBytes:     info.WeightsBytes,
+	}, nil
+}
+
 func (s *Server) ensurePrefix(ctx context.Context, in *ensurePrefixReq) (*transport.PrefixStatus, error) {
 	if err := checkFence(ctx, s.instanceID); err != nil {
 		return nil, encodeError(err)

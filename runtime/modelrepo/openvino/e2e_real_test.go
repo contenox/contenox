@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	modeldopenvino "github.com/contenox/runtime/modeld/openvino"
 	"github.com/contenox/runtime/liblease"
+	modeldopenvino "github.com/contenox/runtime/modeld/openvino"
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"

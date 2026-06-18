@@ -101,3 +101,26 @@ func OpenSession(ctx context.Context, ref ModelRef, cfg transport.Config) (trans
 		Config:    cfg,
 	})
 }
+
+// Describe asks the running modeld owner for a model's capabilities, read from
+// the model metadata by the backend that serves it. This is the modeld→runtime
+// info-flow for model facts (e.g. the trained context window): the runtime is
+// the consumer and never parses model files itself. A not-running/unreachable
+// owner surfaces the probe's typed error.
+func Describe(ctx context.Context, ref ModelRef) (transport.ModelInfo, error) {
+	st := detector().Probe(ctx)
+	if st.State != modeldprobe.StateRunning {
+		return transport.ModelInfo{}, st.Err()
+	}
+	c, err := dial(st.Endpoint, st.Instance)
+	if err != nil {
+		return transport.ModelInfo{}, err
+	}
+	return c.Describe(ctx, transport.OpenSessionRequest{
+		Fence:     transport.Fence{OwnerInstanceID: st.Instance},
+		ModelName: ref.Name,
+		Type:      ref.Type,
+		Digest:    ref.Digest,
+		Path:      ref.Path,
+	})
+}

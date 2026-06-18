@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/toolcalls"
 )
 
 const profileFileName = "contenox-openvino.json"
@@ -16,13 +17,21 @@ const profileFileName = "contenox-openvino.json"
 // device selection and GenAI pipeline knobs are owned by modeld, so those fields
 // are accepted for forward/backward compatibility but not consumed here.
 type modelProfile struct {
-	ContextLength   int             `json:"context_length,omitempty"`
-	MaxOutputTokens int             `json:"max_output_tokens,omitempty"`
-	CanThink        bool            `json:"can_think,omitempty"`
-	Device          string          `json:"device,omitempty"`
-	GenAI           json.RawMessage `json:"genai,omitempty"`
-	ToolCalls       json.RawMessage `json:"tool_calls,omitempty"`
-	Reasoning       json.RawMessage `json:"reasoning,omitempty"`
+	ContextLength   int              `json:"context_length,omitempty"`
+	MaxOutputTokens int              `json:"max_output_tokens,omitempty"`
+	CanThink        bool             `json:"can_think,omitempty"`
+	Device          string           `json:"device,omitempty"`
+	GenAI           json.RawMessage  `json:"genai,omitempty"`
+	ToolCalls       toolCallsProfile `json:"tool_calls,omitempty"`
+	Reasoning       json.RawMessage  `json:"reasoning,omitempty"`
+}
+
+// toolCallsProfile declares the model-native tool-call output protocol — the
+// format the model's own chat template emits (e.g. "qwen"/"hermes"). Empty means
+// the model is not certified for tool calls and the provider reports them
+// unsupported rather than guessing.
+type toolCallsProfile struct {
+	Protocol string `json:"protocol,omitempty"`
 }
 
 func loadModelProfile(modelPath string) (modelProfile, error) {
@@ -52,6 +61,9 @@ func (p modelProfile) validate(path string) error {
 	}
 	if p.MaxOutputTokens < 0 {
 		return fmt.Errorf("openvino profile %s: max_output_tokens must be non-negative", path)
+	}
+	if p.ToolCalls.Protocol != "" && !toolcalls.ProtocolKnown(p.ToolCalls.Protocol) {
+		return fmt.Errorf("openvino profile %s: unknown tool_calls.protocol %q", path, p.ToolCalls.Protocol)
 	}
 	return nil
 }

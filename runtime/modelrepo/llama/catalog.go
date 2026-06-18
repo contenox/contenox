@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 )
 
 func init() {
@@ -20,7 +21,7 @@ type catalogProvider struct {
 
 func (c *catalogProvider) Type() string { return "llama" }
 
-func (c *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedModel, error) {
+func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedModel, error) {
 	// Advertise nothing when the native backend is not compiled in.
 	if !SessionAvailable() {
 		return nil, nil
@@ -35,7 +36,8 @@ func (c *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedMod
 			continue
 		}
 		dir := filepath.Join(c.dir, e.Name())
-		if _, err := os.Stat(filepath.Join(dir, "model.gguf")); err != nil {
+		modelPath := filepath.Join(dir, "model.gguf")
+		if _, err := os.Stat(modelPath); err != nil {
 			continue
 		}
 		profile, err := loadModelProfile(dir)
@@ -43,6 +45,14 @@ func (c *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedMod
 			return nil, err
 		}
 		caps := profile.capabilityConfig()
+		// Context window is a model fact owned by modeld (it loads the model). The
+		// runtime never parses the GGUF; it asks modeld. A profile-declared value
+		// is an explicit cap and wins; otherwise use the model's reported capacity.
+		if caps.ContextLength == 0 {
+			if info, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "llama", Path: modelPath}); derr == nil && info.EffectiveContext > 0 {
+				caps.ContextLength = info.EffectiveContext
+			}
+		}
 		info, _ := e.Info()
 		out = append(out, modelrepo.ObservedModel{
 			Name: e.Name(),

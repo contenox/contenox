@@ -1,10 +1,13 @@
-package llama
+package toolcalls
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
-func TestUnit_LlamaParseHermesToolCalls(t *testing.T) {
+func TestUnit_ParseHermesToolCalls(t *testing.T) {
 	out := "Let me check.\n<tool_call>\n{\"name\": \"get_weather\", \"arguments\": {\"city\": \"SF\"}}\n</tool_call>"
-	calls, content, err := parseHermesToolCalls(out)
+	calls, content, err := ParseHermes(out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,9 +25,9 @@ func TestUnit_LlamaParseHermesToolCalls(t *testing.T) {
 	}
 }
 
-func TestUnit_LlamaParseToolCalls_MultipleAndNone(t *testing.T) {
+func TestUnit_ParseToolCalls_MultipleAndNone(t *testing.T) {
 	multi := "<tool_call>{\"name\":\"a\",\"arguments\":{}}</tool_call><tool_call>{\"name\":\"b\",\"arguments\":{\"x\":1}}</tool_call>"
-	calls, _, err := parseHermesToolCalls(multi)
+	calls, _, err := ParseHermes(multi)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +35,7 @@ func TestUnit_LlamaParseToolCalls_MultipleAndNone(t *testing.T) {
 		t.Fatalf("multi parse = %+v", calls)
 	}
 
-	calls, content, err := parseHermesToolCalls("just a plain answer")
+	calls, content, err := ParseHermes("just a plain answer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,14 +44,17 @@ func TestUnit_LlamaParseToolCalls_MultipleAndNone(t *testing.T) {
 	}
 }
 
-func TestUnit_LlamaToolCallParserFor(t *testing.T) {
-	if p, err := toolCallParserFor(""); err != nil || p != nil {
+func TestUnit_ParserFor(t *testing.T) {
+	if p, err := ParserFor(""); err != nil || p != nil {
 		t.Fatalf("blank protocol should be (nil,nil), got p=%v err=%v", p, err)
 	}
-	if p, err := toolCallParserFor("hermes"); err != nil || p == nil {
+	if p, err := ParserFor("hermes"); err != nil || p == nil {
 		t.Fatalf("hermes protocol should resolve, got p=%v err=%v", p, err)
 	}
-	if _, err := toolCallParserFor("does-not-exist"); err == nil {
-		t.Fatal("unknown protocol must error, not fall back")
+	if p, err := ParserFor("qwen"); err != nil || p == nil {
+		t.Fatalf("qwen protocol should resolve, got p=%v err=%v", p, err)
+	}
+	if _, err := ParserFor("does-not-exist"); !errors.Is(err, ErrUnknownProtocol) {
+		t.Fatalf("unknown protocol must return ErrUnknownProtocol, got %v", err)
 	}
 }

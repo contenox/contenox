@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 )
 
 func init() {
@@ -20,7 +21,7 @@ type catalogProvider struct {
 
 func (c *catalogProvider) Type() string { return "openvino" }
 
-func (c *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedModel, error) {
+func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedModel, error) {
 	// Advertise nothing unless modeld is available to serve these models.
 	if !SessionAvailable() {
 		return nil, nil
@@ -42,11 +43,21 @@ func (c *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedMod
 		if err != nil {
 			return nil, err
 		}
-		info, _ := e.Info()
+		caps := profile.capabilityConfig()
+		// Context window is a model fact owned by modeld (it loads the IR). The
+		// runtime never reads config.json; it asks modeld. A profile-declared value
+		// is an explicit cap and wins; otherwise use the model's reported capacity.
+		if caps.ContextLength == 0 {
+			if mi, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "openvino", Path: modelPath}); derr == nil && mi.EffectiveContext > 0 {
+				caps.ContextLength = mi.EffectiveContext
+			}
+		}
+		fi, _ := e.Info()
 		out = append(out, modelrepo.ObservedModel{
 			Name:             e.Name(),
-			CapabilityConfig: profile.capabilityConfig(),
-			ModifiedAt:       info.ModTime(),
+			ContextLength:    caps.ContextLength,
+			CapabilityConfig: caps,
+			ModifiedAt:       fi.ModTime(),
 			Meta: map[string]string{
 				"format":  "openvino-ir",
 				"runtime": "openvino-genai",

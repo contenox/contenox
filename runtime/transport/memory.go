@@ -47,6 +47,15 @@ func (m *MemoryService) OpenSession(_ context.Context, req OpenSessionRequest) (
 	return &memSession{numCtx: req.Config.NumCtx}, nil
 }
 
+// Describe reports the requested context window back; the in-memory service has
+// no real model to inspect, so it echoes Config.NumCtx (0 when unset).
+func (m *MemoryService) Describe(_ context.Context, req OpenSessionRequest) (ModelInfo, error) {
+	if m.owner != "" && req.Fence.OwnerInstanceID != m.owner {
+		return ModelInfo{}, ErrStaleFence
+	}
+	return ModelInfo{ModelMaxContext: req.Config.NumCtx, EffectiveContext: req.Config.NumCtx}, nil
+}
+
 type memSession struct {
 	mu sync.Mutex
 

@@ -77,6 +77,34 @@ func (c *Client) OpenSession(ctx context.Context, req transport.OpenSessionReque
 	return &grpcSession{client: c, handle: out.Handle}, nil
 }
 
+// Describe reports a model's capabilities as read by the daemon from the model
+// metadata. The model is identified by req's typed handle (Type + Path); Config
+// is ignored.
+func (c *Client) Describe(ctx context.Context, req transport.OpenSessionRequest) (transport.ModelInfo, error) {
+	owner := req.Fence.OwnerInstanceID
+	if owner == "" {
+		owner = c.owner
+	}
+	out := new(describeResp)
+	in := &openSessionReq{
+		OwnerInstanceID: owner,
+		ModelName:       req.ModelName,
+		Type:            req.Type,
+		Digest:          req.Digest,
+		Path:            req.Path,
+	}
+	if err := c.invoke(ctx, "Describe", in, out); err != nil {
+		return transport.ModelInfo{}, err
+	}
+	return transport.ModelInfo{
+		ModelMaxContext:  out.ModelMaxContext,
+		EffectiveContext: out.EffectiveContext,
+		KVBytesPerToken:  out.KVBytesPerToken,
+		FreeBytes:        out.FreeBytes,
+		WeightsBytes:     out.WeightsBytes,
+	}, nil
+}
+
 // grpcSession is the client handle to a session resident in the owner; each
 // method is a fenced RPC keyed by the opaque handle.
 type grpcSession struct {

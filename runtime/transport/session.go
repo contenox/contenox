@@ -49,11 +49,33 @@ type Config struct {
 	DisableBOS           bool
 }
 
+// ModelInfo is what the daemon reports about a model: capabilities resolved from
+// the model metadata AND the device's memory by the backend adapter — never
+// guessed by the runtime. The runtime is the consumer (capabilities, cache
+// identity); it does not parse model files or probe hardware itself.
+//
+// EffectiveContext is the window modeld will actually serve on this device —
+// min(model ceiling, what fits in free memory) — and is the value the runtime
+// uses for NumCtx, display, and the cache-identity manifest. ModelMaxContext and
+// the byte fields explain how it was derived (telemetry / explain-context).
+type ModelInfo struct {
+	ModelMaxContext  int   `json:"model_max_context"`
+	EffectiveContext int   `json:"effective_context"`
+	KVBytesPerToken  int64 `json:"kv_bytes_per_token,omitempty"`
+	FreeBytes        int64 `json:"free_bytes,omitempty"`
+	WeightsBytes     int64 `json:"weights_bytes,omitempty"`
+}
+
 // Service is the entry point modeld serves: it opens persistent sessions on the
-// owned hardware. Opening is where the model is made resident and the session is
-// bound to the owner epoch.
+// owned hardware, and reports model capabilities it reads from the model itself.
+// Opening is where the model is made resident and the session is bound to the
+// owner epoch.
 type Service interface {
 	OpenSession(ctx context.Context, req OpenSessionRequest) (Session, error)
+	// Describe reports a model's capabilities from its on-disk metadata. The
+	// daemon is the authority because it owns the model format; req carries the
+	// typed model handle (Type + Path identify it; Config is ignored).
+	Describe(ctx context.Context, req OpenSessionRequest) (ModelInfo, error)
 }
 
 // OpenSessionRequest asks the owner to open a session for a model. The model is

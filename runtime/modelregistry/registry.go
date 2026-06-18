@@ -25,6 +25,10 @@ type ModelDescriptor struct {
 	// Repo is the Hugging Face repo id for multi-file pulls (OpenVINO IR). For
 	// GGUF models SourceURL points at the single file and Repo is empty.
 	Repo string `json:"repo,omitempty" example:"OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov"`
+	// ToolProtocol is the model-native tool-call output protocol (e.g. "qwen").
+	// Set for curated models certified for tool calls; `model pull` writes it into
+	// the model's profile so the local provider enables tool calls out of the box.
+	ToolProtocol string `json:"toolProtocol,omitempty" example:"qwen"`
 }
 
 // BackendType returns the local backend this model targets, defaulting empty to

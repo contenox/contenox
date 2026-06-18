@@ -18,6 +18,7 @@ func method(name string) string { return "/" + serviceName + "/" + name }
 type computeServer interface {
 	health(context.Context, *healthReq) (*healthResp, error)
 	openSession(context.Context, *openSessionReq) (*openSessionResp, error)
+	describe(context.Context, *openSessionReq) (*describeResp, error)
 	ensurePrefix(context.Context, *ensurePrefixReq) (*transport.PrefixStatus, error)
 	prefillSuffix(context.Context, *prefillSuffixReq) (*transport.SuffixStatus, error)
 	explainContext(context.Context, *explainReq) (*transport.ContextReport, error)
@@ -40,6 +41,17 @@ type openSessionReq struct {
 
 type openSessionResp struct {
 	Handle string `json:"handle"`
+}
+
+// describeReq reuses the open-session request shape (Type + Path identify the
+// model; Config is ignored). describeResp carries the model capabilities the
+// daemon read from the model metadata.
+type describeResp struct {
+	ModelMaxContext  int   `json:"model_max_context"`
+	EffectiveContext int   `json:"effective_context"`
+	KVBytesPerToken  int64 `json:"kv_bytes_per_token,omitempty"`
+	FreeBytes        int64 `json:"free_bytes,omitempty"`
+	WeightsBytes     int64 `json:"weights_bytes,omitempty"`
 }
 
 type ensurePrefixReq struct {
@@ -107,6 +119,13 @@ var serviceDesc = grpclib.ServiceDesc{
 				return nil, err
 			}
 			return s.openSession(ctx, in)
+		})},
+		{MethodName: "Describe", Handler: unaryHandler("Describe", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(openSessionReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.describe(ctx, in)
 		})},
 		{MethodName: "EnsurePrefix", Handler: unaryHandler("EnsurePrefix", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
 			in := new(ensurePrefixReq)

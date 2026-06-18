@@ -97,20 +97,22 @@ var curatedModels = map[string]ModelDescriptor{
 	// ── OpenVINO IR (served by modeld in openvino mode) ───────────────────────
 	// Multi-file IR repos pulled over the HF Hub HTTP API into models/openvino/.
 	"qwen2.5-coder-0.5b-ov": {
-		Name:      "qwen2.5-coder-0.5b-ov",
-		Backend:   "openvino",
-		Repo:      "OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov",
-		SourceURL: "https://huggingface.co/OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov",
-		SizeBytes: 400_000_000,
-		Curated:   true,
+		Name:         "qwen2.5-coder-0.5b-ov",
+		Backend:      "openvino",
+		Repo:         "OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov",
+		SourceURL:    "https://huggingface.co/OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov",
+		SizeBytes:    400_000_000,
+		ToolProtocol: "qwen",
+		Curated:      true,
 	},
 	"qwen2.5-coder-1.5b-ov": {
-		Name:      "qwen2.5-coder-1.5b-ov",
-		Backend:   "openvino",
-		Repo:      "OpenVINO/Qwen2.5-Coder-1.5B-Instruct-int4-ov",
-		SourceURL: "https://huggingface.co/OpenVINO/Qwen2.5-Coder-1.5B-Instruct-int4-ov",
-		SizeBytes: 1_100_000_000,
-		Curated:   true,
+		Name:         "qwen2.5-coder-1.5b-ov",
+		Backend:      "openvino",
+		Repo:         "OpenVINO/Qwen2.5-Coder-1.5B-Instruct-int4-ov",
+		SourceURL:    "https://huggingface.co/OpenVINO/Qwen2.5-Coder-1.5B-Instruct-int4-ov",
+		SizeBytes:    1_100_000_000,
+		ToolProtocol: "qwen",
+		Curated:      true,
 	},
 }
 

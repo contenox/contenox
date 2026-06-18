@@ -46,7 +46,7 @@ VSCODE_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCOD
 VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
 
 .PHONY: help \
-	build-contenox build-contenox-windows build-modeld build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
+	build-contenox build-contenox-windows build-modeld bundle-modeld-libs package-modeld build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
 	clean clean-vscode \
 	deps-modeld deps-llama-headers deps-openvino deps-ollama-headers deps-vscode \
 	dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
@@ -55,7 +55,7 @@ VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET
 
 # -----------------------------------------------------------------------------
 help:
-	@echo "build-*    build-contenox build-contenox-windows build-modeld build-vscode"
+	@echo "build-*    build-contenox build-contenox-windows build-modeld package-modeld build-vscode"
 	@echo "package-*  package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
 	@echo "test-*     test test-unit test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
@@ -84,8 +84,39 @@ build-modeld:
 	CGO_ENABLED=1 \
 	CGO_CPPFLAGS="-I$(LLAMA_VENDOR)" \
 	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
-	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
-	go build -p $(MODELD_BUILD_JOBS) -tags 'llamanode llama_unsafe_abi openvino openvino_genai' -o $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/cmd/modeld
+	CGO_LDFLAGS="$(OPENVINO_GENAI_LINK_FLAGS) -Wl,-rpath,\$$ORIGIN/modeld-libs" \
+	go build -p $(MODELD_BUILD_JOBS) -tags 'llamanode llama_unsafe_abi openvino openvino_genai' \
+		-ldflags "-X 'github.com/contenox/runtime/modeld/openvino.bakedTokenizersPath=$(OPENVINO_TOKENIZERS_SO)'" \
+		-o $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/cmd/modeld
+	@$(MAKE) --no-print-directory MODELD_LIBS_DIR=$(PROJECT_ROOT)/bin/modeld-libs MODELD_LIBS_COPY= bundle-modeld-libs
+
+# bundle-modeld-libs assembles the OpenVINO runtime next to the binary so it loads
+# via the $ORIGIN/modeld-libs rpath with no LD_LIBRARY_PATH and no per-lib hacks:
+# the whole openvino/libs tree (core + device plugins + tbb + frontends) plus the
+# GenAI and tokenizers libraries. Symlinks by default (fast dev loop, this host);
+# MODELD_LIBS_COPY=1 dereferences into real copies for a relocatable package.
+bundle-modeld-libs:
+	@rm -rf "$(MODELD_LIBS_DIR)" && mkdir -p "$(MODELD_LIBS_DIR)"
+	@if [ -n "$(MODELD_LIBS_COPY)" ]; then \
+		cp -L $(OPENVINO_PKG)/libs/* "$(MODELD_LIBS_DIR)/"; \
+		cp -L $(OPENVINO_GENAI_PKG)/libopenvino_genai.so.2620 "$(MODELD_LIBS_DIR)/"; \
+		cp -L $(OPENVINO_TOKENIZERS_SO) "$(MODELD_LIBS_DIR)/"; \
+		echo "bundled OpenVINO runtime (copies) -> $(MODELD_LIBS_DIR)"; \
+	else \
+		ln -sf $(OPENVINO_PKG)/libs/* "$(MODELD_LIBS_DIR)/"; \
+		ln -sf $(OPENVINO_GENAI_PKG)/libopenvino_genai.so.2620 "$(MODELD_LIBS_DIR)/"; \
+		ln -sf $(OPENVINO_TOKENIZERS_SO) "$(MODELD_LIBS_DIR)/"; \
+		echo "bundled OpenVINO runtime (symlinks) -> $(MODELD_LIBS_DIR)"; \
+	fi
+
+# package-modeld produces a relocatable bundle under bin/dist: the binary plus a
+# modeld-libs/ of real copies, so `bin/dist/modeld serve` runs on any host with no
+# venv, no env, no LD_LIBRARY_PATH. (Step 8 distribution.)
+package-modeld: build-modeld
+	@rm -rf $(PROJECT_ROOT)/bin/dist && mkdir -p $(PROJECT_ROOT)/bin/dist
+	@cp $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/bin/dist/modeld
+	@$(MAKE) --no-print-directory MODELD_LIBS_DIR=$(PROJECT_ROOT)/bin/dist/modeld-libs MODELD_LIBS_COPY=1 bundle-modeld-libs
+	@echo "relocatable modeld package -> $(PROJECT_ROOT)/bin/dist (run: bin/dist/modeld serve)"
 
 build-vscode: deps-vscode
 	cd $(VSCODE_DIR) && npm run build
@@ -180,8 +211,6 @@ dev-unlink:
 	@rm -f $(DEV_CONTENOX_BIN)
 
 run-modeld: build-modeld
-	LD_LIBRARY_PATH="$(OPENVINO_PKG)/libs:$(OPENVINO_GENAI_PKG):$(OPENVINO_TOKENIZERS_LIB)" \
-	OPENVINO_TOKENIZERS_PATH_GENAI="$(OPENVINO_TOKENIZERS_SO)" \
 	$(PROJECT_ROOT)/bin/modeld serve
 
 # —— deps ———————————————————————————————————————————————————————————————

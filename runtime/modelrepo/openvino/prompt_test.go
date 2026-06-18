@@ -8,7 +8,7 @@ import (
 )
 
 func TestUnit_LocalNodePromptPlan_RejectsUnsupportedPrompt(t *testing.T) {
-	_, err := buildPromptPlan(nil, Config{PromptFormat: "unknown"}, promptIdentity{})
+	_, err := buildPromptPlan(nil, Config{PromptFormat: "unknown"}, promptIdentity{}, "")
 	// OpenVINO prompt format validates natively inside modeld based on the chat template;
 	// it doesn't currently error here. We just check basic history behavior here.
 	if err != nil {
@@ -20,7 +20,7 @@ func TestUnit_LocalNodePromptPlan_PropagatesToolHistory(t *testing.T) {
 	plan, err := buildPromptPlan([]modelrepo.Message{
 		{Role: "assistant", Content: "thinking", ToolCalls: []modelrepo.ToolCall{{ID: "call_123", Type: "function"}}},
 		{Role: "tool", Content: "result", ToolCallID: "call_123"},
-	}, Config{}, promptIdentity{})
+	}, Config{}, promptIdentity{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

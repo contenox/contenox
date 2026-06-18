@@ -96,3 +96,7 @@ type unavailableBackend struct{}
 func (unavailableBackend) OpenSession(context.Context, transport.OpenSessionRequest) (transport.Session, error) {
 	return nil, errNoBackend
 }
+
+func (unavailableBackend) Describe(context.Context, transport.OpenSessionRequest) (transport.ModelInfo, error) {
+	return transport.ModelInfo{}, errNoBackend
+}

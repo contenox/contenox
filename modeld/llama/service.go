@@ -24,3 +24,13 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	}
 	return newSession(req.Path, req.Config)
 }
+
+// Describe reports the model's trained context window read from the GGUF header
+// (no tensor load). The runtime consumes this as the model's capacity; it never
+// reads the GGUF itself.
+func (s *Service) Describe(_ context.Context, req transport.OpenSessionRequest) (transport.ModelInfo, error) {
+	if req.Type != "" && req.Type != "llama" {
+		return transport.ModelInfo{}, fmt.Errorf("%w: requested %q, this daemon serves llama", transport.ErrBackendMismatch, req.Type)
+	}
+	return transport.ModelInfo{EffectiveContext: ggufContextLength(req.Path)}, nil
+}
