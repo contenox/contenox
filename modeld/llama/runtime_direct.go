@@ -63,6 +63,19 @@ func isAcceleratorDevice(kind string) bool {
 	}
 }
 
+// HasAccelerator reports whether the linked llama.cpp runtime registered a
+// GPU/accelerator device on this host — i.e. ggml dlopen'd a non-CPU backend
+// plugin (CUDA, etc.). modeld uses it to pick the backend on a universal build;
+// it loads the ggml backends once.
+func HasAccelerator() bool {
+	for _, d := range llamacppshim.Devices() {
+		if isAcceleratorDevice(d.Type) {
+			return true
+		}
+	}
+	return false
+}
+
 func directRuntimeInfo() transport.ModelInfo {
 	devices := llamacppshim.Devices()
 	out := make([]transport.DeviceInfo, 0, len(devices))

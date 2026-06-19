@@ -93,6 +93,70 @@ func TestUnit_ServiceResolveConfigAppliesDaemonEnvOverrides(t *testing.T) {
 	t.Setenv("CONTENOX_LLAMA_CTX", "16384")
 	path := writeTestGGUF(t, 32768)
 	svc := NewService(
+		// An accelerator snapshot with ample memory: the daemon GPU-layer override
+		// only materializes as offload when an accelerator is present (otherwise it
+		// resolves to 0 — see TestUnit_ServiceZeroesDaemonGpuLayersWithoutAccelerator),
+		// and ample memory keeps the budget from clamping it back to zero.
+		WithMemorySource(staticSnapshot{snap: capacity.DeviceSnapshot{
+			Kind:       "gpu",
+			DeviceID:   "test-gpu",
+			TotalBytes: 16 << 30,
+			FreeBytes:  16 << 30,
+		}}),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	cfg, err := svc.resolveConfig(transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{NumCtx: 8192, NumGpuLayers: 0, KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("resolveConfig: %v", err)
+	}
+	if cfg.NumGpuLayers <= 0 {
+		t.Fatalf("NumGpuLayers = %d, want positive layer count from daemon env override 999", cfg.NumGpuLayers)
+	}
+	if cfg.NumCtx != 16384 {
+		t.Fatalf("NumCtx = %d, want daemon env override 16384", cfg.NumCtx)
+	}
+}
+
+func TestUnit_ServiceAutoOffloadsToDetectedAccelerator(t *testing.T) {
+	// No CONTENOX_LLAMA_GPU_LAYERS and no profile request (NumGpuLayers: 0): modeld
+	// must still offload because it detected an accelerator with ample memory —
+	// the value is derived from the device, not a knob.
+	t.Setenv("CONTENOX_LLAMA_GPU_LAYERS", "")
+	path := writeTestGGUF(t, 32768)
+	svc := NewService(
+		WithMemorySource(staticSnapshot{snap: capacity.DeviceSnapshot{
+			Kind:       "gpu",
+			DeviceID:   "test-gpu",
+			TotalBytes: 16 << 30,
+			FreeBytes:  16 << 30,
+		}}),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	cfg, err := svc.resolveConfig(transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{NumCtx: 8192, NumGpuLayers: 0, KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("resolveConfig: %v", err)
+	}
+	if cfg.NumGpuLayers <= 0 {
+		t.Fatalf("NumGpuLayers = %d, want auto-offload (>0) on a detected accelerator without any request", cfg.NumGpuLayers)
+	}
+}
+
+func TestUnit_ServiceZeroesDaemonGpuLayersWithoutAccelerator(t *testing.T) {
+	t.Setenv("CONTENOX_LLAMA_GPU_LAYERS", "999")
+	path := writeTestGGUF(t, 32768)
+	svc := NewService(
+		// staticMemory yields a non-accelerator (system RAM) snapshot — the
+		// universal-binary-on-CPU case.
 		WithMemorySource(staticMemory(16<<30)),
 		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
 	)
@@ -105,11 +169,23 @@ func TestUnit_ServiceResolveConfigAppliesDaemonEnvOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveConfig: %v", err)
 	}
-	if cfg.NumGpuLayers != 999 {
-		t.Fatalf("NumGpuLayers = %d, want daemon env override 999", cfg.NumGpuLayers)
+	if cfg.NumGpuLayers != 0 {
+		t.Fatalf("NumGpuLayers = %d, want 0 without an accelerator", cfg.NumGpuLayers)
 	}
-	if cfg.NumCtx != 16384 {
-		t.Fatalf("NumCtx = %d, want daemon env override 16384", cfg.NumCtx)
+
+	info, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{NumCtx: 8192, NumGpuLayers: 999, KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.RequestedGpuLayers != 999 || info.ResolvedGpuLayers != 0 {
+		t.Fatalf("gpu layer explanation = requested %d resolved %d, want 999/0", info.RequestedGpuLayers, info.ResolvedGpuLayers)
+	}
+	if !info.Clamped || info.Reason != "no_accelerator_present" {
+		t.Fatalf("expected no_accelerator_present clamp explanation: %+v", info)
 	}
 }
 

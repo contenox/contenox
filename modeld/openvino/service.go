@@ -73,6 +73,7 @@ func (s *Service) memorySource(device string) capacity.MemorySource {
 	if s.memory != nil {
 		return s.memory
 	}
+	device = effectiveDevice(device)
 	if openvinoDeviceUsesSystemRAM(device) {
 		return capacity.SystemRAM{}
 	}
@@ -320,6 +321,21 @@ func openvinoDeviceUsesSystemRAM(device string) bool {
 	return base == "" || base == "CPU"
 }
 
+// HasAccelerator reports whether OpenVINO enumerates a non-CPU device (GPU/NPU)
+// on this host. modeld uses it to pick the backend on a universal build.
+func HasAccelerator() bool {
+	info, err := ovsession.Runtime()
+	if err != nil {
+		return false
+	}
+	for _, d := range info.Devices {
+		if !openvinoDeviceUsesSystemRAM(d.Name) {
+			return true
+		}
+	}
+	return false
+}
+
 func openvinoDeviceKind(device string) string {
 	switch openvinoDeviceBase(device) {
 	case "GPU":
@@ -345,8 +361,10 @@ func openvinoDeviceBase(device string) string {
 }
 
 // resolveDevice selects the OpenVINO inference device. CONTENOX_OPENVINO_DEVICE
-// is the explicit override (set it to NPU on an Intel NPU node); the test device
-// hint and a CPU default follow.
+// is the explicit override (set it to CPU/GPU/NPU to pin a device); the test
+// device hint and an AUTO default follow. AUTO is OpenVINO's virtual plugin that
+// places work on the best available device (GPU, then NPU) and falls back to CPU,
+// so one modeld binary autodetects its accelerator without configuration.
 func resolveDevice() string {
 	if device := os.Getenv("CONTENOX_OPENVINO_DEVICE"); device != "" {
 		return device
@@ -354,5 +372,42 @@ func resolveDevice() string {
 	if device := os.Getenv("CONTENOX_OPENVINO_TEST_DEVICE"); device != "" {
 		return device
 	}
-	return "CPU"
+	return "AUTO"
+}
+
+// effectiveDevice resolves a device selector to the concrete device that
+// capacity planning should budget against. AUTO does not expose memory
+// telemetry, so mirror its priority (GPU, then NPU, then CPU) against the
+// enumerated devices and budget against the device inference will actually land
+// on. Concrete selectors pass through unchanged; if enumeration fails we fall
+// back to CPU so capacity uses system RAM rather than failing the request.
+func effectiveDevice(device string) string {
+	if openvinoDeviceBase(device) != "AUTO" {
+		return device
+	}
+	info, err := ovsession.Runtime()
+	if err != nil {
+		return "CPU"
+	}
+	var gpu, npu string
+	for _, d := range info.Devices {
+		switch openvinoDeviceBase(d.Name) {
+		case "GPU":
+			if gpu == "" {
+				gpu = d.Name
+			}
+		case "NPU":
+			if npu == "" {
+				npu = d.Name
+			}
+		}
+	}
+	switch {
+	case gpu != "":
+		return gpu
+	case npu != "":
+		return npu
+	default:
+		return "CPU"
+	}
 }

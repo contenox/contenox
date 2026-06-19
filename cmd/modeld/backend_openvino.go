@@ -14,5 +14,5 @@ import (
 func init() {
 	registerBackend("openvino", func(policy capacity.Policy) transport.Service {
 		return openvino.NewService(openvino.WithCapacityPolicy(policy))
-	})
+	}, openvino.HasAccelerator)
 }

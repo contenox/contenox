@@ -45,11 +45,20 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
 	"unsafe"
 )
+
+// backendDirEnv names the directory holding the ggml backend plugins
+// (libggml-cpu-*.so, libggml-cuda.so, …). With GGML_BACKEND_DL=ON the plugins are
+// dlopen'd at runtime rather than linked, and ggml otherwise only searches the
+// executable directory and the cwd — neither of which is the bundled lib dir.
+// Setting this env var points the loader at the right place (the packaged
+// wrapper and `make run-modeld*` targets set it; see mk/llama-flags.mk).
+const backendDirEnv = "CONTENOX_LLAMA_BACKEND_DIR"
 
 // Available reports whether the direct llama.cpp shim was compiled in.
 const Available = true
@@ -58,7 +67,13 @@ var backendOnce sync.Once
 
 func initBackend() {
 	backendOnce.Do(func() {
-		C.ggml_backend_load_all()
+		if dir := strings.TrimSpace(os.Getenv(backendDirEnv)); dir != "" {
+			cdir := C.CString(dir)
+			defer C.free(unsafe.Pointer(cdir))
+			C.ggml_backend_load_all_from_path(cdir)
+		} else {
+			C.ggml_backend_load_all()
+		}
 		C.llama_backend_init()
 	})
 }

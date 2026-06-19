@@ -116,7 +116,10 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 		return sessionPlan{}, fmt.Errorf("%w: model %q cannot fit in the selected %s memory budget (%s)",
 			transport.ErrContextOverflow, req.ModelName, info.DeviceKind, info.Reason)
 	}
-	if info.RequestedGpuLayers > 0 && info.ResolvedGpuLayers <= 0 {
+	// Fail only when an accelerator is present but cannot fit even one layer.
+	// With no accelerator (e.g. a universal binary on a CPU-only host) GPU layers
+	// resolve to 0 by design and the session runs on CPU instead of erroring.
+	if info.RequestedGpuLayers > 0 && info.ResolvedGpuLayers <= 0 && isAcceleratorSnapshot(capacity.DeviceSnapshot{Kind: info.DeviceKind}) {
 		return sessionPlan{}, fmt.Errorf("%w: requested gpu_layers=%d but no layer fits in the selected %s memory budget (%s)",
 			transport.ErrContextOverflow, info.RequestedGpuLayers, info.DeviceKind, info.Reason)
 	}
@@ -176,13 +179,21 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	weights := fileSize(req.Path)
 	kvBytes := capacity.KVBytesPerToken(params.BlockCount, params.kvHeads(), params.headDim(), cfg.KVCacheType)
 	overhead := int64(0)
-	requestedGpuLayers := cfg.NumGpuLayers
-	resolvedGpuLayers := cfg.NumGpuLayers
-	if cfg.NumGpuLayers > 0 && isAcceleratorSnapshot(st) {
+	// modeld derives GPU offload from what it detected at runtime, not from a
+	// per-model knob: with an accelerator present it offloads as many layers as
+	// fit the VRAM budget; with none it runs on CPU (the CUDA plugin was silently
+	// skipped). An explicit cfg.NumGpuLayers (model profile or
+	// CONTENOX_LLAMA_GPU_LAYERS) is honored only as an upper cap.
+	explicitGpuLayers := cfg.NumGpuLayers
+	resolvedGpuLayers := 0
+	if isAcceleratorSnapshot(st) {
+		cfg.NumGpuLayers = autoGpuLayerCeiling(explicitGpuLayers)
 		overhead = llamaGPUComputeReserveBytes(cfg)
 		resolvedGpuLayers = resolveGPULayersForBudget(cfg, params, weights, kvBytes, overhead, st, policy)
 		cfg.NumGpuLayers = resolvedGpuLayers
 		weights = estimateLlamaGPUWeights(weights, params.BlockCount, cfg.NumGpuLayers)
+	} else {
+		cfg.NumGpuLayers = 0
 	}
 	resolved := capacity.Resolve(capacity.Params{
 		ModelMaxCtx:     params.ContextLength,
@@ -196,12 +207,16 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		HeadroomFrac:    policy.HeadroomFrac,
 	})
 	info := modelInfo(resolved, st)
-	info.RequestedGpuLayers = requestedGpuLayers
+	info.RequestedGpuLayers = explicitGpuLayers
 	info.ResolvedGpuLayers = resolvedGpuLayers
-	if requestedGpuLayers > 0 && resolvedGpuLayers < requestedGpuLayers {
+	if explicitGpuLayers > 0 && resolvedGpuLayers < explicitGpuLayers {
 		info.Clamped = true
 		if info.Reason == "" {
-			info.Reason = "gpu_layers_exceed_memory_budget"
+			if isAcceleratorSnapshot(st) {
+				info.Reason = "gpu_layers_exceed_memory_budget"
+			} else {
+				info.Reason = "no_accelerator_present"
+			}
 		}
 	}
 	return info, nil
@@ -257,9 +272,10 @@ func (s *Service) plan(req transport.OpenSessionRequest) (sessionPlan, error) {
 	if err != nil {
 		return sessionPlan{}, err
 	}
-	if info.RequestedGpuLayers > 0 {
-		cfg.NumGpuLayers = info.ResolvedGpuLayers
-	}
+	// describe computes the authoritative offload count (0 on CPU / no accelerator,
+	// the VRAM-fitted count on a detected accelerator), so it always wins over the
+	// incoming request value.
+	cfg.NumGpuLayers = info.ResolvedGpuLayers
 	return sessionPlan{config: cfg, info: info}, nil
 }
 
@@ -278,6 +294,22 @@ func llamaGPUComputeReserveBytes(cfg transport.Config) int64 {
 		return 256 << 20
 	}
 	return reserve
+}
+
+// allGpuLayers is the conventional llama.cpp "offload every layer" sentinel.
+// resolveGPULayersForBudget caps it to the model's real layer count, so it just
+// means "as many as fit"; it is large enough to exceed any real model's depth.
+const allGpuLayers = 999
+
+// autoGpuLayerCeiling is the offload ceiling modeld aims for once an accelerator
+// is detected: an explicit cap when the caller set one (model profile or
+// CONTENOX_LLAMA_GPU_LAYERS), otherwise all layers. resolveGPULayersForBudget
+// then lowers it to what actually fits VRAM.
+func autoGpuLayerCeiling(explicit int) int {
+	if explicit > 0 {
+		return explicit
+	}
+	return allGpuLayers
 }
 
 func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, weights, kvBytes, overhead int64, st capacity.DeviceSnapshot, policy capacity.Policy) int {

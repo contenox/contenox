@@ -77,7 +77,11 @@ func TestOpenSessionRoutesModelAndConfigToBackend(t *testing.T) {
 	})
 	t.Cleanup(func() { llama.SetSessionFactory(nil) })
 
-	cfg := transport.Config{NumCtx: 4096, NumGpuLayers: 99, PromptFormat: "chatml"}
+	// NumGpuLayers is intentionally omitted: GPU layers are subject to capacity
+	// resolution (zeroed without an accelerator), which is covered by the capacity
+	// tests. This test proves the request is routed to the backend, so it uses
+	// fields that pass through unchanged.
+	cfg := transport.Config{NumCtx: 4096, PromptFormat: "chatml"}
 	sess, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
 		ModelName: "foo",
 		Type:      "llama",
@@ -90,7 +94,7 @@ func TestOpenSessionRoutesModelAndConfigToBackend(t *testing.T) {
 	if gotModel != "/models/foo/model.gguf" {
 		t.Errorf("model id not routed to backend: got %q", gotModel)
 	}
-	if gotCfg.NumCtx != 4096 || gotCfg.NumGpuLayers != 99 || gotCfg.PromptFormat != "chatml" {
+	if gotCfg.NumCtx != 4096 || gotCfg.PromptFormat != "chatml" {
 		t.Errorf("config not routed to backend: got %+v", gotCfg)
 	}
 	if sess != transport.Session(fake) {
