@@ -49,25 +49,25 @@ curl -fsSL https://contenox.com/install.sh | sh
 ## Quick Start
 
 ```bash
-# Scaffold a workspace and register the llama backend
-contenox init
+# Configure a provider/model for this machine
+contenox setup
 
-# Pull a model — first pull becomes the default-model automatically
-contenox model pull granite-3.2-2b
-
-# Use it
+# Use it from the CLI
 contenox "say hello world in python"
 contenox chat -e                        # open $EDITOR to compose a prompt
 ```
 
-That's it. No API key, no external server, no `backend add` ceremony. `init`
-registers the `llama` backend, and `model pull` downloads GGUF models into
-`~/.contenox/models/llama/`. Resume past sessions with `contenox session list`
-and `contenox session switch <name>`. To use a cloud provider instead, see
-[Backends](#backends) below.
+For normal CLI/VS Code installs, choose Ollama or a hosted provider in setup.
+Local llama/OpenVINO uses the separate native `modeld` daemon, which is not
+bundled in release installs yet. If you choose a local modeld provider, setup
+prints source-build commands. Full guide:
+[modeld Source Build and Packaging](docs/modeld-source-build.md).
+
+Resume past sessions with `contenox session list` and
+`contenox session switch <name>`. Backends are summarized below.
 
 Developing the source-built local backend? See
-[Testing the llama modeld backend](docs/modeld-llama-backend.md).
+[modeld Source Build and Packaging](docs/modeld-source-build.md).
 
 ---
 
@@ -226,11 +226,14 @@ Verified with GoLand 2026.1.2. Full guide → **[contenox.com/docs/guide/jetbrai
 
 ## Backends
 
-The `llama` backend is the local llama.cpp runtime served by `modeld`.
-`contenox init` registers it automatically and `contenox model pull <name>`
-downloads GGUF models into `~/.contenox/models/llama/`. For source-build testing,
-see [Testing the llama modeld backend](docs/modeld-llama-backend.md). To add
-anything else:
+The `llama` and `openvino` backends are local modeld-backed inference providers.
+`contenox init` registers them automatically and `contenox model pull <name>`
+downloads artifacts into `~/.contenox/models/<backend>/`. The current CLI/VSIX
+release assets do not bundle `modeld`, so local modeld providers require a
+source build for now:
+[modeld Source Build and Packaging](docs/modeld-source-build.md).
+
+To add other backends:
 
 ```bash
 # Other local servers
@@ -261,6 +264,29 @@ git clone https://github.com/contenox/runtime
 cd runtime
 make build-contenox
 ```
+
+Build and run local modeld for llama.cpp:
+
+```bash
+CONTENOX_MODELD_BACKEND=llama make run-modeld
+```
+
+Build and run local modeld for OpenVINO:
+
+```bash
+make deps-modeld
+CONTENOX_MODELD_BACKEND=openvino make run-modeld
+```
+
+Build a relocatable Linux modeld bundle:
+
+```bash
+MODELD_DIST_DIR="$PWD/bin/modeld-linux-amd64" make package-modeld
+tar -C bin -czf bin/modeld-linux-amd64.tar.gz modeld-linux-amd64
+```
+
+See [modeld Source Build and Packaging](docs/modeld-source-build.md) for the
+complete local modeld flow.
 
 ---
 

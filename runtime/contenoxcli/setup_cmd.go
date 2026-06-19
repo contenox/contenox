@@ -26,7 +26,7 @@ var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Interactive wizard to configure your LLM provider and model.",
 	Long: `Run the setup wizard to pick an LLM provider (Ollama, OpenAI, OpenRouter,
-Gemini, or local llama.cpp GGUF through modeld), enter credentials, and set defaults.
+Gemini, or local llama/OpenVINO through modeld), enter credentials, and set defaults.
 This is the same wizard that runs inside IDE terminals via ACP.
 
 Examples:
@@ -49,7 +49,8 @@ var setupProviders = []setupProvider{
 	{key: "openai", label: "OpenAI", defaultModel: "gpt-5-mini", envKey: "OPENAI_API_KEY", needsAPIKey: true},
 	{key: "openrouter", label: "OpenRouter (300+ models, one API key — deepseek, qwen, llama, gemini, gpt and more)", defaultModel: "deepseek/deepseek-chat-v3-5", envKey: "OPENROUTER_API_KEY", needsAPIKey: true},
 	{key: "gemini", label: "Google Gemini", defaultModel: "gemini-flash-latest", envKey: "GEMINI_API_KEY", needsAPIKey: true},
-	{key: "llama", label: "Llama.cpp GGUF (local modeld — no provider API key)", defaultModel: "", needsAPIKey: false},
+	{key: "llama", label: "Llama.cpp GGUF (local modeld source build)", defaultModel: "", needsAPIKey: false},
+	{key: "openvino", label: "OpenVINO IR (local modeld source build)", defaultModel: "", needsAPIKey: false},
 }
 
 func runSetup(cmd *cobra.Command, out io.Writer) error {
@@ -149,15 +150,8 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 	switch sp.key {
 	case "ollama":
 		model = promptOllamaModel(out, scanner, model)
-	case "llama":
-		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "  Pull a model after setup:")
-		fmt.Fprintln(out, "    contenox model pull granite-3.2-2b")
-		fmt.Fprintln(out, "    contenox model local")
-		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "  Start modeld in llama mode before chatting. 'model list' shows only")
-		fmt.Fprintln(out, "  models loadable by the live daemon; 'model local' shows installed files.")
-		fmt.Fprintln(out, "  The first model you pull becomes the default-model automatically.")
+	case "llama", "openvino":
+		printLocalModeldSourceBuildSteps(out, sp.key)
 	default:
 		model = promptLine(out, scanner, fmt.Sprintf("  Model [%s]", model), model)
 	}
@@ -173,7 +167,7 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 	}
 	defer db.Close()
 
-	if sp.key != "llama" {
+	if !isLocalModeldProvider(sp.key) {
 		if err := registerSetupBackend(ctx, db, sp.key, apiKey); err != nil {
 			return err
 		}
@@ -193,6 +187,88 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 
 	reportSetupReadiness(ctx, cmd, db, out, sp.key, model)
 	return nil
+}
+
+func isLocalModeldProvider(provider string) bool {
+	switch provider {
+	case "llama", "openvino":
+		return true
+	default:
+		return false
+	}
+}
+
+func printLocalModeldSourceBuildSteps(out io.Writer, backend string) {
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  Local modeld is not bundled with the normal CLI/VS Code install yet.")
+	fmt.Fprintln(out, "  This provider currently requires a source-built modeld daemon.")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  In another terminal:")
+	fmt.Fprintln(out, "")
+	fmt.Fprintf(out, "    git clone --branch %s --depth 1 https://github.com/contenox/runtime.git contenox-runtime\n", modeldSourceBuildRef())
+	fmt.Fprintln(out, "    cd contenox-runtime")
+	if backend == "openvino" {
+		fmt.Fprintln(out, "    make deps-modeld")
+		fmt.Fprintln(out, "    CONTENOX_MODELD_BACKEND=openvino make run-modeld")
+	} else {
+		fmt.Fprintln(out, "    CONTENOX_MODELD_BACKEND=llama make run-modeld")
+	}
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  Keep modeld running, then return here and install a local model:")
+	if backend == "openvino" {
+		printOpenVINOModelChoices(out)
+	} else {
+		printLlamaModelChoices(out)
+	}
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "    contenox model local           # installed local artifacts")
+	fmt.Fprintln(out, "    contenox model list            # loadable by the live daemon")
+	fmt.Fprintln(out, "    contenox doctor")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  'model local' shows installed files. 'model list' only shows models")
+	fmt.Fprintln(out, "  that the running modeld can describe/load.")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  Build guide:")
+	fmt.Fprintln(out, "    https://github.com/contenox/runtime/blob/main/docs/modeld-source-build.md")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  The first pulled model becomes default-model automatically.")
+}
+
+func printLlamaModelChoices(out io.Writer) {
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "       VRAM     Model               Q4 size   Notes")
+	fmt.Fprintln(out, "       ~2 GB    granite-3.2-2b      ~1-2 GB   good tool use")
+	fmt.Fprintln(out, "       ~3 GB    qwen3-4b            ~3 GB")
+	fmt.Fprintln(out, "       ~3 GB    gemma3-4b           ~3 GB")
+	fmt.Fprintln(out, "       ~5 GB    qwen3-8b            ~5 GB")
+	fmt.Fprintln(out, "       ~5 GB    deepseek-r1-0528-qwen3-8b")
+	fmt.Fprintln(out, "       ~8 GB    gemma3-12b          ~8 GB")
+	fmt.Fprintln(out, "       ~12 GB   gpt-oss-20b         ~12 GB")
+	fmt.Fprintln(out, "       ~19 GB   qwen3-coder-30b-a3b ~19 GB")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")
+	fmt.Fprintln(out, "       contenox model pull qwen3-8b")
+}
+
+func printOpenVINOModelChoices(out io.Writer) {
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "       Model                    Size      Notes")
+	fmt.Fprintln(out, "       qwen2.5-coder-0.5b-ov    ~350 MB   fastest smoke test")
+	fmt.Fprintln(out, "       qwen2.5-coder-1.5b-ov    ~900 MB   small coding model")
+	fmt.Fprintln(out, "       qwen3-4b-ov              ~2.3 GB")
+	fmt.Fprintln(out, "       qwen3-8b-ov              ~4.9 GB")
+	fmt.Fprintln(out, "       phi-4-mini-ov            ~2.4 GB")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")
+	fmt.Fprintln(out, "       contenox model pull qwen2.5-coder-0.5b-ov")
+}
+
+func modeldSourceBuildRef() string {
+	v := strings.TrimSpace(CLIVersion())
+	if strings.HasPrefix(v, "v") {
+		return v
+	}
+	return "main"
 }
 
 // reportSetupReadiness runs the same read-only reachability check as

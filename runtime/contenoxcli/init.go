@@ -131,6 +131,11 @@ var providerConfigs = map[string]providerConfig{
 		defaultModel: "",
 		envKey:       "",
 	},
+	"openvino": {
+		name:         "OpenVINO IR",
+		defaultModel: "",
+		envKey:       "",
+	},
 	"vertex-google": {
 		name:         "Google Vertex AI (Gemini)",
 		defaultModel: "gemini-flash-latest",
@@ -275,7 +280,7 @@ func RunGlobalInit(out io.Writer) error {
 }
 
 // RunInit scaffolds .contenox/ with default chain files.
-// provider is "" (defaults to the already-configured provider or "llama"), "ollama", "gemini", "openai", or "llama".
+// provider is "" (defaults to the already-configured provider or "llama"), or one of providerConfigs.
 // contenoxDir is the target data directory (e.g. from --data-dir or the default .contenox/).
 func RunInit(out, errOut io.Writer, force, update bool, provider string, contenoxDir string) error {
 	provider = modelrepo.CanonicalBackendType(provider)
@@ -301,7 +306,7 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 
 	pc, ok := providerConfigs[provider]
 	if !ok {
-		return fmt.Errorf("unknown provider %q — valid options: ollama, openai, openrouter, gemini, anthropic, mistral, bedrock, llama, vertex-google", provider)
+		return fmt.Errorf("unknown provider %q — valid options: ollama, openai, openrouter, gemini, anthropic, mistral, bedrock, llama, openvino, vertex-google", provider)
 	}
 	if err := os.MkdirAll(contenoxDir, 0750); err != nil {
 		return fmt.Errorf("failed to create .contenox directory: %w", err)
@@ -398,9 +403,9 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		if db, openErr := OpenDBAt(libtracker.WithNewRequestID(context.Background()), dbPath); openErr == nil {
 			ctx := libtracker.WithNewRequestID(context.Background())
 			store := runtimetypes.New(db.WithoutTransaction())
-			if cur, _ := getConfigKV(ctx, store, "default-provider"); cur == "" && provider == "llama" {
+			if cur, _ := getConfigKV(ctx, store, "default-provider"); cur == "" && isLocalModeldProvider(provider) {
 				workspaceID := ResolveWorkspaceID(contenoxDir)
-				_ = clikv.WriteConfig(ctx, store, workspaceID, "default-provider", "llama")
+				_ = clikv.WriteConfig(ctx, store, workspaceID, "default-provider", provider)
 			}
 			db.Close()
 		}
@@ -491,28 +496,10 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		fmt.Fprintln(out, "  Get started with Vertex AI: https://cloud.google.com/vertex-ai/generative-ai/docs/start/quickstarts")
 		fmt.Fprintln(out, "")
 		chatStep = 4
-	case "llama":
-		fmt.Fprintln(out, "  1. Pull a model (choose by available VRAM):")
-		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "       VRAM     Model              Q4 size   Notes")
-		fmt.Fprintln(out, "       ~2 GB    granite-3.2-2b     ~1-2 GB   good tool use")
-		fmt.Fprintln(out, "       ~3 GB    qwen3-4b           ~3 GB")
-		fmt.Fprintln(out, "       ~3 GB    gemma3-4b          ~3 GB")
-		fmt.Fprintln(out, "       ~5 GB    qwen3-8b           ~5 GB")
-		fmt.Fprintln(out, "       ~5 GB    deepseek-r1-0528-qwen3-8b")
-		fmt.Fprintln(out, "       ~8 GB    gemma3-12b         ~8 GB")
-		fmt.Fprintln(out, "       ~12 GB   gpt-oss-20b        ~12 GB")
-		fmt.Fprintln(out, "       ~19 GB   qwen3-coder-30b-a3b ~19 GB")
-		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")
-		fmt.Fprintln(out, "       contenox model pull qwen3-8b")
-		fmt.Fprintln(out, "       contenox model local           # installed local artifacts")
-		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "  The llama backend is already registered and set as default.")
-		fmt.Fprintln(out, "  The first model you pull becomes the default-model automatically.")
-		fmt.Fprintln(out, "  Start modeld in llama mode before chatting; 'model list' shows")
-		fmt.Fprintln(out, "  only models loadable by the live daemon.")
-		fmt.Fprintln(out, "")
+	case "llama", "openvino":
+		fmt.Fprintf(out, "  The %s backend is registered automatically.\n", provider)
+		fmt.Fprintf(out, "  To use it by default: contenox config set default-provider %s\n", provider)
+		printLocalModeldSourceBuildSteps(out, provider)
 		chatStep = 2
 	case "openrouter":
 		backendRegistered := hasBackendOfType("openrouter")
