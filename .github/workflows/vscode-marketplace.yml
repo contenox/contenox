@@ -102,36 +102,24 @@ jobs:
             os: ubuntu-latest
             goos: linux
             goarch: amd64
-            cc: gcc
-            cxx: g++
             smoke: true
           - target: linux-arm64
             os: ubuntu-latest
             goos: linux
             goarch: arm64
-            cc: aarch64-linux-gnu-gcc
-            cxx: aarch64-linux-gnu-g++
-            linux_arm64_cross: true
           - target: darwin-arm64
             os: macos-15
             goos: darwin
             goarch: arm64
-            cc: clang
-            cxx: clang++
             smoke: true
           - target: darwin-x64
             os: macos-15-intel
             goos: darwin
             goarch: amd64
-            cc: clang
-            cxx: clang++
           - target: win32-x64
             os: ubuntu-latest
             goos: windows
             goarch: amd64
-            cc: x86_64-w64-mingw32-gcc-posix
-            cxx: x86_64-w64-mingw32-g++-posix
-            windows_cross: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -148,40 +136,13 @@ jobs:
           cache: npm
           cache-dependency-path: packages/vscode/package-lock.json
 
-      - name: Install Linux build dependencies
+      - name: Install Linux package inspection dependencies
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y gcc g++ nlohmann-json3-dev unzip file
-          if [ "${{ matrix.linux_arm64_cross || false }}" = "true" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-          fi
-          if [ "${{ matrix.windows_cross || false }}" = "true" ]; then
-            sudo apt-get install -y gcc-mingw-w64-x86-64-posix g++-mingw-w64-x86-64-posix
-          fi
-
-      - name: Install macOS build dependencies
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew install nlohmann-json
-          NLOHMANN_PREFIX="$(brew --prefix nlohmann-json)"
-          echo "CGO_CFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
-          echo "CGO_CXXFLAGS=-I${NLOHMANN_PREFIX}/include" >> "$GITHUB_ENV"
-
-      - name: Fetch missing llama.cpp headers
-        run: scripts/prepare_ollama_llama_headers.sh
-
-      - name: Prepare Windows cross-build includes
-        if: matrix.windows_cross == true
-        shell: bash
-        run: |
-          set -euo pipefail
-          INCLUDE_DIR="$(scripts/prepare_windows_cross_includes.sh)"
-          echo "CGO_CXXFLAGS=-I${INCLUDE_DIR}" >> "$GITHUB_ENV"
+          sudo apt-get install -y unzip file
 
       - name: Install extension dependencies
         working-directory: packages/vscode
@@ -197,9 +158,7 @@ jobs:
           CONTENOX_VSCODE_TARGET: ${{ matrix.target }}
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "1"
-          CC: ${{ matrix.cc }}
-          CXX: ${{ matrix.cxx }}
+          CGO_ENABLED: "0"
           CONTENOX_VERSION: ${{ needs.verify.outputs.runtime_version }}
         run: node scripts/build-binary.js
 

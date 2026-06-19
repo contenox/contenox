@@ -20,7 +20,7 @@ fs.mkdirSync(binDir, { recursive: true });
 
 const env = {
   ...process.env,
-  CGO_ENABLED: process.env.CGO_ENABLED || "1",
+  CGO_ENABLED: process.env.CGO_ENABLED || "0",
   GOOS: target.goos,
   GOARCH: target.goarch,
 };
