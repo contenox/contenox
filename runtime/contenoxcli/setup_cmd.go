@@ -25,9 +25,9 @@ import (
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Interactive wizard to configure your LLM provider and model.",
-	Long: `Run the setup wizard to pick an LLM provider (Ollama, OpenAI, Gemini, or
-embedded llama.cpp GGUF), enter credentials, and set defaults. This is the same
-wizard that runs inside IDE terminals via ACP.
+	Long: `Run the setup wizard to pick an LLM provider (Ollama, OpenAI, OpenRouter,
+Gemini, or local llama.cpp GGUF through modeld), enter credentials, and set defaults.
+This is the same wizard that runs inside IDE terminals via ACP.
 
 Examples:
   contenox setup`,
@@ -49,7 +49,7 @@ var setupProviders = []setupProvider{
 	{key: "openai", label: "OpenAI", defaultModel: "gpt-5-mini", envKey: "OPENAI_API_KEY", needsAPIKey: true},
 	{key: "openrouter", label: "OpenRouter (300+ models, one API key — deepseek, qwen, llama, gemini, gpt and more)", defaultModel: "deepseek/deepseek-chat-v3-5", envKey: "OPENROUTER_API_KEY", needsAPIKey: true},
 	{key: "gemini", label: "Google Gemini", defaultModel: "gemini-flash-latest", envKey: "GEMINI_API_KEY", needsAPIKey: true},
-	{key: "llama", label: "Llama.cpp GGUF (embedded — no server, no API key)", defaultModel: "", needsAPIKey: false},
+	{key: "llama", label: "Llama.cpp GGUF (local modeld — no provider API key)", defaultModel: "", needsAPIKey: false},
 }
 
 func runSetup(cmd *cobra.Command, out io.Writer) error {
@@ -153,8 +153,11 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  Pull a model after setup:")
 		fmt.Fprintln(out, "    contenox model pull granite-3.2-2b")
+		fmt.Fprintln(out, "    contenox model local")
 		fmt.Fprintln(out, "")
-		fmt.Fprintln(out, "  The first model you pull becomes the default automatically.")
+		fmt.Fprintln(out, "  Start modeld in llama mode before chatting. 'model list' shows only")
+		fmt.Fprintln(out, "  models loadable by the live daemon; 'model local' shows installed files.")
+		fmt.Fprintln(out, "  The first model you pull becomes the default-model automatically.")
 	default:
 		model = promptLine(out, scanner, fmt.Sprintf("  Model [%s]", model), model)
 	}

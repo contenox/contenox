@@ -39,11 +39,13 @@ A backend points at an LLM provider. Supported types:
   llama                         Local llama.cpp GGUF runtime served by the modeld daemon — NO external
                                 server, NO network, NO API key. Persistent sessions, explicit profiles,
                                 embeddings, and live prefix reuse. Point --url at the models directory.
-                                Registered automatically by 'contenox init'. --type local maps here.
+                                Registered automatically by 'contenox init'. modeld serves one active
+                                model at a time. --type local maps here.
   openvino                      Local OpenVINO IR runtime served by the modeld daemon (CPU / GPU / NPU) —
                                 NO external server, NO network, NO API key. Point --url at the models
                                 directory. Registered automatically by 'contenox init'. modeld serves one
-                                local backend at a time (its mode); the inactive one lists no models.
+                                local backend mode at a time; inactive local registrations are hidden
+                                from 'contenox model list'.
   ollama                        Local Ollama daemon (requires: ollama serve) or hosted Ollama Cloud.
   openai                        api.openai.com (requires --api-key-env).
   openrouter                    openrouter.ai — routes 300+ models from many providers through one
@@ -54,7 +56,7 @@ A backend points at an LLM provider. Supported types:
                                 login and GOOGLE_CLOUD_PROJECT).
 
 Examples:
-  # Fully embedded llama.cpp inference — no daemon, no network:
+  # Local llama.cpp inference through modeld — no provider API key, no network:
   contenox backend add llama --type llama --url <models-dir>
 
   # Register a local Ollama server (default URL inferred):
@@ -91,11 +93,12 @@ var backendAddCmd = &cobra.Command{
 	Long: `Register a named LLM backend endpoint in the local SQLite database.
 
 The --type flag determines which provider protocol is used.
-  llama                         Embedded llama.cpp GGUF runtime compiled into the contenox binary.
-                                No Ollama, no external server, no API key required. Persistent sessions,
-                                explicit runtime profiles, embeddings, and live prefix reuse when built
-                                with -tags llamanode.
+  llama                         Local llama.cpp GGUF runtime served by modeld.
+                                No Ollama, no provider API key required. Persistent sessions,
+                                explicit runtime profiles, embeddings, and live prefix reuse.
                                 Compatibility: --type local maps to this provider.
+  openvino                      Local OpenVINO IR runtime served by modeld. No provider API key required.
+                                modeld runs either llama or openvino mode at a time.
   openai, anthropic, mistral,
   gemini                        Cloud providers. Base URL inferred if --url is omitted. Requires --api-key-env.
   openrouter                    openrouter.ai — single API key for 300+ models. Base URL inferred. Requires --api-key-env.
@@ -331,7 +334,7 @@ func globalContenoxDir() (string, error) {
 }
 
 func init() {
-	backendAddCmd.Flags().String("type", "ollama", "Backend type: llama (embedded llama.cpp GGUF, no external server; local alias accepted), ollama, openai, openrouter, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
+	backendAddCmd.Flags().String("type", "ollama", "Backend type: llama (local GGUF via modeld; local alias accepted), openvino, ollama, openai, openrouter, anthropic, mistral, bedrock, gemini, vllm, vertex-google")
 	backendAddCmd.Flags().String("url", "", "Base URL of the backend (auto-inferred for openai/openrouter/anthropic/mistral/gemini if omitted; set https://ollama.com/api for hosted Ollama)")
 	backendAddCmd.Flags().String("api-key-env", "", "Name of the environment variable holding the API key (preferred over --api-key)")
 	backendAddCmd.Flags().String("api-key", "", "API key literal — prefer --api-key-env to avoid leaking into shell history")

@@ -53,10 +53,13 @@ Curated models — run 'contenox model registry-list' to see full list with size
 Or provide an explicit URL:
   contenox model pull my-model --url https://huggingface.co/.../model.gguf
 
-After downloading, the model is ready to use immediately. The llama backend is
-registered by 'contenox init' and the first pulled model becomes the default:
-  contenox model list
-  contenox "hello, what can you do?"`,
+After downloading, the artifact is installed locally. Use 'contenox model local'
+to inspect installed artifacts. Use 'contenox model list' to see models that are
+currently loadable from live backends; for llama/OpenVINO this requires modeld
+running in the matching backend mode. The first pulled model becomes the default
+model if none is set yet:
+  contenox model local
+  contenox model list`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
@@ -141,7 +144,7 @@ registered by 'contenox init' and the first pulled model becomes the default:
 		}
 
 		// Persist to local model registry and, on a fresh install, claim
-		// default-model so the user can use the model immediately.
+		// default-model so the next modeld-backed run has an explicit target.
 		if db, svc, _, dbErr := openModelRegistryDB(cmd); dbErr == nil {
 			defer db.Close()
 			_ = svc.Create(ctx, &runtimetypes.ModelRegistryEntry{

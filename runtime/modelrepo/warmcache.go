@@ -7,15 +7,16 @@ import (
 
 // Tunables for the warm session cache (package vars so tests can override). They
 // bound how many local backend sessions stay resident at once: each cached
-// session keeps its model resident in modeld, so an unbounded cache leaks
-// VRAM/RAM as the caller switches models. Mirrors the OpenVINO modeld-side pool.
+// session keeps a handle to modeld's active slot, so local modeld uses a default
+// cap of one resident slot. An unbounded cache prevents switching and can keep
+// stale handles alive across modeld owner changes.
 var (
-	WarmCacheMaxResident = 2
+	WarmCacheMaxResident = 1
 	WarmCacheIdleTTL     = 5 * time.Minute
 )
 
 // WarmSession is the minimal contract the cache needs: closing a session releases
-// the resident model in modeld.
+// the cached handle and lets modeld switch or unload the active slot.
 type WarmSession interface{ Close() error }
 
 // WarmEntry is one resident session kept warm across turns. Turn serializes a
@@ -32,8 +33,8 @@ type WarmEntry[S WarmSession] struct {
 
 // WarmCache is a bounded, idle-reaped cache of warm backend sessions keyed by a
 // model+config identity. It evicts by idle TTL and a max-resident cap (LRU),
-// never evicting a session that is mid-turn, and closes evicted sessions so
-// modeld releases the underlying model. Construct with NewWarmCache.
+// never evicting a session that is mid-turn, and closes evicted handles so the
+// modeld slot can be switched or unloaded. Construct with NewWarmCache.
 type WarmCache[S WarmSession] struct {
 	mu  sync.Mutex
 	m   map[string]*WarmEntry[S]
@@ -57,6 +58,11 @@ func (c *WarmCache[S]) Acquire(key string, open func() (S, error)) (*WarmEntry[S
 		return e, nil
 	}
 	c.mu.Unlock()
+
+	c.mu.Lock()
+	preVictims := c.selectVictimsLocked(nil)
+	c.mu.Unlock()
+	closeAll(preVictims)
 
 	s, err := open()
 	if err != nil {

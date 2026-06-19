@@ -506,9 +506,12 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")
 		fmt.Fprintln(out, "       contenox model pull qwen3-8b")
+		fmt.Fprintln(out, "       contenox model local           # installed local artifacts")
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  The llama backend is already registered and set as default.")
 		fmt.Fprintln(out, "  The first model you pull becomes the default-model automatically.")
+		fmt.Fprintln(out, "  Start modeld in llama mode before chatting; 'model list' shows")
+		fmt.Fprintln(out, "  only models loadable by the live daemon.")
 		fmt.Fprintln(out, "")
 		chatStep = 2
 	case "openrouter":

@@ -151,6 +151,75 @@ type EmbedResult struct {
 	Vector []float32 `json:"vector,omitempty"`
 }
 
+// SlotState is the daemon-visible lifecycle state of the single active local
+// model slot. The empty string is treated as SlotEmpty by older callers.
+type SlotState string
+
+const (
+	SlotEmpty        SlotState = "Empty"
+	SlotLoading      SlotState = "Loading"
+	SlotReady        SlotState = "Ready"
+	SlotBusy         SlotState = "Busy"
+	SlotSwitching    SlotState = "Switching"
+	SlotUnloading    SlotState = "Unloading"
+	SlotFailed       SlotState = "Failed"
+	SlotShuttingDown SlotState = "ShuttingDown"
+	SlotLostOwner    SlotState = "LostOwner"
+)
+
+// ActiveModel describes the model identity and runtime config currently loaded
+// in modeld's single active slot.
+type ActiveModel struct {
+	ModelName  string `json:"model_name,omitempty"`
+	Type       string `json:"type,omitempty"`
+	Digest     string `json:"digest,omitempty"`
+	Path       string `json:"path,omitempty"`
+	Config     Config `json:"config"`
+	Generation uint64 `json:"generation"`
+}
+
+// DaemonStatus reports the owner-local modeld slot state. It is intentionally
+// about resident compute state, not the offline installed-model library.
+type DaemonStatus struct {
+	OwnerInstanceID string       `json:"owner_instance_id,omitempty"`
+	Backend         string       `json:"backend,omitempty"`
+	State           SlotState    `json:"state,omitempty"`
+	Active          *ActiveModel `json:"active,omitempty"`
+	BusyOperation   string       `json:"busy_operation,omitempty"`
+	LastError       string       `json:"last_error,omitempty"`
+}
+
+// LoadModelRequest explicitly activates modeld's single local model slot. A
+// different active model may be switched only when the slot has no open session
+// holder and is not busy.
+type LoadModelRequest struct {
+	Fence
+	ModelName string
+	Type      string
+	Digest    string
+	Path      string
+	Config    Config
+	// ExpectedGeneration, when non-zero, makes load/switch conditional on the
+	// caller's view of the active slot.
+	ExpectedGeneration uint64
+}
+
+// UnloadModelRequest explicitly releases modeld's active slot. It is idempotent
+// when the slot is already empty unless ExpectedGeneration is set and stale.
+type UnloadModelRequest struct {
+	Fence
+	ExpectedGeneration uint64
+}
+
+// ModelController is implemented by modeld services that expose explicit
+// single-slot control. Service remains the compute contract; this interface is
+// the daemon lifecycle/control extension.
+type ModelController interface {
+	Status(ctx context.Context) (DaemonStatus, error)
+	LoadModel(ctx context.Context, req LoadModelRequest) (ActiveModel, error)
+	UnloadModel(ctx context.Context, req UnloadModelRequest) error
+}
+
 // Session is a persistent, workspace-scoped inference session. The hot coding
 // loop is EnsurePrefix -> PrefillSuffix -> Decode: keep the stable prefix's KV
 // hot, re-prefill only the changed suffix, decode.
@@ -294,10 +363,16 @@ type ContextReport struct {
 
 // Canonical errors expected to cross the boundary.
 var (
-	ErrNotOwner        = errors.New("instance is not the local runtime owner")
-	ErrStaleFence      = errors.New("stale owner fence token")
-	ErrSessionClosed   = errors.New("session is closed")
-	ErrContextOverflow = errors.New("exceeded the session context window")
+	ErrNotOwner            = errors.New("instance is not the local runtime owner")
+	ErrStaleFence          = errors.New("stale owner fence token")
+	ErrSessionClosed       = errors.New("session is closed")
+	ErrContextOverflow     = errors.New("exceeded the session context window")
+	ErrModelBusy           = errors.New("modeld active model slot is busy")
+	ErrModelNotActive      = errors.New("requested model is not active in modeld")
+	ErrModelSwitchRequired = errors.New("modeld active model slot must be switched")
+	ErrModelLoadFailed     = errors.New("modeld failed to load model")
+	ErrInsufficientMemory  = errors.New("insufficient memory for requested model")
+	ErrSlotGenerationStale = errors.New("stale modeld slot generation")
 	// ErrBackendMismatch means the requested model Type is not the backend this
 	// daemon serves (e.g. a llama model requested from an openvino-mode modeld).
 	ErrBackendMismatch = errors.New("model type not served by this modeld backend")

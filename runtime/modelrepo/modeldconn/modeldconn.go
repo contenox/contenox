@@ -7,6 +7,7 @@ package modeldconn
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/contenox/runtime/runtime/internal/modeldprobe"
@@ -92,14 +93,81 @@ func OpenSession(ctx context.Context, ref ModelRef, cfg transport.Config) (trans
 	if err != nil {
 		return nil, err
 	}
-	return c.OpenSession(ctx, transport.OpenSessionRequest{
-		Fence:     transport.Fence{OwnerInstanceID: st.Instance},
+	req := openRequest(st.Instance, ref, cfg)
+	sess, err := c.OpenSession(ctx, req)
+	if errors.Is(err, transport.ErrModelSwitchRequired) || errors.Is(err, transport.ErrModelNotActive) {
+		if _, loadErr := c.LoadModel(ctx, loadRequest(st.Instance, ref, cfg)); loadErr != nil {
+			return nil, loadErr
+		}
+		return c.OpenSession(ctx, req)
+	}
+	return sess, err
+}
+
+// Status returns the live modeld slot status. It is a runtime-state check, not
+// an installed-model catalog scan.
+func Status(ctx context.Context) (transport.DaemonStatus, error) {
+	st := detector().Probe(ctx)
+	if st.State != modeldprobe.StateRunning {
+		return transport.DaemonStatus{}, st.Err()
+	}
+	c, err := dial(st.Endpoint, st.Instance)
+	if err != nil {
+		return transport.DaemonStatus{}, err
+	}
+	return c.Status(ctx)
+}
+
+// LoadModel explicitly activates the single modeld slot, switching away from an
+// idle active model when needed.
+func LoadModel(ctx context.Context, ref ModelRef, cfg transport.Config) (transport.ActiveModel, error) {
+	st := detector().Probe(ctx)
+	if st.State != modeldprobe.StateRunning {
+		return transport.ActiveModel{}, st.Err()
+	}
+	c, err := dial(st.Endpoint, st.Instance)
+	if err != nil {
+		return transport.ActiveModel{}, err
+	}
+	return c.LoadModel(ctx, loadRequest(st.Instance, ref, cfg))
+}
+
+// UnloadModel releases the active modeld slot.
+func UnloadModel(ctx context.Context, expectedGeneration uint64) error {
+	st := detector().Probe(ctx)
+	if st.State != modeldprobe.StateRunning {
+		return st.Err()
+	}
+	c, err := dial(st.Endpoint, st.Instance)
+	if err != nil {
+		return err
+	}
+	return c.UnloadModel(ctx, transport.UnloadModelRequest{
+		Fence:              transport.Fence{OwnerInstanceID: st.Instance},
+		ExpectedGeneration: expectedGeneration,
+	})
+}
+
+func openRequest(owner string, ref ModelRef, cfg transport.Config) transport.OpenSessionRequest {
+	return transport.OpenSessionRequest{
+		Fence:     transport.Fence{OwnerInstanceID: owner},
 		ModelName: ref.Name,
 		Type:      ref.Type,
 		Digest:    ref.Digest,
 		Path:      ref.Path,
 		Config:    cfg,
-	})
+	}
+}
+
+func loadRequest(owner string, ref ModelRef, cfg transport.Config) transport.LoadModelRequest {
+	return transport.LoadModelRequest{
+		Fence:     transport.Fence{OwnerInstanceID: owner},
+		ModelName: ref.Name,
+		Type:      ref.Type,
+		Digest:    ref.Digest,
+		Path:      ref.Path,
+		Config:    cfg,
+	}
 }
 
 // Describe asks the running modeld owner for a model's capabilities, read from

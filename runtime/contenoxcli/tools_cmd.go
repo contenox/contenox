@@ -22,11 +22,12 @@ import (
 // toolsCmd is the parent "contenox tools" command.
 var toolsCmd = &cobra.Command{
 	Use:   "tools",
-	Short: "Manage remote tools (add, list, show, remove, update).",
-	Long: `Register and manage remote tools — external HTTP services exposed as LLM tools.
+	Short: "Manage remote tool providers (add, list, show, remove, update).",
+	Long: `Register and manage remote tool providers — external HTTP services exposed as LLM tools.
 
-A remote tools points at an OpenAPI v3 service. When used in a chain the runtime
-fetches its schema, discovers every operation, and makes them callable by the model.
+A remote tool provider points at an OpenAPI v3 service. When used in a chain the
+runtime fetches its schema, discovers every operation, and makes them callable by
+the model.
 
 By default the spec is fetched from <url>/openapi.json. Use --spec to point at a
 different location: a full URL (https://...) or a local file (~/my-spec.yaml,
@@ -49,8 +50,8 @@ Examples:
 
 var toolsAddCmd = &cobra.Command{
 	Use:   "add <name>",
-	Short: "Register a remote tools by name and URL.",
-	Long: `Register an external OpenAPI v3 service as a named tools.
+	Short: "Register a remote tool provider by name and URL.",
+	Long: `Register an external OpenAPI v3 service as a named tool provider.
 
 The runtime probes the endpoint at registration time to count available tools.
 If the service is unreachable at registration, it will be retried at chain execution time.
@@ -75,7 +76,7 @@ When set, Contenox performs the login automatically on 401/403 and retries:
   --auth-inject-format  Printf format for the value, e.g. "Bearer %s" (optional)
 
 TLS: for services behind a private CA or self-signed certificate:
-  --insecure-skip-tls-verify  Disable TLS verification for this tools only.
+  --insecure-skip-tls-verify  Disable TLS verification for this provider only.
 
 Examples:
   # Public API — no auth
@@ -109,40 +110,40 @@ Examples:
 
 var toolsListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all registered remote tools.",
+	Short: "List all registered remote tool providers.",
 	Args:  cobra.NoArgs,
 	RunE:  runToolsList,
 }
 
 var toolsShowCmd = &cobra.Command{
 	Use:   "show <name>",
-	Short: "Show details and available tools for a remote tools.",
+	Short: "Show details and available tools for a remote tool provider.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runToolsShow,
 }
 
 var toolsRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
-	Short: "Remove a registered remote tools.",
+	Short: "Remove a registered remote tool provider.",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runToolsRemove,
 }
 
 var toolsUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
-	Short: "Update an existing remote tools's URL, headers, timeout, or spec.",
-	Long: `Update one or more properties of a registered tools.
+	Short: "Update an existing remote tool provider's URL, headers, timeout, or spec.",
+	Long: `Update one or more properties of a registered tool provider.
 
 Only flags that are explicitly provided are updated; others are left unchanged.
 
-  --header replaces ALL existing headers for that tools.
-  --inject replaces ALL existing inject params for that tools.
+  --header replaces ALL existing headers for that provider.
+  --inject replaces ALL existing inject params for that provider.
   --spec   replaces the spec source; pass an empty string to clear it
            (reverting to <url>/openapi.json discovery).
 
 Note: auth flow (--auth-*) and TLS settings (--insecure-skip-tls-verify) can
 only be set at registration time via 'tools add'. To change them, remove the
-tools and re-add it with the updated flags.
+provider and re-add it with the updated flags.
 
 Examples:
   contenox tools update myapi --url http://new-host:9090
@@ -171,7 +172,7 @@ func init() {
 	toolsAddCmd.Flags().String("auth-extract-jsonpath", "", `JSONPath expression to extract a token from the login response body, e.g. "$.data.token"`)
 	toolsAddCmd.Flags().String("auth-inject-header", "", `HTTP header to inject the extracted token into, e.g. "Cookie" or "Authorization"`)
 	toolsAddCmd.Flags().String("auth-inject-format", "", `Printf format string for the injected value, e.g. "Bearer %s" or "sid=%s" (defaults to cookie "name=value" when extracting a cookie)`)
-	toolsAddCmd.Flags().Bool("insecure-skip-tls-verify", false, "Skip TLS certificate verification for this tools (use only for self-signed/internal services)")
+	toolsAddCmd.Flags().Bool("insecure-skip-tls-verify", false, "Skip TLS certificate verification for this provider (use only for self-signed/internal services)")
 
 	toolsUpdateCmd.Flags().String("url", "", "New base URL")
 	toolsUpdateCmd.Flags().StringArray("header", nil, `Header to inject, e.g. "Authorization: Bearer $TOKEN" (repeatable; replaces all existing headers)`)
@@ -385,7 +386,7 @@ func runToolsList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(all) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No remote tools registered. Run: contenox tools add <name> --url <endpoint>")
+		fmt.Fprintln(cmd.OutOrStdout(), "No remote tool providers registered. Run: contenox tools add <name> --url <endpoint>")
 		return nil
 	}
 

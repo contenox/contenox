@@ -12,9 +12,9 @@ import (
 	"github.com/contenox/runtime/runtime/reasoning"
 )
 
-// warm holds resident sessions across turns. It is bounded (idle TTL + resident
-// cap, see modelrepo.WarmCache): switching models evicts and closes the LRU
-// session so modeld releases its model instead of stacking them.
+// warm holds the active modeld session handle across turns. It is bounded (idle
+// TTL + resident cap, see modelrepo.WarmCache): switching models evicts and
+// closes idle handles before opening another slot.
 var warm = modelrepo.NewWarmCache[Session]()
 
 // acquire returns the warm entry for this client's model+config, opening a modeld

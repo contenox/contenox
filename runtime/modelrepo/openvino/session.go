@@ -69,5 +69,8 @@ func NewUnsupportedFeatureError(feature string) error {
 // closed, or the owner changed under us (stale fence after a lease takeover), in
 // which case the next call reopens against the new leader.
 func fatalSessionError(err error) bool {
-	return errors.Is(err, transport.ErrSessionClosed) || errors.Is(err, transport.ErrStaleFence)
+	return errors.Is(err, transport.ErrSessionClosed) ||
+		errors.Is(err, transport.ErrStaleFence) ||
+		errors.Is(err, transport.ErrSlotGenerationStale) ||
+		errors.Is(err, transport.ErrModelNotActive)
 }

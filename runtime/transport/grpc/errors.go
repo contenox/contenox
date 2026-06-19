@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,10 +19,19 @@ var sentinels = []struct {
 	code  codes.Code
 	err   error
 }{
+	{"context_canceled", codes.Canceled, context.Canceled},
+	{"deadline_exceeded", codes.DeadlineExceeded, context.DeadlineExceeded},
 	{"stale_fence", codes.FailedPrecondition, transport.ErrStaleFence},
 	{"not_owner", codes.FailedPrecondition, transport.ErrNotOwner},
 	{"session_closed", codes.FailedPrecondition, transport.ErrSessionClosed},
 	{"context_overflow", codes.ResourceExhausted, transport.ErrContextOverflow},
+	{"model_busy", codes.FailedPrecondition, transport.ErrModelBusy},
+	{"model_not_active", codes.FailedPrecondition, transport.ErrModelNotActive},
+	{"model_switch_required", codes.FailedPrecondition, transport.ErrModelSwitchRequired},
+	{"model_load_failed", codes.Internal, transport.ErrModelLoadFailed},
+	{"insufficient_memory", codes.ResourceExhausted, transport.ErrInsufficientMemory},
+	{"slot_generation_stale", codes.FailedPrecondition, transport.ErrSlotGenerationStale},
+	{"backend_mismatch", codes.FailedPrecondition, transport.ErrBackendMismatch},
 	{"unsupported_feature", codes.Unimplemented, transport.ErrUnsupportedFeature},
 	{"manifest_mismatch", codes.FailedPrecondition, contextasm.ErrManifestMismatch},
 }
@@ -60,5 +70,32 @@ func decodeError(err error) error {
 			return fmt.Errorf("%w: %s", s.err, rest)
 		}
 	}
+	switch st.Code() {
+	case codes.Canceled:
+		return fmt.Errorf("%w: %s", context.Canceled, msg)
+	case codes.DeadlineExceeded:
+		return fmt.Errorf("%w: %s", context.DeadlineExceeded, msg)
+	}
 	return err
+}
+
+func errorToken(err error) string {
+	for _, s := range sentinels {
+		if errors.Is(err, s.err) {
+			return s.token
+		}
+	}
+	return ""
+}
+
+func decodeWireError(token, msg string) error {
+	if msg == "" {
+		return nil
+	}
+	for _, s := range sentinels {
+		if s.token == token {
+			return fmt.Errorf("%w: %s", s.err, msg)
+		}
+	}
+	return errors.New(msg)
 }

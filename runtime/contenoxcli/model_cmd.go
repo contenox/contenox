@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,25 +15,35 @@ import (
 	libbus "github.com/contenox/runtime/libbus"
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/backendservice"
+	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/modelservice"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/transport"
 	"github.com/spf13/cobra"
 )
 
 var modelCmd = &cobra.Command{
 	Use:     "model",
 	Aliases: []string{"models"},
-	Short:   "Inspect LLM models served by backends.",
-	Long: `Inspect models available from LLM backends.
+	Short:   "Inspect LLM models from live backends and local disk.",
+	Long: `Inspect models from LLM backends and local model storage.
 
-By default, 'model list' queries each registered backend in real-time and
-shows the models it is currently serving. Use 'model capability' to set manual
-provider/model capability overrides when a backend does not advertise them.
+'model list' queries registered backends in real time and shows models that can
+be used now. For local llama/OpenVINO, that means modeld is running in the
+matching backend mode and can describe/load the model. Inactive local modeld
+backend registrations are hidden from this live list.
+
+'model local' is the offline inventory of installed GGUF/OpenVINO artifacts on
+disk. It does not require modeld and may include models that are not currently
+loadable by the active daemon.
 
 Examples:
   contenox model list
-  contenox model capability set openai gpt-5-mini --think true
+  contenox model local
+  contenox model registry-list
 
 Set the default model:
   contenox config set default-model    gemini-flash-latest
@@ -48,11 +60,17 @@ Set the default model:
 var modelListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
-	Short:   "List models available from live backends.",
-	Long: `Query each registered backend in real time and show its available models.
+	Short:   "List models currently loadable from live backends.",
+	Long: `Query each registered backend in real time and show models that can be used now.
 
-Shows model name, backend it comes from, and effective capabilities observed at
-runtime plus manual overrides (chat, embed, prompt, think, context length).
+For cloud/Ollama/vLLM providers this is the provider-advertised live catalog.
+For local llama/OpenVINO this is the modeld runtime view: only the backend mode
+currently served by modeld is shown, and only models modeld can describe/load
+are listed. Use 'contenox model local' to inspect installed local artifacts even
+when modeld is stopped or serving the other local backend.
+
+Shows model name, backend, and effective capabilities observed at runtime plus
+manual overrides (chat, embed, prompt, think, context length).
 
 Examples:
   contenox model list`,
@@ -65,6 +83,31 @@ Examples:
 		}
 		defer db.Close()
 		return printLiveModels(ctx, db, cmd.OutOrStdout(), cmd.ErrOrStderr())
+	},
+}
+
+var modelLocalCmd = &cobra.Command{
+	Use:     "local",
+	Aliases: []string{"installed", "library"},
+	Short:   "List installed local model artifacts.",
+	Long: `List local llama/OpenVINO model artifacts on disk.
+
+This is an offline inventory surface: it scans local model directories and does
+not require modeld to be running or the model to be loaded. When modeld is
+reachable, the currently active slot is marked in the STATUS column.
+
+Examples:
+  contenox model local
+  contenox model installed`,
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := libtracker.WithNewRequestID(context.Background())
+		db, _, err := openBackendDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return printLocalModelInventory(ctx, db, cmd.OutOrStdout())
 	},
 }
 
@@ -101,6 +144,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	// Stable sort by backend name.
 	type entry struct {
 		backendName string
+		backendType string
 		backendErr  string
 		pulled      []string
 		canChat     map[string]bool
@@ -113,6 +157,7 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	for _, bs := range rt {
 		e := entry{
 			backendName: bs.Name,
+			backendType: modelrepo.CanonicalBackendType(bs.Backend.Type),
 			backendErr:  bs.Error,
 			canChat:     map[string]bool{},
 			canEmbed:    map[string]bool{},
@@ -141,7 +186,11 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 	any := false
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "BACKEND\tMODEL\tCHAT\tEMBED\tPROMPT\tTHINK\tCTX")
+	activeModeldBackend := modeldconn.Backend()
 	for _, e := range entries {
+		if hideInactiveLocalBackend(e.backendType, activeModeldBackend, e.backendErr, e.pulled) {
+			continue
+		}
 		if e.backendErr != "" {
 			errMsg := e.backendErr
 			if len(errMsg) > 80 {
@@ -174,12 +223,172 @@ func printLiveModels(ctx context.Context, db libdb.DBManager, out, errW io.Write
 		return err
 	}
 	if !any {
-		fmt.Fprintln(out, "\nNo models found on any backend.")
+		fmt.Fprintln(out, "\nNo loadable models found on any live backend. For installed local artifacts, run: contenox model local")
 	}
 	if preferredModel != "" {
 		fmt.Fprintln(out, "\n* = default model (contenox config set default-model <name>)")
 	}
 	return nil
+}
+
+func hideInactiveLocalBackend(backendType, activeModeldBackend, backendErr string, pulled []string) bool {
+	typ := modelrepo.CanonicalBackendType(backendType)
+	if typ != "llama" && typ != "openvino" {
+		return false
+	}
+	if backendErr != "" || len(pulled) > 0 {
+		return false
+	}
+	return activeModeldBackend == "" || activeModeldBackend != typ
+}
+
+type localModelInventoryEntry struct {
+	BackendName string
+	Type        string
+	Model       string
+	Path        string
+	Status      string
+}
+
+type localModelScanRoot struct {
+	backendName string
+	typ         string
+	root        string
+}
+
+func printLocalModelInventory(ctx context.Context, db libdb.DBManager, out io.Writer) error {
+	entries, err := localModelInventory(ctx, db)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		fmt.Fprintln(out, "No local model artifacts found.")
+		return nil
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "BACKEND\tTYPE\tMODEL\tSTATUS\tPATH")
+	for _, e := range entries {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", e.BackendName, e.Type, e.Model, e.Status, e.Path)
+	}
+	return w.Flush()
+}
+
+func localModelInventory(ctx context.Context, db libdb.DBManager) ([]localModelInventoryEntry, error) {
+	backends, err := backendservice.New(db).List(ctx, nil, 1000)
+	if err != nil {
+		return nil, fmt.Errorf("list backends: %w", err)
+	}
+
+	var roots []localModelScanRoot
+	for _, b := range backends {
+		typ := modelrepo.CanonicalBackendType(b.Type)
+		if typ != "llama" && typ != "openvino" {
+			continue
+		}
+		if strings.TrimSpace(b.BaseURL) == "" {
+			continue
+		}
+		roots = append(roots, localModelScanRoot{backendName: b.Name, typ: typ, root: b.BaseURL})
+	}
+	for _, r := range defaultLocalModelRoots() {
+		roots = append(roots, r)
+	}
+
+	status, _ := modeldconn.Status(ctx)
+	var out []localModelInventoryEntry
+	seen := map[string]bool{}
+	for _, root := range roots {
+		found, err := scanLocalModelRoot(root.backendName, root.typ, root.root, status)
+		if err != nil {
+			continue
+		}
+		for _, e := range found {
+			key := e.Type + "\x00" + e.Path
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Type != out[j].Type {
+			return out[i].Type < out[j].Type
+		}
+		if out[i].BackendName != out[j].BackendName {
+			return out[i].BackendName < out[j].BackendName
+		}
+		return out[i].Model < out[j].Model
+	})
+	return out, nil
+}
+
+func defaultLocalModelRoots() []localModelScanRoot {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return nil
+	}
+	base := filepath.Join(home, ".contenox", "models")
+	return []localModelScanRoot{
+		{backendName: "(default)", typ: "llama", root: filepath.Join(base, "llama")},
+		{backendName: "(default)", typ: "openvino", root: filepath.Join(base, "openvino")},
+		{backendName: "(legacy)", typ: "llama", root: base},
+	}
+}
+
+func scanLocalModelRoot(backendName, typ, root string, status transport.DaemonStatus) ([]localModelInventoryEntry, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []localModelInventoryEntry
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		dir := filepath.Join(root, name)
+		path, ok := localModelArtifactPath(typ, dir)
+		if !ok {
+			continue
+		}
+		out = append(out, localModelInventoryEntry{
+			BackendName: backendName,
+			Type:        typ,
+			Model:       name,
+			Path:        path,
+			Status:      localModelStatus(typ, path, status),
+		})
+	}
+	return out, nil
+}
+
+func localModelArtifactPath(typ, dir string) (string, bool) {
+	switch typ {
+	case "llama":
+		path := filepath.Join(dir, "model.gguf")
+		if _, err := os.Stat(path); err == nil {
+			return path, true
+		}
+	case "openvino":
+		if _, err := os.Stat(filepath.Join(dir, "openvino_model.xml")); err == nil {
+			return dir, true
+		}
+	}
+	return "", false
+}
+
+func localModelStatus(typ, path string, status transport.DaemonStatus) string {
+	if status.Active == nil {
+		return "installed"
+	}
+	if status.Active.Type == typ && status.Active.Path == path {
+		if status.State == "" {
+			return "active"
+		}
+		return "active:" + string(status.State)
+	}
+	return "installed"
 }
 
 func boolMark(b bool) string {
@@ -281,5 +490,6 @@ func init() {
 	modelSetContextCmd.Flags().String("context", "", "Context window size: bare int or shorthand (12k, 128k, 1m).")
 	_ = modelSetContextCmd.MarkFlagRequired("context")
 	modelCmd.AddCommand(modelListCmd)
+	modelCmd.AddCommand(modelLocalCmd)
 	modelCmd.AddCommand(modelSetContextCmd)
 }

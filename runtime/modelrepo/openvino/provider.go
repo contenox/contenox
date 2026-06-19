@@ -78,7 +78,7 @@ func (p *openvinoProvider) GetEmbedConnection(_ context.Context, _ string) (mode
 }
 
 func (p *openvinoProvider) notWired(kind string) error {
-	return fmt.Errorf("%w: %s client for model %q (modeld not available)", ErrSessionUnavailable, kind, p.name)
+	return fmt.Errorf("%w: %s client for model %q requires a running modeld serving the openvino backend", ErrSessionUnavailable, kind, p.name)
 }
 
 func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {

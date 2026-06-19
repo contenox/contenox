@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/contenox/runtime/modeld/slot"
 	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/transport"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
@@ -62,11 +63,31 @@ func (s *embeddingService) lastRequest() transport.EmbedRequest {
 
 type decodeRecordingService struct {
 	*transport.MemoryService
-	sess *decodeRecordingSession
+	sess transport.Session
 }
 
 func (s *decodeRecordingService) OpenSession(context.Context, transport.OpenSessionRequest) (transport.Session, error) {
 	return s.sess, nil
+}
+
+type canceledOpenService struct {
+	*transport.MemoryService
+}
+
+func (s *canceledOpenService) OpenSession(context.Context, transport.OpenSessionRequest) (transport.Session, error) {
+	return nil, context.Canceled
+}
+
+type streamErrorSession struct {
+	decodeRecordingSession
+	err error
+}
+
+func (s *streamErrorSession) Decode(context.Context, transport.DecodeConfig) (<-chan transport.StreamChunk, error) {
+	ch := make(chan transport.StreamChunk, 1)
+	ch <- transport.StreamChunk{Error: s.err}
+	close(ch)
+	return ch, nil
 }
 
 type decodeRecordingSession struct {
@@ -291,6 +312,20 @@ func TestContextOverflowSentinelOverWire(t *testing.T) {
 	}
 }
 
+func TestContextCanceledSentinelOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := &canceledOpenService{MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1"))}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+
+	_, err = client.OpenSession(context.Background(), transport.OpenSessionRequest{Fence: transport.Fence{OwnerInstanceID: "owner-1"}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("OpenSession canceled over wire = %v, want context.Canceled", err)
+	}
+}
+
 func TestEmbedRoundTripOverWire(t *testing.T) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -319,5 +354,100 @@ func TestEmbedRoundTripOverWire(t *testing.T) {
 	}
 	if req.Text != "query text" {
 		t.Fatalf("Embed text = %q", req.Text)
+	}
+}
+
+func TestSlotControlRoundTripOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := slot.New(
+		transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		slot.WithOwner("owner-1"),
+		slot.WithBackend("llama"),
+	)
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+	ctx := context.Background()
+
+	active, err := client.LoadModel(ctx, transport.LoadModelRequest{
+		Fence:     transport.Fence{OwnerInstanceID: "owner-1"},
+		ModelName: "a",
+		Type:      "llama",
+		Digest:    "digest-a",
+		Path:      "/models/a.gguf",
+		Config:    transport.Config{NumCtx: 100},
+	})
+	if err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	if active.ModelName != "a" || active.Generation == 0 {
+		t.Fatalf("active over wire = %+v", active)
+	}
+
+	st, err := client.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.State != transport.SlotReady || st.Active == nil || st.Active.Generation != active.Generation {
+		t.Fatalf("status over wire = %+v", st)
+	}
+
+	sess, err := client.OpenSession(ctx, transport.OpenSessionRequest{
+		Fence:     transport.Fence{OwnerInstanceID: "owner-1"},
+		ModelName: "a",
+		Type:      "llama",
+		Digest:    "digest-a",
+		Path:      "/models/a.gguf",
+		Config:    transport.Config{NumCtx: 100},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession active: %v", err)
+	}
+	_, err = client.LoadModel(ctx, transport.LoadModelRequest{
+		Fence:     transport.Fence{OwnerInstanceID: "owner-1"},
+		ModelName: "b",
+		Type:      "llama",
+		Digest:    "digest-b",
+		Path:      "/models/b.gguf",
+		Config:    transport.Config{NumCtx: 100},
+	})
+	if !errors.Is(err, transport.ErrModelBusy) {
+		t.Fatalf("LoadModel while session held = %v, want ErrModelBusy", err)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := client.UnloadModel(ctx, transport.UnloadModelRequest{ExpectedGeneration: active.Generation}); err != nil {
+		t.Fatalf("UnloadModel: %v", err)
+	}
+}
+
+func TestStreamChunkSentinelErrorOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := &decodeRecordingService{
+		MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		sess:          &streamErrorSession{err: transport.ErrSlotGenerationStale},
+	}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+	sess, err := client.OpenSession(context.Background(), transport.OpenSessionRequest{
+		Fence: transport.Fence{OwnerInstanceID: "owner-1"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	ch, err := sess.Decode(context.Background(), transport.DecodeConfig{})
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	chunk, ok := <-ch
+	if !ok {
+		t.Fatal("Decode stream closed without chunk")
+	}
+	if !errors.Is(chunk.Error, transport.ErrSlotGenerationStale) {
+		t.Fatalf("stream chunk error = %v, want ErrSlotGenerationStale", chunk.Error)
 	}
 }

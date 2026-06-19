@@ -19,6 +19,7 @@ type Client struct {
 }
 
 var _ transport.Service = (*Client)(nil)
+var _ transport.ModelController = (*Client)(nil)
 
 // DialLeader connects to the owner's advertised endpoint and fences every call
 // with the expected owner instance id resolved from the lease record.
@@ -55,6 +56,46 @@ func (c *Client) invoke(ctx context.Context, name string, in, out any) error {
 	ctx = withOwner(ctx, c.owner)
 	err := c.cc.Invoke(ctx, method(name), in, out, grpclib.CallContentSubtype(codecName))
 	return decodeError(err)
+}
+
+func (c *Client) Status(ctx context.Context) (transport.DaemonStatus, error) {
+	out := new(transport.DaemonStatus)
+	if err := c.invoke(ctx, "Status", &statusReq{OwnerInstanceID: c.owner}, out); err != nil {
+		return transport.DaemonStatus{}, err
+	}
+	return *out, nil
+}
+
+func (c *Client) LoadModel(ctx context.Context, req transport.LoadModelRequest) (transport.ActiveModel, error) {
+	owner := req.Fence.OwnerInstanceID
+	if owner == "" {
+		owner = c.owner
+	}
+	out := new(transport.ActiveModel)
+	in := &loadModelReq{
+		OwnerInstanceID:    owner,
+		ModelName:          req.ModelName,
+		Type:               req.Type,
+		Digest:             req.Digest,
+		Path:               req.Path,
+		Config:             req.Config,
+		ExpectedGeneration: req.ExpectedGeneration,
+	}
+	if err := c.invoke(ctx, "LoadModel", in, out); err != nil {
+		return transport.ActiveModel{}, err
+	}
+	return *out, nil
+}
+
+func (c *Client) UnloadModel(ctx context.Context, req transport.UnloadModelRequest) error {
+	owner := req.Fence.OwnerInstanceID
+	if owner == "" {
+		owner = c.owner
+	}
+	return c.invoke(ctx, "UnloadModel", &unloadModelReq{
+		OwnerInstanceID:    owner,
+		ExpectedGeneration: req.ExpectedGeneration,
+	}, new(unloadModelResp))
 }
 
 func (c *Client) OpenSession(ctx context.Context, req transport.OpenSessionRequest) (transport.Session, error) {
@@ -225,7 +266,7 @@ func (s *grpcSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (<
 			}
 			chunk := transport.StreamChunk{Text: w.Text, Thinking: w.Thinking, ToolCalls: w.ToolCalls}
 			if w.Error != "" {
-				chunk.Error = errors.New(w.Error)
+				chunk.Error = decodeWireError(w.ErrorToken, w.Error)
 			}
 			out <- chunk
 			if w.Error != "" {

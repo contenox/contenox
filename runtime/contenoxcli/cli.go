@@ -159,7 +159,8 @@ var rootCmd = &cobra.Command{
 	Short: "Local AI workflow runtime: run versioned chains with your tools and models.",
 	Long: `Contenox is a local runtime for packaged, auditable AI workflows.
 Chains define the prompts, model routing, tools, retries, branch conditions,
-and human approval gates. No daemon, no cloud required. State is stored in SQLite.
+and human approval gates. State is stored in SQLite. Cloud providers and Ollama
+work directly from the CLI; local GGUF/OpenVINO inference is served by modeld.
 
   Quickstart:
     contenox setup                         # interactive wizard — pick provider, model, API key
@@ -167,7 +168,7 @@ and human approval gates. No daemon, no cloud required. State is stored in SQLit
     contenox "list files in my home dir"   # one-shot chain run using your configured policy
 
   Or register an LLM backend manually:
-    # Fully embedded llama.cpp GGUF (no external server, no network, no API key):
+    # Local llama.cpp GGUF via modeld (no provider API key, no network):
     contenox backend add llama --type llama --url <models-dir>
     contenox config set default-provider llama
     contenox config set default-model <model-name>
@@ -271,24 +272,35 @@ This writes default-chain.json and default-run-chain.json.
 
 After init, register a backend, make sure the runtime can see a model, then set your defaults:
 
+  # Local llama.cpp via modeld:
+  contenox model pull granite-3.2-2b
+  contenox model local
+  contenox config set default-provider llama
+  contenox config set default-model granite-3.2-2b
+
   # Local Ollama:
   contenox backend add local --type ollama
+  contenox config set default-provider ollama
   contenox config set default-model qwen2.5:7b
 
   # Hosted Ollama Cloud:
   contenox backend add ollama-cloud --type ollama --url https://ollama.com/api --api-key-env OLLAMA_API_KEY
+  contenox config set default-provider ollama
   contenox config set default-model gpt-oss:20b
 
   # OpenAI:
   contenox backend add openai --type openai --api-key-env OPENAI_API_KEY
+  contenox config set default-provider openai
   contenox config set default-model gpt-5-mini
 
   # Google Gemini:
   contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
+  contenox config set default-provider gemini
   contenox config set default-model gemini-3.1-pro-preview
 
   # OpenRouter:
   contenox backend add openrouter --type openrouter --api-key-env OPENROUTER_API_KEY
+  contenox config set default-provider openrouter
   contenox config set default-model deepseek/deepseek-chat-v3-5
 
 Use --force to overwrite existing files, or --update to refresh unchanged default files to the latest version.`,

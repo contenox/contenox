@@ -29,6 +29,7 @@ import (
 	"github.com/contenox/runtime/liblease"
 	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/modeld/owner"
+	"github.com/contenox/runtime/modeld/slot"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
 )
 
@@ -155,6 +156,7 @@ func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy 
 
 	// Serve the runtime/transport.Service contract over gRPC, fenced by the owner
 	// instance id, while we hold the lease.
+	svc = slot.New(svc, slot.WithOwner(o.InstanceID()), slot.WithBackend(backend))
 	fmt.Printf("modeld transport serving: instance=%s endpoint=%s backend=%s\n", o.InstanceID(), endpoint, backend)
 	serveCtx, serveCancel := context.WithCancel(ctx)
 	defer serveCancel()

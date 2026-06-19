@@ -48,7 +48,11 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		// Context window is modeld's physical hot-context decision. Profile config
 		// is only the request/cap; the daemon may reduce it for device memory or a
 		// user memory ceiling.
-		if mi, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "openvino", Digest: modelDigest, Path: modelPath}, Config{NumCtx: caps.ContextLength}); derr == nil && mi.EffectiveContext > 0 {
+		if sessionFactory == nil {
+			mi, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "openvino", Digest: modelDigest, Path: modelPath}, Config{NumCtx: caps.ContextLength})
+			if derr != nil || mi.EffectiveContext <= 0 {
+				continue
+			}
 			caps.ContextLength = mi.EffectiveContext
 		}
 		fi, _ := e.Info()

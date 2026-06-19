@@ -53,8 +53,22 @@ func (s *Server) register(sess transport.Session) string {
 	defer s.mu.Unlock()
 	s.seq++
 	handle := s.instanceID + "/" + strconv.FormatUint(s.seq, 10)
+	if gen := sessionGeneration(sess); gen > 0 {
+		handle = s.instanceID + "/" + strconv.FormatUint(gen, 10) + "/" + strconv.FormatUint(s.seq, 10)
+	}
 	s.sessions[handle] = sess
 	return handle
+}
+
+type generationSession interface {
+	SlotGeneration() uint64
+}
+
+func sessionGeneration(sess transport.Session) uint64 {
+	if gs, ok := sess.(generationSession); ok {
+		return gs.SlotGeneration()
+	}
+	return 0
 }
 
 // lookup returns the live session for a handle. A handle minted by a different
@@ -77,6 +91,83 @@ func (s *Server) lookup(handle string) (transport.Session, error) {
 // compare it against the lease holder).
 func (s *Server) health(_ context.Context, _ *healthReq) (*healthResp, error) {
 	return &healthResp{InstanceID: s.instanceID, Ready: true, Backend: s.backend}, nil
+}
+
+func (s *Server) controller() (transport.ModelController, error) {
+	ctrl, ok := s.svc.(transport.ModelController)
+	if !ok {
+		return nil, transport.ErrUnsupportedFeature
+	}
+	return ctrl, nil
+}
+
+func (s *Server) status(ctx context.Context, _ *statusReq) (*transport.DaemonStatus, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	ctrl, err := s.controller()
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	st, err := ctrl.Status(ctx)
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	if st.OwnerInstanceID == "" {
+		st.OwnerInstanceID = s.instanceID
+	}
+	if st.Backend == "" {
+		st.Backend = s.backend
+	}
+	return &st, nil
+}
+
+func (s *Server) loadModel(ctx context.Context, in *loadModelReq) (*transport.ActiveModel, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	ctrl, err := s.controller()
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	owner := in.OwnerInstanceID
+	if owner == "" {
+		owner = s.instanceID
+	}
+	active, err := ctrl.LoadModel(ctx, transport.LoadModelRequest{
+		Fence:              transport.Fence{OwnerInstanceID: owner},
+		ModelName:          in.ModelName,
+		Type:               in.Type,
+		Digest:             in.Digest,
+		Path:               in.Path,
+		Config:             in.Config,
+		ExpectedGeneration: in.ExpectedGeneration,
+	})
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	return &active, nil
+}
+
+func (s *Server) unloadModel(ctx context.Context, in *unloadModelReq) (*unloadModelResp, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	ctrl, err := s.controller()
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	owner := in.OwnerInstanceID
+	if owner == "" {
+		owner = s.instanceID
+	}
+	if err := ctrl.UnloadModel(ctx, transport.UnloadModelRequest{
+		Fence:              transport.Fence{OwnerInstanceID: owner},
+		ExpectedGeneration: in.ExpectedGeneration,
+	}); err != nil {
+		return nil, encodeError(err)
+	}
+	return &unloadModelResp{}, nil
 }
 
 func (s *Server) openSession(ctx context.Context, in *openSessionReq) (*openSessionResp, error) {
@@ -239,7 +330,9 @@ func (s *Server) closeSession(ctx context.Context, in *closeReq) (*closeResp, er
 	delete(s.sessions, in.Handle)
 	s.mu.Unlock()
 	if sess != nil {
-		_ = sess.Close()
+		if err := sess.Close(); err != nil {
+			return nil, encodeError(err)
+		}
 	}
 	return &closeResp{}, nil
 }
@@ -260,6 +353,7 @@ func (s *Server) decode(ctx context.Context, in *decodeReq, stream grpclib.Serve
 		w := &wireChunk{Text: chunk.Text, Thinking: chunk.Thinking, ToolCalls: chunk.ToolCalls}
 		if chunk.Error != nil {
 			w.Error = chunk.Error.Error()
+			w.ErrorToken = errorToken(chunk.Error)
 		}
 		if err := stream.SendMsg(w); err != nil {
 			return err

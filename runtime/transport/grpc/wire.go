@@ -17,6 +17,9 @@ func method(name string) string { return "/" + serviceName + "/" + name }
 // (*Server) satisfies; this is that interface.
 type computeServer interface {
 	health(context.Context, *healthReq) (*healthResp, error)
+	status(context.Context, *statusReq) (*transport.DaemonStatus, error)
+	loadModel(context.Context, *loadModelReq) (*transport.ActiveModel, error)
+	unloadModel(context.Context, *unloadModelReq) (*unloadModelResp, error)
 	openSession(context.Context, *openSessionReq) (*openSessionResp, error)
 	describe(context.Context, *openSessionReq) (*describeResp, error)
 	embed(context.Context, *embedReq) (*embedResp, error)
@@ -45,6 +48,27 @@ type openSessionReq struct {
 type openSessionResp struct {
 	Handle string `json:"handle"`
 }
+
+type statusReq struct {
+	OwnerInstanceID string `json:"owner_instance_id,omitempty"`
+}
+
+type loadModelReq struct {
+	OwnerInstanceID    string           `json:"owner_instance_id,omitempty"`
+	ModelName          string           `json:"model_name,omitempty"`
+	Type               string           `json:"type,omitempty"`
+	Digest             string           `json:"digest,omitempty"`
+	Path               string           `json:"path,omitempty"`
+	Config             transport.Config `json:"config"`
+	ExpectedGeneration uint64           `json:"expected_generation,omitempty"`
+}
+
+type unloadModelReq struct {
+	OwnerInstanceID    string `json:"owner_instance_id,omitempty"`
+	ExpectedGeneration uint64 `json:"expected_generation,omitempty"`
+}
+
+type unloadModelResp struct{}
 
 // describeReq reuses the open-session request shape: Type + Path identify the
 // model, and Config carries the requested context/runtime knobs for capacity
@@ -141,10 +165,11 @@ type healthResp struct {
 
 // wireChunk is the JSON-safe form of transport.StreamChunk (error -> string).
 type wireChunk struct {
-	Text      string               `json:"text,omitempty"`
-	Thinking  string               `json:"thinking,omitempty"`
-	ToolCalls []transport.ToolCall `json:"tool_calls,omitempty"`
-	Error     string               `json:"error,omitempty"`
+	Text       string               `json:"text,omitempty"`
+	Thinking   string               `json:"thinking,omitempty"`
+	ToolCalls  []transport.ToolCall `json:"tool_calls,omitempty"`
+	Error      string               `json:"error,omitempty"`
+	ErrorToken string               `json:"error_token,omitempty"`
 }
 
 // decodeStreamDesc is the client-side stream descriptor for Decode.
@@ -162,6 +187,27 @@ var serviceDesc = grpclib.ServiceDesc{
 				return nil, err
 			}
 			return s.health(ctx, in)
+		})},
+		{MethodName: "Status", Handler: unaryHandler("Status", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(statusReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.status(ctx, in)
+		})},
+		{MethodName: "LoadModel", Handler: unaryHandler("LoadModel", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(loadModelReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.loadModel(ctx, in)
+		})},
+		{MethodName: "UnloadModel", Handler: unaryHandler("UnloadModel", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(unloadModelReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.unloadModel(ctx, in)
 		})},
 		{MethodName: "OpenSession", Handler: unaryHandler("OpenSession", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
 			in := new(openSessionReq)
