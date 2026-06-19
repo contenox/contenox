@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 // provider implements modelrepo.Provider for the graduated llama.cpp local node.
@@ -33,25 +36,25 @@ func (p *provider) CanStream() bool         { return SessionAvailable() }
 func (p *provider) CanPrompt() bool         { return SessionAvailable() }
 func (p *provider) CanThink() bool          { return p.caps.CanThink }
 
-func (p *provider) GetChatConnection(_ context.Context, _ string) (modelrepo.LLMChatClient, error) {
+func (p *provider) GetChatConnection(ctx context.Context, _ string) (modelrepo.LLMChatClient, error) {
 	if !SessionAvailable() {
 		return nil, p.notWired("chat")
 	}
-	return p.newClient()
+	return p.newClient(ctx)
 }
 
-func (p *provider) GetStreamConnection(_ context.Context, _ string) (modelrepo.LLMStreamClient, error) {
+func (p *provider) GetStreamConnection(ctx context.Context, _ string) (modelrepo.LLMStreamClient, error) {
 	if !SessionAvailable() {
 		return nil, p.notWired("stream")
 	}
-	return p.newClient()
+	return p.newClient(ctx)
 }
 
-func (p *provider) GetPromptConnection(_ context.Context, _ string) (modelrepo.LLMPromptExecClient, error) {
+func (p *provider) GetPromptConnection(ctx context.Context, _ string) (modelrepo.LLMPromptExecClient, error) {
 	if !SessionAvailable() {
 		return nil, p.notWired("prompt")
 	}
-	return p.newClient()
+	return p.newClient(ctx)
 }
 
 func (p *provider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LLMEmbedClient, error) {
@@ -66,11 +69,14 @@ func (p *provider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LL
 	return &embedClient{modelPath: filepath.Join(dir, "model.gguf"), cfg: profile.config()}, nil
 }
 
-func (p *provider) newClient() (*client, error) {
+func (p *provider) newClient(ctx context.Context) (*client, error) {
 	dir := filepath.Join(p.modelDir, p.name)
 	profile, err := loadModelProfile(dir)
 	if err != nil {
 		return nil, err
+	}
+	if profile.ToolCalls.Protocol == "" {
+		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, p.name, "llama")
 	}
 	modelPath := filepath.Join(dir, "model.gguf")
 	modelDigest := profile.ModelDigest
@@ -84,21 +90,79 @@ func (p *provider) newClient() (*client, error) {
 	if profileID == "" {
 		profileID = p.name
 	}
+	cfg := clampContext(profile.config(), p.caps.ContextLength)
+	ref := modeldconn.ModelRef{Name: p.name, Type: "llama", Digest: modelDigest, Path: modelPath}
+	backendID := backendVersion()
+	if sessionFactory == nil {
+		if info, derr := modeldconn.Describe(ctx, ref, transport.Config(cfg)); derr == nil {
+			if info.EffectiveContext > 0 {
+				cfg = clampContextForModeld(cfg, info.EffectiveContext)
+			}
+			if info.RequestedGpuLayers > 0 {
+				cfg.NumGpuLayers = info.ResolvedGpuLayers
+			}
+			if v := backendVersionFromModelInfo(info); v != "" {
+				backendID = v
+			}
+		}
+	}
 	return &client{
 		modelName:       p.name,
 		modelPath:       modelPath,
 		profileID:       profileID,
 		modelDigest:     modelDigest,
-		backendVersion:  backendVersion(),
-		cfg:             profile.config(),
+		backendVersion:  backendID,
+		cfg:             cfg,
 		maxOutputTokens: p.caps.MaxOutputTokens,
 		toolProtocol:    profile.ToolCalls.Protocol,
 	}, nil
 }
 
-func (p *provider) notWired(kind string) error {
-	return fmt.Errorf("%w: %s client for model %q is not wired in this build; compile with -tags llamanode", ErrSessionUnavailable, kind, p.name)
+func curatedToolProtocol(ctx context.Context, modelName, backendType string) string {
+	d, err := modelregistry.New(nil).Resolve(ctx, modelName)
+	if err != nil || d.BackendType() != backendType {
+		return ""
+	}
+	if d.ToolProtocol == "" || !toolCallProtocolKnown(d.ToolProtocol) {
+		return ""
+	}
+	return d.ToolProtocol
 }
+
+func (p *provider) notWired(kind string) error {
+	return fmt.Errorf("%w: %s client for model %q requires a running modeld serving the llama backend", ErrSessionUnavailable, kind, p.name)
+}
+
+func backendVersionFromModelInfo(info transport.ModelInfo) string {
+	switch {
+	case info.RuntimeName != "" && info.RuntimeDigest != "":
+		return info.RuntimeName + "@" + info.RuntimeDigest
+	case info.RuntimeDigest != "":
+		return info.RuntimeDigest
+	case info.RuntimeName != "":
+		return info.RuntimeName
+	default:
+		return ""
+	}
+}
+
+func clampContext(cfg Config, cap int) Config {
+	cfg = normalizeConfig(cfg)
+	if cap > 0 && cfg.NumCtx > cap {
+		cfg.NumCtx = cap
+	}
+	return cfg
+}
+
+func clampContextForModeld(cfg Config, cap int) Config {
+	cfg = clampContext(cfg, cap)
+	if cap > modeldCapacitySafetyTokens && cfg.NumCtx > cap-modeldCapacitySafetyTokens {
+		cfg.NumCtx = cap - modeldCapacitySafetyTokens
+	}
+	return cfg
+}
+
+const modeldCapacitySafetyTokens = 64
 
 var (
 	_ modelrepo.Provider            = (*provider)(nil)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"sort"
 	"text/tabwriter"
 
 	libdb "github.com/contenox/runtime/libdbexec"
@@ -129,18 +131,31 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("failed to list registry: %w", err)
 		}
-		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tSIZE (MB)\tCURATED\tSOURCE")
-		for _, e := range entries {
-			curated := "-"
-			if e.Curated {
-				curated = "✓"
-			}
-			sizeMB := e.SizeBytes / 1024 / 1024
-			fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", e.Name, sizeMB, curated, e.SourceURL)
-		}
-		return w.Flush()
+		return printModelRegistryList(cmd.OutOrStdout(), entries)
 	},
+}
+
+func printModelRegistryList(out io.Writer, entries []modelregistry.ModelDescriptor) error {
+	sort.Slice(entries, func(i, j int) bool {
+		leftBackend := entries[i].BackendType()
+		rightBackend := entries[j].BackendType()
+		if leftBackend != rightBackend {
+			return leftBackend < rightBackend
+		}
+		return entries[i].Name < entries[j].Name
+	})
+
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tBACKEND\tSIZE (MB)\tCURATED\tSOURCE")
+	for _, e := range entries {
+		curated := "-"
+		if e.Curated {
+			curated = "✓"
+		}
+		sizeMB := e.SizeBytes / 1024 / 1024
+		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", e.Name, e.BackendType(), sizeMB, curated, e.SourceURL)
+	}
+	return w.Flush()
 }
 
 func openModelRegistryDB(cmd *cobra.Command) (libdb.DBManager, modelregistryservice.Service, modelregistry.Registry, error) {

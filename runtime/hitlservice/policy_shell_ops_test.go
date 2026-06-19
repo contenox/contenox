@@ -44,7 +44,7 @@ func TestUnit_Evaluate_CommandBlacklist_MatchesBareBasename(t *testing.T) {
 // command basename ("rm"). Policy authors must use bare names only.
 func TestUnit_Evaluate_CommandBlacklist_MultiwordEntryNeverMatches(t *testing.T) {
 	t.Parallel()
-	// Rule with the historically broken "rm -rf" multi-word value.
+	// Rule with the multi-word "rm -rf" value.
 	svc := shellPolicy(t, `{"tools":"local_shell","tool":"local_shell","action":"deny","when":[{"key":"command","op":"command_blacklist","value":"rm -rf"}]}`)
 
 	// "rm" alone does NOT match "rm -rf" because the matcher compares basenames.

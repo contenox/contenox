@@ -1,4 +1,4 @@
-//go:build llamanode
+//go:build llamanode || llamacpp_direct
 
 // Model-native chat-template rendering via minja — the header-only Jinja engine
 // llama.cpp itself uses to apply a model's own GGUF chat template, including tool

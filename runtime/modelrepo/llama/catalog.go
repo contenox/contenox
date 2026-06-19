@@ -7,6 +7,7 @@ import (
 
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 func init() {
@@ -45,13 +46,11 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			return nil, err
 		}
 		caps := profile.capabilityConfig()
-		// Context window is a model fact owned by modeld (it loads the model). The
-		// runtime never parses the GGUF; it asks modeld. A profile-declared value
-		// is an explicit cap and wins; otherwise use the model's reported capacity.
-		if caps.ContextLength == 0 {
-			if info, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "llama", Path: modelPath}); derr == nil && info.EffectiveContext > 0 {
-				caps.ContextLength = info.EffectiveContext
-			}
+		// Context window is modeld's physical hot-context decision. Profile config
+		// is only the request/cap; the daemon may reduce it for device memory or a
+		// user memory ceiling.
+		if info, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "llama", Path: modelPath}, transport.Config(profile.config())); derr == nil && info.EffectiveContext > 0 {
+			caps.ContextLength = info.EffectiveContext
 		}
 		info, _ := e.Info()
 		out = append(out, modelrepo.ObservedModel{

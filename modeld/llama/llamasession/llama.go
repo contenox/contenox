@@ -1,10 +1,8 @@
-//go:build llamanode && llama_unsafe_abi
+//go:build llamanode && llamacpp_direct
 
 // Package llamasession is the llama.cpp adapter for llama.Session. It
-// implements the live warm-reuse hot path using only the sequence/KV ops the
-// ollama llama binding already exposes (Tokenize, Decode, KvCacheSeqRm) — no
-// state save/restore binding is needed for live reuse; that is deferred to the
-// snapshot/durability milestone.
+// implements the live warm-reuse hot path on the Contenox-owned direct
+// llama.cpp shim.
 package llamasession
 
 import (
@@ -17,10 +15,8 @@ import (
 	"sync"
 
 	"github.com/contenox/runtime/modeld/llama"
-	"github.com/contenox/runtime/modeld/llama/llamaabi"
+	"github.com/contenox/runtime/modeld/llama/llamacppshim"
 	"github.com/contenox/runtime/runtime/contextasm"
-	llamacpp "github.com/ollama/ollama/llama"
-	"github.com/ollama/ollama/ml"
 )
 
 // Available reports whether the llama.cpp backend is compiled into this build.
@@ -32,16 +28,17 @@ func init() { llama.SetSessionFactory(New) }
 
 type session struct {
 	mu         sync.Mutex
-	model      *llamacpp.Model
-	lctx       *llamacpp.Context
-	batch      *llamacpp.Batch
+	model      *llamacppshim.Model
+	lctx       *llamacppshim.Context
+	batch      *llamacppshim.Batch
 	numCtx     int
 	nBatch     int
 	addBOS     bool
-	resident   []int // token IDs currently in the KV (seq 0), in order
-	prefixLen  int   // how many of resident are the stable prefix
+	resident   []int  // token IDs currently in the KV (seq 0), in order
+	prefixLen  int    // how many of resident are the stable prefix
+	stableText string // raw stable text from the runtime
 	prefixText string // the templated stable text whose tokens are resident
-	stableMsgs []llamaabi.ChatMessage
+	stableMsgs []llamacppshim.ChatMessage
 	tools      string // JSON tool definitions rendered into the prompt (model-native)
 	manifest   llama.ContextManifest
 	closed     bool
@@ -52,11 +49,7 @@ var _ llama.Session = (*session)(nil)
 // New loads a GGUF model and opens one persistent session — the graduated local
 // node, not a fresh-context-per-call toy.
 func New(modelPath string, cfg llama.Config) (llama.Session, error) {
-	model, err := llamacpp.LoadModelFromFile(modelPath, llamacpp.ModelParams{
-		NumGpuLayers: cfg.NumGpuLayers,
-		TensorSplit:  cfg.TensorSplit,
-		UseMmap:      true,
-	})
+	model, err := llamacppshim.LoadModel(modelPath, modelConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("llamasession: load model %q: %w", modelPath, err)
 	}
@@ -71,30 +64,42 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 	}
 	// BOS policy is model-driven (the GGUF's add_bos_token), not a config guess; an
 	// explicit DisableBOS can still force it off.
-	addBOS := llamaabi.AddBOS(model) && !cfg.DisableBOS
+	addBOS := model.AddBOS() && !cfg.DisableBOS
 	nThreads := cfg.NumThreads
 	if nThreads <= 0 {
 		nThreads = runtime.NumCPU()
 	}
-	fa := ml.FlashAttentionDisabled
-	if cfg.FlashAttn {
-		fa = ml.FlashAttentionEnabled
-	}
 
-	lctx, err := llamacpp.NewContextWithModel(model, llamacpp.NewContextParams(numCtx, nBatch, 1, nThreads, fa, cfg.KVCacheType))
+	lctx, err := llamacppshim.NewContext(model, llamacppshim.ContextConfig{
+		NumCtx:      numCtx,
+		NumBatch:    nBatch,
+		NumSeqMax:   1,
+		NumThreads:  nThreads,
+		FlashAttn:   cfg.FlashAttn,
+		KVCacheType: cfg.KVCacheType,
+		Embeddings:  true,
+		OffloadKQV:  cfg.NumGpuLayers != 0,
+	})
 	if err != nil {
-		llamacpp.FreeModel(model)
+		model.Close()
 		return nil, fmt.Errorf("llamasession: new context: %w", err)
 	}
-	batch, err := llamacpp.NewBatch(nBatch, 1, 0)
+	batch, err := llamacppshim.NewBatch(nBatch, 1, 0)
 	if err != nil {
-		// The Ollama binding exposes llama_model_free but not llama_free(ctx).
-		// Do not free the model while the context still owns it; the owned
-		// binding/fork milestone must close this leak completely.
+		lctx.Close()
+		model.Close()
 		return nil, fmt.Errorf("llamasession: new batch: %w", err)
 	}
 
 	return &session{model: model, lctx: lctx, batch: batch, numCtx: numCtx, nBatch: nBatch, addBOS: addBOS}, nil
+}
+
+func modelConfig(cfg llama.Config) llamacppshim.ModelConfig {
+	return llamacppshim.ModelConfig{
+		NumGPULayers: cfg.NumGpuLayers,
+		TensorSplit:  cfg.TensorSplit,
+		UseMmap:      true,
+	}
 }
 
 func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (llama.PrefixStatus, error) {
@@ -170,6 +175,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	}
 	s.resident = toks
 	s.prefixLen = len(toks)
+	s.stableText = prefix.Text
 	s.prefixText = text
 	s.stableMsgs = stableMsgs
 	s.tools = prefix.Tools
@@ -213,7 +219,7 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	volatileMsgs := volatileMessages(suffix.Text, suffix.Manifest)
 	suffixText := suffix.Text
 	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
-		all := append(append([]llamaabi.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
+		all := append(append([]llamacppshim.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
 		full, err := s.renderTemplate(all, s.tools, true)
 		if err != nil {
 			return llama.SuffixStatus{}, fmt.Errorf("llamasession: apply chat template: %w", err)
@@ -280,7 +286,7 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 			return
 		}
 
-		params := llamacpp.SamplingParams{TopK: 40, TopP: 0.9, MinP: 0.05, Temp: 0.8}
+		params := llamacppshim.SamplingParams{TopK: 40, TopP: 0.9, MinP: 0.05, Temperature: 0.8}
 		if cfg.TopK > 0 {
 			params.TopK = cfg.TopK
 		}
@@ -288,16 +294,17 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 			params.TopP = float32(*cfg.TopP)
 		}
 		if cfg.Temperature != nil {
-			params.Temp = float32(*cfg.Temperature)
+			params.Temperature = float32(*cfg.Temperature)
 		}
 		if cfg.Seed != nil && *cfg.Seed >= 0 {
 			params.Seed = uint32(*cfg.Seed)
 		}
-		sampler, err := llamacpp.NewSamplingContext(s.model, params)
+		sampler, err := llamacppshim.NewSamplingContext(params)
 		if err != nil {
 			ch <- llama.StreamChunk{Error: fmt.Errorf("llamasession: sampler: %w", err)}
 			return
 		}
+		defer sampler.Free()
 
 		maxTokens := cfg.MaxTokens
 		if maxTokens <= 0 {
@@ -319,16 +326,20 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 			default:
 			}
 			id := sampler.Sample(s.lctx, -1)
-			sampler.Accept(id, true)
-			if s.model.TokenIsEog(id) {
+			sampler.Accept(id)
+			if s.model.TokenIsEOG(id) {
 				return
 			}
 
 			s.batch.Clear()
-			s.batch.Add(id, nil, len(s.resident), true, 0)
-			if err := s.lctx.Decode(s.batch); err != nil {
+			if err := s.batch.Add(id, nil, len(s.resident), true, 0); err != nil {
 				s.closeLocked()
-				ch <- llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode token: %v", llama.ErrSessionFatal, err)}
+				ch <- llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode batch: %v", llama.ErrSessionFatal, err)}
+				return
+			}
+			if res := s.lctx.Decode(s.batch); res.Status != llamacppshim.DecodeOK {
+				s.closeLocked()
+				ch <- llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode token: %v", llama.ErrSessionFatal, res.Err)}
 				return
 			}
 			s.resident = append(s.resident, id)
@@ -354,6 +365,94 @@ func (s *session) ExplainContext() llama.ContextReport {
 	}
 }
 
+func (s *session) Snapshot(ctx context.Context) (llama.SessionSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return llama.SessionSnapshot{}, llama.ErrSessionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return llama.SessionSnapshot{}, err
+	}
+	state, err := s.lctx.StateSeqGetData(0)
+	if err != nil {
+		return llama.SessionSnapshot{}, fmt.Errorf("llamasession snapshot: %w", err)
+	}
+	return llama.SessionSnapshot{
+		State:            state,
+		ResidentTokens:   len(s.resident),
+		PrefixTokens:     s.prefixLen,
+		NumCtx:           s.numCtx,
+		ResidentTokenIDs: append([]int(nil), s.resident...),
+		StableText:       s.stableText,
+		PrefixText:       s.prefixText,
+		Tools:            s.tools,
+		Manifest:         s.manifest,
+	}, nil
+}
+
+func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return llama.ErrSessionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if snap.NumCtx > 0 && snap.NumCtx != s.numCtx {
+		return llama.NewManifestMismatchError("snapshot context window changed")
+	}
+	if snap.ResidentTokens < 0 || snap.PrefixTokens < 0 || snap.PrefixTokens > snap.ResidentTokens {
+		return fmt.Errorf("llamasession restore invalid snapshot: prefix_tokens=%d resident_tokens=%d", snap.PrefixTokens, snap.ResidentTokens)
+	}
+	if snap.ResidentTokens > s.numCtx {
+		return llama.NewContextOverflowError("restore", 0, snap.ResidentTokens, s.numCtx)
+	}
+	if snap.ResidentTokens > 0 && len(snap.ResidentTokenIDs) != snap.ResidentTokens {
+		return fmt.Errorf("llamasession restore invalid snapshot: resident_token_ids=%d resident_tokens=%d", len(snap.ResidentTokenIDs), snap.ResidentTokens)
+	}
+	if !s.manifest.IsZero() && !snap.Manifest.IsZero() {
+		if ok, reason := s.manifest.CompatibleRuntime(snap.Manifest); !ok {
+			return llama.NewManifestMismatchError(reason)
+		}
+	}
+	if s.lctx == nil {
+		s.closeLocked()
+		return fmt.Errorf("%w: llamasession restore context is nil", llama.ErrSessionFatal)
+	}
+	if snap.ResidentTokens > 0 && len(snap.State) == 0 {
+		return fmt.Errorf("llamasession restore invalid snapshot: non-empty resident token set has empty state")
+	}
+	s.lctx.ClearMemory(true)
+	if snap.ResidentTokens > 0 {
+		if err := s.lctx.StateSeqSetData(0, snap.State); err != nil {
+			s.closeLocked()
+			return fmt.Errorf("%w: llamasession restore state: %v", llama.ErrSessionFatal, err)
+		}
+	}
+	s.resident = append([]int(nil), snap.ResidentTokenIDs...)
+	s.prefixLen = snap.PrefixTokens
+	s.stableText = snap.StableText
+	s.prefixText = snap.PrefixText
+	s.tools = snap.Tools
+	s.manifest = snap.Manifest
+	s.stableMsgs = stableMessages(s.stableText, s.manifest)
+	if s.prefixText == "" {
+		if len(s.stableMsgs) > 0 {
+			rendered, err := s.renderTemplate(s.stableMsgs, s.tools, false)
+			if err != nil {
+				s.closeLocked()
+				return fmt.Errorf("%w: llamasession restore template: %v", llama.ErrSessionFatal, err)
+			}
+			s.prefixText = rendered
+		} else {
+			s.prefixText = s.stableText
+		}
+	}
+	return nil
+}
+
 func (s *session) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -370,26 +469,31 @@ func (s *session) closeLocked() {
 	}
 	s.closed = true
 	if s.lctx != nil {
-		s.lctx.KvCacheClear()
+		s.lctx.ClearMemory(true)
+		s.lctx.Close()
+		s.lctx = nil
 	}
 	if s.batch != nil {
 		s.batch.Free()
 		s.batch = nil
 	}
+	if s.model != nil {
+		s.model.Close()
+		s.model = nil
+	}
 	s.resident = nil
 	s.prefixLen = 0
+	s.stableText = ""
 	s.prefixText = ""
 	s.manifest = llama.ContextManifest{}
-	// NOTE: this binding version exposes llama_model_free but not llama_free(ctx).
-	// We cannot safely free the model while an unfreed context still references it.
 }
 
 // stableMessages reconstructs the stable role/content turns from the manifest
 // segments (the runtime sends raw content keyed by role), for the model's own
 // chat template. Control segments (BOS, the assistant cue) carry no role and are
 // skipped — the template adds them.
-func stableMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessage {
-	var msgs []llamaabi.ChatMessage
+func stableMessages(text string, m llama.ContextManifest) []llamacppshim.ChatMessage {
+	var msgs []llamacppshim.ChatMessage
 	for _, seg := range m.Segments {
 		if !seg.Stable {
 			continue
@@ -398,7 +502,7 @@ func stableMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessage
 		if role == "" || seg.ByteStart < 0 || seg.ByteEnd > len(text) || seg.ByteStart > seg.ByteEnd {
 			continue
 		}
-		msgs = append(msgs, llamaabi.ChatMessage{
+		msgs = append(msgs, llamacppshim.ChatMessage{
 			Role:       role,
 			Content:    text[seg.ByteStart:seg.ByteEnd],
 			ToolCalls:  seg.ToolCallsJSON,
@@ -410,8 +514,8 @@ func stableMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessage
 
 // volatileMessages reconstructs the volatile turns; their segment byte ranges are
 // global (after the stable bytes), so they are offset into the suffix text.
-func volatileMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessage {
-	var msgs []llamaabi.ChatMessage
+func volatileMessages(text string, m llama.ContextManifest) []llamacppshim.ChatMessage {
+	var msgs []llamacppshim.ChatMessage
 	base := m.StableBytes
 	for _, seg := range m.Segments {
 		if seg.Stable {
@@ -425,7 +529,7 @@ func volatileMessages(text string, m llama.ContextManifest) []llamaabi.ChatMessa
 		if lo < 0 || hi > len(text) || lo > hi {
 			continue
 		}
-		msgs = append(msgs, llamaabi.ChatMessage{
+		msgs = append(msgs, llamacppshim.ChatMessage{
 			Role:       role,
 			Content:    text[lo:hi],
 			ToolCalls:  seg.ToolCallsJSON,
@@ -450,7 +554,7 @@ func chatRole(kind string) string {
 // leading message prefix it ends. The final role segment's boundary is the full
 // stable tokenization, so the common single-segment case adds no template calls.
 // Control segments (e.g. BOS) carry no message text and get a zero-width range.
-func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []llamaabi.ChatMessage, toks []int) (llama.ContextManifest, error) {
+func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []llamacppshim.ChatMessage, toks []int) (llama.ContextManifest, error) {
 	m.Segments = append([]llama.ManifestSegment(nil), m.Segments...)
 	m.StableTokenHash = contextasm.HashTokenIDs(toks)
 	prevEnd, msgIdx := 0, 0
@@ -467,7 +571,7 @@ func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []lla
 		msgIdx++
 		end := len(toks)
 		if msgIdx < len(stableMsgs) {
-			rendered, err := llamaabi.ApplyChatTemplate(s.model, stableMsgs[:msgIdx], false)
+			rendered, err := s.model.ApplyChatTemplate(stableMsgs[:msgIdx], false)
 			if err != nil {
 				return llama.ContextManifest{}, fmt.Errorf("llamasession: stable segment template: %w", err)
 			}
@@ -491,10 +595,10 @@ func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []lla
 // ranges/hashes after the stable prefix, using the same incremental-template
 // boundary recovery. Token positions are offset by prefixTokens. A trailing
 // control segment (the assistant cue) absorbs any remaining suffix tokens.
-func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []llamaabi.ChatMessage, stoks []int) error {
+func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []llamacppshim.ChatMessage, stoks []int) error {
 	s.manifest.Segments = append([]llama.ManifestSegment(nil), s.manifest.Segments...)
 	s.manifest.VolatileTokenHash = contextasm.HashTokenIDs(stoks)
-	allMsgs := append(append([]llamaabi.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
+	allMsgs := append(append([]llamacppshim.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
 	prevEnd, msgIdx := 0, len(s.stableMsgs)
 	for i := range s.manifest.Segments {
 		seg := &s.manifest.Segments[i]
@@ -511,7 +615,7 @@ func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []llamaa
 		msgIdx++
 		end := len(stoks)
 		if msgIdx < len(allMsgs) {
-			rendered, err := llamaabi.ApplyChatTemplate(s.model, allMsgs[:msgIdx], false)
+			rendered, err := s.model.ApplyChatTemplate(allMsgs[:msgIdx], false)
 			if err != nil {
 				return fmt.Errorf("llamasession: volatile segment template: %w", err)
 			}
@@ -536,26 +640,26 @@ func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []llamaa
 // present it routes through minja (ApplyChatTemplateTools) so the GGUF's Jinja tool
 // block is rendered model-natively; the legacy llama_chat_apply_template (used for
 // the no-tools path) cannot do that.
-func (s *session) renderTemplate(msgs []llamaabi.ChatMessage, tools string, addAssistant bool) (string, error) {
+func (s *session) renderTemplate(msgs []llamacppshim.ChatMessage, tools string, addAssistant bool) (string, error) {
 	if tools != "" {
 		msgsJSON, err := chatMessagesJSON(msgs)
 		if err != nil {
 			return "", err
 		}
-		return llamaabi.ApplyChatTemplateTools(s.model, msgsJSON, tools, addAssistant)
+		return s.model.ApplyChatTemplateTools(msgsJSON, tools, addAssistant)
 	}
-	return llamaabi.ApplyChatTemplate(s.model, msgs, addAssistant)
+	return s.model.ApplyChatTemplate(msgs, addAssistant)
 }
 
 // chatMessagesJSON marshals chat turns to the JSON array minja expects.
 // tool_calls is embedded as a raw JSON value (not re-encoded as a string) so
 // Jinja sees it as a proper list; tool_call_id is a plain string.
-func chatMessagesJSON(msgs []llamaabi.ChatMessage) (string, error) {
+func chatMessagesJSON(msgs []llamacppshim.ChatMessage) (string, error) {
 	type wireMsg struct {
-		Role       string              `json:"role"`
-		Content    string              `json:"content"`
-		ToolCalls  json.RawMessage     `json:"tool_calls,omitempty"`
-		ToolCallID string              `json:"tool_call_id,omitempty"`
+		Role       string          `json:"role"`
+		Content    string          `json:"content"`
+		ToolCalls  json.RawMessage `json:"tool_calls,omitempty"`
+		ToolCallID string          `json:"tool_call_id,omitempty"`
 	}
 	out := make([]wireMsg, len(msgs))
 	for i, m := range msgs {
@@ -581,7 +685,7 @@ func (s *session) removeKV(p0, p1 int) error {
 		s.closeLocked()
 		return fmt.Errorf("%w: llamasession context is nil during kv remove", llama.ErrSessionFatal)
 	}
-	if !s.lctx.KvCacheSeqRm(0, p0, p1) {
+	if !s.lctx.MemorySeqRemove(0, p0, p1) {
 		s.closeLocked()
 		return fmt.Errorf("%w: llamasession kv remove failed seq=0 p0=%d p1=%d", llama.ErrSessionFatal, p0, p1)
 	}
@@ -605,10 +709,12 @@ func (s *session) prefillAt(ctx context.Context, toks []int, startPos int, logit
 		}
 		s.batch.Clear()
 		for j := i; j < end; j++ {
-			s.batch.Add(toks[j], nil, startPos+j, logitsOnLast && j == n-1, 0)
+			if err := s.batch.Add(toks[j], nil, startPos+j, logitsOnLast && j == n-1, 0); err != nil {
+				return fmt.Errorf("llamasession: prefill batch add: %w", err)
+			}
 		}
-		if err := s.lctx.Decode(s.batch); err != nil {
-			return fmt.Errorf("llamasession: prefill decode: %w", err)
+		if res := s.lctx.Decode(s.batch); res.Status != llamacppshim.DecodeOK {
+			return fmt.Errorf("llamasession: prefill decode: %w", res.Err)
 		}
 	}
 	return nil

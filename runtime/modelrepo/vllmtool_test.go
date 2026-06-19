@@ -14,6 +14,8 @@ import (
 
 // focuses only on the integration flow not breaking, bigger models would be required for more proper testing
 func TestSystem_VLLM_Tools(t *testing.T) {
+	requireVLLMContainerTests(t)
+
 	ctx := context.Background()
 
 	// Qwen2.5-Instruct ships Hermes-style tool-use in its chat template, so vLLM

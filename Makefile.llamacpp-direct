@@ -1,0 +1,128 @@
+PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+include $(PROJECT_ROOT)mk/llama-flags.mk
+
+LLAMA_CPP_SRC ?= $(LLAMA_CPP_REF_DIR)
+LLAMA_CPP_BUILD_ROOT ?= $(PROJECT_ROOT).build/llamacpp
+LLAMA_CPP_BUILD_TYPE ?= Release
+LLAMA_CPP_BUILD_JOBS ?= 4
+LLAMA_CPP_CMAKE ?= cmake
+LLAMA_RUNTIME_REBUILD ?=
+
+LLAMA_CPP_COMMON_CMAKE_FLAGS = \
+	-S "$(LLAMA_CPP_SRC)" \
+	-B "$(LLAMA_CPP_BUILD_DIR)" \
+	-DCMAKE_BUILD_TYPE="$(LLAMA_CPP_BUILD_TYPE)" \
+	-DCMAKE_INSTALL_PREFIX="$(LLAMA_RUNTIME_DIR)" \
+	-DBUILD_SHARED_LIBS=ON \
+	-DGGML_BACKEND_DL=OFF \
+	-DLLAMA_BUILD_TESTS=OFF \
+	-DLLAMA_BUILD_TOOLS=OFF \
+	-DLLAMA_BUILD_EXAMPLES=OFF \
+	-DLLAMA_BUILD_SERVER=OFF \
+	-DLLAMA_BUILD_APP=OFF \
+	-DLLAMA_BUILD_COMMON=OFF \
+	-DCMAKE_INSTALL_LIBDIR=lib
+
+.PHONY: help deps-ref runtime-cpu runtime-cuda test-shim-cpu clean
+
+help:
+	@echo "runtime-cpu     build/install pinned direct llama.cpp CPU runtime"
+	@echo "runtime-cuda    build/install pinned direct llama.cpp CUDA runtime (requires nvcc/toolkit)"
+	@echo "                set LLAMA_RUNTIME_REBUILD=1 to force a clean runtime rebuild"
+	@echo "test-shim-cpu   build CPU runtime and test modeld/llama/llamacppshim"
+	@echo "deps-ref        fetch upstream llama.cpp reference source"
+	@echo "clean           remove direct llama.cpp build/install outputs"
+
+deps-ref:
+	@mkdir -p "$(dir $(LLAMA_CPP_REF_DIR))"
+	@if [ -d "$(LLAMA_CPP_REF_DIR)/.git" ] && [ "$$(git -C "$(LLAMA_CPP_REF_DIR)" rev-parse HEAD 2>/dev/null)" = "$(LLAMA_CPP_COMMIT)" ]; then \
+		git -C "$(LLAMA_CPP_REF_DIR)" log -1 --oneline; \
+	elif [ -d "$(LLAMA_CPP_REF_DIR)/.git" ]; then \
+		git -C "$(LLAMA_CPP_REF_DIR)" fetch --depth 1 origin "$(LLAMA_CPP_COMMIT)"; \
+		git -C "$(LLAMA_CPP_REF_DIR)" checkout --detach "$(LLAMA_CPP_COMMIT)" >/dev/null; \
+		git -C "$(LLAMA_CPP_REF_DIR)" log -1 --oneline; \
+	else \
+		git clone --no-checkout "$(LLAMA_CPP_REF_REPO)" "$(LLAMA_CPP_REF_DIR)"; \
+		git -C "$(LLAMA_CPP_REF_DIR)" fetch --depth 1 origin "$(LLAMA_CPP_COMMIT)"; \
+		git -C "$(LLAMA_CPP_REF_DIR)" checkout --detach "$(LLAMA_CPP_COMMIT)" >/dev/null; \
+		git -C "$(LLAMA_CPP_REF_DIR)" log -1 --oneline; \
+	fi
+
+runtime-cpu: LLAMA_RUNTIME_PROFILE := cpu
+runtime-cpu: LLAMA_RUNTIME_DIR := $(LLAMA_RUNTIME_ROOT)/cpu
+runtime-cpu: LLAMA_CPP_BUILD_DIR := $(LLAMA_CPP_BUILD_ROOT)/cpu
+runtime-cpu: deps-ref
+	@command -v "$(LLAMA_CPP_CMAKE)" >/dev/null 2>&1 || { echo "missing cmake; install CMake before building direct llama.cpp"; exit 1; }
+	@test -f "$(LLAMA_CPP_SRC)/CMakeLists.txt" || { echo "missing llama.cpp source at $(LLAMA_CPP_SRC); run: make deps-llamacpp-ref"; exit 1; }
+	@if [ "$(LLAMA_RUNTIME_REBUILD)" != "1" ] && \
+		[ -f "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" ] && \
+		grep -qx 'commit=$(LLAMA_CPP_COMMIT)' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
+		grep -qx 'profile=cpu' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
+		grep -qx 'build_type=$(LLAMA_CPP_BUILD_TYPE)' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
+		[ -f "$(LLAMA_RUNTIME_DIR)/lib/libllama.so" ] && \
+		[ -f "$(LLAMA_RUNTIME_DIR)/lib/libggml-cpu.so" ]; then \
+		echo "direct llama.cpp CPU runtime already present -> $(LLAMA_RUNTIME_DIR)"; \
+		find "$(LLAMA_RUNTIME_DIR)/lib" -maxdepth 1 \( -type f -o -type l \) -name 'lib*.so*' -printf '  %f\n' | sort; \
+	else \
+		rm -rf "$(LLAMA_CPP_BUILD_DIR)" "$(LLAMA_RUNTIME_DIR)"; \
+		$(LLAMA_CPP_CMAKE) $(LLAMA_CPP_COMMON_CMAKE_FLAGS) -DGGML_CUDA=OFF; \
+		$(LLAMA_CPP_CMAKE) --build "$(LLAMA_CPP_BUILD_DIR)" --target install -j $(LLAMA_CPP_BUILD_JOBS); \
+		libdir="$(LLAMA_RUNTIME_DIR)/lib"; \
+		test -f "$$libdir/libllama.so" || { echo "direct llama.cpp CPU runtime missing libllama.so in $$libdir"; exit 1; }; \
+		for lib in "$$libdir"/lib*.so; do \
+			[ -e "$$lib" ] || continue; \
+			soname="$$(readelf -d "$$lib" | awk -F'[][]' '/SONAME/ { print $$2; exit }')"; \
+			base="$$(basename "$$lib")"; \
+			if [ -n "$$soname" ] && [ "$$soname" != "$$base" ]; then ln -sf "$$base" "$$libdir/$$soname"; fi; \
+		done; \
+		{ echo 'commit=$(LLAMA_CPP_COMMIT)'; echo 'profile=cpu'; echo 'build_type=$(LLAMA_CPP_BUILD_TYPE)'; } > "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp"; \
+		echo "direct llama.cpp CPU runtime -> $(LLAMA_RUNTIME_DIR)"; \
+		find "$$libdir" -maxdepth 1 \( -type f -o -type l \) -name 'lib*.so*' -printf '  %f\n' | sort; \
+	fi
+
+runtime-cuda: LLAMA_RUNTIME_PROFILE := cuda
+runtime-cuda: LLAMA_RUNTIME_DIR := $(LLAMA_RUNTIME_ROOT)/cuda
+runtime-cuda: LLAMA_CPP_BUILD_DIR := $(LLAMA_CPP_BUILD_ROOT)/cuda
+runtime-cuda: deps-ref
+	@command -v "$(LLAMA_CPP_CMAKE)" >/dev/null 2>&1 || { echo "missing cmake; install CMake before building direct llama.cpp"; exit 1; }
+	@command -v nvcc >/dev/null 2>&1 || { echo "missing nvcc; install the CUDA toolkit before building the direct llama.cpp CUDA runtime"; exit 1; }
+	@test -f "$(LLAMA_CPP_SRC)/CMakeLists.txt" || { echo "missing llama.cpp source at $(LLAMA_CPP_SRC); run: make deps-llamacpp-ref"; exit 1; }
+	@if [ "$(LLAMA_RUNTIME_REBUILD)" != "1" ] && \
+		[ -f "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" ] && \
+		grep -qx 'commit=$(LLAMA_CPP_COMMIT)' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
+		grep -qx 'profile=cuda' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
+		grep -qx 'build_type=$(LLAMA_CPP_BUILD_TYPE)' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
+		[ -f "$(LLAMA_RUNTIME_DIR)/lib/libllama.so" ] && \
+		[ -f "$(LLAMA_RUNTIME_DIR)/lib/libggml-cpu.so" ] && \
+		[ -f "$(LLAMA_RUNTIME_DIR)/lib/libggml-cuda.so" ]; then \
+		echo "direct llama.cpp CUDA runtime already present -> $(LLAMA_RUNTIME_DIR)"; \
+		find "$(LLAMA_RUNTIME_DIR)/lib" -maxdepth 1 \( -type f -o -type l \) -name 'lib*.so*' -printf '  %f\n' | sort; \
+	else \
+		rm -rf "$(LLAMA_CPP_BUILD_DIR)" "$(LLAMA_RUNTIME_DIR)"; \
+		$(LLAMA_CPP_CMAKE) $(LLAMA_CPP_COMMON_CMAKE_FLAGS) -DGGML_CUDA=ON; \
+		$(LLAMA_CPP_CMAKE) --build "$(LLAMA_CPP_BUILD_DIR)" --target install -j $(LLAMA_CPP_BUILD_JOBS); \
+		libdir="$(LLAMA_RUNTIME_DIR)/lib"; \
+		test -f "$$libdir/libllama.so" || { echo "direct llama.cpp CUDA runtime missing libllama.so in $$libdir"; exit 1; }; \
+		test -f "$$libdir/libggml-cuda.so" || { echo "direct llama.cpp CUDA runtime missing libggml-cuda.so in $$libdir"; exit 1; }; \
+		for lib in "$$libdir"/lib*.so; do \
+			[ -e "$$lib" ] || continue; \
+			soname="$$(readelf -d "$$lib" | awk -F'[][]' '/SONAME/ { print $$2; exit }')"; \
+			base="$$(basename "$$lib")"; \
+			if [ -n "$$soname" ] && [ "$$soname" != "$$base" ]; then ln -sf "$$base" "$$libdir/$$soname"; fi; \
+		done; \
+		{ echo 'commit=$(LLAMA_CPP_COMMIT)'; echo 'profile=cuda'; echo 'build_type=$(LLAMA_CPP_BUILD_TYPE)'; } > "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp"; \
+		echo "direct llama.cpp CUDA runtime -> $(LLAMA_RUNTIME_DIR)"; \
+		find "$$libdir" -maxdepth 1 \( -type f -o -type l \) -name 'lib*.so*' -printf '  %f\n' | sort; \
+	fi
+
+test-shim-cpu: runtime-cpu
+	@libdir="$(LLAMA_RUNTIME_ROOT)/cpu/lib"; \
+		test -f "$$libdir/libllama.so" || { echo "missing direct llama.cpp CPU runtime; run: make build-llamacpp-runtime-cpu"; exit 1; }; \
+		CGO_ENABLED=1 \
+		CGO_CPPFLAGS="-I$(LLAMA_VENDOR) -I$(LLAMA_RUNTIME_ROOT)/cpu/include" \
+		CGO_LDFLAGS="-L$$libdir -Wl,--disable-new-dtags -Wl,-rpath,$$libdir -Wl,-rpath-link,$$libdir -l:libllama.so -l:libggml.so -l:libggml-base.so -l:libggml-cpu.so -lstdc++ -lm -ldl -lpthread" \
+		LD_LIBRARY_PATH="$$libdir$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
+		go test -tags 'llamacpp_direct' ./modeld/llama/llamacppshim
+
+clean:
+	rm -rf "$(LLAMA_CPP_BUILD_ROOT)" "$(LLAMA_RUNTIME_ROOT)"

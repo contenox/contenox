@@ -140,6 +140,68 @@ func TestGenaiSessionSuffixManifestMismatchRejected(t *testing.T) {
 	}
 }
 
+func TestGenaiSessionSnapshotRestoreLogicalState(t *testing.T) {
+	ctx := context.Background()
+	m := ovManifest("hash-AAA", "r1")
+	s := newGenaiSession(&fakeGenAIBackend{}, 4096)
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "STABLE", Tools: `[{"type":"function"}]`, Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	if _, err := s.PrefillSuffix(ctx, transport.SuffixInput{Text: "USER", Manifest: m}); err != nil {
+		t.Fatalf("PrefillSuffix: %v", err)
+	}
+	snap, err := s.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if len(snap.State) != 0 {
+		t.Fatalf("OpenVINO logical snapshot should not claim opaque KV bytes, got %d", len(snap.State))
+	}
+	if snap.ResidentTokens != len("STABLEUSER") || snap.PrefixTokens != len("STABLE") || snap.StableText != "STABLE" || snap.PrefixText != "STABLEUSER" {
+		t.Fatalf("snapshot did not capture logical state: %+v", snap)
+	}
+
+	fake := &fakeGenAIBackend{}
+	restored := newGenaiSession(fake, 4096)
+	if err := restored.Restore(ctx, snap); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if got := restored.ExplainContext(); got.ResidentTokens != len("STABLEUSER") || got.PrefixTokens != len("STABLE") || got.ManifestDigest == "" {
+		t.Fatalf("restored context = %+v", got)
+	}
+	ch, err := restored.Decode(ctx, transport.DecodeConfig{MaxTokens: 1})
+	if err != nil {
+		t.Fatalf("Decode restored: %v", err)
+	}
+	for chunk := range ch {
+		if chunk.Error != nil {
+			t.Fatalf("decode chunk error: %v", chunk.Error)
+		}
+	}
+	if len(fake.streamPrompts) != 1 || fake.streamPrompts[0] != "STABLEUSER" {
+		t.Fatalf("restored prompt = %v, want STABLEUSER", fake.streamPrompts)
+	}
+}
+
+func TestGenaiSessionRestoreRejectsIncompatibleRuntime(t *testing.T) {
+	ctx := context.Background()
+	s := newGenaiSession(&fakeGenAIBackend{}, 4096)
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "STABLE", Manifest: ovManifest("hash-AAA", "r1")}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	err := s.Restore(ctx, transport.SessionSnapshot{
+		ResidentTokens: len("STABLE"),
+		PrefixTokens:   len("STABLE"),
+		NumCtx:         4096,
+		StableText:     "STABLE",
+		PrefixText:     "STABLE",
+		Manifest:       ovManifest("hash-AAA", "r2"),
+	})
+	if !errors.Is(err, contextasm.ErrManifestMismatch) {
+		t.Fatalf("Restore mismatch error = %v, want ErrManifestMismatch", err)
+	}
+}
+
 func TestGenaiSessionCloseStopsUse(t *testing.T) {
 	fake := &fakeGenAIBackend{}
 	s := newGenaiSession(fake, 4096)

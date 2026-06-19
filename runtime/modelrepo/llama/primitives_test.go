@@ -189,8 +189,8 @@ func TestUnit_LlamaPromptPlan_UserOnlyHasEmptyStablePrefix(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No system turn => empty stable prefix; the user turn is volatile. BOS is no
-	// longer a synthetic manifest segment — it is added by the model tokenizer in
-	// modeld (llamaabi.AddBOS), proven by the end-to-end test.
+	// longer a synthetic manifest segment; it is added by the model tokenizer in
+	// modeld, proven by the end-to-end test.
 	if plan.Stable.Text != "" {
 		t.Fatalf("stable text = %q, want empty user-only stable prefix", plan.Stable.Text)
 	}

@@ -71,6 +71,29 @@ func TestE2E_RuntimeLlamaDialsModeld(t *testing.T) {
 	if _, err := sess.PrefillSuffix(context.Background(), SuffixInput{Text: " world", Manifest: manifest}); err != nil {
 		t.Fatalf("PrefillSuffix over wire: %v", err)
 	}
+	snap, err := sess.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot over wire: %v", err)
+	}
+	if snap.ResidentTokens != 11 || snap.PrefixTokens != 5 {
+		t.Fatalf("snapshot = %+v, want resident=11 prefix=5", snap)
+	}
+	if _, err := sess.EnsurePrefix(context.Background(), PrefixInput{Text: "other", Manifest: ContextManifest{
+		Backend:              "llama",
+		ModelDigest:          "d1",
+		PromptFormat:         "chatml",
+		PromptTemplateDigest: "t1",
+		RuntimeDigest:        "r1",
+		StableByteHash:       contextasm.HashString("other"),
+	}}); err != nil {
+		t.Fatalf("EnsurePrefix other over wire: %v", err)
+	}
+	if err := sess.Restore(context.Background(), snap); err != nil {
+		t.Fatalf("Restore over wire: %v", err)
+	}
+	if got := sess.ExplainContext(); got.ResidentTokens != 11 || got.PrefixTokens != 5 {
+		t.Fatalf("context after restore = %+v, want resident=11 prefix=5", got)
+	}
 	ch, err := sess.Decode(context.Background(), DecodeConfig{MaxTokens: 3})
 	if err != nil {
 		t.Fatalf("Decode over wire: %v", err)

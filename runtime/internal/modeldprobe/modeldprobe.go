@@ -31,7 +31,7 @@ import (
 // Convention shared with the daemon; kept local so runtime does not depend on
 // the modeld package.
 const (
-	leaseFileName   = "modeld.lease" // mirrors cmd/modeld resolveLeasePath
+	leaseFileName   = "modeld.lease" // mirrors cmd/modeld resolvePaths
 	endpointMetaKey = "endpoint"     // mirrors modeld/owner.EndpointMetaKey
 	backendMetaKey  = "backend"      // mirrors modeld/owner.BackendMetaKey
 	binaryName      = "modeld"

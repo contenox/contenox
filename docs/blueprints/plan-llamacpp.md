@@ -14,6 +14,9 @@
 > `modeld` transport (`modeld-interface-boundary.md`). The pure-Go context
 > assembler (`AssembleContext`), model catalog, and backend management stay in
 > `runtime`; `modeld` owns device memory, KV cache, and sessions.
+>
+> **Runtime path:** the permanent `llama` path is a pinned, Contenox-built
+> direct llama.cpp adapter.
 
 ---
 
@@ -44,13 +47,9 @@ The workspace-context design is already proven on OpenVINO:
 The OpenVINO track is **paused mid-S5** (constrained tool calls). We pivot to
 llama.cpp to prove the **design goals** faster, because GGUF models are
 ubiquitous and GPU offload (CUDA/Metal/Vulkan) is practical on developer
-machines. The retired `runtime/modelrepo/local` toy only proved that llama.cpp
-could be called at all: fixed 4096-token context, 512-token batch, Flash
-Attention disabled, zero GPU layers, fresh context per request, and full prompt
-prefill every turn. The graduated path is the CGO `modeld/llama` backend, owned
-by the `modeld` daemon: persistent sessions, explicit profile/config,
-embeddings, and live prefix reuse. `runtime` reaches it as a client and keeps the
-`local` keyword shim for old config/DB rows.
+machines. The production path is the CGO `modeld/llama` backend, owned by the
+`modeld` daemon: persistent sessions, explicit profile/config, embeddings, and
+live prefix reuse. `runtime` reaches it as a client.
 
 ## Graduation target
 
@@ -197,39 +196,40 @@ cache block/page size if exposed or measured
 Profile changes invalidate cache manifests. Deterministic equivalence tests must
 pin seed and sampler config before comparing warm output to cold output.
 
-## The binding architecture: Contenox-owned minimal binding
+## The binding architecture: direct Contenox shim
 
-`modeld/llama` uses ollama's `github.com/ollama/ollama` `llama`
-binding (v0.17.5). The binding **exposes the sequence KV ops** (`KvCacheSeqRm/Cp/Add/...`)
-but **not** state save/restore, and it lacks fine-grained context lifecycle control (like `llama_free(ctx)`).
+`modeld/llama` uses the Contenox-owned direct llama.cpp shim in
+`modeld/llama/llamacppshim`. The shim links against a pinned, generated
+`.llamacpp-runtime/<profile>` build and owns the model/context lifecycle. The
+old Ollama Go binding and unsafe private-layout shim are not part of the
+embedded llama backend.
 
-More critically, Ollama's wrapper collapses all positive `llama_decode` return codes into a generic `ErrKvCacheFull`. Upstream `llama.cpp` distinguishes:
+The direct shim preserves upstream `llama_decode` status distinctions:
 - `0`: success
 - `1`: could not find KV slot
 - `2`: aborted; partially processed ubatches may remain in memory
 - `-1`: invalid input batch
 - `< -1`: fatal error
 
-A serious llama runtime requires precise cancellation and recovery semantics. If a decode is aborted mid-prefill, the session might be poisoned with partial ubatches. Collapsing this into "KV Full" breaks the correctness of the workspace state.
+That distinction matters because a cancelled or partially decoded prefill can
+poison live workspace state. The session layer must either roll back cleanly or
+mark the session fatal and evict it; it must not collapse these cases into a
+generic "KV full" error.
 
-**The decision:** build a minimal **Contenox-owned llama.cpp shim** now, in
-`modeld/llama` (the owned ABI subpackage). The shim is the L0 path, not a
-post-spike cleanup. We treat the Ollama wrapper purely
-as a bring-up dependency, not the permanent llama substrate. We will not use
-server sidecars, unsafe ABI access to Ollama's private Go layout, or a long-term
-fork of Ollama's wrapper.
-
-The owned shim must expose:
+The shim exposes or must expose:
 
 ```text
 llama_free(ctx)
 llama_decode with exact status mapping
 llama_memory_seq_rm/cp/add
 llama_state_seq_get_size/get_data/set_data
-llama_state_seq_save_file/load_file
 tokenization and token-to-piece helpers
-minimal sampler support needed for deterministic greedy tests
+model-native chat-template rendering through the pinned minja headers
+minimal sampler support needed for deterministic tests
 ```
+
+Snapshot file helpers (`llama_state_seq_save_file/load_file`) remain an L4
+durability/benchmark addition on top of the current byte-state primitives.
 
 See `llamacpp-binding-ownership-options.md` for the final decision record.
 
@@ -362,7 +362,7 @@ with citations.
 - **`Makefile.llamacpp`** with `model` / `test-l0` / `test-l2` targets, mirroring
   `Makefile.openvino`. It must fetch or point at the pinned llama.cpp source used
   by the Contenox-owned shim, build exactly one linked llama.cpp copy, and run
-  tiny-model L0/L2 tests without relying on Ollama internals.
+  tiny-model L0/L2 tests against the direct runtime.
 
 ## Non-goals
 

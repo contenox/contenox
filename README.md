@@ -49,7 +49,7 @@ curl -fsSL https://contenox.com/install.sh | sh
 ## Quick Start
 
 ```bash
-# Scaffold a workspace and register the local backend
+# Scaffold a workspace and register the llama backend
 contenox init
 
 # Pull a model — first pull becomes the default-model automatically
@@ -60,7 +60,14 @@ contenox "say hello world in python"
 contenox chat -e                        # open $EDITOR to compose a prompt
 ```
 
-That's it. No API key, no external server, no `backend add` ceremony — `init` registers the local llama.cpp backend pointed at `~/.contenox/models/`, `model pull` populates it. Resume past sessions with `contenox session list` and `contenox session switch <name>`. To use a cloud provider instead, see [Backends](#backends) below.
+That's it. No API key, no external server, no `backend add` ceremony. `init`
+registers the `llama` backend, and `model pull` downloads GGUF models into
+`~/.contenox/models/llama/`. Resume past sessions with `contenox session list`
+and `contenox session switch <name>`. To use a cloud provider instead, see
+[Backends](#backends) below.
+
+Developing the source-built local backend? See
+[Testing the llama modeld backend](docs/modeld-llama-backend.md).
 
 ---
 
@@ -142,7 +149,7 @@ Output: patch, test run, PR description
 Gate: shell/filesystem approval and human merge
 ```
 
-State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line — Ollama, OpenAI, Anthropic, Mistral, Gemini, AWS Bedrock, vLLM, Vertex (Gemini), or in-process llama.cpp. Use a cloud model, a local server, or a local GGUF model depending on the workflow and data boundary.
+State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line: llama modeld, Ollama, OpenAI, Anthropic, Mistral, Gemini, AWS Bedrock, vLLM, or Vertex (Gemini). Use a cloud model, a local server, or a local GGUF model depending on the workflow and data boundary.
 
 ---
 
@@ -219,7 +226,11 @@ Verified with GoLand 2026.1.2. Full guide → **[contenox.com/docs/guide/jetbrai
 
 ## Backends
 
-The `local` backend (in-process llama.cpp) is registered automatically by `contenox init` and lives at `~/.contenox/models/`. Populate it with `contenox model pull <name>` — never type `backend add local` yourself. To add anything else:
+The `llama` backend is the local llama.cpp runtime served by `modeld`.
+`contenox init` registers it automatically and `contenox model pull <name>`
+downloads GGUF models into `~/.contenox/models/llama/`. For source-build testing,
+see [Testing the llama modeld backend](docs/modeld-llama-backend.md). To add
+anything else:
 
 ```bash
 # Other local servers
@@ -235,8 +246,8 @@ contenox backend add bedrock   --type bedrock   --url https://bedrock-runtime.us
 contenox backend add vertex    --type vertex-google --url "https://us-central1-aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/us-central1"
 
 # Set your defaults
-contenox config set default-model qwen2.5:7b
-contenox config set default-provider ollama
+contenox config set default-model qwen3-8b
+contenox config set default-provider llama
 ```
 
 ---

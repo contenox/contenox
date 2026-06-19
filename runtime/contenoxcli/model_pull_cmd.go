@@ -29,19 +29,24 @@ names ending in -ov) are fetched as a multi-file repo into
 ~/.contenox/models/openvino/<name>/.
 
 Curated models — run 'contenox model registry-list' to see full list with sizes.
-  By GPU size (approximate Q4_K_M VRAM needed):
+  By model file size (approximate resident memory still depends on context/KV):
   ~1 GB   tiny            FastThink 0.5B (testing only)
   ~1 GB   llama3.2-1b     Llama 3.2 1B
   ~1-2 GB granite-3.2-2b  IBM Granite 3.2 2B
-  ~1 GB   qwen2.5-1.5b    Qwen 2.5 1.5B
+  ~1 GB   gemma3-1b       Gemma 3 1B
+  ~2-3 GB phi-4-mini      Phi-4 Mini
   ~3 GB   qwen3-4b        Qwen 3 4B
-  ~3 GB   gemma4-e2b      Gemma 4 E2B
-  ~3 GB   phi-4-mini      Phi-4 Mini
-  ~5 GB   gemma4-e4b      Gemma 4 E4B
+  ~3 GB   gemma3-4b       Gemma 3 4B
   ~5 GB   granite-3.2-8b  IBM Granite 3.2 8B
-  ~5 GB   qwen2.5-7b      Qwen 2.5 7B
+  ~5 GB   qwen3-8b        Qwen 3 8B
+  ~5 GB   deepseek-r1-0528-qwen3-8b
+  ~8 GB   gemma3-12b      Gemma 3 12B
   ~9 GB   qwen3-14b       Qwen 3 14B
-  ~19 GB  qwen3-30b       Qwen 3 30B (MoE, fast)
+  ~10 GB  deepseek-coder-v2-lite
+  ~12 GB  gpt-oss-20b     OpenAI gpt-oss 20B
+  ~17 GB  gemma3-27b      Gemma 3 27B
+  ~19 GB  qwen3-30b       Qwen 3 30B-A3B (MoE)
+  ~19 GB  qwen3-coder-30b-a3b
   ~30 GB  kimi-linear     Kimi Linear 48B (MoE)
   ~68 GB  llama4-scout    Llama 4 Scout 17Bx16E (multi-GPU)
 
@@ -110,14 +115,6 @@ registered by 'contenox init' and the first pulled model becomes the default:
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "Done.")
 			}
-			// Certified curated models declare their tool-call protocol; write it
-			// into the model's profile so the local provider enables model-native
-			// tool calls out of the box. Never overwrite a user-edited profile.
-			if toolProtocol != "" {
-				if err := writeOpenVINOToolProfile(modelDir, toolProtocol); err != nil {
-					fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write tool-call profile: %v\n", err)
-				}
-			}
 		} else {
 			destPath := filepath.Join(modelDir, "model.gguf")
 			if _, err := os.Stat(destPath); err == nil {
@@ -129,6 +126,14 @@ registered by 'contenox init' and the first pulled model becomes the default:
 					return fmt.Errorf("download failed: %w", err)
 				}
 				fmt.Fprintln(cmd.OutOrStdout(), "\nDone.")
+			}
+		}
+		// Certified curated models declare their tool-call protocol; write it
+		// into the model's profile so the local provider enables model-native
+		// tool calls out of the box. Never overwrite a user-edited profile.
+		if toolProtocol != "" {
+			if err := writeToolProfile(modelBackend, modelDir, toolProtocol); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write tool-call profile: %v\n", err)
 			}
 		}
 
@@ -249,11 +254,21 @@ func downloadOpenVINOIR(ctx context.Context, repo, destDir string, out io.Writer
 	return nil
 }
 
-// writeOpenVINOToolProfile writes a minimal contenox-openvino.json declaring the
-// model-native tool-call protocol, so the openvino provider enables tool calls.
-// It does not overwrite an existing profile (a user may have customized it).
-func writeOpenVINOToolProfile(modelDir, protocol string) error {
-	path := filepath.Join(modelDir, "contenox-openvino.json")
+// writeToolProfile writes a minimal backend profile declaring the model-native
+// tool-call protocol, so the local provider enables tool calls. It does not
+// overwrite an existing profile (a user may have customized it).
+func writeToolProfile(modelBackend, modelDir, protocol string) error {
+	var fileName string
+	switch modelrepo.CanonicalBackendType(modelBackend) {
+	case "llama":
+		fileName = "contenox-llama.json"
+	case "openvino":
+		fileName = "contenox-openvino.json"
+	default:
+		return nil
+	}
+
+	path := filepath.Join(modelDir, fileName)
 	if _, err := os.Stat(path); err == nil {
 		return nil // keep an existing (possibly user-edited) profile
 	}
@@ -292,20 +307,60 @@ func downloadFile(ctx context.Context, url, dest string) error {
 // backend and custom --url dirs), else the default ~/.contenox/models/<type>/.
 func localBackendModelDir(ctx context.Context, modelBackend, name string) string {
 	want := modelrepo.CanonicalBackendType(modelBackend)
+	var registeredDir string
 	if dbPath, err := globalDBPath(); err == nil {
 		if db, err := OpenDBAt(ctx, dbPath); err == nil {
 			defer db.Close()
 			if backends, err := backendservice.New(db).List(ctx, nil, 1000); err == nil {
 				for _, b := range backends {
 					if b.BaseURL != "" && modelrepo.CanonicalBackendType(b.Type) == want {
-						return filepath.Join(b.BaseURL, name)
+						dir := filepath.Join(b.BaseURL, name)
+						if localModelPresent(want, dir) {
+							return dir
+						}
+						if registeredDir == "" {
+							registeredDir = dir
+						}
 					}
 				}
 			}
 		}
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".contenox", "models", modelBackend, name)
+	if want == "llama" {
+		if dir, ok := legacyLlamaModelDir(home, name); ok {
+			return dir
+		}
+	}
+	if registeredDir != "" {
+		return registeredDir
+	}
+	return filepath.Join(home, ".contenox", "models", want, name)
+}
+
+func localModelPresent(modelBackend, modelDir string) bool {
+	var marker string
+	switch modelrepo.CanonicalBackendType(modelBackend) {
+	case "llama":
+		marker = "model.gguf"
+	case "openvino":
+		marker = "openvino_model.xml"
+	default:
+		return false
+	}
+	_, err := os.Stat(filepath.Join(modelDir, marker))
+	return err == nil
+}
+
+func legacyLlamaModelDir(home, name string) (string, bool) {
+	if home == "" {
+		return "", false
+	}
+	dir := filepath.Join(home, ".contenox", "models", name)
+	if localModelPresent("llama", dir) {
+		return dir, true
+	}
+	return "", false
 }
 
 func init() {

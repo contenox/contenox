@@ -107,7 +107,7 @@ func OpenSession(ctx context.Context, ref ModelRef, cfg transport.Config) (trans
 // info-flow for model facts (e.g. the trained context window): the runtime is
 // the consumer and never parses model files itself. A not-running/unreachable
 // owner surfaces the probe's typed error.
-func Describe(ctx context.Context, ref ModelRef) (transport.ModelInfo, error) {
+func Describe(ctx context.Context, ref ModelRef, cfg transport.Config) (transport.ModelInfo, error) {
 	st := detector().Probe(ctx)
 	if st.State != modeldprobe.StateRunning {
 		return transport.ModelInfo{}, st.Err()
@@ -122,5 +122,6 @@ func Describe(ctx context.Context, ref ModelRef) (transport.ModelInfo, error) {
 		Type:      ref.Type,
 		Digest:    ref.Digest,
 		Path:      ref.Path,
+		Config:    cfg,
 	})
 }

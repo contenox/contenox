@@ -26,7 +26,32 @@ func TestUnit_LocalNodeProvider_DefaultBuildReportsNotWired(t *testing.T) {
 		t.Fatalf("unexpected provider identity: type=%s id=%s", p.GetType(), p.GetID())
 	}
 	_, err := p.GetChatConnection(context.Background(), "llama")
-	if !errors.Is(err, ErrSessionUnavailable) || !strings.Contains(err.Error(), "compile with -tags llamanode") {
+	if !errors.Is(err, ErrSessionUnavailable) || !strings.Contains(err.Error(), "running modeld serving the llama backend") {
 		t.Fatalf("expected not-wired error, got: %v", err)
+	}
+}
+
+func TestUnit_LlamaProvider_CuratedQwenUsesToolProtocolFallback(t *testing.T) {
+	got := curatedToolProtocol(context.Background(), "qwen3-8b", "llama")
+	if got != "qwen" {
+		t.Fatalf("curated tool protocol = %q, want qwen", got)
+	}
+	if got := curatedToolProtocol(context.Background(), "gemma3-4b", "llama"); got != "" {
+		t.Fatalf("gemma should not declare a qwen tool protocol, got %q", got)
+	}
+	if got := curatedToolProtocol(context.Background(), "qwen3-8b-ov", "llama"); got != "" {
+		t.Fatalf("backend mismatch should not return a protocol, got %q", got)
+	}
+}
+
+func TestUnit_LlamaProvider_ModeldClampLeavesCapacitySafetyMargin(t *testing.T) {
+	cfg := clampContextForModeld(Config{NumCtx: 8192}, 4339)
+	if cfg.NumCtx != 4275 {
+		t.Fatalf("NumCtx = %d, want 4275", cfg.NumCtx)
+	}
+
+	cfg = clampContextForModeld(Config{NumCtx: 100}, 50)
+	if cfg.NumCtx != 50 {
+		t.Fatalf("small cap should not subtract safety margin, got %d", cfg.NumCtx)
 	}
 }

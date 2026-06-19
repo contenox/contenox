@@ -52,12 +52,43 @@ type PipelineMetrics struct {
 	CacheSizeInBytes  uint64
 }
 
+// DeviceInfo describes one OpenVINO device and any memory telemetry exposed by
+// that plugin.
+type DeviceInfo struct {
+	Index             int
+	Name              string
+	Description       string
+	Type              string
+	MemoryFree        uint64
+	MemoryTotal       uint64
+	SharedWithDisplay bool
+}
+
+// RuntimeInfo describes the linked OpenVINO runtime and available devices.
+type RuntimeInfo struct {
+	RuntimeName        string
+	RuntimeDigest      string
+	RuntimeSystemInfo  string
+	SupportsGPUOffload bool
+	Devices            []DeviceInfo
+}
+
 // GenAIResult is the generated text plus the pipeline metrics observed for the
 // request.
 type GenAIResult struct {
 	Text       string
 	ParsedJSON string
 	Metrics    PipelineMetrics
+}
+
+// Runtime reports that the native GenAI backend is not compiled in.
+func Runtime() (RuntimeInfo, error) {
+	return RuntimeInfo{}, errors.New("openvino GenAI backend is not compiled in")
+}
+
+// Device reports that the native GenAI backend is not compiled in.
+func Device(_ string) (DeviceInfo, error) {
+	return DeviceInfo{}, errors.New("openvino GenAI backend is not compiled in")
 }
 
 // StreamChunk carries a decoded text delta or a terminal stream error.

@@ -78,8 +78,9 @@ func (c *Client) OpenSession(ctx context.Context, req transport.OpenSessionReque
 }
 
 // Describe reports a model's capabilities as read by the daemon from the model
-// metadata. The model is identified by req's typed handle (Type + Path); Config
-// is ignored.
+// metadata and capacity policy. The model is identified by req's typed handle
+// (Type + Path); Config carries the requested context/runtime knobs for the
+// capacity plan.
 func (c *Client) Describe(ctx context.Context, req transport.OpenSessionRequest) (transport.ModelInfo, error) {
 	owner := req.Fence.OwnerInstanceID
 	if owner == "" {
@@ -92,16 +93,36 @@ func (c *Client) Describe(ctx context.Context, req transport.OpenSessionRequest)
 		Type:            req.Type,
 		Digest:          req.Digest,
 		Path:            req.Path,
+		Config:          req.Config,
 	}
 	if err := c.invoke(ctx, "Describe", in, out); err != nil {
 		return transport.ModelInfo{}, err
 	}
 	return transport.ModelInfo{
-		ModelMaxContext:  out.ModelMaxContext,
-		EffectiveContext: out.EffectiveContext,
-		KVBytesPerToken:  out.KVBytesPerToken,
-		FreeBytes:        out.FreeBytes,
-		WeightsBytes:     out.WeightsBytes,
+		ModelMaxContext:    out.ModelMaxContext,
+		EffectiveContext:   out.EffectiveContext,
+		KVBytesPerToken:    out.KVBytesPerToken,
+		FreeBytes:          out.FreeBytes,
+		WeightsBytes:       out.WeightsBytes,
+		OverheadBytes:      out.OverheadBytes,
+		ReservedBytes:      out.ReservedBytes,
+		UserLimitBytes:     out.UserLimitBytes,
+		MinFreeBytes:       out.MinFreeBytes,
+		UsableBytes:        out.UsableBytes,
+		RequiredBytes:      out.RequiredBytes,
+		Clamped:            out.Clamped,
+		Reason:             out.Reason,
+		DeviceKind:         out.DeviceKind,
+		DeviceID:           out.DeviceID,
+		DeviceTotalBytes:   out.DeviceTotalBytes,
+		SharedWithDisplay:  out.SharedWithDisplay,
+		RequestedGpuLayers: out.RequestedGpuLayers,
+		ResolvedGpuLayers:  out.ResolvedGpuLayers,
+		RuntimeName:        out.RuntimeName,
+		RuntimeDigest:      out.RuntimeDigest,
+		RuntimeSystemInfo:  out.RuntimeSystemInfo,
+		SupportsGPUOffload: out.SupportsGPUOffload,
+		Devices:            out.Devices,
 	}, nil
 }
 
@@ -137,6 +158,18 @@ func (s *grpcSession) ExplainContext() transport.ContextReport {
 		return transport.ContextReport{Closed: true}
 	}
 	return *out
+}
+
+func (s *grpcSession) Snapshot(ctx context.Context) (transport.SessionSnapshot, error) {
+	out := new(transport.SessionSnapshot)
+	if err := s.client.invoke(ctx, "Snapshot", &snapshotReq{Handle: s.handle}, out); err != nil {
+		return transport.SessionSnapshot{}, err
+	}
+	return *out, nil
+}
+
+func (s *grpcSession) Restore(ctx context.Context, snap transport.SessionSnapshot) error {
+	return s.client.invoke(ctx, "Restore", &restoreReq{Handle: s.handle, Snapshot: snap}, new(restoreResp))
 }
 
 func (s *grpcSession) Close() error {

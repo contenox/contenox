@@ -1,4 +1,4 @@
-//go:build llamanode
+//go:build llamanode || llamacpp_direct
 
 package chattmpl
 

@@ -64,6 +64,45 @@ type ModelInfo struct {
 	KVBytesPerToken  int64 `json:"kv_bytes_per_token,omitempty"`
 	FreeBytes        int64 `json:"free_bytes,omitempty"`
 	WeightsBytes     int64 `json:"weights_bytes,omitempty"`
+	OverheadBytes    int64 `json:"overhead_bytes,omitempty"`
+	ReservedBytes    int64 `json:"reserved_bytes,omitempty"`
+	UserLimitBytes   int64 `json:"user_limit_bytes,omitempty"`
+	MinFreeBytes     int64 `json:"min_free_bytes,omitempty"`
+	UsableBytes      int64 `json:"usable_bytes,omitempty"`
+	RequiredBytes    int64 `json:"required_bytes,omitempty"`
+	Clamped          bool  `json:"clamped,omitempty"`
+	// Reason explains why EffectiveContext was lower than the requested or model
+	// dense context. It is telemetry/debug text, not a stable API enum yet.
+	Reason string `json:"reason,omitempty"`
+	// DeviceKind/DeviceID identify the memory pool modeld used for the capacity
+	// decision. Physical hot context is separate from future planner-level
+	// effective context, which may exceed the model's dense trained window.
+	DeviceKind        string `json:"device_kind,omitempty"`
+	DeviceID          string `json:"device_id,omitempty"`
+	DeviceTotalBytes  int64  `json:"device_total_bytes,omitempty"`
+	SharedWithDisplay bool   `json:"shared_with_display,omitempty"`
+
+	// RequestedGpuLayers is what the profile/env asked for. ResolvedGpuLayers is
+	// what modeld will actually open after applying the device memory budget.
+	RequestedGpuLayers int `json:"requested_gpu_layers,omitempty"`
+	ResolvedGpuLayers  int `json:"resolved_gpu_layers,omitempty"`
+
+	// Runtime identity and device inventory explain which native runtime modeld
+	// actually linked and what memory pools it can allocate from.
+	RuntimeName        string       `json:"runtime_name,omitempty"`
+	RuntimeDigest      string       `json:"runtime_digest,omitempty"`
+	RuntimeSystemInfo  string       `json:"runtime_system_info,omitempty"`
+	SupportsGPUOffload bool         `json:"supports_gpu_offload,omitempty"`
+	Devices            []DeviceInfo `json:"devices,omitempty"`
+}
+
+type DeviceInfo struct {
+	Index       int    `json:"index"`
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	Type        string `json:"type,omitempty"`
+	MemoryFree  int64  `json:"memory_free,omitempty"`
+	MemoryTotal int64  `json:"memory_total,omitempty"`
 }
 
 // Service is the entry point modeld serves: it opens persistent sessions on the
@@ -73,8 +112,8 @@ type ModelInfo struct {
 type Service interface {
 	OpenSession(ctx context.Context, req OpenSessionRequest) (Session, error)
 	// Describe reports a model's capabilities from its on-disk metadata. The
-	// daemon is the authority because it owns the model format; req carries the
-	// typed model handle (Type + Path identify it; Config is ignored).
+	// daemon is the authority because it owns the model format and hardware;
+	// Config carries the requested context/runtime knobs for capacity planning.
 	Describe(ctx context.Context, req OpenSessionRequest) (ModelInfo, error)
 }
 
@@ -111,8 +150,28 @@ type Session interface {
 	// ExplainContext reports the resident context for observability.
 	ExplainContext() ContextReport
 
+	// Snapshot captures backend state for durability/branching. State is opaque
+	// backend data; the manifest and bookkeeping fields are the compatibility
+	// gate needed before Restore may trust it.
+	Snapshot(ctx context.Context) (SessionSnapshot, error)
+
+	// Restore replaces the resident session state from a compatible snapshot.
+	Restore(ctx context.Context, snap SessionSnapshot) error
+
 	// Close releases the session's resources.
 	Close() error
+}
+
+type SessionSnapshot struct {
+	State            []byte          `json:"state,omitempty"`
+	ResidentTokens   int             `json:"resident_tokens,omitempty"`
+	PrefixTokens     int             `json:"prefix_tokens,omitempty"`
+	NumCtx           int             `json:"num_ctx,omitempty"`
+	ResidentTokenIDs []int           `json:"resident_token_ids,omitempty"`
+	StableText       string          `json:"stable_text,omitempty"`
+	PrefixText       string          `json:"prefix_text,omitempty"`
+	Tools            string          `json:"tools,omitempty"`
+	Manifest         ContextManifest `json:"manifest"`
 }
 
 // PrefixInput is the stable prefix text plus the manifest that makes reuse

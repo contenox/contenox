@@ -1,4 +1,4 @@
-//go:build llamanode && llama_unsafe_abi
+//go:build llamanode && llamacpp_direct
 
 // Native embedding path for the llama backend. One-shot, non-causal: the whole
 // input is tokenized and processed in a single batch, then the sequence
@@ -15,8 +15,7 @@ import (
 	"sync"
 
 	"github.com/contenox/runtime/modeld/llama"
-	llamacpp "github.com/ollama/ollama/llama"
-	"github.com/ollama/ollama/ml"
+	"github.com/contenox/runtime/modeld/llama/llamacppshim"
 )
 
 const (
@@ -27,7 +26,7 @@ const (
 func init() { llama.SetEmbedFunc(embed) }
 
 type embedModel struct {
-	model *llamacpp.Model
+	model *llamacppshim.Model
 	mu    sync.Mutex
 }
 
@@ -37,11 +36,7 @@ func acquireEmbedModel(modelPath string, cfg llama.Config) (*embedModel, error) 
 	if v, ok := embedModels.Load(modelPath); ok {
 		return v.(*embedModel), nil
 	}
-	m, err := llamacpp.LoadModelFromFile(modelPath, llamacpp.ModelParams{
-		NumGpuLayers: cfg.NumGpuLayers,
-		TensorSplit:  cfg.TensorSplit,
-		UseMmap:      true,
-	})
+	m, err := llamacppshim.LoadModel(modelPath, modelConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("llama embed: load model %q: %w", modelPath, err)
 	}
@@ -83,22 +78,32 @@ func embed(ctx context.Context, modelPath string, cfg llama.Config, input string
 	}
 
 	// Non-causal embedding: the whole input must fit one ubatch.
-	lctx, err := llamacpp.NewContextWithModel(em.model,
-		llamacpp.NewContextParams(batchSize, batchSize, 1, runtime.NumCPU(), ml.FlashAttentionDisabled, ""))
+	lctx, err := llamacppshim.NewContext(em.model, llamacppshim.ContextConfig{
+		NumCtx:       batchSize,
+		NumBatch:     batchSize,
+		NumSeqMax:    1,
+		NumThreads:   runtime.NumCPU(),
+		Embeddings:   true,
+		PoolingLast:  true,
+		NonCausalAtt: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("llama embed: create context: %w", err)
 	}
-	batch, err := llamacpp.NewBatch(batchSize, 1, 0)
+	defer lctx.Close()
+	batch, err := llamacppshim.NewBatch(batchSize, 1, 0)
 	if err != nil {
 		return nil, fmt.Errorf("llama embed: create batch: %w", err)
 	}
 	defer batch.Free()
 
 	for i, tok := range tokens {
-		batch.Add(tok, nil, i, true, 0)
+		if err := batch.Add(tok, nil, i, true, 0); err != nil {
+			return nil, fmt.Errorf("llama embed: batch add: %w", err)
+		}
 	}
-	if err := lctx.Decode(batch); err != nil {
-		return nil, fmt.Errorf("llama embed: decode: %w", err)
+	if res := lctx.Decode(batch); res.Status != llamacppshim.DecodeOK {
+		return nil, fmt.Errorf("llama embed: decode: %w", res.Err)
 	}
 	select {
 	case <-ctx.Done():
@@ -116,7 +121,7 @@ func embed(ctx context.Context, modelPath string, cfg llama.Config, input string
 // extractEmbedding returns the pooled sequence embedding. When the model declares
 // a pooling type, GetEmbeddingsSeq(0) returns the pooled vector; otherwise we
 // mean-pool the per-token hidden states (the sentence-transformers recipe).
-func extractEmbedding(lctx *llamacpp.Context, numTokens int) ([]float64, error) {
+func extractEmbedding(lctx *llamacppshim.Context, numTokens int) ([]float64, error) {
 	if pooled := lctx.GetEmbeddingsSeq(0); pooled != nil {
 		out := make([]float64, len(pooled))
 		for i, v := range pooled {

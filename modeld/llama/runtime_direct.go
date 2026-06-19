@@ -1,0 +1,97 @@
+//go:build llamacpp_direct
+
+package llama
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/contenox/runtime/modeld/capacity"
+	"github.com/contenox/runtime/modeld/llama/llamacppshim"
+	"github.com/contenox/runtime/runtime/transport"
+)
+
+func init() {
+	defaultMemorySource = func(cfg transport.Config) capacity.MemorySource {
+		if cfg.NumGpuLayers != 0 {
+			return ggmlDeviceMemorySource{requireGPU: true}
+		}
+		return capacity.SystemRAM{}
+	}
+	llamaRuntimeInfo = directRuntimeInfo
+}
+
+type ggmlDeviceMemorySource struct {
+	requireGPU bool
+}
+
+func (s ggmlDeviceMemorySource) FreeBytes() (int64, error) {
+	st, err := s.Snapshot()
+	if err != nil {
+		return 0, err
+	}
+	return st.FreeBytes, nil
+}
+
+func (s ggmlDeviceMemorySource) Snapshot() (capacity.DeviceSnapshot, error) {
+	devices := llamacppshim.Devices()
+	for _, d := range devices {
+		if !isAcceleratorDevice(d.Type) {
+			continue
+		}
+		return capacity.DeviceSnapshot{
+			Kind:              d.Type,
+			DeviceID:          d.Name,
+			TotalBytes:        int64(d.MemoryTotal),
+			FreeBytes:         int64(d.MemoryFree),
+			SharedWithDisplay: d.Type == "igpu",
+		}, nil
+	}
+	if s.requireGPU {
+		return capacity.DeviceSnapshot{}, fmt.Errorf("requested GPU offload but linked llama.cpp runtime registered no GPU devices (supports_gpu_offload=%v, devices=%s)",
+			llamacppshim.SupportsGPUOffload(), deviceSummary(devices))
+	}
+	return capacity.SystemRAM{}.Snapshot()
+}
+
+func isAcceleratorDevice(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "gpu", "igpu", "accel":
+		return true
+	default:
+		return false
+	}
+}
+
+func directRuntimeInfo() transport.ModelInfo {
+	devices := llamacppshim.Devices()
+	out := make([]transport.DeviceInfo, 0, len(devices))
+	for _, d := range devices {
+		out = append(out, transport.DeviceInfo{
+			Index:       d.Index,
+			Name:        d.Name,
+			Description: d.Description,
+			Type:        d.Type,
+			MemoryFree:  int64(d.MemoryFree),
+			MemoryTotal: int64(d.MemoryTotal),
+		})
+	}
+	return transport.ModelInfo{
+		RuntimeName:        "llama.cpp",
+		RuntimeDigest:      llamaCPPCommit,
+		RuntimeSystemInfo:  llamacppshim.SystemInfo(),
+		SupportsGPUOffload: llamacppshim.SupportsGPUOffload(),
+		Devices:            out,
+	}
+}
+
+func deviceSummary(devices []llamacppshim.Device) string {
+	if len(devices) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(devices))
+	for _, d := range devices {
+		parts = append(parts, fmt.Sprintf("%d:%s:%s", d.Index, d.Type, d.Name))
+	}
+	return strings.Join(parts, ",")
+}

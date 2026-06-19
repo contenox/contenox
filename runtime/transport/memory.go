@@ -65,6 +65,7 @@ type memSession struct {
 	// resident state, keyed on the manifest that produced it
 	residentStableHash string
 	residentDigest     string
+	manifest           ContextManifest
 	prefixTokens       int
 	suffixTokens       int
 }
@@ -116,6 +117,7 @@ func (s *memSession) EnsurePrefix(_ context.Context, prefix PrefixInput) (Prefix
 	s.prefixTokens = want
 	s.residentStableHash = stableHash
 	s.residentDigest = digest
+	s.manifest = prefix.Manifest
 
 	return PrefixStatus{
 		ReusedTokens:    reused,
@@ -128,6 +130,46 @@ func (s *memSession) EnsurePrefix(_ context.Context, prefix PrefixInput) (Prefix
 		StableTokenHash: prefix.Manifest.StableTokenHash,
 		ManifestDigest:  digest,
 	}, nil
+}
+
+func (s *memSession) Snapshot(_ context.Context) (SessionSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return SessionSnapshot{}, ErrSessionClosed
+	}
+	return SessionSnapshot{
+		ResidentTokens: s.resident(),
+		PrefixTokens:   s.prefixTokens,
+		NumCtx:         s.numCtx,
+		Manifest:       s.manifest,
+	}, nil
+}
+
+func (s *memSession) Restore(_ context.Context, snap SessionSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return ErrSessionClosed
+	}
+	if snap.NumCtx > 0 && s.numCtx > 0 && snap.NumCtx != s.numCtx {
+		return ErrContextOverflow
+	}
+	if snap.ResidentTokens < 0 || snap.PrefixTokens < 0 || snap.PrefixTokens > snap.ResidentTokens {
+		return ErrContextOverflow
+	}
+	if s.numCtx > 0 && snap.ResidentTokens > s.numCtx {
+		return ErrContextOverflow
+	}
+	s.prefixTokens = snap.PrefixTokens
+	s.suffixTokens = snap.ResidentTokens - snap.PrefixTokens
+	if s.suffixTokens < 0 {
+		s.suffixTokens = 0
+	}
+	s.manifest = snap.Manifest
+	s.residentStableHash = snap.Manifest.StableByteHash
+	s.residentDigest = snap.Manifest.Digest()
+	return nil
 }
 
 func (s *memSession) PrefillSuffix(_ context.Context, suffix SuffixInput) (SuffixStatus, error) {
@@ -184,6 +226,7 @@ func (s *memSession) ExplainContext() ContextReport {
 		AvailableTokens: s.available(),
 		StableByteHash:  s.residentStableHash,
 		ManifestDigest:  s.residentDigest,
+		Manifest:        s.manifest,
 		Closed:          s.closed,
 	}
 }

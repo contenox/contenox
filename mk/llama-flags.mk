@@ -1,14 +1,29 @@
-# Shared llama.cpp build configuration: the vendored single-header tree and the
-# pinned llama.cpp commit. Included by Makefile.llamacpp (vendor + test targets)
-# and the top-level Makefile (build-modeld) so the vendor path and the pin are a
-# single source of truth and cannot drift.
+# Shared llama.cpp build configuration: the vendored single-header tree, the
+# pinned upstream source checkout, and the generated direct runtime location.
+# Included by Makefile.llamacpp (header vendoring), Makefile.llamacpp-direct
+# (native library build), and the top-level Makefile (modeld build) so the
+# template headers and linked llama.cpp runtime cannot drift.
 #
 # Requires PROJECT_ROOT (with trailing slash) from the including Makefile.
 
-# The ollama Go module strips llama.cpp's vendored single-header deps
-# (nlohmann/json, miniaudio, stb), so CGO can't compile it as-is. We fetch them
-# here and feed via CGO_CPPFLAGS=-I$(LLAMA_VENDOR). minja (the model-native Jinja
-# chat-template engine) is pinned to the SAME commit ollama vendors, so the
-# template engine matches the linked llama.cpp.
 LLAMA_VENDOR ?= $(PROJECT_ROOT).llamacpp-vendor
-LLAMA_CPP_COMMIT ?= ec98e2002
+LLAMA_CPP_COMMIT ?= ee3a5a10adf9e83722d1914dddc56a0623ececaf
+
+# Upstream reference source for the direct llama.cpp runtime build. This checkout
+# is intentionally ignored under tmp/; LLAMA_CPP_COMMIT is the production pin.
+LLAMA_CPP_REF_REPO ?= https://github.com/ggml-org/llama.cpp.git
+LLAMA_CPP_REF_DIR ?= $(PROJECT_ROOT)tmp/ref/llama.cpp
+
+# Pinned direct llama.cpp runtime build output. Profiles are directories under
+# this root, e.g. cpu and cuda. These are generated artifacts, not source.
+LLAMA_RUNTIME_ROOT ?= $(PROJECT_ROOT).llamacpp-runtime
+LLAMA_RUNTIME_PROFILE ?= cpu
+LLAMA_RUNTIME_DIR ?= $(LLAMA_RUNTIME_ROOT)/$(LLAMA_RUNTIME_PROFILE)
+LLAMA_RUNTIME_LIB_DIR ?= $(LLAMA_RUNTIME_DIR)/lib
+LLAMA_DIRECT_CPPFLAGS = -I$(LLAMA_RUNTIME_DIR)/include
+LLAMA_DIRECT_BACKEND_LIBS = -l:libggml-cpu.so
+ifeq ($(LLAMA_RUNTIME_PROFILE),cuda)
+LLAMA_DIRECT_BACKEND_LIBS += -l:libggml-cuda.so
+endif
+LLAMA_DIRECT_LINK_LIBS = -l:libllama.so -l:libggml.so -l:libggml-base.so $(LLAMA_DIRECT_BACKEND_LIBS) -lstdc++ -lm -ldl -lpthread
+LLAMA_DIRECT_LDFLAGS = -L$(LLAMA_RUNTIME_LIB_DIR) -Wl,--disable-new-dtags -Wl,-rpath,$(LLAMA_RUNTIME_LIB_DIR) -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS)

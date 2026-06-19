@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
 	"github.com/contenox/runtime/runtime/transport"
 )
@@ -43,7 +45,39 @@ func init() {
 // GenAI backend. It opens persistent, manifest-keyed sessions on the owned
 // device (CPU / GPU / NPU); the runtime reaches it as a client over the
 // transport and never imports this package.
-type Service struct{}
+type Service struct {
+	memory capacity.MemorySource
+	policy capacity.Policy
+	launch capacity.LaunchDefaults
+}
+
+type ServiceOption func(*Service)
+
+func NewService(opts ...ServiceOption) *Service {
+	s := &Service{}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+func WithCapacityPolicy(p capacity.Policy) ServiceOption {
+	return func(s *Service) { s.policy = p }
+}
+
+func WithMemorySource(src capacity.MemorySource) ServiceOption {
+	return func(s *Service) { s.memory = src }
+}
+
+func (s *Service) memorySource(device string) capacity.MemorySource {
+	if s.memory != nil {
+		return s.memory
+	}
+	if openvinoDeviceUsesSystemRAM(device) {
+		return capacity.SystemRAM{}
+	}
+	return openvinoDeviceMemorySource{device: device}
+}
 
 var _ transport.Service = (*Service)(nil)
 
@@ -57,6 +91,10 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	if req.Type != "" && req.Type != "openvino" {
 		return nil, fmt.Errorf("%w: requested %q, this daemon serves openvino", transport.ErrBackendMismatch, req.Type)
 	}
+	cfg, err := s.resolveConfig(req)
+	if err != nil {
+		return nil, err
+	}
 	// The OpenVINO-specific tuning (KV precision, sparse attention, cache size) is
 	// model-driven: read from the model's own contenox-openvino.json profile, not
 	// hardcoded. transport.Config carries only the neutral context window; the
@@ -65,7 +103,7 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	if err != nil {
 		return nil, err
 	}
-	return newGenaiSession(backend, req.Config.NumCtx), nil
+	return newGenaiSession(backend, cfg.NumCtx), nil
 }
 
 // Describe reports the model's trained context window read from the IR's
@@ -75,23 +113,216 @@ func (s *Service) Describe(_ context.Context, req transport.OpenSessionRequest) 
 	if req.Type != "" && req.Type != "openvino" {
 		return transport.ModelInfo{}, fmt.Errorf("%w: requested %q, this daemon serves openvino", transport.ErrBackendMismatch, req.Type)
 	}
-	return transport.ModelInfo{EffectiveContext: openvinoContextLength(req.Path)}, nil
+	info, err := s.describe(req)
+	if err != nil {
+		return transport.ModelInfo{}, err
+	}
+	return info, nil
 }
 
-// openvinoContextLength reads max_position_embeddings from an OpenVINO IR model's
-// config.json. Returns 0 when absent/unreadable.
-func openvinoContextLength(modelDir string) int {
+type openvinoParams struct {
+	MaxPositionEmbeddings int `json:"max_position_embeddings"`
+	NumHiddenLayers       int `json:"num_hidden_layers"`
+	NumKeyValueHeads      int `json:"num_key_value_heads"`
+	NumAttentionHeads     int `json:"num_attention_heads"`
+	HiddenSize            int `json:"hidden_size"`
+	HeadDim               int `json:"head_dim"`
+}
+
+func (p openvinoParams) kvHeads() int {
+	if p.NumKeyValueHeads > 0 {
+		return p.NumKeyValueHeads
+	}
+	return p.NumAttentionHeads
+}
+
+func (p openvinoParams) headDim() int {
+	if p.HeadDim > 0 {
+		return p.HeadDim
+	}
+	if p.HiddenSize > 0 && p.NumAttentionHeads > 0 {
+		return p.HiddenSize / p.NumAttentionHeads
+	}
+	return 0
+}
+
+// openvinoModelParams reads model architecture facts from config.json. Returns
+// zero values when absent/unreadable.
+func openvinoModelParams(modelDir string) openvinoParams {
 	b, err := os.ReadFile(filepath.Join(modelDir, "config.json"))
 	if err != nil {
-		return 0
+		return openvinoParams{}
 	}
-	var cfg struct {
-		MaxPositionEmbeddings int `json:"max_position_embeddings"`
-	}
+	var cfg openvinoParams
 	if json.Unmarshal(b, &cfg) != nil {
-		return 0
+		return openvinoParams{}
 	}
-	return cfg.MaxPositionEmbeddings
+	return cfg
+}
+
+func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Config, error) {
+	info, err := s.describe(req)
+	if err != nil {
+		return transport.Config{}, err
+	}
+	cfg := req.Config
+	if info.EffectiveContext <= 0 {
+		return cfg, nil
+	}
+	if cfg.NumCtx <= 0 {
+		cfg.NumCtx = info.EffectiveContext
+		return cfg, nil
+	}
+	if cfg.NumCtx > info.EffectiveContext {
+		return transport.Config{}, fmt.Errorf("%w: requested num_ctx=%d exceeds modeld effective context=%d (%s)",
+			transport.ErrContextOverflow, cfg.NumCtx, info.EffectiveContext, info.Reason)
+	}
+	return cfg, nil
+}
+
+func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInfo, error) {
+	params := openvinoModelParams(req.Path)
+	device := resolveDevice()
+	st, err := capacity.Snapshot(s.memorySource(device))
+	if err != nil {
+		return transport.ModelInfo{}, fmt.Errorf("openvino capacity memory probe: %w", err)
+	}
+	policy := s.launch.Policy(s.policy, st)
+	genai := genAIConfigFromProfile(req.Path, device)
+	kvBytes := capacity.KVBytesPerToken(params.NumHiddenLayers, params.kvHeads(), params.headDim(), genai.KVCachePrecision)
+	resolved := capacity.Resolve(capacity.Params{
+		ModelMaxCtx:     params.MaxPositionEmbeddings,
+		KVBytesPerToken: kvBytes,
+		WeightsBytes:    dirSize(req.Path),
+		FreeBytes:       st.FreeBytes,
+		UserLimitBytes:  policy.MaxResidentBytes,
+		MinFreeBytes:    policy.MinFreeBytes,
+		Request:         req.Config.NumCtx,
+		HeadroomFrac:    policy.HeadroomFrac,
+	})
+	return modelInfo(resolved, st), nil
+}
+
+func dirSize(root string) int64 {
+	var total int64
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, err := d.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
+}
+
+func modelInfo(c capacity.ModelCapacity, st capacity.DeviceSnapshot) transport.ModelInfo {
+	info := openvinoRuntimeInfo()
+	info.ModelMaxContext = c.ModelMaxContext
+	info.EffectiveContext = c.EffectiveContext
+	info.KVBytesPerToken = c.KVBytesPerToken
+	info.FreeBytes = c.FreeBytes
+	info.WeightsBytes = c.WeightsBytes
+	info.OverheadBytes = c.OverheadBytes
+	info.ReservedBytes = c.ReservedBytes
+	info.UserLimitBytes = c.UserLimitBytes
+	info.MinFreeBytes = c.MinFreeBytes
+	info.UsableBytes = c.UsableBytes
+	info.RequiredBytes = c.RequiredBytes
+	info.Clamped = c.Clamped
+	info.Reason = c.Reason
+	info.DeviceKind = st.Kind
+	info.DeviceID = st.DeviceID
+	info.DeviceTotalBytes = st.TotalBytes
+	info.SharedWithDisplay = st.SharedWithDisplay
+	return info
+}
+
+func openvinoRuntimeInfo() transport.ModelInfo {
+	info := transport.ModelInfo{RuntimeName: "OpenVINO GenAI"}
+	rt, err := ovsession.Runtime()
+	if err != nil {
+		return info
+	}
+	info.RuntimeName = rt.RuntimeName
+	info.RuntimeDigest = rt.RuntimeDigest
+	info.RuntimeSystemInfo = rt.RuntimeSystemInfo
+	info.SupportsGPUOffload = rt.SupportsGPUOffload
+	info.Devices = make([]transport.DeviceInfo, 0, len(rt.Devices))
+	for _, d := range rt.Devices {
+		info.Devices = append(info.Devices, transport.DeviceInfo{
+			Index:       d.Index,
+			Name:        d.Name,
+			Description: d.Description,
+			Type:        d.Type,
+			MemoryFree:  int64(d.MemoryFree),
+			MemoryTotal: int64(d.MemoryTotal),
+		})
+	}
+	return info
+}
+
+type openvinoDeviceMemorySource struct {
+	device string
+}
+
+func (s openvinoDeviceMemorySource) FreeBytes() (int64, error) {
+	st, err := s.Snapshot()
+	if err != nil {
+		return 0, err
+	}
+	return st.FreeBytes, nil
+}
+
+func (s openvinoDeviceMemorySource) Snapshot() (capacity.DeviceSnapshot, error) {
+	d, err := ovsession.Device(s.device)
+	if err != nil {
+		return capacity.DeviceSnapshot{}, err
+	}
+	if d.MemoryFree == 0 || d.MemoryTotal == 0 {
+		return capacity.DeviceSnapshot{}, fmt.Errorf("OpenVINO device %q reported no memory telemetry; set CONTENOX_OPENVINO_DEVICE=CPU or use a plugin exposing device memory", s.device)
+	}
+	kind := d.Type
+	if kind == "" {
+		kind = openvinoDeviceKind(d.Name)
+	}
+	return capacity.DeviceSnapshot{
+		Kind:              kind,
+		DeviceID:          d.Name,
+		TotalBytes:        int64(d.MemoryTotal),
+		FreeBytes:         int64(d.MemoryFree),
+		SharedWithDisplay: d.SharedWithDisplay,
+	}, nil
+}
+
+func openvinoDeviceUsesSystemRAM(device string) bool {
+	base := openvinoDeviceBase(device)
+	return base == "" || base == "CPU"
+}
+
+func openvinoDeviceKind(device string) string {
+	switch openvinoDeviceBase(device) {
+	case "GPU":
+		return "gpu"
+	case "NPU":
+		return "accel"
+	case "CPU":
+		return "cpu"
+	default:
+		return "unknown"
+	}
+}
+
+func openvinoDeviceBase(device string) string {
+	device = strings.ToUpper(strings.TrimSpace(device))
+	if i := strings.IndexByte(device, '.'); i >= 0 {
+		device = device[:i]
+	}
+	if i := strings.IndexByte(device, ':'); i >= 0 {
+		device = device[:i]
+	}
+	return device
 }
 
 // resolveDevice selects the OpenVINO inference device. CONTENOX_OPENVINO_DEVICE

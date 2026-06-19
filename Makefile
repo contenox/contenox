@@ -14,6 +14,25 @@ include $(PROJECT_ROOT)mk/llama-flags.mk
 # translation units are memory-heavy, so the default all-cores fan-out can
 # exhaust RAM and lock the machine. Raise on a box with more headroom.
 MODELD_BUILD_JOBS ?= 4
+MODELD_SERVE_ARGS ?=
+# Direct llama.cpp runtime library directory used by package targets.
+# LLAMA_RUNTIME_SRC remains accepted as a local override, but the bundle code
+# consumes the more precise lib-dir name.
+LLAMA_RUNTIME_LIB_SRC ?= $(if $(strip $(LLAMA_RUNTIME_SRC)),$(LLAMA_RUNTIME_SRC),$(LLAMA_RUNTIME_LIB_DIR))
+LLAMA_LIBS_DIR ?= $(PROJECT_ROOT)lib/llamacpp
+LLAMA_LIBS_COPY ?=
+MODELD_DIST_DIR ?= $(PROJECT_ROOT)bin/dist
+MODELD_GPU_DIST_DIR ?= $(PROJECT_ROOT)bin/dist-gpu
+MODELD_LLAMA_DIST_DIR ?= $(PROJECT_ROOT)bin/dist-llama
+MODELD_LLAMA_GPU_DIST_DIR ?= $(PROJECT_ROOT)bin/dist-llama-gpu
+MODELD_OPENVINO_DIST_DIR ?= $(PROJECT_ROOT)bin/dist-openvino
+MODELD_FULL_TAGS = llamanode llamacpp_direct openvino openvino_genai
+MODELD_LLAMA_TAGS = llamanode llamacpp_direct
+MODELD_OPENVINO_TAGS = openvino openvino_genai
+MODELD_LLAMA_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/llama.llamaCPPCommit=$(LLAMA_CPP_COMMIT)'
+MODELD_OPENVINO_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/openvino.bakedTokenizersPath=$(OPENVINO_TOKENIZERS_SO)'
+# GPU dev run: ask llama.cpp to offload all possible layers.
+MODELD_LLAMA_GPU_LAYERS ?= 999
 
 EMBED_MODEL ?= nomic-embed-text:latest
 EMBED_PROVIDER ?= ollama
@@ -46,20 +65,21 @@ VSCODE_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCOD
 VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
 
 .PHONY: help \
-	build-contenox build-contenox-windows build-modeld bundle-modeld-libs package-modeld build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
+	build-contenox build-contenox-windows build-llamacpp-runtime build-llamacpp-runtime-cpu build-llamacpp-runtime-cuda build-modeld build-modeld-llama build-modeld-llama-gpu build-modeld-openvino bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-gpu package-modeld-llama package-modeld-llama-gpu package-modeld-openvino build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
+	check-modeld-llama-deps check-modeld-openvino-deps \
 	clean clean-vscode \
-	deps-modeld deps-llama-headers deps-openvino deps-ollama-headers deps-vscode \
+	deps-modeld deps-llama-headers deps-llamacpp-ref deps-openvino deps-vscode \
 	dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
-	run-modeld \
-	test test-unit test-system test-contenox-verbose test-contenox-help
+	run-modeld run-modeld-llama run-modeld-llama-gpu run-modeld-openvino \
+	test test-unit test-llamacpp-direct-cpu test-vllm test-system test-contenox-verbose test-contenox-help
 
 # -----------------------------------------------------------------------------
 help:
-	@echo "build-*    build-contenox build-contenox-windows build-modeld package-modeld build-vscode"
-	@echo "package-*  package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
-	@echo "test-*     test test-unit test-system test-contenox-verbose test-contenox-help"
-	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
-	@echo "deps-*     deps-modeld deps-llama-headers deps-openvino deps-ollama-headers deps-vscode"
+	@echo "build-*    build-contenox build-contenox-windows build-llamacpp-runtime build-llamacpp-runtime-cpu build-llamacpp-runtime-cuda build-modeld build-modeld-llama build-modeld-llama-gpu build-modeld-openvino build-vscode"
+	@echo "package-*  package-modeld package-modeld-gpu package-modeld-llama package-modeld-llama-gpu package-modeld-openvino package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
+	@echo "test-*     test test-unit test-llamacpp-direct-cpu test-vllm test-system test-contenox-verbose test-contenox-help"
+	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld run-modeld-llama run-modeld-llama-gpu run-modeld-openvino"
+	@echo "deps-*     deps-modeld deps-llama-headers deps-llamacpp-ref deps-openvino deps-vscode"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
 
@@ -73,21 +93,54 @@ build-contenox:
 build-contenox-windows:
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o $(PROJECT_ROOT)/bin/contenox-windows-amd64.exe $(PROJECT_ROOT)/cmd/contenox
 
+build-llamacpp-runtime:
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct runtime-$(LLAMA_RUNTIME_PROFILE)
+
+build-llamacpp-runtime-cpu:
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct runtime-cpu
+
+build-llamacpp-runtime-cuda:
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct runtime-cuda
+
+check-modeld-llama-deps:
+	@test -f "$(LLAMA_VENDOR)/minja/chat-template.hpp" || { echo "missing llama.cpp vendored headers ($(LLAMA_VENDOR)) — run: make deps-llama-headers"; exit 1; }
+
+check-modeld-openvino-deps:
+	@test -n "$(OPENVINO_PKG)" || { echo "missing OpenVINO SDK in $(OPENVINO_VENV) — run: make deps-openvino"; exit 1; }
+	@test -d "$(OPENVINO_GENAI_SRC)/src/cpp/include" || { echo "missing OpenVINO GenAI C++ headers ($(OPENVINO_GENAI_SRC)) — run: make deps-openvino"; exit 1; }
+
 # modeld binary: native inference backends (llama.cpp owned-ABI shim + OpenVINO
 # GenAI), built with CGO. Needs the vendored llama headers, the OpenVINO SDK and
 # the OpenVINO GenAI C++ headers — run `make deps-modeld` once on a fresh checkout.
 # The CGO flags come from mk/openvino-flags.mk (shared with the OpenVINO tests).
-build-modeld:
-	@test -f "$(LLAMA_VENDOR)/minja/chat-template.hpp" || { echo "missing llama.cpp vendored headers ($(LLAMA_VENDOR)) — run: make deps-modeld"; exit 1; }
-	@test -n "$(OPENVINO_PKG)" || { echo "missing OpenVINO SDK in $(OPENVINO_VENV) — run: make deps-modeld"; exit 1; }
-	@test -d "$(OPENVINO_GENAI_SRC)/src/cpp/include" || { echo "missing OpenVINO GenAI C++ headers ($(OPENVINO_GENAI_SRC)) — run: make deps-modeld"; exit 1; }
+build-modeld: build-llamacpp-runtime check-modeld-llama-deps check-modeld-openvino-deps
 	CGO_ENABLED=1 \
-	CGO_CPPFLAGS="-I$(LLAMA_VENDOR)" \
+	CGO_CPPFLAGS="-I$(LLAMA_VENDOR) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="$(LLAMA_DIRECT_LDFLAGS) $(OPENVINO_GENAI_LINK_FLAGS) -Wl,-rpath,\$$ORIGIN/modeld-libs" \
+	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_FULL_TAGS)' \
+		-ldflags "$(MODELD_LLAMA_LD_FLAGS) $(MODELD_OPENVINO_LD_FLAGS)" \
+		-o $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/cmd/modeld
+	@$(MAKE) --no-print-directory MODELD_LIBS_DIR=$(PROJECT_ROOT)/bin/modeld-libs MODELD_LIBS_COPY= bundle-modeld-libs
+
+build-modeld-llama: build-llamacpp-runtime check-modeld-llama-deps
+	CGO_ENABLED=1 \
+	CGO_CPPFLAGS="-I$(LLAMA_VENDOR) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_LDFLAGS="$(LLAMA_DIRECT_LDFLAGS)" \
+	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_LLAMA_TAGS)' \
+		-ldflags "$(MODELD_LLAMA_LD_FLAGS)" \
+		-o $(PROJECT_ROOT)/bin/modeld-llama $(PROJECT_ROOT)/cmd/modeld
+
+build-modeld-llama-gpu:
+	$(MAKE) --no-print-directory LLAMA_RUNTIME_PROFILE=cuda build-modeld-llama
+
+build-modeld-openvino: check-modeld-openvino-deps
+	CGO_ENABLED=1 \
 	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
 	CGO_LDFLAGS="$(OPENVINO_GENAI_LINK_FLAGS) -Wl,-rpath,\$$ORIGIN/modeld-libs" \
-	go build -p $(MODELD_BUILD_JOBS) -tags 'llamanode llama_unsafe_abi openvino openvino_genai' \
-		-ldflags "-X 'github.com/contenox/runtime/modeld/openvino.bakedTokenizersPath=$(OPENVINO_TOKENIZERS_SO)'" \
-		-o $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/cmd/modeld
+	go build -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_OPENVINO_TAGS)' \
+		-ldflags "$(MODELD_OPENVINO_LD_FLAGS)" \
+		-o $(PROJECT_ROOT)/bin/modeld-openvino $(PROJECT_ROOT)/cmd/modeld
 	@$(MAKE) --no-print-directory MODELD_LIBS_DIR=$(PROJECT_ROOT)/bin/modeld-libs MODELD_LIBS_COPY= bundle-modeld-libs
 
 # bundle-modeld-libs assembles the OpenVINO runtime next to the binary so it loads
@@ -109,14 +162,122 @@ bundle-modeld-libs:
 		echo "bundled OpenVINO runtime (symlinks) -> $(MODELD_LIBS_DIR)"; \
 	fi
 
-# package-modeld produces a relocatable bundle under bin/dist: the binary plus a
-# modeld-libs/ of real copies, so `bin/dist/modeld serve` runs on any host with no
-# venv, no env, no LD_LIBRARY_PATH. (Step 8 distribution.)
-package-modeld: build-modeld
-	@rm -rf $(PROJECT_ROOT)/bin/dist && mkdir -p $(PROJECT_ROOT)/bin/dist
-	@cp $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/bin/dist/modeld
-	@$(MAKE) --no-print-directory MODELD_LIBS_DIR=$(PROJECT_ROOT)/bin/dist/modeld-libs MODELD_LIBS_COPY=1 bundle-modeld-libs
-	@echo "relocatable modeld package -> $(PROJECT_ROOT)/bin/dist (run: bin/dist/modeld serve)"
+# bundle-llama-libs assembles Contenox-built direct llama.cpp runtime libraries
+# next to modeld.
+bundle-llama-libs:
+	@test -n "$(LLAMA_RUNTIME_LIB_SRC)" || { echo "missing direct llama.cpp runtime lib directory. Fetch ref code with: make deps-llamacpp-ref"; exit 1; }
+	@test -d "$(LLAMA_RUNTIME_LIB_SRC)" || { echo "direct llama.cpp runtime lib directory does not exist: $(LLAMA_RUNTIME_LIB_SRC)"; exit 1; }
+	@test -f "$(LLAMA_RUNTIME_LIB_SRC)/libllama.so" || { echo "direct llama.cpp runtime at $(LLAMA_RUNTIME_LIB_SRC) does not contain libllama.so"; exit 1; }
+	@rm -rf "$(LLAMA_LIBS_DIR)" && mkdir -p "$(dir $(LLAMA_LIBS_DIR))"
+	@if [ -n "$(LLAMA_LIBS_COPY)" ]; then \
+		mkdir -p "$(LLAMA_LIBS_DIR)"; \
+		cp -a "$(LLAMA_RUNTIME_LIB_SRC)"/. "$(LLAMA_LIBS_DIR)/"; \
+		echo "bundled direct llama.cpp runtime (copies) -> $(LLAMA_LIBS_DIR)"; \
+	else \
+		ln -s "$(LLAMA_RUNTIME_LIB_SRC)" "$(LLAMA_LIBS_DIR)"; \
+		echo "bundled direct llama.cpp runtime (symlink) -> $(LLAMA_LIBS_DIR)"; \
+	fi
+
+# package-modeld produces a relocatable full backend bundle under bin/dist: the
+# wrapper, native binary, OpenVINO libs, and the direct llama.cpp runtime once
+# LLAMA_RUNTIME_LIB_SRC points at a pinned Contenox build.
+package-modeld: build-llamacpp-runtime check-modeld-llama-deps check-modeld-openvino-deps
+	@rm -rf "$(MODELD_DIST_DIR)" && mkdir -p "$(MODELD_DIST_DIR)"
+	CGO_ENABLED=1 \
+	CGO_CPPFLAGS="-I$(LLAMA_VENDOR) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="-L$(LLAMA_RUNTIME_LIB_DIR) -Wl,--disable-new-dtags -Wl,-rpath,\$$ORIGIN/lib/llamacpp -Wl,-rpath,\$$ORIGIN/modeld-libs -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS) $(OPENVINO_GENAI_LINK_FLAGS)" \
+	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_FULL_TAGS)' \
+		-ldflags "$(MODELD_LLAMA_LD_FLAGS) $(MODELD_OPENVINO_LD_FLAGS)" \
+		-o "$(MODELD_DIST_DIR)/modeld.bin" $(PROJECT_ROOT)/cmd/modeld
+	@{ \
+		printf '%s\n' '#!/usr/bin/env sh'; \
+		printf '%s\n' 'set -eu'; \
+		printf '%s\n' 'SELF_DIR=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)'; \
+		printf '%s\n' 'LIB_DIR="$$SELF_DIR/lib/llamacpp"'; \
+		printf '%s\n' 'if [ -d "$$LIB_DIR" ]; then'; \
+		printf '%s\n' '  export LD_LIBRARY_PATH="$$LIB_DIR$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"'; \
+		printf '%s\n' 'fi'; \
+		printf '%s\n' 'exec "$$SELF_DIR/modeld.bin" "$$@"'; \
+	} > "$(MODELD_DIST_DIR)/modeld"
+	@chmod +x "$(MODELD_DIST_DIR)/modeld"
+	@if [ "$(LLAMA_RUNTIME_PROFILE)" = "cuda" ]; then \
+		{ \
+			printf '%s\n' '#!/usr/bin/env sh'; \
+			printf '%s\n' 'set -eu'; \
+			printf '%s\n' 'SELF_DIR=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)'; \
+			printf '%s\n' 'export CONTENOX_LLAMA_GPU_LAYERS="$${CONTENOX_LLAMA_GPU_LAYERS:-999}"'; \
+			printf '%s\n' 'exec "$$SELF_DIR/modeld" "$$@"'; \
+		} > "$(MODELD_DIST_DIR)/modeld-gpu"; \
+		chmod +x "$(MODELD_DIST_DIR)/modeld-gpu"; \
+	fi
+	@$(MAKE) --no-print-directory MODELD_LIBS_DIR="$(MODELD_DIST_DIR)/modeld-libs" MODELD_LIBS_COPY=1 bundle-modeld-libs
+	@$(MAKE) --no-print-directory LLAMA_LIBS_DIR="$(MODELD_DIST_DIR)/lib/llamacpp" LLAMA_LIBS_COPY=1 bundle-llama-libs
+	@if [ "$(LLAMA_RUNTIME_PROFILE)" = "cuda" ]; then \
+		echo "relocatable CUDA modeld package -> $(MODELD_DIST_DIR) (run: $(MODELD_DIST_DIR)/modeld-gpu serve)"; \
+	else \
+		echo "relocatable CPU modeld package -> $(MODELD_DIST_DIR) (run: $(MODELD_DIST_DIR)/modeld serve)"; \
+	fi
+
+package-modeld-gpu:
+	$(MAKE) --no-print-directory LLAMA_RUNTIME_PROFILE=cuda MODELD_DIST_DIR="$(MODELD_GPU_DIST_DIR)" package-modeld
+
+package-modeld-llama: build-llamacpp-runtime check-modeld-llama-deps
+	@rm -rf "$(MODELD_LLAMA_DIST_DIR)" && mkdir -p "$(MODELD_LLAMA_DIST_DIR)"
+	CGO_ENABLED=1 \
+	CGO_CPPFLAGS="-I$(LLAMA_VENDOR) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_LDFLAGS="-L$(LLAMA_RUNTIME_LIB_DIR) -Wl,--disable-new-dtags -Wl,-rpath,\$$ORIGIN/lib/llamacpp -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS)" \
+	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_LLAMA_TAGS)' \
+		-ldflags "$(MODELD_LLAMA_LD_FLAGS)" \
+		-o "$(MODELD_LLAMA_DIST_DIR)/modeld-llama.bin" $(PROJECT_ROOT)/cmd/modeld
+	@{ \
+		printf '%s\n' '#!/usr/bin/env sh'; \
+		printf '%s\n' 'set -eu'; \
+		printf '%s\n' 'SELF_DIR=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)'; \
+		printf '%s\n' 'LIB_DIR="$$SELF_DIR/lib/llamacpp"'; \
+		printf '%s\n' 'if [ -d "$$LIB_DIR" ]; then'; \
+		printf '%s\n' '  export LD_LIBRARY_PATH="$$LIB_DIR$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"'; \
+		printf '%s\n' 'fi'; \
+		printf '%s\n' 'exec "$$SELF_DIR/modeld-llama.bin" "$$@"'; \
+	} > "$(MODELD_LLAMA_DIST_DIR)/modeld-llama"
+	@chmod +x "$(MODELD_LLAMA_DIST_DIR)/modeld-llama"
+	@if [ "$(LLAMA_RUNTIME_PROFILE)" = "cuda" ]; then \
+		{ \
+			printf '%s\n' '#!/usr/bin/env sh'; \
+			printf '%s\n' 'set -eu'; \
+			printf '%s\n' 'SELF_DIR=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)'; \
+			printf '%s\n' 'export CONTENOX_LLAMA_GPU_LAYERS="$${CONTENOX_LLAMA_GPU_LAYERS:-999}"'; \
+			printf '%s\n' 'exec "$$SELF_DIR/modeld-llama" "$$@"'; \
+		} > "$(MODELD_LLAMA_DIST_DIR)/modeld-llama-gpu"; \
+		chmod +x "$(MODELD_LLAMA_DIST_DIR)/modeld-llama-gpu"; \
+	fi
+	@$(MAKE) --no-print-directory LLAMA_LIBS_DIR="$(MODELD_LLAMA_DIST_DIR)/lib/llamacpp" LLAMA_LIBS_COPY=1 bundle-llama-libs
+	@if [ "$(LLAMA_RUNTIME_PROFILE)" = "cuda" ]; then \
+		echo "relocatable CUDA llama modeld package -> $(MODELD_LLAMA_DIST_DIR) (run: $(MODELD_LLAMA_DIST_DIR)/modeld-llama-gpu serve)"; \
+	else \
+		echo "relocatable CPU llama modeld package -> $(MODELD_LLAMA_DIST_DIR) (run: $(MODELD_LLAMA_DIST_DIR)/modeld-llama serve)"; \
+	fi
+
+package-modeld-llama-gpu:
+	$(MAKE) --no-print-directory LLAMA_RUNTIME_PROFILE=cuda MODELD_LLAMA_DIST_DIR="$(MODELD_LLAMA_GPU_DIST_DIR)" package-modeld-llama
+
+package-modeld-openvino: check-modeld-openvino-deps
+	@rm -rf "$(MODELD_OPENVINO_DIST_DIR)" && mkdir -p "$(MODELD_OPENVINO_DIST_DIR)"
+	CGO_ENABLED=1 \
+	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
+	CGO_LDFLAGS="$(OPENVINO_GENAI_LINK_FLAGS) -Wl,-rpath,\$$ORIGIN/modeld-libs" \
+	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_OPENVINO_TAGS)' \
+		-ldflags "$(MODELD_OPENVINO_LD_FLAGS)" \
+		-o "$(MODELD_OPENVINO_DIST_DIR)/modeld-openvino.bin" $(PROJECT_ROOT)/cmd/modeld
+	@{ \
+		printf '%s\n' '#!/usr/bin/env sh'; \
+		printf '%s\n' 'set -eu'; \
+		printf '%s\n' 'SELF_DIR=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)'; \
+		printf '%s\n' 'exec "$$SELF_DIR/modeld-openvino.bin" "$$@"'; \
+	} > "$(MODELD_OPENVINO_DIST_DIR)/modeld-openvino"
+	@chmod +x "$(MODELD_OPENVINO_DIST_DIR)/modeld-openvino"
+	@$(MAKE) --no-print-directory MODELD_LIBS_DIR="$(MODELD_OPENVINO_DIST_DIR)/modeld-libs" MODELD_LIBS_COPY=1 bundle-modeld-libs
+	@echo "relocatable OpenVINO modeld package -> $(MODELD_OPENVINO_DIST_DIR) (run: $(MODELD_OPENVINO_DIST_DIR)/modeld-openvino serve)"
 
 build-vscode: deps-vscode
 	cd $(VSCODE_DIR) && npm run build
@@ -155,6 +316,12 @@ test:
 
 test-unit:
 	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -short -timeout 15m -run '^TestUnit_' ./...
+
+test-llamacpp-direct-cpu:
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct test-shim-cpu
+
+test-vllm:
+	CONTENOX_RUN_VLLM_TESTS=1 GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -run '^TestSystem_VLLM' ./runtime/modelrepo
 
 test-system:
 	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -run '^TestSystem_' ./...
@@ -211,29 +378,40 @@ dev-unlink:
 	@rm -f $(DEV_CONTENOX_BIN)
 
 run-modeld: build-modeld
-	$(PROJECT_ROOT)/bin/modeld serve
+	$(PROJECT_ROOT)/bin/modeld serve $(MODELD_SERVE_ARGS)
+
+run-modeld-llama: build-modeld-llama
+	$(PROJECT_ROOT)/bin/modeld-llama serve $(MODELD_SERVE_ARGS)
+
+run-modeld-llama-gpu: build-modeld-llama-gpu
+	CONTENOX_LLAMA_GPU_LAYERS=$(MODELD_LLAMA_GPU_LAYERS) \
+	$(PROJECT_ROOT)/bin/modeld-llama serve $(MODELD_SERVE_ARGS)
+
+run-modeld-openvino: build-modeld-openvino
+	$(PROJECT_ROOT)/bin/modeld-openvino serve $(MODELD_SERVE_ARGS)
 
 # —— deps ———————————————————————————————————————————————————————————————
 # Everything build-modeld links against, reproducible from a clean checkout:
-# llama.cpp vendored single-header deps + minja, the ollama llama.cpp headers,
-# and the OpenVINO SDK + GenAI C++ API (venv under .openvino, C++ source worktree).
-deps-modeld: deps-llama-headers deps-ollama-headers deps-openvino
+# direct llama.cpp source/runtime headers, vendored minja headers, and the
+# OpenVINO SDK + GenAI C++ API (venv under .openvino, C++ source worktree).
+deps-modeld: deps-llama-headers deps-llamacpp-ref deps-openvino
 
 deps-llama-headers:
 	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp vendor-headers
 
+deps-llamacpp-ref:
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct deps-ref
+
 deps-openvino:
 	$(MAKE) -f $(PROJECT_ROOT)Makefile.openvino deps-genai genai-src
-
-deps-ollama-headers:
-	@$(PROJECT_ROOT)/scripts/prepare_ollama_llama_headers.sh
 
 deps-vscode:
 	cd $(PROJECT_ROOT)/packages/vscode && npm ci
 
 # —— clean ———————————————————————————————————————————————————————————————
 clean:
-	rm -rf $(PROJECT_ROOT)/bin
+	rm -rf $(PROJECT_ROOT)/bin $(PROJECT_ROOT)/lib/llamacpp $(PROJECT_ROOT).llamacpp-runtime $(PROJECT_ROOT).build/llamacpp
+	@rmdir $(PROJECT_ROOT)/lib 2>/dev/null || true
 
 clean-vscode:
 	rm -rf $(VSCODE_DIR)/bin $(VSCODE_DIR)/dist $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/*.vsix

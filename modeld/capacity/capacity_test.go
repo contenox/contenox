@@ -1,6 +1,10 @@
 package capacity
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestUnit_KVBytesPerToken(t *testing.T) {
 	// 28 layers, 2 KV heads, 128 head dim, f16 (2 bytes), K+V:
@@ -66,6 +70,136 @@ func TestUnit_Resolve_WeightsExceedMemoryYieldsZero(t *testing.T) {
 	c := Resolve(Params{ModelMaxCtx: 32768, KVBytesPerToken: 28672, WeightsBytes: 2 << 30, FreeBytes: 1 << 30})
 	if c.EffectiveContext != 0 {
 		t.Fatalf("weights exceeding memory should yield 0 window, got %d", c.EffectiveContext)
+	}
+}
+
+func TestUnit_Resolve_RequestDoesNotReviveImpossibleMemoryBudget(t *testing.T) {
+	c := Resolve(Params{
+		ModelMaxCtx:     32768,
+		KVBytesPerToken: 1024,
+		WeightsBytes:    10 << 20,
+		OverheadBytes:   1 << 20,
+		FreeBytes:       8 << 20,
+		Request:         4096,
+		HeadroomFrac:    0.1,
+	})
+	if c.EffectiveContext != 0 {
+		t.Fatalf("impossible memory budget with request should stay 0, got %d", c.EffectiveContext)
+	}
+}
+
+func TestUnit_Resolve_UserLimitAndReserveClamp(t *testing.T) {
+	c := Resolve(Params{
+		ModelMaxCtx:     32768,
+		KVBytesPerToken: 1024,
+		WeightsBytes:    1 << 20,
+		FreeBytes:       64 << 20,
+		UserLimitBytes:  8 << 20,
+		MinFreeBytes:    4 << 20,
+		HeadroomFrac:    0.1,
+	})
+	if c.EffectiveContext >= 32768 {
+		t.Fatalf("user limit should clamp below model max, got %d", c.EffectiveContext)
+	}
+	if !c.Clamped {
+		t.Fatal("expected clamped capacity")
+	}
+	if c.UserLimitBytes != 8<<20 || c.MinFreeBytes != 4<<20 {
+		t.Fatalf("policy fields not carried through: %+v", c)
+	}
+}
+
+func TestUnit_Resolve_OverheadConsumesBudget(t *testing.T) {
+	c := Resolve(Params{
+		ModelMaxCtx:     32768,
+		KVBytesPerToken: 1024,
+		WeightsBytes:    4 << 20,
+		OverheadBytes:   2 << 20,
+		FreeBytes:       10 << 20,
+		HeadroomFrac:    0.1,
+	})
+	want := int(((9 << 20) - (4 << 20) - (2 << 20)) / 1024)
+	if c.EffectiveContext != want {
+		t.Fatalf("EffectiveContext = %d, want %d", c.EffectiveContext, want)
+	}
+	if c.RequiredBytes != c.WeightsBytes+c.OverheadBytes+int64(c.EffectiveContext)*c.KVBytesPerToken {
+		t.Fatalf("RequiredBytes does not include overhead: %+v", c)
+	}
+}
+
+func TestUnit_WithLaunchDefaults_SetsMissingResidentCap(t *testing.T) {
+	p := WithLaunchDefaults(Policy{}, DeviceSnapshot{FreeBytes: 10 << 20})
+	if p.MaxResidentBytes != 8<<20 {
+		t.Fatalf("MaxResidentBytes = %d, want 80%% of launch free", p.MaxResidentBytes)
+	}
+
+	explicit := WithLaunchDefaults(Policy{MaxResidentBytes: 3 << 20}, DeviceSnapshot{FreeBytes: 10 << 20})
+	if explicit.MaxResidentBytes != 3<<20 {
+		t.Fatalf("explicit max should win, got %d", explicit.MaxResidentBytes)
+	}
+}
+
+func TestUnit_LaunchDefaults_AreStickyPerDevice(t *testing.T) {
+	var defaults LaunchDefaults
+
+	first := defaults.Policy(Policy{}, DeviceSnapshot{Kind: "gpu", DeviceID: "0", TotalBytes: 16 << 20, FreeBytes: 10 << 20})
+	if first.MaxResidentBytes != 8<<20 {
+		t.Fatalf("first MaxResidentBytes = %d, want 8MiB", first.MaxResidentBytes)
+	}
+
+	later := defaults.Policy(Policy{}, DeviceSnapshot{Kind: "gpu", DeviceID: "0", TotalBytes: 16 << 20, FreeBytes: 12 << 20})
+	if later.MaxResidentBytes != 8<<20 {
+		t.Fatalf("later MaxResidentBytes = %d, want sticky 8MiB", later.MaxResidentBytes)
+	}
+
+	otherFree := int64(4 << 20)
+	other := defaults.Policy(Policy{}, DeviceSnapshot{Kind: "gpu", DeviceID: "1", TotalBytes: 16 << 20, FreeBytes: otherFree})
+	wantOther := int64(float64(otherFree) * DefaultMaxResidentFrac)
+	if other.MaxResidentBytes != wantOther {
+		t.Fatalf("other MaxResidentBytes = %d, want 80%% of other device", other.MaxResidentBytes)
+	}
+
+	explicit := defaults.Policy(Policy{MaxResidentBytes: 3 << 20}, DeviceSnapshot{Kind: "gpu", DeviceID: "0", TotalBytes: 16 << 20, FreeBytes: 12 << 20})
+	if explicit.MaxResidentBytes != 3<<20 {
+		t.Fatalf("explicit MaxResidentBytes = %d, want 3MiB", explicit.MaxResidentBytes)
+	}
+}
+
+func TestUnit_ParseBytes(t *testing.T) {
+	cases := map[string]int64{
+		"1024":   1024,
+		"1KiB":   1 << 10,
+		"1.5GiB": int64(1.5 * float64(1<<30)),
+		"2GB":    2_000_000_000,
+	}
+	for in, want := range cases {
+		got, err := ParseBytes(in)
+		if err != nil {
+			t.Fatalf("ParseBytes(%q): %v", in, err)
+		}
+		if got != want {
+			t.Fatalf("ParseBytes(%q) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestUnit_LoadPolicy_FromConfigAndEnv(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "modeld.json"), []byte(`{"memory":{"max_resident":"4GiB","reserve_free":"1GiB","headroom_frac":0.2}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CONTENOX_MODELD_MEM_MAX", "2GiB")
+	t.Setenv("CONTENOX_MODELD_MEM_RESERVE", "")
+	t.Setenv("CONTENOX_MODELD_MEM_HEADROOM", "")
+	p := LoadPolicy(dir)
+	if p.MaxResidentBytes != 2<<30 {
+		t.Fatalf("MaxResidentBytes = %d, want env override 2GiB", p.MaxResidentBytes)
+	}
+	if p.MinFreeBytes != 1<<30 {
+		t.Fatalf("MinFreeBytes = %d, want config 1GiB", p.MinFreeBytes)
+	}
+	if p.HeadroomFrac != 0.2 {
+		t.Fatalf("HeadroomFrac = %v, want config 0.2", p.HeadroomFrac)
 	}
 }
 

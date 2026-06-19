@@ -43,8 +43,9 @@ func runtimeDigest(cfg Config) string {
 }
 
 type promptIdentity struct {
-	ProfileID   string
-	ModelDigest string
+	ProfileID      string
+	ModelDigest    string
+	BackendVersion string
 }
 
 type promptPlan struct {
@@ -108,6 +109,7 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 	manifest := ContextManifest{
 		ProfileID:            id.ProfileID,
 		Backend:              backendName,
+		BackendVersion:       id.BackendVersion,
 		ModelDigest:          id.ModelDigest,
 		PromptFormat:         cfg.PromptFormat,
 		PromptTemplateDigest: cfg.PromptTemplateDigest,

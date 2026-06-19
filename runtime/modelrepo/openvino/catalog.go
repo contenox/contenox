@@ -44,13 +44,12 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			return nil, err
 		}
 		caps := profile.capabilityConfig()
-		// Context window is a model fact owned by modeld (it loads the IR). The
-		// runtime never reads config.json; it asks modeld. A profile-declared value
-		// is an explicit cap and wins; otherwise use the model's reported capacity.
-		if caps.ContextLength == 0 {
-			if mi, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "openvino", Path: modelPath}); derr == nil && mi.EffectiveContext > 0 {
-				caps.ContextLength = mi.EffectiveContext
-			}
+		modelDigest, _ := modelIdentity(modelPath)
+		// Context window is modeld's physical hot-context decision. Profile config
+		// is only the request/cap; the daemon may reduce it for device memory or a
+		// user memory ceiling.
+		if mi, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "openvino", Digest: modelDigest, Path: modelPath}, Config{NumCtx: caps.ContextLength}); derr == nil && mi.EffectiveContext > 0 {
+			caps.ContextLength = mi.EffectiveContext
 		}
 		fi, _ := e.Info()
 		out = append(out, modelrepo.ObservedModel{

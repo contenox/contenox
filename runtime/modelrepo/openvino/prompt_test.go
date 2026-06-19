@@ -42,3 +42,23 @@ func TestUnit_LocalNodePromptPlan_PropagatesToolHistory(t *testing.T) {
 		t.Fatalf("tool segment missing or incorrect tool call ID: %+v", toolSeg)
 	}
 }
+
+func TestUnit_LocalNodePromptPlan_IncludesBackendVersion(t *testing.T) {
+	plan, err := buildPromptPlan([]modelrepo.Message{
+		{Role: "system", Content: "rules"},
+		{Role: "user", Content: "work"},
+	}, Config{NumCtx: 4096}, promptIdentity{
+		ProfileID:      "coder",
+		ModelDigest:    "sha256:model",
+		BackendVersion: "OpenVINO GenAI@2026.2",
+	}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Stable.Manifest.BackendVersion != "OpenVINO GenAI@2026.2" {
+		t.Fatalf("BackendVersion = %q", plan.Stable.Manifest.BackendVersion)
+	}
+	if plan.Stable.Manifest.Backend != "openvino" || plan.Stable.Manifest.RuntimeDigest == "" {
+		t.Fatalf("manifest identity incomplete: %+v", plan.Stable.Manifest)
+	}
+}

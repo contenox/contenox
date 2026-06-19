@@ -1,4 +1,4 @@
-//go:build llamanode
+//go:build llamanode || llamacpp_direct
 
 // Package chattmpl renders a model's own GGUF chat template (Jinja), including
 // optional tool definitions, using the header-only minja engine that llama.cpp

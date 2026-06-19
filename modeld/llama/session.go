@@ -26,6 +26,7 @@ type SuffixStatus = transport.SuffixStatus
 type DecodeConfig = transport.DecodeConfig
 type StreamChunk = transport.StreamChunk
 type ContextReport = transport.ContextReport
+type SessionSnapshot = transport.SessionSnapshot
 type Session = transport.Session
 
 // SessionFactory creates a backend session for a model with explicit config.
@@ -45,7 +46,7 @@ func SessionAvailable() bool { return sessionFactory != nil }
 // newSession creates a session through the registered backend.
 func newSession(modelPath string, cfg Config) (Session, error) {
 	if sessionFactory == nil {
-		return nil, fmt.Errorf("%w: build with -tags llamanode", ErrSessionUnavailable)
+		return nil, fmt.Errorf("%w: build modeld with -tags 'llamanode llamacpp_direct'", ErrSessionUnavailable)
 	}
 	return sessionFactory(modelPath, cfg)
 }
@@ -65,7 +66,7 @@ func EmbedAvailable() bool { return embedFunc != nil }
 // newEmbed computes an embedding through the registered backend.
 func newEmbed(ctx context.Context, modelPath string, cfg Config, input string) ([]float64, error) {
 	if embedFunc == nil {
-		return nil, fmt.Errorf("%w: build with -tags llamanode", ErrSessionUnavailable)
+		return nil, fmt.Errorf("%w: build modeld with -tags 'llamanode llamacpp_direct'", ErrSessionUnavailable)
 	}
 	return embedFunc(ctx, modelPath, cfg, input)
 }

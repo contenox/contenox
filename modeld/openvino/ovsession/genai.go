@@ -69,6 +69,28 @@ type PipelineMetrics struct {
 	CacheSizeInBytes  uint64
 }
 
+// DeviceInfo describes one OpenVINO device and any memory telemetry exposed by
+// that plugin. CPU devices report zero memory here; modeld uses system RAM for
+// CPU capacity planning.
+type DeviceInfo struct {
+	Index             int
+	Name              string
+	Description       string
+	Type              string
+	MemoryFree        uint64
+	MemoryTotal       uint64
+	SharedWithDisplay bool
+}
+
+// RuntimeInfo describes the linked OpenVINO runtime and available devices.
+type RuntimeInfo struct {
+	RuntimeName        string
+	RuntimeDigest      string
+	RuntimeSystemInfo  string
+	SupportsGPUOffload bool
+	Devices            []DeviceInfo
+}
+
 // GenAIResult is the generated text plus the pipeline metrics observed for the
 // request.
 type GenAIResult struct {
@@ -87,6 +109,72 @@ type StreamChunk struct {
 type GenAISession struct {
 	mu  sync.Mutex
 	ptr *C.cx_genai_session
+}
+
+// Runtime reports the linked OpenVINO runtime identity and available devices.
+func Runtime() (RuntimeInfo, error) {
+	errbuf := C.calloc(1, C.size_t(genAIErrLen))
+	if errbuf == nil {
+		return RuntimeInfo{}, errors.New("allocate OpenVINO runtime info error buffer")
+	}
+	defer C.free(errbuf)
+
+	var out C.cx_ov_runtime_info
+	if rc := C.cx_ov_runtime_info_get(&out, (*C.char)(errbuf), C.size_t(genAIErrLen)); rc != 0 {
+		return RuntimeInfo{}, fmt.Errorf("openvino runtime info: %s", C.GoString((*C.char)(errbuf)))
+	}
+
+	info := RuntimeInfo{
+		RuntimeName:        cString(out.runtime_name[:]),
+		RuntimeDigest:      cString(out.runtime_digest[:]),
+		RuntimeSystemInfo:  cString(out.system_info[:]),
+		SupportsGPUOffload: out.supports_gpu_offload != 0,
+	}
+	count := int(out.device_count)
+	if count > len(out.devices) {
+		count = len(out.devices)
+	}
+	for i := 0; i < count; i++ {
+		info.Devices = append(info.Devices, deviceInfoFromC(out.devices[i]))
+	}
+	return info, nil
+}
+
+// Device returns telemetry for the selected OpenVINO device name, resolving
+// aliases such as "GPU" to the first available OpenVINO GPU device.
+func Device(device string) (DeviceInfo, error) {
+	cDev := C.CString(device)
+	defer C.free(unsafe.Pointer(cDev))
+	errbuf := C.calloc(1, C.size_t(genAIErrLen))
+	if errbuf == nil {
+		return DeviceInfo{}, errors.New("allocate OpenVINO device info error buffer")
+	}
+	defer C.free(errbuf)
+
+	var out C.cx_ov_device_info
+	if rc := C.cx_ov_device_info_get(cDev, &out, (*C.char)(errbuf), C.size_t(genAIErrLen)); rc != 0 {
+		return DeviceInfo{}, fmt.Errorf("openvino device info: %s", C.GoString((*C.char)(errbuf)))
+	}
+	return deviceInfoFromC(out), nil
+}
+
+func deviceInfoFromC(d C.cx_ov_device_info) DeviceInfo {
+	return DeviceInfo{
+		Index:             int(d.index),
+		Name:              cString(d.name[:]),
+		Description:       cString(d.description[:]),
+		Type:              cString(d._type[:]),
+		MemoryFree:        uint64(d.memory_free),
+		MemoryTotal:       uint64(d.memory_total),
+		SharedWithDisplay: d.shared_with_display != 0,
+	}
+}
+
+func cString(buf []C.char) string {
+	if len(buf) == 0 {
+		return ""
+	}
+	return C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
 }
 
 // NewGenAI creates an OpenVINO GenAI ContinuousBatchingPipeline session.

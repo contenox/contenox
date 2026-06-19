@@ -8,11 +8,12 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
 // backendFactory builds the transport.Service for one compiled-in local backend.
-type backendFactory func() transport.Service
+type backendFactory func(capacity.Policy) transport.Service
 
 // backends holds every inference backend compiled into this build, keyed by
 // name. Backend files register themselves from init() under their build tags
@@ -41,10 +42,10 @@ var preferredBackendOrder = []string{"openvino", "llama"}
 //  3. preferredBackendOrder among several;
 //  4. unavailableBackend when none is compiled in — the daemon still owns the
 //     lease and answers health probes, it just cannot open sessions.
-func selectBackend() (transport.Service, string) {
+func selectBackend(policy capacity.Policy) (transport.Service, string) {
 	if want := os.Getenv("CONTENOX_MODELD_BACKEND"); want != "" {
 		if f, ok := backends[want]; ok {
-			return f(), want
+			return f(policy), want
 		}
 		fmt.Fprintf(os.Stderr, "modeld: CONTENOX_MODELD_BACKEND=%q is not compiled into this build (have: %s); falling back\n", want, availableBackends())
 	}
@@ -54,7 +55,7 @@ func selectBackend() (transport.Service, string) {
 	case 0:
 		return unavailableBackend{}, "none"
 	case 1:
-		return backends[names[0]](), names[0]
+		return backends[names[0]](policy), names[0]
 	}
 
 	chosen := names[0] // deterministic fallback if none is in the preference list
@@ -65,7 +66,7 @@ func selectBackend() (transport.Service, string) {
 		}
 	}
 	fmt.Fprintf(os.Stderr, "modeld: multiple backends compiled (%s); using %q (set CONTENOX_MODELD_BACKEND to override)\n", availableBackends(), chosen)
-	return backends[chosen](), chosen
+	return backends[chosen](policy), chosen
 }
 
 // availableBackendNames returns the registered backend names, sorted for

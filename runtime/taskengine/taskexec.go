@@ -370,7 +370,7 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 		Tracker:       exe.tracker,
 	}
 
-	// The prompt/route path historically always sent a temperature (0 when unset).
+		// Keep prompt/route temperature behavior stable: unset is sent as 0.
 	// Preserve that — route handlers depend on temp-0 determinism to emit exactly
 	// one label. Only the chat path treats nil as "use the provider default".
 	promptTemp, _ := temperatureValue(llmCall.Temperature)

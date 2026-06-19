@@ -109,6 +109,8 @@ type ContextReport struct {
 	Closed          bool
 }
 
+type SessionSnapshot = transport.SessionSnapshot
+
 // Session is a persistent, workspace-scoped inference session.
 //
 // The hot coding loop is: keep the stable prefix's KV hot, prefill only the
@@ -130,6 +132,13 @@ type Session interface {
 
 	// ExplainContext reports the resident context for observability.
 	ExplainContext() ContextReport
+
+	// Snapshot captures backend state for durability, branching, and benchmark
+	// reproducibility.
+	Snapshot(ctx context.Context) (SessionSnapshot, error)
+
+	// Restore replaces resident state from a compatible snapshot.
+	Restore(ctx context.Context, snap SessionSnapshot) error
 
 	// Close releases the session's resources.
 	Close() error
@@ -202,6 +211,15 @@ func (r remoteSession) Decode(ctx context.Context, cfg DecodeConfig) (<-chan Str
 
 func (r remoteSession) ExplainContext() ContextReport { return ContextReport(r.s.ExplainContext()) }
 
+func (r remoteSession) Snapshot(ctx context.Context) (SessionSnapshot, error) {
+	snap, err := r.s.Snapshot(ctx)
+	return snap, mapSessionErr(err)
+}
+
+func (r remoteSession) Restore(ctx context.Context, snap SessionSnapshot) error {
+	return mapSessionErr(r.s.Restore(ctx, snap))
+}
+
 func (r remoteSession) Close() error { return mapSessionErr(r.s.Close()) }
 
 // mapSessionErr translates transport sentinels to this package's, so the session
@@ -238,7 +256,7 @@ func EmbedAvailable() bool { return embedFunc != nil }
 // newEmbed computes an embedding through the registered backend.
 func newEmbed(ctx context.Context, modelPath string, cfg Config, input string) ([]float64, error) {
 	if embedFunc == nil {
-		return nil, fmt.Errorf("%w: build with -tags llamanode", ErrSessionUnavailable)
+		return nil, fmt.Errorf("%w: embeddings require a native llama embedding backend", ErrSessionUnavailable)
 	}
 	return embedFunc(ctx, modelPath, cfg, input)
 }

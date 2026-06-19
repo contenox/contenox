@@ -50,7 +50,7 @@ func TestSystem_RuntimeOpenVINOEndToEndOnDevice(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = transportgrpc.Serve(ctx, lis, &modeldopenvino.Service{}, rec.InstanceID) }()
+	go func() { _ = transportgrpc.Serve(ctx, lis, modeldopenvino.NewService(), rec.InstanceID, "openvino") }()
 
 	modeldconn.SetDataRoot(dataRoot)
 	t.Cleanup(func() { modeldconn.SetDataRoot("") })

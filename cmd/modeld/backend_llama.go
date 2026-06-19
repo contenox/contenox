@@ -1,8 +1,9 @@
-//go:build llamanode && llama_unsafe_abi
+//go:build llamanode && llamacpp_direct
 
 package main
 
 import (
+	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/modeld/llama"
 	// Blank-import the CGo llama.cpp adapter so its init registers the session
 	// and embed factories on modeld/llama. Without this the daemon links the
@@ -13,4 +14,8 @@ import (
 
 // Register the llama.cpp backend; selectBackend (backend.go) serves it when it
 // is the only one compiled in or when CONTENOX_MODELD_BACKEND=llama.
-func init() { registerBackend("llama", func() transport.Service { return &llama.Service{} }) }
+func init() {
+	registerBackend("llama", func(policy capacity.Policy) transport.Service {
+		return llama.NewService(llama.WithCapacityPolicy(policy))
+	})
+}

@@ -114,12 +114,12 @@ Run `make help` at the repo root for the full list.
 
 | Prefix | Purpose |
 |--------|---------|
-| `build-*` | `build-contenox`, `build-contenox-windows`, `build-vscode` |
-| `package-*` | `package-vscode`, `package-vscode-proposed` |
-| `test-*` | Go unit/system tests and CLI help checks |
+| `build-*` | CLI, modeld, backend runtime, and VS Code builds |
+| `package-*` | relocatable modeld bundles and VS Code VSIX packages |
+| `test-*` | Go unit tests, explicit integration suites, backend shim checks, and CLI help checks |
 | `dev-*` | local binary and VS Code extension install helpers |
-| `deps-*` | Air, Ollama/llama.cpp headers, VS Code extension dependencies |
-| `clean*` | remove generated binaries and VS Code packaging artifacts |
+| `deps-*` | direct llama.cpp headers/source, OpenVINO SDK/GenAI deps, and VS Code extension dependencies |
+| `clean*` | remove generated binaries, native runtime bundles, and VS Code packaging artifacts |
 
 Version bumps and release notes for maintainers live in `Makefile.version`
 (`make -f Makefile.version help`).
@@ -139,10 +139,10 @@ Keep these files in sync when changing public surface area:
 
 - [Go](https://go.dev/doc/install) 1.25+
 - `make`
-- C/C++ toolchain for the local llama.cpp backend
-- `nlohmann-json3-dev` on Debian/Ubuntu, or `nlohmann-json` through Homebrew on macOS
+- `curl`, `git`, `gcc`, `g++`, and `cmake` for direct llama.cpp builds
 - Node.js 22+ and npm for the VS Code extension
-- Optional: [Air](https://github.com/air-verse/air) for Go live reload (`make deps-go-watch`)
+- Optional: Python 3 for OpenVINO backend dependency setup
+- Optional: CUDA toolkit with `nvcc` on `PATH` for direct llama.cpp CUDA builds
 - Optional: an LLM provider key or local server. The default local path is a GGUF model under `~/.contenox/models/`.
 
 ### Go binary path
@@ -169,30 +169,54 @@ make build-contenox
 Optional: `make dev-install` symlinks `contenox` to
 `~/.local/bin/contenox` for development.
 
-### Building with local LLM inference
+### Building modeld with local LLM inference
 
-The `modeld/llama` package owns embedded GGUF inference. The default
-build stays CGo-free through a stub backend. Native llama.cpp inference is
-enabled with the `llamanode` build tag and currently uses
-`github.com/ollama/ollama/llama` while the Contenox-owned shim is pending.
+The `contenox` CLI build stays CGo-free. Native local inference lives in the
+separate `modeld` daemon. The llama backend uses the Contenox-owned direct
+llama.cpp shim and links against generated `.llamacpp-runtime/<profile>`
+libraries. The OpenVINO backend uses the `.openvino` virtualenv plus matching
+OpenVINO GenAI C++ headers.
 
 On Debian/Ubuntu:
 
 ```bash
-sudo apt-get install -y gcc g++ nlohmann-json3-dev
+sudo apt-get install -y curl git gcc g++ cmake python3 python3-venv
 ```
 
-Then fetch the llama.cpp multimodal headers expected by the vendored Ollama
-module and build with the native tag:
+For a CPU llama daemon:
 
 ```bash
-make deps-ollama-headers
-go build -tags llamanode ./cmd/contenox
+make deps-llama-headers
+make build-modeld-llama
+make run-modeld-llama
 ```
 
-The header target is safe to re-run. It downloads the missing `miniaudio.h` and
-`stb_image.h` files into the Go module cache for the Ollama version used by this
-module.
+For a CUDA llama daemon, install the CUDA toolkit (`nvcc` must be on `PATH`) and
+run:
+
+```bash
+make build-modeld-llama-gpu
+make run-modeld-llama-gpu
+```
+
+For an OpenVINO daemon:
+
+```bash
+make deps-openvino
+make build-modeld-openvino
+make run-modeld-openvino
+```
+
+Relocatable daemon bundles are built from the same root Makefile:
+
+```bash
+make package-modeld-llama
+make package-modeld-llama-gpu
+make package-modeld-openvino
+```
+
+`make package-modeld` builds the combined llama + OpenVINO bundle. `make
+package-modeld-gpu` builds the combined bundle with the CUDA llama runtime.
 
 ### VS Code extension development
 
@@ -236,11 +260,28 @@ Fast path, matching CI:
 make test-unit
 ```
 
-Full Go suite, including slower `TestSystem_*` integration tests:
+Full Go suite, including any system tests that are not separately gated:
 
 ```bash
 make test
+```
+
+Targeted system suites are explicit because some use local services or containers:
+
+```bash
 make test-system
+```
+
+vLLM container tests are hidden behind an opt-in gate:
+
+```bash
+make test-vllm
+```
+
+Direct llama.cpp shim check:
+
+```bash
+make test-llamacpp-direct-cpu
 ```
 
 CLI package and help drift checks:
@@ -291,9 +332,8 @@ If command names, flags, README examples, or user-facing help changed, also run
   opts into all registered tools, and prefer narrow allowlists such as
   `["local_fs"]`.
 - Runtime allowlists may restrict task allowlists but must not expand them.
-- Wide interfaces are a smell. `runtimetypes.Store` is broad for historical
-  reasons; new code should accept the narrowest interface slice it actually
-  needs.
+- Wide interfaces are a smell. New code should accept the narrowest interface
+  slice it actually needs.
 - Do not reintroduce `contenox serve`, Beam/browser UI, HTTP model proxy
   compatibility routes, generated local OpenAPI docs, or API test harnesses
   without an explicit roadmap change.

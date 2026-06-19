@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
+	"github.com/contenox/runtime/runtime/modelrepo/toolcalls"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 // openvinoProvider implements modelrepo.Provider. A model lives at
@@ -29,48 +33,48 @@ func (p *openvinoProvider) GetType() string         { return "openvino" }
 func (p *openvinoProvider) GetContextLength() int   { return p.caps.ContextLength }
 func (p *openvinoProvider) GetMaxOutputTokens() int { return p.caps.MaxOutputTokens }
 func (p *openvinoProvider) CanChat() bool           { return SessionAvailable() }
-func (p *openvinoProvider) CanEmbed() bool          { return SessionAvailable() }
+func (p *openvinoProvider) CanEmbed() bool          { return false }
 func (p *openvinoProvider) CanStream() bool         { return SessionAvailable() }
 func (p *openvinoProvider) CanPrompt() bool         { return SessionAvailable() }
 func (p *openvinoProvider) CanThink() bool          { return p.caps.CanThink }
 
-func (p *openvinoProvider) GetChatConnection(_ context.Context, _ string) (modelrepo.LLMChatClient, error) {
+func (p *openvinoProvider) GetChatConnection(ctx context.Context, _ string) (modelrepo.LLMChatClient, error) {
 	if !SessionAvailable() {
 		return nil, p.notWired("chat")
 	}
-	return p.newClient()
+	return p.newClient(ctx)
 }
 
-func (p *openvinoProvider) GetStreamConnection(_ context.Context, _ string) (modelrepo.LLMStreamClient, error) {
+func (p *openvinoProvider) GetStreamConnection(ctx context.Context, _ string) (modelrepo.LLMStreamClient, error) {
 	if !SessionAvailable() {
 		return nil, p.notWired("stream")
 	}
-	return p.newClient()
+	return p.newClient(ctx)
 }
 
-func (p *openvinoProvider) GetPromptConnection(_ context.Context, _ string) (modelrepo.LLMPromptExecClient, error) {
+func (p *openvinoProvider) GetPromptConnection(ctx context.Context, _ string) (modelrepo.LLMPromptExecClient, error) {
 	if !SessionAvailable() {
 		return nil, p.notWired("prompt")
 	}
-	return p.newClient()
+	return p.newClient(ctx)
 }
 
 func (p *openvinoProvider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LLMEmbedClient, error) {
-	if !SessionAvailable() {
-		return nil, p.notWired("embed")
-	}
-	return p.newEmbedClient()
+	return nil, NewUnsupportedFeatureError("embed client (not implemented over transport)")
 }
 
 func (p *openvinoProvider) notWired(kind string) error {
 	return fmt.Errorf("%w: %s client for model %q (modeld not available)", ErrSessionUnavailable, kind, p.name)
 }
 
-func (p *openvinoProvider) newClient() (*client, error) {
+func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	dir := filepath.Join(p.modelDir, p.name)
 	profile, err := loadModelProfile(dir)
 	if err != nil {
 		return nil, err
+	}
+	if profile.ToolCalls.Protocol == "" {
+		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, p.name, "openvino")
 	}
 	caps := profile.capabilityConfig()
 	numCtx := p.caps.ContextLength
@@ -85,19 +89,47 @@ func (p *openvinoProvider) newClient() (*client, error) {
 	// content-addresses the model, and the template digest tracks its Jinja chat
 	// template, which modeld applies via the IR tokenizer.
 	modelDigest, templateDigest := modelIdentity(dir)
+	profileID := p.name
+	cfg := Config{
+		NumCtx:               numCtx,
+		PromptFormat:         "openvino-chat-template",
+		PromptTemplateDigest: templateDigest,
+	}
+	ref := modeldconn.ModelRef{Name: p.name, Type: "openvino", Digest: modelDigest, Path: dir}
+	backendID := backendVersion()
+	if info, derr := modeldconn.Describe(ctx, ref, transport.Config(cfg)); derr == nil {
+		if info.EffectiveContext > 0 {
+			cfg = clampContextForModeld(cfg, info.EffectiveContext)
+		} else {
+			cfg = normalizeConfig(cfg)
+		}
+		if v := backendVersionFromModelInfo(info); v != "" {
+			backendID = v
+		}
+	} else {
+		cfg = normalizeConfig(cfg)
+	}
 	return &client{
-		modelName:    p.name,
-		modelPath:    dir,
-		profileID:    p.name,
-		modelDigest:  modelDigest,
-		toolProtocol: profile.ToolCalls.Protocol,
-		cfg: Config{
-			NumCtx:               numCtx,
-			PromptFormat:         "openvino-chat-template",
-			PromptTemplateDigest: templateDigest,
-		},
+		modelName:       p.name,
+		modelPath:       dir,
+		profileID:       profileID,
+		modelDigest:     modelDigest,
+		backendVersion:  backendID,
+		toolProtocol:    profile.ToolCalls.Protocol,
+		cfg:             cfg,
 		maxOutputTokens: maxOut,
 	}, nil
+}
+
+func curatedToolProtocol(ctx context.Context, modelName, backendType string) string {
+	d, err := modelregistry.New(nil).Resolve(ctx, modelName)
+	if err != nil || d.BackendType() != backendType {
+		return ""
+	}
+	if d.ToolProtocol == "" || !toolcalls.ProtocolKnown(d.ToolProtocol) {
+		return ""
+	}
+	return d.ToolProtocol
 }
 
 func (p *openvinoProvider) newEmbedClient() (*embedClient, error) {
@@ -107,5 +139,42 @@ func (p *openvinoProvider) newEmbedClient() (*embedClient, error) {
 		device:    "CPU", // For embeddings, default to CPU for now
 	}, nil
 }
+
+func backendVersion() string {
+	return "OpenVINO GenAI"
+}
+
+func backendVersionFromModelInfo(info transport.ModelInfo) string {
+	switch {
+	case info.RuntimeName != "" && info.RuntimeDigest != "":
+		return info.RuntimeName + "@" + info.RuntimeDigest
+	case info.RuntimeDigest != "":
+		return info.RuntimeDigest
+	case info.RuntimeName != "":
+		return info.RuntimeName
+	default:
+		return ""
+	}
+}
+
+func clampContext(cfg Config, cap int) Config {
+	if cfg.PromptFormat == "" {
+		cfg.PromptFormat = "openvino-chat-template"
+	}
+	if cap > 0 && (cfg.NumCtx <= 0 || cfg.NumCtx > cap) {
+		cfg.NumCtx = cap
+	}
+	return normalizeConfig(cfg)
+}
+
+func clampContextForModeld(cfg Config, cap int) Config {
+	cfg = clampContext(cfg, cap)
+	if cap > modeldCapacitySafetyTokens && cfg.NumCtx > cap-modeldCapacitySafetyTokens {
+		cfg.NumCtx = cap - modeldCapacitySafetyTokens
+	}
+	return cfg
+}
+
+const modeldCapacitySafetyTokens = 64
 
 var _ modelrepo.Provider = (*openvinoProvider)(nil)

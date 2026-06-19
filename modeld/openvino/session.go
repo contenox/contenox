@@ -241,6 +241,68 @@ func (s *genaiSession) ExplainContext() transport.ContextReport {
 	}
 }
 
+func (s *genaiSession) Snapshot(ctx context.Context) (transport.SessionSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return transport.SessionSnapshot{}, transport.ErrSessionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return transport.SessionSnapshot{}, err
+	}
+	return transport.SessionSnapshot{
+		ResidentTokens: s.resident(),
+		PrefixTokens:   s.stableTokens,
+		NumCtx:         s.numCtx,
+		StableText:     s.stable,
+		PrefixText:     s.stable + s.suffix,
+		Tools:          s.tools,
+		Manifest:       s.manifest,
+	}, nil
+}
+
+func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return transport.ErrSessionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if snap.NumCtx > 0 && s.numCtx > 0 && snap.NumCtx != s.numCtx {
+		return contextasm.NewManifestMismatchError("snapshot context window changed")
+	}
+	if snap.ResidentTokens < 0 || snap.PrefixTokens < 0 || snap.PrefixTokens > snap.ResidentTokens {
+		return transport.ErrContextOverflow
+	}
+	if s.numCtx > 0 && snap.ResidentTokens > s.numCtx {
+		return transport.ErrContextOverflow
+	}
+	if !s.manifest.IsZero() && !snap.Manifest.IsZero() {
+		if ok, reason := s.manifest.CompatibleRuntime(snap.Manifest); !ok {
+			return contextasm.NewManifestMismatchError(reason)
+		}
+	}
+	prefixText := snap.PrefixText
+	if prefixText == "" {
+		prefixText = snap.StableText
+	}
+	if snap.StableText != "" && !strings.HasPrefix(prefixText, snap.StableText) {
+		return contextasm.NewManifestMismatchError("snapshot prefix text does not contain stable text")
+	}
+	s.stable = snap.StableText
+	s.suffix = strings.TrimPrefix(prefixText, snap.StableText)
+	s.stableTokens = snap.PrefixTokens
+	s.suffixTokens = snap.ResidentTokens - snap.PrefixTokens
+	if s.suffixTokens < 0 {
+		s.suffixTokens = 0
+	}
+	s.tools = snap.Tools
+	s.manifest = snap.Manifest
+	return nil
+}
+
 func (s *genaiSession) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -2,7 +2,6 @@ package llama
 
 import (
 	"encoding/json"
-	"runtime/debug"
 
 	"github.com/contenox/runtime/runtime/contextasm"
 )
@@ -72,17 +71,5 @@ func normalizeConfig(cfg Config) Config {
 }
 
 func backendVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return ""
-	}
-	for _, dep := range info.Deps {
-		if dep.Path == "github.com/ollama/ollama" {
-			if dep.Replace != nil {
-				return dep.Replace.Version
-			}
-			return dep.Version
-		}
-	}
-	return ""
+	return "llamacpp-direct"
 }

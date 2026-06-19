@@ -22,6 +22,8 @@ type computeServer interface {
 	ensurePrefix(context.Context, *ensurePrefixReq) (*transport.PrefixStatus, error)
 	prefillSuffix(context.Context, *prefillSuffixReq) (*transport.SuffixStatus, error)
 	explainContext(context.Context, *explainReq) (*transport.ContextReport, error)
+	snapshot(context.Context, *snapshotReq) (*transport.SessionSnapshot, error)
+	restore(context.Context, *restoreReq) (*restoreResp, error)
 	closeSession(context.Context, *closeReq) (*closeResp, error)
 	decode(context.Context, *decodeReq, grpclib.ServerStream) error
 }
@@ -43,15 +45,35 @@ type openSessionResp struct {
 	Handle string `json:"handle"`
 }
 
-// describeReq reuses the open-session request shape (Type + Path identify the
-// model; Config is ignored). describeResp carries the model capabilities the
-// daemon read from the model metadata.
+// describeReq reuses the open-session request shape: Type + Path identify the
+// model, and Config carries the requested context/runtime knobs for capacity
+// planning. describeResp carries the model capabilities the daemon read from
+// model metadata plus the capacity decision.
 type describeResp struct {
-	ModelMaxContext  int   `json:"model_max_context"`
-	EffectiveContext int   `json:"effective_context"`
-	KVBytesPerToken  int64 `json:"kv_bytes_per_token,omitempty"`
-	FreeBytes        int64 `json:"free_bytes,omitempty"`
-	WeightsBytes     int64 `json:"weights_bytes,omitempty"`
+	ModelMaxContext    int                    `json:"model_max_context"`
+	EffectiveContext   int                    `json:"effective_context"`
+	KVBytesPerToken    int64                  `json:"kv_bytes_per_token,omitempty"`
+	FreeBytes          int64                  `json:"free_bytes,omitempty"`
+	WeightsBytes       int64                  `json:"weights_bytes,omitempty"`
+	OverheadBytes      int64                  `json:"overhead_bytes,omitempty"`
+	ReservedBytes      int64                  `json:"reserved_bytes,omitempty"`
+	UserLimitBytes     int64                  `json:"user_limit_bytes,omitempty"`
+	MinFreeBytes       int64                  `json:"min_free_bytes,omitempty"`
+	UsableBytes        int64                  `json:"usable_bytes,omitempty"`
+	RequiredBytes      int64                  `json:"required_bytes,omitempty"`
+	Clamped            bool                   `json:"clamped,omitempty"`
+	Reason             string                 `json:"reason,omitempty"`
+	DeviceKind         string                 `json:"device_kind,omitempty"`
+	DeviceID           string                 `json:"device_id,omitempty"`
+	DeviceTotalBytes   int64                  `json:"device_total_bytes,omitempty"`
+	SharedWithDisplay  bool                   `json:"shared_with_display,omitempty"`
+	RequestedGpuLayers int                    `json:"requested_gpu_layers,omitempty"`
+	ResolvedGpuLayers  int                    `json:"resolved_gpu_layers,omitempty"`
+	RuntimeName        string                 `json:"runtime_name,omitempty"`
+	RuntimeDigest      string                 `json:"runtime_digest,omitempty"`
+	RuntimeSystemInfo  string                 `json:"runtime_system_info,omitempty"`
+	SupportsGPUOffload bool                   `json:"supports_gpu_offload,omitempty"`
+	Devices            []transport.DeviceInfo `json:"devices,omitempty"`
 }
 
 type ensurePrefixReq struct {
@@ -72,6 +94,17 @@ type decodeReq struct {
 type explainReq struct {
 	Handle string `json:"handle"`
 }
+
+type snapshotReq struct {
+	Handle string `json:"handle"`
+}
+
+type restoreReq struct {
+	Handle   string                    `json:"handle"`
+	Snapshot transport.SessionSnapshot `json:"snapshot"`
+}
+
+type restoreResp struct{}
 
 type closeReq struct {
 	Handle string `json:"handle"`
@@ -147,6 +180,20 @@ var serviceDesc = grpclib.ServiceDesc{
 				return nil, err
 			}
 			return s.explainContext(ctx, in)
+		})},
+		{MethodName: "Snapshot", Handler: unaryHandler("Snapshot", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(snapshotReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.snapshot(ctx, in)
+		})},
+		{MethodName: "Restore", Handler: unaryHandler("Restore", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(restoreReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.restore(ctx, in)
 		})},
 		{MethodName: "CloseSession", Handler: unaryHandler("CloseSession", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
 			in := new(closeReq)

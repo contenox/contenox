@@ -118,6 +118,57 @@ func TestSystem_LlamaSessionTiny_WarmSuffixEqualsColdOneToken(t *testing.T) {
 	}
 }
 
+func TestSystem_LlamaSessionTiny_SnapshotRestoreOneToken(t *testing.T) {
+	modelPath := os.Getenv("CONTENOX_LLAMA_TINY_GGUF")
+	requireTinyGGUF(t, modelPath)
+
+	cfg := llama.Config{NumCtx: 128, NumBatch: 16, NumThreads: 1, DisableBOS: true}
+	stable := "system\n"
+	suffix := "user\n"
+	manifest := tinyManifest(stable, suffix)
+
+	original, err := New(modelPath, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer original.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := original.EnsurePrefix(ctx, llama.PrefixInput{Text: stable, Manifest: manifest}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := original.PrefillSuffix(ctx, llama.SuffixInput{Text: suffix, Manifest: manifest}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := original.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := decodeOne(ctx, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want == "" {
+		t.Skip("tiny model produced no visible token for the original continuation")
+	}
+
+	restored, err := New(modelPath, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	if err := restored.Restore(ctx, snap); err != nil {
+		t.Fatal(err)
+	}
+	got, err := decodeOne(ctx, restored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("restored continuation %q != original continuation %q", got, want)
+	}
+}
+
 // TestSystem_LlamaSessionTiny_ToolsRenderThroughSession proves the PrefixInput.Tools
 // field reaches the model-native (minja) renderer in the daemon session: the same
 // stable prefix rendered WITH tool definitions resolves to more resident tokens than
@@ -200,6 +251,23 @@ func tinyTurn(ctx context.Context, sess llama.Session, stable, suffix string) (s
 		out += chunk.Text
 	}
 	return out, prefix, nil
+}
+
+func decodeOne(ctx context.Context, sess llama.Session) (string, error) {
+	temp := 0.0
+	seed := 7
+	chunks, err := sess.Decode(ctx, llama.DecodeConfig{MaxTokens: 1, Temperature: &temp, Seed: &seed})
+	if err != nil {
+		return "", err
+	}
+	var out string
+	for chunk := range chunks {
+		if chunk.Error != nil {
+			return "", chunk.Error
+		}
+		out += chunk.Text
+	}
+	return out, nil
 }
 
 func tinyManifest(stable, suffix string) llama.ContextManifest {

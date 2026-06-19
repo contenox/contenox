@@ -1,4 +1,4 @@
-//go:build llamanode && llama_unsafe_abi
+//go:build llamanode && llamacpp_direct
 
 package llama
 
@@ -48,7 +48,7 @@ func TestSystem_RuntimeLlamaEndToEnd(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go func() { _ = transportgrpc.Serve(ctx, lis, &modeldllama.Service{}, rec.InstanceID) }()
+	go func() { _ = transportgrpc.Serve(ctx, lis, modeldllama.NewService(), rec.InstanceID, "llama") }()
 
 	modeldconn.SetDataRoot(dataRoot)
 	t.Cleanup(func() { modeldconn.SetDataRoot("") })

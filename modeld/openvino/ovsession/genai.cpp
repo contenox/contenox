@@ -3,7 +3,10 @@
 #include "genai.h"
 
 #include <atomic>
+#include <algorithm>
+#include <cctype>
 #include <condition_variable>
+#include <cstdint>
 #include <cstring>
 #include <deque>
 #include <exception>
@@ -18,7 +21,11 @@
 #include <utility>
 #include <vector>
 
+#include <openvino/core/version.hpp>
 #include <openvino/openvino.hpp>
+#include <openvino/runtime/intel_gpu/properties.hpp>
+#include <openvino/runtime/intel_npu/properties.hpp>
+#include <openvino/runtime/properties.hpp>
 #include <openvino/genai/continuous_batching_pipeline.hpp>
 #include <openvino/genai/generation_config.hpp>
 #include <openvino/genai/parsers.hpp>
@@ -33,6 +40,163 @@ static void write_buf(char *dst, size_t dst_len, const std::string &value) {
     if (!dst || dst_len == 0) return;
     std::strncpy(dst, value.c_str(), dst_len - 1);
     dst[dst_len - 1] = '\0';
+}
+
+template <size_t N>
+static void write_fixed(char (&dst)[N], const std::string &value) {
+    write_buf(dst, N, value);
+}
+
+static std::string upper_device_base(const std::string &device) {
+    auto base = device.substr(0, device.find('.'));
+    std::transform(base.begin(), base.end(), base.begin(), [](unsigned char c) {
+        return static_cast<char>(std::toupper(c));
+    });
+    return base;
+}
+
+static bool is_accelerator_device(const std::string &device) {
+    const auto base = upper_device_base(device);
+    return base == "GPU" || base == "NPU";
+}
+
+static std::string select_available_device(const std::vector<std::string> &devices, const std::string &requested) {
+    if (requested.empty()) {
+        return "CPU";
+    }
+    for (const auto &dev : devices) {
+        if (dev == requested) {
+            return dev;
+        }
+    }
+    const auto req_base = upper_device_base(requested);
+    for (const auto &dev : devices) {
+        if (upper_device_base(dev) == req_base) {
+            return dev;
+        }
+    }
+    return requested;
+}
+
+static void fill_device_info(ov::Core &core, const std::string &device, int index, cx_ov_device_info *out) {
+    if (!out) return;
+    std::memset(out, 0, sizeof(*out));
+    out->index = index;
+    write_fixed(out->name, device);
+
+    const auto base = upper_device_base(device);
+    std::string type = base;
+    std::string description;
+    bool shared = false;
+
+    try {
+        description = core.get_property(device, ov::device::full_name);
+    } catch (...) {
+        description = device;
+    }
+
+    try {
+        const auto dev_type = core.get_property(device, ov::device::type);
+        if (dev_type == ov::device::Type::INTEGRATED) {
+            shared = true;
+            if (!description.empty()) {
+                description += " (integrated)";
+            }
+        } else if (dev_type == ov::device::Type::DISCRETE && !description.empty()) {
+            description += " (discrete)";
+        }
+    } catch (...) {
+    }
+
+    if (base == "GPU") {
+        type = shared ? "igpu" : "gpu";
+        try {
+            out->memory_total = core.get_property(device, ov::intel_gpu::device_total_mem_size);
+        } catch (...) {
+        }
+        try {
+            auto free = core.get_property(device, ov::intel_gpu::hint::available_device_mem);
+            if (free > 0) {
+                out->memory_free = static_cast<uint64_t>(free);
+            }
+        } catch (...) {
+        }
+    } else if (base == "NPU") {
+        type = "accel";
+        try {
+            out->memory_total = core.get_property(device, ov::intel_npu::device_total_mem_size);
+        } catch (...) {
+        }
+        try {
+            auto allocated = core.get_property(device, ov::intel_npu::device_alloc_mem_size);
+            if (out->memory_total > allocated) {
+                out->memory_free = out->memory_total - allocated;
+            }
+        } catch (...) {
+            out->memory_free = out->memory_total;
+        }
+    } else if (base == "CPU") {
+        type = "cpu";
+    }
+
+    if (out->memory_free == 0 && out->memory_total > 0) {
+        out->memory_free = out->memory_total;
+    }
+    out->shared_with_display = shared ? 1 : 0;
+    write_fixed(out->description, description);
+    write_fixed(out->type, type);
+}
+
+extern "C" int cx_ov_runtime_info_get(cx_ov_runtime_info *out, char *err, size_t err_len) {
+    try {
+        if (!out) {
+            throw std::runtime_error("runtime info output pointer is null");
+        }
+        std::memset(out, 0, sizeof(*out));
+        write_fixed(out->runtime_name, "OpenVINO GenAI");
+
+        const auto version = ov::get_openvino_version();
+        std::string digest = version.buildNumber ? version.buildNumber : "";
+        std::string desc = version.description ? version.description : "";
+        write_fixed(out->runtime_digest, digest);
+        write_fixed(out->system_info, desc);
+
+        ov::Core core;
+        auto devices = core.get_available_devices();
+        out->device_count = std::min(devices.size(), static_cast<size_t>(16));
+        for (size_t i = 0; i < out->device_count; ++i) {
+            fill_device_info(core, devices[i], static_cast<int>(i), &out->devices[i]);
+            if (is_accelerator_device(devices[i])) {
+                out->supports_gpu_offload = 1;
+            }
+        }
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO runtime info error");
+        return 1;
+    }
+}
+
+extern "C" int cx_ov_device_info_get(const char *device, cx_ov_device_info *out, char *err, size_t err_len) {
+    try {
+        if (!out) {
+            throw std::runtime_error("device info output pointer is null");
+        }
+        ov::Core core;
+        auto devices = core.get_available_devices();
+        const std::string selected = select_available_device(devices, device ? std::string(device) : std::string("CPU"));
+        fill_device_info(core, selected, 0, out);
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO device info error");
+        return 1;
+    }
 }
 
 static ov::genai::SchedulerConfig scheduler_config_from(const cx_genai_session_config *config) {

@@ -31,6 +31,12 @@ func (f *fakeSession) Decode(context.Context, transport.DecodeConfig) (<-chan tr
 
 func (f *fakeSession) ExplainContext() transport.ContextReport { return transport.ContextReport{} }
 
+func (f *fakeSession) Snapshot(context.Context) (transport.SessionSnapshot, error) {
+	return transport.SessionSnapshot{}, nil
+}
+
+func (f *fakeSession) Restore(context.Context, transport.SessionSnapshot) error { return nil }
+
 func (f *fakeSession) Close() error { f.closed = true; return nil }
 
 // The reshaped modeld/llama exposes exactly one boundary: transport.Service.

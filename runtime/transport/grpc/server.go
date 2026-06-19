@@ -107,16 +107,36 @@ func (s *Server) describe(ctx context.Context, in *openSessionReq) (*describeRes
 		Type:      in.Type,
 		Digest:    in.Digest,
 		Path:      in.Path,
+		Config:    in.Config,
 	})
 	if err != nil {
 		return nil, encodeError(err)
 	}
 	return &describeResp{
-		ModelMaxContext:  info.ModelMaxContext,
-		EffectiveContext: info.EffectiveContext,
-		KVBytesPerToken:  info.KVBytesPerToken,
-		FreeBytes:        info.FreeBytes,
-		WeightsBytes:     info.WeightsBytes,
+		ModelMaxContext:    info.ModelMaxContext,
+		EffectiveContext:   info.EffectiveContext,
+		KVBytesPerToken:    info.KVBytesPerToken,
+		FreeBytes:          info.FreeBytes,
+		WeightsBytes:       info.WeightsBytes,
+		OverheadBytes:      info.OverheadBytes,
+		ReservedBytes:      info.ReservedBytes,
+		UserLimitBytes:     info.UserLimitBytes,
+		MinFreeBytes:       info.MinFreeBytes,
+		UsableBytes:        info.UsableBytes,
+		RequiredBytes:      info.RequiredBytes,
+		Clamped:            info.Clamped,
+		Reason:             info.Reason,
+		DeviceKind:         info.DeviceKind,
+		DeviceID:           info.DeviceID,
+		DeviceTotalBytes:   info.DeviceTotalBytes,
+		SharedWithDisplay:  info.SharedWithDisplay,
+		RequestedGpuLayers: info.RequestedGpuLayers,
+		ResolvedGpuLayers:  info.ResolvedGpuLayers,
+		RuntimeName:        info.RuntimeName,
+		RuntimeDigest:      info.RuntimeDigest,
+		RuntimeSystemInfo:  info.RuntimeSystemInfo,
+		SupportsGPUOffload: info.SupportsGPUOffload,
+		Devices:            info.Devices,
 	}, nil
 }
 
@@ -160,6 +180,35 @@ func (s *Server) explainContext(ctx context.Context, in *explainReq) (*transport
 	}
 	report := sess.ExplainContext()
 	return &report, nil
+}
+
+func (s *Server) snapshot(ctx context.Context, in *snapshotReq) (*transport.SessionSnapshot, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	sess, err := s.lookup(in.Handle)
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	snap, err := sess.Snapshot(ctx)
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	return &snap, nil
+}
+
+func (s *Server) restore(ctx context.Context, in *restoreReq) (*restoreResp, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	sess, err := s.lookup(in.Handle)
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	if err := sess.Restore(ctx, in.Snapshot); err != nil {
+		return nil, encodeError(err)
+	}
+	return &restoreResp{}, nil
 }
 
 func (s *Server) closeSession(ctx context.Context, in *closeReq) (*closeResp, error) {

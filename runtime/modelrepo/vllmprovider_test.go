@@ -15,6 +15,8 @@ import (
 
 // TestVLLM_Smoke tests the minimal functionality of the vLLM provider
 func TestSystem_VLLM_Smoke(t *testing.T) {
+	requireVLLMContainerTests(t)
+
 	ctx := context.Background()
 
 	// Use tiny model for CPU testing

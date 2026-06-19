@@ -8,8 +8,8 @@
 > `modeld/llama/chattmpl`, tools across the transport, output parser).
 >
 > Build/test recipe for the tagged llama path:
-> `make -f Makefile.llamacpp vendor-headers` then
-> `CGO_CPPFLAGS=-I$PWD/.llamacpp-vendor CONTENOX_LLAMA_TINY_GGUF=/home/naro/.libollama/models/tiny/model.gguf go test -tags 'llamanode llama_unsafe_abi' ./modeld/llama/...`
+> `make deps-llama-headers build-modeld-llama test-llamacpp-direct-cpu`, then
+> `CGO_ENABLED=1 CGO_CPPFLAGS="-I$PWD/.llamacpp-vendor -I$PWD/.llamacpp-runtime/cpu/include" CGO_LDFLAGS="-L$PWD/.llamacpp-runtime/cpu/lib -Wl,--disable-new-dtags -Wl,-rpath,$PWD/.llamacpp-runtime/cpu/lib -Wl,-rpath-link,$PWD/.llamacpp-runtime/cpu/lib -l:libllama.so -l:libggml.so -l:libggml-base.so -l:libggml-cpu.so -lstdc++ -lm -ldl -lpthread" go test -tags 'llamanode llamacpp_direct' ./modeld/llama/...`
 > OpenVINO: model at `.openvino/models/qwen-coder-0.5b-int4`; flags resolved from the
 > `.openvino/venv` like `Makefile.openvino` (`make -f Makefile.openvino test-s1-5`).
 
@@ -70,16 +70,17 @@ recovery). The blueprint L3 said decide *after* L0/L2 numbers — those now exis
 (`benchreport`), so proceed.
 
 **Where:**
-- The native primitives already exist: `modeld/llama/llamaabi/llamaabi.go` —
-  `StateSeqGetData` / `StateSeqSetData` / `StateSeqSaveFile` / `StateSeqLoadFile`
-  (currently unused).
+- The native byte-state primitives live in
+  `modeld/llama/llamacppshim/direct.go` — `StateSeqGetData` /
+  `StateSeqSetData` are present; file save/load helpers still need direct shim
+  wrappers if benchmark output should avoid moving large KV blobs through Go.
 - Contract: extend `runtime/transport/session.go` `Session` with
   `Snapshot()/Restore()` (or `SaveState/LoadState`). This crosses the gRPC boundary —
   add methods in `runtime/transport/grpc/{wire,server,client}.go` (mirror the existing
   unary methods; the JSON codec handles structs, but raw KV bytes are large — consider
   a streamed or base64 field).
-- `modeld/llama/llamasession/llama.go` — implement save/restore via the llamaabi
-  StateSeq funcs; gate restore on `ContextManifest` compatibility (reuse
+- `modeld/llama/llamasession/llama.go` — implement save/restore via the
+  `llamacppshim` state funcs; gate restore on `ContextManifest` compatibility (reuse
   `contextasm` CompatibleRuntime + stable token hash) — refuse a mismatched snapshot.
 
 **Hints:** kill gates are in `docs/blueprints/llamacpp-binding-ownership-options.md`
@@ -152,15 +153,10 @@ with `tool_calls`) is still rejected at `runtime/modelrepo/llama/prompt.go`
 
 ---
 
-## Deferred: Contenox-owned llama.cpp shim  (replace the `llama_unsafe_abi` spike)
+## Done: Contenox-owned llama.cpp shim
 
-The live llama path runs on `modeld/llama/llamaabi` — a quarantined `unsafe` read of
-ollama's private `llama.Context`, behind `llama_unsafe_abi`. It works and is tested, so
-this is a hardening/robustness item, not a functional blocker. The decode-status fidelity
-gap (ollama's `Decode` collapses `no_kv_slot`/`aborted`/`fatal`) also rides here.
-
-**Hint:** `docs/blueprints/llamacpp-binding-ownership-options.md` is the spec
-(`runtime/modelrepo/llama/llamacppshim/` → now `modeld/llama/llamacppshim/`). Note the
-minja vendoring done for tool calls (`Makefile.llamacpp` pinned to commit `ec98e2002`,
-`modeld/llama/chattmpl`) is the same pattern this shim will use to own its llama.cpp
-sources rather than piggyback ollama's stripped module.
+The live llama path now runs on `modeld/llama/llamacppshim` behind the
+`llamacpp_direct` build tag. The old `llama_unsafe_abi` spike and
+`modeld/llama/llamaabi` package are retired. Remaining work on this track is
+GPU/runtime certification, snapshot transport, and benchmark reporting, not
+replacement of the binding itself.

@@ -95,6 +95,23 @@ func TestRoundTripContractOverWire(t *testing.T) {
 	if report.ResidentTokens != 11 { // "hello"(5) + " world"(6)
 		t.Fatalf("ExplainContext resident = %d, want 11", report.ResidentTokens)
 	}
+	snap, err := sess.Snapshot(ctx)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if snap.ResidentTokens != 11 || snap.PrefixTokens != 5 || snap.Manifest.Digest() != m.Digest() {
+		t.Fatalf("snapshot over wire = %+v, want resident=11 prefix=5 manifest digest %q", snap, m.Digest())
+	}
+	if _, err := sess.EnsurePrefix(ctx, transport.PrefixInput{Text: "other", Manifest: manifest("other")}); err != nil {
+		t.Fatalf("EnsurePrefix other: %v", err)
+	}
+	if err := sess.Restore(ctx, snap); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	report = sess.ExplainContext()
+	if report.ResidentTokens != 11 || report.ManifestDigest != m.Digest() {
+		t.Fatalf("ExplainContext after restore = %+v, want restored snapshot", report)
+	}
 
 	if err := sess.Close(); err != nil {
 		t.Fatalf("Close: %v", err)

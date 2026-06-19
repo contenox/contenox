@@ -3,13 +3,40 @@ package llama
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
+	"strconv"
+	"strings"
 
+	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
 // Service implements the runtime/transport.Service boundary.
 // It acts as the opener for native llama.cpp backend sessions.
-type Service struct{}
+type Service struct {
+	memory capacity.MemorySource
+	policy capacity.Policy
+	launch capacity.LaunchDefaults
+}
+
+type ServiceOption func(*Service)
+
+func NewService(opts ...ServiceOption) *Service {
+	s := &Service{}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+func WithCapacityPolicy(p capacity.Policy) ServiceOption {
+	return func(s *Service) { s.policy = p }
+}
+
+func WithMemorySource(src capacity.MemorySource) ServiceOption {
+	return func(s *Service) { s.memory = src }
+}
 
 var _ transport.Service = (*Service)(nil)
 
@@ -22,7 +49,29 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	if req.Type != "" && req.Type != "llama" {
 		return nil, fmt.Errorf("%w: requested %q, this daemon serves llama", transport.ErrBackendMismatch, req.Type)
 	}
-	return newSession(req.Path, req.Config)
+	plan, err := s.resolveSession(req)
+	if err != nil {
+		return nil, err
+	}
+	cfg := plan.config
+	info := plan.info
+	slog.Info("llama session config",
+		"num_ctx", cfg.NumCtx,
+		"num_batch", cfg.NumBatch,
+		"num_gpu_layers", cfg.NumGpuLayers,
+		"requested_gpu_layers", info.RequestedGpuLayers,
+		"resolved_gpu_layers", info.ResolvedGpuLayers,
+		"free_bytes", info.FreeBytes,
+		"user_limit_bytes", info.UserLimitBytes,
+		"usable_bytes", info.UsableBytes,
+		"weights_bytes", info.WeightsBytes,
+		"overhead_bytes", info.OverheadBytes,
+		"required_bytes", info.RequiredBytes,
+		"capacity_reason", info.Reason,
+		"flash_attention", cfg.FlashAttn,
+		"kv_cache_type", cfg.KVCacheType,
+	)
+	return newSession(req.Path, cfg)
 }
 
 // Describe reports the model's trained context window read from the GGUF header
@@ -32,5 +81,257 @@ func (s *Service) Describe(_ context.Context, req transport.OpenSessionRequest) 
 	if req.Type != "" && req.Type != "llama" {
 		return transport.ModelInfo{}, fmt.Errorf("%w: requested %q, this daemon serves llama", transport.ErrBackendMismatch, req.Type)
 	}
-	return transport.ModelInfo{EffectiveContext: ggufContextLength(req.Path)}, nil
+	info, err := s.describe(req)
+	if err != nil {
+		return transport.ModelInfo{}, err
+	}
+	return info, nil
+}
+
+func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Config, error) {
+	plan, err := s.resolveSession(req)
+	if err != nil {
+		return transport.Config{}, err
+	}
+	return plan.config, nil
+}
+
+func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan, error) {
+	plan, err := s.plan(req)
+	if err != nil {
+		return sessionPlan{}, err
+	}
+	cfg := plan.config
+	info := plan.info
+	if info.EffectiveContext <= 0 && info.Reason != "" {
+		return sessionPlan{}, fmt.Errorf("%w: model %q cannot fit in the selected %s memory budget (%s)",
+			transport.ErrContextOverflow, req.ModelName, info.DeviceKind, info.Reason)
+	}
+	if info.RequestedGpuLayers > 0 && info.ResolvedGpuLayers <= 0 {
+		return sessionPlan{}, fmt.Errorf("%w: requested gpu_layers=%d but no layer fits in the selected %s memory budget (%s)",
+			transport.ErrContextOverflow, info.RequestedGpuLayers, info.DeviceKind, info.Reason)
+	}
+	if cfg.NumCtx <= 0 {
+		cfg.NumCtx = info.EffectiveContext
+		plan.config = cfg
+		return plan, nil
+	}
+	if cfg.NumCtx > info.EffectiveContext {
+		return sessionPlan{}, fmt.Errorf("%w: requested num_ctx=%d exceeds modeld effective context=%d (%s)",
+			transport.ErrContextOverflow, cfg.NumCtx, info.EffectiveContext, info.Reason)
+	}
+	return plan, nil
+}
+
+func applyDaemonEnvOverrides(cfg transport.Config) transport.Config {
+	if v := os.Getenv("CONTENOX_LLAMA_GPU_LAYERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.NumGpuLayers = n
+		}
+	}
+	if v := os.Getenv("CONTENOX_LLAMA_CTX"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.NumCtx = n
+		}
+	}
+	return cfg
+}
+
+var defaultMemorySource = func(transport.Config) capacity.MemorySource {
+	return capacity.SystemRAM{}
+}
+
+var llamaRuntimeInfo = func() transport.ModelInfo {
+	return transport.ModelInfo{}
+}
+
+// Set by Makefile builds so Describe can report the exact pinned llama.cpp
+// source used for the direct runtime.
+var llamaCPPCommit string
+
+func (s *Service) memorySource(cfg transport.Config) capacity.MemorySource {
+	if s.memory != nil {
+		return s.memory
+	}
+	return defaultMemorySource(cfg)
+}
+
+func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInfo, error) {
+	cfg := applyDaemonEnvOverrides(req.Config)
+	params := ggufModelParams(req.Path)
+	st, err := capacity.Snapshot(s.memorySource(cfg))
+	if err != nil {
+		return transport.ModelInfo{}, fmt.Errorf("llama capacity memory probe: %w", err)
+	}
+	policy := s.launch.Policy(s.policy, st)
+	weights := fileSize(req.Path)
+	kvBytes := capacity.KVBytesPerToken(params.BlockCount, params.kvHeads(), params.headDim(), cfg.KVCacheType)
+	overhead := int64(0)
+	requestedGpuLayers := cfg.NumGpuLayers
+	resolvedGpuLayers := cfg.NumGpuLayers
+	if cfg.NumGpuLayers > 0 && isAcceleratorSnapshot(st) {
+		overhead = llamaGPUComputeReserveBytes(cfg)
+		resolvedGpuLayers = resolveGPULayersForBudget(cfg, params, weights, kvBytes, overhead, st, policy)
+		cfg.NumGpuLayers = resolvedGpuLayers
+		weights = estimateLlamaGPUWeights(weights, params.BlockCount, cfg.NumGpuLayers)
+	}
+	resolved := capacity.Resolve(capacity.Params{
+		ModelMaxCtx:     params.ContextLength,
+		KVBytesPerToken: kvBytes,
+		WeightsBytes:    weights,
+		OverheadBytes:   overhead,
+		FreeBytes:       st.FreeBytes,
+		UserLimitBytes:  policy.MaxResidentBytes,
+		MinFreeBytes:    policy.MinFreeBytes,
+		Request:         cfg.NumCtx,
+		HeadroomFrac:    policy.HeadroomFrac,
+	})
+	info := modelInfo(resolved, st)
+	info.RequestedGpuLayers = requestedGpuLayers
+	info.ResolvedGpuLayers = resolvedGpuLayers
+	if requestedGpuLayers > 0 && resolvedGpuLayers < requestedGpuLayers {
+		info.Clamped = true
+		if info.Reason == "" {
+			info.Reason = "gpu_layers_exceed_memory_budget"
+		}
+	}
+	return info, nil
+}
+
+func fileSize(path string) int64 {
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		return info.Size()
+	}
+	return 0
+}
+
+func modelInfo(c capacity.ModelCapacity, st capacity.DeviceSnapshot) transport.ModelInfo {
+	info := llamaRuntimeInfo()
+	info.ModelMaxContext = c.ModelMaxContext
+	info.EffectiveContext = c.EffectiveContext
+	info.KVBytesPerToken = c.KVBytesPerToken
+	info.FreeBytes = c.FreeBytes
+	info.WeightsBytes = c.WeightsBytes
+	info.OverheadBytes = c.OverheadBytes
+	info.ReservedBytes = c.ReservedBytes
+	info.UserLimitBytes = c.UserLimitBytes
+	info.MinFreeBytes = c.MinFreeBytes
+	info.UsableBytes = c.UsableBytes
+	info.RequiredBytes = c.RequiredBytes
+	info.Clamped = c.Clamped
+	info.Reason = c.Reason
+	info.DeviceKind = st.Kind
+	info.DeviceID = st.DeviceID
+	info.DeviceTotalBytes = st.TotalBytes
+	info.SharedWithDisplay = st.SharedWithDisplay
+	if info.RuntimeDigest == "" {
+		info.RuntimeDigest = llamaCPPCommit
+	}
+	return info
+}
+
+type sessionPlan struct {
+	config transport.Config
+	info   transport.ModelInfo
+}
+
+func (s *Service) plan(req transport.OpenSessionRequest) (sessionPlan, error) {
+	cfg := applyDaemonEnvOverrides(req.Config)
+	info, err := s.describe(transport.OpenSessionRequest{
+		Fence:     req.Fence,
+		ModelName: req.ModelName,
+		Type:      req.Type,
+		Digest:    req.Digest,
+		Path:      req.Path,
+		Config:    cfg,
+	})
+	if err != nil {
+		return sessionPlan{}, err
+	}
+	if info.RequestedGpuLayers > 0 {
+		cfg.NumGpuLayers = info.ResolvedGpuLayers
+	}
+	return sessionPlan{config: cfg, info: info}, nil
+}
+
+const defaultLlamaGPUComputeReserveBytes int64 = 768 << 20
+
+func llamaGPUComputeReserveBytes(cfg transport.Config) int64 {
+	if v, err := capacity.ParseBytes(os.Getenv("CONTENOX_LLAMA_GPU_COMPUTE_RESERVE")); err == nil && v > 0 {
+		return v
+	}
+	batch := cfg.NumBatch
+	if batch <= 0 {
+		batch = 512
+	}
+	reserve := defaultLlamaGPUComputeReserveBytes * int64(batch) / 512
+	if reserve < 256<<20 {
+		return 256 << 20
+	}
+	return reserve
+}
+
+func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, weights, kvBytes, overhead int64, st capacity.DeviceSnapshot, policy capacity.Policy) int {
+	if cfg.NumGpuLayers <= 0 {
+		return 0
+	}
+	if params.BlockCount <= 0 || weights <= 0 || kvBytes <= 0 {
+		return cfg.NumGpuLayers
+	}
+	maxSlots := params.BlockCount
+	if cfg.NumGpuLayers > params.BlockCount {
+		maxSlots = params.BlockCount + 1 // output layer
+	}
+	requestedSlots := min(cfg.NumGpuLayers, maxSlots)
+	for slots := requestedSlots; slots >= 1; slots-- {
+		modelBytes := estimateLlamaGPUWeights(weights, params.BlockCount, slots)
+		resolved := capacity.Resolve(capacity.Params{
+			ModelMaxCtx:     params.ContextLength,
+			KVBytesPerToken: kvBytes,
+			WeightsBytes:    modelBytes,
+			OverheadBytes:   overhead,
+			FreeBytes:       st.FreeBytes,
+			UserLimitBytes:  policy.MaxResidentBytes,
+			MinFreeBytes:    policy.MinFreeBytes,
+			Request:         cfg.NumCtx,
+			HeadroomFrac:    policy.HeadroomFrac,
+		})
+		if resolved.EffectiveContext <= 0 {
+			continue
+		}
+		if cfg.NumCtx > 0 && resolved.EffectiveContext < cfg.NumCtx {
+			continue
+		}
+		return slots
+	}
+	return 0
+}
+
+func estimateLlamaGPUWeights(weights int64, blockCount, gpuLayers int) int64 {
+	if weights <= 0 || gpuLayers <= 0 {
+		return 0
+	}
+	if blockCount <= 0 {
+		return weights
+	}
+	maxSlots := blockCount + 1 // repeating layers plus output layer
+	slots := min(gpuLayers, maxSlots)
+	perSlot := weights / int64(maxSlots)
+	if perSlot <= 0 {
+		return weights
+	}
+	est := perSlot * int64(slots)
+	if est > weights {
+		return weights
+	}
+	return est
+}
+
+func isAcceleratorSnapshot(st capacity.DeviceSnapshot) bool {
+	switch strings.ToLower(strings.TrimSpace(st.Kind)) {
+	case "gpu", "igpu", "accel":
+		return true
+	default:
+		return false
+	}
 }

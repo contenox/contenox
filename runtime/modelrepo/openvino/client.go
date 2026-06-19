@@ -42,6 +42,7 @@ type client struct {
 	modelPath       string
 	profileID       string
 	modelDigest     string
+	backendVersion  string
 	cfg             Config
 	maxOutputTokens int
 	toolProtocol    string // profile-declared tool-call protocol ("" = tools unsupported)
@@ -186,8 +187,9 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 // prefix so modeld renders it via the model's own chat template.
 func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string) error {
 	plan, err := buildPromptPlan(messages, c.cfg, promptIdentity{
-		ProfileID:   c.profileID,
-		ModelDigest: c.modelDigest,
+		ProfileID:      c.profileID,
+		ModelDigest:    c.modelDigest,
+		BackendVersion: c.backendVersion,
 	}, toolsJSON)
 	if err != nil {
 		return err

@@ -1,12 +1,11 @@
 PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 include $(PROJECT_ROOT)mk/llama-flags.mk
 
-.PHONY: help vendor-headers test-shim test-abi-link clean
+.PHONY: help vendor-headers test-shim clean
 
 help:
 	@echo "vendor-headers fetch llama.cpp single-header deps + minja into $(LLAMA_VENDOR)"
-	@echo "test-shim      build + run the owned-ABI shim test (set CONTENOX_LLAMA_TINY_GGUF)"
-	@echo "test-abi-link  prove the unsafe-ABI symbols link into the test binary"
+	@echo "test-shim      build + run the direct llama.cpp shim tests"
 	@echo "clean          remove the vendored header tree"
 
 vendor-headers:
@@ -19,21 +18,9 @@ vendor-headers:
 	@curl -fsSL -o "$(LLAMA_VENDOR)/minja/chat-template.hpp" https://raw.githubusercontent.com/ggml-org/llama.cpp/$(LLAMA_CPP_COMMIT)/vendor/minja/chat-template.hpp
 	@echo "vendored llama.cpp headers -> $(LLAMA_VENDOR)"
 
-# Build + run the owned-ABI shim test: proves it reads the model's own GGUF chat
-# template + applies it + reads BOS policy. Set CONTENOX_LLAMA_TINY_GGUF.
+# Build + run the direct llama.cpp shim tests.
 test-shim: vendor-headers
-	CGO_ENABLED=1 CGO_CPPFLAGS="-I$(LLAMA_VENDOR)" \
-	go test -tags 'llamanode llama_unsafe_abi' -run TestShim -v ./modeld/llama/llamaabi/
-
-test-abi-link: vendor-headers
-	@echo "--- Running L0 Unsafe ABI Linkage Test ---"
-	@go test -v -x -work -tags 'llamanode llama_unsafe_abi' ./modeld/llama/llamaabi 2>&1 | tee /tmp/llamaabi-build.log
-	@go test -c -tags 'llamanode llama_unsafe_abi' -o /tmp/llamaabi.test ./modeld/llama/llamaabi
-	@echo "--- Checking symbols in /tmp/llamaabi.test ---"
-	nm -A /tmp/llamaabi.test | grep 'llama_state_seq_get_data' || echo "llama_state_seq_get_data not found in binary!"
-	nm -A /tmp/llamaabi.test | grep 'llama_free' || echo "llama_free not found in binary!"
-	ldd /tmp/llamaabi.test || true
-	@echo "--- Linkage Test Complete ---"
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct test-shim-cpu
 
 clean:
 	rm -rf "$(LLAMA_VENDOR)"

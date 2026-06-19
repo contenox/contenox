@@ -11,6 +11,25 @@ extern "C" {
 typedef struct cx_genai_session cx_genai_session;
 typedef struct cx_genai_stream cx_genai_stream;
 
+typedef struct cx_ov_device_info {
+    int index;
+    char name[128];
+    char description[256];
+    char type[32];
+    uint64_t memory_free;
+    uint64_t memory_total;
+    int shared_with_display;
+} cx_ov_device_info;
+
+typedef struct cx_ov_runtime_info {
+    char runtime_name[64];
+    char runtime_digest[128];
+    char system_info[512];
+    int supports_gpu_offload;
+    size_t device_count;
+    cx_ov_device_info devices[16];
+} cx_ov_runtime_info;
+
 typedef struct cx_genai_metrics {
     size_t requests;
     size_t scheduled_requests;
@@ -32,6 +51,9 @@ typedef struct cx_genai_session_config {
     size_t xattention_block_size;
     size_t xattention_stride;
 } cx_genai_session_config;
+
+int cx_ov_runtime_info_get(cx_ov_runtime_info *out, char *err, size_t err_len);
+int cx_ov_device_info_get(const char *device, cx_ov_device_info *out, char *err, size_t err_len);
 
 cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device,
                                        const cx_genai_session_config *config,

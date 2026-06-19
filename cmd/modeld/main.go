@@ -8,7 +8,7 @@
 //
 // Usage:
 //
-//	modeld serve  [--data-root DIR] [--ttl DURATION]
+//	modeld serve  [--data-root DIR] [--ttl DURATION] [--mem-max 8GiB] [--mem-reserve 2GiB]
 //	modeld status [--data-root DIR] [--json]
 package main
 
@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/liblease"
+	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/modeld/owner"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
 )
@@ -48,19 +49,25 @@ func run(args []string) error {
 	dataRoot := fs.String("data-root", "", "contenox data root (default ~/.contenox)")
 	ttl := fs.Duration("ttl", 30*time.Second, "lease duration; renewed at ttl/3")
 	listen := fs.String("listen", "127.0.0.1:0", "gRPC listen address for serve")
+	memMax := fs.String("mem-max", "", "maximum modeld resident memory budget (bytes or e.g. 8GiB)")
+	memReserve := fs.String("mem-reserve", "", "memory to leave free for desktop/other workloads (bytes or e.g. 2GiB)")
 	asJSON := fs.Bool("json", false, "machine-readable JSON output (status)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	leasePath, err := resolveLeasePath(*dataRoot)
+	resolvedRoot, leasePath, err := resolvePaths(*dataRoot)
 	if err != nil {
 		return err
 	}
 
 	switch cmd {
 	case "serve":
-		return serve(leasePath, *ttl, *listen)
+		policy, err := resolvePolicy(resolvedRoot, *memMax, *memReserve)
+		if err != nil {
+			return err
+		}
+		return serve(leasePath, *ttl, *listen, policy)
 	case "status":
 		return status(leasePath, *asJSON)
 	default:
@@ -68,21 +75,40 @@ func run(args []string) error {
 	}
 }
 
-func resolveLeasePath(dataRoot string) (string, error) {
+func resolvePolicy(dataRoot, memMax, memReserve string) (capacity.Policy, error) {
+	policy := capacity.LoadPolicy(dataRoot)
+	if memMax != "" {
+		v, err := capacity.ParseBytes(memMax)
+		if err != nil {
+			return capacity.Policy{}, fmt.Errorf("parse --mem-max: %w", err)
+		}
+		policy.MaxResidentBytes = v
+	}
+	if memReserve != "" {
+		v, err := capacity.ParseBytes(memReserve)
+		if err != nil {
+			return capacity.Policy{}, fmt.Errorf("parse --mem-reserve: %w", err)
+		}
+		policy.MinFreeBytes = v
+	}
+	return policy, nil
+}
+
+func resolvePaths(dataRoot string) (string, string, error) {
 	if dataRoot == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("resolve home: %w", err)
+			return "", "", fmt.Errorf("resolve home: %w", err)
 		}
 		dataRoot = filepath.Join(home, ".contenox")
 	}
 	if err := os.MkdirAll(dataRoot, 0o700); err != nil {
-		return "", fmt.Errorf("create data root %q: %w", dataRoot, err)
+		return "", "", fmt.Errorf("create data root %q: %w", dataRoot, err)
 	}
-	return filepath.Join(dataRoot, "modeld.lease"), nil
+	return dataRoot, filepath.Join(dataRoot, "modeld.lease"), nil
 }
 
-func serve(leasePath string, ttl time.Duration, listen string) error {
+func serve(leasePath string, ttl time.Duration, listen string, policy capacity.Policy) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -96,7 +122,7 @@ func serve(leasePath string, ttl time.Duration, listen string) error {
 	// (llama / openvino / none); the runtime's detector reads it without a
 	// network round-trip. A build with no local backend still owns the lease and
 	// answers health probes so detection reports the daemon running.
-	svc, backend := selectBackend()
+	svc, backend := selectBackend(policy)
 
 	o, err := owner.Join(ctx, owner.Config{LeasePath: leasePath, TTL: ttl, Endpoint: endpoint, Backend: backend})
 	if err != nil {
