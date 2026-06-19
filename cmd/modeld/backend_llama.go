@@ -17,5 +17,7 @@ import (
 func init() {
 	registerBackend("llama", func(policy capacity.Policy) transport.Service {
 		return llama.NewService(llama.WithCapacityPolicy(policy))
-	}, llama.HasAccelerator)
+	}, llama.HasAccelerator, func() backendDiagnostic {
+		return backendDiagnosticFromModelInfo(llama.RuntimeInfo())
+	})
 }

@@ -157,6 +157,12 @@ var llamaRuntimeInfo = func() transport.ModelInfo {
 	return transport.ModelInfo{}
 }
 
+// RuntimeInfo reports the linked llama.cpp runtime identity and device
+// inventory. In non-direct builds this returns an empty record.
+func RuntimeInfo() transport.ModelInfo {
+	return llamaRuntimeInfo()
+}
+
 // Set by Makefile builds so Describe can report the exact pinned llama.cpp
 // source used for the direct runtime.
 var llamaCPPCommit string

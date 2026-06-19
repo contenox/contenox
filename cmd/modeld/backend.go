@@ -29,11 +29,30 @@ var backends = map[string]backendFactory{}
 // compiled in. A nil probe (or absent entry) means "no accelerator known".
 var backendHasAccel = map[string]func() bool{}
 
+// backendDiagnostics holds optional, human-facing runtime/device inventory for
+// a compiled-in backend. It is deliberately diagnostic only; backend selection
+// still works with just backendHasAccel for tests and minimal builds.
+var backendDiagnostics = map[string]func() backendDiagnostic{}
+
+type backendDiagnostic struct {
+	RuntimeName        string
+	RuntimeDigest      string
+	RuntimeSystemInfo  string
+	SupportsGPUOffload bool
+	Devices            []transport.DeviceInfo
+}
+
+type backendProbeResult struct {
+	Name        string
+	Accelerated bool
+	Diagnostic  backendDiagnostic
+}
+
 // registerBackend records a compiled-in backend. Called from backend file
 // init()s; the build tags decide which backends a given binary contains.
 // hasAccel is an optional probe (may be nil) reporting whether this backend has
 // an accelerator on the current host.
-func registerBackend(name string, f backendFactory, hasAccel func() bool) {
+func registerBackend(name string, f backendFactory, hasAccel func() bool, diagnostics ...func() backendDiagnostic) {
 	if _, dup := backends[name]; dup {
 		panic("modeld: backend registered twice: " + name)
 	}
@@ -41,24 +60,33 @@ func registerBackend(name string, f backendFactory, hasAccel func() bool) {
 	if hasAccel != nil {
 		backendHasAccel[name] = hasAccel
 	}
+	if len(diagnostics) > 0 && diagnostics[0] != nil {
+		backendDiagnostics[name] = diagnostics[0]
+	}
 }
 
 // preferredBackendOrder breaks ties when several backends are compiled in and
-// CONTENOX_MODELD_BACKEND is not set: the accelerator-capable backend wins so a
-// build that bothered to link OpenVINO uses it by default. Override per process
-// with CONTENOX_MODELD_BACKEND.
+// no backend reports an accelerator. Override per process with
+// CONTENOX_MODELD_BACKEND.
 var preferredBackendOrder = []string{"openvino", "llama"}
+
+// preferredAcceleratedBackendOrder breaks ties when several compiled-in
+// backends report an accelerator. In the direct llama.cpp build, "llama"
+// acceleration means ggml loaded a non-CPU plugin (CUDA on the dev/runtime
+// target), so prefer that path over OpenVINO when both see the same dGPU.
+var preferredAcceleratedBackendOrder = []string{"llama", "openvino"}
 
 // selectBackend chooses the transport.Service this daemon serves. Selection:
 //  1. CONTENOX_MODELD_BACKEND, if set and compiled in;
 //  2. the only compiled-in backend, if exactly one;
 //  3. among several, a backend reporting an accelerator on this host wins, with
-//     preferredBackendOrder breaking remaining ties;
+//     preferredAcceleratedBackendOrder breaking remaining ties;
 //  4. unavailableBackend when none is compiled in — the daemon still owns the
 //     lease and answers health probes, it just cannot open sessions.
 func selectBackend(policy capacity.Policy) (transport.Service, string) {
 	if want := os.Getenv("CONTENOX_MODELD_BACKEND"); want != "" {
 		if f, ok := backends[want]; ok {
+			fmt.Fprintf(os.Stderr, "modeld backend selected: backend=%s reason=env_override env=CONTENOX_MODELD_BACKEND compiled=%s\n", want, availableBackends())
 			return f(policy), want
 		}
 		fmt.Fprintf(os.Stderr, "modeld: CONTENOX_MODELD_BACKEND=%q is not compiled into this build (have: %s); falling back\n", want, availableBackends())
@@ -67,8 +95,10 @@ func selectBackend(policy capacity.Policy) (transport.Service, string) {
 	names := availableBackendNames()
 	switch len(names) {
 	case 0:
+		fmt.Fprintln(os.Stderr, "modeld backend selected: backend=none reason=no_compiled_backend")
 		return unavailableBackend{}, "none"
 	case 1:
+		fmt.Fprintf(os.Stderr, "modeld backend selected: backend=%s reason=only_compiled_backend\n", names[0])
 		return backends[names[0]](policy), names[0]
 	}
 
@@ -77,29 +107,110 @@ func selectBackend(policy capacity.Policy) (transport.Service, string) {
 	// that physically exists rather than the static preference. Probing loads the
 	// backend's native libs (CUDA / OpenVINO) once at startup.
 	candidates := names
+	preference := preferredBackendOrder
 	var accelerated []string
-	for _, name := range names {
-		if probe := backendHasAccel[name]; probe != nil && probe() {
-			accelerated = append(accelerated, name)
+	probes := collectBackendProbes(names)
+	for _, probe := range probes {
+		logBackendProbe(probe)
+		if probe.Accelerated {
+			accelerated = append(accelerated, probe.Name)
 		}
 	}
 	if len(accelerated) > 0 {
 		candidates = accelerated
+		preference = preferredAcceleratedBackendOrder
 	}
 
+	chosen := choosePreferredBackend(candidates, preference)
+	if len(accelerated) > 0 {
+		reason := "accelerated_backend"
+		if len(accelerated) > 1 {
+			reason = "accelerated_tie"
+		}
+		fmt.Fprintf(os.Stderr, "modeld backend selected: backend=%s reason=%s compiled=%s accelerated=%s preference=%s override_hint=CONTENOX_MODELD_BACKEND\n",
+			chosen, reason, availableBackends(), strings.Join(accelerated, ","), strings.Join(preference, ","))
+	} else {
+		fmt.Fprintf(os.Stderr, "modeld backend selected: backend=%s reason=no_accelerator_detected compiled=%s preference=%s override_hint=CONTENOX_MODELD_BACKEND\n",
+			chosen, availableBackends(), strings.Join(preference, ","))
+	}
+	return backends[chosen](policy), chosen
+}
+
+func collectBackendProbes(names []string) []backendProbeResult {
+	out := make([]backendProbeResult, 0, len(names))
+	for _, name := range names {
+		out = append(out, probeBackend(name))
+	}
+	return out
+}
+
+func probeBackend(name string) backendProbeResult {
+	res := backendProbeResult{Name: name}
+	if diagnostics := backendDiagnostics[name]; diagnostics != nil {
+		res.Diagnostic = diagnostics()
+		res.Accelerated = diagnosticHasAccelerator(res.Diagnostic)
+	}
+	if res.Accelerated {
+		return res
+	}
+	if probe := backendHasAccel[name]; probe != nil {
+		res.Accelerated = probe()
+	}
+	return res
+}
+
+func backendDiagnosticFromModelInfo(info transport.ModelInfo) backendDiagnostic {
+	return backendDiagnostic{
+		RuntimeName:        info.RuntimeName,
+		RuntimeDigest:      info.RuntimeDigest,
+		RuntimeSystemInfo:  info.RuntimeSystemInfo,
+		SupportsGPUOffload: info.SupportsGPUOffload,
+		Devices:            info.Devices,
+	}
+}
+
+func diagnosticHasAccelerator(d backendDiagnostic) bool {
+	for _, device := range d.Devices {
+		if isAcceleratorType(device.Type) {
+			return true
+		}
+	}
+	return false
+}
+
+func isAcceleratorType(deviceType string) bool {
+	switch strings.ToLower(strings.TrimSpace(deviceType)) {
+	case "gpu", "igpu", "accel":
+		return true
+	default:
+		return false
+	}
+}
+
+func logBackendProbe(probe backendProbeResult) {
+	d := probe.Diagnostic
+	fmt.Fprintf(os.Stderr, "modeld backend probe: backend=%s accelerated=%t runtime=%s digest=%s supports_gpu_offload=%t devices=%s\n",
+		probe.Name,
+		probe.Accelerated,
+		quoteLogValue(d.RuntimeName),
+		quoteLogValue(shortDigest(d.RuntimeDigest)),
+		d.SupportsGPUOffload,
+		formatDeviceList(d.Devices),
+	)
+	if d.RuntimeSystemInfo != "" {
+		fmt.Fprintf(os.Stderr, "modeld backend system-info: backend=%s %s\n", probe.Name, d.RuntimeSystemInfo)
+	}
+}
+
+func choosePreferredBackend(candidates, preference []string) string {
 	chosen := candidates[0] // deterministic fallback if none is in the preference list
-	for _, name := range preferredBackendOrder {
+	for _, name := range preference {
 		if slices.Contains(candidates, name) {
 			chosen = name
 			break
 		}
 	}
-	if len(accelerated) > 0 {
-		fmt.Fprintf(os.Stderr, "modeld: multiple backends compiled (%s); accelerator detected for %s; using %q (set CONTENOX_MODELD_BACKEND to override)\n", availableBackends(), strings.Join(accelerated, ", "), chosen)
-	} else {
-		fmt.Fprintf(os.Stderr, "modeld: multiple backends compiled (%s); no accelerator detected; using %q (set CONTENOX_MODELD_BACKEND to override)\n", availableBackends(), chosen)
-	}
-	return backends[chosen](policy), chosen
+	return chosen
 }
 
 // availableBackendNames returns the registered backend names, sorted for

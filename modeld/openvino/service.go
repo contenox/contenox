@@ -283,6 +283,13 @@ func openvinoRuntimeInfo() transport.ModelInfo {
 	return info
 }
 
+// RuntimeInfo reports the linked OpenVINO runtime identity and device inventory.
+// In builds without the native OpenVINO GenAI tags, this returns a minimal
+// record with RuntimeName set.
+func RuntimeInfo() transport.ModelInfo {
+	return openvinoRuntimeInfo()
+}
+
 type openvinoDeviceMemorySource struct {
 	device string
 }

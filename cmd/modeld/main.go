@@ -67,7 +67,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		return serve(leasePath, *ttl, *listen, policy)
+		return serve(resolvedRoot, leasePath, *ttl, *listen, policy)
 	case "status":
 		return status(leasePath, *asJSON)
 	default:
@@ -108,15 +108,20 @@ func resolvePaths(dataRoot string) (string, string, error) {
 	return dataRoot, filepath.Join(dataRoot, "modeld.lease"), nil
 }
 
-func serve(leasePath string, ttl time.Duration, listen string, policy capacity.Policy) error {
+func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy capacity.Policy) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	fmt.Fprintf(os.Stderr, "modeld starting: data_root=%q lease=%q listen=%q ttl=%s memory={%s}\n",
+		dataRoot, leasePath, listen, ttl, formatPolicy(policy))
+	logRuntimeEnv()
 
 	lis, err := net.Listen("tcp", listen)
 	if err != nil {
 		return fmt.Errorf("listen %q: %w", listen, err)
 	}
 	endpoint := lis.Addr().String()
+	fmt.Fprintf(os.Stderr, "modeld listener ready: requested=%q endpoint=%q\n", listen, endpoint)
 
 	// Resolve the served backend before joining so the lease advertises the mode
 	// (llama / openvino / none); the runtime's detector reads it without a
@@ -132,15 +137,25 @@ func serve(leasePath string, ttl time.Duration, listen string, policy capacity.P
 	if !o.IsOwner() {
 		_ = lis.Close()
 		h := o.Holder()
-		fmt.Printf("another modeld owns this data root: instance=%s pid=%d endpoint=%s backend=%s until=%s\n",
-			h.InstanceID, h.PID, h.Meta[owner.EndpointMetaKey], h.Meta[owner.BackendMetaKey], h.ExpiresAt().Format(time.RFC3339))
+		expiresAt := h.ExpiresAt()
+		fmt.Printf("modeld follower: reason=lease_held data_root=%q holder_instance=%s holder_pid=%d holder_host=%s endpoint=%s backend=%s expires=%s ttl_left=%s\n",
+			dataRoot,
+			h.InstanceID,
+			h.PID,
+			h.Host,
+			h.Meta[owner.EndpointMetaKey],
+			h.Meta[owner.BackendMetaKey],
+			expiresAt.Format(time.RFC3339),
+			time.Until(expiresAt).Round(time.Second),
+		)
 		return nil
 	}
-	fmt.Printf("modeld owner started: instance=%s pid=%d endpoint=%s ttl=%s\n", o.InstanceID(), os.Getpid(), endpoint, ttl)
+	fmt.Printf("modeld owner started: instance=%s pid=%d data_root=%s endpoint=%s backend=%s ttl=%s\n",
+		o.InstanceID(), os.Getpid(), dataRoot, endpoint, backend, ttl)
 
 	// Serve the runtime/transport.Service contract over gRPC, fenced by the owner
 	// instance id, while we hold the lease.
-	fmt.Printf("modeld serving transport: backend=%s\n", backend)
+	fmt.Printf("modeld transport serving: instance=%s endpoint=%s backend=%s\n", o.InstanceID(), endpoint, backend)
 	serveCtx, serveCancel := context.WithCancel(ctx)
 	defer serveCancel()
 	serveErr := make(chan error, 1)
@@ -162,7 +177,7 @@ func serve(leasePath string, ttl time.Duration, listen string, policy capacity.P
 	if err := o.Release(); err != nil {
 		return fmt.Errorf("release lease: %w", err)
 	}
-	fmt.Println("modeld owner stopped")
+	fmt.Printf("modeld owner stopped: instance=%s backend=%s\n", o.InstanceID(), backend)
 	return nil
 }
 
@@ -193,7 +208,16 @@ func status(leasePath string, asJSON bool) error {
 	if expired {
 		state = "expired (stale)"
 	}
-	fmt.Printf("modeld lease: instance=%s pid=%d host=%s endpoint=%s expires=%s [%s]\n",
-		rec.InstanceID, rec.PID, rec.Host, rec.Meta[owner.EndpointMetaKey], rec.ExpiresAt().Format(time.RFC3339), state)
+	expiresAt := rec.ExpiresAt()
+	fmt.Printf("modeld lease: instance=%s pid=%d host=%s endpoint=%s backend=%s expires=%s ttl_left=%s [%s]\n",
+		rec.InstanceID,
+		rec.PID,
+		rec.Host,
+		rec.Meta[owner.EndpointMetaKey],
+		rec.Meta[owner.BackendMetaKey],
+		expiresAt.Format(time.RFC3339),
+		time.Until(expiresAt).Round(time.Second),
+		state,
+	)
 	return nil
 }
