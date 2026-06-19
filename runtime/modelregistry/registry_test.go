@@ -24,7 +24,7 @@ func TestUnit_Registry_ResolveCuratedByExactName(t *testing.T) {
 	assert.Equal(t, "qwen3-8b", d.Name)
 	assert.True(t, d.Curated)
 	assert.NotEmpty(t, d.SourceURL)
-	assert.Equal(t, "qwen", d.ToolProtocol)
+	assert.Equal(t, "llama:common_chat_tool_parser", d.ToolProtocol)
 }
 
 func TestUnit_Registry_ResolveCuratedQwen3CoderGGUF(t *testing.T) {
@@ -37,7 +37,7 @@ func TestUnit_Registry_ResolveCuratedQwen3CoderGGUF(t *testing.T) {
 	assert.Equal(t, int64(18_556_689_568), d.SizeBytes)
 	assert.Contains(t, d.SourceURL, "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF")
 	assert.Empty(t, d.Repo)
-	assert.Equal(t, "qwen", d.ToolProtocol)
+	assert.Equal(t, "llama:common_chat_tool_parser", d.ToolProtocol)
 	assert.True(t, d.Curated)
 }
 
@@ -51,7 +51,20 @@ func TestUnit_Registry_ResolveCuratedQwen3CoderOpenVINO(t *testing.T) {
 	assert.Equal(t, "OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov", d.Repo)
 	assert.Equal(t, int64(16_344_057_522), d.SizeBytes)
 	assert.Equal(t, "https://huggingface.co/OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov", d.SourceURL)
-	assert.Equal(t, "qwen", d.ToolProtocol)
+	assert.Equal(t, "openvino:json_schema_tool_calls", d.ToolProtocol)
+	assert.True(t, d.Curated)
+}
+
+func TestUnit_Registry_ResolveCuratedQwen25CoderOpenVINOTiny(t *testing.T) {
+	reg := newCuratedOnly()
+	d, err := reg.Resolve(context.Background(), "qwen2.5-coder-0.5b-ov")
+	require.NoError(t, err)
+
+	assert.Equal(t, "qwen2.5-coder-0.5b-ov", d.Name)
+	assert.Equal(t, "openvino", d.BackendType())
+	assert.Equal(t, "OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov", d.Repo)
+	assert.Equal(t, int64(348_761_603), d.SizeBytes)
+	assert.Equal(t, "openvino:json_schema_tool_calls", d.ToolProtocol)
 	assert.True(t, d.Curated)
 }
 
@@ -77,6 +90,7 @@ func TestUnit_Registry_ListIncludesCurated(t *testing.T) {
 		names[e.Name] = true
 	}
 	assert.True(t, names["qwen3-8b"])
+	assert.True(t, names["qwen2.5-coder-0.5b-ov"])
 	assert.True(t, names["qwen3-coder-30b-a3b"])
 	assert.True(t, names["qwen3-coder-30b-a3b-ov"])
 	assert.True(t, names["gemma3-4b"])
@@ -117,13 +131,14 @@ func TestUnit_Registry_OptimalForOpenVINOQwen3CoderFamilyMapping(t *testing.T) {
 func TestUnit_Registry_OptimalForCurrentFamilies(t *testing.T) {
 	reg := newCuratedOnly()
 	tests := map[string]string{
-		"google/gemma-3-4b-it":            "gemma3-4b",
-		"google/gemma-3-1b-it":            "gemma3-1b",
-		"microsoft/Phi-4-mini-instruct":   "phi-4-mini",
-		"DeepSeek-R1-0528-Qwen3-8B":       "deepseek-r1-0528-qwen3-8b",
-		"bartowski/openai_gpt-oss-20b":    "gpt-oss-20b",
-		"OpenVINO/gpt-oss-20b-int4-ov":    "gpt-oss-20b-ov",
-		"OpenVINO/gemma-3-12b-it-int4-ov": "gemma3-12b-ov",
+		"google/gemma-3-4b-it":                         "gemma3-4b",
+		"google/gemma-3-1b-it":                         "gemma3-1b",
+		"microsoft/Phi-4-mini-instruct":                "phi-4-mini",
+		"DeepSeek-R1-0528-Qwen3-8B":                    "deepseek-r1-0528-qwen3-8b",
+		"bartowski/openai_gpt-oss-20b":                 "gpt-oss-20b",
+		"OpenVINO/gpt-oss-20b-int4-ov":                 "gpt-oss-20b-ov",
+		"OpenVINO/gemma-3-12b-it-int4-ov":              "gemma3-12b-ov",
+		"OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov": "qwen2.5-coder-0.5b-ov",
 	}
 	for input, want := range tests {
 		got, err := reg.OptimalFor(context.Background(), input)
@@ -159,7 +174,10 @@ func TestUnit_Registry_OpenVINOCrossSyncWithCuratedLlamaModels(t *testing.T) {
 		assert.NotEmpty(t, openvinoModel.Repo, openvinoName)
 		assert.NotEmpty(t, openvinoModel.SourceURL, openvinoName)
 		assert.True(t, openvinoModel.Curated, openvinoName)
-		assert.Equal(t, llamaModel.ToolProtocol, openvinoModel.ToolProtocol, openvinoName)
+		if openvinoModel.ToolProtocol != "" {
+			assert.Contains(t, openvinoModel.ToolProtocol, "openvino:", openvinoName)
+			assert.NotEqual(t, llamaModel.ToolProtocol, openvinoModel.ToolProtocol, openvinoName)
+		}
 	}
 }
 
@@ -181,7 +199,9 @@ func TestUnit_Registry_UserEntryKeepsCuratedBackendAndToolProtocol(t *testing.T)
 	assert.Equal(t, "https://example.com/custom-qwen3-8b.gguf", d.SourceURL)
 	assert.Equal(t, int64(5_027_783_488), d.SizeBytes)
 	assert.Equal(t, "llama", d.BackendType())
-	assert.Equal(t, "qwen", d.ToolProtocol)
+	assert.Equal(t, "llama:common_chat_tool_parser", d.ToolProtocol)
+	assert.Equal(t, "llama:common_chat_reasoning_parser", d.ReasoningProtocol)
+	assert.Equal(t, "deepseek", d.ReasoningFormat)
 	assert.False(t, d.Curated)
 
 	all, err := reg.List(context.Background())
@@ -194,7 +214,9 @@ func TestUnit_Registry_UserEntryKeepsCuratedBackendAndToolProtocol(t *testing.T)
 		}
 	}
 	require.NotNil(t, listed)
-	assert.Equal(t, "qwen", listed.ToolProtocol)
+	assert.Equal(t, "llama:common_chat_tool_parser", listed.ToolProtocol)
+	assert.Equal(t, "llama:common_chat_reasoning_parser", listed.ReasoningProtocol)
+	assert.Equal(t, "deepseek", listed.ReasoningFormat)
 	assert.Equal(t, int64(5_027_783_488), listed.SizeBytes)
 	assert.False(t, listed.Curated)
 }

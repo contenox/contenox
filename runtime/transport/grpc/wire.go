@@ -19,6 +19,7 @@ type computeServer interface {
 	health(context.Context, *healthReq) (*healthResp, error)
 	openSession(context.Context, *openSessionReq) (*openSessionResp, error)
 	describe(context.Context, *openSessionReq) (*describeResp, error)
+	embed(context.Context, *embedReq) (*embedResp, error)
 	ensurePrefix(context.Context, *ensurePrefixReq) (*transport.PrefixStatus, error)
 	prefillSuffix(context.Context, *prefillSuffixReq) (*transport.SuffixStatus, error)
 	explainContext(context.Context, *explainReq) (*transport.ContextReport, error)
@@ -76,6 +77,20 @@ type describeResp struct {
 	Devices            []transport.DeviceInfo `json:"devices,omitempty"`
 }
 
+type embedReq struct {
+	OwnerInstanceID string           `json:"owner_instance_id,omitempty"`
+	ModelName       string           `json:"model_name,omitempty"`
+	Type            string           `json:"type,omitempty"`
+	Digest          string           `json:"digest,omitempty"`
+	Path            string           `json:"path,omitempty"`
+	Config          transport.Config `json:"config"`
+	Text            string           `json:"text"`
+}
+
+type embedResp struct {
+	Vector []float32 `json:"vector,omitempty"`
+}
+
 type ensurePrefixReq struct {
 	Handle string                `json:"handle"`
 	Prefix transport.PrefixInput `json:"prefix"`
@@ -126,15 +141,17 @@ type healthResp struct {
 
 // wireChunk is the JSON-safe form of transport.StreamChunk (error -> string).
 type wireChunk struct {
-	Text  string `json:"text,omitempty"`
-	Error string `json:"error,omitempty"`
+	Text      string               `json:"text,omitempty"`
+	Thinking  string               `json:"thinking,omitempty"`
+	ToolCalls []transport.ToolCall `json:"tool_calls,omitempty"`
+	Error     string               `json:"error,omitempty"`
 }
 
 // decodeStreamDesc is the client-side stream descriptor for Decode.
 var decodeStreamDesc = grpclib.StreamDesc{StreamName: "Decode", ServerStreams: true}
 
-// serviceDesc registers the five unary methods plus the Decode server stream
-// against a *Server.
+// serviceDesc registers the unary methods plus the Decode server stream against
+// a *Server.
 var serviceDesc = grpclib.ServiceDesc{
 	ServiceName: serviceName,
 	HandlerType: (*computeServer)(nil),
@@ -159,6 +176,13 @@ var serviceDesc = grpclib.ServiceDesc{
 				return nil, err
 			}
 			return s.describe(ctx, in)
+		})},
+		{MethodName: "Embed", Handler: unaryHandler("Embed", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(embedReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.embed(ctx, in)
 		})},
 		{MethodName: "EnsurePrefix", Handler: unaryHandler("EnsurePrefix", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
 			in := new(ensurePrefixReq)

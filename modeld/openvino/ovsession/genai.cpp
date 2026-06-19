@@ -330,18 +330,23 @@ struct cx_genai_session {
     }
 };
 
+struct cx_genai_stream_chunk {
+    std::string text;
+    std::string thinking;
+};
+
 struct cx_genai_stream {
     std::mutex mu;
     std::condition_variable cv;
-    std::deque<std::string> chunks;
+    std::deque<cx_genai_stream_chunk> chunks;
     bool done = false;
     int rc = 0;
     std::string error;
 
-    void push(const std::string &chunk) {
-        if (chunk.empty()) return;
+    void push(const std::string &text, const std::string &thinking) {
+        if (text.empty() && thinking.empty()) return;
         std::lock_guard<std::mutex> lock(mu);
-        chunks.push_back(chunk);
+        chunks.push_back(cx_genai_stream_chunk{text, thinking});
         cv.notify_all();
     }
 
@@ -427,13 +432,13 @@ static std::shared_ptr<ov::genai::Parser> parser_for_protocol(const std::string 
         return std::make_shared<ov::genai::Llama3JsonToolParser>();
     }
     if (protocol == "openvino:reasoning_parser") {
-        return std::make_shared<ov::genai::ReasoningParser>();
+        return std::make_shared<ov::genai::ReasoningParser>(/*expect_open_tag=*/true, /*keep_original_content=*/false);
     }
     if (protocol == "openvino:deepseek_r1_reasoning_parser") {
-        return std::make_shared<ov::genai::DeepSeekR1ReasoningParser>();
+        return std::make_shared<ov::genai::ReasoningParser>(/*expect_open_tag=*/false, /*keep_original_content=*/false);
     }
     if (protocol == "openvino:phi4_reasoning_parser") {
-        return std::make_shared<ov::genai::Phi4ReasoningParser>();
+        return std::make_shared<ov::genai::ReasoningParser>(/*expect_open_tag=*/true, /*keep_original_content=*/false);
     }
     if (protocol == "openvino:vllm_parser_wrapper") {
         throw std::runtime_error("openvino:vllm_parser_wrapper is a Python OpenVINO GenAI binding and is not available in the native C++ session bridge");
@@ -448,13 +453,13 @@ static std::shared_ptr<ov::genai::Parser> parser_for_protocol(const std::string 
 
 static std::shared_ptr<ov::genai::IncrementalParser> incremental_parser_for_protocol(const std::string &protocol) {
     if (protocol == "openvino:reasoning_incremental_parser") {
-        return std::make_shared<ov::genai::ReasoningIncrementalParser>();
+        return std::make_shared<ov::genai::ReasoningIncrementalParser>(/*expect_open_tag=*/true, /*keep_original_content=*/false);
     }
     if (protocol == "openvino:deepseek_r1_reasoning_incremental_parser") {
-        return std::make_shared<ov::genai::DeepSeekR1ReasoningIncrementalParser>();
+        return std::make_shared<ov::genai::ReasoningIncrementalParser>(/*expect_open_tag=*/false, /*keep_original_content=*/false);
     }
     if (protocol == "openvino:phi4_reasoning_incremental_parser") {
-        return std::make_shared<ov::genai::Phi4ReasoningIncrementalParser>();
+        return std::make_shared<ov::genai::ReasoningIncrementalParser>(/*expect_open_tag=*/true, /*keep_original_content=*/false);
     }
     if (protocol == "openvino:llama3_pythonic_tool_parser" ||
         protocol == "openvino:llama3_json_tool_parser" ||
@@ -502,9 +507,6 @@ static void apply_structured_output(ov::genai::GenerationConfig &gen,
         cfg.regex = payload;
     } else if (protocol == "openvino:ebnf") {
         cfg.grammar = payload;
-    } else if (protocol == "openvino:qwen_xml_parameters") {
-        cfg.structural_tags_config = ov::genai::StructuredOutputConfig::StructuralTag{
-            ov::genai::StructuredOutputConfig::QwenXMLParametersFormat(payload)};
     } else if (protocol == "openvino:const_string") {
         cfg.structural_tags_config = ov::genai::StructuredOutputConfig::StructuralTag{
             ov::genai::StructuredOutputConfig::ConstString(payload)};
@@ -535,6 +537,14 @@ static std::string parse_generated(const std::vector<std::shared_ptr<ov::genai::
         parser->parse(message);
     }
     return message.to_json_string();
+}
+
+static std::string json_string_field(const ov::genai::JsonContainer &message, const std::string &key) {
+    if (!message.contains(key)) {
+        return std::string();
+    }
+    auto value = message[key].as_string();
+    return value.has_value() ? *value : std::string();
 }
 
 extern "C" {
@@ -810,6 +820,8 @@ void cx_genai_stream_abort(cx_genai_stream *stream, const char *message) {
 int cx_genai_stream_next(cx_genai_stream *stream,
                          char *out,
                          size_t out_len,
+                         char *thinking,
+                         size_t thinking_len,
                          char *err,
                          size_t err_len) {
     if (!stream) {
@@ -823,14 +835,19 @@ int cx_genai_stream_next(cx_genai_stream *stream,
     });
 
     if (!stream->chunks.empty()) {
-        std::string chunk = std::move(stream->chunks.front());
+        cx_genai_stream_chunk chunk = std::move(stream->chunks.front());
         stream->chunks.pop_front();
         lock.unlock();
-        if (chunk.size() + 1 > out_len) {
+        if (chunk.text.size() + 1 > out_len) {
             write_buf(err, err_len, "OpenVINO GenAI stream chunk buffer too small");
             return 2;
         }
-        write_buf(out, out_len, chunk);
+        if (chunk.thinking.size() + 1 > thinking_len) {
+            write_buf(err, err_len, "OpenVINO GenAI stream thinking buffer too small");
+            return 2;
+        }
+        write_buf(out, out_len, chunk.text);
+        write_buf(thinking, thinking_len, chunk.thinking);
         return 0;
     }
 
@@ -898,13 +915,11 @@ int cx_genai_generate_stream(cx_genai_session *s,
             
             ov::genai::StreamerVariant streamer_variant = std::function<ov::genai::StreamingStatus(std::string)>(
                 [s, stream, inc_parsers](std::string chunk) mutable {
-                    ov::genai::JsonContainer dummy_msg; // We only need the filtered chunk
+                    ov::genai::JsonContainer delta_message;
                     for (auto &parser : inc_parsers) {
-                        chunk = parser->parse(dummy_msg, chunk);
+                        chunk = parser->parse(delta_message, chunk);
                     }
-                    if (!chunk.empty()) {
-                        stream->push(chunk);
-                    }
+                    stream->push(chunk, json_string_field(delta_message, "reasoning_content"));
                     if (s->cancel_requested.load()) {
                         return ov::genai::StreamingStatus::CANCEL;
                     }

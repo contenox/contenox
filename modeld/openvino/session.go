@@ -1,7 +1,10 @@
 package openvino
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -14,6 +17,7 @@ import (
 // adapter depends on. Narrowing it to an interface keeps the warm-reuse mapping
 // testable without compiling the CGO OpenVINO GenAI backend.
 type genaiBackend interface {
+	Generate(ctx context.Context, prompt string, opts ovsession.GenerateOptions) (ovsession.GenAIResult, error)
 	Stream(ctx context.Context, prompt string, opts ovsession.GenerateOptions) (<-chan ovsession.StreamChunk, error)
 	Tokenize(ctx context.Context, prompt string, addSpecial bool) ([]int, error)
 	// ApplyChatTemplate renders role/content turns with the MODEL's own chat
@@ -64,7 +68,7 @@ func newGenaiSession(backend genaiBackend, numCtx int) *genaiSession {
 	return &genaiSession{backend: backend, numCtx: numCtx}
 }
 
-func newEmbedSession(modelPath, device string) (EmbedSessionBackend, error) {
+var newEmbedSession = func(modelPath, device string) (EmbedSessionBackend, error) {
 	return ovsession.NewEmbed(modelPath, device)
 }
 
@@ -205,17 +209,40 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 		}
 	}
 
-	src, err := backend.Stream(ctx, prompt, decodeOptions(cfg))
+	opts := decodeOptions(cfg)
+	out := make(chan transport.StreamChunk, 16)
+	if cfg.StructuredOutput.Protocol != "" || usesCompleteParser(opts.ParserProtocols) {
+		go func() {
+			defer close(out)
+			res, err := backend.Generate(ctx, prompt, opts)
+			if err != nil {
+				out <- transport.StreamChunk{Error: err}
+				return
+			}
+			chunk, err := chunkFromGenAIResult(res, cfg.StructuredOutput)
+			if err != nil {
+				out <- transport.StreamChunk{Error: err}
+				return
+			}
+			select {
+			case out <- chunk:
+			case <-ctx.Done():
+				out <- transport.StreamChunk{Error: ctx.Err()}
+			}
+		}()
+		return out, nil
+	}
+
+	src, err := backend.Stream(ctx, prompt, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make(chan transport.StreamChunk, 16)
 	go func() {
 		defer close(out)
 		for chunk := range src {
 			select {
-			case out <- transport.StreamChunk{Text: chunk.Text, Error: chunk.Error}:
+			case out <- transport.StreamChunk{Text: chunk.Text, Thinking: chunk.Thinking, Error: chunk.Error}:
 			case <-ctx.Done():
 				out <- transport.StreamChunk{Error: ctx.Err()}
 				return
@@ -223,6 +250,163 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 		}
 	}()
 	return out, nil
+}
+
+func usesCompleteParser(protocols []string) bool {
+	for _, protocol := range protocols {
+		switch protocol {
+		case "openvino:llama3_pythonic_tool_parser",
+			"openvino:llama3_json_tool_parser",
+			"openvino:reasoning_parser",
+			"openvino:deepseek_r1_reasoning_parser",
+			"openvino:phi4_reasoning_parser":
+			return true
+		}
+	}
+	return false
+}
+
+func chunkFromGenAIResult(res ovsession.GenAIResult, structured transport.StructuredOutputConfig) (transport.StreamChunk, error) {
+	chunk := transport.StreamChunk{Text: res.Text}
+	if strings.TrimSpace(res.ParsedJSON) == "" {
+		switch structured.Protocol {
+		case "":
+			return chunk, nil
+		case "openvino:json_schema_tool_calls":
+			return chunkFromStructuredToolJSON(res.Text)
+		default:
+			return transport.StreamChunk{}, fmt.Errorf("openvino: unsupported structured output result protocol %q", structured.Protocol)
+		}
+	}
+
+	var parsed struct {
+		Content         *string          `json:"content"`
+		Reasoning       *string          `json:"reasoning_content"`
+		ToolCalls       []parsedToolCall `json:"tool_calls"`
+		OpenAIToolCalls []parsedToolCall `json:"toolCalls"`
+	}
+	if err := json.Unmarshal([]byte(res.ParsedJSON), &parsed); err != nil {
+		return transport.StreamChunk{}, fmt.Errorf("openvino: parse GenAI parsed output: %w", err)
+	}
+	if parsed.Content != nil {
+		chunk.Text = *parsed.Content
+	}
+	if parsed.Reasoning != nil {
+		chunk.Thinking = *parsed.Reasoning
+	}
+	toolCalls := parsed.ToolCalls
+	if len(toolCalls) == 0 {
+		toolCalls = parsed.OpenAIToolCalls
+	}
+	calls, err := transportToolCalls(toolCalls)
+	if err != nil {
+		return transport.StreamChunk{}, err
+	}
+	chunk.ToolCalls = calls
+	return chunk, nil
+}
+
+type parsedToolCall struct {
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Name       string          `json:"name"`
+	ToolName   string          `json:"tool_name"`
+	Arguments  json.RawMessage `json:"arguments"`
+	Parameters json.RawMessage `json:"parameters"`
+	Function   struct {
+		Name       string          `json:"name"`
+		Arguments  json.RawMessage `json:"arguments"`
+		Parameters json.RawMessage `json:"parameters"`
+	} `json:"function"`
+}
+
+func transportToolCalls(in []parsedToolCall) ([]transport.ToolCall, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make([]transport.ToolCall, 0, len(in))
+	for i, tc := range in {
+		call := transport.ToolCall{ID: tc.ID, Type: tc.Type}
+		if call.ID == "" {
+			call.ID = fmt.Sprintf("call_%d", i+1)
+		}
+		if call.Type == "" {
+			call.Type = "function"
+		}
+		call.Function.Name = tc.Function.Name
+		if call.Function.Name == "" {
+			call.Function.Name = tc.Name
+		}
+		if call.Function.Name == "" {
+			call.Function.Name = tc.ToolName
+		}
+		rawArgs := tc.Function.Arguments
+		if len(rawArgs) == 0 {
+			rawArgs = tc.Function.Parameters
+		}
+		if len(rawArgs) == 0 {
+			rawArgs = tc.Arguments
+		}
+		if len(rawArgs) == 0 {
+			rawArgs = tc.Parameters
+		}
+		args, err := normalizeToolArguments(rawArgs)
+		if err != nil {
+			return nil, err
+		}
+		call.Function.Arguments = args
+		out = append(out, call)
+	}
+	return out, nil
+}
+
+func chunkFromStructuredToolJSON(text string) (transport.StreamChunk, error) {
+	raw := bytes.TrimSpace([]byte(text))
+	if len(raw) == 0 {
+		return transport.StreamChunk{}, fmt.Errorf("openvino: structured tool call output is empty")
+	}
+
+	var envelope struct {
+		Content   *string          `json:"content"`
+		ToolCalls []parsedToolCall `json:"tool_calls"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return transport.StreamChunk{}, fmt.Errorf("openvino: parse structured tool call envelope: %w", err)
+	}
+	if len(envelope.ToolCalls) == 0 {
+		return transport.StreamChunk{}, fmt.Errorf("openvino: structured tool call envelope contained no tool_calls")
+	}
+	calls, err := transportToolCalls(envelope.ToolCalls)
+	if err != nil {
+		return transport.StreamChunk{}, err
+	}
+	chunk := transport.StreamChunk{ToolCalls: calls}
+	if envelope.Content != nil {
+		chunk.Text = *envelope.Content
+	}
+	return chunk, nil
+}
+
+func normalizeToolArguments(raw json.RawMessage) (string, error) {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return "{}", nil
+	}
+	if len(raw) > 0 && raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return "", fmt.Errorf("openvino: parse tool arguments string: %w", err)
+		}
+		if strings.TrimSpace(s) == "" {
+			return "{}", nil
+		}
+		return s, nil
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err != nil {
+		return "", fmt.Errorf("openvino: compact tool arguments: %w", err)
+	}
+	return compact.String(), nil
 }
 
 func (s *genaiSession) ExplainContext() transport.ContextReport {
@@ -354,9 +538,15 @@ func chatRole(kind string) string {
 // generate options. TopK and Seed have no GenAI GenerateOptions equivalent and
 // are intentionally dropped here.
 func decodeOptions(cfg transport.DecodeConfig) ovsession.GenerateOptions {
-	opts := ovsession.GenerateOptions{MaxNewTokens: cfg.MaxTokens}
+	opts := ovsession.GenerateOptions{MaxNewTokens: cfg.MaxTokens, ParserProtocols: cfg.ParserProtocols}
 	if opts.MaxNewTokens <= 0 {
 		opts.MaxNewTokens = 256
+	}
+	if cfg.StructuredOutput.Protocol != "" {
+		opts.StructuredOutput = ovsession.StructuredOutput{
+			Protocol: openvinoStructuredProtocol(cfg.StructuredOutput.Protocol),
+			Payload:  cfg.StructuredOutput.Payload,
+		}
 	}
 	if cfg.Temperature != nil {
 		v := *cfg.Temperature
@@ -367,4 +557,13 @@ func decodeOptions(cfg transport.DecodeConfig) ovsession.GenerateOptions {
 		opts.TopP = &v
 	}
 	return opts
+}
+
+func openvinoStructuredProtocol(protocol string) string {
+	switch protocol {
+	case "openvino:json_schema_tool_calls":
+		return "openvino:json_schema"
+	default:
+		return protocol
+	}
 }

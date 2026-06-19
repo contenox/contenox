@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/contenox/runtime/runtime/contextasm"
@@ -20,6 +21,11 @@ func startServer(t *testing.T, ownerFence, expectedOwner string) *transportgrpc.
 		t.Fatalf("listen: %v", err)
 	}
 	svc := transport.NewMemoryService(transport.WithOwnerFence(ownerFence))
+	return startServerWithService(t, svc, lis, ownerFence, expectedOwner)
+}
+
+func startServerWithService(t *testing.T, svc transport.Service, lis net.Listener, ownerFence, expectedOwner string) *transportgrpc.Client {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { _ = transportgrpc.Serve(ctx, lis, svc, ownerFence, "test") }()
 
@@ -31,6 +37,88 @@ func startServer(t *testing.T, ownerFence, expectedOwner string) *transportgrpc.
 	return client
 }
 
+type embeddingService struct {
+	*transport.MemoryService
+
+	mu   sync.Mutex
+	last transport.EmbedRequest
+}
+
+func (s *embeddingService) Embed(ctx context.Context, req transport.EmbedRequest) (transport.EmbedResult, error) {
+	if _, err := s.MemoryService.Embed(ctx, req); errors.Is(err, transport.ErrStaleFence) {
+		return transport.EmbedResult{}, err
+	}
+	s.mu.Lock()
+	s.last = req
+	s.mu.Unlock()
+	return transport.EmbedResult{Vector: []float32{1, 2.5, -3}}, nil
+}
+
+func (s *embeddingService) lastRequest() transport.EmbedRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.last
+}
+
+type decodeRecordingService struct {
+	*transport.MemoryService
+	sess *decodeRecordingSession
+}
+
+func (s *decodeRecordingService) OpenSession(context.Context, transport.OpenSessionRequest) (transport.Session, error) {
+	return s.sess, nil
+}
+
+type decodeRecordingSession struct {
+	mu     sync.Mutex
+	config transport.DecodeConfig
+}
+
+func transportToolCall(id, name, arguments string) transport.ToolCall {
+	var tc transport.ToolCall
+	tc.ID = id
+	tc.Type = "function"
+	tc.Function.Name = name
+	tc.Function.Arguments = arguments
+	return tc
+}
+
+func (s *decodeRecordingSession) EnsurePrefix(context.Context, transport.PrefixInput) (transport.PrefixStatus, error) {
+	return transport.PrefixStatus{}, nil
+}
+
+func (s *decodeRecordingSession) PrefillSuffix(context.Context, transport.SuffixInput) (transport.SuffixStatus, error) {
+	return transport.SuffixStatus{}, nil
+}
+
+func (s *decodeRecordingSession) Decode(_ context.Context, cfg transport.DecodeConfig) (<-chan transport.StreamChunk, error) {
+	s.mu.Lock()
+	s.config = cfg
+	s.mu.Unlock()
+	ch := make(chan transport.StreamChunk, 2)
+	ch <- transport.StreamChunk{Thinking: "think"}
+	ch <- transport.StreamChunk{Text: "answer", ToolCalls: []transport.ToolCall{transportToolCall("call_1", "lookup", `{"q":"x"}`)}}
+	close(ch)
+	return ch, nil
+}
+
+func (s *decodeRecordingSession) ExplainContext() transport.ContextReport {
+	return transport.ContextReport{}
+}
+func (s *decodeRecordingSession) Snapshot(context.Context) (transport.SessionSnapshot, error) {
+	return transport.SessionSnapshot{}, nil
+}
+func (s *decodeRecordingSession) Restore(context.Context, transport.SessionSnapshot) error {
+	return nil
+}
+func (s *decodeRecordingSession) Close() error { return nil }
+
+func (s *decodeRecordingSession) lastConfig() transport.DecodeConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.config
+}
+
 func manifest(stable string) contextasm.ContextManifest {
 	return contextasm.ContextManifest{
 		Backend:              "mem",
@@ -39,6 +127,63 @@ func manifest(stable string) contextasm.ContextManifest {
 		PromptTemplateDigest: "t1",
 		RuntimeDigest:        "r1",
 		StableByteHash:       contextasm.HashString(stable),
+	}
+}
+
+func TestDecodeMetadataRoundTripOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	rec := &decodeRecordingSession{}
+	svc := &decodeRecordingService{
+		MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		sess:          rec,
+	}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+	sess, err := client.OpenSession(context.Background(), transport.OpenSessionRequest{
+		Fence: transport.Fence{OwnerInstanceID: "owner-1"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+
+	ch, err := sess.Decode(context.Background(), transport.DecodeConfig{
+		MaxTokens:       4,
+		ParserProtocols: []string{"openvino:deepseek_r1_reasoning_incremental_parser"},
+		ReasoningFormat: "deepseek",
+		StructuredOutput: transport.StructuredOutputConfig{
+			Protocol: "openvino:json_schema_tool_calls",
+			Payload:  `{"type":"object"}`,
+			ToolName: "echo.echo",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	var text, thinking string
+	var calls []transport.ToolCall
+	for chunk := range ch {
+		if chunk.Error != nil {
+			t.Fatalf("decode chunk error: %v", chunk.Error)
+		}
+		text += chunk.Text
+		thinking += chunk.Thinking
+		calls = append(calls, chunk.ToolCalls...)
+	}
+	if text != "answer" || thinking != "think" {
+		t.Fatalf("stream text/thinking = %q/%q", text, thinking)
+	}
+	if len(calls) != 1 || calls[0].ID != "call_1" || calls[0].Function.Name != "lookup" || calls[0].Function.Arguments != `{"q":"x"}` {
+		t.Fatalf("stream tool calls = %+v", calls)
+	}
+	cfg := rec.lastConfig()
+	if cfg.MaxTokens != 4 || len(cfg.ParserProtocols) != 1 || cfg.ParserProtocols[0] != "openvino:deepseek_r1_reasoning_incremental_parser" ||
+		cfg.ReasoningFormat != "deepseek" ||
+		cfg.StructuredOutput.Protocol != "openvino:json_schema_tool_calls" ||
+		cfg.StructuredOutput.Payload != `{"type":"object"}` ||
+		cfg.StructuredOutput.ToolName != "echo.echo" {
+		t.Fatalf("decode config over wire = %+v", cfg)
 	}
 }
 
@@ -143,5 +288,36 @@ func TestContextOverflowSentinelOverWire(t *testing.T) {
 	_, err = sess.EnsurePrefix(ctx, transport.PrefixInput{Text: "too many tokens", Manifest: manifest("too many tokens")})
 	if !errors.Is(err, transport.ErrContextOverflow) {
 		t.Fatalf("EnsurePrefix overflow = %v, want ErrContextOverflow", err)
+	}
+}
+
+func TestEmbedRoundTripOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := &embeddingService{MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1"))}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+
+	res, err := client.Embed(context.Background(), transport.EmbedRequest{
+		Fence:     transport.Fence{OwnerInstanceID: "owner-1"},
+		ModelName: "embedder",
+		Type:      "openvino",
+		Digest:    "sha256:test",
+		Path:      "/models/embedder",
+		Text:      "query text",
+	})
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(res.Vector) != 3 || res.Vector[0] != 1 || res.Vector[1] != 2.5 || res.Vector[2] != -3 {
+		t.Fatalf("Embed vector = %+v", res.Vector)
+	}
+	req := svc.lastRequest()
+	if req.ModelName != "embedder" || req.Type != "openvino" || req.Digest != "sha256:test" || req.Path != "/models/embedder" {
+		t.Fatalf("Embed request identity = %+v", req)
+	}
+	if req.Text != "query text" {
+		t.Fatalf("Embed text = %q", req.Text)
 	}
 }

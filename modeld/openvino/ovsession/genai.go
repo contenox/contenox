@@ -101,8 +101,9 @@ type GenAIResult struct {
 
 // StreamChunk carries a decoded text delta or a terminal stream error.
 type StreamChunk struct {
-	Text  string
-	Error error
+	Text     string
+	Thinking string
+	Error    error
 }
 
 // GenAISession wraps a single ContinuousBatchingPipeline.
@@ -438,6 +439,14 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 		}
 		defer C.free(out)
 
+		thinking := C.calloc(1, C.size_t(genAIOutLen))
+		if thinking == nil {
+			ch <- StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream thinking buffer")}
+			C.cx_genai_session_cancel(ptr)
+			return
+		}
+		defer C.free(thinking)
+
 		errbuf := C.calloc(1, C.size_t(genAIErrLen))
 		if errbuf == nil {
 			ch <- StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream error buffer")}
@@ -451,17 +460,20 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 				stream,
 				(*C.char)(out),
 				C.size_t(genAIOutLen),
+				(*C.char)(thinking),
+				C.size_t(genAIOutLen),
 				(*C.char)(errbuf),
 				C.size_t(genAIErrLen),
 			)
 			switch rc {
 			case 0:
 				text := C.GoString((*C.char)(out))
-				if text == "" {
+				thinkingText := C.GoString((*C.char)(thinking))
+				if text == "" && thinkingText == "" {
 					continue
 				}
 				select {
-				case ch <- StreamChunk{Text: text}:
+				case ch <- StreamChunk{Text: text, Thinking: thinkingText}:
 				case <-ctx.Done():
 					C.cx_genai_session_cancel(ptr)
 				}

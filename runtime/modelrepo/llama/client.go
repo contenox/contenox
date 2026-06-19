@@ -9,6 +9,7 @@ import (
 
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
+	"github.com/contenox/runtime/runtime/reasoning"
 )
 
 // warm holds resident sessions across turns. It is bounded (idle TTL + resident
@@ -43,8 +44,8 @@ func sessionCacheKey(ref modeldconn.ModelRef, cfg Config) string {
 		}
 		b.WriteString(strconv.FormatFloat(float64(v), 'g', -1, 32))
 	}
-	fmt.Fprintf(&b, "\x00prompt=%s\x00template=%s\x00bos=%t",
-		cfg.PromptFormat, cfg.PromptTemplateDigest, !cfg.DisableBOS)
+	fmt.Fprintf(&b, "\x00prompt=%s\x00template=%s\x00bos=%t\x00reasoning=%s",
+		cfg.PromptFormat, cfg.PromptTemplateDigest, !cfg.DisableBOS, cfg.ReasoningFormat)
 	return b.String()
 }
 
@@ -52,14 +53,15 @@ func sessionCacheKey(ref modeldconn.ModelRef, cfg Config) string {
 func closeCachedSessionsForTest() { warm.Clear() }
 
 type client struct {
-	modelName       string
-	modelPath       string
-	profileID       string
-	modelDigest     string
-	backendVersion  string
-	cfg             Config
-	maxOutputTokens int
-	toolProtocol    string // profile-declared tool-call protocol ("" = tools unsupported)
+	modelName         string
+	modelPath         string
+	profileID         string
+	modelDigest       string
+	backendVersion    string
+	cfg               Config
+	maxOutputTokens   int
+	toolProtocol      string // profile-declared tool-call protocol ("" = tools unsupported)
+	reasoningProtocol string // profile-declared reasoning parser ("" = no reasoning parser)
 }
 
 // ref is the typed model handle this client opens sessions with: logical name +
@@ -72,40 +74,42 @@ func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ..
 	cfg := applyChatArgs(args)
 
 	var toolsJSON string
-	var parser toolCallParser
+	parseToolCalls := false
 	if len(cfg.Tools) > 0 {
-		// Tools require a profile-declared parser protocol: the daemon renders the
-		// tool definitions via the model's own GGUF chat template (model-native),
-		// and the declared protocol parses the model's tool-call output. No protocol
-		// means no guessing — tool calls are unsupported for this model.
-		p, err := toolCallParserFor(c.toolProtocol)
-		if err != nil {
-			return modelrepo.ChatResult{}, err
-		}
-		if p == nil {
+		// Tools require a profile-declared tool protocol: the daemon renders tool
+		// definitions and parses tool-call output via llama.cpp's model-native
+		// common chat path. No protocol means no guessing.
+		if c.toolProtocol == "" {
 			return modelrepo.ChatResult{}, NewUnsupportedFeatureError("tool calls (model declares no tool_calls.protocol)")
 		}
-		parser = p
+		if !toolCallProtocolKnown(c.toolProtocol) {
+			return modelrepo.ChatResult{}, fmt.Errorf("%w: tool protocol %q", ErrUnsupportedFeature, c.toolProtocol)
+		}
+		parseToolCalls = true
+		var err error
 		if toolsJSON, err = serializeToolDefs(cfg.Tools); err != nil {
 			return modelrepo.ChatResult{}, err
 		}
 	}
 
-	text, err := c.generate(ctx, messages, decodeConfig(cfg, c.maxOutputTokens), toolsJSON)
+	dc, showThinking, enableThinking, err := c.decodeOptions(cfg)
+	if err != nil {
+		return modelrepo.ChatResult{}, err
+	}
+	if parseToolCalls {
+		dc.ParserProtocols = append(dc.ParserProtocols, toolParserProtocolCommonChat)
+	}
+	text, thinking, toolCalls, err := c.generate(ctx, messages, dc, toolsJSON, enableThinking, showThinking)
 	if err != nil {
 		return modelrepo.ChatResult{}, err
 	}
 
 	msg := modelrepo.Message{Role: "assistant", Content: text}
-	if parser != nil {
-		calls, content, perr := parser(text)
-		if perr != nil {
-			return modelrepo.ChatResult{}, perr
-		}
-		msg.Content = content
-		msg.ToolCalls = calls
+	if showThinking {
+		msg.Thinking = thinking
 	}
-	return modelrepo.ChatResult{Message: msg}, nil
+	msg.ToolCalls = toolCalls
+	return modelrepo.ChatResult{Message: msg, ToolCalls: toolCalls}, nil
 }
 
 func (c *client) Prompt(ctx context.Context, systemInstruction string, temperature float32, prompt string) (string, error) {
@@ -115,7 +119,12 @@ func (c *client) Prompt(ctx context.Context, systemInstruction string, temperatu
 	}
 	messages = append(messages, modelrepo.Message{Role: "user", Content: prompt})
 	temp := float64(temperature)
-	return c.generate(ctx, messages, decodeConfig(&modelrepo.ChatConfig{Temperature: &temp}, c.maxOutputTokens), "")
+	dc, _, enableThinking, err := c.decodeOptions(&modelrepo.ChatConfig{Temperature: &temp})
+	if err != nil {
+		return "", err
+	}
+	text, _, _, err := c.generate(ctx, messages, dc, "", enableThinking, false)
+	return text, err
 }
 
 func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
@@ -123,20 +132,24 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	if len(cfg.Tools) > 0 {
 		return nil, NewUnsupportedFeatureError("tool calls")
 	}
+	dc, showThinking, enableThinking, err := c.decodeOptions(cfg)
+	if err != nil {
+		return nil, err
+	}
 	cs, err := c.acquire()
 	if err != nil {
 		return nil, err
 	}
 
 	cs.Turn.Lock()
-	if err := c.prime(ctx, cs, messages, ""); err != nil {
+	if err := c.prime(ctx, cs, messages, "", enableThinking); err != nil {
 		cs.Turn.Unlock()
 		if fatalSessionError(err) {
 			warm.Drop(cs)
 		}
 		return nil, err
 	}
-	chunks, err := cs.Sess.Decode(ctx, decodeConfig(cfg, c.maxOutputTokens))
+	chunks, err := cs.Sess.Decode(ctx, dc)
 	if err != nil {
 		cs.Turn.Unlock()
 		if fatalSessionError(err) {
@@ -160,45 +173,66 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 			if chunk.Text != "" {
 				out <- &modelrepo.StreamParcel{Data: chunk.Text}
 			}
+			if showThinking && chunk.Thinking != "" {
+				out <- &modelrepo.StreamParcel{Thinking: chunk.Thinking}
+			}
 		}
 	}()
 	return out, nil
 }
 
-func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string) (string, error) {
+func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string, enableThinking *bool, showThinking bool) (string, string, []modelrepo.ToolCall, error) {
 	cs, err := c.acquire()
 	if err != nil {
-		return "", err
+		return "", "", nil, err
 	}
 	cs.Turn.Lock()
 	defer cs.Turn.Unlock()
 
-	if err := c.prime(ctx, cs, messages, toolsJSON); err != nil {
+	if err := c.prime(ctx, cs, messages, toolsJSON, enableThinking); err != nil {
 		if fatalSessionError(err) {
 			warm.Drop(cs)
 		}
-		return "", err
+		return "", "", nil, err
 	}
 	chunks, err := cs.Sess.Decode(ctx, dc)
 	if err != nil {
-		return "", err
+		return "", "", nil, err
 	}
 	var b strings.Builder
+	var thinking strings.Builder
+	var toolCalls []modelrepo.ToolCall
 	for chunk := range chunks {
 		if chunk.Error != nil {
 			if fatalSessionError(chunk.Error) {
 				warm.Drop(cs)
 			}
-			return "", chunk.Error
+			return "", "", nil, chunk.Error
 		}
 		b.WriteString(chunk.Text)
+		if showThinking {
+			thinking.WriteString(chunk.Thinking)
+		}
+		toolCalls = appendToolCalls(toolCalls, chunk.ToolCalls)
 	}
-	return strings.TrimSpace(b.String()), nil
+	return strings.TrimSpace(b.String()), thinking.String(), toolCalls, nil
+}
+
+func appendToolCalls(dst []modelrepo.ToolCall, src []ToolCall) []modelrepo.ToolCall {
+	for _, in := range src {
+		var out modelrepo.ToolCall
+		out.ID = in.ID
+		out.Type = in.Type
+		out.Function.Name = in.Function.Name
+		out.Function.Arguments = in.Function.Arguments
+		dst = append(dst, out)
+	}
+	return dst
 }
 
 // prime ensures the warm stable prefix and prefills the volatile suffix. Caller
 // holds cs.Turn.
-func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string) error {
+func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string, enableThinking *bool) error {
 	plan, err := buildPromptPlan(messages, c.cfg, promptIdentity{
 		ProfileID:      c.profileID,
 		ModelDigest:    c.modelDigest,
@@ -210,6 +244,7 @@ func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], me
 	if _, err := cs.Sess.EnsurePrefix(ctx, plan.Stable); err != nil {
 		return err
 	}
+	plan.Volatile.EnableThinking = enableThinking
 	_, err = cs.Sess.PrefillSuffix(ctx, plan.Volatile)
 	return err
 }
@@ -241,6 +276,35 @@ func decodeConfig(cfg *modelrepo.ChatConfig, maxOutputTokens int) DecodeConfig {
 		dc.Seed = &v
 	}
 	return dc
+}
+
+func (c *client) decodeOptions(cfg *modelrepo.ChatConfig) (DecodeConfig, bool, *bool, error) {
+	dc := decodeConfig(cfg, c.maxOutputTokens)
+	if err := validateReasoningProtocol(c.reasoningProtocol); err != nil {
+		return DecodeConfig{}, false, nil, err
+	}
+	if c.reasoningProtocol == "" {
+		return dc, false, nil, nil
+	}
+	if c.cfg.ReasoningFormat == "" {
+		return DecodeConfig{}, false, nil, fmt.Errorf("%w: reasoning format is required when reasoning protocol %q is set", ErrUnsupportedFeature, c.reasoningProtocol)
+	}
+	dc.ParserProtocols = append(dc.ParserProtocols, c.reasoningProtocol)
+	dc.ReasoningFormat = c.cfg.ReasoningFormat
+	showThinking := false
+	var enableThinking *bool
+	if cfg != nil && cfg.Think != nil {
+		level, ok, err := reasoning.NormalizeOptional(*cfg.Think)
+		if err != nil {
+			return DecodeConfig{}, false, nil, err
+		}
+		if ok && level != reasoning.Auto {
+			v := level != reasoning.Off
+			enableThinking = &v
+		}
+		showThinking = ok && level != reasoning.Off && level != reasoning.Auto
+	}
+	return dc, showThinking, enableThinking, nil
 }
 
 func fatalSessionError(err error) bool {

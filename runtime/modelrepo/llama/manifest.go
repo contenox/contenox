@@ -29,6 +29,7 @@ func runtimeDigest(cfg Config) string {
 		TensorSplit  []float32 `json:"tensor_split,omitempty"`
 		FlashAttn    bool      `json:"flash_attention"`
 		KVCacheType  string    `json:"kv_cache_type,omitempty"`
+		Reasoning    string    `json:"reasoning,omitempty"`
 	}
 	b, _ := json.Marshal(runtimeIdentity{
 		NumCtx:       cfg.NumCtx,
@@ -38,6 +39,7 @@ func runtimeDigest(cfg Config) string {
 		TensorSplit:  cfg.TensorSplit,
 		FlashAttn:    cfg.FlashAttn,
 		KVCacheType:  cfg.KVCacheType,
+		Reasoning:    cfg.ReasoningFormat,
 	})
 	return hashBytes(b)
 }

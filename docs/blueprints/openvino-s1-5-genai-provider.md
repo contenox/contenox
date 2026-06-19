@@ -218,18 +218,16 @@ Done:
 - native cancellation hook using GenAI `StreamingStatus::CANCEL`, with Go
   context cancellation mapped back to `context.Canceled` / deadline errors;
 - shared GenAI session pooling across prompt/chat/stream provider connections;
+- profile-gated embeddings over modeld transport via OpenVINO GenAI
+  `TextEmbeddingPipeline` (`can_embed` in `contenox-openvino.json`);
 - repeatable make target.
 
 Still not done:
 
-- embeddings. GenAI exposes `TextEmbeddingPipeline`, but it should be wired only
-  for model profiles that declare an embedding model, not for every LLM IR dir;
-- structured tool-call parsing. **Superseded by S2.7:** the provider now uses
-  strict model/profile-declared parser protocols and rejects raw regex fallback;
-- a deterministic in-flight cancellation system test. The native cancel hook is
-  implemented, but the committed test currently covers pre-canceled contexts;
-- idle-pool eviction policy. The pool keeps sessions warm until explicit test
-  cleanup or process exit.
+- C++ native support for Python-only parser objects such as `VLLMParserWrapper`
+  remains unresolved; native parser protocols are wired through S2.7;
+- per-model shipped `contenox-openvino.json` profiles still need to declare the
+  correct tool/reasoning protocols and embedding/chat capabilities.
 
 Current broader follow-up after S2/S2.5/S2.7: move the segment assembler into
 shared `contextasm`, add token/profile-stable cache manifests, implement semantic
@@ -259,6 +257,10 @@ Profile format:
 {
   "context_length": 65536,
   "max_output_tokens": 512,
+  "can_chat": true,
+  "can_prompt": true,
+  "can_stream": true,
+  "can_embed": false,
   "can_think": true,
   "device": "CPU",
   "genai": {

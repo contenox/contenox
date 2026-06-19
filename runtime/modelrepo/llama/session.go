@@ -36,6 +36,7 @@ type Config struct {
 	PromptFormat         string // profile-declared prompt format, e.g. "chatml" or "llama3"
 	PromptTemplateDigest string // digest of the declared/rendered prompt template
 	DisableBOS           bool   // false means tokenize the stable prefix with backend BOS handling
+	ReasoningFormat      string // llama.cpp common-chat reasoning format, e.g. "deepseek"
 }
 
 // PrefixInput is the stable prefix text plus the profile/runtime manifest that
@@ -55,6 +56,10 @@ type PrefixInput struct {
 type SuffixInput struct {
 	Text     string
 	Manifest ContextManifest
+	// EnableThinking controls model-owned chat-template rendering for the
+	// assistant generation prompt when modeld supports it. nil means backend
+	// default.
+	EnableThinking *bool `json:",omitempty"`
 }
 
 // PrefixStatus reports what EnsurePrefix reused versus had to (re)compute. This
@@ -83,17 +88,23 @@ type SuffixStatus struct {
 
 // DecodeConfig controls a single decode pass.
 type DecodeConfig struct {
-	MaxTokens   int
-	Temperature *float64
-	TopP        *float64
-	TopK        int
-	Seed        *int
+	MaxTokens       int
+	Temperature     *float64
+	TopP            *float64
+	TopK            int
+	Seed            *int
+	ParserProtocols []string
+	ReasoningFormat string
 }
 
-// StreamChunk is a decoded text delta or a terminal error.
+type ToolCall = transport.ToolCall
+
+// StreamChunk is a decoded text delta, parsed model output, or a terminal error.
 type StreamChunk struct {
-	Text  string
-	Error error
+	Text      string
+	Thinking  string
+	ToolCalls []ToolCall
+	Error     error
 }
 
 // ContextReport explains the session's resident context (explain-context).
@@ -195,7 +206,7 @@ func (r remoteSession) PrefillSuffix(ctx context.Context, s SuffixInput) (Suffix
 }
 
 func (r remoteSession) Decode(ctx context.Context, cfg DecodeConfig) (<-chan StreamChunk, error) {
-	src, err := r.s.Decode(ctx, transport.DecodeConfig(cfg))
+	src, err := r.s.Decode(ctx, transportDecodeConfig(cfg))
 	if err != nil {
 		return nil, mapSessionErr(err)
 	}
@@ -203,10 +214,22 @@ func (r remoteSession) Decode(ctx context.Context, cfg DecodeConfig) (<-chan Str
 	go func() {
 		defer close(out)
 		for c := range src {
-			out <- StreamChunk{Text: c.Text, Error: mapSessionErr(c.Error)}
+			out <- StreamChunk{Text: c.Text, Thinking: c.Thinking, ToolCalls: c.ToolCalls, Error: mapSessionErr(c.Error)}
 		}
 	}()
 	return out, nil
+}
+
+func transportDecodeConfig(cfg DecodeConfig) transport.DecodeConfig {
+	return transport.DecodeConfig{
+		MaxTokens:       cfg.MaxTokens,
+		Temperature:     cfg.Temperature,
+		TopP:            cfg.TopP,
+		TopK:            cfg.TopK,
+		Seed:            cfg.Seed,
+		ParserProtocols: append([]string(nil), cfg.ParserProtocols...),
+		ReasoningFormat: cfg.ReasoningFormat,
+	}
 }
 
 func (r remoteSession) ExplainContext() ContextReport { return ContextReport(r.s.ExplainContext()) }

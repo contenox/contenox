@@ -22,6 +22,7 @@ var sentinels = []struct {
 	{"not_owner", codes.FailedPrecondition, transport.ErrNotOwner},
 	{"session_closed", codes.FailedPrecondition, transport.ErrSessionClosed},
 	{"context_overflow", codes.ResourceExhausted, transport.ErrContextOverflow},
+	{"unsupported_feature", codes.Unimplemented, transport.ErrUnsupportedFeature},
 	{"manifest_mismatch", codes.FailedPrecondition, contextasm.ErrManifestMismatch},
 }
 

@@ -8,7 +8,6 @@ import (
 	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
-	"github.com/contenox/runtime/runtime/modelrepo/toolcalls"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
@@ -32,15 +31,18 @@ func (p *openvinoProvider) GetID() string           { return "openvino:" + p.nam
 func (p *openvinoProvider) GetType() string         { return "openvino" }
 func (p *openvinoProvider) GetContextLength() int   { return p.caps.ContextLength }
 func (p *openvinoProvider) GetMaxOutputTokens() int { return p.caps.MaxOutputTokens }
-func (p *openvinoProvider) CanChat() bool           { return SessionAvailable() }
-func (p *openvinoProvider) CanEmbed() bool          { return false }
-func (p *openvinoProvider) CanStream() bool         { return SessionAvailable() }
-func (p *openvinoProvider) CanPrompt() bool         { return SessionAvailable() }
+func (p *openvinoProvider) CanChat() bool           { return p.caps.CanChat && SessionAvailable() }
+func (p *openvinoProvider) CanEmbed() bool          { return p.caps.CanEmbed && SessionAvailable() }
+func (p *openvinoProvider) CanStream() bool         { return p.caps.CanStream && SessionAvailable() }
+func (p *openvinoProvider) CanPrompt() bool         { return p.caps.CanPrompt && SessionAvailable() }
 func (p *openvinoProvider) CanThink() bool          { return p.caps.CanThink }
 
 func (p *openvinoProvider) GetChatConnection(ctx context.Context, _ string) (modelrepo.LLMChatClient, error) {
 	if !SessionAvailable() {
 		return nil, p.notWired("chat")
+	}
+	if !p.caps.CanChat {
+		return nil, NewUnsupportedFeatureError("chat")
 	}
 	return p.newClient(ctx)
 }
@@ -49,6 +51,9 @@ func (p *openvinoProvider) GetStreamConnection(ctx context.Context, _ string) (m
 	if !SessionAvailable() {
 		return nil, p.notWired("stream")
 	}
+	if !p.caps.CanStream {
+		return nil, NewUnsupportedFeatureError("stream")
+	}
 	return p.newClient(ctx)
 }
 
@@ -56,11 +61,20 @@ func (p *openvinoProvider) GetPromptConnection(ctx context.Context, _ string) (m
 	if !SessionAvailable() {
 		return nil, p.notWired("prompt")
 	}
+	if !p.caps.CanPrompt {
+		return nil, NewUnsupportedFeatureError("prompt")
+	}
 	return p.newClient(ctx)
 }
 
 func (p *openvinoProvider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LLMEmbedClient, error) {
-	return nil, NewUnsupportedFeatureError("embed client (not implemented over transport)")
+	if !SessionAvailable() {
+		return nil, p.notWired("embed")
+	}
+	if !p.caps.CanEmbed {
+		return nil, NewUnsupportedFeatureError("embed")
+	}
+	return p.newEmbedClient()
 }
 
 func (p *openvinoProvider) notWired(kind string) error {
@@ -76,6 +90,7 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	if profile.ToolCalls.Protocol == "" {
 		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, p.name, "openvino")
 	}
+	reasoningParser, reasoningStream := profile.Reasoning.protocols()
 	caps := profile.capabilityConfig()
 	numCtx := p.caps.ContextLength
 	if numCtx == 0 {
@@ -116,6 +131,8 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		modelDigest:     modelDigest,
 		backendVersion:  backendID,
 		toolProtocol:    profile.ToolCalls.Protocol,
+		reasoningParser: reasoningParser,
+		reasoningStream: reasoningStream,
 		cfg:             cfg,
 		maxOutputTokens: maxOut,
 	}, nil
@@ -126,7 +143,7 @@ func curatedToolProtocol(ctx context.Context, modelName, backendType string) str
 	if err != nil || d.BackendType() != backendType {
 		return ""
 	}
-	if d.ToolProtocol == "" || !toolcalls.ProtocolKnown(d.ToolProtocol) {
+	if d.ToolProtocol == "" || !toolCallProtocolKnown(d.ToolProtocol) {
 		return ""
 	}
 	return d.ToolProtocol
@@ -134,9 +151,14 @@ func curatedToolProtocol(ctx context.Context, modelName, backendType string) str
 
 func (p *openvinoProvider) newEmbedClient() (*embedClient, error) {
 	dir := filepath.Join(p.modelDir, p.name)
+	if _, err := loadModelProfile(dir); err != nil {
+		return nil, err
+	}
+	modelDigest, _ := modelIdentity(dir)
 	return &embedClient{
-		modelPath: dir,
-		device:    "CPU", // For embeddings, default to CPU for now
+		modelName:   p.name,
+		modelPath:   dir,
+		modelDigest: modelDigest,
 	}, nil
 }
 

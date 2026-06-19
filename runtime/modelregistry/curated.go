@@ -1,41 +1,56 @@
 package modelregistry
 
+const (
+	toolProtocolLlamaCommonChat             = "llama:common_chat_tool_parser"
+	toolProtocolOpenVINOJSONSchemaToolCalls = "openvino:json_schema_tool_calls"
+	reasoningProtocolLlamaCommonChat        = "llama:common_chat_reasoning_parser"
+	reasoningFormatDeepSeek                 = "deepseek"
+)
+
 var curatedModels = map[string]ModelDescriptor{
 	// ── Qwen 3 ───────────────────────────────────────────────────────────────
 	"qwen3-4b": {
-		Name:         "qwen3-4b",
-		SourceURL:    "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
-		SizeBytes:    2_497_280_256,
-		Curated:      true,
-		ToolProtocol: "qwen",
+		Name:              "qwen3-4b",
+		SourceURL:         "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
+		SizeBytes:         2_497_280_256,
+		Curated:           true,
+		ToolProtocol:      toolProtocolLlamaCommonChat,
+		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
+		ReasoningFormat:   reasoningFormatDeepSeek,
 	},
 	"qwen3-8b": {
-		Name:         "qwen3-8b",
-		SourceURL:    "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
-		SizeBytes:    5_027_783_488,
-		Curated:      true,
-		ToolProtocol: "qwen",
+		Name:              "qwen3-8b",
+		SourceURL:         "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
+		SizeBytes:         5_027_783_488,
+		Curated:           true,
+		ToolProtocol:      toolProtocolLlamaCommonChat,
+		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
+		ReasoningFormat:   reasoningFormatDeepSeek,
 	},
 	"qwen3-14b": {
-		Name:         "qwen3-14b",
-		SourceURL:    "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
-		SizeBytes:    9_001_752_960,
-		Curated:      true,
-		ToolProtocol: "qwen",
+		Name:              "qwen3-14b",
+		SourceURL:         "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
+		SizeBytes:         9_001_752_960,
+		Curated:           true,
+		ToolProtocol:      toolProtocolLlamaCommonChat,
+		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
+		ReasoningFormat:   reasoningFormatDeepSeek,
 	},
 	"qwen3-30b": {
-		Name:         "qwen3-30b",
-		SourceURL:    "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf",
-		SizeBytes:    18_556_685_824,
-		Curated:      true,
-		ToolProtocol: "qwen",
+		Name:              "qwen3-30b",
+		SourceURL:         "https://huggingface.co/Qwen/Qwen3-30B-A3B-GGUF/resolve/main/Qwen3-30B-A3B-Q4_K_M.gguf",
+		SizeBytes:         18_556_685_824,
+		Curated:           true,
+		ToolProtocol:      toolProtocolLlamaCommonChat,
+		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
+		ReasoningFormat:   reasoningFormatDeepSeek,
 	},
 	"qwen3-coder-30b-a3b": {
 		Name:         "qwen3-coder-30b-a3b",
 		SourceURL:    "https://huggingface.co/unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/resolve/main/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
 		SizeBytes:    18_556_689_568,
 		Curated:      true,
-		ToolProtocol: "qwen",
+		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
 	// ── Llama ────────────────────────────────────────────────────────────────
 	"llama3.2-1b": {
@@ -84,18 +99,22 @@ var curatedModels = map[string]ModelDescriptor{
 	},
 	// ── DeepSeek ──────────────────────────────────────────────────────────────
 	"deepseek-r1-0528-qwen3-8b": {
-		Name:         "deepseek-r1-0528-qwen3-8b",
-		SourceURL:    "https://huggingface.co/bartowski/deepseek-ai_DeepSeek-R1-0528-Qwen3-8B-GGUF/resolve/main/deepseek-ai_DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf",
-		SizeBytes:    5_027_783_040,
-		Curated:      true,
-		ToolProtocol: "qwen",
+		Name:              "deepseek-r1-0528-qwen3-8b",
+		SourceURL:         "https://huggingface.co/bartowski/deepseek-ai_DeepSeek-R1-0528-Qwen3-8B-GGUF/resolve/main/deepseek-ai_DeepSeek-R1-0528-Qwen3-8B-Q4_K_M.gguf",
+		SizeBytes:         5_027_783_040,
+		Curated:           true,
+		ToolProtocol:      toolProtocolLlamaCommonChat,
+		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
+		ReasoningFormat:   reasoningFormatDeepSeek,
 	},
 	"deepseek-r1-distill-qwen-7b": {
-		Name:         "deepseek-r1-distill-qwen-7b",
-		SourceURL:    "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
-		SizeBytes:    4_683_073_504,
-		Curated:      true,
-		ToolProtocol: "qwen",
+		Name:              "deepseek-r1-distill-qwen-7b",
+		SourceURL:         "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
+		SizeBytes:         4_683_073_504,
+		Curated:           true,
+		ToolProtocol:      toolProtocolLlamaCommonChat,
+		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
+		ReasoningFormat:   reasoningFormatDeepSeek,
 	},
 	"deepseek-coder-v2-lite": {
 		Name:      "deepseek-coder-v2-lite",
@@ -132,14 +151,34 @@ var curatedModels = map[string]ModelDescriptor{
 	},
 	// ── Tiny (testing) ───────────────────────────────────────────────────────
 	"tiny": {
-		Name:      "tiny",
-		SourceURL: "https://huggingface.co/Hjgugugjhuhjggg/FastThink-0.5B-Tiny-Q2_K-GGUF/resolve/main/fastthink-0.5b-tiny-q2_k.gguf",
-		SizeBytes: 200_000_000,
-		Curated:   true,
+		Name:              "tiny",
+		SourceURL:         "https://huggingface.co/Hjgugugjhuhjggg/FastThink-0.5B-Tiny-Q2_K-GGUF/resolve/main/fastthink-0.5b-tiny-q2_k.gguf",
+		SizeBytes:         200_000_000,
+		Curated:           true,
+		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
+		ReasoningFormat:   reasoningFormatDeepSeek,
 	},
 
 	// ── OpenVINO IR (served by modeld in openvino mode) ───────────────────────
 	// Multi-file IR repos pulled over the HF Hub HTTP API into models/openvino/.
+	"qwen2.5-coder-0.5b-ov": {
+		Name:         "qwen2.5-coder-0.5b-ov",
+		Backend:      "openvino",
+		Repo:         "OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov",
+		SourceURL:    "https://huggingface.co/OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov",
+		SizeBytes:    348_761_603,
+		Curated:      true,
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
+	},
+	"qwen2.5-coder-1.5b-ov": {
+		Name:         "qwen2.5-coder-1.5b-ov",
+		Backend:      "openvino",
+		Repo:         "OpenVINO/Qwen2.5-Coder-1.5B-Instruct-int4-ov",
+		SourceURL:    "https://huggingface.co/OpenVINO/Qwen2.5-Coder-1.5B-Instruct-int4-ov",
+		SizeBytes:    941_408_897,
+		Curated:      true,
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
+	},
 	"gemma3-4b-ov": {
 		Name:      "gemma3-4b-ov",
 		Backend:   "openvino",
@@ -171,7 +210,7 @@ var curatedModels = map[string]ModelDescriptor{
 		SourceURL:    "https://huggingface.co/OpenVINO/Qwen3-4B-int4-ov",
 		SizeBytes:    2_290_768_181,
 		Curated:      true,
-		ToolProtocol: "qwen",
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"qwen3-8b-ov": {
 		Name:         "qwen3-8b-ov",
@@ -180,7 +219,7 @@ var curatedModels = map[string]ModelDescriptor{
 		SourceURL:    "https://huggingface.co/OpenVINO/Qwen3-8B-int4-ov",
 		SizeBytes:    4_882_865_352,
 		Curated:      true,
-		ToolProtocol: "qwen",
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"qwen3-14b-ov": {
 		Name:         "qwen3-14b-ov",
@@ -189,7 +228,7 @@ var curatedModels = map[string]ModelDescriptor{
 		SourceURL:    "https://huggingface.co/OpenVINO/Qwen3-14B-int4-ov",
 		SizeBytes:    9_731_519_596,
 		Curated:      true,
-		ToolProtocol: "qwen",
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"qwen3-30b-ov": {
 		Name:         "qwen3-30b-ov",
@@ -198,7 +237,7 @@ var curatedModels = map[string]ModelDescriptor{
 		SourceURL:    "https://huggingface.co/OpenVINO/Qwen3-30B-A3B-int4-ov",
 		SizeBytes:    16_344_043_009,
 		Curated:      true,
-		ToolProtocol: "qwen",
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"qwen3-coder-30b-a3b-ov": {
 		Name:         "qwen3-coder-30b-a3b-ov",
@@ -207,7 +246,7 @@ var curatedModels = map[string]ModelDescriptor{
 		SourceURL:    "https://huggingface.co/OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov",
 		SizeBytes:    16_344_057_522,
 		Curated:      true,
-		ToolProtocol: "qwen",
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"deepseek-r1-distill-qwen-7b-ov": {
 		Name:         "deepseek-r1-distill-qwen-7b-ov",
@@ -216,7 +255,7 @@ var curatedModels = map[string]ModelDescriptor{
 		SourceURL:    "https://huggingface.co/OpenVINO/DeepSeek-R1-Distill-Qwen-7B-int4-ov",
 		SizeBytes:    4_503_931_427,
 		Curated:      true,
-		ToolProtocol: "qwen",
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"gpt-oss-20b-ov": {
 		Name:      "gpt-oss-20b-ov",
@@ -235,6 +274,8 @@ type familyMapping struct {
 
 var defaultFamilies = []familyMapping{
 	// OpenVINO aliases first so backend-specific repo ids keep the -ov target.
+	{CanonicalName: "qwen2.5-coder-1.5b-ov", Substrings: []string{"openvino/qwen2.5-coder-1.5", "qwen2.5-coder-1.5b-instruct-int4-ov", "qwen2.5-coder-1.5b-ov"}},
+	{CanonicalName: "qwen2.5-coder-0.5b-ov", Substrings: []string{"openvino/qwen2.5-coder-0.5", "qwen2.5-coder-0.5b-instruct-int4-ov", "qwen2.5-coder-0.5b-ov"}},
 	{CanonicalName: "qwen3-coder-30b-a3b-ov", Substrings: []string{"openvino/qwen3-coder-30", "qwen3-coder-30b-a3b-instruct-int4-ov", "qwen3-coder-30b-a3b-ov"}},
 	{CanonicalName: "qwen3-30b-ov", Substrings: []string{"openvino/qwen3-30", "qwen3-30b-a3b-int4-ov", "qwen3-30b-ov"}},
 	{CanonicalName: "qwen3-14b-ov", Substrings: []string{"openvino/qwen3-14", "qwen3-14b-int4-ov", "qwen3-14b-ov"}},

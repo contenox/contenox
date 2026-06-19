@@ -145,20 +145,24 @@ These cross-cutting changes make the single-backend daemon coherent (detail in
   `{ModelName, Type, Digest, Path}` (was a raw `ModelID` path); modeld rejects a
   foreign model `Type` with `transport.ErrBackendMismatch` before loading.
 
-### TODO — Steps 5, 6, 8
+### TODO — Step 8
 
-5. **Stream/tool-history parity.** `client.go`: carry
-   `ToolCalls`/`ToolCallID`/`Thinking` into `ChatMessage`→`ApplyChatTemplate`;
-   give `Stream` the same parser handling as `Chat` (or OpenVINO incremental
-   parsers).
-6. **Embeddings.** ABI + provider embed path; implement
-   `GetEmbedConnection`/`Embed`; flip `CanEmbed()` when an embed model/profile
-   exists. (No-sidecar rule: must come from OpenVINO.)
 8. **Distribution.** Vendor `.so` + RPATH (or static link); drop the venv +
    checked-out `openvino.genai` header-worktree dependency; reproducible tagged CI.
    `make build-modeld` is now wired (CGO flags via `mk/openvino-flags.mk` +
    `mk/llama-flags.mk`, deps via `make deps-modeld`), but still RPATHs into the
    `.openvino` venv — this step makes it self-contained.
+
+Done since this handover: OpenVINO embeddings now use a stateless
+`transport.Service.Embed` call, `runtime/modelrepo/openvino` exposes
+`GetEmbedConnection` for profiles with `can_embed`, and modeld runs the GenAI
+`TextEmbeddingPipeline`. Stream/tool-history parity is also wired: tool-call
+history is preserved into modeld chat-template rendering, and tool-enabled
+streams emit a final parsed `ToolCalls` parcel. Live verification passed with
+`bge-small-ov` embeddings, Qwen chat/tool-template rendering, and official
+`OpenVINO/DeepSeek-R1-Distill-Qwen-1.5B-int4-ov` reasoning streams. The
+reasoning path requires OpenVINO tokenizer/detokenizer IR files; a cache missing
+`openvino_tokenizer.xml` can apply templates but cannot reliably generate.
 
 ## Deferred
 

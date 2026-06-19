@@ -1,20 +1,32 @@
 package llama
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/contenox/runtime/runtime/modelrepo"
-	"github.com/contenox/runtime/runtime/modelrepo/toolcalls"
 )
 
-// Model-native tool-call machinery is shared with the OpenVINO backend in
-// runtime/modelrepo/toolcalls; these thin aliases keep the llama call sites and
-// the model-declared protocol stance (no guessing) unchanged.
-
-type toolCallParser = toolcalls.Parser
+const (
+	toolParserProtocolCommonChat = "llama:common_chat_tool_parser"
+)
 
 func serializeToolDefs(tools []modelrepo.Tool) (string, error) {
-	return toolcalls.SerializeToolDefs(tools)
+	if len(tools) == 0 {
+		return "", nil
+	}
+	b, err := json.Marshal(tools)
+	if err != nil {
+		return "", fmt.Errorf("llama: serialize tool definitions: %w", err)
+	}
+	return string(b), nil
 }
 
-func toolCallProtocolKnown(protocol string) bool { return toolcalls.ProtocolKnown(protocol) }
-
-func toolCallParserFor(protocol string) (toolCallParser, error) { return toolcalls.ParserFor(protocol) }
+func toolCallProtocolKnown(protocol string) bool {
+	switch protocol {
+	case toolParserProtocolCommonChat:
+		return true
+	default:
+		return false
+	}
+}

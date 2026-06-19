@@ -120,6 +120,25 @@ func (s *Service) Describe(_ context.Context, req transport.OpenSessionRequest) 
 	return info, nil
 }
 
+// Embed runs a one-shot OpenVINO GenAI TextEmbeddingPipeline for req.Text. It is
+// deliberately separate from OpenSession: embedding models do not use the chat
+// session's prefix/suffix/Decode lifecycle.
+func (s *Service) Embed(ctx context.Context, req transport.EmbedRequest) (transport.EmbedResult, error) {
+	if req.Type != "" && req.Type != "openvino" {
+		return transport.EmbedResult{}, fmt.Errorf("%w: requested %q, this daemon serves openvino", transport.ErrBackendMismatch, req.Type)
+	}
+	backend, err := newEmbedSession(req.Path, resolveDevice())
+	if err != nil {
+		return transport.EmbedResult{}, err
+	}
+	defer backend.Close()
+	vec, err := backend.Embed(ctx, req.Text)
+	if err != nil {
+		return transport.EmbedResult{}, err
+	}
+	return transport.EmbedResult{Vector: vec}, nil
+}
+
 type openvinoParams struct {
 	MaxPositionEmbeddings int `json:"max_position_embeddings"`
 	NumHiddenLayers       int `json:"num_hidden_layers"`

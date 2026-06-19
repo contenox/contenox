@@ -4,10 +4,41 @@ package llamacppshim
 
 /*
 #cgo CFLAGS: -std=c11
+#cgo CXXFLAGS: -std=c++17
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include "llama.h"
 #include "ggml-backend.h"
+
+struct cx_chat_apply_result {
+    char *prompt;
+    int format;
+    int thinking_forced_open;
+};
+
+int cx_common_chat_format_generic(void);
+
+struct cx_chat_apply_result cx_common_chat_apply(const struct llama_model *model,
+                                                 const char *messages_json,
+                                                 const char *tools_json,
+                                                 int add_generation_prompt,
+                                                 const char *reasoning_format,
+                                                 int enable_thinking,
+                                                 char *errbuf,
+                                                 size_t errlen);
+
+int cx_common_chat_parse(const char *input,
+                         int is_partial,
+                         int format,
+                         const char *reasoning_format,
+                         int thinking_forced_open,
+                         int parse_tool_calls,
+                         char **content_out,
+                         char **reasoning_out,
+                         char **tool_calls_out,
+                         char *errbuf,
+                         size_t errlen);
 */
 import "C"
 
@@ -18,8 +49,6 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
-
-	"github.com/contenox/runtime/modeld/llama/chattmpl"
 )
 
 // Available reports whether the direct llama.cpp shim was compiled in.
@@ -32,6 +61,10 @@ func initBackend() {
 		C.ggml_backend_load_all()
 		C.llama_backend_init()
 	})
+}
+
+func commonChatFormatGeneric() int {
+	return int(C.cx_common_chat_format_generic())
 }
 
 // SystemInfo returns llama.cpp's linked runtime system information string.
@@ -268,103 +301,138 @@ func (m *Model) Tokenize(text string, addSpecial bool, parseSpecial bool) ([]int
 	return out, nil
 }
 
-// ChatMessage is one role/content turn for chat-template application.
-type ChatMessage struct {
-	Role       string
-	Content    string
-	ToolCalls  string
-	ToolCallID string
+// ApplyChatTemplateCommon renders messages through llama.cpp's common chat
+// layer. That path owns Jinja execution, model-specific tool handlers, tool-call
+// history, and BOS/EOS normalization.
+func (m *Model) ApplyChatTemplateCommon(messagesJSON, toolsJSON string, addAssistant bool) (string, error) {
+	result, err := m.ApplyChatTemplateCommonWithOptions(messagesJSON, toolsJSON, ChatTemplateOptions{
+		AddAssistant:   addAssistant,
+		EnableThinking: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.Prompt, nil
 }
 
-// ChatTemplate returns the model's default GGUF chat template.
-func (m *Model) ChatTemplate() string {
+// ChatTemplateOptions controls llama.cpp common chat-template rendering.
+type ChatTemplateOptions struct {
+	AddAssistant    bool
+	ReasoningFormat string
+	EnableThinking  bool
+}
+
+// ChatSyntax is the llama.cpp common parser syntax returned by the template
+// application path. The format is intentionally opaque to Go; it is passed back
+// to llama.cpp's common_chat_parse for model-native output parsing.
+type ChatSyntax struct {
+	Format             int
+	ThinkingForcedOpen bool
+}
+
+// ChatTemplateResult is a rendered prompt plus the syntax llama.cpp selected
+// from the model's chat template.
+type ChatTemplateResult struct {
+	Prompt string
+	Syntax ChatSyntax
+}
+
+// ChatParseResult is llama.cpp common_chat_parse output.
+type ChatParseResult struct {
+	Content       string
+	Thinking      string
+	ToolCallsJSON string
+}
+
+// ApplyChatTemplateCommonWithOptions renders messages through llama.cpp's common
+// chat layer and returns the parser syntax selected for that render.
+func (m *Model) ApplyChatTemplateCommonWithOptions(messagesJSON, toolsJSON string, opts ChatTemplateOptions) (ChatTemplateResult, error) {
 	if m == nil || m.ptr == nil {
-		return ""
+		return ChatTemplateResult{}, errors.New("llamacppshim: model is closed")
 	}
-	t := C.llama_model_chat_template(m.ptr, nil)
-	if t == nil {
-		return ""
+	cMsgs := C.CString(messagesJSON)
+	defer C.free(unsafe.Pointer(cMsgs))
+	cTools := C.CString(toolsJSON)
+	defer C.free(unsafe.Pointer(cTools))
+	cReasoning := C.CString(opts.ReasoningFormat)
+	defer C.free(unsafe.Pointer(cReasoning))
+
+	const errLen = 1024
+	errbuf := (*C.char)(C.calloc(1, errLen))
+	defer C.free(unsafe.Pointer(errbuf))
+
+	add := C.int(0)
+	if opts.AddAssistant {
+		add = 1
 	}
-	return C.GoString(t)
+	enableThinking := C.int(0)
+	if opts.EnableThinking {
+		enableThinking = 1
+	}
+	result := C.cx_common_chat_apply(m.ptr, cMsgs, cTools, add, cReasoning, enableThinking, errbuf, C.size_t(errLen))
+	if result.prompt == nil {
+		return ChatTemplateResult{}, errors.New("llamacppshim: common chat template: " + C.GoString(errbuf))
+	}
+	defer C.free(unsafe.Pointer(result.prompt))
+	return ChatTemplateResult{
+		Prompt: C.GoString(result.prompt),
+		Syntax: ChatSyntax{
+			Format:             int(result.format),
+			ThinkingForcedOpen: result.thinking_forced_open != 0,
+		},
+	}, nil
 }
 
-func (m *Model) bosText() string {
-	if m == nil || m.vocab == nil {
-		return ""
-	}
-	tok := C.llama_vocab_bos(m.vocab)
-	if tok < 0 {
-		return ""
-	}
-	txt := C.llama_vocab_get_text(m.vocab, tok)
-	if txt == nil {
-		return ""
-	}
-	return C.GoString(txt)
-}
+// ParseChatResponse parses generated text through llama.cpp's common response
+// parser using syntax returned by ApplyChatTemplateCommonWithOptions.
+func ParseChatResponse(input string, partial bool, syntax ChatSyntax, reasoningFormat string, parseToolCalls bool) (ChatParseResult, error) {
+	cInput := C.CString(input)
+	defer C.free(unsafe.Pointer(cInput))
+	cReasoning := C.CString(reasoningFormat)
+	defer C.free(unsafe.Pointer(cReasoning))
 
-func (m *Model) eosText() string {
-	if m == nil || m.vocab == nil {
-		return ""
-	}
-	tok := C.llama_vocab_eos(m.vocab)
-	if tok < 0 {
-		return ""
-	}
-	txt := C.llama_vocab_get_text(m.vocab, tok)
-	if txt == nil {
-		return ""
-	}
-	return C.GoString(txt)
-}
+	const errLen = 1024
+	errbuf := (*C.char)(C.calloc(1, errLen))
+	defer C.free(unsafe.Pointer(errbuf))
 
-// ApplyChatTemplateTools renders the model's Jinja chat template via minja,
-// including tool definitions.
-func (m *Model) ApplyChatTemplateTools(messagesJSON, toolsJSON string, addAssistant bool) (string, error) {
-	source := m.ChatTemplate()
-	if source == "" {
-		return "", errors.New("llamacppshim: model declares no chat template")
+	var cContent *C.char
+	var cReasoningOut *C.char
+	var cToolCalls *C.char
+	isPartial := C.int(0)
+	if partial {
+		isPartial = 1
 	}
-	return chattmpl.Render(source, m.bosText(), m.eosText(), messagesJSON, toolsJSON, addAssistant)
-}
-
-// ApplyChatTemplate applies llama.cpp's built-in chat-template matcher. This
-// path does not execute arbitrary Jinja tool blocks; use ApplyChatTemplateTools
-// when tool definitions are present.
-func (m *Model) ApplyChatTemplate(messages []ChatMessage, addAssistant bool) (string, error) {
-	tmpl := m.ChatTemplate()
-	if tmpl == "" {
-		return "", errors.New("llamacppshim: model declares no chat template")
+	forcedOpen := C.int(0)
+	if syntax.ThinkingForcedOpen {
+		forcedOpen = 1
 	}
-	ctmpl := C.CString(tmpl)
-	defer C.free(unsafe.Pointer(ctmpl))
-
-	cmsgs := make([]C.struct_llama_chat_message, len(messages))
-	for i, msg := range messages {
-		role := C.CString(msg.Role)
-		content := C.CString(msg.Content)
-		defer C.free(unsafe.Pointer(role))
-		defer C.free(unsafe.Pointer(content))
-		cmsgs[i].role = role
-		cmsgs[i].content = content
+	parseTools := C.int(0)
+	if parseToolCalls {
+		parseTools = 1
 	}
-	var cmsg *C.struct_llama_chat_message
-	if len(cmsgs) > 0 {
-		cmsg = (*C.struct_llama_chat_message)(unsafe.Pointer(&cmsgs[0]))
+	if rc := C.cx_common_chat_parse(
+		cInput,
+		isPartial,
+		C.int(syntax.Format),
+		cReasoning,
+		forcedOpen,
+		parseTools,
+		&cContent,
+		&cReasoningOut,
+		&cToolCalls,
+		errbuf,
+		C.size_t(errLen),
+	); rc != 0 {
+		return ChatParseResult{}, errors.New("llamacppshim: common chat parse: " + C.GoString(errbuf))
 	}
-	need := C.llama_chat_apply_template(ctmpl, cmsg, C.size_t(len(cmsgs)), C.bool(addAssistant), nil, 0)
-	if need < 0 {
-		return "", errors.New("llamacppshim: chat template not supported by llama.cpp")
-	}
-	buf := make([]byte, int(need)+1)
-	got := C.llama_chat_apply_template(ctmpl, cmsg, C.size_t(len(cmsgs)), C.bool(addAssistant), (*C.char)(unsafe.Pointer(&buf[0])), C.int32_t(len(buf)))
-	if got < 0 {
-		return "", errors.New("llamacppshim: chat template apply failed")
-	}
-	if int(got) > len(buf) {
-		got = C.int32_t(len(buf))
-	}
-	return string(buf[:int(got)]), nil
+	defer C.free(unsafe.Pointer(cContent))
+	defer C.free(unsafe.Pointer(cReasoningOut))
+	defer C.free(unsafe.Pointer(cToolCalls))
+	return ChatParseResult{
+		Content:       C.GoString(cContent),
+		Thinking:      C.GoString(cReasoningOut),
+		ToolCallsJSON: C.GoString(cToolCalls),
+	}, nil
 }
 
 // ContextConfig controls direct llama_context construction.
@@ -708,7 +776,40 @@ func (s *SamplingContext) Free() {
 	runtime.SetFinalizer(s, nil)
 }
 
-// StateSeqGetData returns direct sequence state bytes.
+// StateGetData returns full context state bytes, including output logits and
+// memory. Use this for session snapshots that must resume the next sample.
+func (c *Context) StateGetData() ([]byte, error) {
+	if c == nil || c.ptr == nil {
+		return nil, errors.New("llamacppshim: context is closed")
+	}
+	n := C.llama_state_get_size(c.ptr)
+	if n == 0 {
+		return nil, errors.New("llamacppshim: empty context state")
+	}
+	buf := make([]byte, int(n))
+	got := C.llama_state_get_data(c.ptr, (*C.uint8_t)(unsafe.Pointer(&buf[0])), n)
+	if got != n {
+		return nil, fmt.Errorf("llamacppshim: copied %d context state bytes, want %d", uint64(got), uint64(n))
+	}
+	return buf, nil
+}
+
+// StateSetData restores bytes previously returned by StateGetData.
+func (c *Context) StateSetData(data []byte) error {
+	if c == nil || c.ptr == nil {
+		return errors.New("llamacppshim: context is closed")
+	}
+	if len(data) == 0 {
+		return errors.New("llamacppshim: empty context state")
+	}
+	got := C.llama_state_set_data(c.ptr, (*C.uint8_t)(unsafe.Pointer(&data[0])), C.size_t(len(data)))
+	if got != C.size_t(len(data)) {
+		return fmt.Errorf("llamacppshim: loaded %d context state bytes, want %d", uint64(got), len(data))
+	}
+	return nil
+}
+
+// StateSeqGetData returns direct sequence memory state bytes.
 func (c *Context) StateSeqGetData(seqID int) ([]byte, error) {
 	if c == nil || c.ptr == nil {
 		return nil, errors.New("llamacppshim: context is closed")
@@ -725,7 +826,7 @@ func (c *Context) StateSeqGetData(seqID int) ([]byte, error) {
 	return buf, nil
 }
 
-// StateSeqSetData restores direct sequence state bytes.
+// StateSeqSetData restores direct sequence memory state bytes.
 func (c *Context) StateSeqSetData(seqID int, data []byte) error {
 	if c == nil || c.ptr == nil {
 		return errors.New("llamacppshim: context is closed")

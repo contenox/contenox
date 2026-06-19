@@ -47,6 +47,7 @@ type Config struct {
 	PromptFormat         string // profile-declared prompt format, e.g. "chatml" or "llama3"
 	PromptTemplateDigest string // digest of the declared/rendered prompt template
 	DisableBOS           bool
+	ReasoningFormat      string // backend-native reasoning format for chat-template parsing/rendering
 }
 
 // ModelInfo is what the daemon reports about a model: capabilities resolved from
@@ -115,6 +116,10 @@ type Service interface {
 	// daemon is the authority because it owns the model format and hardware;
 	// Config carries the requested context/runtime knobs for capacity planning.
 	Describe(ctx context.Context, req OpenSessionRequest) (ModelInfo, error)
+	// Embed computes a one-shot embedding for a model. It uses the same typed
+	// handle and owner fence as Describe, but does not create a persistent decode
+	// session because embedding pipelines do not participate in KV reuse.
+	Embed(ctx context.Context, req EmbedRequest) (EmbedResult, error)
 }
 
 // OpenSessionRequest asks the owner to open a session for a model. The model is
@@ -129,6 +134,21 @@ type OpenSessionRequest struct {
 	Digest    string // content digest; part of the cache identity
 	Path      string // runtime-resolved filesystem location (GGUF file or IR dir)
 	Config    Config
+}
+
+// EmbedRequest asks the owner to compute a one-shot embedding for Text.
+type EmbedRequest struct {
+	Fence
+	ModelName string // logical model name, e.g. "bge-small-en"
+	Type      string // backend type the model targets: "llama" | "openvino"
+	Digest    string // content digest; part of the model identity
+	Path      string // runtime-resolved filesystem location (GGUF file or IR dir)
+	Config    Config
+	Text      string
+}
+
+type EmbedResult struct {
+	Vector []float32 `json:"vector,omitempty"`
 }
 
 // Session is a persistent, workspace-scoped inference session. The hot coding
@@ -192,6 +212,10 @@ type PrefixInput struct {
 type SuffixInput struct {
 	Text     string
 	Manifest ContextManifest
+	// EnableThinking controls model-owned chat-template rendering for the
+	// assistant generation prompt when a backend supports it. nil means backend
+	// default.
+	EnableThinking *bool `json:",omitempty"`
 }
 
 // PrefixStatus reports what EnsurePrefix reused versus had to (re)compute.
@@ -219,17 +243,40 @@ type SuffixStatus struct {
 
 // DecodeConfig controls a single decode pass.
 type DecodeConfig struct {
-	MaxTokens   int
-	Temperature *float64
-	TopP        *float64
-	TopK        int
-	Seed        *int
+	MaxTokens        int
+	Temperature      *float64
+	TopP             *float64
+	TopK             int
+	Seed             *int
+	ParserProtocols  []string
+	ReasoningFormat  string
+	StructuredOutput StructuredOutputConfig
 }
 
-// StreamChunk is a decoded text delta or a terminal error.
+// StructuredOutputConfig carries a backend-typed structured-output request for
+// decode calls that need the native backend to constrain generation.
+type StructuredOutputConfig struct {
+	Protocol string
+	Payload  string
+	ToolName string
+}
+
+// ToolCall is a backend-neutral parsed function call emitted by a model.
+type ToolCall struct {
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// StreamChunk is a decoded text delta, parsed model output, or a terminal error.
 type StreamChunk struct {
-	Text  string
-	Error error
+	Text      string
+	Thinking  string
+	ToolCalls []ToolCall
+	Error     error
 }
 
 // ContextReport explains the session's resident context (explain-context).
@@ -254,4 +301,7 @@ var (
 	// ErrBackendMismatch means the requested model Type is not the backend this
 	// daemon serves (e.g. a llama model requested from an openvino-mode modeld).
 	ErrBackendMismatch = errors.New("model type not served by this modeld backend")
+	// ErrUnsupportedFeature means the backend is healthy but does not implement
+	// the requested product surface for this model or backend mode.
+	ErrUnsupportedFeature = errors.New("unsupported transport feature")
 )

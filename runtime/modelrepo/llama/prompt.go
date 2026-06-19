@@ -31,10 +31,8 @@ type promptPlan struct {
 }
 
 type promptRenderer struct {
-	format             string
-	templateDigest     string
-	renderMessage      func(modelrepo.Message) (string, error)
-	renderAssistantCue func() string
+	format         string
+	templateDigest string
 }
 
 func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity, toolsJSON string) (promptPlan, error) {
@@ -67,7 +65,7 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 			}
 			tcJSON = string(b)
 		}
-		
+
 		var start, end int
 		text := m.Content
 		if isStable {
@@ -132,10 +130,8 @@ func rendererForFormat(format, overrideDigest string) (promptRenderer, error) {
 			digest = promptTemplateDigest(promptFormatChatML)
 		}
 		return promptRenderer{
-			format:             promptFormatChatML,
-			templateDigest:     digest,
-			renderMessage:      renderChatMLMessage,
-			renderAssistantCue: func() string { return "<|assistant|>\n" },
+			format:         promptFormatChatML,
+			templateDigest: digest,
 		}, nil
 	case promptFormatLlama3:
 		digest := overrideDigest
@@ -143,10 +139,8 @@ func rendererForFormat(format, overrideDigest string) (promptRenderer, error) {
 			digest = promptTemplateDigest(promptFormatLlama3)
 		}
 		return promptRenderer{
-			format:             promptFormatLlama3,
-			templateDigest:     digest,
-			renderMessage:      renderLlama3Message,
-			renderAssistantCue: func() string { return "<|start_header_id|>assistant<|end_header_id|>\n\n" },
+			format:         promptFormatLlama3,
+			templateDigest: digest,
 		}, nil
 	default:
 		return promptRenderer{}, NewUnsupportedFeatureError("prompt format " + format)
@@ -156,20 +150,12 @@ func rendererForFormat(format, overrideDigest string) (promptRenderer, error) {
 func promptTemplateDigest(format string) string {
 	switch format {
 	case "", promptFormatChatML:
-		return hashString("chatml:v1:<|role|>\\ncontent\\n:<|assistant|>\\n")
+		return hashString("llama-runtime-prompt-metadata:chatml:v1")
 	case promptFormatLlama3:
-		return hashString("llama3:v1:<|start_header_id|>role<|end_header_id|>\\n\\ncontent<|eot_id|>:assistant-cue")
+		return hashString("llama-runtime-prompt-metadata:llama3:v1")
 	default:
 		return ""
 	}
-}
-
-func renderChatMLMessage(m modelrepo.Message) (string, error) {
-	return fmt.Sprintf("<|%s|>\n%s\n", m.Role, m.Content), nil
-}
-
-func renderLlama3Message(m modelrepo.Message) (string, error) {
-	return fmt.Sprintf("<|start_header_id|>%s<|end_header_id|>\n\n%s<|eot_id|>", m.Role, m.Content), nil
 }
 
 func segmentKindForRole(role string) string {

@@ -31,6 +31,16 @@ func TestUnit_LocalNodeProfile_RuntimeContextFeedsCapabilities(t *testing.T) {
 	}
 }
 
+func TestUnit_LocalNodeProfile_ReasoningProtocolFeedsCanThink(t *testing.T) {
+	p := modelProfile{Reasoning: reasoningProfile{Protocol: reasoningProtocolCommonChat, Format: "deepseek"}}
+
+	caps := p.capabilityConfig()
+
+	if !caps.CanThink {
+		t.Fatal("reasoning protocol should advertise CanThink")
+	}
+}
+
 func TestUnit_LocalNodeProfile_PromptSettingsFeedConfig(t *testing.T) {
 	addBOS := false
 	p := modelProfile{
@@ -97,5 +107,51 @@ func TestUnit_LocalNodeProfile_RejectsUnsupportedPromptFormat(t *testing.T) {
 
 	if _, err := loadModelProfile(dir); !errors.Is(err, ErrUnsupportedFeature) {
 		t.Fatalf("expected unsupported prompt format error, got %v", err)
+	}
+}
+
+func TestUnit_LocalNodeProfile_RejectsUnsupportedReasoningProtocol(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, profileFileName), []byte(`{"reasoning":{"protocol":"llama:nope"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := loadModelProfile(dir); !errors.Is(err, ErrUnsupportedFeature) {
+		t.Fatalf("expected unsupported reasoning protocol error, got %v", err)
+	}
+}
+
+func TestUnit_LocalNodeProfile_RejectsReasoningProtocolWithoutFormat(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, profileFileName), []byte(`{"reasoning":{"protocol":"llama:common_chat_reasoning_parser"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := loadModelProfile(dir); !errors.Is(err, ErrUnsupportedFeature) {
+		t.Fatalf("expected unsupported reasoning profile error, got %v", err)
+	}
+}
+
+func TestUnit_LocalNodeProfile_AcceptsCommonChatToolProtocol(t *testing.T) {
+	dir := t.TempDir()
+	body := []byte(`{"tool_calls":{"protocol":"` + toolParserProtocolCommonChat + `"}}`)
+	if err := os.WriteFile(filepath.Join(dir, profileFileName), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadModelProfile(dir); err != nil {
+		t.Fatalf("common chat tool protocol should be accepted: %v", err)
+	}
+}
+
+func TestUnit_LocalNodeProfile_RejectsLegacyToolProtocolAliases(t *testing.T) {
+	for _, protocol := range []string{"qwen", "hermes"} {
+		dir := t.TempDir()
+		body := []byte(`{"tool_calls":{"protocol":"` + protocol + `"}}`)
+		if err := os.WriteFile(filepath.Join(dir, profileFileName), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadModelProfile(dir); err == nil {
+			t.Fatalf("legacy protocol alias %q should be rejected", protocol)
+		}
 	}
 }

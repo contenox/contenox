@@ -20,7 +20,7 @@ From the repo root:
 
 ```bash
 cd /home/naro/src/github.com/contenox/enterprise/runtime
-make deps-llama-headers deps-llamacpp-ref
+make deps-llamacpp-ref
 make build-contenox
 ```
 

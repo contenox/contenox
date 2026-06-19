@@ -93,8 +93,9 @@ func Device(_ string) (DeviceInfo, error) {
 
 // StreamChunk carries a decoded text delta or a terminal stream error.
 type StreamChunk struct {
-	Text  string
-	Error error
+	Text     string
+	Thinking string
+	Error    error
 }
 
 // GenAISession is unavailable without the openvino and openvino_genai build

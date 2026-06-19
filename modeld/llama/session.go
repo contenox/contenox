@@ -24,6 +24,7 @@ type SuffixInput = transport.SuffixInput
 type PrefixStatus = transport.PrefixStatus
 type SuffixStatus = transport.SuffixStatus
 type DecodeConfig = transport.DecodeConfig
+type ToolCall = transport.ToolCall
 type StreamChunk = transport.StreamChunk
 type ContextReport = transport.ContextReport
 type SessionSnapshot = transport.SessionSnapshot

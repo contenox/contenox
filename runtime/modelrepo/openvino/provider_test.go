@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/liblease"
-	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/transport"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
@@ -21,7 +20,9 @@ type recordingService struct {
 
 	mu      sync.Mutex
 	request transport.OpenSessionRequest
+	embed   transport.EmbedRequest
 	info    transport.ModelInfo
+	vector  []float32
 }
 
 func (s *recordingService) OpenSession(ctx context.Context, req transport.OpenSessionRequest) (transport.Session, error) {
@@ -35,10 +36,23 @@ func (s *recordingService) Describe(_ context.Context, req transport.OpenSession
 	return s.info, nil
 }
 
+func (s *recordingService) Embed(_ context.Context, req transport.EmbedRequest) (transport.EmbedResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.embed = req
+	return transport.EmbedResult{Vector: s.vector}, nil
+}
+
 func (s *recordingService) lastRequest() transport.OpenSessionRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.request
+}
+
+func (s *recordingService) lastEmbedRequest() transport.EmbedRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.embed
 }
 
 func TestUnit_OpenVINOProvider_UsesDescribeResolvedContextAndRuntime(t *testing.T) {
@@ -65,14 +79,18 @@ func TestUnit_OpenVINOProvider_UsesDescribeResolvedContextAndRuntime(t *testing.
 	}
 	serveModeldForProviderTest(t, svc)
 
-	p := &openvinoProvider{name: "coder", modelDir: root, caps: modelrepo.CapabilityConfig{}}
+	profile, err := loadModelProfile(modelDir)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	p := &openvinoProvider{name: "coder", modelDir: root, caps: profile.capabilityConfig()}
 	got, err := p.GetChatConnection(context.Background(), "")
 	if err != nil {
 		t.Fatalf("GetChatConnection: %v", err)
 	}
 	c := got.(*client)
-	if c.cfg.NumCtx != 24576 {
-		t.Fatalf("NumCtx = %d, want Describe effective context", c.cfg.NumCtx)
+	if c.cfg.NumCtx != 24576-modeldCapacitySafetyTokens {
+		t.Fatalf("NumCtx = %d, want Describe effective context minus modeld safety margin", c.cfg.NumCtx)
 	}
 	if c.backendVersion != "OpenVINO GenAI@2026.2-test" {
 		t.Fatalf("backendVersion = %q", c.backendVersion)
@@ -86,16 +104,136 @@ func TestUnit_OpenVINOProvider_UsesDescribeResolvedContextAndRuntime(t *testing.
 	}
 }
 
-func TestUnit_OpenVINOProvider_CuratedQwenUsesToolProtocolFallback(t *testing.T) {
+func TestUnit_OpenVINOProvider_EmbeddingUsesModeldTransport(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "embedder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "openvino_model.xml"), []byte("<xml/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "contenox-openvino.json"), []byte(`{"can_chat":false,"can_embed":true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &recordingService{
+		base:   transport.NewMemoryService(),
+		vector: []float32{1.25, -0.5, 3},
+	}
+	serveModeldForProviderTest(t, svc)
+
+	profile, err := loadModelProfile(modelDir)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	p := &openvinoProvider{name: "embedder", modelDir: root, caps: profile.capabilityConfig()}
+	if p.CanChat() {
+		t.Fatal("embedding-only profile should not advertise chat")
+	}
+	if !p.CanEmbed() {
+		t.Fatal("embedding profile should advertise embeddings when modeld is available")
+	}
+
+	conn, err := p.GetEmbedConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetEmbedConnection: %v", err)
+	}
+	got, err := conn.Embed(context.Background(), "hello embeddings")
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	want := []float64{1.25, -0.5, 3}
+	if len(got) != len(want) {
+		t.Fatalf("embedding length = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("embedding[%d] = %v, want %v", i, got[i], want[i])
+		}
+	}
+
+	req := svc.lastEmbedRequest()
+	if req.Type != "openvino" || req.ModelName != "embedder" || req.Path != modelDir || req.Digest == "" {
+		t.Fatalf("Embed request missing model identity: %+v", req)
+	}
+	if req.Text != "hello embeddings" {
+		t.Fatalf("Embed text = %q", req.Text)
+	}
+}
+
+func TestUnit_OpenVINOProvider_CuratedQwenUsesNativeOpenVINOProtocol(t *testing.T) {
 	got := curatedToolProtocol(context.Background(), "qwen3-8b-ov", "openvino")
-	if got != "qwen" {
-		t.Fatalf("curated tool protocol = %q, want qwen", got)
+	if got != "openvino:json_schema_tool_calls" {
+		t.Fatalf("curated OpenVINO qwen protocol = %q, want native JSON schema protocol", got)
+	}
+	if got := curatedToolProtocol(context.Background(), "qwen2.5-coder-0.5b-ov", "openvino"); got != "openvino:json_schema_tool_calls" {
+		t.Fatalf("curated OpenVINO qwen2.5 protocol = %q, want native JSON schema protocol", got)
 	}
 	if got := curatedToolProtocol(context.Background(), "gemma3-4b-ov", "openvino"); got != "" {
-		t.Fatalf("gemma should not declare a qwen tool protocol, got %q", got)
+		t.Fatalf("gemma should not declare a tool protocol, got %q", got)
 	}
 	if got := curatedToolProtocol(context.Background(), "qwen3-8b", "openvino"); got != "" {
 		t.Fatalf("backend mismatch should not return a protocol, got %q", got)
+	}
+}
+
+func TestUnit_OpenVINOProfile_ReasoningProtocolDerivesStreamParserAndCapability(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "deepseek")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "contenox-openvino.json"), []byte(`{"reasoning":{"protocol":"openvino:deepseek_r1_reasoning_parser"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, err := loadModelProfile(modelDir)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	if !profile.capabilityConfig().CanThink {
+		t.Fatal("reasoning protocol should advertise CanThink")
+	}
+	_, stream := profile.Reasoning.protocols()
+	if stream != "openvino:deepseek_r1_reasoning_incremental_parser" {
+		t.Fatalf("stream protocol = %q", stream)
+	}
+}
+
+func TestUnit_OpenVINOProfile_ToolProtocolMustBeNativeOpenVINOProtocol(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "llama3")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(modelDir, "contenox-openvino.json")
+	if err := os.WriteFile(path, []byte(`{"tool_calls":{"protocol":"openvino:llama3_json_tool_parser"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadModelProfile(modelDir); err != nil {
+		t.Fatalf("native OpenVINO parser should be accepted: %v", err)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"tool_calls":{"protocol":"openvino:json_schema_tool_calls"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadModelProfile(modelDir); err != nil {
+		t.Fatalf("OpenVINO JSON-schema tool-call protocol should be accepted: %v", err)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"tool_calls":{"protocol":"openvino:qwen_xml_parameters"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadModelProfile(modelDir); err == nil {
+		t.Fatal("OpenVINO qwen XML parameters protocol should not be accepted")
+	}
+
+	if err := os.WriteFile(path, []byte(`{"tool_calls":{"protocol":"qwen"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadModelProfile(modelDir); err == nil {
+		t.Fatal("qwen should not be accepted as an OpenVINO parser protocol")
 	}
 }
 

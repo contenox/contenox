@@ -140,6 +140,25 @@ func (s *Server) describe(ctx context.Context, in *openSessionReq) (*describeRes
 	}, nil
 }
 
+func (s *Server) embed(ctx context.Context, in *embedReq) (*embedResp, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	res, err := s.svc.Embed(ctx, transport.EmbedRequest{
+		Fence:     transport.Fence{OwnerInstanceID: in.OwnerInstanceID},
+		ModelName: in.ModelName,
+		Type:      in.Type,
+		Digest:    in.Digest,
+		Path:      in.Path,
+		Config:    in.Config,
+		Text:      in.Text,
+	})
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	return &embedResp{Vector: res.Vector}, nil
+}
+
 func (s *Server) ensurePrefix(ctx context.Context, in *ensurePrefixReq) (*transport.PrefixStatus, error) {
 	if err := checkFence(ctx, s.instanceID); err != nil {
 		return nil, encodeError(err)
@@ -238,7 +257,7 @@ func (s *Server) decode(ctx context.Context, in *decodeReq, stream grpclib.Serve
 		return encodeError(err)
 	}
 	for chunk := range ch {
-		w := &wireChunk{Text: chunk.Text}
+		w := &wireChunk{Text: chunk.Text, Thinking: chunk.Thinking, ToolCalls: chunk.ToolCalls}
 		if chunk.Error != nil {
 			w.Error = chunk.Error.Error()
 		}

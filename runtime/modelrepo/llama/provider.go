@@ -78,6 +78,11 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 	if profile.ToolCalls.Protocol == "" {
 		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, p.name, "llama")
 	}
+	if profile.Reasoning.Protocol == "" {
+		profile.Reasoning.Protocol, profile.Reasoning.Format = curatedReasoning(ctx, p.name, "llama")
+	} else if profile.Reasoning.Format == "" {
+		_, profile.Reasoning.Format = curatedReasoning(ctx, p.name, "llama")
+	}
 	modelPath := filepath.Join(dir, "model.gguf")
 	modelDigest := profile.ModelDigest
 	if modelDigest == "" {
@@ -107,14 +112,15 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		}
 	}
 	return &client{
-		modelName:       p.name,
-		modelPath:       modelPath,
-		profileID:       profileID,
-		modelDigest:     modelDigest,
-		backendVersion:  backendID,
-		cfg:             cfg,
-		maxOutputTokens: p.caps.MaxOutputTokens,
-		toolProtocol:    profile.ToolCalls.Protocol,
+		modelName:         p.name,
+		modelPath:         modelPath,
+		profileID:         profileID,
+		modelDigest:       modelDigest,
+		backendVersion:    backendID,
+		cfg:               cfg,
+		maxOutputTokens:   p.caps.MaxOutputTokens,
+		toolProtocol:      profile.ToolCalls.Protocol,
+		reasoningProtocol: profile.Reasoning.Protocol,
 	}, nil
 }
 
@@ -127,6 +133,27 @@ func curatedToolProtocol(ctx context.Context, modelName, backendType string) str
 		return ""
 	}
 	return d.ToolProtocol
+}
+
+func curatedReasoningProtocol(ctx context.Context, modelName, backendType string) string {
+	protocol, _ := curatedReasoning(ctx, modelName, backendType)
+	return protocol
+}
+
+func curatedReasoningFormat(ctx context.Context, modelName, backendType string) string {
+	_, format := curatedReasoning(ctx, modelName, backendType)
+	return format
+}
+
+func curatedReasoning(ctx context.Context, modelName, backendType string) (protocol, format string) {
+	d, err := modelregistry.New(nil).Resolve(ctx, modelName)
+	if err != nil || d.BackendType() != backendType {
+		return "", ""
+	}
+	if d.ReasoningProtocol == "" || d.ReasoningFormat == "" || !reasoningProtocolKnown(d.ReasoningProtocol) {
+		return "", ""
+	}
+	return d.ReasoningProtocol, d.ReasoningFormat
 }
 
 func (p *provider) notWired(kind string) error {

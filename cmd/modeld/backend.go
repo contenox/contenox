@@ -101,3 +101,7 @@ func (unavailableBackend) OpenSession(context.Context, transport.OpenSessionRequ
 func (unavailableBackend) Describe(context.Context, transport.OpenSessionRequest) (transport.ModelInfo, error) {
 	return transport.ModelInfo{}, errNoBackend
 }
+
+func (unavailableBackend) Embed(context.Context, transport.EmbedRequest) (transport.EmbedResult, error) {
+	return transport.EmbedResult{}, errNoBackend
+}

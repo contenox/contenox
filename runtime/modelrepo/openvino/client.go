@@ -2,12 +2,14 @@ package openvino
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
-	"github.com/contenox/runtime/runtime/modelrepo/toolcalls"
+	"github.com/contenox/runtime/runtime/reasoning"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 // warm holds resident sessions across turns. It is bounded (idle TTL + resident
@@ -45,7 +47,9 @@ type client struct {
 	backendVersion  string
 	cfg             Config
 	maxOutputTokens int
-	toolProtocol    string // profile-declared tool-call protocol ("" = tools unsupported)
+	toolProtocol    string // profile-declared OpenVINO tool protocol ("" = tools unsupported)
+	reasoningParser string // profile-declared complete reasoning parser ("" = no complete parser)
+	reasoningStream string // profile-declared incremental reasoning parser ("" = no stream parser)
 }
 
 // ref is the typed model handle this client opens sessions with: logical name +
@@ -57,41 +61,30 @@ func (c *client) ref() modeldconn.ModelRef {
 func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
 	cfg := applyChatArgs(args)
 
-	var toolsJSON string
-	var parser toolcalls.Parser
-	if len(cfg.Tools) > 0 {
-		// Tools require a profile-declared protocol: modeld renders the tool
-		// definitions via the model's own chat template (model-native), and the
-		// declared protocol parses the model's tool-call output. No protocol means
-		// no guessing — tool calls are unsupported for this model.
-		p, err := toolcalls.ParserFor(c.toolProtocol)
-		if err != nil {
-			return modelrepo.ChatResult{}, err
-		}
-		if p == nil {
-			return modelrepo.ChatResult{}, NewUnsupportedFeatureError("tool calls (model declares no tool_calls.protocol)")
-		}
-		parser = p
-		if toolsJSON, err = toolcalls.SerializeToolDefs(cfg.Tools); err != nil {
-			return modelrepo.ChatResult{}, err
-		}
+	toolPlan, err := c.prepareTools(cfg)
+	if err != nil {
+		return modelrepo.ChatResult{}, err
 	}
 
-	text, err := c.generate(ctx, messages, decodeConfig(cfg, c.maxOutputTokens), toolsJSON)
+	dc, showThinking, err := c.decodeConfig(cfg, toolPlan.completeDecode())
+	if err != nil {
+		return modelrepo.ChatResult{}, err
+	}
+	if toolPlan.ParserProtocol != "" {
+		dc.ParserProtocols = append(dc.ParserProtocols, toolPlan.ParserProtocol)
+	}
+	dc.StructuredOutput = toolPlan.StructuredOutput
+	text, thinking, toolCalls, err := c.generate(ctx, messages, dc, toolPlan.ToolsJSON, showThinking)
 	if err != nil {
 		return modelrepo.ChatResult{}, err
 	}
 
 	msg := modelrepo.Message{Role: "assistant", Content: text}
-	if parser != nil {
-		calls, content, perr := parser(text)
-		if perr != nil {
-			return modelrepo.ChatResult{}, perr
-		}
-		msg.Content = content
-		msg.ToolCalls = calls
+	if showThinking {
+		msg.Thinking = thinking
 	}
-	return modelrepo.ChatResult{Message: msg}, nil
+	msg.ToolCalls = toolCalls
+	return modelrepo.ChatResult{Message: msg, ToolCalls: toolCalls}, nil
 }
 
 func (c *client) Prompt(ctx context.Context, systemInstruction string, temperature float32, prompt string) (string, error) {
@@ -101,28 +94,43 @@ func (c *client) Prompt(ctx context.Context, systemInstruction string, temperatu
 	}
 	messages = append(messages, modelrepo.Message{Role: "user", Content: prompt})
 	temp := float64(temperature)
-	return c.generate(ctx, messages, decodeConfig(&modelrepo.ChatConfig{Temperature: &temp}, c.maxOutputTokens), "")
+	cfg := &modelrepo.ChatConfig{Temperature: &temp}
+	dc, _, err := c.decodeConfig(cfg, false)
+	if err != nil {
+		return "", err
+	}
+	text, _, _, err := c.generate(ctx, messages, dc, "", false)
+	return text, err
 }
 
 func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
 	cfg := applyChatArgs(args)
-	if len(cfg.Tools) > 0 {
-		return nil, NewUnsupportedFeatureError("tool calls")
+	toolPlan, err := c.prepareTools(cfg)
+	if err != nil {
+		return nil, err
 	}
+	dc, showThinking, err := c.decodeConfig(cfg, toolPlan.completeDecode())
+	if err != nil {
+		return nil, err
+	}
+	if toolPlan.ParserProtocol != "" {
+		dc.ParserProtocols = append(dc.ParserProtocols, toolPlan.ParserProtocol)
+	}
+	dc.StructuredOutput = toolPlan.StructuredOutput
 	cs, err := c.acquire()
 	if err != nil {
 		return nil, err
 	}
 
 	cs.Turn.Lock()
-	if err := c.prime(ctx, cs, messages, ""); err != nil {
+	if err := c.prime(ctx, cs, messages, toolPlan.ToolsJSON); err != nil {
 		cs.Turn.Unlock()
 		if fatalSessionError(err) {
 			warm.Drop(cs)
 		}
 		return nil, err
 	}
-	chunks, err := cs.Sess.Decode(ctx, decodeConfig(cfg, c.maxOutputTokens))
+	chunks, err := cs.Sess.Decode(ctx, dc)
 	if err != nil {
 		cs.Turn.Unlock()
 		if fatalSessionError(err) {
@@ -143,18 +151,90 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 				}
 				return
 			}
-			if chunk.Text != "" {
-				out <- &modelrepo.StreamParcel{Data: chunk.Text}
+			toolCalls := modelToolCalls(chunk.ToolCalls)
+			if chunk.Text != "" || len(toolCalls) > 0 {
+				out <- &modelrepo.StreamParcel{Data: chunk.Text, ToolCalls: toolCalls}
+			}
+			if showThinking && chunk.Thinking != "" {
+				out <- &modelrepo.StreamParcel{Thinking: chunk.Thinking}
 			}
 		}
 	}()
 	return out, nil
 }
 
-func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string) (string, error) {
+func (c *client) decodeConfig(cfg *modelrepo.ChatConfig, completeParsers bool) (DecodeConfig, bool, error) {
+	dc := decodeConfig(cfg, c.maxOutputTokens)
+	reasoningProtocol := c.reasoningStream
+	if completeParsers {
+		reasoningProtocol = c.reasoningParser
+	}
+	if reasoningProtocol != "" {
+		dc.ParserProtocols = append(dc.ParserProtocols, reasoningProtocol)
+	}
+	showThinking := false
+	if reasoningProtocol != "" && cfg != nil && cfg.Think != nil {
+		level, ok, err := reasoning.NormalizeOptional(*cfg.Think)
+		if err != nil {
+			return DecodeConfig{}, false, err
+		}
+		showThinking = ok && level != reasoning.Off && level != reasoning.Auto
+	}
+	return dc, showThinking, nil
+}
+
+type toolPlan struct {
+	ToolsJSON        string
+	ParserProtocol   string
+	StructuredOutput transport.StructuredOutputConfig
+}
+
+func (p toolPlan) completeDecode() bool {
+	return p.ParserProtocol != "" || p.StructuredOutput.Protocol != ""
+}
+
+func (c *client) prepareTools(cfg *modelrepo.ChatConfig) (toolPlan, error) {
+	if cfg == nil || len(cfg.Tools) == 0 {
+		return toolPlan{}, nil
+	}
+	// Tools require a profile-declared protocol: modeld renders the tool
+	// definitions via the model's own chat template (model-native), and the
+	// declared OpenVINO parser protocol parses model output inside modeld. No
+	// protocol means no guessing.
+	if c.toolProtocol == "" {
+		return toolPlan{}, NewUnsupportedFeatureError("tool calls (model declares no tool_calls.protocol)")
+	}
+	if !toolCallProtocolKnown(c.toolProtocol) {
+		return toolPlan{}, fmt.Errorf("%w: tool protocol %q", ErrUnsupportedFeature, c.toolProtocol)
+	}
+	toolsJSON, err := serializeToolDefs(cfg.Tools)
+	if err != nil {
+		return toolPlan{}, err
+	}
+	if toolCallProtocolUsesParser(c.toolProtocol) {
+		return toolPlan{ToolsJSON: toolsJSON, ParserProtocol: c.toolProtocol}, nil
+	}
+	switch c.toolProtocol {
+	case toolProtocolJSONSchemaToolCalls:
+		payload, err := toolCallsJSONSchema(cfg.Tools)
+		if err != nil {
+			return toolPlan{}, err
+		}
+		return toolPlan{
+			ToolsJSON: toolsJSON,
+			StructuredOutput: transport.StructuredOutputConfig{
+				Protocol: toolProtocolJSONSchemaToolCalls,
+				Payload:  payload,
+			},
+		}, nil
+	}
+	return toolPlan{}, fmt.Errorf("%w: tool protocol %q", ErrUnsupportedFeature, c.toolProtocol)
+}
+
+func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string, showThinking bool) (string, string, []modelrepo.ToolCall, error) {
 	cs, err := c.acquire()
 	if err != nil {
-		return "", err
+		return "", "", nil, err
 	}
 	cs.Turn.Lock()
 	defer cs.Turn.Unlock()
@@ -163,23 +243,54 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 		if fatalSessionError(err) {
 			warm.Drop(cs)
 		}
-		return "", err
+		return "", "", nil, err
 	}
 	chunks, err := cs.Sess.Decode(ctx, dc)
 	if err != nil {
-		return "", err
+		return "", "", nil, err
 	}
 	var b strings.Builder
+	var thinking strings.Builder
+	var toolCalls []modelrepo.ToolCall
 	for chunk := range chunks {
 		if chunk.Error != nil {
 			if fatalSessionError(chunk.Error) {
 				warm.Drop(cs)
 			}
-			return "", chunk.Error
+			return "", "", nil, chunk.Error
 		}
 		b.WriteString(chunk.Text)
+		if showThinking {
+			thinking.WriteString(chunk.Thinking)
+		}
+		toolCalls = append(toolCalls, modelToolCalls(chunk.ToolCalls)...)
 	}
-	return strings.TrimSpace(b.String()), nil
+	return strings.TrimSpace(b.String()), thinking.String(), toolCalls, nil
+}
+
+func serializeToolDefs(tools []modelrepo.Tool) (string, error) {
+	if len(tools) == 0 {
+		return "", nil
+	}
+	b, err := json.Marshal(tools)
+	if err != nil {
+		return "", fmt.Errorf("openvino: serialize tool definitions: %w", err)
+	}
+	return string(b), nil
+}
+
+func modelToolCalls(in []ToolCall) []modelrepo.ToolCall {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]modelrepo.ToolCall, 0, len(in))
+	for _, tc := range in {
+		call := modelrepo.ToolCall{ID: tc.ID, Type: tc.Type}
+		call.Function.Name = tc.Function.Name
+		call.Function.Arguments = tc.Function.Arguments
+		out = append(out, call)
+	}
+	return out
 }
 
 // prime ensures the warm stable prefix and prefills the volatile suffix. Caller
@@ -237,14 +348,26 @@ var (
 )
 
 type embedClient struct {
-	modelPath string
-	device    string
+	modelName   string
+	modelPath   string
+	modelDigest string
 }
 
 func (c *embedClient) Embed(ctx context.Context, prompt string) ([]float64, error) {
-	// The native OpenVINO embeddings backend is in modeld. For now, the client
-	// returns unsupported. Once we transport embeddings, this will call modeldconn.
-	return nil, NewUnsupportedFeatureError("embed client (not implemented over transport)")
+	res, err := modeldconn.Embed(ctx, modeldconn.ModelRef{
+		Name:   c.modelName,
+		Type:   "openvino",
+		Digest: c.modelDigest,
+		Path:   c.modelPath,
+	}, transport.Config{}, prompt)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]float64, len(res.Vector))
+	for i, v := range res.Vector {
+		out[i] = float64(v)
+	}
+	return out, nil
 }
 
 var _ modelrepo.LLMEmbedClient = (*embedClient)(nil)

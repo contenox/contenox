@@ -51,7 +51,11 @@ type StreamParcel struct {
 	// visible output text. Like Message.Thinking, it is provider-facing output
 	// and must never be sent back as conversation history.
 	Thinking string
-	Error    error
+	// ToolCalls carries final structured tool-call output for providers that can
+	// assemble tool calls from a stream. It is normally emitted on a terminal
+	// parcel, not token-by-token.
+	ToolCalls []ToolCall
+	Error     error
 }
 
 type Tool struct {

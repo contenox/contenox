@@ -1,6 +1,7 @@
 package openvino
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,6 +22,22 @@ type staticSnapshot struct {
 func (s staticSnapshot) FreeBytes() (int64, error) { return s.snap.FreeBytes, nil }
 func (s staticSnapshot) Snapshot() (capacity.DeviceSnapshot, error) {
 	return s.snap, nil
+}
+
+type fakeEmbedBackend struct {
+	prompt string
+	closed bool
+	vec    []float32
+}
+
+func (b *fakeEmbedBackend) Embed(_ context.Context, prompt string) ([]float32, error) {
+	b.prompt = prompt
+	return b.vec, nil
+}
+
+func (b *fakeEmbedBackend) Close() error {
+	b.closed = true
+	return nil
 }
 
 func TestUnit_ServiceDescribeResolvesCapacity(t *testing.T) {
@@ -114,6 +131,51 @@ func TestUnit_ServiceOpenSessionRejectsOversizedContextBeforeBackend(t *testing.
 	})
 	if !errors.Is(err, transport.ErrContextOverflow) {
 		t.Fatalf("OpenSession = %v, want ErrContextOverflow", err)
+	}
+}
+
+func TestUnit_ServiceEmbedUsesNativeEmbeddingSession(t *testing.T) {
+	old := newEmbedSession
+	t.Cleanup(func() { newEmbedSession = old })
+	t.Setenv("CONTENOX_OPENVINO_DEVICE", "CPU")
+
+	var gotPath, gotDevice string
+	backend := &fakeEmbedBackend{vec: []float32{0.25, 0.5, 0.75}}
+	newEmbedSession = func(modelPath, device string) (EmbedSessionBackend, error) {
+		gotPath, gotDevice = modelPath, device
+		return backend, nil
+	}
+
+	res, err := NewService().Embed(t.Context(), transport.EmbedRequest{
+		Type: "openvino",
+		Path: "/models/embedder",
+		Text: "search query",
+	})
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if gotPath != "/models/embedder" || gotDevice != "CPU" {
+		t.Fatalf("newEmbedSession path/device = %q/%q", gotPath, gotDevice)
+	}
+	if backend.prompt != "search query" {
+		t.Fatalf("prompt = %q", backend.prompt)
+	}
+	if !backend.closed {
+		t.Fatal("embedding backend was not closed")
+	}
+	if len(res.Vector) != 3 || res.Vector[0] != 0.25 || res.Vector[2] != 0.75 {
+		t.Fatalf("embedding vector = %+v", res.Vector)
+	}
+}
+
+func TestUnit_ServiceEmbedRejectsBackendMismatch(t *testing.T) {
+	_, err := NewService().Embed(t.Context(), transport.EmbedRequest{
+		Type: "llama",
+		Path: "/models/not-openvino",
+		Text: "query",
+	})
+	if !errors.Is(err, transport.ErrBackendMismatch) {
+		t.Fatalf("Embed = %v, want ErrBackendMismatch", err)
 	}
 }
 

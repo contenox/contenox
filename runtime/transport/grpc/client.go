@@ -126,6 +126,29 @@ func (c *Client) Describe(ctx context.Context, req transport.OpenSessionRequest)
 	}, nil
 }
 
+// Embed computes a one-shot embedding through the owner without opening a
+// persistent decode session.
+func (c *Client) Embed(ctx context.Context, req transport.EmbedRequest) (transport.EmbedResult, error) {
+	owner := req.Fence.OwnerInstanceID
+	if owner == "" {
+		owner = c.owner
+	}
+	out := new(embedResp)
+	in := &embedReq{
+		OwnerInstanceID: owner,
+		ModelName:       req.ModelName,
+		Type:            req.Type,
+		Digest:          req.Digest,
+		Path:            req.Path,
+		Config:          req.Config,
+		Text:            req.Text,
+	}
+	if err := c.invoke(ctx, "Embed", in, out); err != nil {
+		return transport.EmbedResult{}, err
+	}
+	return transport.EmbedResult{Vector: out.Vector}, nil
+}
+
 // grpcSession is the client handle to a session resident in the owner; each
 // method is a fenced RPC keyed by the opaque handle.
 type grpcSession struct {
@@ -200,7 +223,7 @@ func (s *grpcSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (<
 				out <- transport.StreamChunk{Error: decodeError(err)}
 				return
 			}
-			chunk := transport.StreamChunk{Text: w.Text}
+			chunk := transport.StreamChunk{Text: w.Text, Thinking: w.Thinking, ToolCalls: w.ToolCalls}
 			if w.Error != "" {
 				chunk.Error = errors.New(w.Error)
 			}

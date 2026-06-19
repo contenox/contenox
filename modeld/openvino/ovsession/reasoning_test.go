@@ -5,6 +5,7 @@ package ovsession_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
@@ -35,7 +36,8 @@ func TestSystem_OpenVINOGenAI_ReasoningStreaming(t *testing.T) {
 	t.Logf("Formatted prompt: %q", prompt)
 
 	opts := ovsession.GenerateOptions{
-		MaxNewTokens: 128,
+		MaxNewTokens:    128,
+		ParserProtocols: []string{"openvino:deepseek_r1_reasoning_incremental_parser"},
 	}
 
 	ch, err := session.Stream(ctx, prompt, opts)
@@ -43,18 +45,23 @@ func TestSystem_OpenVINOGenAI_ReasoningStreaming(t *testing.T) {
 		t.Fatalf("Stream: %v", err)
 	}
 
-	var text string
+	var text, thinking string
 	for chunk := range ch {
 		if chunk.Error != nil {
 			t.Fatalf("Chunk error: %v", chunk.Error)
 		}
-		t.Logf("Chunk: %q", chunk.Text)
+		t.Logf("Chunk: text=%q thinking=%q", chunk.Text, chunk.Thinking)
 		text += chunk.Text
+		thinking += chunk.Thinking
 	}
 
-	if text == "" {
-		t.Fatal("Expected some output, got empty")
+	if thinking == "" {
+		t.Fatal("expected reasoning parser to emit thinking content")
+	}
+	if strings.Contains(text, "<think>") || strings.Contains(text, "Okay, so I'm trying") {
+		t.Fatalf("reasoning leaked into visible text: %q", text)
 	}
 
-	t.Logf("Filtered streamed output: %s", text)
+	t.Logf("Visible streamed output: %s", text)
+	t.Logf("Thinking streamed output: %s", thinking)
 }

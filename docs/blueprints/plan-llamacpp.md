@@ -121,7 +121,7 @@ packaging on the target OS/arch. Alternative-silicon certification lives in
 
 | Reuse capability | llama.cpp API | Notes |
 |---|---|---|
-| Snapshot/restore a session's KV | `llama_state_seq_get_data` / `set_data`; `llama_state_seq_save_file` / `load_file` | file variants write straight to NVMe — cleaner than OpenVINO's per-tensor walk |
+| Snapshot/restore a session | `llama_state_get_data` / `set_data` for exact resume; `llama_state_seq_*` for sequence memory operations | full context state includes the last logits buffer; sequence-only state is not enough for next-token equality |
 | Suffix-only re-prefill | `llama_memory_seq_rm(seq, p0, p1)` | drop the changed tail, append the new suffix |
 | Copy-on-write session branch | `llama_memory_seq_cp` | fork a workspace session cheaply |
 | Context shift / position ops | `llama_memory_seq_add`, `_div`, `_keep`, `_pos_max` | older docs call these `llama_kv_cache_seq_*`; the vendored version uses `llama_memory_seq_*` |
@@ -222,21 +222,24 @@ The shim exposes or must expose:
 llama_free(ctx)
 llama_decode with exact status mapping
 llama_memory_seq_rm/cp/add
+llama_state_get_data/set_data
 llama_state_seq_get_size/get_data/set_data
 tokenization and token-to-piece helpers
 model-native chat-template rendering through the pinned minja headers
 minimal sampler support needed for deterministic tests
 ```
 
-Snapshot file helpers (`llama_state_seq_save_file/load_file`) remain an L4
+Snapshot file helpers (`llama_state_save_file/load_file` or
+`llama_state_seq_save_file/load_file`, depending on whether logits are needed)
+remain an L4
 durability/benchmark addition on top of the current byte-state primitives.
 
 See `llamacpp-binding-ownership-options.md` for the final decision record.
 
 ## Spike plan (mirrors S0 / S2 / S2.5)
 
-- **L0 (kill-gate) — owned shim + KV round-trip.** Build the Contenox-owned
-  llama.cpp shim, then prefill a prompt, `llama_state_seq_save_file`, fresh
+- **L0 (kill-gate) — owned shim + state round-trip.** Build the Contenox-owned
+  llama.cpp shim, then prefill a prompt, save context state, fresh
   context, `load_file`, decode, and assert identical greedy continuation. Also
   prove same prompt + same seed + same sampler config reproduces, snapshot
   save/restore bytes/ms are recorded, `llama_free(ctx)` works, decode status
@@ -359,10 +362,9 @@ with citations.
   `runtime`; it feeds segments and tokens to `modeld` over the transport. This
   refactor is the concrete proof the workspace-context layer is
   substrate-independent.
-- **`Makefile.llamacpp`** with `model` / `test-l0` / `test-l2` targets, mirroring
-  `Makefile.openvino`. It must fetch or point at the pinned llama.cpp source used
-  by the Contenox-owned shim, build exactly one linked llama.cpp copy, and run
-  tiny-model L0/L2 tests against the direct runtime.
+- **`Makefile.llamacpp-direct`** owns the pinned llama.cpp source/runtime build.
+  It must build exactly one linked llama.cpp copy plus `common`, and run
+  tiny-model tests against the direct runtime.
 
 ## Non-goals
 
@@ -376,7 +378,9 @@ with citations.
 
 ## Verification
 
-- `make -f Makefile.llamacpp test-l0 test-l2` — snapshot round-trip + warm/cold.
+- `make -f Makefile.llamacpp-direct test-shim-cpu` — direct shim build/link.
+- Native `modeld/llama/llamasession` tests — snapshot round-trip + warm/cold
+  when `CONTENOX_LLAMA_TINY_GGUF` is set.
 - Warm suffix output equals cold full prompt output under greedy decoding.
 - Profile/tokenizer/template mismatch causes a cache miss, not stale reuse.
 - Cancellation during prefill/decode has a tested structured outcome.

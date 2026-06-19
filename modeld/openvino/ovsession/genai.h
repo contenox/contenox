@@ -106,6 +106,8 @@ void cx_genai_stream_abort(cx_genai_stream *stream, const char *message);
 int cx_genai_stream_next(cx_genai_stream *stream,
                          char *out,
                          size_t out_len,
+                         char *thinking,
+                         size_t thinking_len,
                          char *err,
                          size_t err_len);
 

@@ -12,21 +12,41 @@ import (
 func TestUnit_WriteToolProfileWritesLlamaProfile(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, writeToolProfile("llama", dir, "qwen"))
+	require.NoError(t, writeToolProfile("llama", dir, "llama:common_chat_tool_parser"))
 
 	body, err := os.ReadFile(filepath.Join(dir, "contenox-llama.json"))
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"tool_calls":{"protocol":"qwen"}}`, string(body))
+	assert.JSONEq(t, `{"tool_calls":{"protocol":"llama:common_chat_tool_parser"}}`, string(body))
 }
 
 func TestUnit_WriteToolProfileWritesOpenVINOProfile(t *testing.T) {
 	dir := t.TempDir()
 
-	require.NoError(t, writeToolProfile("openvino", dir, "qwen"))
+	require.NoError(t, writeToolProfile("openvino", dir, "openvino:llama3_json_tool_parser"))
 
 	body, err := os.ReadFile(filepath.Join(dir, "contenox-openvino.json"))
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"tool_calls":{"protocol":"qwen"}}`, string(body))
+	assert.JSONEq(t, `{"tool_calls":{"protocol":"openvino:llama3_json_tool_parser"}}`, string(body))
+}
+
+func TestUnit_WriteLocalModelProfileWritesReasoningProtocol(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, writeLocalModelProfile("llama", dir, "", "llama:common_chat_reasoning_parser", "deepseek"))
+
+	body, err := os.ReadFile(filepath.Join(dir, "contenox-llama.json"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"reasoning":{"protocol":"llama:common_chat_reasoning_parser","format":"deepseek"}}`, string(body))
+}
+
+func TestUnit_WriteLocalModelProfileWritesToolAndReasoningProtocols(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, writeLocalModelProfile("llama", dir, "llama:common_chat_tool_parser", "llama:common_chat_reasoning_parser", "deepseek"))
+
+	body, err := os.ReadFile(filepath.Join(dir, "contenox-llama.json"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"tool_calls":{"protocol":"llama:common_chat_tool_parser"},"reasoning":{"protocol":"llama:common_chat_reasoning_parser","format":"deepseek"}}`, string(body))
 }
 
 func TestUnit_WriteToolProfileKeepsExistingProfile(t *testing.T) {
@@ -34,7 +54,7 @@ func TestUnit_WriteToolProfileKeepsExistingProfile(t *testing.T) {
 	path := filepath.Join(dir, "contenox-llama.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"profile_id":"user"}`), 0o644))
 
-	require.NoError(t, writeToolProfile("local", dir, "qwen"))
+	require.NoError(t, writeToolProfile("local", dir, "llama:common_chat_tool_parser"))
 
 	body, err := os.ReadFile(path)
 	require.NoError(t, err)

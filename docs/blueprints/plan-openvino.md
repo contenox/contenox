@@ -835,8 +835,9 @@ expensive unknown in the plan, and it is measurable in days on one machine.
       `openvino openvino_genai` builds and wires them through
       `ContinuousBatchingPipeline`. Model directories can provide a strict
       `contenox-openvino.json` profile for scheduler/session settings. Prompt,
-      chat, and stream clients share pooled GenAI sessions. Embeddings and
-      coding-context integration remain follow-up work.
+      chat, and stream clients share pooled GenAI sessions. Embedding transport
+      was added later via profile-gated `TextEmbeddingPipeline`; coding-context
+      integration remains follow-up work.
 - [x] **S2:** test whether Runtime state APIs can snapshot useful LLM state.
       Result: `prefill -> snapshot_save -> fresh session -> snapshot_restore ->
       decode` reproduces greedy continuation exactly on

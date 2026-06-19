@@ -4,19 +4,19 @@
 > refactor and the following landed + verified: daemon wiring (cmd/modeld now imports
 > `modeld/llama/llamasession`), manifest token-range population, the common benchmark
 > harness (`runtime/benchreport` + real llama driver), the OpenVINO in-flight cancel
-> test, and **model-native llama tool calls** (owned minja engine in
-> `modeld/llama/chattmpl`, tools across the transport, output parser).
+> test, and **model-native llama tool calls** (llama.cpp common chat template
+> path, tools across the transport, output parser).
 >
 > Build/test recipe for the tagged llama path:
-> `make deps-llama-headers build-modeld-llama test-llamacpp-direct-cpu`, then
-> `CGO_ENABLED=1 CGO_CPPFLAGS="-I$PWD/.llamacpp-vendor -I$PWD/.llamacpp-runtime/cpu/include" CGO_LDFLAGS="-L$PWD/.llamacpp-runtime/cpu/lib -Wl,--disable-new-dtags -Wl,-rpath,$PWD/.llamacpp-runtime/cpu/lib -Wl,-rpath-link,$PWD/.llamacpp-runtime/cpu/lib -l:libllama.so -l:libggml.so -l:libggml-base.so -l:libggml-cpu.so -lstdc++ -lm -ldl -lpthread" go test -tags 'llamanode llamacpp_direct' ./modeld/llama/...`
+> `make build-modeld-llama test-llamacpp-direct-cpu`, then
+> `CGO_ENABLED=1 CGO_CPPFLAGS="-I$PWD/tmp/ref/llama.cpp/common -I$PWD/tmp/ref/llama.cpp/vendor -I$PWD/.llamacpp-runtime/cpu/include" CGO_LDFLAGS="-L$PWD/.llamacpp-runtime/cpu/lib -Wl,--disable-new-dtags -Wl,-rpath,$PWD/.llamacpp-runtime/cpu/lib -Wl,-rpath-link,$PWD/.llamacpp-runtime/cpu/lib -l:libcommon.a -l:libllama.so -l:libggml.so -l:libggml-base.so -l:libggml-cpu.so -lstdc++ -lm -ldl -lpthread" go test -tags 'llamanode llamacpp_direct' ./modeld/llama/...`
 > OpenVINO: model at `.openvino/models/qwen-coder-0.5b-int4`; flags resolved from the
 > `.openvino/venv` like `Makefile.openvino` (`make -f Makefile.openvino test-s1-5`).
 
 > Update (2026-06-18): landed + verified (pure-Go build/vet/tests green) —
 > - **`make build-modeld` wired:** CGO flags via shared `mk/openvino-flags.mk` +
->   `mk/llama-flags.mk`; `make deps-modeld` reproduces deps; `.llamacpp-vendor`
->   gitignored. Parallelism capped (`-p`) to avoid OOM.
+>   `mk/llama-flags.mk`; `make deps-modeld` reproduces deps. Parallelism capped
+>   (`-p`) to avoid OOM.
 > - **modeld single-backend made coherent:** `cmd/modeld` registry picks one
 >   backend (`CONTENOX_MODELD_BACKEND` / preference); the owner lease + gRPC health
 >   advertise it; `modeldprobe.Status.Backend` + `modeldconn.Backend()` let the
@@ -63,31 +63,20 @@ only then can the policy be exercised + benched (`benchreport` `hit_rate` vs LRU
 
 ---
 
-## #2 Snapshot/restore wiring  (now unblocked — Phase 3 numbers exist)
+## Done: Snapshot/restore wiring
 
-**Goal:** L0 snapshot round-trip on the live session (suspend/resume, branch, crash
-recovery). The blueprint L3 said decide *after* L0/L2 numbers — those now exist
-(`benchreport`), so proceed.
+L0 live snapshot round-trip is wired through `transport.Session` and the gRPC
+transport, with `modeld/llama/llamasession` restoring into a fresh llama.cpp
+context and matching the original greedy continuation on a tiny GGUF.
 
-**Where:**
-- The native byte-state primitives live in
-  `modeld/llama/llamacppshim/direct.go` — `StateSeqGetData` /
-  `StateSeqSetData` are present; file save/load helpers still need direct shim
-  wrappers if benchmark output should avoid moving large KV blobs through Go.
-- Contract: extend `runtime/transport/session.go` `Session` with
-  `Snapshot()/Restore()` (or `SaveState/LoadState`). This crosses the gRPC boundary —
-  add methods in `runtime/transport/grpc/{wire,server,client}.go` (mirror the existing
-  unary methods; the JSON codec handles structs, but raw KV bytes are large — consider
-  a streamed or base64 field).
-- `modeld/llama/llamasession/llama.go` — implement save/restore via the
-  `llamacppshim` state funcs; gate restore on `ContextManifest` compatibility (reuse
-  `contextasm` CompatibleRuntime + stable token hash) — refuse a mismatched snapshot.
+The session snapshot uses full llama.cpp context state (`llama_state_get_data` /
+`llama_state_set_data`) through `modeld/llama/llamacppshim/direct.go`, not only
+`llama_state_seq_*`, because sequence state restores KV memory but not the last
+logits buffer needed for exact next-token equality.
 
-**Hints:** kill gates are in `docs/blueprints/llamacpp-binding-ownership-options.md`
-("Kill Gates"): tiny GGUF, non-empty state bytes, restore into fresh context, greedy
-continuation equals original, wrong-manifest rejected, double-close safe. Add the
-`snapshot_save`/`snapshot_restore` fields to `benchreport.Report` (already stubbed in
-the shape) and fill them from a real round-trip test.
+Remaining optional work: add file save/load wrappers if benchmark output should
+avoid moving large state blobs through Go, and fill the `snapshot_save` /
+`snapshot_restore` fields in `benchreport.Report`.
 
 ---
 
@@ -115,16 +104,19 @@ Done: deterministic in-flight cancel test (`modeld/openvino/ovsession/genai_test
 **OpenVINO is now a first-class registrable backend type** (2026-06-18) — `contenox
 init` registers it, `backendservice` validation accepts it, `runtimestate` dispatches
 it, and `contenox model pull` fetches curated IR models (see handover Step 7).
-Remaining, each blocked on a model this env doesn't have:
+Embedding transport/provider wiring is done: profiles opt in with `can_embed`,
+runtime calls `modeldconn.Embed`, and modeld runs OpenVINO GenAI
+`TextEmbeddingPipeline` as a stateless request. System verification passed with
+`.openvino/models/bge-small-ov`. Stream/tool history parity is done: modeld
+receives assistant `tool_calls` and tool-result IDs in chat-template rendering,
+and tool-enabled streams emit a final parsed `ToolCalls` parcel.
+Streaming incremental reasoning is also wired: `DecodeConfig.ParserProtocols`
+reaches OpenVINO GenAI, native incremental parsers split `reasoning_content`
+into `StreamChunk.Thinking`, and the runtime only displays it when `WithThink`
+requests a visible level. Verified with
+`.openvino/models/deepseek-r1-distill-qwen-1.5b-int4-ov`.
+Remaining:
 
-- **Embeddings** — wire `TextEmbeddingPipeline` in `modeld/openvino/ovsession` for
-  profiles that declare an embedding model; flip `runtime/modelrepo/openvino/provider.go`
-  `CanEmbed()`/`GetEmbedConnection` off the not-wired stub. Mirror the llama
-  `EmbedFunc` seam (`modeld/llama/session.go` `SetEmbedFunc`). *Needs an embedding IR
-  model (e.g. bge-*) — the chat model can't verify it.*
-- **Streaming incremental-reasoning parser bridge** — support the `*_incremental_*`
-  protocols registered in `modeld/openvino/ovsession/genai.go`. *Needs a reasoning model
-  (DeepSeek-R1 / Phi-4 reasoning) to verify.*
 - **VLLMParserWrapper** — formalize: either a Python parser-object bridge or keep the
   explicit native-bridge error, documented (per `openvino-s2-7-protocol-registry.md`).
 - **Per-model-family profiles** — ship `contenox-openvino.json` files declaring the
@@ -135,21 +127,19 @@ Remaining, each blocked on a model this env doesn't have:
   `Close` (lifecycle is via `OpenSession`/`Close` since the in-process pool was removed).
 
 **Hint:** to verify locally, `make -f Makefile.openvino model` downloads the chat model;
-embeddings/reasoning need their own `snapshot_download` of an appropriate IR.
+set `CONTENOX_OPENVINO_EMBED_MODEL` to a BGE OpenVINO IR and
+`CONTENOX_OPENVINO_REASONING_MODEL` to an official DeepSeek/Phi reasoning IR with
+`openvino_tokenizer.xml`.
 
 ---
 
-## #5 follow-up: tool-result history  (extends the shipped model-native tool calls)
+## Done: tool-result history
 
-Sending tool *results* back in a multi-turn (`role:"tool"` messages, assistant messages
-with `tool_calls`) is still rejected at `runtime/modelrepo/llama/prompt.go`
-`validateMessage`. minja already renders these, so the work is:
-- carry `tool_calls` / `tool` role + tool-call ids through the message→segment mapping
-  in `prompt.go` and the modeld `stableMessages`/`volatileMessages` reconstruction
-  (`modeld/llama/llamasession/llama.go`) — currently only `system/user/assistant`
-  text roles survive;
-- pass them as structured JSON to `chattmpl.Render` (minja consumes `messages[].tool_calls`
-  and `role:"tool"`), not flattened text.
+Tool results in multi-turn history (`role:"tool"` messages, assistant messages
+with `tool_calls`) now flow through the message→segment mapping and modeld
+reconstruction. The llama backend renders them via llama.cpp's common chat
+template layer, so the same upstream path handles tool definitions, assistant
+tool calls, tool result IDs, and model-specific template handlers.
 
 ---
 

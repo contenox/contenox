@@ -65,7 +65,7 @@ registered by 'contenox init' and the first pulled model becomes the default:
 		// Registry is the single source of truth for curated model URLs.
 		reg := modelregistry.New(nil)
 
-		var name, downloadURL, repo, toolProtocol string
+		var name, downloadURL, repo, toolProtocol, reasoningProtocol, reasoningFormat string
 		modelBackend := "llama" // GGUF single-file by default; --url pulls are GGUF
 		switch {
 		case rawURL != "" && len(args) == 1:
@@ -89,6 +89,8 @@ registered by 'contenox init' and the first pulled model becomes the default:
 			modelBackend = d.BackendType()
 			repo = d.Repo
 			toolProtocol = d.ToolProtocol
+			reasoningProtocol = d.ReasoningProtocol
+			reasoningFormat = d.ReasoningFormat
 		default:
 			return cmd.Help()
 		}
@@ -128,12 +130,13 @@ registered by 'contenox init' and the first pulled model becomes the default:
 				fmt.Fprintln(cmd.OutOrStdout(), "\nDone.")
 			}
 		}
-		// Certified curated models declare their tool-call protocol; write it
-		// into the model's profile so the local provider enables model-native
-		// tool calls out of the box. Never overwrite a user-edited profile.
-		if toolProtocol != "" {
-			if err := writeToolProfile(modelBackend, modelDir, toolProtocol); err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write tool-call profile: %v\n", err)
+		// Certified curated models declare their local parsing protocols; write
+		// them into the model's profile so the provider enables model-native tool
+		// calls and thinking separation out of the box. Never overwrite a
+		// user-edited profile.
+		if toolProtocol != "" || reasoningProtocol != "" {
+			if err := writeLocalModelProfile(modelBackend, modelDir, toolProtocol, reasoningProtocol, reasoningFormat); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not write local model profile: %v\n", err)
 			}
 		}
 
@@ -258,6 +261,13 @@ func downloadOpenVINOIR(ctx context.Context, repo, destDir string, out io.Writer
 // tool-call protocol, so the local provider enables tool calls. It does not
 // overwrite an existing profile (a user may have customized it).
 func writeToolProfile(modelBackend, modelDir, protocol string) error {
+	return writeLocalModelProfile(modelBackend, modelDir, protocol, "", "")
+}
+
+// writeLocalModelProfile writes certified local parsing protocols to a fresh
+// backend profile. It does not overwrite an existing profile because users may
+// have customized runtime, prompt, or capability settings.
+func writeLocalModelProfile(modelBackend, modelDir, toolProtocol, reasoningProtocol, reasoningFormat string) error {
 	var fileName string
 	switch modelrepo.CanonicalBackendType(modelBackend) {
 	case "llama":
@@ -272,8 +282,26 @@ func writeToolProfile(modelBackend, modelDir, protocol string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil // keep an existing (possibly user-edited) profile
 	}
-	body := fmt.Sprintf("{\n  \"tool_calls\": { \"protocol\": %q }\n}\n", protocol)
-	return os.WriteFile(path, []byte(body), 0o644)
+	profile := map[string]any{}
+	if toolProtocol != "" {
+		profile["tool_calls"] = map[string]any{"protocol": toolProtocol}
+	}
+	if reasoningProtocol != "" {
+		if modelrepo.CanonicalBackendType(modelBackend) == "llama" && reasoningFormat == "" {
+			return fmt.Errorf("llama reasoning profile requires reasoning format")
+		}
+		reasoning := map[string]any{"protocol": reasoningProtocol}
+		if reasoningFormat != "" {
+			reasoning["format"] = reasoningFormat
+		}
+		profile["reasoning"] = reasoning
+	}
+	body, err := json.MarshalIndent(profile, "", "  ")
+	if err != nil {
+		return err
+	}
+	body = append(body, '\n')
+	return os.WriteFile(path, body, 0o644)
 }
 
 // downloadFile streams url to dest.

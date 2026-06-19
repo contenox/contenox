@@ -31,29 +31,7 @@ func TestSystem_RuntimeOpenVINOEndToEndOnDevice(t *testing.T) {
 		t.Skip("set CONTENOX_OPENVINO_TEST_MODEL (see Makefile.openvino)")
 	}
 
-	// modeld, in-process, serving the real OpenVINO backend.
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	endpoint := lis.Addr().String()
-	dataRoot := t.TempDir()
-	leasePath := filepath.Join(dataRoot, "modeld.lease")
-	lease, err := liblease.Acquire(leasePath, 60*time.Second, liblease.WithMeta(map[string]string{"endpoint": endpoint}))
-	if err != nil {
-		t.Fatalf("acquire lease: %v", err)
-	}
-	t.Cleanup(func() { _ = lease.Release() })
-	rec, err := liblease.Inspect(leasePath)
-	if err != nil {
-		t.Fatalf("inspect lease: %v", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go func() { _ = transportgrpc.Serve(ctx, lis, modeldopenvino.NewService(), rec.InstanceID, "openvino") }()
-
-	modeldconn.SetDataRoot(dataRoot)
-	t.Cleanup(func() { modeldconn.SetDataRoot("") })
+	serveRealOpenVINOModeld(t)
 
 	// Runtime side: point the client straight at the IR model dir, with identity
 	// derived from the model's own files (template digest from its chat_template).
@@ -83,4 +61,102 @@ func TestSystem_RuntimeOpenVINOEndToEndOnDevice(t *testing.T) {
 	if strings.TrimSpace(res.Message.Content) == "" {
 		t.Fatal("end-to-end chat produced no tokens")
 	}
+}
+
+func TestSystem_RuntimeOpenVINOEmbedEndToEndOnDevice(t *testing.T) {
+	modelDir := os.Getenv("CONTENOX_OPENVINO_EMBED_MODEL")
+	if modelDir == "" {
+		t.Skip("set CONTENOX_OPENVINO_EMBED_MODEL")
+	}
+
+	serveRealOpenVINOModeld(t)
+
+	modelDigest, _ := modelIdentity(modelDir)
+	c := &embedClient{
+		modelName:   "embed-test",
+		modelPath:   modelDir,
+		modelDigest: modelDigest,
+	}
+	vec, err := c.Embed(context.Background(), "hello embeddings")
+	if err != nil {
+		t.Fatalf("Embed end-to-end: %v", err)
+	}
+	if len(vec) == 0 {
+		t.Fatal("end-to-end embedding produced an empty vector")
+	}
+	t.Logf("embedding dims=%d first=%f", len(vec), vec[0])
+}
+
+func TestSystem_RuntimeOpenVINOReasoningEndToEndOnDevice(t *testing.T) {
+	modelDir := os.Getenv("CONTENOX_OPENVINO_REASONING_MODEL")
+	if modelDir == "" {
+		t.Skip("set CONTENOX_OPENVINO_REASONING_MODEL")
+	}
+
+	serveRealOpenVINOModeld(t)
+
+	modelDigest, templateDigest := modelIdentity(modelDir)
+	c := &client{
+		modelPath:   modelDir,
+		profileID:   "deepseek-test",
+		modelDigest: modelDigest,
+		cfg: Config{
+			NumCtx:               2048,
+			PromptFormat:         "openvino-chat-template",
+			PromptTemplateDigest: templateDigest,
+		},
+		maxOutputTokens: 96,
+		reasoningStream: "openvino:deepseek_r1_reasoning_incremental_parser",
+	}
+	res, err := c.Chat(
+		context.Background(),
+		[]modelrepo.Message{{Role: "user", Content: "Why is the sky blue?"}},
+		modelrepo.WithThink("high"),
+		modelrepo.WithMaxTokens(96),
+	)
+	if err != nil {
+		t.Fatalf("Reasoning chat end-to-end: %v", err)
+	}
+	if strings.TrimSpace(res.Message.Thinking) == "" {
+		t.Fatal("reasoning end-to-end produced no thinking")
+	}
+	if strings.Contains(res.Message.Content, "<think>") || strings.Contains(res.Message.Content, "Okay, so I'm trying") {
+		t.Fatalf("reasoning leaked into visible content: %q", res.Message.Content)
+	}
+	t.Logf("visible=%q thinking_prefix=%q", res.Message.Content, firstRunes(res.Message.Thinking, 80))
+}
+
+func serveRealOpenVINOModeld(t *testing.T) {
+	t.Helper()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	endpoint := lis.Addr().String()
+	dataRoot := t.TempDir()
+	leasePath := filepath.Join(dataRoot, "modeld.lease")
+	lease, err := liblease.Acquire(leasePath, 60*time.Second, liblease.WithMeta(map[string]string{"endpoint": endpoint, "backend": "openvino"}))
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	t.Cleanup(func() { _ = lease.Release() })
+	rec, err := liblease.Inspect(leasePath)
+	if err != nil {
+		t.Fatalf("inspect lease: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = transportgrpc.Serve(ctx, lis, modeldopenvino.NewService(), rec.InstanceID, "openvino") }()
+
+	modeldconn.SetDataRoot(dataRoot)
+	t.Cleanup(func() { modeldconn.SetDataRoot("") })
+}
+
+func firstRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
 }

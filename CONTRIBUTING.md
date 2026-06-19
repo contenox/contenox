@@ -186,7 +186,6 @@ sudo apt-get install -y curl git gcc g++ cmake python3 python3-venv
 For a CPU llama daemon:
 
 ```bash
-make deps-llama-headers
 make build-modeld-llama
 make run-modeld-llama
 ```

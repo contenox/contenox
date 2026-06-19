@@ -38,9 +38,11 @@ type session struct {
 	prefixLen  int    // how many of resident are the stable prefix
 	stableText string // raw stable text from the runtime
 	prefixText string // the templated stable text whose tokens are resident
-	stableMsgs []llamacppshim.ChatMessage
+	stableMsgs []chatTemplateMessage
 	tools      string // JSON tool definitions rendered into the prompt (model-native)
 	manifest   llama.ContextManifest
+	chatSyntax llamacppshim.ChatSyntax
+	reasoning  string
 	closed     bool
 }
 
@@ -91,7 +93,7 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 		return nil, fmt.Errorf("llamasession: new batch: %w", err)
 	}
 
-	return &session{model: model, lctx: lctx, batch: batch, numCtx: numCtx, nBatch: nBatch, addBOS: addBOS}, nil
+	return &session{model: model, lctx: lctx, batch: batch, numCtx: numCtx, nBatch: nBatch, addBOS: addBOS, reasoning: cfg.ReasoningFormat}, nil
 }
 
 func modelConfig(cfg llama.Config) llamacppshim.ModelConfig {
@@ -179,6 +181,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	s.prefixText = text
 	s.stableMsgs = stableMsgs
 	s.tools = prefix.Tools
+	s.chatSyntax = llamacppshim.ChatSyntax{}
 	enriched, err := s.enrichStableSegments(prefix.Manifest, stableMsgs, toks)
 	if err != nil {
 		return llama.PrefixStatus{}, err
@@ -219,15 +222,17 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	volatileMsgs := volatileMessages(suffix.Text, suffix.Manifest)
 	suffixText := suffix.Text
 	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
-		all := append(append([]llamacppshim.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
-		full, err := s.renderTemplate(all, s.tools, true)
+		all := append(append([]chatTemplateMessage{}, s.stableMsgs...), volatileMsgs...)
+		rendered, err := s.renderTemplateForDecode(all, s.tools, suffix.EnableThinking)
 		if err != nil {
 			return llama.SuffixStatus{}, fmt.Errorf("llamasession: apply chat template: %w", err)
 		}
+		full := rendered.Prompt
 		if !strings.HasPrefix(full, s.prefixText) {
 			return llama.SuffixStatus{}, llama.NewManifestMismatchError("model template is not prefix-stable across the suffix")
 		}
 		suffixText = full[len(s.prefixText):]
+		s.chatSyntax = rendered.Syntax
 	}
 
 	// When the stable prefix is empty, the BOS (if the model adds one) belongs to
@@ -318,6 +323,32 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		if maxTokens > remaining {
 			maxTokens = remaining
 		}
+		reasoningFormat := cfg.ReasoningFormat
+		if reasoningFormat == "" {
+			reasoningFormat = s.reasoning
+		}
+		parser, err := newChatOutputParser(cfg.ParserProtocols, s.chatSyntax, reasoningFormat)
+		if err != nil {
+			ch <- llama.StreamChunk{Error: err}
+			return
+		}
+		emitParsed := func(piece string, partial bool) bool {
+			if parser == nil {
+				if piece != "" {
+					ch <- llama.StreamChunk{Text: piece}
+				}
+				return true
+			}
+			text, thinking, toolCalls, err := parser.Push(piece, partial)
+			if err != nil {
+				ch <- llama.StreamChunk{Error: err}
+				return false
+			}
+			if text != "" || thinking != "" || len(toolCalls) > 0 {
+				ch <- llama.StreamChunk{Text: text, Thinking: thinking, ToolCalls: toolCalls}
+			}
+			return true
+		}
 		for n := 0; n < maxTokens; n++ {
 			select {
 			case <-ctx.Done():
@@ -328,6 +359,7 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 			id := sampler.Sample(s.lctx, -1)
 			sampler.Accept(id)
 			if s.model.TokenIsEOG(id) {
+				emitParsed("", false)
 				return
 			}
 
@@ -343,8 +375,11 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 				return
 			}
 			s.resident = append(s.resident, id)
-			ch <- llama.StreamChunk{Text: s.model.TokenToPiece(id)}
+			if !emitParsed(s.model.TokenToPiece(id), true) {
+				return
+			}
 		}
+		emitParsed("", false)
 	}()
 	return ch, nil
 }
@@ -374,7 +409,7 @@ func (s *session) Snapshot(ctx context.Context) (llama.SessionSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return llama.SessionSnapshot{}, err
 	}
-	state, err := s.lctx.StateSeqGetData(0)
+	state, err := s.lctx.StateGetData()
 	if err != nil {
 		return llama.SessionSnapshot{}, fmt.Errorf("llamasession snapshot: %w", err)
 	}
@@ -426,7 +461,7 @@ func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error
 	}
 	s.lctx.ClearMemory(true)
 	if snap.ResidentTokens > 0 {
-		if err := s.lctx.StateSeqSetData(0, snap.State); err != nil {
+		if err := s.lctx.StateSetData(snap.State); err != nil {
 			s.closeLocked()
 			return fmt.Errorf("%w: llamasession restore state: %v", llama.ErrSessionFatal, err)
 		}
@@ -492,8 +527,8 @@ func (s *session) closeLocked() {
 // segments (the runtime sends raw content keyed by role), for the model's own
 // chat template. Control segments (BOS, the assistant cue) carry no role and are
 // skipped — the template adds them.
-func stableMessages(text string, m llama.ContextManifest) []llamacppshim.ChatMessage {
-	var msgs []llamacppshim.ChatMessage
+func stableMessages(text string, m llama.ContextManifest) []chatTemplateMessage {
+	var msgs []chatTemplateMessage
 	for _, seg := range m.Segments {
 		if !seg.Stable {
 			continue
@@ -502,7 +537,7 @@ func stableMessages(text string, m llama.ContextManifest) []llamacppshim.ChatMes
 		if role == "" || seg.ByteStart < 0 || seg.ByteEnd > len(text) || seg.ByteStart > seg.ByteEnd {
 			continue
 		}
-		msgs = append(msgs, llamacppshim.ChatMessage{
+		msgs = append(msgs, chatTemplateMessage{
 			Role:       role,
 			Content:    text[seg.ByteStart:seg.ByteEnd],
 			ToolCalls:  seg.ToolCallsJSON,
@@ -514,8 +549,8 @@ func stableMessages(text string, m llama.ContextManifest) []llamacppshim.ChatMes
 
 // volatileMessages reconstructs the volatile turns; their segment byte ranges are
 // global (after the stable bytes), so they are offset into the suffix text.
-func volatileMessages(text string, m llama.ContextManifest) []llamacppshim.ChatMessage {
-	var msgs []llamacppshim.ChatMessage
+func volatileMessages(text string, m llama.ContextManifest) []chatTemplateMessage {
+	var msgs []chatTemplateMessage
 	base := m.StableBytes
 	for _, seg := range m.Segments {
 		if seg.Stable {
@@ -529,7 +564,7 @@ func volatileMessages(text string, m llama.ContextManifest) []llamacppshim.ChatM
 		if lo < 0 || hi > len(text) || lo > hi {
 			continue
 		}
-		msgs = append(msgs, llamacppshim.ChatMessage{
+		msgs = append(msgs, chatTemplateMessage{
 			Role:       role,
 			Content:    text[lo:hi],
 			ToolCalls:  seg.ToolCallsJSON,
@@ -554,7 +589,7 @@ func chatRole(kind string) string {
 // leading message prefix it ends. The final role segment's boundary is the full
 // stable tokenization, so the common single-segment case adds no template calls.
 // Control segments (e.g. BOS) carry no message text and get a zero-width range.
-func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []llamacppshim.ChatMessage, toks []int) (llama.ContextManifest, error) {
+func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []chatTemplateMessage, toks []int) (llama.ContextManifest, error) {
 	m.Segments = append([]llama.ManifestSegment(nil), m.Segments...)
 	m.StableTokenHash = contextasm.HashTokenIDs(toks)
 	prevEnd, msgIdx := 0, 0
@@ -571,7 +606,7 @@ func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []lla
 		msgIdx++
 		end := len(toks)
 		if msgIdx < len(stableMsgs) {
-			rendered, err := s.model.ApplyChatTemplate(stableMsgs[:msgIdx], false)
+			rendered, err := s.renderTemplate(stableMsgs[:msgIdx], s.tools, false)
 			if err != nil {
 				return llama.ContextManifest{}, fmt.Errorf("llamasession: stable segment template: %w", err)
 			}
@@ -595,10 +630,10 @@ func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []lla
 // ranges/hashes after the stable prefix, using the same incremental-template
 // boundary recovery. Token positions are offset by prefixTokens. A trailing
 // control segment (the assistant cue) absorbs any remaining suffix tokens.
-func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []llamacppshim.ChatMessage, stoks []int) error {
+func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []chatTemplateMessage, stoks []int) error {
 	s.manifest.Segments = append([]llama.ManifestSegment(nil), s.manifest.Segments...)
 	s.manifest.VolatileTokenHash = contextasm.HashTokenIDs(stoks)
-	allMsgs := append(append([]llamacppshim.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
+	allMsgs := append(append([]chatTemplateMessage{}, s.stableMsgs...), volatileMsgs...)
 	prevEnd, msgIdx := 0, len(s.stableMsgs)
 	for i := range s.manifest.Segments {
 		seg := &s.manifest.Segments[i]
@@ -615,7 +650,7 @@ func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []llamac
 		msgIdx++
 		end := len(stoks)
 		if msgIdx < len(allMsgs) {
-			rendered, err := s.model.ApplyChatTemplate(allMsgs[:msgIdx], false)
+			rendered, err := s.renderTemplate(allMsgs[:msgIdx], s.tools, false)
 			if err != nil {
 				return fmt.Errorf("llamasession: volatile segment template: %w", err)
 			}
@@ -636,48 +671,105 @@ func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []llamac
 	return nil
 }
 
-// renderTemplate applies the model's own chat template. When tool definitions are
-// present it routes through minja (ApplyChatTemplateTools) so the GGUF's Jinja tool
-// block is rendered model-natively; the legacy llama_chat_apply_template (used for
-// the no-tools path) cannot do that.
-func (s *session) renderTemplate(msgs []llamacppshim.ChatMessage, tools string, addAssistant bool) (string, error) {
-	if tools != "" {
-		msgsJSON, err := chatMessagesJSON(msgs)
-		if err != nil {
-			return "", err
-		}
-		return s.model.ApplyChatTemplateTools(msgsJSON, tools, addAssistant)
-	}
-	return s.model.ApplyChatTemplate(msgs, addAssistant)
-}
-
-// chatMessagesJSON marshals chat turns to the JSON array minja expects.
-// tool_calls is embedded as a raw JSON value (not re-encoded as a string) so
-// Jinja sees it as a proper list; tool_call_id is a plain string.
-func chatMessagesJSON(msgs []llamacppshim.ChatMessage) (string, error) {
-	type wireMsg struct {
-		Role       string          `json:"role"`
-		Content    string          `json:"content"`
-		ToolCalls  json.RawMessage `json:"tool_calls,omitempty"`
-		ToolCallID string          `json:"tool_call_id,omitempty"`
-	}
-	out := make([]wireMsg, len(msgs))
-	for i, m := range msgs {
-		wm := wireMsg{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID}
-		if m.ToolCalls != "" {
-			wm.ToolCalls = json.RawMessage(m.ToolCalls)
-		}
-		out[i] = wm
-	}
-	b, err := json.Marshal(out)
+// renderTemplate applies llama.cpp's upstream common chat-template path. That
+// path handles model-specific Jinja/template variants, tool definitions,
+// assistant tool_calls, tool result IDs, and BOS/EOS normalization.
+func (s *session) renderTemplate(msgs []chatTemplateMessage, tools string, addAssistant bool) (string, error) {
+	result, err := s.renderTemplateWithOptions(msgs, tools, addAssistant, nil)
 	if err != nil {
 		return "", err
 	}
-	return string(b), nil
+	return result.Prompt, nil
+}
+
+func (s *session) renderTemplateForDecode(msgs []chatTemplateMessage, tools string, enableThinking *bool) (llamacppshim.ChatTemplateResult, error) {
+	return s.renderTemplateWithOptions(msgs, tools, true, enableThinking)
+}
+
+func (s *session) renderTemplateWithOptions(msgs []chatTemplateMessage, tools string, addAssistant bool, enableThinking *bool) (llamacppshim.ChatTemplateResult, error) {
+	msgsJSON, err := chatMessagesJSON(msgs)
+	if err != nil {
+		return llamacppshim.ChatTemplateResult{}, err
+	}
+	thinking := true
+	if enableThinking != nil {
+		thinking = *enableThinking
+	}
+	return s.model.ApplyChatTemplateCommonWithOptions(msgsJSON, tools, llamacppshim.ChatTemplateOptions{
+		AddAssistant:    addAssistant,
+		ReasoningFormat: s.reasoning,
+		EnableThinking:  thinking,
+	})
 }
 
 func (s *session) tokenize(text string, addSpecial bool) ([]int, error) {
 	return s.model.Tokenize(text, addSpecial, true)
+}
+
+const (
+	llamaCommonChatReasoningParser = "llama:common_chat_reasoning_parser"
+	llamaCommonChatToolParser      = "llama:common_chat_tool_parser"
+)
+
+type chatOutputParser struct {
+	syntax          llamacppshim.ChatSyntax
+	reasoningFormat string
+	parseToolCalls  bool
+	raw             strings.Builder
+	content         string
+	thinking        string
+}
+
+func newChatOutputParser(protocols []string, syntax llamacppshim.ChatSyntax, configuredReasoningFormat string) (*chatOutputParser, error) {
+	var reasoningFormat string
+	var parseToolCalls bool
+	for _, protocol := range protocols {
+		switch protocol {
+		case "":
+			continue
+		case llamaCommonChatReasoningParser:
+			if configuredReasoningFormat == "" {
+				return nil, fmt.Errorf("%w: reasoning format is required for parser protocol %q", llama.ErrUnsupportedFeature, protocol)
+			}
+			reasoningFormat = configuredReasoningFormat
+		case llamaCommonChatToolParser:
+			parseToolCalls = true
+		default:
+			return nil, fmt.Errorf("%w: parser protocol %q", llama.ErrUnsupportedFeature, protocol)
+		}
+	}
+	if reasoningFormat == "" && !parseToolCalls {
+		return nil, nil
+	}
+	return &chatOutputParser{syntax: syntax, reasoningFormat: reasoningFormat, parseToolCalls: parseToolCalls}, nil
+}
+
+func (p *chatOutputParser) Push(piece string, partial bool) (textDelta, thinkingDelta string, toolCalls []llama.ToolCall, err error) {
+	if p == nil {
+		return piece, "", nil, nil
+	}
+	p.raw.WriteString(piece)
+	parsed, err := llamacppshim.ParseChatResponse(p.raw.String(), partial, p.syntax, p.reasoningFormat, p.parseToolCalls)
+	if err != nil {
+		return "", "", nil, err
+	}
+	textDelta = stringDelta(p.content, parsed.Content)
+	thinkingDelta = stringDelta(p.thinking, parsed.Thinking)
+	p.content = parsed.Content
+	p.thinking = parsed.Thinking
+	if p.parseToolCalls && !partial && parsed.ToolCallsJSON != "" && parsed.ToolCallsJSON != "[]" {
+		if err := json.Unmarshal([]byte(parsed.ToolCallsJSON), &toolCalls); err != nil {
+			return "", "", nil, fmt.Errorf("llamasession: parse tool calls: %w", err)
+		}
+	}
+	return textDelta, thinkingDelta, toolCalls, nil
+}
+
+func stringDelta(previous, current string) string {
+	if strings.HasPrefix(current, previous) {
+		return current[len(previous):]
+	}
+	return current
 }
 
 func (s *session) removeKV(p0, p1 int) error {

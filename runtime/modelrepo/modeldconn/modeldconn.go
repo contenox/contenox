@@ -125,3 +125,26 @@ func Describe(ctx context.Context, ref ModelRef, cfg transport.Config) (transpor
 		Config:    cfg,
 	})
 }
+
+// Embed asks the running modeld owner to compute a one-shot embedding for text.
+// It uses the same typed model handle and owner fence as Describe, but does not
+// open a persistent session.
+func Embed(ctx context.Context, ref ModelRef, cfg transport.Config, text string) (transport.EmbedResult, error) {
+	st := detector().Probe(ctx)
+	if st.State != modeldprobe.StateRunning {
+		return transport.EmbedResult{}, st.Err()
+	}
+	c, err := dial(st.Endpoint, st.Instance)
+	if err != nil {
+		return transport.EmbedResult{}, err
+	}
+	return c.Embed(ctx, transport.EmbedRequest{
+		Fence:     transport.Fence{OwnerInstanceID: st.Instance},
+		ModelName: ref.Name,
+		Type:      ref.Type,
+		Digest:    ref.Digest,
+		Path:      ref.Path,
+		Config:    cfg,
+		Text:      text,
+	})
+}

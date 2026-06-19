@@ -16,21 +16,30 @@ const profileFileName = "contenox-llama.json"
 // contenox-llama.json). Absent file = defaults. This is where explicit
 // runtime config replaces the toy fixed constants.
 type modelProfile struct {
-	ProfileID       string         `json:"profile_id,omitempty"`
-	ModelDigest     string         `json:"model_digest,omitempty"`
-	ContextLength   int            `json:"context_length,omitempty"`
-	MaxOutputTokens int            `json:"max_output_tokens,omitempty"`
+	ProfileID       string           `json:"profile_id,omitempty"`
+	ModelDigest     string           `json:"model_digest,omitempty"`
+	ContextLength   int              `json:"context_length,omitempty"`
+	MaxOutputTokens int              `json:"max_output_tokens,omitempty"`
 	CanThink        bool             `json:"can_think,omitempty"`
 	Prompt          promptProfile    `json:"prompt,omitempty"`
 	Runtime         runtimeProfile   `json:"runtime,omitempty"`
 	ToolCalls       toolCallsProfile `json:"tool_calls,omitempty"`
+	Reasoning       reasoningProfile `json:"reasoning,omitempty"`
 }
 
-// toolCallsProfile declares how this model emits tool calls. The protocol must be
-// a registered parser name (e.g. "hermes"); tool calls are rejected when unset, so
-// the runtime never guesses a model's tool format.
+// toolCallsProfile certifies that this model supports a known native tool-call
+// protocol. modeld parses the generated output through llama.cpp's common chat
+// parser; the runtime never scans marker strings or guesses support when unset.
 type toolCallsProfile struct {
 	Protocol string `json:"protocol,omitempty"`
+}
+
+// reasoningProfile declares how this model emits reasoning text in its normal
+// token stream. Empty means reasoning is not certified and the runtime will not
+// guess based on model names.
+type reasoningProfile struct {
+	Protocol string `json:"protocol,omitempty"`
+	Format   string `json:"format,omitempty"`
 }
 
 type promptProfile struct {
@@ -71,6 +80,17 @@ func loadModelProfile(profileDir string) (modelProfile, error) {
 	if p.ToolCalls.Protocol != "" && !toolCallProtocolKnown(p.ToolCalls.Protocol) {
 		return modelProfile{}, fmt.Errorf("llama profile %s: unknown tool_calls.protocol %q", path, p.ToolCalls.Protocol)
 	}
+	if p.Reasoning.Protocol != "" {
+		if err := validateReasoningProtocol(p.Reasoning.Protocol); err != nil {
+			return modelProfile{}, fmt.Errorf("llama profile %s: unknown reasoning.protocol %q: %w", path, p.Reasoning.Protocol, err)
+		}
+		if p.Reasoning.Format == "" {
+			return modelProfile{}, fmt.Errorf("%w: llama profile %s: reasoning.format is required when reasoning.protocol is set", ErrUnsupportedFeature, path)
+		}
+	}
+	if p.Reasoning.Format != "" && p.Reasoning.Protocol == "" {
+		return modelProfile{}, fmt.Errorf("%w: llama profile %s: reasoning.format requires reasoning.protocol", ErrUnsupportedFeature, path)
+	}
 	return p, nil
 }
 
@@ -87,6 +107,7 @@ func (p modelProfile) config() Config {
 		KVCacheType:          p.Runtime.KVCacheType,
 		PromptFormat:         p.Prompt.Format,
 		PromptTemplateDigest: p.Prompt.TemplateDigest,
+		ReasoningFormat:      p.Reasoning.Format,
 	}
 	if p.Prompt.AddBOS != nil {
 		c.DisableBOS = !*p.Prompt.AddBOS
@@ -117,6 +138,6 @@ func (p modelProfile) capabilityConfig() modelrepo.CapabilityConfig {
 		CanPrompt:       SessionAvailable(),
 		CanStream:       SessionAvailable(),
 		CanEmbed:        EmbedAvailable(),
-		CanThink:        p.CanThink,
+		CanThink:        p.CanThink || p.Reasoning.Protocol != "",
 	}
 }

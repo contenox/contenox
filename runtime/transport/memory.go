@@ -56,6 +56,15 @@ func (m *MemoryService) Describe(_ context.Context, req OpenSessionRequest) (Mod
 	return ModelInfo{ModelMaxContext: req.Config.NumCtx, EffectiveContext: req.Config.NumCtx}, nil
 }
 
+// Embed is intentionally unsupported by the memory service; it only models the
+// warm session contract.
+func (m *MemoryService) Embed(_ context.Context, req EmbedRequest) (EmbedResult, error) {
+	if m.owner != "" && req.Fence.OwnerInstanceID != m.owner {
+		return EmbedResult{}, ErrStaleFence
+	}
+	return EmbedResult{}, ErrUnsupportedFeature
+}
+
 type memSession struct {
 	mu sync.Mutex
 

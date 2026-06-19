@@ -68,7 +68,7 @@ VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET
 	build-contenox build-contenox-windows build-llamacpp-runtime build-llamacpp-runtime-cpu build-llamacpp-runtime-cuda build-modeld build-modeld-llama build-modeld-llama-gpu build-modeld-openvino bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-gpu package-modeld-llama package-modeld-llama-gpu package-modeld-openvino build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
 	check-modeld-llama-deps check-modeld-openvino-deps \
 	clean clean-vscode \
-	deps-modeld deps-llama-headers deps-llamacpp-ref deps-openvino deps-vscode \
+	deps-modeld deps-llamacpp-ref deps-openvino deps-vscode \
 	dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
 	run-modeld run-modeld-llama run-modeld-llama-gpu run-modeld-openvino \
 	test test-unit test-llamacpp-direct-cpu test-vllm test-system test-contenox-verbose test-contenox-help
@@ -79,7 +79,7 @@ help:
 	@echo "package-*  package-modeld package-modeld-gpu package-modeld-llama package-modeld-llama-gpu package-modeld-openvino package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
 	@echo "test-*     test test-unit test-llamacpp-direct-cpu test-vllm test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld run-modeld-llama run-modeld-llama-gpu run-modeld-openvino"
-	@echo "deps-*     deps-modeld deps-llama-headers deps-llamacpp-ref deps-openvino deps-vscode"
+	@echo "deps-*     deps-modeld deps-llamacpp-ref deps-openvino deps-vscode"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
 
@@ -103,19 +103,21 @@ build-llamacpp-runtime-cuda:
 	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct runtime-cuda
 
 check-modeld-llama-deps:
-	@test -f "$(LLAMA_VENDOR)/minja/chat-template.hpp" || { echo "missing llama.cpp vendored headers ($(LLAMA_VENDOR)) — run: make deps-llama-headers"; exit 1; }
+	@test -f "$(LLAMA_CPP_REF_DIR)/common/chat.h" || { echo "missing pinned llama.cpp common headers ($(LLAMA_CPP_REF_DIR)) — run: make deps-llamacpp-ref"; exit 1; }
+	@test -f "$(LLAMA_RUNTIME_LIB_DIR)/libcommon.a" || { echo "missing direct llama.cpp common library ($(LLAMA_RUNTIME_LIB_DIR)/libcommon.a) — run: make build-llamacpp-runtime"; exit 1; }
 
 check-modeld-openvino-deps:
 	@test -n "$(OPENVINO_PKG)" || { echo "missing OpenVINO SDK in $(OPENVINO_VENV) — run: make deps-openvino"; exit 1; }
 	@test -d "$(OPENVINO_GENAI_SRC)/src/cpp/include" || { echo "missing OpenVINO GenAI C++ headers ($(OPENVINO_GENAI_SRC)) — run: make deps-openvino"; exit 1; }
 
 # modeld binary: native inference backends (llama.cpp owned-ABI shim + OpenVINO
-# GenAI), built with CGO. Needs the vendored llama headers, the OpenVINO SDK and
-# the OpenVINO GenAI C++ headers — run `make deps-modeld` once on a fresh checkout.
+# GenAI), built with CGO. Needs the pinned llama.cpp source/runtime, the OpenVINO
+# SDK, and the OpenVINO GenAI C++ headers — run `make deps-modeld` once on a
+# fresh checkout.
 # The CGO flags come from mk/openvino-flags.mk (shared with the OpenVINO tests).
 build-modeld: build-llamacpp-runtime check-modeld-llama-deps check-modeld-openvino-deps
 	CGO_ENABLED=1 \
-	CGO_CPPFLAGS="-I$(LLAMA_VENDOR) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
 	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
 	CGO_LDFLAGS="$(LLAMA_DIRECT_LDFLAGS) $(OPENVINO_GENAI_LINK_FLAGS) -Wl,-rpath,\$$ORIGIN/modeld-libs" \
 	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_FULL_TAGS)' \
@@ -125,7 +127,7 @@ build-modeld: build-llamacpp-runtime check-modeld-llama-deps check-modeld-openvi
 
 build-modeld-llama: build-llamacpp-runtime check-modeld-llama-deps
 	CGO_ENABLED=1 \
-	CGO_CPPFLAGS="-I$(LLAMA_VENDOR) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
 	CGO_LDFLAGS="$(LLAMA_DIRECT_LDFLAGS)" \
 	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_LLAMA_TAGS)' \
 		-ldflags "$(MODELD_LLAMA_LD_FLAGS)" \
@@ -184,7 +186,7 @@ bundle-llama-libs:
 package-modeld: build-llamacpp-runtime check-modeld-llama-deps check-modeld-openvino-deps
 	@rm -rf "$(MODELD_DIST_DIR)" && mkdir -p "$(MODELD_DIST_DIR)"
 	CGO_ENABLED=1 \
-	CGO_CPPFLAGS="-I$(LLAMA_VENDOR) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
 	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
 	CGO_LDFLAGS="-L$(LLAMA_RUNTIME_LIB_DIR) -Wl,--disable-new-dtags -Wl,-rpath,\$$ORIGIN/lib/llamacpp -Wl,-rpath,\$$ORIGIN/modeld-libs -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS) $(OPENVINO_GENAI_LINK_FLAGS)" \
 	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_FULL_TAGS)' \
@@ -225,7 +227,7 @@ package-modeld-gpu:
 package-modeld-llama: build-llamacpp-runtime check-modeld-llama-deps
 	@rm -rf "$(MODELD_LLAMA_DIST_DIR)" && mkdir -p "$(MODELD_LLAMA_DIST_DIR)"
 	CGO_ENABLED=1 \
-	CGO_CPPFLAGS="-I$(LLAMA_VENDOR) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
 	CGO_LDFLAGS="-L$(LLAMA_RUNTIME_LIB_DIR) -Wl,--disable-new-dtags -Wl,-rpath,\$$ORIGIN/lib/llamacpp -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS)" \
 	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_LLAMA_TAGS)' \
 		-ldflags "$(MODELD_LLAMA_LD_FLAGS)" \
@@ -392,12 +394,9 @@ run-modeld-openvino: build-modeld-openvino
 
 # —— deps ———————————————————————————————————————————————————————————————
 # Everything build-modeld links against, reproducible from a clean checkout:
-# direct llama.cpp source/runtime headers, vendored minja headers, and the
-# OpenVINO SDK + GenAI C++ API (venv under .openvino, C++ source worktree).
-deps-modeld: deps-llama-headers deps-llamacpp-ref deps-openvino
-
-deps-llama-headers:
-	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp vendor-headers
+# direct llama.cpp source/runtime headers and the OpenVINO SDK + GenAI C++ API
+# (venv under .openvino, C++ source worktree).
+deps-modeld: deps-llamacpp-ref deps-openvino
 
 deps-llamacpp-ref:
 	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct deps-ref

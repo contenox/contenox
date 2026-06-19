@@ -321,6 +321,8 @@ Done:
 - profile-declared reasoning parser protocol slot;
 - shared registry pattern for tool and reasoning parser names;
 - native C++ bridge for complete-output OpenVINO parser classes;
+- native stream bridge for incremental reasoning parser classes, carrying
+  `reasoning_content` as `StreamParcel.Thinking`;
 - native structured-output bridge at the generation layer;
 - removal of local Qwen regex tool parsing;
 - parser-output normalization into `modelrepo.Message`.
@@ -329,7 +331,6 @@ Still open:
 
 - C++ native support for `VLLMParserWrapper`, unless OpenVINO exposes it outside
   Python or this runtime adds a Python parser-object bridge;
-- streaming bridge for incremental reasoning parsers;
 - a model profile for each actual model family that declares the correct parser
   protocol;
 - a real Qwen tool-call parser primitive from OpenVINO or an explicit

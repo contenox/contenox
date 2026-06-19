@@ -26,10 +26,18 @@ type ModelDescriptor struct {
 	// Repo is the Hugging Face repo id for multi-file pulls (OpenVINO IR). For
 	// GGUF models SourceURL points at the single file and Repo is empty.
 	Repo string `json:"repo,omitempty" example:"OpenVINO/Qwen3-8B-int4-ov"`
-	// ToolProtocol is the model-native tool-call output protocol (e.g. "qwen").
+	// ToolProtocol is the backend-native tool-call parser protocol (for example
+	// "llama:common_chat_tool_parser" or "openvino:...").
 	// Set for curated models certified for tool calls; `model pull` writes it into
 	// the model's profile so the local provider enables tool calls out of the box.
-	ToolProtocol string `json:"toolProtocol,omitempty" example:"qwen"`
+	ToolProtocol string `json:"toolProtocol,omitempty" example:"llama:common_chat_tool_parser"`
+	// ReasoningProtocol is the local backend's parser for model-emitted reasoning
+	// text. `model pull` writes it into the
+	// model's profile so the provider can separate visible output from thinking.
+	ReasoningProtocol string `json:"reasoningProtocol,omitempty" example:"llama:common_chat_reasoning_parser"`
+	// ReasoningFormat is the backend-native reasoning format passed to the parser
+	// and chat-template renderer, for example llama.cpp common-chat "deepseek".
+	ReasoningFormat string `json:"reasoningFormat,omitempty" example:"deepseek"`
 }
 
 // BackendType returns the local backend this model targets, defaulting empty to

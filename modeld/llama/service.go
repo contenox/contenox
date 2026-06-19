@@ -88,6 +88,15 @@ func (s *Service) Describe(_ context.Context, req transport.OpenSessionRequest) 
 	return info, nil
 }
 
+// Embed is not served through the modeld transport for llama yet. The runtime's
+// llama provider still owns its native one-shot embedding path separately.
+func (s *Service) Embed(_ context.Context, req transport.EmbedRequest) (transport.EmbedResult, error) {
+	if req.Type != "" && req.Type != "llama" {
+		return transport.EmbedResult{}, fmt.Errorf("%w: requested %q, this daemon serves llama", transport.ErrBackendMismatch, req.Type)
+	}
+	return transport.EmbedResult{}, fmt.Errorf("%w: llama embeddings are not served over modeld transport", transport.ErrUnsupportedFeature)
+}
+
 func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Config, error) {
 	plan, err := s.resolveSession(req)
 	if err != nil {
