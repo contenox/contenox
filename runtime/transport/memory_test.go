@@ -136,6 +136,20 @@ func TestContextOverflow(t *testing.T) {
 	}
 }
 
+func TestDescribeReportsContextBudgetFields(t *testing.T) {
+	info, err := NewMemoryService().Describe(context.Background(), OpenSessionRequest{Config: Config{NumCtx: 128}})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.EffectiveContext != 128 || info.HotContextTokens != 128 || info.PlannerEffectiveContext != 128 {
+		t.Fatalf("context budget fields = effective %d hot %d planner %d, want 128/128/128",
+			info.EffectiveContext, info.HotContextTokens, info.PlannerEffectiveContext)
+	}
+	if info.MemoryContextTokens != 0 {
+		t.Fatalf("MemoryContextTokens = %d, want 0 for memory service with unknown KV", info.MemoryContextTokens)
+	}
+}
+
 // TestClosedSession proves a closed session refuses work.
 func TestClosedSession(t *testing.T) {
 	ctx := context.Background()

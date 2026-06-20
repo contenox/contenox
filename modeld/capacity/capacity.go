@@ -72,22 +72,29 @@ type Params struct {
 }
 
 // ModelCapacity is the resolved result reported to the runtime. EffectiveContext
-// is the window modeld will actually serve and the value the cache identity
-// (manifest context_size) must use; the rest explain how it was derived.
+// remains the dense context window modeld will actually serve today and the
+// value the cache identity must use. MemoryContextTokens is the raw KV-token
+// budget from memory before model/request clamping. HotContextTokens is the
+// physical hot KV budget for the current dense session; PlannerEffectiveContext
+// is the logical planner context and currently equals EffectiveContext until
+// sparse attention + cold KV offload are executable.
 type ModelCapacity struct {
-	ModelMaxContext  int
-	EffectiveContext int
-	KVBytesPerToken  int64
-	FreeBytes        int64
-	WeightsBytes     int64
-	OverheadBytes    int64
-	ReservedBytes    int64
-	UserLimitBytes   int64
-	MinFreeBytes     int64
-	UsableBytes      int64
-	RequiredBytes    int64
-	Clamped          bool
-	Reason           string
+	ModelMaxContext         int
+	EffectiveContext        int
+	MemoryContextTokens     int
+	HotContextTokens        int
+	PlannerEffectiveContext int
+	KVBytesPerToken         int64
+	FreeBytes               int64
+	WeightsBytes            int64
+	OverheadBytes           int64
+	ReservedBytes           int64
+	UserLimitBytes          int64
+	MinFreeBytes            int64
+	UsableBytes             int64
+	RequiredBytes           int64
+	Clamped                 bool
+	Reason                  string
 }
 
 // Resolve computes the physical hot context window:
@@ -110,11 +117,12 @@ func Resolve(p Params) ModelCapacity {
 	}
 	usable = max(int64(float64(usable)*(1-headroom)), 0)
 
+	memoryTokens := 0
 	if p.KVBytesPerToken > 0 {
 		budget := max(usable-p.WeightsBytes-p.OverheadBytes, 0)
-		memTokens := int(budget / p.KVBytesPerToken)
-		if eff <= 0 || memTokens < eff {
-			eff = memTokens
+		memoryTokens = int(budget / p.KVBytesPerToken)
+		if eff <= 0 || memoryTokens < eff {
+			eff = memoryTokens
 		}
 	}
 
@@ -150,20 +158,25 @@ func Resolve(p Params) ModelCapacity {
 		clamped, reason = true, "model_context_exceeds_memory_budget"
 	}
 
+	hotTokens := eff
+
 	return ModelCapacity{
-		ModelMaxContext:  p.ModelMaxCtx,
-		EffectiveContext: eff,
-		KVBytesPerToken:  p.KVBytesPerToken,
-		FreeBytes:        p.FreeBytes,
-		WeightsBytes:     p.WeightsBytes,
-		OverheadBytes:    p.OverheadBytes,
-		ReservedBytes:    p.ReservedBytes,
-		UserLimitBytes:   p.UserLimitBytes,
-		MinFreeBytes:     p.MinFreeBytes,
-		UsableBytes:      usable,
-		RequiredBytes:    required,
-		Clamped:          clamped,
-		Reason:           reason,
+		ModelMaxContext:         p.ModelMaxCtx,
+		EffectiveContext:        eff,
+		MemoryContextTokens:     memoryTokens,
+		HotContextTokens:        hotTokens,
+		PlannerEffectiveContext: eff,
+		KVBytesPerToken:         p.KVBytesPerToken,
+		FreeBytes:               p.FreeBytes,
+		WeightsBytes:            p.WeightsBytes,
+		OverheadBytes:           p.OverheadBytes,
+		ReservedBytes:           p.ReservedBytes,
+		UserLimitBytes:          p.UserLimitBytes,
+		MinFreeBytes:            p.MinFreeBytes,
+		UsableBytes:             usable,
+		RequiredBytes:           required,
+		Clamped:                 clamped,
+		Reason:                  reason,
 	}
 }
 

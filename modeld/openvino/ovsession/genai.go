@@ -41,6 +41,13 @@ type GenAIConfig struct {
 	XAttentionThreshold         float32
 	XAttentionBlockSize         int
 	XAttentionStride            int
+	// UseCacheEviction enables OpenVINO's native sink+recent+evictable KV cache
+	// eviction (the declarative form of the residency policy). Sizes are in
+	// tokens; CacheEvictMaxSize must exceed start + recent.
+	UseCacheEviction     *bool
+	CacheEvictStartSize  int
+	CacheEvictRecentSize int
+	CacheEvictMaxSize    int
 }
 
 // GenerateOptions controls a single GenAI generation call.
@@ -214,6 +221,10 @@ func NewGenAI(modelDir string, cfg GenAIConfig) (*GenAISession, error) {
 		xattention_threshold:             C.float(cfg.XAttentionThreshold),
 		xattention_block_size:            C.size_t(cfg.XAttentionBlockSize),
 		xattention_stride:                C.size_t(cfg.XAttentionStride),
+		use_cache_eviction:               cbool(boolValue(cfg.UseCacheEviction, false)),
+		cache_evict_start_size:           C.size_t(max(cfg.CacheEvictStartSize, 0)),
+		cache_evict_recent_size:          C.size_t(max(cfg.CacheEvictRecentSize, 0)),
+		cache_evict_max_size:             C.size_t(max(cfg.CacheEvictMaxSize, 0)),
 	}
 
 	ptr := C.cx_genai_session_new(cDir, cDev, &cConfig, (*C.char)(errbuf), C.size_t(genAIErrLen))

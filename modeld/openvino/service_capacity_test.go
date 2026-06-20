@@ -61,6 +61,12 @@ func TestUnit_ServiceDescribeResolvesCapacity(t *testing.T) {
 	if info.EffectiveContext <= 0 || info.EffectiveContext >= 4096 {
 		t.Fatalf("EffectiveContext = %d, want clamp below request", info.EffectiveContext)
 	}
+	if info.HotContextTokens != info.EffectiveContext || info.PlannerEffectiveContext != info.EffectiveContext {
+		t.Fatalf("context split = hot %d planner %d effective %d", info.HotContextTokens, info.PlannerEffectiveContext, info.EffectiveContext)
+	}
+	if info.MemoryContextTokens < info.EffectiveContext {
+		t.Fatalf("MemoryContextTokens = %d, want >= effective %d", info.MemoryContextTokens, info.EffectiveContext)
+	}
 	if !info.Clamped || info.UserLimitBytes != 1<<20 {
 		t.Fatalf("capacity explanation missing clamp/user limit: %+v", info)
 	}

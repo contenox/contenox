@@ -75,30 +75,33 @@ type unloadModelResp struct{}
 // planning. describeResp carries the model capabilities the daemon read from
 // model metadata plus the capacity decision.
 type describeResp struct {
-	ModelMaxContext    int                    `json:"model_max_context"`
-	EffectiveContext   int                    `json:"effective_context"`
-	KVBytesPerToken    int64                  `json:"kv_bytes_per_token,omitempty"`
-	FreeBytes          int64                  `json:"free_bytes,omitempty"`
-	WeightsBytes       int64                  `json:"weights_bytes,omitempty"`
-	OverheadBytes      int64                  `json:"overhead_bytes,omitempty"`
-	ReservedBytes      int64                  `json:"reserved_bytes,omitempty"`
-	UserLimitBytes     int64                  `json:"user_limit_bytes,omitempty"`
-	MinFreeBytes       int64                  `json:"min_free_bytes,omitempty"`
-	UsableBytes        int64                  `json:"usable_bytes,omitempty"`
-	RequiredBytes      int64                  `json:"required_bytes,omitempty"`
-	Clamped            bool                   `json:"clamped,omitempty"`
-	Reason             string                 `json:"reason,omitempty"`
-	DeviceKind         string                 `json:"device_kind,omitempty"`
-	DeviceID           string                 `json:"device_id,omitempty"`
-	DeviceTotalBytes   int64                  `json:"device_total_bytes,omitempty"`
-	SharedWithDisplay  bool                   `json:"shared_with_display,omitempty"`
-	RequestedGpuLayers int                    `json:"requested_gpu_layers,omitempty"`
-	ResolvedGpuLayers  int                    `json:"resolved_gpu_layers,omitempty"`
-	RuntimeName        string                 `json:"runtime_name,omitempty"`
-	RuntimeDigest      string                 `json:"runtime_digest,omitempty"`
-	RuntimeSystemInfo  string                 `json:"runtime_system_info,omitempty"`
-	SupportsGPUOffload bool                   `json:"supports_gpu_offload,omitempty"`
-	Devices            []transport.DeviceInfo `json:"devices,omitempty"`
+	ModelMaxContext         int                    `json:"model_max_context"`
+	EffectiveContext        int                    `json:"effective_context"`
+	MemoryContextTokens     int                    `json:"memory_context_tokens,omitempty"`
+	HotContextTokens        int                    `json:"hot_context_tokens,omitempty"`
+	PlannerEffectiveContext int                    `json:"planner_effective_context,omitempty"`
+	KVBytesPerToken         int64                  `json:"kv_bytes_per_token,omitempty"`
+	FreeBytes               int64                  `json:"free_bytes,omitempty"`
+	WeightsBytes            int64                  `json:"weights_bytes,omitempty"`
+	OverheadBytes           int64                  `json:"overhead_bytes,omitempty"`
+	ReservedBytes           int64                  `json:"reserved_bytes,omitempty"`
+	UserLimitBytes          int64                  `json:"user_limit_bytes,omitempty"`
+	MinFreeBytes            int64                  `json:"min_free_bytes,omitempty"`
+	UsableBytes             int64                  `json:"usable_bytes,omitempty"`
+	RequiredBytes           int64                  `json:"required_bytes,omitempty"`
+	Clamped                 bool                   `json:"clamped,omitempty"`
+	Reason                  string                 `json:"reason,omitempty"`
+	DeviceKind              string                 `json:"device_kind,omitempty"`
+	DeviceID                string                 `json:"device_id,omitempty"`
+	DeviceTotalBytes        int64                  `json:"device_total_bytes,omitempty"`
+	SharedWithDisplay       bool                   `json:"shared_with_display,omitempty"`
+	RequestedGpuLayers      int                    `json:"requested_gpu_layers,omitempty"`
+	ResolvedGpuLayers       int                    `json:"resolved_gpu_layers,omitempty"`
+	RuntimeName             string                 `json:"runtime_name,omitempty"`
+	RuntimeDigest           string                 `json:"runtime_digest,omitempty"`
+	RuntimeSystemInfo       string                 `json:"runtime_system_info,omitempty"`
+	SupportsGPUOffload      bool                   `json:"supports_gpu_offload,omitempty"`
+	Devices                 []transport.DeviceInfo `json:"devices,omitempty"`
 }
 
 type embedReq struct {

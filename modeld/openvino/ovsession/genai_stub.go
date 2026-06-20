@@ -22,6 +22,10 @@ type GenAIConfig struct {
 	XAttentionThreshold         float32
 	XAttentionBlockSize         int
 	XAttentionStride            int
+	UseCacheEviction            *bool
+	CacheEvictStartSize         int
+	CacheEvictRecentSize        int
+	CacheEvictMaxSize           int
 }
 
 // GenerateOptions controls a single GenAI generation call.

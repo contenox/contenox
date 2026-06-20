@@ -15,6 +15,7 @@ import (
 	"github.com/contenox/runtime/modeld/internal/sessionkit"
 	"github.com/contenox/runtime/modeld/llama"
 	"github.com/contenox/runtime/modeld/llama/llamacppshim"
+	"github.com/contenox/runtime/modeld/residency"
 	"github.com/contenox/runtime/runtime/contextasm"
 )
 
@@ -43,9 +44,94 @@ type session struct {
 	chatSyntax llamacppshim.ChatSyntax
 	reasoning  string
 	closed     bool
+
+	residencyPlan residency.Plan
+	residencyErr  string
 }
 
 var _ llama.Session = (*session)(nil)
+var _ residency.Executor = (*session)(nil)
+
+func (s *session) Capabilities() residency.Capabilities {
+	return residency.Capabilities{
+		RemoveTail:    true,
+		RemoveMiddle:  true,
+		PositionShift: true,
+	}
+}
+
+// EvictRange drops the resident token range [r.Start, r.End) from the KV cache
+// and slides the surviving tail down by the removed width, so the remaining
+// tokens keep contiguous RoPE positions (the StreamingLLM sliding-window move:
+// remove the middle, shift the tail; llama.cpp re-applies RoPE to the shifted
+// cells on the next decode). It updates the logical resident bookkeeping to
+// match. The residency policy is responsible for never handing this primitive a
+// protected range (attention sinks / task-pinned prefix); EvictRange trusts the
+// range it is given.
+func (s *session) EvictRange(ctx context.Context, r residency.Range) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return llama.ErrSessionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.evictRangeLocked(r.Start, r.End)
+}
+
+// evictRangeLocked removes [a,b) from the KV, slides the tail, and updates
+// resident bookkeeping. The caller holds s.mu and has checked s.closed.
+func (s *session) evictRangeLocked(a, b int) error {
+	n := len(s.resident)
+	if a < 0 || b > n || a >= b {
+		return fmt.Errorf("llamasession: evict range [%d,%d) outside resident [0,%d)", a, b, n)
+	}
+	if err := s.removeKV(a, b); err != nil {
+		return err
+	}
+	if b < n {
+		// Slide the surviving tail down by the removed width so positions stay
+		// contiguous; the shifted cells are RoPE-corrected on the next decode.
+		s.lctx.MemorySeqAdd(0, b, -1, -(b - a))
+	}
+	s.resident = append(s.resident[:a], s.resident[b:]...)
+	oldPrefix := s.prefixLen
+	s.prefixLen = min(a, oldPrefix) + max(0, oldPrefix-b)
+	if a < oldPrefix {
+		// Stable prefix tokens were evicted, so its cached templated text no
+		// longer maps to the resident KV.
+		s.prefixText = ""
+	}
+	return nil
+}
+
+// slideForDecodeLocked frees room for continued generation by evicting the
+// oldest tokens just after the stable prefix, keeping that prefix hot as
+// attention sinks and preserving the recent tail (StreamingLLM). It reports
+// false without error when the prefix fills the window and no slot can be freed.
+func (s *session) slideForDecodeLocked() (bool, error) {
+	// Keep the stable prefix as attention sinks plus the derived recent window;
+	// evict the middle. Same budget derivation OpenVINO feeds its native
+	// CacheEvictionConfig, token-granular (block size 1) for llama's KV.
+	recent := residency.DeriveEvictionBudget(s.numCtx, 1).RecentTokens
+	a := s.prefixLen
+	b := len(s.resident) - recent
+	if b <= a {
+		return false, nil // the prefix + recent window fills num_ctx; cannot slide
+	}
+	if err := s.evictRangeLocked(a, b); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// AdmitRange would re-admit a previously evicted range into the hot KV. The
+// llama adapter evicts permanently — there is no cold KV store to restore from
+// yet — so this is unsupported, and the session advertises ColdStore=false.
+func (s *session) AdmitRange(_ context.Context, r residency.Range) error {
+	return fmt.Errorf("%w: llamasession admit range [%d,%d) requires a cold KV store", llama.ErrUnsupportedFeature, r.Start, r.End)
+}
 
 // New loads a GGUF model and opens one persistent session.
 func New(modelPath string, cfg llama.Config) (llama.Session, error) {
@@ -185,6 +271,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		return llama.PrefixStatus{}, err
 	}
 	s.manifest = enriched
+	s.updateResidencyPlanLocked(false)
 
 	return llama.PrefixStatus{
 		ReusedTokens:    reuse,
@@ -259,6 +346,7 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	if err := s.enrichVolatileSegments(s.prefixLen, volatileMsgs, stoks); err != nil {
 		return llama.SuffixStatus{}, err
 	}
+	s.updateResidencyPlanLocked(true)
 	return llama.SuffixStatus{
 		SuffixTokens:    len(stoks),
 		PrefixTokens:    s.prefixLen,
@@ -317,15 +405,23 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		if maxTokens <= 0 {
 			maxTokens = 256
 		}
-		remaining := s.numCtx - len(s.resident)
-		if remaining <= 0 {
-			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: llama.NewContextOverflowError("decode", len(s.resident), 1, s.numCtx)}) {
+		// If the window is already full, slide it (keep the stable prefix as
+		// attention sinks + the recent tail) so generation can begin. Only when
+		// even that frees no slot — the prefix fills num_ctx — is it a hard
+		// overflow. Generation past num_ctx is enabled by sliding mid-loop below.
+		if len(s.resident) >= s.numCtx {
+			slid, err := s.slideForDecodeLocked()
+			if err != nil {
+				s.closeLocked()
+				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode slide: %v", llama.ErrSessionFatal, err)})
 				return
 			}
-			return
-		}
-		if maxTokens > remaining {
-			maxTokens = remaining
+			if !slid {
+				if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: llama.NewContextOverflowError("decode", len(s.resident), 1, s.numCtx)}) {
+					return
+				}
+				return
+			}
 		}
 		reasoningFormat := cfg.ReasoningFormat
 		if reasoningFormat == "" {
@@ -368,6 +464,21 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 				return
 			}
 
+			// Keep a free KV slot for this token, sliding the window when full so
+			// generation continues past num_ctx instead of stopping.
+			if len(s.resident) >= s.numCtx {
+				slid, err := s.slideForDecodeLocked()
+				if err != nil {
+					s.closeLocked()
+					_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode slide: %v", llama.ErrSessionFatal, err)})
+					return
+				}
+				if !slid {
+					emitParsed("", false)
+					return
+				}
+			}
+
 			s.batch.Clear()
 			if err := s.batch.Add(id, nil, len(s.resident), true, 0); err != nil {
 				s.closeLocked()
@@ -402,6 +513,7 @@ func (s *session) ExplainContext() llama.ContextReport {
 		ManifestDigest:  s.manifest.Digest(),
 		Manifest:        s.manifest,
 		Closed:          s.closed,
+		Residency:       sessionkit.ResidencyReport(s.residencyPlan, s.residencyErr, s.Capabilities()),
 	}
 }
 
@@ -490,6 +602,7 @@ func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error
 			s.prefixText = s.stableText
 		}
 	}
+	s.updateResidencyPlanLocked(true)
 	return nil
 }
 
@@ -526,6 +639,8 @@ func (s *session) closeLocked() {
 	s.stableText = ""
 	s.prefixText = ""
 	s.manifest = llama.ContextManifest{}
+	s.residencyPlan = residency.Plan{}
+	s.residencyErr = ""
 }
 
 // stableMessages reconstructs the stable role/content turns from the manifest
@@ -806,6 +921,36 @@ func (s *session) prefillAt(ctx context.Context, toks []int, startPos int, logit
 		}
 	}
 	return nil
+}
+
+func (s *session) updateResidencyPlanLocked(requireComplete bool) {
+	s.residencyPlan = residency.Plan{}
+	s.residencyErr = ""
+	if s.numCtx <= 0 || len(s.resident) == 0 {
+		return
+	}
+	blocks, err := residency.BlocksFromManifest(s.manifest, residency.ManifestOptions{
+		ResidentTokens:  len(s.resident),
+		RequireComplete: requireComplete,
+	})
+	if err != nil {
+		s.residencyErr = err.Error()
+		if len(blocks) == 0 {
+			return
+		}
+	}
+	plan, planErr := residency.PlanHotSet(residency.PlanInput{
+		Blocks:       blocks,
+		BudgetTokens: s.numCtx,
+	})
+	if planErr != nil {
+		s.residencyErr = planErr.Error()
+		return
+	}
+	if err != nil {
+		plan.Diagnostics = append(plan.Diagnostics, err.Error())
+	}
+	s.residencyPlan = plan
 }
 
 func isContextErr(err error) bool {

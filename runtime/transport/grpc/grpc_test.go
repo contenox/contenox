@@ -78,6 +78,15 @@ func (s *canceledOpenService) OpenSession(context.Context, transport.OpenSession
 	return nil, context.Canceled
 }
 
+type describeService struct {
+	*transport.MemoryService
+	info transport.ModelInfo
+}
+
+func (s *describeService) Describe(context.Context, transport.OpenSessionRequest) (transport.ModelInfo, error) {
+	return s.info, nil
+}
+
 type streamErrorSession struct {
 	decodeRecordingSession
 	err error
@@ -323,6 +332,54 @@ func TestContextCanceledSentinelOverWire(t *testing.T) {
 	_, err = client.OpenSession(context.Background(), transport.OpenSessionRequest{Fence: transport.Fence{OwnerInstanceID: "owner-1"}})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("OpenSession canceled over wire = %v, want context.Canceled", err)
+	}
+}
+
+func TestDescribeContextBudgetRoundTripOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	want := transport.ModelInfo{
+		ModelMaxContext:         32768,
+		EffectiveContext:        8192,
+		MemoryContextTokens:     12000,
+		HotContextTokens:        8192,
+		PlannerEffectiveContext: 8192,
+		KVBytesPerToken:         2048,
+		FreeBytes:               64 << 20,
+		WeightsBytes:            4 << 20,
+		UsableBytes:             32 << 20,
+		RequiredBytes:           20 << 20,
+		Clamped:                 true,
+		Reason:                  "request_exceeds_memory_budget",
+		DeviceKind:              "gpu",
+		DeviceID:                "GPU.0",
+	}
+	svc := &describeService{
+		MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		info:          want,
+	}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+
+	got, err := client.Describe(context.Background(), transport.OpenSessionRequest{
+		Fence:  transport.Fence{OwnerInstanceID: "owner-1"},
+		Config: transport.Config{NumCtx: 8192},
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if got.ModelMaxContext != want.ModelMaxContext ||
+		got.EffectiveContext != want.EffectiveContext ||
+		got.MemoryContextTokens != want.MemoryContextTokens ||
+		got.HotContextTokens != want.HotContextTokens ||
+		got.PlannerEffectiveContext != want.PlannerEffectiveContext ||
+		got.KVBytesPerToken != want.KVBytesPerToken ||
+		got.RequiredBytes != want.RequiredBytes ||
+		got.Reason != want.Reason ||
+		got.DeviceKind != want.DeviceKind ||
+		got.DeviceID != want.DeviceID {
+		t.Fatalf("Describe over wire = %+v, want %+v", got, want)
 	}
 }
 

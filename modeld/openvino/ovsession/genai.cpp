@@ -214,6 +214,17 @@ static ov::genai::SchedulerConfig scheduler_config_from(const cx_genai_session_c
         config ? config->xattention_block_size : 128;
     cfg.sparse_attention_config.xattention_stride =
         config ? config->xattention_stride : 16;
+    if (config && config->use_cache_eviction != 0) {
+        // Native sink + recent + evictable-middle eviction. This is the OpenVINO
+        // expression of the residency policy: keep the prefix (sinks) and a
+        // recent window hot, evict the middle by attention importance.
+        cfg.use_cache_eviction = true;
+        cfg.cache_eviction_config = ov::genai::CacheEvictionConfig(
+            config->cache_evict_start_size,
+            config->cache_evict_recent_size,
+            config->cache_evict_max_size,
+            ov::genai::AggregationMode::NORM_SUM);
+    }
     cfg.validate();
     return cfg;
 }

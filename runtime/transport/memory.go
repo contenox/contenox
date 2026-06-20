@@ -53,7 +53,12 @@ func (m *MemoryService) Describe(_ context.Context, req OpenSessionRequest) (Mod
 	if m.owner != "" && req.Fence.OwnerInstanceID != m.owner {
 		return ModelInfo{}, ErrStaleFence
 	}
-	return ModelInfo{ModelMaxContext: req.Config.NumCtx, EffectiveContext: req.Config.NumCtx}, nil
+	return ModelInfo{
+		ModelMaxContext:         req.Config.NumCtx,
+		EffectiveContext:        req.Config.NumCtx,
+		HotContextTokens:        req.Config.NumCtx,
+		PlannerEffectiveContext: req.Config.NumCtx,
+	}, nil
 }
 
 // Embed is intentionally unsupported by the memory service; it only models the

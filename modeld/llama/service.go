@@ -57,6 +57,8 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	info := plan.info
 	slog.Info("llama session config",
 		"num_ctx", cfg.NumCtx,
+		"hot_context_tokens", info.HotContextTokens,
+		"planner_effective_context", info.PlannerEffectiveContext,
 		"num_batch", cfg.NumBatch,
 		"num_gpu_layers", cfg.NumGpuLayers,
 		"requested_gpu_layers", info.RequestedGpuLayers,
@@ -239,6 +241,9 @@ func modelInfo(c capacity.ModelCapacity, st capacity.DeviceSnapshot) transport.M
 	info := llamaRuntimeInfo()
 	info.ModelMaxContext = c.ModelMaxContext
 	info.EffectiveContext = c.EffectiveContext
+	info.MemoryContextTokens = c.MemoryContextTokens
+	info.HotContextTokens = c.HotContextTokens
+	info.PlannerEffectiveContext = c.PlannerEffectiveContext
 	info.KVBytesPerToken = c.KVBytesPerToken
 	info.FreeBytes = c.FreeBytes
 	info.WeightsBytes = c.WeightsBytes

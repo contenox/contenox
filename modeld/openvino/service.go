@@ -10,8 +10,13 @@ import (
 
 	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
+	"github.com/contenox/runtime/modeld/residency"
 	"github.com/contenox/runtime/runtime/transport"
 )
+
+// openvinoEvictionBlock aligns the derived cache-eviction sizes to OpenVINO's KV
+// block granularity.
+const openvinoEvictionBlock = 32
 
 // buildTokenizersPath is the build-time fallback path to libopenvino_tokenizers.so
 // (set via build-modeld -ldflags -X) for an in-place dev build whose libs live in
@@ -99,11 +104,24 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	// model-driven: read from the model's own contenox-openvino.json profile, not
 	// hardcoded. transport.Config carries only the neutral context window; the
 	// device (incl. NPU) is resolved from the environment.
-	backend, err := ovsession.NewGenAI(req.Path, genAIConfigFromProfile(req.Path, resolveDevice()))
+	genaiCfg := genAIConfigFromProfile(req.Path, resolveDevice())
+	// Enforce the residency policy with OpenVINO's native sink+recent+evictable
+	// cache eviction (the declarative parallel to the llama slide). The budget is
+	// derived from the served window; tiny windows stay un-evicted.
+	budget := residency.DeriveEvictionBudget(cfg.NumCtx, openvinoEvictionBlock)
+	eviction := budget.Valid()
+	if eviction {
+		on := true
+		genaiCfg.UseCacheEviction = &on
+		genaiCfg.CacheEvictStartSize = budget.SinkTokens
+		genaiCfg.CacheEvictRecentSize = budget.RecentTokens
+		genaiCfg.CacheEvictMaxSize = budget.MaxTokens
+	}
+	backend, err := ovsession.NewGenAI(req.Path, genaiCfg)
 	if err != nil {
 		return nil, err
 	}
-	return newGenaiSession(backend, cfg.NumCtx), nil
+	return newGenaiSessionWithEviction(backend, cfg.NumCtx, eviction), nil
 }
 
 // Describe reports the model's trained context window read from the IR's
@@ -240,6 +258,9 @@ func modelInfo(c capacity.ModelCapacity, st capacity.DeviceSnapshot) transport.M
 	info := openvinoRuntimeInfo()
 	info.ModelMaxContext = c.ModelMaxContext
 	info.EffectiveContext = c.EffectiveContext
+	info.MemoryContextTokens = c.MemoryContextTokens
+	info.HotContextTokens = c.HotContextTokens
+	info.PlannerEffectiveContext = c.PlannerEffectiveContext
 	info.KVBytesPerToken = c.KVBytesPerToken
 	info.FreeBytes = c.FreeBytes
 	info.WeightsBytes = c.WeightsBytes

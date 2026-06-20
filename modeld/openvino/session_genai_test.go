@@ -172,6 +172,86 @@ func TestGenaiSessionDecodeConcatenatesStableAndSuffix(t *testing.T) {
 	}
 }
 
+func TestGenaiSessionExplainContextSurfacesResidencyPlan(t *testing.T) {
+	fake := &fakeGenAIBackend{emit: []string{"ok"}}
+	s := newGenaiSession(fake, 4096)
+	ctx := context.Background()
+	stable := "rules"
+	fullText := "rulesask"
+	m := ovManifest(contextasm.HashString(stable), "r1")
+	m.Segments = []contextasm.ManifestSegment{
+		{Kind: "system", Stable: true, ByteStart: 0, ByteEnd: 5, ByteHash: contextasm.HashString("rules")},
+		{Kind: "user", ByteStart: 5, ByteEnd: 8, ByteHash: contextasm.HashString("ask")},
+	}
+
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: stable, Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	if _, err := s.PrefillSuffix(ctx, transport.SuffixInput{Text: strings.TrimPrefix(fullText, stable), Manifest: m}); err != nil {
+		t.Fatalf("PrefillSuffix: %v", err)
+	}
+
+	report := s.ExplainContext()
+	res := report.Residency
+	if res == nil {
+		t.Fatal("ExplainContext did not surface a residency report")
+	}
+	if res.BudgetTokens != 4096 {
+		t.Fatalf("residency budget = %d, want numCtx 4096", res.BudgetTokens)
+	}
+	if res.TotalTokens != report.ResidentTokens {
+		t.Fatalf("residency total = %d, want resident %d", res.TotalTokens, report.ResidentTokens)
+	}
+	if res.ColdTokens != 0 || res.OverBudget {
+		t.Fatalf("expected all-hot under the numCtx budget: %+v", res)
+	}
+	if res.HotBlocks == 0 || res.ProtectedTokens == 0 {
+		t.Fatalf("expected pinned hot blocks, got %+v", res)
+	}
+	// OpenVINO does residency declaratively: no runtime-driven KV range ops, but
+	// it runs XAttention sparse attention natively.
+	if want := (transport.ResidencyCapabilities{SparseAttention: true}); res.Capabilities != want {
+		t.Fatalf("openvino capabilities = %+v, want %+v", res.Capabilities, want)
+	}
+	if res.Error != "" {
+		t.Fatalf("unexpected residency error: %q", res.Error)
+	}
+}
+
+func TestGenaiSessionEvictionEnabledGeneratesPastNumCtx(t *testing.T) {
+	ctx := context.Background()
+	m := ovManifest("h", "r1")
+	longSuffix := "this is a long user turn that exceeds the tiny window"
+
+	// Eviction ON: the pipeline bounds physical KV by evicting, so prefill and
+	// decode past numCtx must not overflow.
+	on := newGenaiSessionWithEviction(&fakeGenAIBackend{emit: []string{"ok"}}, 8, true)
+	if _, err := on.EnsurePrefix(ctx, transport.PrefixInput{Text: "sys", Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	if _, err := on.PrefillSuffix(ctx, transport.SuffixInput{Text: longSuffix, Manifest: m}); err != nil {
+		t.Fatalf("PrefillSuffix past numCtx with eviction should not overflow: %v", err)
+	}
+	ch, err := on.Decode(ctx, transport.DecodeConfig{MaxTokens: 4})
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	for c := range ch {
+		if c.Error != nil {
+			t.Fatalf("decode past numCtx with eviction should not overflow: %v", c.Error)
+		}
+	}
+
+	// Eviction OFF: the same input is a hard overflow (gating works).
+	off := newGenaiSession(&fakeGenAIBackend{}, 8)
+	if _, err := off.EnsurePrefix(ctx, transport.PrefixInput{Text: "sys", Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	if _, err := off.PrefillSuffix(ctx, transport.SuffixInput{Text: longSuffix, Manifest: m}); !errors.Is(err, transport.ErrContextOverflow) {
+		t.Fatalf("PrefillSuffix without eviction = %v, want ErrContextOverflow", err)
+	}
+}
+
 func TestGenaiSessionEnsurePrefixUsesTokenLCPReuse(t *testing.T) {
 	s := newGenaiSession(&fakeGenAIBackend{}, 4096)
 	ctx := context.Background()
@@ -231,6 +311,47 @@ func TestGenaiSessionPrefillSuffixAppliesModelChatTemplate(t *testing.T) {
 	msgs := fake.templateCalls[0]
 	if len(msgs) != 2 || msgs[0].Role != "system" || msgs[1].Role != "user" {
 		t.Fatalf("template messages = %+v, want system and user", msgs)
+	}
+}
+
+func TestGenaiSessionPopulatesManifestTokenRangesAndResidencyPlan(t *testing.T) {
+	fake := &fakeGenAIBackend{}
+	s := newGenaiSession(fake, 4096)
+	ctx := context.Background()
+	stable := "rules"
+	suffix := "ask"
+	fullText := stable + suffix
+	m := ovManifest(contextasm.HashString(stable), "r1")
+	m.Segments = []contextasm.ManifestSegment{
+		{Kind: "system", Stable: true, ByteStart: 0, ByteEnd: len(stable), ByteHash: contextasm.HashString(stable)},
+		{Kind: "user", ByteStart: len(stable), ByteEnd: len(fullText), ByteHash: contextasm.HashString(suffix)},
+	}
+
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: stable, Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	if _, err := s.PrefillSuffix(ctx, transport.SuffixInput{Text: suffix, Manifest: m}); err != nil {
+		t.Fatalf("PrefillSuffix: %v", err)
+	}
+
+	report := s.ExplainContext()
+	if report.Manifest.StableTokenHash == "" || report.Manifest.VolatileTokenHash == "" {
+		t.Fatalf("manifest token hashes not populated: %+v", report.Manifest)
+	}
+	if len(report.Manifest.Segments) != 2 {
+		t.Fatalf("segments = %d, want 2", len(report.Manifest.Segments))
+	}
+	if got := report.Manifest.Segments[0]; got.TokenStart != 0 || got.TokenEnd != len(stable) || got.TokenHash == "" {
+		t.Fatalf("stable token range = %+v, want [0,%d)", got, len(stable))
+	}
+	if got := report.Manifest.Segments[1]; got.TokenStart != len(stable) || got.TokenEnd != len(fullText) || got.TokenHash == "" {
+		t.Fatalf("volatile token range = %+v, want [%d,%d)", got, len(stable), len(fullText))
+	}
+	if s.residencyErr != "" {
+		t.Fatalf("residency error = %q", s.residencyErr)
+	}
+	if s.residencyPlan.TotalTokens != len(fullText) || len(s.residencyPlan.KeepHot) != 2 || len(s.residencyPlan.EvictCold) != 0 {
+		t.Fatalf("residency plan = %+v, want both blocks hot", s.residencyPlan)
 	}
 }
 

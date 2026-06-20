@@ -55,23 +55,28 @@ type Config struct {
 // guessed by the runtime. The runtime is the consumer (capabilities, cache
 // identity); it does not parse model files or probe hardware itself.
 //
-// EffectiveContext is the window modeld will actually serve on this device —
-// min(model ceiling, what fits in free memory) — and is the value the runtime
-// uses for NumCtx, display, and the cache-identity manifest. ModelMaxContext and
-// the byte fields explain how it was derived (telemetry / explain-context).
+// EffectiveContext is the dense window modeld will actually serve on this
+// device today — min(model ceiling, what fits in free memory) — and is the value
+// the runtime uses for NumCtx, display, and the cache-identity manifest.
+// MemoryContextTokens, HotContextTokens, and PlannerEffectiveContext expose the
+// effective-context plumbing separately: raw memory-fit KV tokens, current
+// physical hot KV budget, and future logical planner context.
 type ModelInfo struct {
-	ModelMaxContext  int   `json:"model_max_context"`
-	EffectiveContext int   `json:"effective_context"`
-	KVBytesPerToken  int64 `json:"kv_bytes_per_token,omitempty"`
-	FreeBytes        int64 `json:"free_bytes,omitempty"`
-	WeightsBytes     int64 `json:"weights_bytes,omitempty"`
-	OverheadBytes    int64 `json:"overhead_bytes,omitempty"`
-	ReservedBytes    int64 `json:"reserved_bytes,omitempty"`
-	UserLimitBytes   int64 `json:"user_limit_bytes,omitempty"`
-	MinFreeBytes     int64 `json:"min_free_bytes,omitempty"`
-	UsableBytes      int64 `json:"usable_bytes,omitempty"`
-	RequiredBytes    int64 `json:"required_bytes,omitempty"`
-	Clamped          bool  `json:"clamped,omitempty"`
+	ModelMaxContext         int   `json:"model_max_context"`
+	EffectiveContext        int   `json:"effective_context"`
+	MemoryContextTokens     int   `json:"memory_context_tokens,omitempty"`
+	HotContextTokens        int   `json:"hot_context_tokens,omitempty"`
+	PlannerEffectiveContext int   `json:"planner_effective_context,omitempty"`
+	KVBytesPerToken         int64 `json:"kv_bytes_per_token,omitempty"`
+	FreeBytes               int64 `json:"free_bytes,omitempty"`
+	WeightsBytes            int64 `json:"weights_bytes,omitempty"`
+	OverheadBytes           int64 `json:"overhead_bytes,omitempty"`
+	ReservedBytes           int64 `json:"reserved_bytes,omitempty"`
+	UserLimitBytes          int64 `json:"user_limit_bytes,omitempty"`
+	MinFreeBytes            int64 `json:"min_free_bytes,omitempty"`
+	UsableBytes             int64 `json:"usable_bytes,omitempty"`
+	RequiredBytes           int64 `json:"required_bytes,omitempty"`
+	Clamped                 bool  `json:"clamped,omitempty"`
 	// Reason explains why EffectiveContext was lower than the requested or model
 	// dense context. It is telemetry/debug text, not a stable API enum yet.
 	Reason string `json:"reason,omitempty"`
@@ -359,6 +364,41 @@ type ContextReport struct {
 	ManifestDigest  string
 	Manifest        ContextManifest
 	Closed          bool
+	// Residency is the backend's current KV residency plan: the hot/cold
+	// partition it would apply under the derived hot budget. It is observability;
+	// the plan is enforced only when the backend can execute it (Capabilities).
+	// Nil when the backend computes no plan.
+	Residency *ResidencyReport `json:"residency,omitempty"`
+}
+
+// ResidencyCapabilities mirrors what a backend can physically execute against
+// resident KV. The runtime reads it to know which residency plans are actionable
+// on the serving backend versus observational only.
+type ResidencyCapabilities struct {
+	RemoveTail      bool `json:"remove_tail,omitempty"`
+	RemoveMiddle    bool `json:"remove_middle,omitempty"`
+	PositionShift   bool `json:"position_shift,omitempty"`
+	SparseAttention bool `json:"sparse_attention,omitempty"`
+	ColdStore       bool `json:"cold_store,omitempty"`
+	RecomputeRange  bool `json:"recompute_range,omitempty"`
+}
+
+// ResidencyReport explains a backend's KV residency plan for observability: the
+// hot/cold partition under the derived hot budget, what is protected, and what
+// the backend could execute. It is backend-neutral; the modeld residency planner
+// produces it and the adapter maps it onto this type.
+type ResidencyReport struct {
+	BudgetTokens    int                   `json:"budget_tokens,omitempty"`
+	TotalTokens     int                   `json:"total_tokens,omitempty"`
+	HotTokens       int                   `json:"hot_tokens,omitempty"`
+	ColdTokens      int                   `json:"cold_tokens,omitempty"`
+	ProtectedTokens int                   `json:"protected_tokens,omitempty"`
+	HotBlocks       int                   `json:"hot_blocks,omitempty"`
+	ColdBlocks      int                   `json:"cold_blocks,omitempty"`
+	OverBudget      bool                  `json:"over_budget,omitempty"`
+	Capabilities    ResidencyCapabilities `json:"capabilities"`
+	Diagnostics     []string              `json:"diagnostics,omitempty"`
+	Error           string                `json:"error,omitempty"`
 }
 
 // Canonical errors expected to cross the boundary.

@@ -50,6 +50,14 @@ typedef struct cx_genai_session_config {
     float xattention_threshold;
     size_t xattention_block_size;
     size_t xattention_stride;
+    /* Native KV cache eviction (sink + recent + evictable middle). When
+       use_cache_eviction is set, the residency policy is enforced by OpenVINO's
+       own CacheEvictionConfig instead of by runtime KV surgery. Sizes are in
+       tokens; max must exceed start + recent. */
+    int use_cache_eviction;
+    size_t cache_evict_start_size;
+    size_t cache_evict_recent_size;
+    size_t cache_evict_max_size;
 } cx_genai_session_config;
 
 int cx_ov_runtime_info_get(cx_ov_runtime_info *out, char *err, size_t err_len);

@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/contenox/runtime/modeld/residency"
 )
 
 // TestSendReturnsFalseWhenCanceledAndFull pins the cancel-safe contract Decode
@@ -64,6 +66,41 @@ func TestCommonPrefixLen(t *testing.T) {
 		if got := CommonPrefixLen(c.a, c.b); got != c.want {
 			t.Errorf("CommonPrefixLen(%v, %v) = %d, want %d", c.a, c.b, got, c.want)
 		}
+	}
+}
+
+func TestResidencyReportMapsPlanAndCapabilities(t *testing.T) {
+	plan := residency.Plan{
+		BudgetTokens:    100,
+		TotalTokens:     120,
+		HotTokens:       100,
+		ProtectedTokens: 40,
+		OverBudget:      true,
+		KeepHot:         make([]residency.Block, 2),
+		EvictCold:       make([]residency.Block, 1),
+		Diagnostics:     []string{"over budget"},
+	}
+	rep := ResidencyReport(plan, "boom", residency.Capabilities{RemoveTail: true, PositionShift: true})
+	if rep == nil {
+		t.Fatal("ResidencyReport returned nil for a non-empty plan")
+	}
+	if rep.BudgetTokens != 100 || rep.TotalTokens != 120 || rep.HotTokens != 100 || rep.ColdTokens != 20 {
+		t.Fatalf("token totals = %+v", rep)
+	}
+	if rep.ProtectedTokens != 40 || !rep.OverBudget || rep.HotBlocks != 2 || rep.ColdBlocks != 1 {
+		t.Fatalf("plan shape = %+v", rep)
+	}
+	if !rep.Capabilities.RemoveTail || !rep.Capabilities.PositionShift || rep.Capabilities.RemoveMiddle {
+		t.Fatalf("capabilities = %+v", rep.Capabilities)
+	}
+	if rep.Error != "boom" || len(rep.Diagnostics) != 1 {
+		t.Fatalf("error/diagnostics = %q / %v", rep.Error, rep.Diagnostics)
+	}
+}
+
+func TestResidencyReportNilWhenEmpty(t *testing.T) {
+	if rep := ResidencyReport(residency.Plan{}, "", residency.Capabilities{}); rep != nil {
+		t.Fatalf("expected nil report for an empty plan, got %+v", rep)
 	}
 }
 

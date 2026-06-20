@@ -133,8 +133,9 @@ Worst case = a **cold start that must prefill the full effective context** once.
   each subsequent turn re-prefills only the changed suffix (a new turn + tool output —
   hundreds to a few thousand tokens), which is sub-second to seconds. The ~99.5%
   warm-reuse measurement is the evidence the worst case is *rare*, not typical.
-- **Decode is memory-bound.** Streaming at long context needs KV bandwidth; quantized
-  KV + accelerator bandwidth keep tok/s usable.
+- **Decode is memory-bound.** Each token reads only the KV it *attends to*; sparse
+  attention keeps that to a bounded VRAM hot set (not the full context), which is what
+  keeps tok/s usable at long context.
 - **Levers already plumbed:** chunked prefill (`NumBatch`), FlashAttention
   (`Config.FlashAttn`), GQA-aware budgeting, and — above all — **not re-prefilling**
   via warm reuse.
@@ -146,42 +147,45 @@ per-turn prefill bounded, and (c) cold starts stay rare (snapshot/restore).
 
 ## 6. What's technically required (the gap list)
 
-Mapped to the seams above; ordered by leverage.
+The corrected mechanism and the modeld-side code map live in the companion blueprint
+[modeld effective-context architecture](modeld-effective-context-architecture.md). The
+short version, ordered by leverage:
 
-1. **KV residency tiering: VRAM → CPU RAM → SSD.** Today `Snapshot`/`Restore` are
-   whole-session. The vision needs **segment-granular live offload** (LMCache-style):
-   keep the hot working set in VRAM, stream cold `repo_map`/`volatile` spans to host
-   RAM/SSD, fetch on demand. The manifest's per-segment token ranges are the unit.
-2. **Budget-aware admission/eviction.** Wire the `CacheClass` drop policy (the seam
-   `segments.go` calls "gated on the T3 context planner, #7"): a producer of richly
-   classed segments + an eviction loop that drops `MoreEvictableThan` first to fit the
-   `EffectiveContext` budget.
-3. **Selective recomputation.** Use a segment's `TokenStart/TokenEnd` to recompute
-   *exactly* an evicted cold span on access, instead of a full re-prefill — the
-   "burn compute to save memory" trade, applied surgically.
-4. **Effective context beyond the trained window** *(the hard, partly-open part)*.
-   A model trained to 32k cannot natively attend to 200k. Options: position scaling
-   (RoPE/YaRN), streaming-LLM (attention sinks + sliding window), or retrieval over
-   resident KV. The manifest + `CacheClass` make whichever technique *informed* (it
-   knows what's task-pinned vs droppable) rather than blind. `ModelInfo.EffectiveContext`
-   already anticipates a "planner-level effective context that may exceed the model's
-   dense trained window."
-5. **Deliberate KV quantization.** The KV-snapshot finding (default 8-bit KV is lossy;
-   f16 round-trips cleanly) means precision is a measured quality/footprint trade, not
-   a default — `q8_0`/`q4_0` to stretch the window with eyes open.
-6. **Prefill throughput.** Accelerator autodetect + offload derivation, FlashAttention,
-   chunked prefill, and warm reuse to avoid prefill entirely on the hot path.
+1. **Sparse / streaming attention** is the actual "beyond the window" mechanism — sinks
+   + a recent sliding window + a small set of *retrieved* relevant blocks. It bounds the
+   KV attended per decode token, which is the prerequisite for everything below. A model
+   trained to 32k does not natively attend to 200k; this (or position scaling, RoPE/YaRN)
+   is what makes it possible — and it is the riskiest, most engine-invasive piece.
+2. **Host-RAM KV cold store + block retrieval.** The full context parked off the
+   accelerator, with relevant blocks fetched in **bulk on relevance change** into the
+   VRAM hot set. This is viable *only* because (1) bounds the hot set: KV cannot be
+   streamed from host RAM/SSD per decode token (batch-1, no amortization). It is a cold
+   store, **not** a live attention extender; SSD is marginal (cross-session resume only).
+3. **Budget-aware admission/eviction/retrieval policy.** Consume `CacheClass` + recency +
+   the *derived* VRAM budget (`MoreEvictableThan` first; pin `task_pinned`; keep sinks +
+   recent window) to decide the hot set. Pure logic; the one piece testable without CGo.
+4. **Engine-level KV block manipulation.** Evict a token-range, offload, reinsert, keep
+   positions coherent. llama exposes `removeKV`/`prefillAt`; OpenVINO's pipeline owns its
+   KV internally and may not permit it. Whether stock engines suffice is unproven.
+5. **Derived sizing.** The VRAM hot-set / host cold-store split comes from
+   `capacity.Resolve` (model `KVBytesPerToken` + device memory), never a constant — the
+   budget can rival the weights.
+
+Orthogonal multipliers (not gating): KV quantization (`KVCacheType`; default 8-bit lossy,
+f16 round-trips) and recompute-from-tokens (rebuild a block from its token range when
+cheaper than fetching — often beats SSD on an accelerator).
 
 ---
 
 ## 7. Honest unknowns
 
-- **200k on 8–16 GB** is only reachable with aggressive tiering + quantization **and**
-  a model that actually attends usefully at that length. The number is a target that
-  forces the architecture, not a measured guarantee.
-- **Gap #4 (effective > trained window)** is the riskiest: it is unsolved in general
-  and depends on the model and technique. Everything else (tiering, eviction,
-  recomputation, warm reuse) is engineering on seams that already exist.
+- **200k on consumer VRAM** requires sparse attention that holds quality at length
+  **and** the engine support to manipulate KV blocks. The number is a target that forces
+  the architecture, not a measured guarantee.
+- **The mechanism itself — sparse/retrieval attention + block offload — is the unproven,
+  engine-invasive core**, not a detail. It may exceed what stock llama.cpp / OpenVINO
+  expose and need custom attention/KV handling. Retrieval is also approximate (a missed
+  block = a quality hit) and locality-dependent.
 - **Cold-prefill worst case** is the latency risk; it is bounded by the accelerator
   and kept rare by snapshot/restore — both of which depend on the single-owner,
   single-slot invariant holding.

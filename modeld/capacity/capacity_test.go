@@ -50,6 +50,10 @@ func TestUnit_Resolve_ScarceMemoryClampsBelowMax(t *testing.T) {
 	if c.EffectiveContext != want {
 		t.Fatalf("EffectiveContext = %d, want %d", c.EffectiveContext, want)
 	}
+	if c.MemoryContextTokens != want || c.HotContextTokens != want || c.PlannerEffectiveContext != want {
+		t.Fatalf("context split = memory %d hot %d planner %d, want all %d",
+			c.MemoryContextTokens, c.HotContextTokens, c.PlannerEffectiveContext, want)
+	}
 }
 
 func TestUnit_Resolve_RequestCaps(t *testing.T) {
@@ -57,12 +61,22 @@ func TestUnit_Resolve_RequestCaps(t *testing.T) {
 	if c.EffectiveContext != 8192 {
 		t.Fatalf("request should cap to 8192, got %d", c.EffectiveContext)
 	}
+	if c.MemoryContextTokens <= c.EffectiveContext {
+		t.Fatalf("MemoryContextTokens = %d, want raw memory-fit budget above requested effective %d", c.MemoryContextTokens, c.EffectiveContext)
+	}
+	if c.HotContextTokens != c.EffectiveContext || c.PlannerEffectiveContext != c.EffectiveContext {
+		t.Fatalf("hot/planner = %d/%d, want effective %d", c.HotContextTokens, c.PlannerEffectiveContext, c.EffectiveContext)
+	}
 }
 
 func TestUnit_Resolve_UnknownKVFallsBackToModelMax(t *testing.T) {
 	c := Resolve(Params{ModelMaxCtx: 32768, KVBytesPerToken: 0, FreeBytes: 1 << 20})
 	if c.EffectiveContext != 32768 {
 		t.Fatalf("unknown KV cost should fall back to model max, got %d", c.EffectiveContext)
+	}
+	if c.MemoryContextTokens != 0 || c.HotContextTokens != 32768 || c.PlannerEffectiveContext != 32768 {
+		t.Fatalf("unknown-KV context split = memory %d hot %d planner %d, want 0/32768/32768",
+			c.MemoryContextTokens, c.HotContextTokens, c.PlannerEffectiveContext)
 	}
 }
 

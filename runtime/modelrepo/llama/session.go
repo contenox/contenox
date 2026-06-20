@@ -118,6 +118,7 @@ type ContextReport struct {
 	ManifestDigest  string
 	Manifest        ContextManifest
 	Closed          bool
+	Residency       *transport.ResidencyReport `json:"residency,omitempty"`
 }
 
 type SessionSnapshot = transport.SessionSnapshot

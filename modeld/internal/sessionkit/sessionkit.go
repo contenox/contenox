@@ -7,7 +7,12 @@
 // is identical and lives here once instead of drifting as per-adapter copies.
 package sessionkit
 
-import "context"
+import (
+	"context"
+
+	"github.com/contenox/runtime/modeld/residency"
+	"github.com/contenox/runtime/runtime/transport"
+)
 
 // Send delivers v on ch, or reports false if ctx is canceled before a slot is
 // free. Decode loops use the bool to stop streaming once the consumer is gone.
@@ -52,5 +57,35 @@ func ChatRole(kind string) string {
 		return kind
 	default:
 		return ""
+	}
+}
+
+// ResidencyReport maps a residency.Plan (plus any planning error and the
+// backend's capabilities) onto the backend-neutral transport.ResidencyReport for
+// explain-context observability, so the two adapters surface residency the same
+// way. It returns nil when there is no plan to report (empty session).
+func ResidencyReport(plan residency.Plan, errMsg string, caps residency.Capabilities) *transport.ResidencyReport {
+	if plan.TotalTokens == 0 && plan.BudgetTokens == 0 && errMsg == "" && len(plan.Diagnostics) == 0 {
+		return nil
+	}
+	return &transport.ResidencyReport{
+		BudgetTokens:    plan.BudgetTokens,
+		TotalTokens:     plan.TotalTokens,
+		HotTokens:       plan.HotTokens,
+		ColdTokens:      plan.TotalTokens - plan.HotTokens,
+		ProtectedTokens: plan.ProtectedTokens,
+		HotBlocks:       len(plan.KeepHot),
+		ColdBlocks:      len(plan.EvictCold),
+		OverBudget:      plan.OverBudget,
+		Capabilities: transport.ResidencyCapabilities{
+			RemoveTail:      caps.RemoveTail,
+			RemoveMiddle:    caps.RemoveMiddle,
+			PositionShift:   caps.PositionShift,
+			SparseAttention: caps.SparseAttention,
+			ColdStore:       caps.ColdStore,
+			RecomputeRange:  caps.RecomputeRange,
+		},
+		Diagnostics: plan.Diagnostics,
+		Error:       errMsg,
 	}
 }

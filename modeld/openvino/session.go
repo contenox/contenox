@@ -10,6 +10,7 @@ import (
 
 	"github.com/contenox/runtime/modeld/internal/sessionkit"
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
+	"github.com/contenox/runtime/modeld/residency"
 	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/transport"
 )
@@ -58,10 +59,24 @@ type genaiSession struct {
 	tools     string // model-native tool definitions JSON, rendered via the chat template
 	resident  []int  // logical token IDs resident by contract; GenAI owns physical KV
 	prefixLen int    // how many resident tokens belong to the stable prefix
+
+	// evictionEnabled is set when the GenAI pipeline runs native cache eviction
+	// (sink+recent+evictable). Then numCtx is the physical hot budget the pipeline
+	// keeps by evicting, not a hard logical ceiling, so the adapter lets the
+	// logical context grow past it instead of returning ErrContextOverflow — the
+	// OpenVINO parallel to the llama decode-time slide.
+	evictionEnabled bool
+
+	residencyPlan residency.Plan
+	residencyErr  string
 }
 
 func newGenaiSession(backend genaiBackend, numCtx int) *genaiSession {
-	return &genaiSession{backend: backend, numCtx: numCtx}
+	return newGenaiSessionWithEviction(backend, numCtx, false)
+}
+
+func newGenaiSessionWithEviction(backend genaiBackend, numCtx int, eviction bool) *genaiSession {
+	return &genaiSession{backend: backend, numCtx: numCtx, evictionEnabled: eviction}
 }
 
 var newEmbedSession = func(modelPath, device string) (EmbedSessionBackend, error) {
@@ -69,6 +84,17 @@ var newEmbedSession = func(modelPath, device string) (EmbedSessionBackend, error
 }
 
 var _ transport.Session = (*genaiSession)(nil)
+var _ residency.Controller = (*genaiSession)(nil)
+
+func (s *genaiSession) Capabilities() residency.Capabilities {
+	// OpenVINO GenAI does residency declaratively, not by imperative KV range
+	// surgery: the ContinuousBatchingPipeline runs XAttention sparse attention
+	// (enabled by default in the session config) and supports a native
+	// CacheEvictionConfig (sink/recent/evictable). So it has no RemoveTail/
+	// RemoveMiddle/PositionShift the runtime can drive itself, but it does attend
+	// sparsely over long context on its own.
+	return residency.Capabilities{SparseAttention: true}
+}
 
 func (s *genaiSession) residentTokens() int { return len(s.resident) }
 
@@ -112,7 +138,6 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	if ok, _ := s.manifest.CompatibleRuntime(prefix.Manifest); ok {
 		reuse = sessionkit.CommonPrefixLen(s.resident, tokens)
 	}
-	stableTokenHash := contextasm.HashTokenIDs(tokens)
 
 	// EnsurePrefix replaces the stable prefix and drops any prior suffix.
 	s.stable = prefix.Text
@@ -120,8 +145,12 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	s.tools = prefix.Tools
 	s.resident = append(s.resident[:0], tokens...)
 	s.prefixLen = len(tokens)
-	s.manifest = prefix.Manifest
-	s.manifest.StableTokenHash = stableTokenHash
+	enriched, err := s.enrichStableManifest(ctx, prefix.Text, prefix.Manifest, tokens)
+	if err != nil {
+		return transport.PrefixStatus{}, err
+	}
+	s.manifest = enriched
+	s.updateResidencyPlanLocked(false)
 
 	return transport.PrefixStatus{
 		ReusedTokens:    reuse,
@@ -165,12 +194,18 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 	if err != nil {
 		return transport.SuffixStatus{}, fmt.Errorf("openvino: tokenize suffix: %w", err)
 	}
-	if s.numCtx > 0 && s.residentTokens()+len(tokens) > s.numCtx {
+	if s.numCtx > 0 && !s.evictionEnabled && s.residentTokens()+len(tokens) > s.numCtx {
 		return transport.SuffixStatus{}, transport.ErrContextOverflow
 	}
 	resident := append(append([]int(nil), s.resident...), tokens...)
+	enriched, err := s.enrichVolatileManifest(ctx, suffixText, suffix.Manifest, tokens, addSpecial)
+	if err != nil {
+		return transport.SuffixStatus{}, err
+	}
 	s.suffix += suffix.Text
 	s.resident = resident
+	s.manifest = enriched
+	s.updateResidencyPlanLocked(true)
 
 	return transport.SuffixStatus{
 		SuffixTokens:    len(tokens),
@@ -193,18 +228,23 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 	tools := s.tools
 	resident := s.residentTokens()
 	numCtx := s.numCtx
+	eviction := s.evictionEnabled
 	s.mu.Unlock()
 
 	opts := decodeOptions(cfg)
 	out := make(chan transport.StreamChunk, 16)
-	if numCtx > 0 && resident >= numCtx {
+	// With native cache eviction the pipeline bounds physical KV by evicting, so a
+	// resident count at/over numCtx is not an overflow — let generation continue
+	// past the window (the OpenVINO parallel to the llama slide). Without eviction
+	// numCtx is a hard ceiling.
+	if numCtx > 0 && !eviction && resident >= numCtx {
 		go func() {
 			defer close(out)
 			_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: transport.ErrContextOverflow})
 		}()
 		return out, nil
 	}
-	if numCtx > 0 && resident+opts.MaxNewTokens > numCtx {
+	if numCtx > 0 && !eviction && resident+opts.MaxNewTokens > numCtx {
 		opts.MaxNewTokens = numCtx - resident
 	}
 
@@ -215,6 +255,86 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 		}
 	}
 	return s.decodePrompt(ctx, backend, prompt, opts, cfg, out)
+}
+
+func (s *genaiSession) enrichStableManifest(ctx context.Context, stableText string, manifest transport.ContextManifest, tokens []int) (transport.ContextManifest, error) {
+	if len(manifest.Segments) == 0 {
+		if manifest.StableBytes == 0 {
+			manifest.StableBytes = len(stableText)
+		}
+		manifest.StableTokenHash = contextasm.HashTokenIDs(tokens)
+		return manifest, nil
+	}
+	if manifest.StableBytes == 0 {
+		manifest.StableBytes = len(stableText)
+	}
+	enriched, err := manifest.WithStableTokenization(stableText, tokens, func(text string, addSpecial bool) ([]int, error) {
+		return s.tokenize(ctx, text, addSpecial)
+	}, manifest.AddBOS)
+	if err != nil {
+		return transport.ContextManifest{}, err
+	}
+	return enriched, nil
+}
+
+func (s *genaiSession) enrichVolatileManifest(ctx context.Context, suffixText string, manifest transport.ContextManifest, tokens []int, suffixAddSpecial bool) (transport.ContextManifest, error) {
+	if len(manifest.Segments) == 0 {
+		if manifest.StableBytes == 0 {
+			manifest.StableBytes = len(s.stable)
+		}
+		if manifest.TotalBytes == 0 {
+			manifest.TotalBytes = len(s.stable) + len(suffixText)
+		}
+		manifest.StableTokenHash = s.manifest.StableTokenHash
+		manifest.VolatileTokenHash = contextasm.HashTokenIDs(tokens)
+		return manifest, nil
+	}
+	if manifest.StableBytes == 0 {
+		manifest.StableBytes = len(s.stable)
+	}
+	if manifest.TotalBytes == 0 {
+		manifest.TotalBytes = len(s.stable) + len(suffixText)
+	}
+	enriched, err := manifest.WithVolatileTokenization(s.manifest, s.prefixLen, suffixText, tokens, func(text string, addSpecial bool) ([]int, error) {
+		if suffixAddSpecial {
+			addSpecial = true
+		}
+		return s.tokenize(ctx, text, addSpecial)
+	})
+	if err != nil {
+		return transport.ContextManifest{}, err
+	}
+	return enriched, nil
+}
+
+func (s *genaiSession) updateResidencyPlanLocked(requireComplete bool) {
+	s.residencyPlan = residency.Plan{}
+	s.residencyErr = ""
+	if s.numCtx <= 0 || len(s.resident) == 0 {
+		return
+	}
+	blocks, err := residency.BlocksFromManifest(s.manifest, residency.ManifestOptions{
+		ResidentTokens:  len(s.resident),
+		RequireComplete: requireComplete,
+	})
+	if err != nil {
+		s.residencyErr = err.Error()
+		if len(blocks) == 0 {
+			return
+		}
+	}
+	plan, planErr := residency.PlanHotSet(residency.PlanInput{
+		Blocks:       blocks,
+		BudgetTokens: s.numCtx,
+	})
+	if planErr != nil {
+		s.residencyErr = planErr.Error()
+		return
+	}
+	if err != nil {
+		plan.Diagnostics = append(plan.Diagnostics, err.Error())
+	}
+	s.residencyPlan = plan
 }
 
 func (s *genaiSession) decodePrompt(ctx context.Context, backend genaiBackend, prompt string, opts ovsession.GenerateOptions, cfg transport.DecodeConfig, out chan transport.StreamChunk) (<-chan transport.StreamChunk, error) {
@@ -426,6 +546,7 @@ func (s *genaiSession) ExplainContext() transport.ContextReport {
 		ManifestDigest:  s.manifest.Digest(),
 		Manifest:        s.manifest,
 		Closed:          s.closed,
+		Residency:       sessionkit.ResidencyReport(s.residencyPlan, s.residencyErr, s.Capabilities()),
 	}
 }
 
@@ -503,6 +624,7 @@ func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapsh
 	if s.manifest.StableTokenHash == "" && s.prefixLen <= len(s.resident) {
 		s.manifest.StableTokenHash = contextasm.HashTokenIDs(s.resident[:s.prefixLen])
 	}
+	s.updateResidencyPlanLocked(true)
 	return nil
 }
 
@@ -513,6 +635,8 @@ func (s *genaiSession) Close() error {
 		return nil
 	}
 	s.closed = true
+	s.residencyPlan = residency.Plan{}
+	s.residencyErr = ""
 	if s.backend != nil {
 		return s.backend.Close()
 	}
