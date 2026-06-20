@@ -11,6 +11,7 @@ package owner
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"time"
 
@@ -58,6 +59,11 @@ const EndpointMetaKey = "endpoint"
 // BackendMetaKey is the lease metadata key used to advertise the inference
 // backend the owner serves (mirrored by runtime/internal/modeldprobe).
 const BackendMetaKey = "backend"
+
+var (
+	acquireLease = liblease.Acquire
+	inspectLease = liblease.Inspect
+)
 
 // leaseMeta builds the lease metadata advertised to followers. Empty values are
 // omitted so a non-serving owner publishes no endpoint/backend.
@@ -111,21 +117,32 @@ func Join(ctx context.Context, cfg Config) (*Owner, error) {
 		opts = append(opts, liblease.WithMeta(meta))
 	}
 
-	l, err := liblease.Acquire(cfg.LeasePath, cfg.TTL, opts...)
-	if err != nil {
-		if errors.Is(err, liblease.ErrHeld) {
-			rec, ierr := liblease.Inspect(cfg.LeasePath)
-			if ierr != nil {
-				return nil, ierr
-			}
-			return &Owner{
-				role:   RoleFollower,
-				id:     rec.InstanceID,
-				holder: rec,
-				lost:   make(chan struct{}), // never fires for a follower
-			}, nil
+	var l *liblease.Lease
+	for {
+		var err error
+		l, err = acquireLease(cfg.LeasePath, cfg.TTL, opts...)
+		if err == nil {
+			break
 		}
-		return nil, err
+		if !errors.Is(err, liblease.ErrHeld) {
+			return nil, err
+		}
+		rec, ierr := inspectLease(cfg.LeasePath)
+		if errors.Is(ierr, os.ErrNotExist) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if ierr != nil {
+			return nil, ierr
+		}
+		return &Owner{
+			role:   RoleFollower,
+			id:     rec.InstanceID,
+			holder: rec,
+			lost:   make(chan struct{}), // never fires for a follower
+		}, nil
 	}
 
 	rctx, cancel := context.WithCancel(ctx)

@@ -224,6 +224,35 @@ Verified with GoLand 2026.1.2. Full guide → **[contenox.com/docs/guide/jetbrai
 
 ---
 
+## Local north star: long context on your own accelerator
+
+Most of Contenox runs against whatever provider you choose. The native `modeld`
+daemon exists for one specific bet: a local AI coding agent on a single consumer
+accelerator that serves **real, long-context work** — an *effective* context far
+beyond a model's native window (the goal is ~200k tokens) on limited hardware, by
+treating context as resident state kept hot rather than a prompt resent every turn.
+
+`modeld` is shaped entirely around that bet:
+
+- **One model, one user, many sessions.** A single active model slot serves many
+  persistent sessions for one owner, so the device's whole memory and KV budget go
+  to making *that* model deep and fast instead of multiplexing several.
+- **Warm-reuse sessions.** Each session keeps its stable prefix's KV hot and
+  re-prefills only the changed suffix (`EnsurePrefix → PrefillSuffix → Decode`), so
+  a long working context is paid for once, not resent on every turn.
+- **Snapshot / restore.** Session state is durable and branchable, so effective
+  context outlives a single live process.
+- **Accelerator-driven, no knobs.** modeld detects the accelerator and derives
+  offload and the effective window from the device at runtime — no per-model flags.
+
+This is the direction the local backend is built toward, not a shipped guarantee on
+every model and device. The workflow runtime above doesn't depend on it — use any
+hosted or local provider today. How it maps onto the code (KV cache, warm reuse,
+capacity, the latency budget, and what's still required):
+[Effective Context North Star](docs/blueprints/effective-context-north-star.md).
+
+---
+
 ## Backends
 
 The `llama` and `openvino` backends are local modeld-backed inference providers.

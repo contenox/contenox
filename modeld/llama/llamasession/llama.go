@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/contenox/runtime/modeld/internal/sessionkit"
 	"github.com/contenox/runtime/modeld/llama"
 	"github.com/contenox/runtime/modeld/llama/llamacppshim"
 	"github.com/contenox/runtime/runtime/contextasm"
@@ -145,7 +146,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		s.prefixText = ""
 		s.manifest = llama.ContextManifest{}
 	} else {
-		reuse = commonPrefixLen(s.resident, toks)
+		reuse = sessionkit.CommonPrefixLen(s.resident, toks)
 	}
 	if reuse < len(s.resident) {
 		if err := s.removeKV(reuse, -1); err != nil {
@@ -276,15 +277,17 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		defer func() {
 			if r := recover(); r != nil {
 				s.closeLocked()
-				ch <- llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode panicked: %v", llama.ErrSessionFatal, r)}
+				sessionkit.TrySend(ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode panicked: %v", llama.ErrSessionFatal, r)})
 			}
 		}()
 		if s.closed {
-			ch <- llama.StreamChunk{Error: llama.ErrSessionClosed}
+			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: llama.ErrSessionClosed}) {
+				return
+			}
 			return
 		}
 		if err := ctx.Err(); err != nil {
-			ch <- llama.StreamChunk{Error: err}
+			sessionkit.TrySend(ch, llama.StreamChunk{Error: err})
 			return
 		}
 
@@ -303,7 +306,9 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		}
 		sampler, err := llamacppshim.NewSamplingContext(params)
 		if err != nil {
-			ch <- llama.StreamChunk{Error: fmt.Errorf("llamasession: sampler: %w", err)}
+			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("llamasession: sampler: %w", err)}) {
+				return
+			}
 			return
 		}
 		defer sampler.Free()
@@ -314,7 +319,9 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		}
 		remaining := s.numCtx - len(s.resident)
 		if remaining <= 0 {
-			ch <- llama.StreamChunk{Error: llama.NewContextOverflowError("decode", len(s.resident), 1, s.numCtx)}
+			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: llama.NewContextOverflowError("decode", len(s.resident), 1, s.numCtx)}) {
+				return
+			}
 			return
 		}
 		if maxTokens > remaining {
@@ -326,30 +333,31 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		}
 		parser, err := newChatOutputParser(cfg.ParserProtocols, s.chatSyntax, reasoningFormat)
 		if err != nil {
-			ch <- llama.StreamChunk{Error: err}
+			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: err}) {
+				return
+			}
 			return
 		}
 		emitParsed := func(piece string, partial bool) bool {
 			if parser == nil {
 				if piece != "" {
-					ch <- llama.StreamChunk{Text: piece}
+					return sessionkit.Send(ctx, ch, llama.StreamChunk{Text: piece})
 				}
 				return true
 			}
 			text, thinking, toolCalls, err := parser.Push(piece, partial)
 			if err != nil {
-				ch <- llama.StreamChunk{Error: err}
-				return false
+				return sessionkit.Send(ctx, ch, llama.StreamChunk{Error: err})
 			}
 			if text != "" || thinking != "" || len(toolCalls) > 0 {
-				ch <- llama.StreamChunk{Text: text, Thinking: thinking, ToolCalls: toolCalls}
+				return sessionkit.Send(ctx, ch, llama.StreamChunk{Text: text, Thinking: thinking, ToolCalls: toolCalls})
 			}
 			return true
 		}
 		for n := 0; n < maxTokens; n++ {
 			select {
 			case <-ctx.Done():
-				ch <- llama.StreamChunk{Error: ctx.Err()}
+				sessionkit.TrySend(ch, llama.StreamChunk{Error: ctx.Err()})
 				return
 			default:
 			}
@@ -363,12 +371,12 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 			s.batch.Clear()
 			if err := s.batch.Add(id, nil, len(s.resident), true, 0); err != nil {
 				s.closeLocked()
-				ch <- llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode batch: %v", llama.ErrSessionFatal, err)}
+				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode batch: %v", llama.ErrSessionFatal, err)})
 				return
 			}
 			if res := s.lctx.Decode(s.batch); res.Status != llamacppshim.DecodeOK {
 				s.closeLocked()
-				ch <- llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode token: %v", llama.ErrSessionFatal, res.Err)}
+				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode token: %v", llama.ErrSessionFatal, res.Err)})
 				return
 			}
 			s.resident = append(s.resident, id)
@@ -530,7 +538,7 @@ func stableMessages(text string, m llama.ContextManifest) []chatTemplateMessage 
 		if !seg.Stable {
 			continue
 		}
-		role := chatRole(seg.Kind)
+		role := sessionkit.ChatRole(seg.Kind)
 		if role == "" || seg.ByteStart < 0 || seg.ByteEnd > len(text) || seg.ByteStart > seg.ByteEnd {
 			continue
 		}
@@ -553,7 +561,7 @@ func volatileMessages(text string, m llama.ContextManifest) []chatTemplateMessag
 		if seg.Stable {
 			continue
 		}
-		role := chatRole(seg.Kind)
+		role := sessionkit.ChatRole(seg.Kind)
 		if role == "" {
 			continue
 		}
@@ -571,15 +579,6 @@ func volatileMessages(text string, m llama.ContextManifest) []chatTemplateMessag
 	return msgs
 }
 
-func chatRole(kind string) string {
-	switch kind {
-	case "system", "user", "assistant", "tool":
-		return kind
-	default:
-		return ""
-	}
-}
-
 // enrichStableSegments fills the stored manifest with backend-resolved stable
 // token ranges/hashes. modeld owns the tokenizer/template, so a segment's token
 // boundary is recovered by tokenizing the model's chat template applied to the
@@ -595,7 +594,7 @@ func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []cha
 		if !seg.Stable {
 			continue
 		}
-		if chatRole(seg.Kind) == "" {
+		if sessionkit.ChatRole(seg.Kind) == "" {
 			seg.TokenStart, seg.TokenEnd = prevEnd, prevEnd
 			seg.TokenHash = contextasm.HashTokenIDs(toks[prevEnd:prevEnd])
 			continue
@@ -637,7 +636,7 @@ func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []chatTe
 		if seg.Stable {
 			continue
 		}
-		if chatRole(seg.Kind) == "" {
+		if sessionkit.ChatRole(seg.Kind) == "" {
 			seg.TokenStart = prefixTokens + prevEnd
 			seg.TokenEnd = prefixTokens + len(stoks)
 			seg.TokenHash = contextasm.HashTokenIDs(stoks[prevEnd:])
@@ -807,18 +806,6 @@ func (s *session) prefillAt(ctx context.Context, toks []int, startPos int, logit
 		}
 	}
 	return nil
-}
-
-func commonPrefixLen(a, b []int) int {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	i := 0
-	for i < n && a[i] == b[i] {
-		i++
-	}
-	return i
 }
 
 func isContextErr(err error) bool {

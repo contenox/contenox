@@ -76,6 +76,12 @@ func Acquire(path string, ttl time.Duration, opts ...Option) (*Lease, error) {
 	if ttl <= 0 {
 		return nil, errors.New("liblease: ttl must be positive")
 	}
+	unlock, err := acquireLeaseLock(path, ttl)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
 	now := time.Now()
 	host, _ := os.Hostname()
 	rec := Record{
@@ -110,9 +116,16 @@ func Acquire(path string, ttl time.Duration, opts ...Option) (*Lease, error) {
 			ErrHeld, cur.InstanceID, cur.PID, cur.ExpiresAt().Format(time.RFC3339))
 	}
 
-	// Expired: take over with an atomic overwrite, then verify we won. Two
-	// challengers can race here; the last rename wins and the loser sees a
-	// different id on readback. The InstanceID fencing token guards the rest.
+	// Re-check under the acquisition lock. The previous holder may have renewed
+	// or released while this caller was waiting to serialize acquisition.
+	if cur, rerr := readRecord(path); rerr == nil && !cur.expired(time.Now()) {
+		return nil, fmt.Errorf("%w: instance %s (pid %d) until %s",
+			ErrHeld, cur.InstanceID, cur.PID, cur.ExpiresAt().Format(time.RFC3339))
+	}
+
+	// Expired or released: take over with an atomic overwrite. The takeover lock
+	// makes this a single-winner path; the readback remains a corruption/FS sanity
+	// check rather than the concurrency primitive.
 	if err := writeRecord(path, rec); err != nil {
 		return nil, err
 	}
@@ -124,6 +137,37 @@ func Acquire(path string, ttl time.Duration, opts ...Option) (*Lease, error) {
 		return nil, fmt.Errorf("%w: lost takeover race to instance %s", ErrHeld, after.InstanceID)
 	}
 	return &Lease{path: path, rec: rec}, nil
+}
+
+const leaseLockStaleAfter = 5 * time.Second
+
+func acquireLeaseLock(path string, ttl time.Duration) (func(), error) {
+	lockPath := path + ".acquire.lock"
+	staleAfter := leaseLockStaleAfter
+	if ttl > 0 && ttl < staleAfter {
+		staleAfter = ttl
+	}
+	if staleAfter < 100*time.Millisecond {
+		staleAfter = 100 * time.Millisecond
+	}
+	for {
+		err := os.Mkdir(lockPath, 0o700)
+		if err == nil {
+			return func() { _ = os.Remove(lockPath) }, nil
+		}
+		if !os.IsExist(err) {
+			return nil, err
+		}
+		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > staleAfter {
+			_ = os.Remove(lockPath)
+			continue
+		} else if statErr != nil && errors.Is(statErr, os.ErrNotExist) {
+			continue
+		} else if statErr != nil {
+			return nil, statErr
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // tryCreate atomically creates the lease file only if it does not already
@@ -145,15 +189,24 @@ func tryCreate(path string, rec Record) (bool, error) {
 }
 
 // Renew extends the lease by another TTL from now. It returns ErrLost if the
-// lease has since been taken over by another instance, which the caller must
-// treat as losing ownership.
+// lease has expired locally or has since been taken over by another instance,
+// which the caller must treat as losing ownership.
 func (l *Lease) Renew() error {
+	unlock, err := acquireLeaseLock(l.path, l.rec.TTL)
+	if err != nil {
+		return fmt.Errorf("liblease: renew lock: %w", err)
+	}
+	defer unlock()
+
 	cur, err := readRecord(l.path)
 	if err != nil {
 		return fmt.Errorf("liblease: renew: %w", err)
 	}
 	if cur.InstanceID != l.rec.InstanceID {
 		return fmt.Errorf("%w: now held by %s", ErrLost, cur.InstanceID)
+	}
+	if l.rec.expired(time.Now()) {
+		return fmt.Errorf("%w: lease expired before renewal", ErrLost)
 	}
 	l.rec.RenewedAt = time.Now()
 	return writeRecord(l.path, l.rec)
@@ -162,6 +215,12 @@ func (l *Lease) Renew() error {
 // Release relinquishes the lease by removing the file, but only if it is still
 // ours. It is safe to call more than once.
 func (l *Lease) Release() error {
+	unlock, err := acquireLeaseLock(l.path, l.rec.TTL)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	cur, err := readRecord(l.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

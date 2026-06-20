@@ -25,6 +25,7 @@ var sentinels = []struct {
 	{"not_owner", codes.FailedPrecondition, transport.ErrNotOwner},
 	{"session_closed", codes.FailedPrecondition, transport.ErrSessionClosed},
 	{"context_overflow", codes.ResourceExhausted, transport.ErrContextOverflow},
+	{"session_fatal", codes.Aborted, transport.ErrSessionFatal},
 	{"model_busy", codes.FailedPrecondition, transport.ErrModelBusy},
 	{"model_not_active", codes.FailedPrecondition, transport.ErrModelNotActive},
 	{"model_switch_required", codes.FailedPrecondition, transport.ErrModelSwitchRequired},

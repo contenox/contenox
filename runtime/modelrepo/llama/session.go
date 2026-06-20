@@ -255,7 +255,7 @@ func mapSessionErr(err error) error {
 		return nil
 	case errors.Is(err, transport.ErrSessionClosed):
 		return ErrSessionClosed
-	case errors.Is(err, transport.ErrStaleFence), errors.Is(err, transport.ErrSlotGenerationStale), errors.Is(err, transport.ErrModelNotActive):
+	case errors.Is(err, transport.ErrSessionFatal), errors.Is(err, transport.ErrStaleFence), errors.Is(err, transport.ErrSlotGenerationStale), errors.Is(err, transport.ErrModelNotActive):
 		return fmt.Errorf("%w: %v", ErrSessionFatal, err)
 	case errors.Is(err, transport.ErrContextOverflow):
 		return fmt.Errorf("%w: %v", ErrContextOverflow, err)

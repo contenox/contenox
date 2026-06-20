@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/contenox/runtime/modeld/internal/sessionkit"
 )
 
 // GenAIAvailable reports whether the OpenVINO GenAI session backend was built.
@@ -326,16 +328,20 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 	return GenAIResult{
 		Text:       C.GoString((*C.char)(out)),
 		ParsedJSON: C.GoString((*C.char)(parsed)),
-		Metrics: PipelineMetrics{
-			Requests:          uint64(cmetrics.requests),
-			ScheduledRequests: uint64(cmetrics.scheduled_requests),
-			CacheUsage:        float32(cmetrics.cache_usage),
-			MaxCacheUsage:     float32(cmetrics.max_cache_usage),
-			AvgCacheUsage:     float32(cmetrics.avg_cache_usage),
-			InferenceDuration: float32(cmetrics.inference_duration),
-			CacheSizeInBytes:  uint64(cmetrics.cache_size_in_bytes),
-		},
+		Metrics:    pipelineMetricsFromC(cmetrics),
 	}, nil
+}
+
+func pipelineMetricsFromC(cmetrics C.cx_genai_metrics) PipelineMetrics {
+	return PipelineMetrics{
+		Requests:          uint64(cmetrics.requests),
+		ScheduledRequests: uint64(cmetrics.scheduled_requests),
+		CacheUsage:        float32(cmetrics.cache_usage),
+		MaxCacheUsage:     float32(cmetrics.max_cache_usage),
+		AvgCacheUsage:     float32(cmetrics.avg_cache_usage),
+		InferenceDuration: float32(cmetrics.inference_duration),
+		CacheSizeInBytes:  uint64(cmetrics.cache_size_in_bytes),
+	}
 }
 
 // Stream runs one prompt and returns decoded text deltas as GenAI produces them.
@@ -433,7 +439,7 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 
 		out := C.calloc(1, C.size_t(genAIOutLen))
 		if out == nil {
-			ch <- StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream output buffer")}
+			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream output buffer")})
 			C.cx_genai_session_cancel(ptr)
 			return
 		}
@@ -441,7 +447,7 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 
 		thinking := C.calloc(1, C.size_t(genAIOutLen))
 		if thinking == nil {
-			ch <- StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream thinking buffer")}
+			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream thinking buffer")})
 			C.cx_genai_session_cancel(ptr)
 			return
 		}
@@ -449,7 +455,7 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 
 		errbuf := C.calloc(1, C.size_t(genAIErrLen))
 		if errbuf == nil {
-			ch <- StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream error buffer")}
+			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream error buffer")})
 			C.cx_genai_session_cancel(ptr)
 			return
 		}
@@ -476,18 +482,20 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 				case ch <- StreamChunk{Text: text, Thinking: thinkingText}:
 				case <-ctx.Done():
 					C.cx_genai_session_cancel(ptr)
+					sessionkit.TrySend(ch, StreamChunk{Error: ctx.Err()})
+					return
 				}
 			case 1:
 				return
 			case 3:
 				if err := ctx.Err(); err != nil {
-					ch <- StreamChunk{Error: err}
+					_ = sessionkit.Send(ctx, ch, StreamChunk{Error: err})
 				} else {
-					ch <- StreamChunk{Error: errors.New("openvino GenAI generation canceled")}
+					_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("openvino GenAI generation canceled")})
 				}
 				return
 			default:
-				ch <- StreamChunk{Error: fmt.Errorf("openvino GenAI stream: %s", C.GoString((*C.char)(errbuf)))}
+				_ = sessionkit.Send(ctx, ch, StreamChunk{Error: fmt.Errorf("openvino GenAI stream: %s", C.GoString((*C.char)(errbuf)))})
 				return
 			}
 		}

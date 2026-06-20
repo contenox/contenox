@@ -58,6 +58,20 @@ func TestUnit_Lease_TakeoverAfterExpiry(t *testing.T) {
 	}
 }
 
+func TestUnit_Lease_RenewAfterLocalExpiryIsLost(t *testing.T) {
+	path := leasePath(t)
+
+	l, err := liblease.Acquire(path, time.Nanosecond)
+	if err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	time.Sleep(time.Millisecond)
+
+	if err := l.Renew(); !errors.Is(err, liblease.ErrLost) {
+		t.Fatalf("expired Renew: want ErrLost, got %v", err)
+	}
+}
+
 func TestUnit_Lease_RenewKeepsOwnership(t *testing.T) {
 	path := leasePath(t)
 
@@ -158,5 +172,59 @@ func TestUnit_Lease_SingleWinnerRace(t *testing.T) {
 	}
 	if wins != 1 {
 		t.Fatalf("expected exactly 1 winner, got %d", wins)
+	}
+}
+
+// TestUnit_Lease_ExpiredTakeoverSingleWinnerRace covers the stale-record path:
+// many challengers may observe the same expired lease, but only one may return
+// as owner.
+func TestUnit_Lease_ExpiredTakeoverSingleWinnerRace(t *testing.T) {
+	const rounds = 20
+	const racers = 40
+
+	for round := range rounds {
+		path := filepath.Join(t.TempDir(), "expired.lease")
+		first, err := liblease.Acquire(path, time.Nanosecond)
+		if err != nil {
+			t.Fatalf("round %d initial Acquire: %v", round, err)
+		}
+		time.Sleep(time.Millisecond)
+
+		var wins int64
+		var wg sync.WaitGroup
+		bad := make(chan error, racers)
+		won := make(chan *liblease.Lease, racers)
+		start := make(chan struct{})
+
+		for range racers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				l, err := liblease.Acquire(path, time.Minute)
+				switch {
+				case err == nil:
+					atomic.AddInt64(&wins, 1)
+					won <- l
+				case errors.Is(err, liblease.ErrHeld):
+				default:
+					bad <- err
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(bad)
+		close(won)
+		for l := range won {
+			_ = l.Release()
+		}
+
+		for err := range bad {
+			t.Fatalf("round %d unexpected acquire error: %v", round, err)
+		}
+		if wins != 1 {
+			t.Fatalf("round %d expected exactly 1 expired-takeover winner, got %d (first=%s)", round, wins, first.InstanceID())
+		}
 	}
 }

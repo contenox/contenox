@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/contenox/runtime/modeld/internal/sessionkit"
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
 	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/transport"
@@ -41,26 +42,22 @@ var _ EmbedSessionBackend = (*ovsession.EmbedSession)(nil)
 
 // genaiSession adapts OpenVINO GenAI to the runtime's transport.Session contract.
 //
-// OpenVINO GenAI is string-prompt based: its ContinuousBatchingPipeline holds
-// the tokenizer and applies prefix caching INTERNALLY, keyed on the prompt
-// string. This adapter does not manipulate KV the way the llama backend does.
-// EnsurePrefix and PrefillSuffix record the stable prefix and volatile suffix
-// text and gate reuse on the manifest; Decode concatenates them into one prompt
-// and streams. The manifest is the correctness key: an incompatible
-// profile/template/runtime drops the recorded prefix so stale warm state is not
-// reused across a runtime change.
+// OpenVINO GenAI owns the tokenizer, chat template, and physical prefix cache
+// inside ContinuousBatchingPipeline. The adapter keeps transport-level token
+// accounting and feeds model-native prompt strings through the existing GenAI
+// session API.
 type genaiSession struct {
 	backend genaiBackend
 	numCtx  int
 
-	mu           sync.Mutex
-	closed       bool
-	manifest     transport.ContextManifest
-	stable       string
-	suffix       string
-	tools        string // model-native tool definitions JSON, rendered via the chat template
-	stableTokens int
-	suffixTokens int
+	mu        sync.Mutex
+	closed    bool
+	manifest  transport.ContextManifest
+	stable    string // raw stable text from the runtime
+	suffix    string // raw volatile text appended after stable
+	tools     string // model-native tool definitions JSON, rendered via the chat template
+	resident  []int  // logical token IDs resident by contract; GenAI owns physical KV
+	prefixLen int    // how many resident tokens belong to the stable prefix
 }
 
 func newGenaiSession(backend genaiBackend, numCtx int) *genaiSession {
@@ -73,26 +70,20 @@ var newEmbedSession = func(modelPath, device string) (EmbedSessionBackend, error
 
 var _ transport.Session = (*genaiSession)(nil)
 
-func (s *genaiSession) resident() int { return s.stableTokens + s.suffixTokens }
+func (s *genaiSession) residentTokens() int { return len(s.resident) }
 
 func (s *genaiSession) available() int {
 	if s.numCtx <= 0 {
 		return 0
 	}
-	return s.numCtx - s.resident()
+	return s.numCtx - s.residentTokens()
 }
 
-// tokenCount tokenizes best-effort: the count is for the status report only, so
-// a backend tokenize error degrades to zero rather than failing the operation.
-func (s *genaiSession) tokenCount(ctx context.Context, text string, addSpecial bool) int {
+func (s *genaiSession) tokenize(ctx context.Context, text string, addSpecial bool) ([]int, error) {
 	if text == "" {
-		return 0
+		return nil, nil
 	}
-	toks, err := s.backend.Tokenize(ctx, text, addSpecial)
-	if err != nil {
-		return 0
-	}
-	return len(toks)
+	return s.backend.Tokenize(ctx, text, addSpecial)
 }
 
 func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.PrefixInput) (transport.PrefixStatus, error) {
@@ -107,47 +98,40 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 
 	digest := prefix.Manifest.Digest()
 	stableHash := prefix.Manifest.StableByteHash
-	oldResident := s.resident()
+	oldResident := s.residentTokens()
 
-	// Warm only when the resident prefix came from a compatible runtime identity
-	// AND the same stable bytes. CompatibleRuntime deliberately ignores the stable
-	// hash (token LCP stays correct under stable-text edits), so the stable hash
-	// is compared explicitly here: the pipeline must not reuse a string prefix
-	// across a profile/template/runtime change.
-	compatible, _ := s.manifest.CompatibleRuntime(prefix.Manifest)
-	warm := compatible && s.stable != "" && stableHash != "" && stableHash == s.manifest.StableByteHash
-
-	tokens := s.tokenCount(ctx, prefix.Text, prefix.Manifest.AddBOS)
-	if s.numCtx > 0 && tokens > s.numCtx {
+	tokens, err := s.tokenize(ctx, prefix.Text, prefix.Manifest.AddBOS)
+	if err != nil {
+		return transport.PrefixStatus{}, fmt.Errorf("openvino: tokenize stable prefix: %w", err)
+	}
+	if s.numCtx > 0 && len(tokens) > s.numCtx {
 		return transport.PrefixStatus{}, transport.ErrContextOverflow
 	}
 
-	reused, prefilled, dropped := 0, tokens, 0
-	if warm {
-		reused, prefilled = tokens, 0
-	} else {
-		dropped = oldResident
+	reuse := 0
+	if ok, _ := s.manifest.CompatibleRuntime(prefix.Manifest); ok {
+		reuse = sessionkit.CommonPrefixLen(s.resident, tokens)
 	}
+	stableTokenHash := contextasm.HashTokenIDs(tokens)
 
-	// EnsurePrefix replaces the stable prefix and drops any prior suffix. The tool
-	// definitions ride on the prefix so Decode renders them via the model's own
-	// chat template (model-native tool calls).
+	// EnsurePrefix replaces the stable prefix and drops any prior suffix.
 	s.stable = prefix.Text
 	s.suffix = ""
-	s.suffixTokens = 0
-	s.stableTokens = tokens
-	s.manifest = prefix.Manifest
 	s.tools = prefix.Tools
+	s.resident = append(s.resident[:0], tokens...)
+	s.prefixLen = len(tokens)
+	s.manifest = prefix.Manifest
+	s.manifest.StableTokenHash = stableTokenHash
 
 	return transport.PrefixStatus{
-		ReusedTokens:    reused,
-		PrefilledTokens: prefilled,
-		DroppedTokens:   dropped,
-		PrefixTokens:    s.stableTokens,
-		ResidentTokens:  s.resident(),
+		ReusedTokens:    reuse,
+		PrefilledTokens: len(tokens) - reuse,
+		DroppedTokens:   oldResident - reuse,
+		PrefixTokens:    s.prefixLen,
+		ResidentTokens:  s.residentTokens(),
 		AvailableTokens: s.available(),
 		StableByteHash:  stableHash,
-		StableTokenHash: prefix.Manifest.StableTokenHash,
+		StableTokenHash: s.manifest.StableTokenHash,
 		ManifestDigest:  digest,
 	}, nil
 }
@@ -168,17 +152,30 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 		return transport.SuffixStatus{}, contextasm.NewManifestMismatchError("stable prefix changed between EnsurePrefix and PrefillSuffix")
 	}
 
-	add := s.tokenCount(ctx, suffix.Text, false)
-	if s.numCtx > 0 && s.resident()+add > s.numCtx {
+	suffixText := suffix.Text
+	fullText := s.stable + suffix.Text
+	if msgs := chatMessagesFromManifest(fullText, suffix.Manifest); len(msgs) > 0 {
+		if _, err := s.backend.ApplyChatTemplate(msgs, s.tools); err != nil {
+			return transport.SuffixStatus{}, fmt.Errorf("openvino: apply full chat template: %w", err)
+		}
+	}
+
+	addSpecial := s.prefixLen == 0 && suffix.Manifest.AddBOS
+	tokens, err := s.tokenize(ctx, suffixText, addSpecial)
+	if err != nil {
+		return transport.SuffixStatus{}, fmt.Errorf("openvino: tokenize suffix: %w", err)
+	}
+	if s.numCtx > 0 && s.residentTokens()+len(tokens) > s.numCtx {
 		return transport.SuffixStatus{}, transport.ErrContextOverflow
 	}
+	resident := append(append([]int(nil), s.resident...), tokens...)
 	s.suffix += suffix.Text
-	s.suffixTokens += add
+	s.resident = resident
 
 	return transport.SuffixStatus{
-		SuffixTokens:    s.suffixTokens,
-		PrefixTokens:    s.stableTokens,
-		ResidentTokens:  s.resident(),
+		SuffixTokens:    len(tokens),
+		PrefixTokens:    s.prefixLen,
+		ResidentTokens:  s.residentTokens(),
 		AvailableTokens: s.available(),
 		ManifestDigest:  suffix.Manifest.Digest(),
 	}, nil
@@ -194,39 +191,48 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 	manifest := s.manifest
 	backend := s.backend
 	tools := s.tools
+	resident := s.residentTokens()
+	numCtx := s.numCtx
 	s.mu.Unlock()
 
-	// Apply the model's own chat template when the manifest carries the role
-	// structure, so the model sees its native format (including tool definitions
-	// and tool-call history) and emits a clean EOS the pipeline stops on. Fall back
-	// to the raw text when there are no role segments (e.g. direct callers without
-	// an assembled manifest).
+	opts := decodeOptions(cfg)
+	out := make(chan transport.StreamChunk, 16)
+	if numCtx > 0 && resident >= numCtx {
+		go func() {
+			defer close(out)
+			_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: transport.ErrContextOverflow})
+		}()
+		return out, nil
+	}
+	if numCtx > 0 && resident+opts.MaxNewTokens > numCtx {
+		opts.MaxNewTokens = numCtx - resident
+	}
+
 	prompt := fullText
 	if msgs := chatMessagesFromManifest(fullText, manifest); len(msgs) > 0 {
 		if templated, err := backend.ApplyChatTemplate(msgs, tools); err == nil && strings.TrimSpace(templated) != "" {
 			prompt = templated
 		}
 	}
+	return s.decodePrompt(ctx, backend, prompt, opts, cfg, out)
+}
 
-	opts := decodeOptions(cfg)
-	out := make(chan transport.StreamChunk, 16)
+func (s *genaiSession) decodePrompt(ctx context.Context, backend genaiBackend, prompt string, opts ovsession.GenerateOptions, cfg transport.DecodeConfig, out chan transport.StreamChunk) (<-chan transport.StreamChunk, error) {
 	if cfg.StructuredOutput.Protocol != "" || usesCompleteParser(opts.ParserProtocols) {
 		go func() {
 			defer close(out)
 			res, err := backend.Generate(ctx, prompt, opts)
 			if err != nil {
-				out <- transport.StreamChunk{Error: err}
+				_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: err})
 				return
 			}
 			chunk, err := chunkFromGenAIResult(res, cfg.StructuredOutput)
 			if err != nil {
-				out <- transport.StreamChunk{Error: err}
+				_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: err})
 				return
 			}
-			select {
-			case out <- chunk:
-			case <-ctx.Done():
-				out <- transport.StreamChunk{Error: ctx.Err()}
+			if !sessionkit.Send(ctx, out, chunk) {
+				sessionkit.TrySend(out, transport.StreamChunk{Error: ctx.Err()})
 			}
 		}()
 		return out, nil
@@ -236,14 +242,13 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 	if err != nil {
 		return nil, err
 	}
-
 	go func() {
 		defer close(out)
 		for chunk := range src {
 			select {
 			case out <- transport.StreamChunk{Text: chunk.Text, Thinking: chunk.Thinking, Error: chunk.Error}:
 			case <-ctx.Done():
-				out <- transport.StreamChunk{Error: ctx.Err()}
+				sessionkit.TrySend(out, transport.StreamChunk{Error: ctx.Err()})
 				return
 			}
 		}
@@ -412,8 +417,8 @@ func (s *genaiSession) ExplainContext() transport.ContextReport {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return transport.ContextReport{
-		ResidentTokens:  s.resident(),
-		PrefixTokens:    s.stableTokens,
+		ResidentTokens:  s.residentTokens(),
+		PrefixTokens:    s.prefixLen,
 		NumCtx:          s.numCtx,
 		AvailableTokens: s.available(),
 		StableByteHash:  s.manifest.StableByteHash,
@@ -434,13 +439,14 @@ func (s *genaiSession) Snapshot(ctx context.Context) (transport.SessionSnapshot,
 		return transport.SessionSnapshot{}, err
 	}
 	return transport.SessionSnapshot{
-		ResidentTokens: s.resident(),
-		PrefixTokens:   s.stableTokens,
-		NumCtx:         s.numCtx,
-		StableText:     s.stable,
-		PrefixText:     s.stable + s.suffix,
-		Tools:          s.tools,
-		Manifest:       s.manifest,
+		ResidentTokens:   s.residentTokens(),
+		PrefixTokens:     s.prefixLen,
+		NumCtx:           s.numCtx,
+		ResidentTokenIDs: append([]int(nil), s.resident...),
+		StableText:       s.stable,
+		PrefixText:       s.stable + s.suffix,
+		Tools:            s.tools,
+		Manifest:         s.manifest,
 	}, nil
 }
 
@@ -474,15 +480,29 @@ func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapsh
 	if snap.StableText != "" && !strings.HasPrefix(prefixText, snap.StableText) {
 		return contextasm.NewManifestMismatchError("snapshot prefix text does not contain stable text")
 	}
+	resident := append([]int(nil), snap.ResidentTokenIDs...)
+	if len(resident) == 0 && snap.ResidentTokens > 0 {
+		var err error
+		resident, err = s.tokenize(ctx, prefixText, snap.Manifest.AddBOS)
+		if err != nil {
+			return fmt.Errorf("openvino: tokenize snapshot: %w", err)
+		}
+		if len(resident) != snap.ResidentTokens {
+			return contextasm.NewManifestMismatchError("snapshot resident token count changed under tokenizer")
+		}
+	}
+	if len(resident) != snap.ResidentTokens {
+		return contextasm.NewManifestMismatchError("snapshot resident token ids do not match resident token count")
+	}
 	s.stable = snap.StableText
 	s.suffix = strings.TrimPrefix(prefixText, snap.StableText)
-	s.stableTokens = snap.PrefixTokens
-	s.suffixTokens = snap.ResidentTokens - snap.PrefixTokens
-	if s.suffixTokens < 0 {
-		s.suffixTokens = 0
-	}
+	s.prefixLen = snap.PrefixTokens
+	s.resident = resident
 	s.tools = snap.Tools
 	s.manifest = snap.Manifest
+	if s.manifest.StableTokenHash == "" && s.prefixLen <= len(s.resident) {
+		s.manifest.StableTokenHash = contextasm.HashTokenIDs(s.resident[:s.prefixLen])
+	}
 	return nil
 }
 
@@ -507,7 +527,7 @@ func (s *genaiSession) Close() error {
 func chatMessagesFromManifest(fullText string, m transport.ContextManifest) []ovsession.ChatMessage {
 	var msgs []ovsession.ChatMessage
 	for _, seg := range m.Segments {
-		role := chatRole(seg.Kind)
+		role := sessionkit.ChatRole(seg.Kind)
 		if role == "" {
 			continue
 		}
@@ -522,15 +542,6 @@ func chatMessagesFromManifest(fullText string, m transport.ContextManifest) []ov
 		})
 	}
 	return msgs
-}
-
-func chatRole(kind string) string {
-	switch kind {
-	case "system", "user", "assistant", "tool":
-		return kind
-	default:
-		return ""
-	}
 }
 
 // decodeOptions maps the backend-neutral decode config onto OpenVINO GenAI's

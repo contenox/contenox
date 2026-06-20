@@ -363,10 +363,13 @@ type ContextReport struct {
 
 // Canonical errors expected to cross the boundary.
 var (
-	ErrNotOwner            = errors.New("instance is not the local runtime owner")
-	ErrStaleFence          = errors.New("stale owner fence token")
-	ErrSessionClosed       = errors.New("session is closed")
-	ErrContextOverflow     = errors.New("exceeded the session context window")
+	ErrNotOwner        = errors.New("instance is not the local runtime owner")
+	ErrStaleFence      = errors.New("stale owner fence token")
+	ErrSessionClosed   = errors.New("session is closed")
+	ErrContextOverflow = errors.New("exceeded the session context window")
+	// ErrSessionFatal means the backend marked the session unusable; the client
+	// must evict the session and reopen instead of reusing resident state.
+	ErrSessionFatal        = errors.New("session marked fatal; evict and reopen")
 	ErrModelBusy           = errors.New("modeld active model slot is busy")
 	ErrModelNotActive      = errors.New("requested model is not active in modeld")
 	ErrModelSwitchRequired = errors.New("modeld active model slot must be switched")

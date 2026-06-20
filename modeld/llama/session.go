@@ -76,14 +76,24 @@ var (
 	// this binary.
 	ErrSessionUnavailable = errors.New("llama: session backend unavailable")
 	// ErrSessionClosed means the caller used a closed persistent session.
-	ErrSessionClosed = errors.New("llama: session closed")
+	//
+	// ErrSessionClosed, ErrContextOverflow, and ErrUnsupportedFeature alias the
+	// transport sentinels (as manifest.go already aliases contextasm.ErrManifestMismatch)
+	// so the daemon's session errors survive the modeld wire boundary: the gRPC
+	// error map (runtime/transport/grpc/errors.go) keys on the transport.Err*
+	// values, and an error that is not Is-compatible with them is downgraded to
+	// codes.Internal. The typed *ContextOverflowError / *UnsupportedFeatureError
+	// still wrap these, so errors.As keeps returning their structured fields.
+	ErrSessionClosed = transport.ErrSessionClosed
 	// ErrContextOverflow means a prefix, suffix, or decode would exceed NumCtx.
-	ErrContextOverflow = errors.New("llama: context overflow")
+	ErrContextOverflow = transport.ErrContextOverflow
 	// ErrUnsupportedFeature marks explicit product-surface gaps such as tools.
-	ErrUnsupportedFeature = errors.New("llama: unsupported feature")
+	ErrUnsupportedFeature = transport.ErrUnsupportedFeature
 	// ErrSessionFatal means the backend marked the session unusable and callers
-	// must evict it instead of trying to reuse resident KV.
-	ErrSessionFatal = errors.New("llama: session fatal")
+	// must evict it instead of trying to reuse resident KV. It aliases the
+	// transport sentinel so the existing decode/restore emissions classify over
+	// the modeld wire boundary instead of degrading to codes.Internal.
+	ErrSessionFatal = transport.ErrSessionFatal
 )
 
 // ContextOverflowError carries token counts for an overflow at a specific
