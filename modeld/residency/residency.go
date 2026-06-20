@@ -395,12 +395,13 @@ func alignUp(n, block int) int {
 
 // Capabilities describes what a backend adapter can actually execute.
 type Capabilities struct {
-	RemoveTail      bool
-	RemoveMiddle    bool
-	PositionShift   bool
-	SparseAttention bool
-	ColdStore       bool
-	RecomputeRange  bool
+	RemoveTail                   bool
+	RemoveMiddle                 bool
+	PositionShift                bool
+	SparseAttention              bool
+	SlidingWindowAttentionTokens int
+	ColdStore                    bool
+	RecomputeRange               bool
 }
 
 // Controller is the optional engine-facing seam. It is intentionally not part

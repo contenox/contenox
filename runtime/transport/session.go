@@ -96,6 +96,13 @@ type ModelInfo struct {
 	RequestedGpuLayers int `json:"requested_gpu_layers,omitempty"`
 	ResolvedGpuLayers  int `json:"resolved_gpu_layers,omitempty"`
 
+	// SparseAttention reports model-native sparse/sliding-window attention that
+	// the backend can actually execute for this model. For llama.cpp this means
+	// GGUF-declared SWA; it does not mean arbitrary XAttention can be forced on a
+	// dense model.
+	SparseAttention              bool `json:"sparse_attention,omitempty"`
+	SlidingWindowAttentionTokens int  `json:"sliding_window_attention_tokens,omitempty"`
+
 	// Runtime identity and device inventory explain which native runtime modeld
 	// actually linked and what memory pools it can allocate from.
 	RuntimeName        string       `json:"runtime_name,omitempty"`
@@ -380,12 +387,13 @@ type ContextReport struct {
 // resident KV. The runtime reads it to know which residency plans are actionable
 // on the serving backend versus observational only.
 type ResidencyCapabilities struct {
-	RemoveTail      bool `json:"remove_tail,omitempty"`
-	RemoveMiddle    bool `json:"remove_middle,omitempty"`
-	PositionShift   bool `json:"position_shift,omitempty"`
-	SparseAttention bool `json:"sparse_attention,omitempty"`
-	ColdStore       bool `json:"cold_store,omitempty"`
-	RecomputeRange  bool `json:"recompute_range,omitempty"`
+	RemoveTail                   bool `json:"remove_tail,omitempty"`
+	RemoveMiddle                 bool `json:"remove_middle,omitempty"`
+	PositionShift                bool `json:"position_shift,omitempty"`
+	SparseAttention              bool `json:"sparse_attention,omitempty"`
+	SlidingWindowAttentionTokens int  `json:"sliding_window_attention_tokens,omitempty"`
+	ColdStore                    bool `json:"cold_store,omitempty"`
+	RecomputeRange               bool `json:"recompute_range,omitempty"`
 }
 
 // ResidencyReport explains a backend's KV residency plan for observability: the

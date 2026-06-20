@@ -222,6 +222,15 @@ func (m *Model) ContextTrain() int {
 	return int(C.llama_model_n_ctx_train(m.ptr))
 }
 
+// SlidingWindowAttention returns the model-native sliding-window attention size
+// reported by llama.cpp. Zero means the model has no SWA layers.
+func (m *Model) SlidingWindowAttention() int {
+	if m == nil || m.ptr == nil {
+		return 0
+	}
+	return int(C.llama_model_n_swa(m.ptr))
+}
+
 // EmbeddingLength returns the model embedding dimension.
 func (m *Model) EmbeddingLength() int {
 	if m == nil || m.ptr == nil {

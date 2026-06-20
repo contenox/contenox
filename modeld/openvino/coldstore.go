@@ -70,7 +70,8 @@ func (s *genaiSession) EvictRange(ctx context.Context, r residency.Range) error 
 }
 
 // AdmitRange restores a previously evicted OpenVINO cold KV block at the hot
-// tail. It matches llama's first-pass append-mode behavior.
+// tail. Shifted admits are imported into destination prefix-cache blocks with
+// native RoPE key rotation in the backend.
 func (s *genaiSession) AdmitRange(ctx context.Context, r residency.Range) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -214,23 +215,16 @@ func (s *genaiSession) admitRangeLocked(ctx context.Context, r residency.Range) 
 	}
 
 	destStart := len(s.resident)
-	if destStart == block.Range.Start {
-		if err := s.coldKVBackend().ImportColdKV(ctx, ovsession.ColdKVRange{
-			Start:        block.Range.Start,
-			End:          block.Range.End,
-			DestStart:    destStart,
-			Tokens:       append([]int(nil), block.Tokens...),
-			PrefixTokens: append([]int(nil), block.PrefixTokens...),
-			TokenHash:    block.TokenHash,
-		}, block.KV); err != nil {
-			return fmt.Errorf("%w: openvino import cold kv [%d,%d): %v", transport.ErrSessionFatal, r.Start, r.End, err)
-		}
-	}
 	newResident := append(append([]int(nil), s.resident...), block.Tokens...)
-	if len(newResident) > 0 {
-		if err := s.backend.PrefillTokens(ctx, newResident); err != nil {
-			return fmt.Errorf("%w: openvino prefill after admit range [%d,%d): %v", transport.ErrSessionFatal, r.Start, r.End, err)
-		}
+	if err := s.coldKVBackend().ImportColdKV(ctx, ovsession.ColdKVRange{
+		Start:        block.Range.Start,
+		End:          block.Range.End,
+		DestStart:    destStart,
+		Tokens:       append([]int(nil), block.Tokens...),
+		PrefixTokens: append([]int(nil), newResident...),
+		TokenHash:    block.TokenHash,
+	}, block.KV); err != nil {
+		return fmt.Errorf("%w: openvino import cold kv [%d,%d) -> %d: %v", transport.ErrSessionFatal, r.Start, r.End, destStart, err)
 	}
 	s.resident = newResident
 	s.deleteColdBlockLocked(key)

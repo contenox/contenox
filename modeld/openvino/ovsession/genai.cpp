@@ -7,6 +7,7 @@
 #include <atomic>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
@@ -22,10 +23,12 @@
 #include <mutex>
 #include <numeric>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -264,6 +267,7 @@ static ov::Any kv_precision_from(const cx_genai_session_config *config) {
 struct cx_genai_session {
     std::unique_ptr<ov::genai::ContinuousBatchingPipeline> pipe;
     std::atomic<bool> cancel_requested{false};
+    std::string kv_cache_precision = "f16";
 
     std::thread worker;
     std::mutex mu;
@@ -745,6 +749,15 @@ static const ov::genai::KVCacheManager &genai_kv_cache_manager(const ov::genai::
 
 static bool genai_cold_kv_supported_locked(cx_genai_session *s) {
     try {
+        if (!s) {
+            return false;
+        }
+        const auto &precision = s->kv_cache_precision;
+        const bool float_kv = precision == "f16" || precision == "fp16" || precision == "FP16" ||
+                              precision == "f32" || precision == "fp32" || precision == "FP32";
+        if (!float_kv) {
+            return false;
+        }
         auto orchestrator = genai_cache_orchestrator(s);
         auto &block_manager = orchestrator->get_block_manager(ov::genai::CacheType::KV_CACHE);
         auto &block_private = genai_private(block_manager);
@@ -969,6 +982,210 @@ static void write_cache_block_bytes(ov::Tensor cache, size_t block_index, const 
     }
 }
 
+static size_t cache_content_block_start(size_t content_len, size_t block_size) {
+    if (content_len == 0 || block_size == 0) {
+        throw std::runtime_error("OpenVINO cold KV content length is invalid");
+    }
+    size_t block_start = content_len - (content_len % block_size);
+    if (block_start == content_len) {
+        block_start -= block_size;
+    }
+    return block_start;
+}
+
+static void validate_shifted_cache_layout(const ov::Tensor &cache, size_t block_size, const char *name) {
+    const auto shape = cache.get_shape();
+    if (shape.size() != 4) {
+        throw std::runtime_error(std::string("OpenVINO shifted cold KV import requires rank-4 ") + name + " cache tensors");
+    }
+    if (shape[2] != block_size) {
+        throw std::runtime_error(std::string("OpenVINO shifted cold KV import ") + name + " cache block axis does not match block manager");
+    }
+    if (shape[3] == 0) {
+        throw std::runtime_error(std::string("OpenVINO shifted cold KV import ") + name + " cache head size is zero");
+    }
+    const auto elem_type = cache.get_element_type();
+    if (elem_type != ov::element::f32 && elem_type != ov::element::f16 && elem_type != ov::element::bf16) {
+        throw std::runtime_error("OpenVINO shifted cold KV import requires f32/f16/bf16 KV cache precision");
+    }
+}
+
+static size_t shifted_cache_elem_size(const ov::Tensor &cache) {
+    const auto elem_type = cache.get_element_type();
+    if (elem_type == ov::element::f32 || elem_type == ov::element::f16 || elem_type == ov::element::bf16) {
+        return elem_type.size();
+    }
+    throw std::runtime_error("OpenVINO shifted cold KV import requires f32/f16/bf16 KV cache precision");
+}
+
+static size_t shifted_cache_token_offset_bytes(const ov::Shape &shape,
+                                               size_t elem_size,
+                                               size_t head,
+                                               size_t token_offset,
+                                               size_t dim) {
+    const size_t block_size = shape[2];
+    const size_t head_size = shape[3];
+    return ((head * block_size + token_offset) * head_size + dim) * elem_size;
+}
+
+template <typename T>
+static float shifted_cache_read_scalar(const std::vector<uint8_t> &bytes, size_t off) {
+    if (off > bytes.size() || bytes.size() - off < sizeof(T)) {
+        throw std::runtime_error("OpenVINO shifted cold KV scalar read is outside cache block");
+    }
+    T value{};
+    std::memcpy(&value, bytes.data() + off, sizeof(T));
+    return static_cast<float>(value);
+}
+
+template <typename T>
+static void shifted_cache_write_scalar(std::vector<uint8_t> &bytes, size_t off, float value) {
+    if (off > bytes.size() || bytes.size() - off < sizeof(T)) {
+        throw std::runtime_error("OpenVINO shifted cold KV scalar write is outside cache block");
+    }
+    T out = static_cast<T>(value);
+    std::memcpy(bytes.data() + off, &out, sizeof(T));
+}
+
+static float shifted_cache_read_scalar(const std::vector<uint8_t> &bytes,
+                                       size_t off,
+                                       const ov::element::Type &elem_type) {
+    if (elem_type == ov::element::f32) {
+        return shifted_cache_read_scalar<float>(bytes, off);
+    }
+    if (elem_type == ov::element::f16) {
+        return shifted_cache_read_scalar<ov::float16>(bytes, off);
+    }
+    if (elem_type == ov::element::bf16) {
+        return shifted_cache_read_scalar<ov::bfloat16>(bytes, off);
+    }
+    throw std::runtime_error("OpenVINO shifted cold KV import requires f32/f16/bf16 KV cache precision");
+}
+
+static void shifted_cache_write_scalar(std::vector<uint8_t> &bytes,
+                                       size_t off,
+                                       const ov::element::Type &elem_type,
+                                       float value) {
+    if (elem_type == ov::element::f32) {
+        shifted_cache_write_scalar<float>(bytes, off, value);
+        return;
+    }
+    if (elem_type == ov::element::f16) {
+        shifted_cache_write_scalar<ov::float16>(bytes, off, value);
+        return;
+    }
+    if (elem_type == ov::element::bf16) {
+        shifted_cache_write_scalar<ov::bfloat16>(bytes, off, value);
+        return;
+    }
+    throw std::runtime_error("OpenVINO shifted cold KV import requires f32/f16/bf16 KV cache precision");
+}
+
+static void copy_shifted_cache_token(const std::vector<uint8_t> &src,
+                                     std::vector<uint8_t> &dst,
+                                     const ov::Shape &shape,
+                                     size_t elem_size,
+                                     size_t src_token_offset,
+                                     size_t dst_token_offset) {
+    const size_t heads = shape[1];
+    const size_t block_size = shape[2];
+    const size_t head_size = shape[3];
+    if (src_token_offset >= block_size || dst_token_offset >= block_size) {
+        throw std::runtime_error("OpenVINO shifted cold KV token offset is outside cache block");
+    }
+    const size_t chunk = head_size * elem_size;
+    for (size_t head = 0; head < heads; ++head) {
+        const size_t src_off = shifted_cache_token_offset_bytes(shape, elem_size, head, src_token_offset, 0);
+        const size_t dst_off = shifted_cache_token_offset_bytes(shape, elem_size, head, dst_token_offset, 0);
+        if (src_off > src.size() || src.size() - src_off < chunk ||
+            dst_off > dst.size() || dst.size() - dst_off < chunk) {
+            throw std::runtime_error("OpenVINO shifted cold KV token copy is outside cache block");
+        }
+        std::memcpy(dst.data() + dst_off, src.data() + src_off, chunk);
+    }
+}
+
+static void rotate_shifted_key_token(std::vector<uint8_t> &bytes,
+                                     const ov::Shape &shape,
+                                     const ov::element::Type &elem_type,
+                                     size_t elem_size,
+                                     size_t token_offset,
+                                     int64_t position_delta) {
+    if (position_delta == 0) {
+        return;
+    }
+    const size_t heads = shape[1];
+    const size_t block_size = shape[2];
+    const size_t head_size = shape[3];
+    if (token_offset >= block_size) {
+        throw std::runtime_error("OpenVINO shifted cold KV key token offset is outside cache block");
+    }
+    if (head_size % 2 != 0) {
+        throw std::runtime_error("OpenVINO shifted cold KV key head size must be even for RoPE rotation");
+    }
+    constexpr double rope_theta = 10000.0;
+    const size_t half = head_size / 2;
+    for (size_t head = 0; head < heads; ++head) {
+        for (size_t dim = 0; dim < half; ++dim) {
+            const double exponent = -static_cast<double>(2 * dim) / static_cast<double>(head_size);
+            const double angle = static_cast<double>(position_delta) * std::pow(rope_theta, exponent);
+            const float c = static_cast<float>(std::cos(angle));
+            const float sn = static_cast<float>(std::sin(angle));
+            const size_t x_off = shifted_cache_token_offset_bytes(shape, elem_size, head, token_offset, dim);
+            const size_t y_off = shifted_cache_token_offset_bytes(shape, elem_size, head, token_offset, dim + half);
+            const float x = shifted_cache_read_scalar(bytes, x_off, elem_type);
+            const float y = shifted_cache_read_scalar(bytes, y_off, elem_type);
+            shifted_cache_write_scalar(bytes, x_off, elem_type, x * c - y * sn);
+            shifted_cache_write_scalar(bytes, y_off, elem_type, x * sn + y * c);
+        }
+    }
+}
+
+static void ensure_shifted_dest_block_initialized(ov::genai::BlockManager &block_manager,
+                                                  const ov::genai::KVCacheManager &kv_manager,
+                                                  size_t layer,
+                                                  size_t layer_count,
+                                                  size_t block_size,
+                                                  size_t dest_hash,
+                                                  size_t dest_block_start,
+                                                  size_t dest_start,
+                                                  const std::vector<int64_t> &dest_prefix_tokens,
+                                                  std::set<std::tuple<size_t, size_t>> &initialized) {
+    const auto key = std::make_tuple(layer, dest_hash);
+    if (initialized.find(key) != initialized.end()) {
+        return;
+    }
+
+    auto dest_blocks = ensure_import_blocks_locked(block_manager, dest_hash);
+    const size_t dest_block_index = cache_block_index_for_layer(dest_blocks, layer, layer_count);
+    auto key_cache = kv_manager.get_key_cache(layer);
+    auto value_cache = kv_manager.get_value_cache(layer);
+    std::vector<uint8_t> key_bytes(cache_block_stride_bytes(key_cache), 0);
+    std::vector<uint8_t> value_bytes(cache_block_stride_bytes(value_cache), 0);
+
+    if (dest_block_start < dest_start) {
+        const size_t seed_content_len = dest_start;
+        const size_t seed_hash = prefix_hash_for_tokens(dest_prefix_tokens, seed_content_len, block_size);
+        auto seed_blocks = find_prefix_blocks_locked(block_manager, seed_hash);
+        if (seed_blocks.empty()) {
+            throw std::runtime_error("OpenVINO shifted cold KV import cannot find resident prefix block to seed destination");
+        }
+        const size_t seed_block_index = cache_block_index_for_layer(seed_blocks, layer, layer_count);
+        key_bytes = read_cache_block_bytes(key_cache, seed_block_index);
+        value_bytes = read_cache_block_bytes(value_cache, seed_block_index);
+    }
+
+    write_cache_block_bytes(key_cache, dest_block_index, key_bytes);
+    write_cache_block_bytes(value_cache, dest_block_index, value_bytes);
+    initialized.insert(key);
+}
+
+struct shifted_dest_block_bytes {
+    size_t block_index = 0;
+    std::vector<uint8_t> key;
+    std::vector<uint8_t> value;
+};
+
 static std::vector<uint8_t> genai_export_cold_kv_locked(cx_genai_session *s,
                                                         size_t start,
                                                         size_t end,
@@ -1022,6 +1239,7 @@ static std::vector<uint8_t> genai_export_cold_kv_locked(cx_genai_session *s,
 static void genai_import_cold_kv_locked(cx_genai_session *s,
                                         size_t start,
                                         size_t end,
+                                        size_t dest_start,
                                         const std::vector<int64_t> &prefix_tokens,
                                         const std::string &token_hash,
                                         const uint8_t *data,
@@ -1068,25 +1286,119 @@ static void genai_import_cold_kv_locked(cx_genai_session *s,
     if (payload_blocks == 0) {
         throw std::runtime_error("OpenVINO cold KV payload contains no KV blocks");
     }
+    if (end <= start) {
+        throw std::runtime_error("OpenVINO cold KV import range is empty");
+    }
+    const size_t token_count = end - start;
+    if (dest_start > prefix_tokens.size() || token_count > prefix_tokens.size() - dest_start) {
+        throw std::runtime_error("OpenVINO cold KV destination prefix tokens do not cover shifted import range");
+    }
 
     auto &block_private = genai_private(block_manager);
     std::lock_guard<std::mutex> lock(block_private.m_cached_blocks_map_mutex);
+    if (dest_start == start) {
+        for (size_t block = 0; block < payload_blocks; ++block) {
+            const size_t content_len = checked_size(reader.pod<uint64_t>(), "cold KV content length");
+            const size_t payload_prefix_hash = checked_size(reader.pod<uint64_t>(), "cold KV prefix hash");
+            const size_t expected_hash = prefix_hash_for_tokens(prefix_tokens, content_len, payload_block_size);
+            if (payload_prefix_hash != expected_hash) {
+                throw std::runtime_error("OpenVINO cold KV payload prefix hash does not match prefix tokens");
+            }
+            auto blocks = ensure_import_blocks_locked(block_manager, expected_hash);
+            for (size_t layer = 0; layer < payload_layers; ++layer) {
+                const auto key_len = checked_size(reader.pod<uint64_t>(), "cold KV key block");
+                auto key_bytes = reader.bytes(key_len);
+                const auto value_len = checked_size(reader.pod<uint64_t>(), "cold KV value block");
+                auto value_bytes = reader.bytes(value_len);
+                const size_t block_index = cache_block_index_for_layer(blocks, layer, payload_layers);
+                write_cache_block_bytes(kv_manager.get_key_cache(layer), block_index, key_bytes);
+                write_cache_block_bytes(kv_manager.get_value_cache(layer), block_index, value_bytes);
+            }
+        }
+        reader.expect_finished();
+        return;
+    }
+
+    const int64_t position_delta = static_cast<int64_t>(dest_start) - static_cast<int64_t>(start);
+    std::set<std::tuple<size_t, size_t>> initialized_dest_blocks;
     for (size_t block = 0; block < payload_blocks; ++block) {
         const size_t content_len = checked_size(reader.pod<uint64_t>(), "cold KV content length");
-        const size_t payload_prefix_hash = checked_size(reader.pod<uint64_t>(), "cold KV prefix hash");
-        const size_t expected_hash = prefix_hash_for_tokens(prefix_tokens, content_len, payload_block_size);
-        if (payload_prefix_hash != expected_hash) {
-            throw std::runtime_error("OpenVINO cold KV payload prefix hash does not match prefix tokens");
+        (void)checked_size(reader.pod<uint64_t>(), "cold KV prefix hash");
+        const size_t source_block_start = cache_content_block_start(content_len, payload_block_size);
+        if (content_len <= source_block_start) {
+            throw std::runtime_error("OpenVINO cold KV payload content length maps to an empty source block");
         }
-        auto blocks = ensure_import_blocks_locked(block_manager, expected_hash);
+        const size_t source_begin = std::max(start, source_block_start);
+        const size_t source_end = std::min(end, content_len);
         for (size_t layer = 0; layer < payload_layers; ++layer) {
             const auto key_len = checked_size(reader.pod<uint64_t>(), "cold KV key block");
             auto key_bytes = reader.bytes(key_len);
             const auto value_len = checked_size(reader.pod<uint64_t>(), "cold KV value block");
             auto value_bytes = reader.bytes(value_len);
-            const size_t block_index = cache_block_index_for_layer(blocks, layer, payload_layers);
-            write_cache_block_bytes(kv_manager.get_key_cache(layer), block_index, key_bytes);
-            write_cache_block_bytes(kv_manager.get_value_cache(layer), block_index, value_bytes);
+            auto key_cache = kv_manager.get_key_cache(layer);
+            auto value_cache = kv_manager.get_value_cache(layer);
+            validate_shifted_cache_layout(key_cache, payload_block_size, "key");
+            validate_shifted_cache_layout(value_cache, payload_block_size, "value");
+            if (key_len != cache_block_stride_bytes(key_cache) ||
+                value_len != cache_block_stride_bytes(value_cache)) {
+                throw std::runtime_error("OpenVINO shifted cold KV payload block size does not match KV tensor");
+            }
+            const auto key_shape = key_cache.get_shape();
+            const auto value_shape = value_cache.get_shape();
+            if (key_shape != value_shape) {
+                throw std::runtime_error("OpenVINO shifted cold KV key/value cache layouts do not match");
+            }
+            const size_t key_elem_size = shifted_cache_elem_size(key_cache);
+            const size_t value_elem_size = shifted_cache_elem_size(value_cache);
+            if (source_begin >= source_end) {
+                continue;
+            }
+            std::map<size_t, shifted_dest_block_bytes> dest_cache_blocks;
+            for (size_t source_pos = source_begin; source_pos < source_end; ++source_pos) {
+                const size_t source_token_offset = source_pos - source_block_start;
+                const size_t dest_pos = dest_start + (source_pos - start);
+                const size_t dest_content_len = std::min(((dest_pos / payload_block_size) + 1) * payload_block_size,
+                                                         prefix_tokens.size());
+                const size_t dest_block_start = cache_content_block_start(dest_content_len, payload_block_size);
+                if (dest_pos < dest_block_start || dest_pos >= dest_content_len) {
+                    throw std::runtime_error("OpenVINO shifted cold KV destination token is outside destination block");
+                }
+                const size_t dest_token_offset = dest_pos - dest_block_start;
+                const size_t dest_hash = prefix_hash_for_tokens(prefix_tokens, dest_content_len, payload_block_size);
+                ensure_shifted_dest_block_initialized(block_manager,
+                                                      kv_manager,
+                                                      layer,
+                                                      payload_layers,
+                                                      payload_block_size,
+                                                      dest_hash,
+                                                      dest_block_start,
+                                                      dest_start,
+                                                      prefix_tokens,
+                                                      initialized_dest_blocks);
+                auto dest_it = dest_cache_blocks.find(dest_hash);
+                if (dest_it == dest_cache_blocks.end()) {
+                    auto dest_blocks = ensure_import_blocks_locked(block_manager, dest_hash);
+                    const size_t dest_block_index = cache_block_index_for_layer(dest_blocks, layer, payload_layers);
+                    shifted_dest_block_bytes entry;
+                    entry.block_index = dest_block_index;
+                    entry.key = read_cache_block_bytes(key_cache, dest_block_index);
+                    entry.value = read_cache_block_bytes(value_cache, dest_block_index);
+                    dest_it = dest_cache_blocks.emplace(dest_hash, std::move(entry)).first;
+                }
+                auto &dest_bytes = dest_it->second;
+                copy_shifted_cache_token(key_bytes, dest_bytes.key, key_shape, key_elem_size, source_token_offset, dest_token_offset);
+                copy_shifted_cache_token(value_bytes, dest_bytes.value, value_shape, value_elem_size, source_token_offset, dest_token_offset);
+                rotate_shifted_key_token(dest_bytes.key,
+                                         key_shape,
+                                         key_cache.get_element_type(),
+                                         key_elem_size,
+                                         dest_token_offset,
+                                         position_delta);
+            }
+            for (const auto &dest_entry : dest_cache_blocks) {
+                write_cache_block_bytes(key_cache, dest_entry.second.block_index, dest_entry.second.key);
+                write_cache_block_bytes(value_cache, dest_entry.second.block_index, dest_entry.second.value);
+            }
         }
     }
     reader.expect_finished();
@@ -1118,6 +1430,7 @@ cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device
             ? std::string(config->kv_cache_precision)
             : std::string("f16");
         cfg_copy.kv_cache_precision = kv_precision.c_str();
+        s->kv_cache_precision = kv_precision;
         s->run([s, model_path, dev, cfg_copy, kv_precision] {
             auto cfg = scheduler_config_from(&cfg_copy);
             ov::AnyMap properties{{"KV_CACHE_PRECISION", kv_precision_from(&cfg_copy)}};
@@ -1357,8 +1670,12 @@ int cx_genai_import_cold_kv(cx_genai_session *s,
         write_buf(err, err_len, "OpenVINO cold KV import range or payload is empty");
         return 1;
     }
-    if (dest_start != start) {
-        write_buf(err, err_len, "OpenVINO cold KV import cannot shift RoPE-positioned KV blocks; prefill the destination token sequence instead");
+    if (dest_start < 0) {
+        write_buf(err, err_len, "OpenVINO cold KV import destination is negative");
+        return 1;
+    }
+    if (tokens_len != static_cast<size_t>(end - start)) {
+        write_buf(err, err_len, "OpenVINO cold KV import token count does not match range");
         return 1;
     }
     try {
@@ -1375,6 +1692,7 @@ int cx_genai_import_cold_kv(cx_genai_session *s,
                 s,
                 static_cast<size_t>(start),
                 static_cast<size_t>(end),
+                static_cast<size_t>(dest_start),
                 prefix_copy,
                 hash,
                 payload.data(),

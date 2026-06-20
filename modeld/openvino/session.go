@@ -117,13 +117,12 @@ var _ residency.Executor = (*genaiSession)(nil)
 
 func (s *genaiSession) Capabilities() residency.Capabilities {
 	cold := s.coldMaxTokens > 0 && s.coldKVBackend() != nil
-	// OpenVINO GenAI owns physical KV blocks. The adapter can evict/admit by
-	// exporting in-place cold KV where valid and re-prefilling the destination
-	// token tape when a shifted RoPE position would make native import unsafe.
+	// OpenVINO GenAI owns physical KV blocks. The adapter exports cold blocks
+	// and imports them back into destination prefix-cache blocks; shifted admits
+	// rotate RoPE-positioned keys in the native GenAI bridge.
 	return residency.Capabilities{
 		SparseAttention: true,
 		ColdStore:       cold,
-		RecomputeRange:  cold,
 	}
 }
 

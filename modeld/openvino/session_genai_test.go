@@ -298,6 +298,9 @@ func TestGenaiSessionColdStoreEvictAdmitUsesBackendKVHooks(t *testing.T) {
 	if report.Residency == nil || !report.Residency.Capabilities.ColdStore {
 		t.Fatalf("cold-store capability not reported: %+v", report.Residency)
 	}
+	if report.Residency.Capabilities.RecomputeRange {
+		t.Fatalf("recompute should not be advertised for native cold-store admit: %+v", report.Residency.Capabilities)
+	}
 
 	exec := any(s).(residency.Executor)
 	r := residency.Range{Start: 2, End: 4}
@@ -317,17 +320,20 @@ func TestGenaiSessionColdStoreEvictAdmitUsesBackendKVHooks(t *testing.T) {
 	if err := exec.AdmitRange(ctx, r); err != nil {
 		t.Fatalf("AdmitRange: %v", err)
 	}
-	if len(fake.importedColdKV) != 0 {
-		t.Fatalf("shifted admit should not import RoPE-positioned KV, got %+v", fake.importedColdKV)
+	if len(fake.importedColdKV) != 1 {
+		t.Fatalf("shifted import calls = %d, want 1", len(fake.importedColdKV))
+	}
+	if got := fake.importedColdKV[0]; got.Start != 2 || got.End != 4 || got.DestStart != 4 || string(runesFromInts(got.Tokens)) != "cd" || string(runesFromInts(got.PrefixTokens)) != "abefcd" || got.TokenHash == "" {
+		t.Fatalf("shifted import range = %+v, want cd [2,4) -> 4 with abefcd prefix and hash", got)
 	}
 	if got := s.ExplainContext(); got.ResidentTokens != 6 {
 		t.Fatalf("after admit context = %+v, want resident=6", got)
 	}
-	if len(fake.prefillTokenPrompts) < 3 {
-		t.Fatalf("prefill calls = %+v, want ensure/evict/admit", fake.prefillTokenPrompts)
+	if len(fake.prefillTokenPrompts) != 2 {
+		t.Fatalf("prefill calls = %+v, want ensure/evict only", fake.prefillTokenPrompts)
 	}
-	if got := string(runesFromInts(fake.prefillTokenPrompts[len(fake.prefillTokenPrompts)-1])); got != "abefcd" {
-		t.Fatalf("admit prefill prompt = %q, want abefcd", got)
+	if got := string(runesFromInts(fake.prefillTokenPrompts[len(fake.prefillTokenPrompts)-1])); got != "abef" {
+		t.Fatalf("last prefill prompt after shifted import = %q, want abef", got)
 	}
 	ch, err := s.Decode(ctx, transport.DecodeConfig{MaxTokens: 1})
 	if err != nil {
@@ -365,11 +371,17 @@ func TestGenaiSessionColdStoreTailAdmitUsesNativeImport(t *testing.T) {
 	if got := fake.importedColdKV[0]; got.Start != 4 || got.End != 6 || got.DestStart != 4 || string(runesFromInts(got.Tokens)) != "ef" || got.TokenHash == "" {
 		t.Fatalf("import range = %+v, want ef [4,6) -> 4 with hash", got)
 	}
+	if got := string(runesFromInts(fake.importedColdKV[0].PrefixTokens)); got != "abcdef" {
+		t.Fatalf("tail import prefix = %q, want abcdef", got)
+	}
 	if len(fake.importedKV) != 1 || len(fake.importedKV[0]) == 0 {
 		t.Fatalf("imported kv payload = %+v, want bytes", fake.importedKV)
 	}
-	if got := string(runesFromInts(fake.prefillTokenPrompts[len(fake.prefillTokenPrompts)-1])); got != "abcdef" {
-		t.Fatalf("tail admit prefill prompt = %q, want abcdef", got)
+	if len(fake.prefillTokenPrompts) != 2 {
+		t.Fatalf("tail prefill calls = %+v, want ensure/evict only", fake.prefillTokenPrompts)
+	}
+	if got := string(runesFromInts(fake.prefillTokenPrompts[len(fake.prefillTokenPrompts)-1])); got != "abcd" {
+		t.Fatalf("last tail prefill prompt = %q, want abcd", got)
 	}
 }
 

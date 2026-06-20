@@ -80,7 +80,12 @@ func TestResidencyReportMapsPlanAndCapabilities(t *testing.T) {
 		EvictCold:       make([]residency.Block, 1),
 		Diagnostics:     []string{"over budget"},
 	}
-	rep := ResidencyReport(plan, "boom", residency.Capabilities{RemoveTail: true, PositionShift: true})
+	rep := ResidencyReport(plan, "boom", residency.Capabilities{
+		RemoveTail:                   true,
+		PositionShift:                true,
+		SparseAttention:              true,
+		SlidingWindowAttentionTokens: 4096,
+	})
 	if rep == nil {
 		t.Fatal("ResidencyReport returned nil for a non-empty plan")
 	}
@@ -92,6 +97,9 @@ func TestResidencyReportMapsPlanAndCapabilities(t *testing.T) {
 	}
 	if !rep.Capabilities.RemoveTail || !rep.Capabilities.PositionShift || rep.Capabilities.RemoveMiddle {
 		t.Fatalf("capabilities = %+v", rep.Capabilities)
+	}
+	if !rep.Capabilities.SparseAttention || rep.Capabilities.SlidingWindowAttentionTokens != 4096 {
+		t.Fatalf("sparse capabilities = %+v", rep.Capabilities)
 	}
 	if rep.Error != "boom" || len(rep.Diagnostics) != 1 {
 		t.Fatalf("error/diagnostics = %q / %v", rep.Error, rep.Diagnostics)

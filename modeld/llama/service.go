@@ -78,6 +78,8 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 		"capacity_reason", info.Reason,
 		"flash_attention", cfg.FlashAttn,
 		"kv_cache_type", cfg.KVCacheType,
+		"sparse_attention", info.SparseAttention,
+		"sliding_window_attention_tokens", info.SlidingWindowAttentionTokens,
 	)
 	return newSession(req.Path, cfg)
 }
@@ -246,6 +248,10 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		HeadroomFrac:        policy.HeadroomFrac,
 	})
 	info := modelInfo(resolved, st)
+	if params.SlidingWindow > 0 {
+		info.SparseAttention = true
+		info.SlidingWindowAttentionTokens = params.SlidingWindow
+	}
 	info.RequestedGpuLayers = explicitGpuLayers
 	info.ResolvedGpuLayers = resolvedGpuLayers
 	if explicitGpuLayers > 0 && resolvedGpuLayers < explicitGpuLayers {

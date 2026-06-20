@@ -79,6 +79,55 @@ func TestSystem_OpenVINOGenAI_TokenPrefillAndGenerate(t *testing.T) {
 	require.NotEmpty(t, got.Text)
 }
 
+func TestSystem_OpenVINOGenAI_ShiftedColdKVImport(t *testing.T) {
+	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
+	if modelDir == "" {
+		t.Skip("set CONTENOX_OPENVINO_TEST_MODEL to an OpenVINO IR model directory")
+	}
+	device := os.Getenv("CONTENOX_OPENVINO_TEST_DEVICE")
+	if device == "" {
+		device = "CPU"
+	}
+
+	s, err := NewGenAI(modelDir, GenAIConfig{Device: device})
+	require.NoError(t, err)
+	defer s.Close()
+
+	ctx := context.Background()
+	tokens, err := s.Tokenize(ctx, "def add(a, b):\n    return a + b\n\nprint(add(2, 3))\n", true)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(tokens), 8)
+
+	start, end := 2, 5
+	tokenHash := "shifted-cold-kv-system"
+	require.NoError(t, s.PrefillTokens(ctx, tokens))
+	kv, err := s.ExportColdKV(ctx, ColdKVRange{
+		Start:        start,
+		End:          end,
+		Tokens:       append([]int(nil), tokens[start:end]...),
+		PrefixTokens: append([]int(nil), tokens...),
+		TokenHash:    tokenHash,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, kv)
+
+	resident := append(append([]int(nil), tokens[:start]...), tokens[end:]...)
+	require.NoError(t, s.PrefillTokens(ctx, resident))
+	dest := append(append([]int(nil), resident...), tokens[start:end]...)
+	require.NoError(t, s.ImportColdKV(ctx, ColdKVRange{
+		Start:        start,
+		End:          end,
+		DestStart:    len(resident),
+		Tokens:       append([]int(nil), tokens[start:end]...),
+		PrefixTokens: dest,
+		TokenHash:    tokenHash,
+	}, kv))
+
+	got, err := s.GenerateTokens(ctx, dest, GenerateOptions{MaxNewTokens: 1})
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), got.Metrics.Requests)
+}
+
 func TestSystem_OpenVINOGenAI_ContextCanceledBeforeGenerate(t *testing.T) {
 	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
 	if modelDir == "" {

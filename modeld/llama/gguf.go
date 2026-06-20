@@ -34,6 +34,7 @@ type ggufParams struct {
 	HeadCount       int
 	KeyLength       int // per-head dim, when declared
 	EmbeddingLength int
+	SlidingWindow   int // model-native sliding-window attention size (SWA)
 }
 
 // headDim is the per-head KV dimension: the declared key_length, else
@@ -112,6 +113,8 @@ func ggufModelParams(path string) ggufParams {
 			p.HeadCount = int(val)
 		case strings.HasSuffix(key, ".attention.key_length"):
 			p.KeyLength = int(val)
+		case strings.HasSuffix(key, ".attention.sliding_window"):
+			p.SlidingWindow = int(val)
 		case strings.HasSuffix(key, ".embedding_length"):
 			p.EmbeddingLength = int(val)
 		}

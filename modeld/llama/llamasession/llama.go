@@ -27,29 +27,31 @@ const Available = true
 func init() { llama.SetSessionFactory(New) }
 
 type session struct {
-	mu            sync.Mutex
-	model         *llamacppshim.Model
-	lctx          *llamacppshim.Context
-	batch         *llamacppshim.Batch
-	numCtx        int
-	plannerCtx    int
-	coldMaxTokens int
-	coldTokens    int
-	coldClock     int64
-	coldBlocks    map[string]*coldBlock
-	coldRangeKey  map[string]string
-	nBatch        int
-	addBOS        bool
-	resident      []int  // token IDs currently in the KV (seq 0), in order
-	prefixLen     int    // how many of resident are the stable prefix
-	stableText    string // raw stable text from the runtime
-	prefixText    string // the templated stable text whose tokens are resident
-	stableMsgs    []chatTemplateMessage
-	tools         string // JSON tool definitions rendered into the prompt (model-native)
-	manifest      llama.ContextManifest
-	chatSyntax    llamacppshim.ChatSyntax
-	reasoning     string
-	closed        bool
+	mu                           sync.Mutex
+	model                        *llamacppshim.Model
+	lctx                         *llamacppshim.Context
+	batch                        *llamacppshim.Batch
+	numCtx                       int
+	plannerCtx                   int
+	coldMaxTokens                int
+	coldTokens                   int
+	coldClock                    int64
+	coldBlocks                   map[string]*coldBlock
+	coldRangeKey                 map[string]string
+	sparseAttention              bool
+	slidingWindowAttentionTokens int
+	nBatch                       int
+	addBOS                       bool
+	resident                     []int  // token IDs currently in the KV (seq 0), in order
+	prefixLen                    int    // how many of resident are the stable prefix
+	stableText                   string // raw stable text from the runtime
+	prefixText                   string // the templated stable text whose tokens are resident
+	stableMsgs                   []chatTemplateMessage
+	tools                        string // JSON tool definitions rendered into the prompt (model-native)
+	manifest                     llama.ContextManifest
+	chatSyntax                   llamacppshim.ChatSyntax
+	reasoning                    string
+	closed                       bool
 
 	residencyPlan residency.Plan
 	residencyErr  string
@@ -60,10 +62,12 @@ var _ residency.Executor = (*session)(nil)
 
 func (s *session) Capabilities() residency.Capabilities {
 	return residency.Capabilities{
-		RemoveTail:    true,
-		RemoveMiddle:  true,
-		PositionShift: true,
-		ColdStore:     s.coldMaxTokens > 0,
+		RemoveTail:                   true,
+		RemoveMiddle:                 true,
+		PositionShift:                true,
+		SparseAttention:              s.sparseAttention,
+		SlidingWindowAttentionTokens: s.slidingWindowAttentionTokens,
+		ColdStore:                    s.coldMaxTokens > 0,
 	}
 }
 
@@ -174,6 +178,7 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 		plannerCtx = numCtx
 	}
 	coldMaxTokens := max(plannerCtx-numCtx, 0)
+	slidingWindow := model.SlidingWindowAttention()
 	nBatch := cfg.NumBatch
 	if nBatch <= 0 {
 		nBatch = 512
@@ -208,15 +213,17 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 	}
 
 	return &session{
-		model:         model,
-		lctx:          lctx,
-		batch:         batch,
-		numCtx:        numCtx,
-		plannerCtx:    plannerCtx,
-		coldMaxTokens: coldMaxTokens,
-		nBatch:        nBatch,
-		addBOS:        addBOS,
-		reasoning:     cfg.ReasoningFormat,
+		model:                        model,
+		lctx:                         lctx,
+		batch:                        batch,
+		numCtx:                       numCtx,
+		plannerCtx:                   plannerCtx,
+		coldMaxTokens:                coldMaxTokens,
+		sparseAttention:              slidingWindow > 0,
+		slidingWindowAttentionTokens: slidingWindow,
+		nBatch:                       nBatch,
+		addBOS:                       addBOS,
+		reasoning:                    cfg.ReasoningFormat,
 	}, nil
 }
 

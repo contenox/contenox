@@ -341,20 +341,22 @@ func TestDescribeContextBudgetRoundTripOverWire(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	want := transport.ModelInfo{
-		ModelMaxContext:         32768,
-		EffectiveContext:        8192,
-		MemoryContextTokens:     12000,
-		HotContextTokens:        8192,
-		PlannerEffectiveContext: 8192,
-		KVBytesPerToken:         2048,
-		FreeBytes:               64 << 20,
-		WeightsBytes:            4 << 20,
-		UsableBytes:             32 << 20,
-		RequiredBytes:           20 << 20,
-		Clamped:                 true,
-		Reason:                  "request_exceeds_memory_budget",
-		DeviceKind:              "gpu",
-		DeviceID:                "GPU.0",
+		ModelMaxContext:              32768,
+		EffectiveContext:             8192,
+		MemoryContextTokens:          12000,
+		HotContextTokens:             8192,
+		PlannerEffectiveContext:      8192,
+		KVBytesPerToken:              2048,
+		FreeBytes:                    64 << 20,
+		WeightsBytes:                 4 << 20,
+		UsableBytes:                  32 << 20,
+		RequiredBytes:                20 << 20,
+		Clamped:                      true,
+		Reason:                       "request_exceeds_memory_budget",
+		DeviceKind:                   "gpu",
+		DeviceID:                     "GPU.0",
+		SparseAttention:              true,
+		SlidingWindowAttentionTokens: 4096,
 	}
 	svc := &describeService{
 		MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
@@ -378,7 +380,9 @@ func TestDescribeContextBudgetRoundTripOverWire(t *testing.T) {
 		got.RequiredBytes != want.RequiredBytes ||
 		got.Reason != want.Reason ||
 		got.DeviceKind != want.DeviceKind ||
-		got.DeviceID != want.DeviceID {
+		got.DeviceID != want.DeviceID ||
+		got.SparseAttention != want.SparseAttention ||
+		got.SlidingWindowAttentionTokens != want.SlidingWindowAttentionTokens {
 		t.Fatalf("Describe over wire = %+v, want %+v", got, want)
 	}
 }

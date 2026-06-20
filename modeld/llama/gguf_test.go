@@ -70,6 +70,29 @@ func TestUnit_GGUFContextLength_MissingFileIsZero(t *testing.T) {
 	}
 }
 
+func TestUnit_GGUFModelParams_ParsesSlidingWindowAttention(t *testing.T) {
+	data := buildGGUF(t, []func(*bytes.Buffer){
+		func(b *bytes.Buffer) {
+			writeGGUFString(b, "gemma2.context_length")
+			_ = binary.Write(b, binary.LittleEndian, ggufUint32)
+			_ = binary.Write(b, binary.LittleEndian, uint32(8192))
+		},
+		func(b *bytes.Buffer) {
+			writeGGUFString(b, "gemma2.attention.sliding_window")
+			_ = binary.Write(b, binary.LittleEndian, ggufUint32)
+			_ = binary.Write(b, binary.LittleEndian, uint32(4096))
+		},
+	})
+	path := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ggufModelParams(path)
+	if got.ContextLength != 8192 || got.SlidingWindow != 4096 {
+		t.Fatalf("ggufModelParams = %+v, want context=8192 sliding_window=4096", got)
+	}
+}
+
 // TestUnit_GGUFContextLength_RealModel reads an actual GGUF if one is provided,
 // so the parser can be checked against a real model (e.g. a pulled qwen).
 func TestUnit_GGUFContextLength_RealModel(t *testing.T) {

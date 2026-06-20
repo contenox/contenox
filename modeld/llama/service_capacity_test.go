@@ -109,6 +109,27 @@ func TestUnit_ServiceDescribeReportsPlannerAboveHotWithHostColdBudget(t *testing
 	}
 }
 
+func TestUnit_ServiceDescribeReportsSparseAttentionForSWA(t *testing.T) {
+	path := writeTestGGUFWithSWA(t, 32768, 4096)
+	svc := NewService(
+		WithMemorySource(staticMemory(64<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	info, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{NumCtx: 4096, KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if !info.SparseAttention || info.SlidingWindowAttentionTokens != 4096 {
+		t.Fatalf("sparse attention metadata = enabled %v window %d, want true/4096", info.SparseAttention, info.SlidingWindowAttentionTokens)
+	}
+}
+
 func TestUnit_ServiceOpenSessionRejectsOversizedContextBeforeBackend(t *testing.T) {
 	path := writeTestGGUF(t, 32768)
 	svc := NewService(
@@ -273,6 +294,10 @@ func TestUnit_ServiceResolveConfigClampsDaemonGpuLayersToMemoryBudget(t *testing
 }
 
 func writeTestGGUF(t *testing.T, ctx int) string {
+	return writeTestGGUFWithSWA(t, ctx, 0)
+}
+
+func writeTestGGUFWithSWA(t *testing.T, ctx, slidingWindow int) string {
 	t.Helper()
 	var b bytes.Buffer
 	b.WriteString("GGUF")
@@ -287,6 +312,12 @@ func writeTestGGUF(t *testing.T, ctx int) string {
 		{"qwen2.attention.head_count_kv", 1},
 		{"qwen2.attention.head_count", 2},
 		{"qwen2.attention.key_length", 128},
+	}
+	if slidingWindow > 0 {
+		kvs = append(kvs, struct {
+			key string
+			val uint32
+		}{"qwen2.attention.sliding_window", uint32(slidingWindow)})
 	}
 	_ = binary.Write(&b, binary.LittleEndian, uint64(len(kvs)))
 	for _, kv := range kvs {
