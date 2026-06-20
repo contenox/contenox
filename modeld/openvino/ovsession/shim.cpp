@@ -130,9 +130,10 @@ static void read_snapshot(cx_session *s, std::istream &in) {
 
         int64_t bytes;
         rd(in, bytes);
-        // VariableState exposes f32 tensors even when the CPU plugin stores
-        // KV internally as f16. Allocate to the exposed type and byte size.
-        ov::Tensor tensor(ov::element::f32, shape);
+        // Dynamically query the element type expected by this state to avoid
+        // hardcoding f32, which might break on different devices or plugins.
+        ov::element::Type el_type = states[static_cast<size_t>(i)].get_state().get_element_type();
+        ov::Tensor tensor(el_type, shape);
         if (static_cast<int64_t>(tensor.get_byte_size()) != bytes) {
             throw std::runtime_error("state byte size mismatch");
         }

@@ -392,7 +392,11 @@ static ov::genai::GenerationConfig generation_config_from(ov::genai::GenerationC
                                                           float temperature,
                                                           int use_temperature,
                                                           float top_p,
-                                                          int use_top_p) {
+                                                          int use_top_p,
+                                                          size_t top_k,
+                                                          int use_top_k,
+                                                          size_t seed,
+                                                          int use_seed) {
     if (max_new_tokens > 0) {
         gen.max_new_tokens = max_new_tokens;
     } else if (gen.max_new_tokens == 0 || gen.max_new_tokens == SIZE_MAX) {
@@ -407,8 +411,44 @@ static ov::genai::GenerationConfig generation_config_from(ov::genai::GenerationC
         gen.top_p = top_p;
         gen.do_sample = true;
     }
+    if (use_top_k) {
+        gen.top_k = top_k;
+        gen.do_sample = true;
+    }
+    if (use_seed) {
+        gen.rng_seed = seed;
+    }
     gen.validate();
     return gen;
+}
+
+static ov::genai::GenerationConfig prefill_config_from(ov::genai::GenerationConfig gen) {
+    gen.max_new_tokens = 0;
+    gen.min_new_tokens = 0;
+    gen.echo = true;
+    gen.apply_chat_template = false;
+    gen.validate();
+    return gen;
+}
+
+static ov::Tensor tensor_from_tokens(const std::vector<int64_t> &tokens) {
+    ov::Tensor input(ov::element::i64, ov::Shape{1, tokens.size()});
+    if (!tokens.empty()) {
+        std::copy(tokens.begin(), tokens.end(), input.data<int64_t>());
+    }
+    return input;
+}
+
+static std::string decode_first_generation(ov::genai::Tokenizer tokenizer,
+                                           const std::vector<ov::genai::EncodedGenerationResult> &results,
+                                           bool canceled) {
+    if (results.empty() || results[0].m_generation_ids.empty()) {
+        if (canceled) {
+            return std::string();
+        }
+        throw std::runtime_error("OpenVINO GenAI returned no generation");
+    }
+    return tokenizer.decode(results[0].m_generation_ids[0]);
 }
 
 static void copy_metrics(const ov::genai::PipelineMetrics &src, cx_genai_metrics *dst) {
@@ -1113,6 +1153,7 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
                                  const char **tool_call_ids,
                                  size_t n,
                                  const char *tools_json,
+                                 int add_generation_prompt,
                                  char *out,
                                  size_t out_len,
                                  char *err,
@@ -1147,7 +1188,7 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
             if (!tools_str.empty()) {
                 tools = ov::genai::JsonContainer::from_json_string(tools_str);
             }
-            templated = s->pipe->get_tokenizer().apply_chat_template(history, /*add_generation_prompt=*/true, std::string{}, tools);
+            templated = s->pipe->get_tokenizer().apply_chat_template(history, add_generation_prompt != 0, std::string{}, tools);
         });
         if (templated.size() + 1 > out_len) {
             write_buf(err, err_len, "OpenVINO GenAI chat template output buffer too small");
@@ -1308,13 +1349,16 @@ int cx_genai_import_cold_kv(cx_genai_session *s,
                             size_t data_len,
                             char *err,
                             size_t err_len) {
-    (void)dest_start;
     if (!s) {
         write_buf(err, err_len, "OpenVINO GenAI session is nil");
         return 1;
     }
     if (start < 0 || end <= start || !tokens || tokens_len == 0 || !prefix_tokens || prefix_tokens_len == 0 || !data || data_len == 0) {
         write_buf(err, err_len, "OpenVINO cold KV import range or payload is empty");
+        return 1;
+    }
+    if (dest_start != start) {
+        write_buf(err, err_len, "OpenVINO cold KV import cannot shift RoPE-positioned KV blocks; prefill the destination token sequence instead");
         return 1;
     }
     try {
@@ -1357,6 +1401,10 @@ int cx_genai_generate(cx_genai_session *s,
                       int use_temperature,
                       float top_p,
                       int use_top_p,
+                      size_t top_k,
+                      int use_top_k,
+                      size_t seed,
+                      int use_seed,
                       const char *structured_protocol,
                       const char *structured_payload,
                       const char *parser_protocols,
@@ -1390,7 +1438,7 @@ int cx_genai_generate(cx_genai_session *s,
             }
             s->cancel_requested.store(false);
 
-            auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p);
+            auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p, top_k, use_top_k, seed, use_seed);
             apply_structured_output(gen, structured_protocol, structured_payload);
             auto parsers = parsers_for_protocols(protocols);
             gen.parsers = parsers;
@@ -1438,6 +1486,145 @@ int cx_genai_generate(cx_genai_session *s,
         return 0;
     } catch (const std::exception &e) {
         write_buf(err, err_len, e.what());
+        return 1;
+    }
+}
+
+int cx_genai_prefill_tokens(cx_genai_session *s,
+                            const int64_t *tokens,
+                            size_t tokens_len,
+                            cx_genai_metrics *metrics,
+                            char *err,
+                            size_t err_len) {
+    if (!s) {
+        write_buf(err, err_len, "OpenVINO GenAI session is nil");
+        return 1;
+    }
+    if (!tokens || tokens_len == 0) {
+        write_buf(err, err_len, "OpenVINO GenAI token prompt is empty");
+        return 1;
+    }
+
+    try {
+        ov::genai::PipelineMetrics latest_metrics;
+        std::vector<int64_t> token_copy(tokens, tokens + tokens_len);
+
+        s->run([&] {
+            if (!s->pipe) {
+                throw std::runtime_error("OpenVINO GenAI session is closed");
+            }
+            s->cancel_requested.store(false);
+            auto gen = prefill_config_from(s->pipe->get_config());
+            auto input = tensor_from_tokens(token_copy);
+            s->pipe->generate(
+                std::vector<ov::Tensor>{input},
+                std::vector<ov::genai::GenerationConfig>{gen},
+                std::monostate{});
+            latest_metrics = s->pipe->get_metrics();
+        });
+
+        copy_metrics(latest_metrics, metrics);
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO token prefill error");
+        return 1;
+    }
+}
+
+int cx_genai_generate_tokens(cx_genai_session *s,
+                             const int64_t *tokens,
+                             size_t tokens_len,
+                             size_t max_new_tokens,
+                             float temperature,
+                             int use_temperature,
+                             float top_p,
+                             int use_top_p,
+                             size_t top_k,
+                             int use_top_k,
+                             size_t seed,
+                             int use_seed,
+                             const char *structured_protocol,
+                             const char *structured_payload,
+                             const char *parser_protocols,
+                             char *out,
+                             size_t out_len,
+                             char *parsed,
+                             size_t parsed_len,
+                             cx_genai_metrics *metrics,
+                             char *err,
+                             size_t err_len) {
+    if (!s) {
+        write_buf(err, err_len, "OpenVINO GenAI session is nil");
+        return 1;
+    }
+    if (!tokens || tokens_len == 0) {
+        write_buf(err, err_len, "OpenVINO GenAI token prompt is empty");
+        return 1;
+    }
+
+    try {
+        std::string generated;
+        std::string parsed_message;
+        ov::genai::PipelineMetrics latest_metrics;
+        std::vector<int64_t> token_copy(tokens, tokens + tokens_len);
+        std::vector<std::string> protocols = split_protocols(parser_protocols);
+        bool canceled = false;
+
+        s->run([&] {
+            if (!s->pipe) {
+                throw std::runtime_error("OpenVINO GenAI session is closed");
+            }
+            s->cancel_requested.store(false);
+
+            auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p, top_k, use_top_k, seed, use_seed);
+            apply_structured_output(gen, structured_protocol, structured_payload);
+            auto parsers = parsers_for_protocols(protocols);
+            gen.parsers = parsers;
+            gen.validate();
+
+            ov::genai::StreamerVariant streamer = std::function<ov::genai::StreamingStatus(std::string)>(
+                [s](std::string) {
+                    if (s->cancel_requested.load()) {
+                        return ov::genai::StreamingStatus::CANCEL;
+                    }
+                    return ov::genai::StreamingStatus::RUNNING;
+                });
+            auto input = tensor_from_tokens(token_copy);
+            auto results = s->pipe->generate(
+                std::vector<ov::Tensor>{input},
+                std::vector<ov::genai::GenerationConfig>{gen},
+                streamer);
+            canceled = s->cancel_requested.load();
+            generated = decode_first_generation(s->pipe->get_tokenizer(), results, canceled);
+            parsed_message = parse_generated(parsers, generated);
+            latest_metrics = s->pipe->get_metrics();
+        });
+
+        if (canceled) {
+            return 3;
+        }
+        if (generated.size() + 1 > out_len) {
+            write_buf(err, err_len, "OpenVINO GenAI output buffer too small");
+            return 2;
+        }
+        write_buf(out, out_len, generated);
+        if (!parsed_message.empty()) {
+            if (parsed_message.size() + 1 > parsed_len) {
+                write_buf(err, err_len, "OpenVINO GenAI parsed output buffer too small");
+                return 2;
+            }
+            write_buf(parsed, parsed_len, parsed_message);
+        }
+        copy_metrics(latest_metrics, metrics);
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO token generation error");
         return 1;
     }
 }
@@ -1510,6 +1697,10 @@ int cx_genai_generate_stream(cx_genai_session *s,
                              int use_temperature,
                              float top_p,
                              int use_top_p,
+                             size_t top_k,
+                             int use_top_k,
+                             size_t seed,
+                             int use_seed,
                              const char *parser_protocols,
                              cx_genai_stream *stream,
                              cx_genai_metrics *metrics,
@@ -1553,7 +1744,7 @@ int cx_genai_generate_stream(cx_genai_session *s,
 
             auto inc_parsers = incremental_parsers_for_protocols(protocols);
 
-            auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p);
+            auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p, top_k, use_top_k, seed, use_seed);
             
             ov::genai::StreamerVariant streamer_variant = std::function<ov::genai::StreamingStatus(std::string)>(
                 [s, stream, inc_parsers](std::string chunk) mutable {
@@ -1585,6 +1776,92 @@ int cx_genai_generate_stream(cx_genai_session *s,
     } catch (const std::exception &e) {
         write_buf(err, err_len, e.what());
         stream->finish(1, e.what());
+        return 1;
+    }
+}
+
+int cx_genai_generate_tokens_stream(cx_genai_session *s,
+                                    const int64_t *tokens,
+                                    size_t tokens_len,
+                                    size_t max_new_tokens,
+                                    float temperature,
+                                    int use_temperature,
+                                    float top_p,
+                                    int use_top_p,
+                                    size_t top_k,
+                                    int use_top_k,
+                                    size_t seed,
+                                    int use_seed,
+                                    const char *parser_protocols,
+                                    cx_genai_stream *stream,
+                                    cx_genai_metrics *metrics,
+                                    char *err,
+                                    size_t err_len) {
+    if (!s) {
+        write_buf(err, err_len, "OpenVINO GenAI session is nil");
+        if (stream) stream->finish(1, "OpenVINO GenAI session is nil");
+        return 1;
+    }
+    if (!tokens || tokens_len == 0) {
+        write_buf(err, err_len, "OpenVINO GenAI token prompt is empty");
+        if (stream) stream->finish(1, "OpenVINO GenAI token prompt is empty");
+        return 1;
+    }
+    if (!stream) {
+        write_buf(err, err_len, "OpenVINO GenAI stream is nil");
+        return 1;
+    }
+
+    try {
+        ov::genai::PipelineMetrics latest_metrics;
+        std::vector<int64_t> token_copy(tokens, tokens + tokens_len);
+        bool canceled = false;
+        std::vector<std::string> protocols = split_protocols(parser_protocols);
+
+        s->run([&] {
+            if (!s->pipe) {
+                throw std::runtime_error("OpenVINO GenAI session is closed");
+            }
+            s->cancel_requested.store(false);
+
+            auto inc_parsers = incremental_parsers_for_protocols(protocols);
+            auto gen = generation_config_from(s->pipe->get_config(), max_new_tokens, temperature, use_temperature, top_p, use_top_p, top_k, use_top_k, seed, use_seed);
+
+            ov::genai::StreamerVariant streamer_variant = std::function<ov::genai::StreamingStatus(std::string)>(
+                [s, stream, inc_parsers](std::string chunk) mutable {
+                    ov::genai::JsonContainer delta_message;
+                    for (auto &parser : inc_parsers) {
+                        chunk = parser->parse(delta_message, chunk);
+                    }
+                    stream->push(chunk, json_string_field(delta_message, "reasoning_content"));
+                    if (s->cancel_requested.load()) {
+                        return ov::genai::StreamingStatus::CANCEL;
+                    }
+                    return ov::genai::StreamingStatus::RUNNING;
+                });
+            auto input = tensor_from_tokens(token_copy);
+            s->pipe->generate(
+                std::vector<ov::Tensor>{input},
+                std::vector<ov::genai::GenerationConfig>{gen},
+                streamer_variant);
+            canceled = s->cancel_requested.load();
+            latest_metrics = s->pipe->get_metrics();
+        });
+
+        if (canceled) {
+            stream->finish(3, "OpenVINO GenAI generation canceled");
+            return 3;
+        }
+        copy_metrics(latest_metrics, metrics);
+        stream->finish(0);
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        stream->finish(1, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO token stream error");
+        stream->finish(1, "unknown OpenVINO token stream error");
         return 1;
     }
 }

@@ -20,13 +20,17 @@ import (
 // testable without compiling the CGO OpenVINO GenAI backend.
 type genaiBackend interface {
 	Generate(ctx context.Context, prompt string, opts ovsession.GenerateOptions) (ovsession.GenAIResult, error)
+	GenerateTokens(ctx context.Context, tokens []int, opts ovsession.GenerateOptions) (ovsession.GenAIResult, error)
 	Stream(ctx context.Context, prompt string, opts ovsession.GenerateOptions) (<-chan ovsession.StreamChunk, error)
+	StreamTokens(ctx context.Context, tokens []int, opts ovsession.GenerateOptions) (<-chan ovsession.StreamChunk, error)
+	PrefillTokens(ctx context.Context, tokens []int) error
 	Tokenize(ctx context.Context, prompt string, addSpecial bool) ([]int, error)
 	// ApplyChatTemplate renders role/content turns with the MODEL's own chat
 	// template (held inside the IR tokenizer), producing the prompt string the
 	// pipeline expects. This is why generation runs with apply_chat_template=false
 	// in the shim: the caller templates first, with the model-native template.
 	ApplyChatTemplate(messages []ovsession.ChatMessage, toolsJSON string) (string, error)
+	ApplyChatTemplateWithPrompt(messages []ovsession.ChatMessage, toolsJSON string, addGenerationPrompt bool) (string, error)
 	Close() error
 }
 
@@ -45,8 +49,8 @@ var _ EmbedSessionBackend = (*ovsession.EmbedSession)(nil)
 //
 // OpenVINO GenAI owns the tokenizer, chat template, and physical prefix cache
 // inside ContinuousBatchingPipeline. The adapter keeps transport-level token
-// accounting and feeds model-native prompt strings through the existing GenAI
-// session API.
+// accounting over the model-native prompt token sequence, so residency
+// operations mutate the same token tape that decode sends back to GenAI.
 type genaiSession struct {
 	backend       genaiBackend
 	numCtx        int
@@ -57,14 +61,16 @@ type genaiSession struct {
 	coldBlocks    map[string]*openvinoColdBlock
 	coldRangeKey  map[string]string
 
-	mu        sync.Mutex
-	closed    bool
-	manifest  transport.ContextManifest
-	stable    string // raw stable text from the runtime
-	suffix    string // raw volatile text appended after stable
-	tools     string // model-native tool definitions JSON, rendered via the chat template
-	resident  []int  // logical token IDs resident by contract; GenAI owns physical KV
-	prefixLen int    // how many resident tokens belong to the stable prefix
+	mu         sync.Mutex
+	closed     bool
+	manifest   transport.ContextManifest
+	stable     string // raw stable text from the runtime
+	suffix     string // raw volatile text appended after stable
+	prefixText string // model-native stable prompt text whose tokens form resident[:prefixLen]
+	stableMsgs []ovsession.ChatMessage
+	tools      string // model-native tool definitions JSON, rendered via the chat template
+	resident   []int  // model-native prompt token IDs resident by contract
+	prefixLen  int    // how many resident tokens belong to the stable prefix
 
 	// evictionEnabled is set when the GenAI pipeline runs native cache eviction
 	// (sink+recent+evictable). Then numCtx is the physical hot budget the pipeline
@@ -110,15 +116,14 @@ var _ residency.Controller = (*genaiSession)(nil)
 var _ residency.Executor = (*genaiSession)(nil)
 
 func (s *genaiSession) Capabilities() residency.Capabilities {
-	// OpenVINO GenAI does residency declaratively, not by imperative KV range
-	// surgery: the ContinuousBatchingPipeline runs XAttention sparse attention
-	// (enabled by default in the session config) and supports a native
-	// CacheEvictionConfig (sink/recent/evictable). So it has no RemoveTail/
-	// RemoveMiddle/PositionShift the runtime can drive itself, but it does attend
-	// sparsely over long context on its own.
+	cold := s.coldMaxTokens > 0 && s.coldKVBackend() != nil
+	// OpenVINO GenAI owns physical KV blocks. The adapter can evict/admit by
+	// exporting in-place cold KV where valid and re-prefilling the destination
+	// token tape when a shifted RoPE position would make native import unsafe.
 	return residency.Capabilities{
 		SparseAttention: true,
-		ColdStore:       s.coldMaxTokens > 0 && s.coldKVBackend() != nil,
+		ColdStore:       cold,
+		RecomputeRange:  cold,
 	}
 }
 
@@ -152,12 +157,27 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	stableHash := prefix.Manifest.StableByteHash
 	oldResident := s.residentTokens()
 
-	tokens, err := s.tokenize(ctx, prefix.Text, prefix.Manifest.AddBOS)
+	stableMsgs := stableMessagesFromManifest(prefix.Text, prefix.Manifest)
+	promptText := prefix.Text
+	if len(stableMsgs) > 0 {
+		templated, err := s.backend.ApplyChatTemplateWithPrompt(stableMsgs, prefix.Tools, false)
+		if err != nil {
+			return transport.PrefixStatus{}, fmt.Errorf("openvino: apply stable chat template: %w", err)
+		}
+		promptText = templated
+	}
+
+	tokens, err := s.tokenize(ctx, promptText, prefix.Manifest.AddBOS)
 	if err != nil {
 		return transport.PrefixStatus{}, fmt.Errorf("openvino: tokenize stable prefix: %w", err)
 	}
 	if s.numCtx > 0 && len(tokens) > s.numCtx {
 		return transport.PrefixStatus{}, transport.ErrContextOverflow
+	}
+	if len(tokens) > 0 {
+		if err := s.backend.PrefillTokens(ctx, tokens); err != nil {
+			return transport.PrefixStatus{}, fmt.Errorf("%w: openvino prefill stable prefix: %v", transport.ErrSessionFatal, err)
+		}
 	}
 
 	reuse := 0
@@ -173,10 +193,12 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	// EnsurePrefix replaces the stable prefix and drops any prior suffix.
 	s.stable = prefix.Text
 	s.suffix = ""
+	s.prefixText = promptText
+	s.stableMsgs = stableMsgs
 	s.tools = prefix.Tools
 	s.resident = append(s.resident[:0], tokens...)
 	s.prefixLen = len(tokens)
-	enriched, err := s.enrichStableManifest(ctx, prefix.Text, prefix.Manifest, tokens)
+	enriched, err := s.enrichStableManifest(ctx, prefix.Text, prefix.Manifest, tokens, stableMsgs)
 	if err != nil {
 		return transport.PrefixStatus{}, err
 	}
@@ -212,12 +234,25 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 		return transport.SuffixStatus{}, contextasm.NewManifestMismatchError("stable prefix changed between EnsurePrefix and PrefillSuffix")
 	}
 
+	suffixManifest := suffix.Manifest
+	if suffixManifest.StableBytes == 0 {
+		suffixManifest.StableBytes = len(s.stable)
+	}
+	if suffixManifest.TotalBytes == 0 {
+		suffixManifest.TotalBytes = len(s.stable) + len(suffix.Text)
+	}
 	suffixText := suffix.Text
-	fullText := s.stable + suffix.Text
-	if msgs := chatMessagesFromManifest(fullText, suffix.Manifest); len(msgs) > 0 {
-		if _, err := s.backend.ApplyChatTemplate(msgs, s.tools); err != nil {
+	volatileMsgs := volatileMessagesFromManifest(suffix.Text, suffixManifest)
+	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
+		all := append(append([]ovsession.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
+		rendered, err := s.backend.ApplyChatTemplateWithPrompt(all, s.tools, true)
+		if err != nil {
 			return transport.SuffixStatus{}, fmt.Errorf("openvino: apply full chat template: %w", err)
 		}
+		if !strings.HasPrefix(rendered, s.prefixText) {
+			return transport.SuffixStatus{}, contextasm.NewManifestMismatchError("model template is not prefix-stable across the suffix")
+		}
+		suffixText = rendered[len(s.prefixText):]
 	}
 
 	addSpecial := s.prefixLen == 0 && suffix.Manifest.AddBOS
@@ -229,7 +264,12 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 		return transport.SuffixStatus{}, transport.ErrContextOverflow
 	}
 	resident := append(append([]int(nil), s.resident...), tokens...)
-	enriched, err := s.enrichVolatileManifest(ctx, suffixText, suffix.Manifest, tokens, addSpecial)
+	if len(resident) > 0 {
+		if err := s.backend.PrefillTokens(ctx, resident); err != nil {
+			return transport.SuffixStatus{}, fmt.Errorf("%w: openvino prefill suffix: %v", transport.ErrSessionFatal, err)
+		}
+	}
+	enriched, err := s.enrichVolatileManifest(ctx, suffix.Text, suffixManifest, tokens, addSpecial, volatileMsgs)
 	if err != nil {
 		return transport.SuffixStatus{}, err
 	}
@@ -257,6 +297,7 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 	manifest := s.manifest
 	backend := s.backend
 	tools := s.tools
+	tokens := append([]int(nil), s.resident...)
 	resident := s.residentTokens()
 	numCtx := s.numCtx
 	eviction := s.evictionEnabled
@@ -279,6 +320,10 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 		opts.MaxNewTokens = numCtx - resident
 	}
 
+	if len(tokens) > 0 {
+		return s.decodePromptTokens(ctx, backend, tokens, opts, cfg, out)
+	}
+
 	prompt := fullText
 	if msgs := chatMessagesFromManifest(fullText, manifest); len(msgs) > 0 {
 		if templated, err := backend.ApplyChatTemplate(msgs, tools); err == nil && strings.TrimSpace(templated) != "" {
@@ -288,13 +333,16 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 	return s.decodePrompt(ctx, backend, prompt, opts, cfg, out)
 }
 
-func (s *genaiSession) enrichStableManifest(ctx context.Context, stableText string, manifest transport.ContextManifest, tokens []int) (transport.ContextManifest, error) {
+func (s *genaiSession) enrichStableManifest(ctx context.Context, stableText string, manifest transport.ContextManifest, tokens []int, stableMsgs []ovsession.ChatMessage) (transport.ContextManifest, error) {
 	if len(manifest.Segments) == 0 {
 		if manifest.StableBytes == 0 {
 			manifest.StableBytes = len(stableText)
 		}
 		manifest.StableTokenHash = contextasm.HashTokenIDs(tokens)
 		return manifest, nil
+	}
+	if len(stableMsgs) > 0 {
+		return s.enrichStableChatManifest(ctx, stableText, manifest, tokens, stableMsgs)
 	}
 	if manifest.StableBytes == 0 {
 		manifest.StableBytes = len(stableText)
@@ -308,7 +356,51 @@ func (s *genaiSession) enrichStableManifest(ctx context.Context, stableText stri
 	return enriched, nil
 }
 
-func (s *genaiSession) enrichVolatileManifest(ctx context.Context, suffixText string, manifest transport.ContextManifest, tokens []int, suffixAddSpecial bool) (transport.ContextManifest, error) {
+func (s *genaiSession) enrichStableChatManifest(ctx context.Context, stableText string, manifest transport.ContextManifest, tokens []int, stableMsgs []ovsession.ChatMessage) (transport.ContextManifest, error) {
+	out := manifest
+	out.Segments = append([]contextasm.ManifestSegment(nil), manifest.Segments...)
+	out.StableTokenHash = contextasm.HashTokenIDs(tokens)
+	if out.StableBytes == 0 {
+		out.StableBytes = len(stableText)
+	}
+	if out.StableBytes != len(stableText) {
+		return transport.ContextManifest{}, contextasm.NewManifestMismatchError("stable byte length changed before tokenization")
+	}
+	prevEnd, msgIdx := 0, 0
+	for i := range out.Segments {
+		seg := &out.Segments[i]
+		if !seg.Stable {
+			continue
+		}
+		if sessionkit.ChatRole(seg.Kind) == "" {
+			seg.TokenStart, seg.TokenEnd = prevEnd, prevEnd
+			seg.TokenHash = contextasm.HashTokenIDs(tokens[prevEnd:prevEnd])
+			continue
+		}
+		msgIdx++
+		end := len(tokens)
+		if msgIdx < len(stableMsgs) {
+			rendered, err := s.backend.ApplyChatTemplateWithPrompt(stableMsgs[:msgIdx], s.tools, false)
+			if err != nil {
+				return transport.ContextManifest{}, fmt.Errorf("openvino: stable segment template: %w", err)
+			}
+			cum, err := s.tokenize(ctx, rendered, out.AddBOS)
+			if err != nil {
+				return transport.ContextManifest{}, fmt.Errorf("openvino: stable segment tokenize: %w", err)
+			}
+			end = len(cum)
+		}
+		if end < prevEnd || end > len(tokens) {
+			return transport.ContextManifest{}, contextasm.NewManifestMismatchError("stable segment token boundary out of range")
+		}
+		seg.TokenStart, seg.TokenEnd = prevEnd, end
+		seg.TokenHash = contextasm.HashTokenIDs(tokens[prevEnd:end])
+		prevEnd = end
+	}
+	return out, nil
+}
+
+func (s *genaiSession) enrichVolatileManifest(ctx context.Context, suffixText string, manifest transport.ContextManifest, tokens []int, suffixAddSpecial bool, volatileMsgs []ovsession.ChatMessage) (transport.ContextManifest, error) {
 	if len(manifest.Segments) == 0 {
 		if manifest.StableBytes == 0 {
 			manifest.StableBytes = len(s.stable)
@@ -326,6 +418,9 @@ func (s *genaiSession) enrichVolatileManifest(ctx context.Context, suffixText st
 	if manifest.TotalBytes == 0 {
 		manifest.TotalBytes = len(s.stable) + len(suffixText)
 	}
+	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
+		return s.enrichVolatileChatManifest(ctx, suffixText, manifest, tokens, volatileMsgs)
+	}
 	enriched, err := manifest.WithVolatileTokenization(s.manifest, s.prefixLen, suffixText, tokens, func(text string, addSpecial bool) ([]int, error) {
 		if suffixAddSpecial {
 			addSpecial = true
@@ -336,6 +431,69 @@ func (s *genaiSession) enrichVolatileManifest(ctx context.Context, suffixText st
 		return transport.ContextManifest{}, err
 	}
 	return enriched, nil
+}
+
+func (s *genaiSession) enrichVolatileChatManifest(ctx context.Context, suffixText string, manifest transport.ContextManifest, tokens []int, volatileMsgs []ovsession.ChatMessage) (transport.ContextManifest, error) {
+	if ok, reason := s.manifest.CompatibleRuntime(manifest); !ok {
+		return transport.ContextManifest{}, contextasm.NewManifestMismatchError(reason)
+	}
+	if !s.manifest.IsZero() && !manifest.IsZero() && s.manifest.StableByteHash != manifest.StableByteHash {
+		return transport.ContextManifest{}, contextasm.NewManifestMismatchError("stable prefix changed before suffix tokenization")
+	}
+	if manifest.StableBytes < 0 || manifest.TotalBytes < manifest.StableBytes || manifest.TotalBytes-manifest.StableBytes != len(suffixText) {
+		return transport.ContextManifest{}, contextasm.NewManifestMismatchError("volatile byte length changed before tokenization")
+	}
+
+	out := manifest
+	out.Segments = append([]contextasm.ManifestSegment(nil), manifest.Segments...)
+	out.StableTokenHash = s.manifest.StableTokenHash
+	out.VolatileTokenHash = contextasm.HashTokenIDs(tokens)
+	mergeOpenVINOStableSegmentTokens(&out, s.manifest)
+	for _, seg := range out.Segments {
+		if seg.Stable && seg.TokenHash == "" {
+			return transport.ContextManifest{}, contextasm.NewManifestMismatchError("stable segment token range missing from resident manifest")
+		}
+	}
+
+	allMsgs := append(append([]ovsession.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
+	prevEnd, msgIdx := 0, len(s.stableMsgs)
+	for i := range out.Segments {
+		seg := &out.Segments[i]
+		if seg.Stable {
+			continue
+		}
+		if sessionkit.ChatRole(seg.Kind) == "" {
+			seg.TokenStart = s.prefixLen + prevEnd
+			seg.TokenEnd = s.prefixLen + len(tokens)
+			seg.TokenHash = contextasm.HashTokenIDs(tokens[prevEnd:])
+			prevEnd = len(tokens)
+			continue
+		}
+		msgIdx++
+		end := len(tokens)
+		if msgIdx < len(allMsgs) {
+			rendered, err := s.backend.ApplyChatTemplateWithPrompt(allMsgs[:msgIdx], s.tools, false)
+			if err != nil {
+				return transport.ContextManifest{}, fmt.Errorf("openvino: volatile segment template: %w", err)
+			}
+			if !strings.HasPrefix(rendered, s.prefixText) {
+				return transport.ContextManifest{}, contextasm.NewManifestMismatchError("model template is not prefix-stable across volatile segment")
+			}
+			cum, err := s.tokenize(ctx, rendered[len(s.prefixText):], false)
+			if err != nil {
+				return transport.ContextManifest{}, fmt.Errorf("openvino: volatile segment tokenize: %w", err)
+			}
+			end = len(cum)
+		}
+		if end < prevEnd || end > len(tokens) {
+			return transport.ContextManifest{}, contextasm.NewManifestMismatchError("volatile segment token boundary out of range")
+		}
+		seg.TokenStart = s.prefixLen + prevEnd
+		seg.TokenEnd = s.prefixLen + end
+		seg.TokenHash = contextasm.HashTokenIDs(tokens[prevEnd:end])
+		prevEnd = end
+	}
+	return out, nil
 }
 
 func (s *genaiSession) updateResidencyPlanLocked(requireComplete bool) {
@@ -390,6 +548,45 @@ func (s *genaiSession) decodePrompt(ctx context.Context, backend genaiBackend, p
 	}
 
 	src, err := backend.Stream(ctx, prompt, opts)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		defer close(out)
+		for chunk := range src {
+			select {
+			case out <- transport.StreamChunk{Text: chunk.Text, Thinking: chunk.Thinking, Error: chunk.Error}:
+			case <-ctx.Done():
+				sessionkit.TrySend(out, transport.StreamChunk{Error: ctx.Err()})
+				return
+			}
+		}
+	}()
+	return out, nil
+}
+
+func (s *genaiSession) decodePromptTokens(ctx context.Context, backend genaiBackend, tokens []int, opts ovsession.GenerateOptions, cfg transport.DecodeConfig, out chan transport.StreamChunk) (<-chan transport.StreamChunk, error) {
+	if cfg.StructuredOutput.Protocol != "" || usesCompleteParser(opts.ParserProtocols) {
+		go func() {
+			defer close(out)
+			res, err := backend.GenerateTokens(ctx, tokens, opts)
+			if err != nil {
+				_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: err})
+				return
+			}
+			chunk, err := chunkFromGenAIResult(res, cfg.StructuredOutput)
+			if err != nil {
+				_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: err})
+				return
+			}
+			if !sessionkit.Send(ctx, out, chunk) {
+				sessionkit.TrySend(out, transport.StreamChunk{Error: ctx.Err()})
+			}
+		}()
+		return out, nil
+	}
+
+	src, err := backend.StreamTokens(ctx, tokens, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -598,7 +795,7 @@ func (s *genaiSession) Snapshot(ctx context.Context) (transport.SessionSnapshot,
 		NumCtx:           s.numCtx,
 		ResidentTokenIDs: append([]int(nil), s.resident...),
 		StableText:       s.stable,
-		PrefixText:       s.stable + s.suffix,
+		PrefixText:       s.prefixText,
 		Tools:            s.tools,
 		Manifest:         s.manifest,
 	}, nil
@@ -627,12 +824,23 @@ func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapsh
 			return contextasm.NewManifestMismatchError(reason)
 		}
 	}
+	stableMsgs := stableMessagesFromManifest(snap.StableText, snap.Manifest)
 	prefixText := snap.PrefixText
 	if prefixText == "" {
-		prefixText = snap.StableText
+		if len(stableMsgs) > 0 {
+			rendered, err := s.backend.ApplyChatTemplateWithPrompt(stableMsgs, snap.Tools, false)
+			if err != nil {
+				return fmt.Errorf("%w: openvino restore template: %v", transport.ErrSessionFatal, err)
+			}
+			prefixText = rendered
+		} else {
+			prefixText = snap.StableText
+		}
 	}
 	if snap.StableText != "" && !strings.HasPrefix(prefixText, snap.StableText) {
-		return contextasm.NewManifestMismatchError("snapshot prefix text does not contain stable text")
+		if len(stableMsgs) == 0 {
+			return contextasm.NewManifestMismatchError("snapshot prefix text does not contain stable text")
+		}
 	}
 	resident := append([]int(nil), snap.ResidentTokenIDs...)
 	if len(resident) == 0 && snap.ResidentTokens > 0 {
@@ -648,8 +856,15 @@ func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapsh
 	if len(resident) != snap.ResidentTokens {
 		return contextasm.NewManifestMismatchError("snapshot resident token ids do not match resident token count")
 	}
+	if len(resident) > 0 {
+		if err := s.backend.PrefillTokens(ctx, resident); err != nil {
+			return fmt.Errorf("%w: openvino restore prefill: %v", transport.ErrSessionFatal, err)
+		}
+	}
 	s.stable = snap.StableText
-	s.suffix = strings.TrimPrefix(prefixText, snap.StableText)
+	s.suffix = ""
+	s.prefixText = prefixText
+	s.stableMsgs = stableMsgs
 	s.prefixLen = snap.PrefixTokens
 	s.resident = resident
 	s.clearColdStoreLocked()
@@ -672,6 +887,12 @@ func (s *genaiSession) Close() error {
 	s.plannerCtx = 0
 	s.coldMaxTokens = 0
 	s.clearColdStoreLocked()
+	s.stable = ""
+	s.suffix = ""
+	s.prefixText = ""
+	s.stableMsgs = nil
+	s.resident = nil
+	s.prefixLen = 0
 	s.residencyPlan = residency.Plan{}
 	s.residencyErr = ""
 	if s.backend != nil {
@@ -680,24 +901,22 @@ func (s *genaiSession) Close() error {
 	return nil
 }
 
-// chatMessagesFromManifest reconstructs the role/content turns from the
-// assembled manifest's segments, so the adapter applies the model's own chat
-// template instead of a generic render. Each non-control segment's byte range
-// slices the full (stable+suffix) text; control segments (BOS, the assistant
-// generation cue) are skipped because apply_chat_template adds them.
-func chatMessagesFromManifest(fullText string, m transport.ContextManifest) []ovsession.ChatMessage {
+func stableMessagesFromManifest(text string, m transport.ContextManifest) []ovsession.ChatMessage {
 	var msgs []ovsession.ChatMessage
 	for _, seg := range m.Segments {
+		if !seg.Stable {
+			continue
+		}
 		role := sessionkit.ChatRole(seg.Kind)
 		if role == "" {
 			continue
 		}
-		if seg.ByteStart < 0 || seg.ByteEnd > len(fullText) || seg.ByteStart > seg.ByteEnd {
+		if seg.ByteStart < 0 || seg.ByteEnd > len(text) || seg.ByteStart > seg.ByteEnd {
 			continue
 		}
 		msgs = append(msgs, ovsession.ChatMessage{
 			Role:       role,
-			Content:    fullText[seg.ByteStart:seg.ByteEnd],
+			Content:    text[seg.ByteStart:seg.ByteEnd],
 			ToolCalls:  seg.ToolCallsJSON,
 			ToolCallID: seg.ToolCallID,
 		})
@@ -705,13 +924,83 @@ func chatMessagesFromManifest(fullText string, m transport.ContextManifest) []ov
 	return msgs
 }
 
+func volatileMessagesFromManifest(text string, m transport.ContextManifest) []ovsession.ChatMessage {
+	var msgs []ovsession.ChatMessage
+	base := m.StableBytes
+	for _, seg := range m.Segments {
+		if seg.Stable {
+			continue
+		}
+		role := sessionkit.ChatRole(seg.Kind)
+		if role == "" {
+			continue
+		}
+		lo, hi := seg.ByteStart-base, seg.ByteEnd-base
+		if lo < 0 || hi > len(text) || lo > hi {
+			continue
+		}
+		msgs = append(msgs, ovsession.ChatMessage{
+			Role:       role,
+			Content:    text[lo:hi],
+			ToolCalls:  seg.ToolCallsJSON,
+			ToolCallID: seg.ToolCallID,
+		})
+	}
+	return msgs
+}
+
+// chatMessagesFromManifest reconstructs all role/content turns from the
+// assembled manifest's segments. It remains as a no-resident fallback for
+// unusual callers that decode without prefilled tokens.
+func chatMessagesFromManifest(fullText string, m transport.ContextManifest) []ovsession.ChatMessage {
+	suffixText := ""
+	if m.StableBytes >= 0 && m.StableBytes <= len(fullText) {
+		suffixText = fullText[m.StableBytes:]
+	}
+	return append(stableMessagesFromManifest(fullText, m), volatileMessagesFromManifest(suffixText, m)...)
+}
+
+func mergeOpenVINOStableSegmentTokens(out *transport.ContextManifest, stable transport.ContextManifest) {
+	stableByIdentity := map[contextasm.ManifestSegment]contextasm.ManifestSegment{}
+	for _, seg := range stable.Segments {
+		if !seg.Stable {
+			continue
+		}
+		key := seg
+		key.TokenStart = 0
+		key.TokenEnd = 0
+		key.TokenHash = ""
+		stableByIdentity[key] = seg
+	}
+	for i := range out.Segments {
+		seg := &out.Segments[i]
+		if !seg.Stable {
+			continue
+		}
+		key := *seg
+		key.TokenStart = 0
+		key.TokenEnd = 0
+		key.TokenHash = ""
+		if filled, ok := stableByIdentity[key]; ok {
+			seg.TokenStart = filled.TokenStart
+			seg.TokenEnd = filled.TokenEnd
+			seg.TokenHash = filled.TokenHash
+		}
+	}
+}
+
 // decodeOptions maps the backend-neutral decode config onto OpenVINO GenAI's
-// generate options. TopK and Seed have no GenAI GenerateOptions equivalent and
-// are intentionally dropped here.
+// generate options.
 func decodeOptions(cfg transport.DecodeConfig) ovsession.GenerateOptions {
 	opts := ovsession.GenerateOptions{MaxNewTokens: cfg.MaxTokens, ParserProtocols: cfg.ParserProtocols}
 	if opts.MaxNewTokens <= 0 {
 		opts.MaxNewTokens = 256
+	}
+	if cfg.TopK > 0 {
+		opts.TopK = &cfg.TopK
+	}
+	if cfg.Seed != nil && *cfg.Seed >= 0 {
+		opts.Seed = cfg.Seed
 	}
 	if cfg.StructuredOutput.Protocol != "" {
 		opts.StructuredOutput = ovsession.StructuredOutput{

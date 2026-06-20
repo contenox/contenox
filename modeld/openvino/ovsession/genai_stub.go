@@ -33,6 +33,8 @@ type GenerateOptions struct {
 	MaxNewTokens     int
 	Temperature      *float64
 	TopP             *float64
+	TopK             *int
+	Seed             *int
 	StructuredOutput StructuredOutput
 	ParserProtocols  []string
 }
@@ -116,8 +118,23 @@ func (s *GenAISession) Generate(_ context.Context, _ string, _ GenerateOptions) 
 	return GenAIResult{}, errors.New("openvino GenAI backend is not compiled in")
 }
 
+// PrefillTokens reports that the native GenAI backend is not compiled in.
+func (s *GenAISession) PrefillTokens(_ context.Context, _ []int) error {
+	return errors.New("openvino GenAI backend is not compiled in")
+}
+
+// GenerateTokens reports that the native GenAI backend is not compiled in.
+func (s *GenAISession) GenerateTokens(_ context.Context, _ []int, _ GenerateOptions) (GenAIResult, error) {
+	return GenAIResult{}, errors.New("openvino GenAI backend is not compiled in")
+}
+
 // Stream reports that the native GenAI backend is not compiled in.
 func (s *GenAISession) Stream(_ context.Context, _ string, _ GenerateOptions) (<-chan StreamChunk, error) {
+	return nil, errors.New("openvino GenAI backend is not compiled in")
+}
+
+// StreamTokens reports that the native GenAI backend is not compiled in.
+func (s *GenAISession) StreamTokens(_ context.Context, _ []int, _ GenerateOptions) (<-chan StreamChunk, error) {
 	return nil, errors.New("openvino GenAI backend is not compiled in")
 }
 
@@ -136,6 +153,12 @@ type ChatMessage struct {
 
 // ApplyChatTemplate reports that the native GenAI backend is not compiled in.
 func (s *GenAISession) ApplyChatTemplate(_ []ChatMessage, _ string) (string, error) {
+	return "", errors.New("openvino GenAI backend is not compiled in")
+}
+
+// ApplyChatTemplateWithPrompt reports that the native GenAI backend is not
+// compiled in.
+func (s *GenAISession) ApplyChatTemplateWithPrompt(_ []ChatMessage, _ string, _ bool) (string, error) {
 	return "", errors.New("openvino GenAI backend is not compiled in")
 }
 

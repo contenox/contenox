@@ -49,12 +49,23 @@ func (s *genaiSession) EvictRange(ctx context.Context, r residency.Range) error 
 	if err != nil {
 		return err
 	}
-	s.resident = append(s.resident[:r.Start], s.resident[r.End:]...)
 	oldPrefix := s.prefixLen
-	s.prefixLen = min(r.Start, oldPrefix) + max(0, oldPrefix-r.End)
+	newResident := append(append([]int(nil), s.resident[:r.Start]...), s.resident[r.End:]...)
+	newPrefixLen := min(r.Start, oldPrefix) + max(0, oldPrefix-r.End)
+	if len(newResident) > 0 {
+		if err := s.backend.PrefillTokens(ctx, newResident); err != nil {
+			return fmt.Errorf("%w: openvino prefill after evict range [%d,%d): %v", transport.ErrSessionFatal, r.Start, r.End, err)
+		}
+	}
+	s.resident = newResident
+	s.prefixLen = newPrefixLen
+	if r.Start < oldPrefix {
+		s.prefixText = ""
+	}
 	if block != nil {
 		s.storeColdBlockLocked(block)
 	}
+	s.updateResidencyPlanLocked(true)
 	return nil
 }
 
@@ -203,18 +214,27 @@ func (s *genaiSession) admitRangeLocked(ctx context.Context, r residency.Range) 
 	}
 
 	destStart := len(s.resident)
-	if err := s.coldKVBackend().ImportColdKV(ctx, ovsession.ColdKVRange{
-		Start:        block.Range.Start,
-		End:          block.Range.End,
-		DestStart:    destStart,
-		Tokens:       append([]int(nil), block.Tokens...),
-		PrefixTokens: append([]int(nil), block.PrefixTokens...),
-		TokenHash:    block.TokenHash,
-	}, block.KV); err != nil {
-		return fmt.Errorf("%w: openvino import cold kv [%d,%d): %v", transport.ErrSessionFatal, r.Start, r.End, err)
+	if destStart == block.Range.Start {
+		if err := s.coldKVBackend().ImportColdKV(ctx, ovsession.ColdKVRange{
+			Start:        block.Range.Start,
+			End:          block.Range.End,
+			DestStart:    destStart,
+			Tokens:       append([]int(nil), block.Tokens...),
+			PrefixTokens: append([]int(nil), block.PrefixTokens...),
+			TokenHash:    block.TokenHash,
+		}, block.KV); err != nil {
+			return fmt.Errorf("%w: openvino import cold kv [%d,%d): %v", transport.ErrSessionFatal, r.Start, r.End, err)
+		}
 	}
-	s.resident = append(s.resident, block.Tokens...)
+	newResident := append(append([]int(nil), s.resident...), block.Tokens...)
+	if len(newResident) > 0 {
+		if err := s.backend.PrefillTokens(ctx, newResident); err != nil {
+			return fmt.Errorf("%w: openvino prefill after admit range [%d,%d): %v", transport.ErrSessionFatal, r.Start, r.End, err)
+		}
+	}
+	s.resident = newResident
 	s.deleteColdBlockLocked(key)
+	s.updateResidencyPlanLocked(true)
 	return nil
 }
 

@@ -54,6 +54,31 @@ func TestSystem_OpenVINOGenAI_ColdKVCapability(t *testing.T) {
 	require.True(t, s.SupportsColdKV(), "GenAI bridge should expose cold KV import/export hooks")
 }
 
+func TestSystem_OpenVINOGenAI_TokenPrefillAndGenerate(t *testing.T) {
+	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
+	if modelDir == "" {
+		t.Skip("set CONTENOX_OPENVINO_TEST_MODEL to an OpenVINO IR model directory")
+	}
+	device := os.Getenv("CONTENOX_OPENVINO_TEST_DEVICE")
+	if device == "" {
+		device = "CPU"
+	}
+
+	s, err := NewGenAI(modelDir, GenAIConfig{Device: device})
+	require.NoError(t, err)
+	defer s.Close()
+
+	ctx := context.Background()
+	tokens, err := s.Tokenize(ctx, "def add(a, b):", true)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokens)
+
+	require.NoError(t, s.PrefillTokens(ctx, tokens))
+	got, err := s.GenerateTokens(ctx, tokens, GenerateOptions{MaxNewTokens: 8})
+	require.NoError(t, err)
+	require.NotEmpty(t, got.Text)
+}
+
 func TestSystem_OpenVINOGenAI_ContextCanceledBeforeGenerate(t *testing.T) {
 	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
 	if modelDir == "" {

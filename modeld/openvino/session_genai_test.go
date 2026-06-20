@@ -16,21 +16,25 @@ import (
 // is asked to stream and tokenizes by rune count, so the adapter's text mapping
 // can be tested without the CGO OpenVINO backend.
 type fakeGenAIBackend struct {
-	streamPrompts   []string
-	streamOptions   []ovsession.GenerateOptions
-	generatePrompts []string
-	generateOptions []ovsession.GenerateOptions
-	templateCalls   [][]ovsession.ChatMessage
-	templateTools   []string
-	generateResult  ovsession.GenAIResult
-	generateErr     error
-	emit            []string
-	emitChunks      []ovsession.StreamChunk
-	closed          bool
-	supportsColdKV  bool
-	exportedColdKV  []ovsession.ColdKVRange
-	importedColdKV  []ovsession.ColdKVRange
-	importedKV      [][]byte
+	streamPrompts               []string
+	streamTokenPrompts          [][]int
+	streamOptions               []ovsession.GenerateOptions
+	generatePrompts             []string
+	generateTokenPrompts        [][]int
+	generateOptions             []ovsession.GenerateOptions
+	prefillTokenPrompts         [][]int
+	templateCalls               [][]ovsession.ChatMessage
+	templateTools               []string
+	templateAddGenerationPrompt []bool
+	generateResult              ovsession.GenAIResult
+	generateErr                 error
+	emit                        []string
+	emitChunks                  []ovsession.StreamChunk
+	closed                      bool
+	supportsColdKV              bool
+	exportedColdKV              []ovsession.ColdKVRange
+	importedColdKV              []ovsession.ColdKVRange
+	importedKV                  [][]byte
 }
 
 func (f *fakeGenAIBackend) Generate(_ context.Context, prompt string, opts ovsession.GenerateOptions) (ovsession.GenAIResult, error) {
@@ -39,10 +43,27 @@ func (f *fakeGenAIBackend) Generate(_ context.Context, prompt string, opts ovses
 	return f.generateResult, f.generateErr
 }
 
+func (f *fakeGenAIBackend) GenerateTokens(_ context.Context, tokens []int, opts ovsession.GenerateOptions) (ovsession.GenAIResult, error) {
+	f.generateTokenPrompts = append(f.generateTokenPrompts, append([]int(nil), tokens...))
+	f.generateOptions = append(f.generateOptions, opts)
+	return f.generateResult, f.generateErr
+}
+
 func (f *fakeGenAIBackend) Stream(_ context.Context, prompt string, opts ovsession.GenerateOptions) (<-chan ovsession.StreamChunk, error) {
 	f.streamPrompts = append(f.streamPrompts, prompt)
 	f.streamOptions = append(f.streamOptions, opts)
 	return f.streamChunks(opts)
+}
+
+func (f *fakeGenAIBackend) StreamTokens(_ context.Context, tokens []int, opts ovsession.GenerateOptions) (<-chan ovsession.StreamChunk, error) {
+	f.streamTokenPrompts = append(f.streamTokenPrompts, append([]int(nil), tokens...))
+	f.streamOptions = append(f.streamOptions, opts)
+	return f.streamChunks(opts)
+}
+
+func (f *fakeGenAIBackend) PrefillTokens(_ context.Context, tokens []int) error {
+	f.prefillTokenPrompts = append(f.prefillTokenPrompts, append([]int(nil), tokens...))
+	return nil
 }
 
 func (f *fakeGenAIBackend) streamChunks(_ ovsession.GenerateOptions) (<-chan ovsession.StreamChunk, error) {
@@ -73,14 +94,21 @@ func (f *fakeGenAIBackend) Tokenize(_ context.Context, prompt string, _ bool) ([
 }
 
 func (f *fakeGenAIBackend) ApplyChatTemplate(messages []ovsession.ChatMessage, tools string) (string, error) {
+	return f.ApplyChatTemplateWithPrompt(messages, tools, true)
+}
+
+func (f *fakeGenAIBackend) ApplyChatTemplateWithPrompt(messages []ovsession.ChatMessage, tools string, addGenerationPrompt bool) (string, error) {
 	cp := append([]ovsession.ChatMessage(nil), messages...)
 	f.templateCalls = append(f.templateCalls, cp)
 	f.templateTools = append(f.templateTools, tools)
+	f.templateAddGenerationPrompt = append(f.templateAddGenerationPrompt, addGenerationPrompt)
 	out := ""
 	for _, m := range messages {
 		out += "<|" + m.Role + "|>" + m.Content
 	}
-	out += "<|assistant|>"
+	if addGenerationPrompt {
+		out += "<|assistant|>"
+	}
 	return out, nil
 }
 
@@ -151,10 +179,17 @@ func TestGenaiSessionDecodePreservesToolHistoryForChatTemplate(t *testing.T) {
 	for range ch {
 	}
 
-	if len(fake.templateCalls) != 2 {
-		t.Fatalf("template calls = %d, want suffix prefill and decode calls", len(fake.templateCalls))
+	fullCall := -1
+	for i, add := range fake.templateAddGenerationPrompt {
+		if add && len(fake.templateCalls[i]) == 4 {
+			fullCall = i
+			break
+		}
 	}
-	msgs := fake.templateCalls[len(fake.templateCalls)-1]
+	if fullCall < 0 {
+		t.Fatalf("template calls = %+v add_generation_prompt=%+v, want full decode prompt render", fake.templateCalls, fake.templateAddGenerationPrompt)
+	}
+	msgs := fake.templateCalls[fullCall]
 	if len(msgs) != 4 {
 		t.Fatalf("template messages = %+v, want 4", msgs)
 	}
@@ -164,12 +199,12 @@ func TestGenaiSessionDecodePreservesToolHistoryForChatTemplate(t *testing.T) {
 	if msgs[3].Role != "tool" || msgs[3].ToolCallID != "call_123" || msgs[3].Content != "result" {
 		t.Fatalf("tool result metadata not preserved: %+v", msgs[3])
 	}
-	if got := fake.templateTools[len(fake.templateTools)-1]; got != `[{"type":"function"}]` {
+	if got := fake.templateTools[fullCall]; got != `[{"type":"function"}]` {
 		t.Fatalf("template tools = %+v", fake.templateTools)
 	}
 	wantPrompt := "<|system|>rules<|user|>ask<|assistant|>calling<|tool|>result<|assistant|>"
-	if len(fake.streamPrompts) != 1 || fake.streamPrompts[0] != wantPrompt {
-		t.Fatalf("decode prompt = %+v, want %q", fake.streamPrompts, wantPrompt)
+	if len(fake.streamTokenPrompts) != 1 || string(runesFromInts(fake.streamTokenPrompts[0])) != wantPrompt {
+		t.Fatalf("decode token prompt = %+v, want %q", fake.streamTokenPrompts, wantPrompt)
 	}
 }
 
@@ -199,8 +234,8 @@ func TestGenaiSessionDecodeConcatenatesStableAndSuffix(t *testing.T) {
 	if out != "hello" {
 		t.Errorf("decoded text = %q, want %q", out, "hello")
 	}
-	if len(fake.streamPrompts) != 1 || fake.streamPrompts[0] != "SYSTEMUSER" {
-		t.Errorf("streamed prompt = %v, want one prompt %q", fake.streamPrompts, "SYSTEMUSER")
+	if len(fake.streamTokenPrompts) != 1 || string(runesFromInts(fake.streamTokenPrompts[0])) != "SYSTEMUSER" {
+		t.Errorf("streamed token prompt = %v, want one prompt %q", fake.streamTokenPrompts, "SYSTEMUSER")
 	}
 }
 
@@ -282,17 +317,59 @@ func TestGenaiSessionColdStoreEvictAdmitUsesBackendKVHooks(t *testing.T) {
 	if err := exec.AdmitRange(ctx, r); err != nil {
 		t.Fatalf("AdmitRange: %v", err)
 	}
+	if len(fake.importedColdKV) != 0 {
+		t.Fatalf("shifted admit should not import RoPE-positioned KV, got %+v", fake.importedColdKV)
+	}
+	if got := s.ExplainContext(); got.ResidentTokens != 6 {
+		t.Fatalf("after admit context = %+v, want resident=6", got)
+	}
+	if len(fake.prefillTokenPrompts) < 3 {
+		t.Fatalf("prefill calls = %+v, want ensure/evict/admit", fake.prefillTokenPrompts)
+	}
+	if got := string(runesFromInts(fake.prefillTokenPrompts[len(fake.prefillTokenPrompts)-1])); got != "abefcd" {
+		t.Fatalf("admit prefill prompt = %q, want abefcd", got)
+	}
+	ch, err := s.Decode(ctx, transport.DecodeConfig{MaxTokens: 1})
+	if err != nil {
+		t.Fatalf("Decode after admit: %v", err)
+	}
+	for chunk := range ch {
+		if chunk.Error != nil {
+			t.Fatalf("decode after admit error: %v", chunk.Error)
+		}
+	}
+	if len(fake.streamTokenPrompts) != 1 || string(runesFromInts(fake.streamTokenPrompts[0])) != "abefcd" {
+		t.Fatalf("decode token prompt after shifted admit = %+v, want abefcd", fake.streamTokenPrompts)
+	}
+}
+
+func TestGenaiSessionColdStoreTailAdmitUsesNativeImport(t *testing.T) {
+	fake := &fakeGenAIBackend{supportsColdKV: true}
+	s := newGenaiSessionWithPlanner(fake, 6, 10, true)
+	ctx := context.Background()
+	m := ovManifest(contextasm.HashString("abcdef"), "r1")
+
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "abcdef", Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	r := residency.Range{Start: 4, End: 6}
+	if err := s.EvictRange(ctx, r); err != nil {
+		t.Fatalf("EvictRange: %v", err)
+	}
+	if err := s.AdmitRange(ctx, r); err != nil {
+		t.Fatalf("AdmitRange: %v", err)
+	}
 	if len(fake.importedColdKV) != 1 {
 		t.Fatalf("import calls = %d, want 1", len(fake.importedColdKV))
 	}
-	if got := fake.importedColdKV[0]; got.Start != 2 || got.End != 4 || got.DestStart != 4 || string([]rune{rune(got.Tokens[0]), rune(got.Tokens[1])}) != "cd" || string(runesFromInts(got.PrefixTokens)) != "abcdef" || got.TokenHash == "" {
-		t.Fatalf("import range = %+v, want cd [2,4) -> 4 with abcdef prefix and hash", got)
+	if got := fake.importedColdKV[0]; got.Start != 4 || got.End != 6 || got.DestStart != 4 || string(runesFromInts(got.Tokens)) != "ef" || got.TokenHash == "" {
+		t.Fatalf("import range = %+v, want ef [4,6) -> 4 with hash", got)
 	}
 	if len(fake.importedKV) != 1 || len(fake.importedKV[0]) == 0 {
 		t.Fatalf("imported kv payload = %+v, want bytes", fake.importedKV)
 	}
-	if got := s.ExplainContext(); got.ResidentTokens != 6 {
-		t.Fatalf("after admit context = %+v, want resident=6", got)
+	if got := string(runesFromInts(fake.prefillTokenPrompts[len(fake.prefillTokenPrompts)-1])); got != "abcdef" {
+		t.Fatalf("tail admit prefill prompt = %q, want abcdef", got)
 	}
 }
 
@@ -398,13 +475,21 @@ func TestGenaiSessionPrefillSuffixAppliesModelChatTemplate(t *testing.T) {
 		t.Fatalf("PrefillSuffix: %v", err)
 	}
 
-	if st.SuffixTokens != len([]rune("ask")) {
-		t.Fatalf("SuffixTokens = %d, want raw suffix token count %d", st.SuffixTokens, len([]rune("ask")))
+	wantSuffix := "<|user|>ask<|assistant|>"
+	if st.SuffixTokens != len([]rune(wantSuffix)) {
+		t.Fatalf("SuffixTokens = %d, want templated suffix token count %d", st.SuffixTokens, len([]rune(wantSuffix)))
 	}
-	if len(fake.templateCalls) != 1 {
-		t.Fatalf("template calls = %d, want full prompt template call", len(fake.templateCalls))
+	fullCall := -1
+	for i, add := range fake.templateAddGenerationPrompt {
+		if add && len(fake.templateCalls[i]) == 2 {
+			fullCall = i
+			break
+		}
 	}
-	msgs := fake.templateCalls[0]
+	if fullCall < 0 {
+		t.Fatalf("template calls = %+v add_generation_prompt=%+v, want full prompt template call", fake.templateCalls, fake.templateAddGenerationPrompt)
+	}
+	msgs := fake.templateCalls[fullCall]
 	if len(msgs) != 2 || msgs[0].Role != "system" || msgs[1].Role != "user" {
 		t.Fatalf("template messages = %+v, want system and user", msgs)
 	}
@@ -437,16 +522,18 @@ func TestGenaiSessionPopulatesManifestTokenRangesAndResidencyPlan(t *testing.T) 
 	if len(report.Manifest.Segments) != 2 {
 		t.Fatalf("segments = %d, want 2", len(report.Manifest.Segments))
 	}
-	if got := report.Manifest.Segments[0]; got.TokenStart != 0 || got.TokenEnd != len(stable) || got.TokenHash == "" {
-		t.Fatalf("stable token range = %+v, want [0,%d)", got, len(stable))
+	stablePrompt := "<|system|>rules"
+	fullPrompt := stablePrompt + "<|user|>ask<|assistant|>"
+	if got := report.Manifest.Segments[0]; got.TokenStart != 0 || got.TokenEnd != len(stablePrompt) || got.TokenHash == "" {
+		t.Fatalf("stable token range = %+v, want [0,%d)", got, len(stablePrompt))
 	}
-	if got := report.Manifest.Segments[1]; got.TokenStart != len(stable) || got.TokenEnd != len(fullText) || got.TokenHash == "" {
-		t.Fatalf("volatile token range = %+v, want [%d,%d)", got, len(stable), len(fullText))
+	if got := report.Manifest.Segments[1]; got.TokenStart != len(stablePrompt) || got.TokenEnd != len(fullPrompt) || got.TokenHash == "" {
+		t.Fatalf("volatile token range = %+v, want [%d,%d)", got, len(stablePrompt), len(fullPrompt))
 	}
 	if s.residencyErr != "" {
 		t.Fatalf("residency error = %q", s.residencyErr)
 	}
-	if s.residencyPlan.TotalTokens != len(fullText) || len(s.residencyPlan.KeepHot) != 2 || len(s.residencyPlan.EvictCold) != 0 {
+	if s.residencyPlan.TotalTokens != len(fullPrompt) || len(s.residencyPlan.KeepHot) != 2 || len(s.residencyPlan.EvictCold) != 0 {
 		t.Fatalf("residency plan = %+v, want both blocks hot", s.residencyPlan)
 	}
 }
@@ -463,8 +550,11 @@ func TestGenaiSessionDecodePassesParserProtocolsAndThinking(t *testing.T) {
 	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "USER", Manifest: m}); err != nil {
 		t.Fatalf("EnsurePrefix: %v", err)
 	}
+	seed := 7
 	ch, err := s.Decode(ctx, transport.DecodeConfig{
 		MaxTokens:       8,
+		TopK:            11,
+		Seed:            &seed,
 		ParserProtocols: []string{"openvino:deepseek_r1_reasoning_incremental_parser"},
 	})
 	if err != nil {
@@ -486,6 +576,9 @@ func TestGenaiSessionDecodePassesParserProtocolsAndThinking(t *testing.T) {
 	}
 	if got := fake.streamOptions[0].ParserProtocols; len(got) != 1 || got[0] != "openvino:deepseek_r1_reasoning_incremental_parser" {
 		t.Fatalf("parser protocols = %+v", got)
+	}
+	if fake.streamOptions[0].TopK == nil || *fake.streamOptions[0].TopK != 11 || fake.streamOptions[0].Seed == nil || *fake.streamOptions[0].Seed != 7 {
+		t.Fatalf("stream options = %+v, want TopK=11 Seed=7", fake.streamOptions[0])
 	}
 }
 
@@ -534,11 +627,11 @@ func TestGenaiSessionDecodeCompleteParserEmitsParsedToolCalls(t *testing.T) {
 	if len(lastGenerate.ParserProtocols) != 1 || lastGenerate.ParserProtocols[0] != "openvino:llama3_json_tool_parser" {
 		t.Fatalf("generate options = %+v", fake.generateOptions)
 	}
-	if len(fake.generatePrompts) != 1 || fake.generatePrompts[0] != "USER" {
-		t.Fatalf("complete parser should use Generate with prompt USER, got %+v", fake.generatePrompts)
+	if len(fake.generateTokenPrompts) != 1 || string(runesFromInts(fake.generateTokenPrompts[0])) != "USER" {
+		t.Fatalf("complete parser should use GenerateTokens with prompt USER, got %+v", fake.generateTokenPrompts)
 	}
-	if len(fake.streamPrompts) != 0 {
-		t.Fatalf("complete parser should not use Stream, got stream prompts %+v", fake.streamPrompts)
+	if len(fake.streamTokenPrompts) != 0 {
+		t.Fatalf("complete parser should not use StreamTokens, got stream prompts %+v", fake.streamTokenPrompts)
 	}
 }
 
@@ -586,11 +679,11 @@ func TestGenaiSessionDecodeStructuredJSONSchemaToolCalls(t *testing.T) {
 	if got := lastGenerate.StructuredOutput; got.Protocol != "openvino:json_schema" || got.Payload != `{"type":"object"}` {
 		t.Fatalf("structured output = %+v", got)
 	}
-	if len(fake.generatePrompts) != 1 || fake.generatePrompts[0] != "USER" {
-		t.Fatalf("structured output should use Generate with prompt USER, got %+v", fake.generatePrompts)
+	if len(fake.generateTokenPrompts) != 1 || string(runesFromInts(fake.generateTokenPrompts[0])) != "USER" {
+		t.Fatalf("structured output should use GenerateTokens with prompt USER, got %+v", fake.generateTokenPrompts)
 	}
-	if len(fake.streamPrompts) != 0 {
-		t.Fatalf("structured output should not use Stream, got stream prompts %+v", fake.streamPrompts)
+	if len(fake.streamTokenPrompts) != 0 {
+		t.Fatalf("structured output should not use StreamTokens, got stream prompts %+v", fake.streamTokenPrompts)
 	}
 }
 
@@ -714,7 +807,7 @@ func TestGenaiSessionSnapshotRestoreLogicalState(t *testing.T) {
 	if len(snap.State) != 0 {
 		t.Fatalf("OpenVINO logical snapshot should not claim opaque KV bytes, got %d", len(snap.State))
 	}
-	if snap.ResidentTokens != len("STABLEUSER") || snap.PrefixTokens != len("STABLE") || snap.StableText != "STABLE" || snap.PrefixText != "STABLEUSER" {
+	if snap.ResidentTokens != len("STABLEUSER") || snap.PrefixTokens != len("STABLE") || snap.StableText != "STABLE" || snap.PrefixText != "STABLE" {
 		t.Fatalf("snapshot did not capture logical state: %+v", snap)
 	}
 
@@ -735,8 +828,8 @@ func TestGenaiSessionSnapshotRestoreLogicalState(t *testing.T) {
 			t.Fatalf("decode chunk error: %v", chunk.Error)
 		}
 	}
-	if len(fake.streamPrompts) != 1 || fake.streamPrompts[0] != "STABLEUSER" {
-		t.Fatalf("restored prompt = %v, want STABLEUSER", fake.streamPrompts)
+	if len(fake.streamTokenPrompts) != 1 || string(runesFromInts(fake.streamTokenPrompts[0])) != "STABLEUSER" {
+		t.Fatalf("restored token prompt = %v, want STABLEUSER", fake.streamTokenPrompts)
 	}
 }
 

@@ -55,6 +55,8 @@ type GenerateOptions struct {
 	MaxNewTokens     int
 	Temperature      *float64
 	TopP             *float64
+	TopK             *int
+	Seed             *int
 	StructuredOutput StructuredOutput
 	ParserProtocols  []string
 }
@@ -291,6 +293,18 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 		topP = C.float(*opts.TopP)
 		useTopP = 1
 	}
+	var topK C.size_t
+	var useTopK C.int
+	if opts.TopK != nil && *opts.TopK > 0 {
+		topK = C.size_t(*opts.TopK)
+		useTopK = 1
+	}
+	var seed C.size_t
+	var useSeed C.int
+	if opts.Seed != nil && *opts.Seed >= 0 {
+		seed = C.size_t(*opts.Seed)
+		useSeed = 1
+	}
 
 	done := make(chan struct{})
 	if ctx.Done() != nil {
@@ -311,6 +325,10 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 		useTemp,
 		topP,
 		useTopP,
+		topK,
+		useTopK,
+		seed,
+		useSeed,
 		cStructuredProtocol,
 		cStructuredPayload,
 		cParserProtocols,
@@ -331,6 +349,187 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 			return GenAIResult{}, errors.New("openvino GenAI generation canceled")
 		}
 		return GenAIResult{}, fmt.Errorf("openvino GenAI generate: %s", C.GoString((*C.char)(errbuf)))
+	}
+	if err := ctx.Err(); err != nil {
+		return GenAIResult{}, err
+	}
+
+	return GenAIResult{
+		Text:       C.GoString((*C.char)(out)),
+		ParsedJSON: C.GoString((*C.char)(parsed)),
+		Metrics:    pipelineMetricsFromC(cmetrics),
+	}, nil
+}
+
+// PrefillTokens submits an already-tokenized prompt with zero generation so
+// OpenVINO GenAI materializes prefix-cache KV for subsequent export/reuse.
+func (s *GenAISession) PrefillTokens(ctx context.Context, tokens []int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(tokens) == 0 {
+		return errors.New("openvino GenAI token prompt is empty")
+	}
+	cTokens := make([]C.int64_t, len(tokens))
+	for i, tok := range tokens {
+		cTokens[i] = C.int64_t(tok)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ptr == nil {
+		return errors.New("openvino GenAI session is closed")
+	}
+
+	errbuf := C.calloc(1, C.size_t(genAIErrLen))
+	if errbuf == nil {
+		return errors.New("allocate OpenVINO GenAI token prefill error buffer")
+	}
+	defer C.free(errbuf)
+
+	var cmetrics C.cx_genai_metrics
+	done := make(chan struct{})
+	if ctx.Done() != nil {
+		ptr := s.ptr
+		go func() {
+			select {
+			case <-ctx.Done():
+				C.cx_genai_session_cancel(ptr)
+			case <-done:
+			}
+		}()
+	}
+	rc := C.cx_genai_prefill_tokens(
+		s.ptr,
+		(*C.int64_t)(unsafe.Pointer(&cTokens[0])),
+		C.size_t(len(cTokens)),
+		&cmetrics,
+		(*C.char)(errbuf),
+		C.size_t(genAIErrLen),
+	)
+	close(done)
+	if rc != 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return fmt.Errorf("openvino GenAI token prefill: %s", C.GoString((*C.char)(errbuf)))
+	}
+	return ctx.Err()
+}
+
+// GenerateTokens runs one already-tokenized prompt through the GenAI session.
+func (s *GenAISession) GenerateTokens(ctx context.Context, tokens []int, opts GenerateOptions) (GenAIResult, error) {
+	if err := ctx.Err(); err != nil {
+		return GenAIResult{}, err
+	}
+	if len(tokens) == 0 {
+		return GenAIResult{}, errors.New("openvino GenAI token prompt is empty")
+	}
+	cTokens := make([]C.int64_t, len(tokens))
+	for i, tok := range tokens {
+		cTokens[i] = C.int64_t(tok)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ptr == nil {
+		return GenAIResult{}, errors.New("openvino GenAI session is closed")
+	}
+
+	cStructuredProtocol := C.CString(opts.StructuredOutput.Protocol)
+	cStructuredPayload := C.CString(opts.StructuredOutput.Payload)
+	cParserProtocols := C.CString(strings.Join(opts.ParserProtocols, "\n"))
+	defer C.free(unsafe.Pointer(cStructuredProtocol))
+	defer C.free(unsafe.Pointer(cStructuredPayload))
+	defer C.free(unsafe.Pointer(cParserProtocols))
+
+	out := C.calloc(1, C.size_t(genAIOutLen))
+	if out == nil {
+		return GenAIResult{}, errors.New("allocate OpenVINO GenAI output buffer")
+	}
+	defer C.free(out)
+	parsed := C.calloc(1, C.size_t(genAIOutLen))
+	if parsed == nil {
+		return GenAIResult{}, errors.New("allocate OpenVINO GenAI parsed output buffer")
+	}
+	defer C.free(parsed)
+
+	errbuf := C.calloc(1, C.size_t(genAIErrLen))
+	if errbuf == nil {
+		return GenAIResult{}, errors.New("allocate OpenVINO GenAI error buffer")
+	}
+	defer C.free(errbuf)
+
+	var cmetrics C.cx_genai_metrics
+	var temp C.float
+	var useTemp C.int
+	if opts.Temperature != nil {
+		temp = C.float(*opts.Temperature)
+		useTemp = 1
+	}
+	var topP C.float
+	var useTopP C.int
+	if opts.TopP != nil {
+		topP = C.float(*opts.TopP)
+		useTopP = 1
+	}
+	var topK C.size_t
+	var useTopK C.int
+	if opts.TopK != nil && *opts.TopK > 0 {
+		topK = C.size_t(*opts.TopK)
+		useTopK = 1
+	}
+	var seed C.size_t
+	var useSeed C.int
+	if opts.Seed != nil && *opts.Seed >= 0 {
+		seed = C.size_t(*opts.Seed)
+		useSeed = 1
+	}
+
+	done := make(chan struct{})
+	if ctx.Done() != nil {
+		ptr := s.ptr
+		go func() {
+			select {
+			case <-ctx.Done():
+				C.cx_genai_session_cancel(ptr)
+			case <-done:
+			}
+		}()
+	}
+	rc := C.cx_genai_generate_tokens(
+		s.ptr,
+		(*C.int64_t)(unsafe.Pointer(&cTokens[0])),
+		C.size_t(len(cTokens)),
+		C.size_t(max(opts.MaxNewTokens, 0)),
+		temp,
+		useTemp,
+		topP,
+		useTopP,
+		topK,
+		useTopK,
+		seed,
+		useSeed,
+		cStructuredProtocol,
+		cStructuredPayload,
+		cParserProtocols,
+		(*C.char)(out),
+		C.size_t(genAIOutLen),
+		(*C.char)(parsed),
+		C.size_t(genAIOutLen),
+		&cmetrics,
+		(*C.char)(errbuf),
+		C.size_t(genAIErrLen),
+	)
+	close(done)
+	if rc != 0 {
+		if rc == 3 {
+			if err := ctx.Err(); err != nil {
+				return GenAIResult{}, err
+			}
+			return GenAIResult{}, errors.New("openvino GenAI generation canceled")
+		}
+		return GenAIResult{}, fmt.Errorf("openvino GenAI generate tokens: %s", C.GoString((*C.char)(errbuf)))
 	}
 	if err := ctx.Err(); err != nil {
 		return GenAIResult{}, err
@@ -413,6 +612,18 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 			topP = C.float(*opts.TopP)
 			useTopP = 1
 		}
+		var topK C.size_t
+		var useTopK C.int
+		if opts.TopK != nil && *opts.TopK > 0 {
+			topK = C.size_t(*opts.TopK)
+			useTopK = 1
+		}
+		var seed C.size_t
+		var useSeed C.int
+		if opts.Seed != nil && *opts.Seed >= 0 {
+			seed = C.size_t(*opts.Seed)
+			useSeed = 1
+		}
 
 		done := make(chan struct{})
 		if ctx.Done() != nil {
@@ -432,6 +643,10 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 			useTemp,
 			topP,
 			useTopP,
+			topK,
+			useTopK,
+			seed,
+			useSeed,
 			cParserProtocols,
 			stream,
 			&cmetrics,
@@ -515,6 +730,185 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 	return ch, nil
 }
 
+// StreamTokens runs an already-tokenized prompt and returns decoded text deltas
+// as GenAI produces them.
+func (s *GenAISession) StreamTokens(ctx context.Context, tokens []int, opts GenerateOptions) (<-chan StreamChunk, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(tokens) == 0 {
+		return nil, errors.New("openvino GenAI token prompt is empty")
+	}
+	cTokens := make([]C.int64_t, len(tokens))
+	for i, tok := range tokens {
+		cTokens[i] = C.int64_t(tok)
+	}
+
+	s.mu.Lock()
+	if s.ptr == nil {
+		s.mu.Unlock()
+		return nil, errors.New("openvino GenAI session is closed")
+	}
+	ptr := s.ptr
+
+	stream := C.cx_genai_stream_new()
+	if stream == nil {
+		s.mu.Unlock()
+		return nil, errors.New("allocate OpenVINO GenAI stream")
+	}
+
+	ch := make(chan StreamChunk, 16)
+	generatorDone := make(chan struct{})
+
+	go func() {
+		defer close(generatorDone)
+		defer s.mu.Unlock()
+
+		errbuf := C.calloc(1, C.size_t(genAIErrLen))
+		if errbuf == nil {
+			msg := C.CString("allocate OpenVINO GenAI stream generator error buffer")
+			C.cx_genai_stream_abort(stream, msg)
+			C.free(unsafe.Pointer(msg))
+			C.cx_genai_session_cancel(ptr)
+			return
+		}
+		defer C.free(errbuf)
+
+		cParserProtocols := C.CString(strings.Join(opts.ParserProtocols, "\n"))
+		defer C.free(unsafe.Pointer(cParserProtocols))
+
+		var cmetrics C.cx_genai_metrics
+		var temp C.float
+		var useTemp C.int
+		if opts.Temperature != nil {
+			temp = C.float(*opts.Temperature)
+			useTemp = 1
+		}
+		var topP C.float
+		var useTopP C.int
+		if opts.TopP != nil {
+			topP = C.float(*opts.TopP)
+			useTopP = 1
+		}
+		var topK C.size_t
+		var useTopK C.int
+		if opts.TopK != nil && *opts.TopK > 0 {
+			topK = C.size_t(*opts.TopK)
+			useTopK = 1
+		}
+		var seed C.size_t
+		var useSeed C.int
+		if opts.Seed != nil && *opts.Seed >= 0 {
+			seed = C.size_t(*opts.Seed)
+			useSeed = 1
+		}
+
+		done := make(chan struct{})
+		if ctx.Done() != nil {
+			go func() {
+				select {
+				case <-ctx.Done():
+					C.cx_genai_session_cancel(ptr)
+				case <-done:
+				}
+			}()
+		}
+		C.cx_genai_generate_tokens_stream(
+			ptr,
+			(*C.int64_t)(unsafe.Pointer(&cTokens[0])),
+			C.size_t(len(cTokens)),
+			C.size_t(max(opts.MaxNewTokens, 0)),
+			temp,
+			useTemp,
+			topP,
+			useTopP,
+			topK,
+			useTopK,
+			seed,
+			useSeed,
+			cParserProtocols,
+			stream,
+			&cmetrics,
+			(*C.char)(errbuf),
+			C.size_t(genAIErrLen),
+		)
+		close(done)
+	}()
+
+	go func() {
+		defer close(ch)
+		defer func() {
+			<-generatorDone
+			C.cx_genai_stream_free(stream)
+		}()
+
+		out := C.calloc(1, C.size_t(genAIOutLen))
+		if out == nil {
+			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream output buffer")})
+			C.cx_genai_session_cancel(ptr)
+			return
+		}
+		defer C.free(out)
+
+		thinking := C.calloc(1, C.size_t(genAIOutLen))
+		if thinking == nil {
+			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream thinking buffer")})
+			C.cx_genai_session_cancel(ptr)
+			return
+		}
+		defer C.free(thinking)
+
+		errbuf := C.calloc(1, C.size_t(genAIErrLen))
+		if errbuf == nil {
+			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream error buffer")})
+			C.cx_genai_session_cancel(ptr)
+			return
+		}
+		defer C.free(errbuf)
+
+		for {
+			rc := C.cx_genai_stream_next(
+				stream,
+				(*C.char)(out),
+				C.size_t(genAIOutLen),
+				(*C.char)(thinking),
+				C.size_t(genAIOutLen),
+				(*C.char)(errbuf),
+				C.size_t(genAIErrLen),
+			)
+			switch rc {
+			case 0:
+				text := C.GoString((*C.char)(out))
+				thinkingText := C.GoString((*C.char)(thinking))
+				if text == "" && thinkingText == "" {
+					continue
+				}
+				select {
+				case ch <- StreamChunk{Text: text, Thinking: thinkingText}:
+				case <-ctx.Done():
+					C.cx_genai_session_cancel(ptr)
+					sessionkit.TrySend(ch, StreamChunk{Error: ctx.Err()})
+					return
+				}
+			case 1:
+				return
+			case 3:
+				if err := ctx.Err(); err != nil {
+					_ = sessionkit.Send(ctx, ch, StreamChunk{Error: err})
+				} else {
+					_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("openvino GenAI generation canceled")})
+				}
+				return
+			default:
+				_ = sessionkit.Send(ctx, ch, StreamChunk{Error: fmt.Errorf("openvino GenAI stream tokens: %s", C.GoString((*C.char)(errbuf)))})
+				return
+			}
+		}
+	}()
+
+	return ch, nil
+}
+
 // Close releases the native GenAI session.
 func (s *GenAISession) Close() error {
 	if s == nil {
@@ -548,6 +942,12 @@ type ChatMessage struct {
 // to Generate/Stream. This replaces hand-rolled prompt formatting so the model
 // sees the format it was trained on.
 func (s *GenAISession) ApplyChatTemplate(messages []ChatMessage, toolsJSON string) (string, error) {
+	return s.ApplyChatTemplateWithPrompt(messages, toolsJSON, true)
+}
+
+// ApplyChatTemplateWithPrompt renders messages with explicit control over
+// whether the model's assistant generation cue should be appended.
+func (s *GenAISession) ApplyChatTemplateWithPrompt(messages []ChatMessage, toolsJSON string, addGenerationPrompt bool) (string, error) {
 	if len(messages) == 0 {
 		return "", errors.New("openvino GenAI chat template requires at least one message")
 	}
@@ -611,6 +1011,7 @@ func (s *GenAISession) ApplyChatTemplate(messages []ChatMessage, toolsJSON strin
 		(**C.char)(unsafe.Pointer(&toolCallIDs[0])),
 		C.size_t(len(messages)),
 		cTools,
+		cbool(addGenerationPrompt),
 		(*C.char)(out),
 		C.size_t(genAIOutLen),
 		(*C.char)(errbuf),
