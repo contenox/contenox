@@ -43,13 +43,12 @@ var _ EmbedSessionBackend = (*ovsession.EmbedSession)(nil)
 //
 // OpenVINO GenAI is string-prompt based: its ContinuousBatchingPipeline holds
 // the tokenizer and applies prefix caching INTERNALLY, keyed on the prompt
-// string (the proven S2 reuse). So this adapter does not manipulate KV the way
-// the llama backend does. EnsurePrefix and PrefillSuffix record the stable
-// prefix and volatile suffix text and gate reuse on the manifest; Decode
-// concatenates them into one prompt and streams — the pipeline reuses the stable
-// prefix's KV on its own. The manifest is the correctness key: an incompatible
-// profile/template/runtime drops the recorded prefix so a stale warm string is
-// never reused across a runtime change.
+// string. This adapter does not manipulate KV the way the llama backend does.
+// EnsurePrefix and PrefillSuffix record the stable prefix and volatile suffix
+// text and gate reuse on the manifest; Decode concatenates them into one prompt
+// and streams. The manifest is the correctness key: an incompatible
+// profile/template/runtime drops the recorded prefix so stale warm state is not
+// reused across a runtime change.
 type genaiSession struct {
 	backend genaiBackend
 	numCtx  int

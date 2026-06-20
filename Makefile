@@ -1,37 +1,27 @@
-# Contenox — namespaces: build-*  test-*  dev-*  deps-*
-# Default: make help
-
 PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 .DEFAULT_GOAL := help
 
-# modeld links two native backends. The OpenVINO CGO flags are shared with the
-# OpenVINO test targets via this fragment (single source of truth); the llama
-# backend reads minja + llama.cpp single-header deps from the vendored tree.
-# All deps are reproducible from a clean checkout via `make deps-modeld`.
+# Shared native build flags for modeld and native backend tests.
 include $(PROJECT_ROOT)mk/openvino-flags.mk
 include $(PROJECT_ROOT)mk/llama-flags.mk
-# Cap concurrent compiles for the modeld build: the llama.cpp and OpenVINO C++
-# translation units are memory-heavy, so the default all-cores fan-out can
-# exhaust RAM and lock the machine. Raise on a box with more headroom.
+
+# Limit native C++ compile parallelism. Increase on hosts with enough RAM.
 MODELD_BUILD_JOBS ?= 4
 MODELD_SERVE_ARGS ?=
-# Direct llama.cpp runtime library directory used by package targets.
-# LLAMA_RUNTIME_SRC remains accepted as a local override, but the bundle code
-# consumes the more precise lib-dir name.
+
+# llama.cpp runtime library source used by package targets.
+# LLAMA_RUNTIME_SRC overrides the autodetected runtime directory.
 LLAMA_RUNTIME_LIB_SRC ?= $(if $(strip $(LLAMA_RUNTIME_SRC)),$(LLAMA_RUNTIME_SRC),$(LLAMA_RUNTIME_LIB_DIR))
 LLAMA_LIBS_DIR ?= $(PROJECT_ROOT)lib/llamacpp
 LLAMA_LIBS_COPY ?=
 MODELD_DIST_DIR ?= $(PROJECT_ROOT)bin/dist
 
 MODELD_LLAMA_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/llama.llamaCPPCommit=$(LLAMA_CPP_COMMIT)'
-MODELD_OPENVINO_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/openvino.bakedTokenizersPath=$(OPENVINO_TOKENIZERS_SO)'
+MODELD_OPENVINO_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/openvino.buildTokenizersPath=$(OPENVINO_TOKENIZERS_SO)'
 
-# One modeld, assembled from what the build host has. llama.cpp is always
-# included; the OpenVINO backend is added when its SDK is installed; the CUDA
-# llama plugin is baked when nvcc is present (autodetected in
-# Makefile.llamacpp-direct). The resulting binary autodetects accelerators at
-# runtime — there is a single build, not a cpu/gpu/llama/openvino matrix. Pin a
-# backend at run time with CONTENOX_MODELD_BACKEND if you need to.
+# modeld always includes llama.cpp. OpenVINO is enabled when its SDK is present;
+# CUDA support follows the llama.cpp runtime build. Set CONTENOX_MODELD_BACKEND
+# at runtime to pin backend selection.
 MODELD_HAVE_OPENVINO := $(shell test -n "$(strip $(OPENVINO_PKG))" && test -d "$(OPENVINO_GENAI_SRC)/src/cpp/include" && echo 1)
 
 ifeq ($(MODELD_HAVE_OPENVINO),1)
@@ -87,21 +77,18 @@ VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET
 	run-modeld \
 	test test-unit test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help
 
-# -----------------------------------------------------------------------------
 help:
 	@echo "build-*    build-contenox build-contenox-windows build-llamacpp-runtime build-modeld build-vscode"
 	@echo "package-*  package-modeld package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
 	@echo "test-*     test test-unit test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
-	@echo "           (modeld is ONE build: llama always, +OpenVINO if its SDK is present, +CUDA if nvcc is present; runtime-autodetects backend/accelerator)"
+	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
 	@echo "deps-*     deps-modeld deps-llamacpp-ref deps-openvino deps-vscode"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
 
-# —— build ————————————————————————————————————————————————————————————————
-# Contenox binary: CLI entrypoint (cmd/contenox). Pure Go (CGO_ENABLED=0): the
-# native inference backends live in the separate modeld binary, so the runtime
-# cross-compiles with no C toolchain. See docs/blueprints/modeld-interface-boundary.md.
+# build
+# Build the pure-Go CLI. Native inference is handled by modeld.
 build-contenox:
 	CGO_ENABLED=0 go build -o $(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/cmd/contenox
 
@@ -115,12 +102,8 @@ check-modeld-llama-deps:
 	@test -f "$(LLAMA_CPP_REF_DIR)/common/chat.h" || { echo "missing pinned llama.cpp common headers ($(LLAMA_CPP_REF_DIR)) — run: make deps-llamacpp-ref"; exit 1; }
 	@test -f "$(LLAMA_RUNTIME_LIB_DIR)/libcommon.a" || { echo "missing direct llama.cpp common library ($(LLAMA_RUNTIME_LIB_DIR)/libcommon.a) — run: make build-llamacpp-runtime"; exit 1; }
 
-# modeld binary: ONE build, assembled from what the host has. llama.cpp (CGO,
-# owned-ABI shim) is always linked; the OpenVINO GenAI backend is added when its
-# SDK is detected (MODELD_HAVE_OPENVINO); the CUDA llama plugin is baked when the
-# build host has nvcc. The binary autodetects backend + accelerator at runtime.
-# Run `make deps-modeld` once on a fresh checkout to install the (optional)
-# OpenVINO SDK; CGO flags come from mk/openvino-flags.mk + mk/llama-flags.mk.
+# Build modeld with llama.cpp and, when available, OpenVINO GenAI.
+# Run `make deps-modeld` before building with OpenVINO support.
 build-modeld: build-llamacpp-runtime check-modeld-llama-deps
 	@echo "building modeld: tags=[$(MODELD_TAGS)] openvino=$(if $(MODELD_HAVE_OPENVINO),yes,no)"
 	CGO_ENABLED=1 \
@@ -132,11 +115,8 @@ build-modeld: build-llamacpp-runtime check-modeld-llama-deps
 		-o $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/cmd/modeld
 	@if [ "$(MODELD_HAVE_OPENVINO)" = "1" ]; then $(MAKE) --no-print-directory MODELD_LIBS_DIR=$(PROJECT_ROOT)/bin/modeld-libs MODELD_LIBS_COPY= bundle-modeld-libs; fi
 
-# bundle-modeld-libs assembles the OpenVINO runtime next to the binary so it loads
-# via the $ORIGIN/modeld-libs rpath with no LD_LIBRARY_PATH and no per-lib hacks:
-# the whole openvino/libs tree (core + device plugins + tbb + frontends) plus the
-# GenAI and tokenizers libraries. Symlinks by default (fast dev loop, this host);
-# MODELD_LIBS_COPY=1 dereferences into real copies for a relocatable package.
+# Place OpenVINO runtime libraries next to modeld.
+# MODELD_LIBS_COPY=1 copies files instead of symlinking them.
 bundle-modeld-libs:
 	@rm -rf "$(MODELD_LIBS_DIR)" && mkdir -p "$(MODELD_LIBS_DIR)"
 	@if [ -n "$(MODELD_LIBS_COPY)" ]; then \
@@ -151,8 +131,7 @@ bundle-modeld-libs:
 		echo "bundled OpenVINO runtime (symlinks) -> $(MODELD_LIBS_DIR)"; \
 	fi
 
-# bundle-llama-libs assembles Contenox-built direct llama.cpp runtime libraries
-# next to modeld.
+# Place llama.cpp runtime libraries next to modeld.
 bundle-llama-libs:
 	@test -n "$(LLAMA_RUNTIME_LIB_SRC)" || { echo "missing direct llama.cpp runtime lib directory. Fetch ref code with: make deps-llamacpp-ref"; exit 1; }
 	@test -d "$(LLAMA_RUNTIME_LIB_SRC)" || { echo "direct llama.cpp runtime lib directory does not exist: $(LLAMA_RUNTIME_LIB_SRC)"; exit 1; }
@@ -167,13 +146,10 @@ bundle-llama-libs:
 		echo "bundled direct llama.cpp runtime (symlink) -> $(LLAMA_LIBS_DIR)"; \
 	fi
 
-# package-modeld produces ONE relocatable bundle under bin/dist: the wrapper, the
-# native binary, the direct llama.cpp runtime (CPU plugins + CUDA plugin if the
-# build host had nvcc), and the OpenVINO libs when that backend was compiled in.
-# The wrapper points ggml at the bundled plugins; the binary autodetects backend
-# + accelerator at runtime. NOTE: the CUDA plugin dlopen's libcudart.so.12 on GPU
-# hosts; to run on a GPU host without the CUDA toolkit, add libcudart.so.12 to
-# lib/llamacpp (libcuda.so.1 is the driver, always host-provided).
+# Build a relocatable modeld bundle under MODELD_DIST_DIR.
+# The bundle contains the wrapper, native binary, llama.cpp runtime libraries,
+# and OpenVINO libraries when that backend is compiled in.
+# CUDA hosts need libcudart.so.12 available to the bundled llama.cpp plugin.
 package-modeld: build-llamacpp-runtime check-modeld-llama-deps
 	@rm -rf "$(MODELD_DIST_DIR)" && mkdir -p "$(MODELD_DIST_DIR)"
 	@echo "packaging modeld: tags=[$(MODELD_TAGS)] openvino=$(if $(MODELD_HAVE_OPENVINO),yes,no)"
@@ -231,7 +207,7 @@ package-vscode-proposed-dev: deps-vscode
 	cd $(VSCODE_DIR) && CONTENOX_ALLOW_PROPOSED=1 npm run package:check -- "artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix"
 	@echo "Built proposed dev VS Code extension: $(VSCODE_PROPOSED_VSIX)"
 
-# —— test ————————————————————————————————————————————————————————————————
+# test
 test:
 	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) ./...
 
@@ -254,7 +230,7 @@ test-contenox-help: build-contenox
 	@chmod +x $(PROJECT_ROOT)/scripts/verify_cli_help.sh
 	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/verify_cli_help.sh
 
-# —— dev —————————————————————————————————————————————————————————————————
+# dev
 dev-install: build-contenox dev-link
 
 dev-install-vscode: package-vscode-dev
@@ -298,18 +274,14 @@ dev-link: build-contenox
 dev-unlink:
 	@rm -f $(DEV_CONTENOX_BIN)
 
-# CONTENOX_LLAMA_BACKEND_DIR points the ggml plugin loader at the (non-packaged)
-# runtime lib dir, since for a bare bin/ run ggml would otherwise only search the
-# executable dir and cwd. The binary autodetects backend + accelerator; pin one
-# with CONTENOX_MODELD_BACKEND=llama|openvino if you need to.
+# Run modeld from the local build output.
+# Set CONTENOX_MODELD_BACKEND=llama|openvino to pin backend selection.
 run-modeld: build-modeld
 	CONTENOX_LLAMA_BACKEND_DIR=$(LLAMA_RUNTIME_LIB_DIR) \
 	$(PROJECT_ROOT)/bin/modeld serve $(MODELD_SERVE_ARGS)
 
-# —— deps ———————————————————————————————————————————————————————————————
-# Everything build-modeld links against, reproducible from a clean checkout:
-# direct llama.cpp source/runtime headers and the OpenVINO SDK + GenAI C++ API
-# (venv under .openvino, C++ source worktree).
+# deps
+# Native backend dependencies for build-modeld.
 deps-modeld: deps-llamacpp-ref deps-openvino
 
 deps-llamacpp-ref:
@@ -321,7 +293,7 @@ deps-openvino:
 deps-vscode:
 	cd $(PROJECT_ROOT)/packages/vscode && npm ci
 
-# —— clean ———————————————————————————————————————————————————————————————
+# clean
 clean:
 	rm -rf $(PROJECT_ROOT)/bin $(PROJECT_ROOT)/lib/llamacpp $(PROJECT_ROOT).llamacpp-runtime $(PROJECT_ROOT).build/llamacpp
 	@rmdir $(PROJECT_ROOT)/lib 2>/dev/null || true

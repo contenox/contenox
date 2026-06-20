@@ -13,17 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSystem_OpenVINOGenAI_PrefixReuseWarmsPrefill is the S2 proof: it checks the
-// single load-bearing assumption under the Contenox workspace-context reuse layer —
-// that OpenVINO's ContinuousBatchingPipeline prefix caching actually makes a
-// repeated, stable prefix cheap to re-process.
+// TestSystem_OpenVINOGenAI_PrefixReuseWarmsPrefill checks that OpenVINO's
+// ContinuousBatchingPipeline prefix cache makes a repeated stable prefix cheaper
+// to process.
 //
 // One session, prefix caching on (the NewGenAI default). We send a large stable
 // "repo context" prefix with two different tiny suffixes and ask for one token
 // each. The first call pays full prefill; the second should reuse the cached KV
 // of the shared prefix and be materially faster. If this fails, automatic prefix
-// caching does not deliver warm reuse on this stack and the workspace-context layer must instead be
-// built on the explicit S0 snapshot/restore primitive.
+// caching is not delivering warm reuse on this stack.
 func TestSystem_OpenVINOGenAI_PrefixReuseWarmsPrefill(t *testing.T) {
 	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
 	if modelDir == "" {

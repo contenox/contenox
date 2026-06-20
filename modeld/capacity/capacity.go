@@ -1,9 +1,9 @@
 // Package capacity is modeld's hardware capacity planner: it resolves the
 // EFFECTIVE context window a model can actually be served at on this device,
 // from the model's KV-cache footprint and the device's free memory — not the
-// model's trained ceiling alone. modeld owns this because it owns the hardware
-// (see docs/blueprints/modeld-interface-boundary.md and plan-llamacpp.md:16);
-// the runtime consumes the resolved number and never computes it.
+// model's trained ceiling alone. modeld owns this calculation because it owns
+// the backend process and hardware telemetry; the runtime consumes the resolved
+// value and does not inspect model files.
 package capacity
 
 import (

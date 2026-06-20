@@ -15,15 +15,14 @@ import (
 
 // TestSystem_OpenVINOGenAIAdapter_GeneratesAndReusesPrefix drives the real
 // OpenVINO GenAI backend through the transport.Session adapter built in
-// session.go. It proves the EnsurePrefix -> PrefillSuffix -> Decode path
-// generates text on the configured device (CPU / GPU / NPU), and that a second
-// turn sharing the stable prefix reuses the pipeline's warm KV (the S2 effect)
-// end to end through the adapter — not just the fake-backend mapping.
+// session.go. It checks that EnsurePrefix -> PrefillSuffix -> Decode generates
+// text on the configured device and that a second turn sharing the stable prefix
+// reuses the pipeline's warm KV through the adapter.
 //
 // Provision + run with the pinned wheels/headers/model:
 //
-//	make -f Makefile.openvino test-s1-5
-//	OPENVINO_DEVICE=NPU make -f Makefile.openvino test-s1-5   # benchmark on the NPU
+//	make -f Makefile.openvino test-genai
+//	OPENVINO_DEVICE=NPU make -f Makefile.openvino test-genai
 func TestSystem_OpenVINOGenAIAdapter_GeneratesAndReusesPrefix(t *testing.T) {
 	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
 	if modelDir == "" {

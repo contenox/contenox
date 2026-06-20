@@ -9,28 +9,15 @@ LLAMA_CPP_CMAKE ?= cmake
 LLAMA_CPP_BUILD_DIR ?= $(LLAMA_CPP_BUILD_ROOT)/$(LLAMA_RUNTIME_PROFILE)
 LLAMA_RUNTIME_REBUILD ?=
 
-# Build-host CUDA autodetection: nvcc present -> bake the CUDA ggml plugin
-# (GGML_CUDA=ON), else CPU-only. With GGML_BACKEND_DL the plugin layout is
-# identical either way, so the same install tree (and the same modeld binary)
-# runs on GPU and CPU hosts.
+# Enable the CUDA ggml plugin when nvcc is available.
 LLAMA_HAVE_NVCC := $(shell command -v nvcc >/dev/null 2>&1 && echo 1)
 LLAMA_CUDA := $(if $(LLAMA_HAVE_NVCC),ON,OFF)
 
-# Bumped whenever the runtime's link/ABI contract changes, so a runtime built by
-# an older checkout is rebuilt instead of silently reused (the stamp records it
-# and the skip-checks require a match). dl-v1: GGML_BACKEND_DL=ON — the compute
-# backends are dlopen'd plugins, not linked, so a pre-DL static runtime is no
-# longer compatible with the modeld link flags.
+# Runtime ABI stamp for generated llama.cpp libraries.
 LLAMA_RUNTIME_ABI := dl-v1
 
-# GGML_BACKEND_DL=ON makes each ggml compute backend (CPU variants, CUDA, …) a
-# dlopen'd plugin discovered at runtime by ggml_backend_load_all instead of a
-# link-time dependency. That is what lets one modeld binary autodetect its
-# accelerator: the CUDA plugin loads when libcuda.so.1 is present and is silently
-# skipped on CPU-only hosts (Release builds run the loader in silent mode).
-# GGML_CPU_ALL_VARIANTS + GGML_NATIVE=OFF build per-microarch CPU plugins
-# (sandybridge/haswell/skylakex/…) that self-select per host, so the same binary
-# runs on older CPUs instead of crashing with SIGILL on a -march=native build.
+# Build ggml CPU/CUDA backends as runtime-loaded plugins.
+# CPU variants are built portably instead of using -march=native.
 LLAMA_CPP_COMMON_CMAKE_FLAGS = \
 	-S "$(LLAMA_CPP_SRC)" \
 	-B "$(LLAMA_CPP_BUILD_DIR)" \

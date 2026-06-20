@@ -1,8 +1,8 @@
 # Contributing to Contenox
 
-Thanks for helping improve Contenox. This repository is being shaped around the
-V1 runtime surface: local CLI usage, ACP over stdio, and the VS Code extension
-that embeds the same Go runtime.
+Thanks for helping improve Contenox. This repository centers on the V1 runtime
+surface: local CLI usage, ACP over stdio, and the VS Code extension that embeds
+the same Go runtime.
 
 ## Code of Conduct
 
@@ -36,10 +36,10 @@ The V1 public surface is:
 - `contenox acp` for ACP clients such as Zed, JetBrains, and AionUi
 - `contenox vscode-agent --stdio` through the VS Code extension
 
-The current V1 direction explicitly does not include `contenox serve`, Beam, a
-browser UI, OpenAI/Ollama-compatible proxy routes, or generated local OpenAPI
-docs. Do not reintroduce those surfaces without updating `ROADMAP.md` and the
-blueprints first.
+The V1 public surface does not include `contenox serve`, Beam, a browser UI,
+OpenAI/Ollama-compatible proxy routes, or generated local OpenAPI docs. Do not
+reintroduce those surfaces without updating `docs/blueprints/v1-feature-map.md`
+and the relevant user docs first.
 
 ### Abstraction layers
 
@@ -87,8 +87,9 @@ without direct package coupling.
 ## Repository structure
 
 The `contenox` binary is the main entrypoint. Current commands include `setup`,
-`init`, `chat`, `run`, `tools`, `mcp`, `backend`, `config`, `model`, `doctor`,
-`session`, `acp`, `acpx`, and `vscode-agent`.
+`init`, `chat`, `run`, `tools`, `mcp`, `backend`, `cache`, `config`, `model`,
+`state`, `doctor`, `session`, `acp`, `acpx`, `vscode-agent`, `update`, and
+`version`.
 
 All AI workflow packages live under `runtime/`. Infrastructure libraries
 (`libauth`, `libbus`, `libcipher`, `libdbexec`, `libkvstore`, `libroutine`,
@@ -104,7 +105,7 @@ runtime/localtools/   local shell, local filesystem, web, echo, print tools
 runtime/*service/     runtime services
 runtime/vscodeagent/  stdio bridge used by the VS Code extension
 packages/vscode/      VS Code extension
-docs/blueprints/      release, product, and pruning plans
+docs/blueprints/      product and release planning notes
 lib*/                 infrastructure libraries with no LLM dependency
 ```
 
@@ -114,24 +115,25 @@ Run `make help` at the repo root for the full list.
 
 | Prefix | Purpose |
 |--------|---------|
-| `build-*` | CLI, modeld, backend runtime, and VS Code builds |
-| `package-*` | relocatable modeld bundles and VS Code VSIX packages |
-| `test-*` | Go unit tests, explicit integration suites, backend shim checks, and CLI help checks |
+| `build-*` | CLI, modeld, llama.cpp runtime, and VS Code builds |
+| `package-*` | relocatable modeld bundle and VS Code VSIX packages |
+| `test-*` | Go unit tests, explicit integration suites, direct llama.cpp shim checks, and CLI help checks |
 | `dev-*` | local binary and VS Code extension install helpers |
-| `deps-*` | direct llama.cpp headers/source, OpenVINO SDK/GenAI deps, and VS Code extension dependencies |
+| `deps-*` | modeld dependencies, pinned llama.cpp source, OpenVINO SDK/GenAI deps, and VS Code extension dependencies |
 | `clean*` | remove generated binaries, native runtime bundles, and VS Code packaging artifacts |
 
 Version bumps and release notes for maintainers live in `Makefile.version`
 (`make -f Makefile.version help`).
 
-### Planning docs
+### Surface docs
 
 Keep these files in sync when changing public surface area:
 
-- `ROADMAP.md`
 - `docs/blueprints/v1-feature-map.md`
-- `docs/blueprints/vscode-marketplace-release.md`
-- `docs/blueprints/runtime-prune-http-ui-proxy.md`
+- `docs/contenox-cli.md`
+- `docs/modeld-source-build.md`
+- `packages/vscode/README.md`
+- `docs/blueprints/acp-registry-submission/README.md`
 
 ## Local development setup
 
@@ -183,39 +185,39 @@ On Debian/Ubuntu:
 sudo apt-get install -y curl git gcc g++ cmake python3 python3-venv
 ```
 
-For a CPU llama daemon:
+For a llama daemon:
 
 ```bash
-make build-modeld-llama
-make run-modeld-llama
+make build-modeld
+CONTENOX_MODELD_BACKEND=llama make run-modeld
 ```
 
-For a CUDA llama daemon, install the CUDA toolkit (`nvcc` must be on `PATH`) and
-run:
+For a CUDA-backed llama daemon, install the CUDA toolkit first (`nvcc` must be
+on `PATH`). The same targets include the CUDA llama.cpp backend when it is
+available:
 
 ```bash
-make build-modeld-llama-gpu
-make run-modeld-llama-gpu
+make build-modeld
+CONTENOX_MODELD_BACKEND=llama make run-modeld
 ```
 
 For an OpenVINO daemon:
 
 ```bash
-make deps-openvino
-make build-modeld-openvino
-make run-modeld-openvino
+make deps-modeld
+make build-modeld
+CONTENOX_MODELD_BACKEND=openvino make run-modeld
 ```
 
 Relocatable daemon bundles are built from the same root Makefile:
 
 ```bash
-make package-modeld-llama
-make package-modeld-llama-gpu
-make package-modeld-openvino
+make package-modeld
 ```
 
-`make package-modeld` builds the combined llama + OpenVINO bundle. `make
-package-modeld-gpu` builds the combined bundle with the CUDA llama runtime.
+The bundle includes llama.cpp and adds OpenVINO when the SDK/GenAI dependencies
+are present. CUDA support follows the generated llama.cpp runtime. See
+`docs/modeld-source-build.md` for source-build and packaging details.
 
 ### VS Code extension development
 
@@ -236,7 +238,7 @@ cd packages/vscode
 npm ci
 npm run check
 npm run package
-npm run package:check -- runtime-$(tr -d '\r\n' < ../../runtime/version/version.txt).vsix
+npm run package:check -- artifacts/<generated-vsix-name>.vsix
 ```
 
 Install the local VSIX into VS Code:
@@ -280,7 +282,7 @@ make test-vllm
 Direct llama.cpp shim check:
 
 ```bash
-make test-llamacpp-direct-cpu
+make test-llamacpp-direct
 ```
 
 CLI package and help drift checks:

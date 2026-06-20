@@ -18,9 +18,9 @@ func TestSystem_OpenVINOGenAI_SchedulerControlsReachable(t *testing.T) {
 		device = "CPU"
 	}
 
-	got, err := runS1GenAIProbe(modelDir, device)
+	got, err := runGenAISchedulerProbe(modelDir, device)
 	if err != nil {
-		t.Fatalf("S1 GenAI probe failed: %s", err)
+		t.Fatalf("GenAI scheduler probe failed: %s", err)
 	}
 	t.Log(got)
 	for _, want := range []string{
@@ -36,7 +36,7 @@ func TestSystem_OpenVINOGenAI_SchedulerControlsReachable(t *testing.T) {
 		"GenerationResultCount: 1",
 	} {
 		if !strings.Contains(got, want) {
-			t.Fatalf("S1 report missing %q\n%s", want, got)
+			t.Fatalf("scheduler report missing %q\n%s", want, got)
 		}
 	}
 }

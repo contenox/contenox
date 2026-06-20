@@ -18,7 +18,7 @@ import (
 )
 
 // benchHarness drives the common benchmark report against a real llama.cpp
-// session, proving warm reuse / cold-equivalence numbers on the tiny GGUF.
+// session using the tiny GGUF fixture.
 type benchHarness struct {
 	modelPath string
 	cfg       llama.Config

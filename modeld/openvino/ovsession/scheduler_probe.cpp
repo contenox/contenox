@@ -1,6 +1,6 @@
 //go:build openvino && openvino_genai
 
-#include "s1_probe.h"
+#include "scheduler_probe.h"
 
 #include <cstring>
 #include <filesystem>
@@ -22,9 +22,9 @@ static void write_buf(char *dst, size_t dst_len, const std::string &value) {
 
 extern "C" {
 
-int cx_s1_genai_probe(const char *model_dir, const char *device,
-                      char *report, size_t report_len,
-                      char *err, size_t err_len) {
+int cx_genai_scheduler_probe(const char *model_dir, const char *device,
+                             char *report, size_t report_len,
+                             char *err, size_t err_len) {
     try {
         ov::genai::SchedulerConfig cfg;
         cfg.cache_size = 1;
@@ -41,7 +41,7 @@ int cx_s1_genai_probe(const char *model_dir, const char *device,
         ov::AnyMap properties{{"KV_CACHE_PRECISION", ov::element::f16}};
         // Probe-only lifecycle: keep the GenAI pipeline alive for the process.
         // Destroying ContinuousBatchingPipeline inside the CGo call currently
-        // corrupts the Go test process after the proof report is returned.
+        // corrupts the Go test process after the report is returned.
         auto *pipe = new ov::genai::ContinuousBatchingPipeline(
             std::filesystem::path(model_dir),
             cfg,

@@ -1,5 +1,4 @@
-# Maintainer: runtime/version/version.txt bumps and release checklist.
-# Run from repo root: make -f Makefile.version help
+# Version bump and release helper targets.
 
 PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 .DEFAULT_GOAL := help

@@ -1,8 +1,6 @@
 //go:build llamanode && llamacpp_direct
 
-// Package llamasession is the llama.cpp adapter for llama.Session. It
-// implements the live warm-reuse hot path on the Contenox-owned direct
-// llama.cpp shim.
+// Package llamasession is the llama.cpp adapter for llama.Session.
 package llamasession
 
 import (
@@ -48,8 +46,7 @@ type session struct {
 
 var _ llama.Session = (*session)(nil)
 
-// New loads a GGUF model and opens one persistent session — the graduated local
-// node, not a fresh-context-per-call toy.
+// New loads a GGUF model and opens one persistent session.
 func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 	model, err := llamacppshim.LoadModel(modelPath, modelConfig(cfg))
 	if err != nil {

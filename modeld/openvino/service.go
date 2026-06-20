@@ -13,18 +13,17 @@ import (
 	"github.com/contenox/runtime/runtime/transport"
 )
 
-// bakedTokenizersPath is the build-time fallback path to libopenvino_tokenizers.so
+// buildTokenizersPath is the build-time fallback path to libopenvino_tokenizers.so
 // (set via build-modeld -ldflags -X) for an in-place dev build whose libs live in
 // the venv. OpenVINO GenAI loads that extension via OPENVINO_TOKENIZERS_PATH_GENAI.
-var bakedTokenizersPath string
+var buildTokenizersPath string
 
 // tokenizersLibName is the extension file the bundle/venv provides.
 const tokenizersLibName = "libopenvino_tokenizers.so"
 
 // init points OpenVINO GenAI at the tokenizers extension without requiring the
 // caller to set OPENVINO_TOKENIZERS_PATH_GENAI. It prefers a bundle next to the
-// binary (bin/modeld + bin/modeld-libs/ — relocatable, the packaged daemon) and
-// falls back to the build-time baked venv path (the in-place dev build).
+// binary and falls back to the build-time venv path for local development.
 func init() {
 	if os.Getenv("OPENVINO_TOKENIZERS_PATH_GENAI") != "" {
 		return
@@ -36,8 +35,8 @@ func init() {
 			return
 		}
 	}
-	if bakedTokenizersPath != "" {
-		_ = os.Setenv("OPENVINO_TOKENIZERS_PATH_GENAI", bakedTokenizersPath)
+	if buildTokenizersPath != "" {
+		_ = os.Setenv("OPENVINO_TOKENIZERS_PATH_GENAI", buildTokenizersPath)
 	}
 }
 
@@ -328,8 +327,8 @@ func openvinoDeviceUsesSystemRAM(device string) bool {
 	return base == "" || base == "CPU"
 }
 
-// HasAccelerator reports whether OpenVINO enumerates a non-CPU device (GPU/NPU)
-// on this host. modeld uses it to pick the backend on a universal build.
+// HasAccelerator reports whether OpenVINO enumerates a non-CPU device on this
+// host. modeld uses it for runtime backend selection.
 func HasAccelerator() bool {
 	info, err := ovsession.Runtime()
 	if err != nil {
@@ -370,8 +369,7 @@ func openvinoDeviceBase(device string) string {
 // resolveDevice selects the OpenVINO inference device. CONTENOX_OPENVINO_DEVICE
 // is the explicit override (set it to CPU/GPU/NPU to pin a device); the test
 // device hint and an AUTO default follow. AUTO is OpenVINO's virtual plugin that
-// places work on the best available device (GPU, then NPU) and falls back to CPU,
-// so one modeld binary autodetects its accelerator without configuration.
+// places work on the best available device and falls back to CPU.
 func resolveDevice() string {
 	if device := os.Getenv("CONTENOX_OPENVINO_DEVICE"); device != "" {
 		return device

@@ -1,13 +1,11 @@
 // Package owner manages lease-based ownership of the local runtime's resident
 // state. On Join, one instance becomes the owner — it holds the lease and renews
 // it in the background — while others become followers that know who the owner
-// is and (later) where to reach it.
+// is and, when advertised, where to reach it.
 //
 // The owner self-fences: if it cannot renew before the lease expires, Lost()
 // fires and the caller MUST stop touching owned state, because another instance
-// may have taken over. This is the in-process, no-daemon, cross-platform owner
-// election described in
-// docs/blueprints/local-runtime-owner-coordination.md.
+// may have taken over.
 package owner
 
 import (
@@ -45,7 +43,7 @@ type Config struct {
 	// RenewInterval is how often the owner renews; defaults to TTL/3.
 	RenewInterval time.Duration
 	// Endpoint, if set, is advertised to followers via the lease record so they
-	// can reach the owner once it serves a transport (P3). Empty = not serving.
+	// can reach the owner transport. Empty means no endpoint is advertised.
 	Endpoint string
 	// Backend, if set, is the inference backend this owner serves ("llama" /
 	// "openvino" / "none"), advertised via the lease so the runtime can tell which
@@ -95,7 +93,7 @@ type Owner struct {
 // is free it returns an Owner in RoleOwner and starts renewing in the
 // background; if a live owner already holds it, it returns RoleFollower with the
 // current holder. ctx bounds the renew loop's lifetime; cancelling it stops
-// renewal (call Release for a clean handover).
+// renewal. Call Release to relinquish the lease before the TTL expires.
 func Join(ctx context.Context, cfg Config) (*Owner, error) {
 	if cfg.TTL <= 0 {
 		return nil, errors.New("owner: ttl must be positive")

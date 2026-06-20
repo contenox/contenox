@@ -5,7 +5,7 @@ package ovsession
 /*
 #cgo CXXFLAGS: -std=c++17
 #include <stdlib.h>
-#include "s1_probe.h"
+#include "scheduler_probe.h"
 */
 import "C"
 
@@ -15,35 +15,35 @@ import (
 )
 
 const (
-	s1ReportLen = 16 * 1024
-	s1ErrLen    = 4 * 1024
+	schedulerReportLen = 16 * 1024
+	schedulerErrLen    = 4 * 1024
 )
 
-func runS1GenAIProbe(modelDir, device string) (string, error) {
+func runGenAISchedulerProbe(modelDir, device string) (string, error) {
 	cModelDir := C.CString(modelDir)
 	cDevice := C.CString(device)
 	defer C.free(unsafe.Pointer(cModelDir))
 	defer C.free(unsafe.Pointer(cDevice))
 
-	report := C.calloc(1, C.size_t(s1ReportLen))
+	report := C.calloc(1, C.size_t(schedulerReportLen))
 	if report == nil {
-		return "", fmt.Errorf("allocate S1 report buffer")
+		return "", fmt.Errorf("allocate scheduler report buffer")
 	}
 	defer C.free(report)
 
-	errbuf := C.calloc(1, C.size_t(s1ErrLen))
+	errbuf := C.calloc(1, C.size_t(schedulerErrLen))
 	if errbuf == nil {
-		return "", fmt.Errorf("allocate S1 error buffer")
+		return "", fmt.Errorf("allocate scheduler error buffer")
 	}
 	defer C.free(errbuf)
 
-	rc := C.cx_s1_genai_probe(
+	rc := C.cx_genai_scheduler_probe(
 		cModelDir,
 		cDevice,
 		(*C.char)(report),
-		C.size_t(s1ReportLen),
+		C.size_t(schedulerReportLen),
 		(*C.char)(errbuf),
-		C.size_t(s1ErrLen),
+		C.size_t(schedulerErrLen),
 	)
 	if rc != 0 {
 		return "", fmt.Errorf("%s", C.GoString((*C.char)(errbuf)))

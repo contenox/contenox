@@ -9,10 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSystem_OpenVINOGenAI_ApplyChatTemplate proves the provider feeds the model
-// its own chat template (from tokenizer_config.json) rather than a hand-rolled
-// ChatML string. Qwen2.5 uses <|im_start|> role markers, so the rendered prompt
-// must contain those and must not be the <|system|> fallback layout.
+// TestSystem_OpenVINOGenAI_ApplyChatTemplate checks that the provider feeds the
+// model its own chat template from tokenizer_config.json rather than a
+// hand-rolled ChatML string. Qwen2.5 uses <|im_start|> role markers, so the
+// rendered prompt must contain those and must not be the <|system|> fallback
+// layout.
 func TestSystem_OpenVINOGenAI_ApplyChatTemplate(t *testing.T) {
 	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
 	if modelDir == "" {
@@ -41,9 +42,9 @@ func TestSystem_OpenVINOGenAI_ApplyChatTemplate(t *testing.T) {
 	t.Logf("templated prompt:\n%s", out)
 }
 
-// TestSystem_OpenVINOGenAI_ApplyChatTemplateWithTools proves tool definitions are
-// rendered into the prompt via the model's own template tools-handling, so the
-// model knows what it may call.
+// TestSystem_OpenVINOGenAI_ApplyChatTemplateWithTools checks that tool
+// definitions are rendered into the prompt via the model's own template
+// tools-handling.
 func TestSystem_OpenVINOGenAI_ApplyChatTemplateWithTools(t *testing.T) {
 	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
 	if modelDir == "" {

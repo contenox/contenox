@@ -11,7 +11,7 @@ import (
 	"github.com/contenox/runtime/runtime/transport"
 )
 
-// fakeSession is a no-op transport.Session used to prove the Service wires a
+// fakeSession is a no-op transport.Session used to check that Service wires a
 // request to a backend session without compiling the CGO llama.cpp backend.
 type fakeSession struct{ closed bool }
 
@@ -79,7 +79,7 @@ func TestOpenSessionRoutesModelAndConfigToBackend(t *testing.T) {
 
 	// NumGpuLayers is intentionally omitted: GPU layers are subject to capacity
 	// resolution (zeroed without an accelerator), which is covered by the capacity
-	// tests. This test proves the request is routed to the backend, so it uses
+	// tests. This test checks request routing to the backend, so it uses
 	// fields that pass through unchanged.
 	cfg := transport.Config{NumCtx: 4096, PromptFormat: "chatml"}
 	sess, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{

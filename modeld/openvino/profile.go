@@ -9,10 +9,9 @@ import (
 )
 
 // genAIConfigFromProfile builds the GenAI session config from the model's own
-// contenox-openvino.json (beside the IR), so the tested tuning — KV-cache
-// precision, prefix caching, sparse attention / XAttention, cache size — is
-// model-driven, not hardcoded. device is the resolved inference device. Missing
-// or partial profiles take conservative defaults; sparse attention and other
+// contenox-openvino.json beside the IR. KV-cache precision, prefix caching,
+// sparse attention, XAttention, and cache size are model-driven. Missing or
+// partial profiles take conservative defaults; sparse attention and other
 // aggressive knobs are only enabled when the profile asks.
 func genAIConfigFromProfile(modelDir, device string) ovsession.GenAIConfig {
 	var p struct {

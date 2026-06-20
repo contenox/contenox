@@ -6,19 +6,19 @@ OPENVINO_REPO ?= OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov
 OPENVINO_DEVICE ?= CPU
 OPENVINO_GENAI_REPO ?= $(HOME)/src/github.com/openvinotoolkit/openvino.genai
 
-.PHONY: help deps deps-genai genai-src model test test-s1 test-s1-5 test-s2 test-s2-5 clean
+.PHONY: help deps deps-genai genai-src model test test-genai test-genai-scheduler test-genai-prefix-cache test-genai-context-cache clean
 
 help:
-	@echo "deps       create .openvino venv and install OpenVINO SDK"
-	@echo "deps-genai install OpenVINO GenAI into the .openvino venv"
-	@echo "genai-src  fetch matching OpenVINO GenAI C++ headers"
-	@echo "model      download the tiny OpenVINO IR test model"
-	@echo "test       run the build-tagged OpenVINO S0 KV round-trip test"
-	@echo "test-s1    run the GenAI SchedulerConfig control-surface proof"
-	@echo "test-s1-5  run the GenAI session/provider prompt-chat-stream proof"
-	@echo "test-s2    prove prefix-cache warm reuse makes a repeated prefix cheap"
-	@echo "test-s2-5  prove the context assembler drives the prefix cache end to end"
-	@echo "clean      remove .openvino"
+	@echo "deps                       create .openvino venv and install OpenVINO SDK"
+	@echo "deps-genai                 install OpenVINO GenAI into the .openvino venv"
+	@echo "genai-src                  fetch matching OpenVINO GenAI C++ headers"
+	@echo "model                      download the tiny OpenVINO IR test model"
+	@echo "test                       run the build-tagged OpenVINO KV round-trip test"
+	@echo "test-genai                 run OpenVINO GenAI provider/session tests"
+	@echo "test-genai-scheduler       run GenAI SchedulerConfig tests"
+	@echo "test-genai-prefix-cache    run GenAI prefix-cache warm-reuse test"
+	@echo "test-genai-context-cache   run context assembler prefix-cache tests"
+	@echo "clean                      remove .openvino"
 
 deps:
 	$(PYTHON) -m venv "$(OPENVINO_VENV)"
@@ -45,7 +45,7 @@ test: model
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
 	go test -tags openvino -run 'Test(System_OpenVINOSession|Unit_OpenVINO)' -v ./modeld/openvino/...
 
-test-s1: model deps-genai genai-src
+test-genai-scheduler: model deps-genai genai-src
 	CGO_ENABLED=1 \
 	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
 	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
@@ -55,7 +55,7 @@ test-s1: model deps-genai genai-src
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
 	go test -tags 'openvino openvino_genai' -run TestSystem_OpenVINOGenAI_SchedulerControlsReachable -v ./modeld/openvino/ovsession
 
-test-s1-5: model deps-genai genai-src
+test-genai: model deps-genai genai-src
 	CGO_ENABLED=1 \
 	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
 	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
@@ -65,7 +65,7 @@ test-s1-5: model deps-genai genai-src
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
 	go test -tags 'openvino openvino_genai' -v ./modeld/openvino/...
 
-test-s2: model deps-genai genai-src
+test-genai-prefix-cache: model deps-genai genai-src
 	CGO_ENABLED=1 \
 	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
 	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \
@@ -75,7 +75,7 @@ test-s2: model deps-genai genai-src
 	CONTENOX_OPENVINO_TEST_DEVICE="$(OPENVINO_DEVICE)" \
 	go test -tags 'openvino openvino_genai' -run TestSystem_OpenVINOGenAI_PrefixReuseWarmsPrefill -v ./modeld/openvino/ovsession
 
-test-s2-5: model deps-genai genai-src
+test-genai-context-cache: model deps-genai genai-src
 	CGO_ENABLED=1 \
 	CGO_CXXFLAGS="$(OPENVINO_GENAI_CGO_CXXFLAGS)" \
 	CGO_LDFLAGS="$(OPENVINO_GENAI_CGO_LDFLAGS)" \

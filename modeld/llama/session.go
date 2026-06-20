@@ -1,13 +1,12 @@
-// Package llama is the graduated local coding-node runtime: a persistent,
-// workspace-scoped inference session that keeps a stable prefix's KV hot and
-// re-prefills only the changed suffix (the live warm-reuse hot path), distinct
-// from the toy fixed-constant `local` provider.
+// Package llama defines the modeld-side llama backend contract: persistent
+// inference sessions keep a stable prefix's KV hot and re-prefill only the
+// changed suffix.
 //
 // This package defines the backend-neutral session contract. Backend adapters
-// implement it — llama.cpp now (./llamasession), OpenVINO later. Product code
-// talks to Session, never to llama.cpp or OpenVINO concepts. Snapshot/restore
-// (durability, branching, crash recovery) is a separate, later concern; the hot
-// coding loop is EnsurePrefix -> PrefillSuffix -> Decode on a live session.
+// implement it; product code talks to Session, not llama.cpp internals.
+// Snapshot/restore is part of the same contract for durability and branching.
+// The main generation path is EnsurePrefix -> PrefillSuffix -> Decode on a live
+// session.
 package llama
 
 import (
