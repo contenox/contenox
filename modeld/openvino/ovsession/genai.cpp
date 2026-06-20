@@ -2,18 +2,26 @@
 
 #include "genai.h"
 
+#include <any>
+#include <array>
 #include <atomic>
 #include <algorithm>
 #include <cctype>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <exception>
 #include <filesystem>
 #include <functional>
+#include <limits>
+#include <list>
+#include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -26,7 +34,12 @@
 #include <openvino/runtime/intel_gpu/properties.hpp>
 #include <openvino/runtime/intel_npu/properties.hpp>
 #include <openvino/runtime/properties.hpp>
+
+#define protected public
 #include <openvino/genai/continuous_batching_pipeline.hpp>
+#include "continuous_batching/pipeline_impl.hpp"
+#undef protected
+
 #include <openvino/genai/generation_config.hpp>
 #include <openvino/genai/parsers.hpp>
 #include <openvino/genai/scheduler_config.hpp>
@@ -558,6 +571,487 @@ static std::string json_string_field(const ov::genai::JsonContainer &message, co
     return value.has_value() ? *value : std::string();
 }
 
+static constexpr std::array<uint8_t, 8> k_cold_kv_magic{{'O', 'V', 'C', 'K', 'V', '0', '1', '\0'}};
+static constexpr uint64_t k_cold_kv_version = 1;
+
+// Private OpenVINO GenAI cold-KV plumbing. These mirrors match the pinned
+// 2026.2.0.0 private headers included above; keep all direct layout access here.
+struct genai_scheduler_access {
+    bool m_can_use_partial_preemption;
+    ov::genai::SchedulerConfig m_config;
+    std::shared_ptr<ov::genai::CacheOrchestrator> m_cache_orchestrator;
+};
+
+struct genai_block_manager_access {
+    ov::genai::BlockAllocator m_allocator;
+    bool m_enable_prefix_caching;
+    size_t m_block_size;
+    size_t m_num_layers;
+    size_t m_fixed_blocks_per_sequence;
+    std::map<uint64_t, ov::genai::BlocksPerLayer> m_prefix_hash_to_occupied_block_map;
+    std::map<uint64_t, std::vector<ov::genai::BlocksPerLayer>> m_block_table;
+    std::mutex m_cached_blocks_map_mutex;
+};
+
+static genai_block_manager_access &genai_private(ov::genai::BlockManager &block_manager) {
+    return *reinterpret_cast<genai_block_manager_access *>(&block_manager);
+}
+
+class cold_kv_writer {
+public:
+    std::vector<uint8_t> data;
+
+    template <typename T>
+    void pod(T value) {
+        const auto *src = reinterpret_cast<const uint8_t *>(&value);
+        data.insert(data.end(), src, src + sizeof(T));
+    }
+
+    void bytes(const void *src, size_t n) {
+        if (n == 0) {
+            return;
+        }
+        if (!src) {
+            throw std::runtime_error("cold KV payload source bytes are null");
+        }
+        const auto *p = reinterpret_cast<const uint8_t *>(src);
+        data.insert(data.end(), p, p + n);
+    }
+
+    void string(const std::string &value) {
+        pod<uint64_t>(value.size());
+        bytes(value.data(), value.size());
+    }
+};
+
+class cold_kv_reader {
+    const uint8_t *data_;
+    size_t len_;
+    size_t off_ = 0;
+
+public:
+    cold_kv_reader(const uint8_t *data, size_t len) : data_(data), len_(len) {}
+
+    template <typename T>
+    T pod() {
+        if (off_ > len_ || len_ - off_ < sizeof(T)) {
+            throw std::runtime_error("cold KV payload is truncated");
+        }
+        T value{};
+        std::memcpy(&value, data_ + off_, sizeof(T));
+        off_ += sizeof(T);
+        return value;
+    }
+
+    std::vector<uint8_t> bytes(size_t n) {
+        if (off_ > len_ || len_ - off_ < n) {
+            throw std::runtime_error("cold KV payload is truncated");
+        }
+        std::vector<uint8_t> out(data_ + off_, data_ + off_ + n);
+        off_ += n;
+        return out;
+    }
+
+    std::string string() {
+        const auto n = checked_size(pod<uint64_t>(), "cold KV string");
+        auto raw = bytes(n);
+        return std::string(reinterpret_cast<const char *>(raw.data()), raw.size());
+    }
+
+    void expect_finished() const {
+        if (off_ != len_) {
+            throw std::runtime_error("cold KV payload has trailing bytes");
+        }
+    }
+
+    static size_t checked_size(uint64_t value, const char *what) {
+        if (value > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+            throw std::runtime_error(std::string(what) + " size exceeds host size_t");
+        }
+        return static_cast<size_t>(value);
+    }
+};
+
+static size_t checked_size(uint64_t value, const char *what) {
+    return cold_kv_reader::checked_size(value, what);
+}
+
+static std::shared_ptr<ov::genai::CacheOrchestrator> genai_cache_orchestrator(cx_genai_session *s) {
+    if (!s || !s->pipe) {
+        throw std::runtime_error("OpenVINO GenAI session is nil or closed");
+    }
+    auto impl = std::dynamic_pointer_cast<ov::genai::ContinuousBatchingPipeline::ContinuousBatchingImpl>(s->pipe->m_impl);
+    if (!impl) {
+        throw std::runtime_error("OpenVINO GenAI pipeline is not continuous batching");
+    }
+    if (!impl->m_scheduler) {
+        throw std::runtime_error("OpenVINO GenAI scheduler cache is not initialized");
+    }
+    auto orchestrator = reinterpret_cast<genai_scheduler_access *>(impl->m_scheduler.get())->m_cache_orchestrator;
+    if (!orchestrator) {
+        throw std::runtime_error("OpenVINO GenAI scheduler cache is not initialized");
+    }
+    return orchestrator;
+}
+
+static const ov::genai::KVCacheManager &genai_kv_cache_manager(const ov::genai::CacheOrchestrator &orchestrator) {
+    const auto &base = orchestrator.get_cache_manager(ov::genai::CacheType::KV_CACHE);
+    const auto *kv = dynamic_cast<const ov::genai::KVCacheManager *>(&base);
+    if (!kv) {
+        throw std::runtime_error("OpenVINO GenAI KV cache manager is not available");
+    }
+    return *kv;
+}
+
+static bool genai_cold_kv_supported_locked(cx_genai_session *s) {
+    try {
+        auto orchestrator = genai_cache_orchestrator(s);
+        auto &block_manager = orchestrator->get_block_manager(ov::genai::CacheType::KV_CACHE);
+        auto &block_private = genai_private(block_manager);
+        const auto &kv_manager = genai_kv_cache_manager(*orchestrator);
+        const auto block_layers = block_manager.get_num_layers();
+        const auto kv_layers = kv_manager.get_num_layers();
+        return block_private.m_enable_prefix_caching &&
+               block_manager.get_block_size() > 0 &&
+               block_manager.get_total_number_of_kv_blocks() > 0 &&
+               kv_layers > 0 &&
+               (block_layers == 1 || block_layers == kv_layers);
+    } catch (...) {
+        return false;
+    }
+}
+
+static size_t prefix_hash_make(const std::vector<int64_t> &tokens,
+                               size_t content_length,
+                               size_t block_size,
+                               const std::vector<int64_t> &prefix_hashes) {
+    if (content_length == 0 || block_size == 0 || content_length > tokens.size()) {
+        throw std::runtime_error("invalid OpenVINO prefix hash input");
+    }
+
+    size_t block_start = content_length - (content_length % block_size);
+    if (block_start == content_length) {
+        block_start -= block_size;
+    }
+    const size_t filled_blocks = block_start / block_size;
+    if (filled_blocks > prefix_hashes.size()) {
+        throw std::runtime_error("invalid OpenVINO prefix hash chain");
+    }
+
+    std::vector<int64_t> content;
+    if (filled_blocks > 0) {
+        content.emplace_back(prefix_hashes[filled_blocks - 1]);
+    }
+    content.insert(content.end(), tokens.begin() + block_start, tokens.begin() + content_length);
+    const char *raw = reinterpret_cast<const char *>(content.data());
+    const std::size_t raw_len = content.size() * sizeof(content[0]);
+    return std::hash<std::string_view>{}(std::string_view(raw, raw_len));
+}
+
+static size_t prefix_hash_for_tokens(const std::vector<int64_t> &tokens,
+                                     size_t content_length,
+                                     size_t block_size) {
+    if (content_length == 0 || content_length > tokens.size()) {
+        throw std::runtime_error("OpenVINO cold KV prefix tokens do not cover the requested content length");
+    }
+    std::vector<int64_t> prefix_hashes;
+    for (size_t cur = block_size; cur <= content_length; cur += block_size) {
+        prefix_hashes.push_back(static_cast<int64_t>(prefix_hash_make(tokens, cur, block_size, prefix_hashes)));
+    }
+    if (content_length % block_size == 0) {
+        return static_cast<size_t>(prefix_hashes[content_length / block_size - 1]);
+    }
+    return prefix_hash_make(tokens, content_length, block_size, prefix_hashes);
+}
+
+static std::vector<size_t> cold_content_lengths_for_range(size_t start,
+                                                          size_t end,
+                                                          size_t prefix_len,
+                                                          size_t block_size) {
+    if (block_size == 0) {
+        throw std::runtime_error("OpenVINO KV block size is zero");
+    }
+    if (start >= end || end > prefix_len) {
+        throw std::runtime_error("OpenVINO cold KV range is outside prefix tokens");
+    }
+    const size_t first_block = start / block_size;
+    const size_t last_block = (end - 1) / block_size;
+    std::vector<size_t> out;
+    out.reserve(last_block - first_block + 1);
+    for (size_t block = first_block; block <= last_block; ++block) {
+        const size_t content_len = std::min((block + 1) * block_size, prefix_len);
+        if (content_len == 0 || content_len <= block * block_size) {
+            throw std::runtime_error("OpenVINO cold KV range maps to an empty KV block");
+        }
+        out.push_back(content_len);
+    }
+    return out;
+}
+
+static ov::genai::BlocksPerLayer find_prefix_blocks_locked(ov::genai::BlockManager &block_manager,
+                                                           size_t hash) {
+    auto &block_private = genai_private(block_manager);
+    auto occupied_it = block_private.m_prefix_hash_to_occupied_block_map.find(static_cast<uint64_t>(hash));
+    if (occupied_it != block_private.m_prefix_hash_to_occupied_block_map.end()) {
+        return occupied_it->second;
+    }
+    return {};
+}
+
+static ov::genai::BlocksPerLayer ensure_import_blocks_locked(ov::genai::BlockManager &block_manager,
+                                                             size_t hash) {
+    auto blocks = find_prefix_blocks_locked(block_manager, hash);
+    if (!blocks.empty()) {
+        return blocks;
+    }
+    auto &block_private = genai_private(block_manager);
+    if (!block_private.m_allocator.can_allocate_blocks(1)) {
+        throw std::runtime_error("OpenVINO GenAI has no free KV blocks for cold import");
+    }
+    blocks = block_private.m_allocator.allocate_block(hash, block_private.m_prefix_hash_to_occupied_block_map);
+    if (blocks.empty()) {
+        throw std::runtime_error("OpenVINO GenAI failed to allocate KV blocks for cold import");
+    }
+    block_private.m_allocator.free(blocks, block_private.m_prefix_hash_to_occupied_block_map);
+    blocks = find_prefix_blocks_locked(block_manager, hash);
+    if (blocks.empty()) {
+        throw std::runtime_error("OpenVINO GenAI failed to register imported KV blocks");
+    }
+    return blocks;
+}
+
+static size_t cache_block_index_for_layer(const ov::genai::BlocksPerLayer &blocks,
+                                          size_t decoder_layer,
+                                          size_t decoder_layers) {
+    if (blocks.empty()) {
+        throw std::runtime_error("OpenVINO prefix cache block entry is empty");
+    }
+    if (blocks.size() == 1) {
+        return static_cast<size_t>(blocks[0]->get_index());
+    }
+    if (blocks.size() != decoder_layers || decoder_layer >= blocks.size()) {
+        throw std::runtime_error("OpenVINO prefix cache block layer count does not match KV tensors");
+    }
+    return static_cast<size_t>(blocks[decoder_layer]->get_index());
+}
+
+static size_t cache_block_stride_bytes(const ov::Tensor &cache) {
+    const auto shape = cache.get_shape();
+    if (shape.empty()) {
+        throw std::runtime_error("OpenVINO KV cache tensor rank is zero");
+    }
+    size_t elems = 1;
+    for (auto it = std::next(shape.begin()); it != shape.end(); ++it) {
+        if (*it != 0 && elems > std::numeric_limits<size_t>::max() / *it) {
+            throw std::runtime_error("OpenVINO KV cache tensor block shape overflows size_t");
+        }
+        elems *= *it;
+    }
+    const auto elem_type = cache.get_element_type();
+    const size_t bits = (elem_type == ov::element::u4 || elem_type == ov::element::i4)
+        ? 4
+        : elem_type.size() * 8;
+    if (bits == 0 || elems > (std::numeric_limits<size_t>::max() - 7) / bits) {
+        throw std::runtime_error("OpenVINO KV cache tensor block byte size overflows size_t");
+    }
+    return (elems * bits + 7) / 8;
+}
+
+static std::pair<ov::Coordinate, ov::Coordinate> cache_block_roi_coords(const ov::Tensor &cache,
+                                                                        size_t block_index) {
+    auto shape = cache.get_shape();
+    if (shape.empty()) {
+        throw std::runtime_error("OpenVINO KV cache tensor rank is zero");
+    }
+    if (block_index >= shape[0]) {
+        throw std::runtime_error("OpenVINO KV cache block index is outside tensor shape");
+    }
+    ov::Coordinate begin(shape.size(), 0);
+    ov::Coordinate end = shape;
+    begin[0] = block_index;
+    end[0] = block_index + 1;
+    return {begin, end};
+}
+
+static std::vector<uint8_t> read_cache_block_bytes(ov::Tensor cache, size_t block_index) {
+    if (cache.is<ov::RemoteTensor>()) {
+        auto coords = cache_block_roi_coords(cache, block_index);
+        ov::RemoteTensor roi(cache, coords.first, coords.second);
+        ov::Tensor host(roi.get_element_type(), roi.get_shape());
+        roi.copy_to(host);
+        const size_t n = host.get_byte_size();
+        std::vector<uint8_t> out(n);
+        if (n > 0) {
+            std::memcpy(out.data(), host.data(), n);
+        }
+        return out;
+    }
+
+    const size_t stride = cache_block_stride_bytes(cache);
+    auto shape = cache.get_shape();
+    if (block_index >= shape[0]) {
+        throw std::runtime_error("OpenVINO KV cache block index is outside tensor shape");
+    }
+    std::vector<uint8_t> out(stride);
+    if (stride > 0) {
+        const auto *src = reinterpret_cast<const uint8_t *>(cache.data()) + block_index * stride;
+        std::memcpy(out.data(), src, stride);
+    }
+    return out;
+}
+
+static void write_cache_block_bytes(ov::Tensor cache, size_t block_index, const std::vector<uint8_t> &bytes) {
+    if (cache.is<ov::RemoteTensor>()) {
+        auto coords = cache_block_roi_coords(cache, block_index);
+        ov::RemoteTensor roi(cache, coords.first, coords.second);
+        ov::Tensor host(roi.get_element_type(), roi.get_shape());
+        if (host.get_byte_size() != bytes.size()) {
+            throw std::runtime_error("OpenVINO cold KV payload block size does not match remote tensor");
+        }
+        if (!bytes.empty()) {
+            std::memcpy(host.data(), bytes.data(), bytes.size());
+        }
+        roi.copy_from(host);
+        return;
+    }
+
+    const size_t stride = cache_block_stride_bytes(cache);
+    if (stride != bytes.size()) {
+        throw std::runtime_error("OpenVINO cold KV payload block size does not match tensor");
+    }
+    auto shape = cache.get_shape();
+    if (block_index >= shape[0]) {
+        throw std::runtime_error("OpenVINO KV cache block index is outside tensor shape");
+    }
+    if (!bytes.empty()) {
+        auto *dst = reinterpret_cast<uint8_t *>(cache.data()) + block_index * stride;
+        std::memcpy(dst, bytes.data(), bytes.size());
+    }
+}
+
+static std::vector<uint8_t> genai_export_cold_kv_locked(cx_genai_session *s,
+                                                        size_t start,
+                                                        size_t end,
+                                                        const std::vector<int64_t> &prefix_tokens,
+                                                        const std::string &token_hash) {
+    auto orchestrator = genai_cache_orchestrator(s);
+    if (!genai_cold_kv_supported_locked(s)) {
+        throw std::runtime_error("OpenVINO GenAI cold KV export requires prefix-cached KV blocks");
+    }
+    orchestrator->allocate_cache_if_needed();
+
+    auto &block_manager = orchestrator->get_block_manager(ov::genai::CacheType::KV_CACHE);
+    const auto &kv_manager = genai_kv_cache_manager(*orchestrator);
+    const size_t block_size = block_manager.get_block_size();
+    const size_t layer_count = kv_manager.get_num_layers();
+    const auto content_lengths = cold_content_lengths_for_range(start, end, prefix_tokens.size(), block_size);
+
+    cold_kv_writer writer;
+    writer.bytes(k_cold_kv_magic.data(), k_cold_kv_magic.size());
+    writer.pod<uint64_t>(k_cold_kv_version);
+    writer.pod<uint64_t>(start);
+    writer.pod<uint64_t>(end);
+    writer.pod<uint64_t>(block_size);
+    writer.pod<uint64_t>(layer_count);
+    writer.pod<uint64_t>(content_lengths.size());
+    writer.string(token_hash);
+
+    auto &block_private = genai_private(block_manager);
+    std::lock_guard<std::mutex> lock(block_private.m_cached_blocks_map_mutex);
+    for (size_t content_len : content_lengths) {
+        const size_t hash = prefix_hash_for_tokens(prefix_tokens, content_len, block_size);
+        auto blocks = find_prefix_blocks_locked(block_manager, hash);
+        if (blocks.empty()) {
+            throw std::runtime_error("OpenVINO GenAI prefix cache block is not resident for cold export");
+        }
+        writer.pod<uint64_t>(content_len);
+        writer.pod<uint64_t>(static_cast<uint64_t>(hash));
+        for (size_t layer = 0; layer < layer_count; ++layer) {
+            const size_t block_index = cache_block_index_for_layer(blocks, layer, layer_count);
+            auto key_bytes = read_cache_block_bytes(kv_manager.get_key_cache(layer), block_index);
+            auto value_bytes = read_cache_block_bytes(kv_manager.get_value_cache(layer), block_index);
+            writer.pod<uint64_t>(key_bytes.size());
+            writer.bytes(key_bytes.data(), key_bytes.size());
+            writer.pod<uint64_t>(value_bytes.size());
+            writer.bytes(value_bytes.data(), value_bytes.size());
+        }
+    }
+    return std::move(writer.data);
+}
+
+static void genai_import_cold_kv_locked(cx_genai_session *s,
+                                        size_t start,
+                                        size_t end,
+                                        const std::vector<int64_t> &prefix_tokens,
+                                        const std::string &token_hash,
+                                        const uint8_t *data,
+                                        size_t data_len) {
+    if (!data || data_len == 0) {
+        throw std::runtime_error("OpenVINO cold KV import payload is empty");
+    }
+    auto orchestrator = genai_cache_orchestrator(s);
+    if (!genai_cold_kv_supported_locked(s)) {
+        throw std::runtime_error("OpenVINO GenAI cold KV import requires prefix-cached KV blocks");
+    }
+    orchestrator->allocate_cache_if_needed();
+
+    auto &block_manager = orchestrator->get_block_manager(ov::genai::CacheType::KV_CACHE);
+    const auto &kv_manager = genai_kv_cache_manager(*orchestrator);
+    cold_kv_reader reader(data, data_len);
+    auto magic = reader.bytes(k_cold_kv_magic.size());
+    if (!std::equal(magic.begin(), magic.end(), k_cold_kv_magic.begin())) {
+        throw std::runtime_error("OpenVINO cold KV payload has an unknown format");
+    }
+    const auto version = reader.pod<uint64_t>();
+    if (version != k_cold_kv_version) {
+        throw std::runtime_error("OpenVINO cold KV payload version is unsupported");
+    }
+    const size_t payload_start = checked_size(reader.pod<uint64_t>(), "cold KV range start");
+    const size_t payload_end = checked_size(reader.pod<uint64_t>(), "cold KV range end");
+    const size_t payload_block_size = checked_size(reader.pod<uint64_t>(), "cold KV block size");
+    const size_t payload_layers = checked_size(reader.pod<uint64_t>(), "cold KV layer count");
+    const size_t payload_blocks = checked_size(reader.pod<uint64_t>(), "cold KV block count");
+    const auto payload_hash = reader.string();
+
+    if (payload_start != start || payload_end != end) {
+        throw std::runtime_error("OpenVINO cold KV payload range does not match import range");
+    }
+    if (!token_hash.empty() && !payload_hash.empty() && token_hash != payload_hash) {
+        throw std::runtime_error("OpenVINO cold KV payload token hash does not match import range");
+    }
+    if (payload_block_size != block_manager.get_block_size()) {
+        throw std::runtime_error("OpenVINO cold KV payload block size does not match this model");
+    }
+    if (payload_layers != kv_manager.get_num_layers()) {
+        throw std::runtime_error("OpenVINO cold KV payload layer count does not match this model");
+    }
+    if (payload_blocks == 0) {
+        throw std::runtime_error("OpenVINO cold KV payload contains no KV blocks");
+    }
+
+    auto &block_private = genai_private(block_manager);
+    std::lock_guard<std::mutex> lock(block_private.m_cached_blocks_map_mutex);
+    for (size_t block = 0; block < payload_blocks; ++block) {
+        const size_t content_len = checked_size(reader.pod<uint64_t>(), "cold KV content length");
+        const size_t payload_prefix_hash = checked_size(reader.pod<uint64_t>(), "cold KV prefix hash");
+        const size_t expected_hash = prefix_hash_for_tokens(prefix_tokens, content_len, payload_block_size);
+        if (payload_prefix_hash != expected_hash) {
+            throw std::runtime_error("OpenVINO cold KV payload prefix hash does not match prefix tokens");
+        }
+        auto blocks = ensure_import_blocks_locked(block_manager, expected_hash);
+        for (size_t layer = 0; layer < payload_layers; ++layer) {
+            const auto key_len = checked_size(reader.pod<uint64_t>(), "cold KV key block");
+            auto key_bytes = reader.bytes(key_len);
+            const auto value_len = checked_size(reader.pod<uint64_t>(), "cold KV value block");
+            auto value_bytes = reader.bytes(value_len);
+            const size_t block_index = cache_block_index_for_layer(blocks, layer, payload_layers);
+            write_cache_block_bytes(kv_manager.get_key_cache(layer), block_index, key_bytes);
+            write_cache_block_bytes(kv_manager.get_value_cache(layer), block_index, value_bytes);
+        }
+    }
+    reader.expect_finished();
+}
+
 extern "C" {
 
 cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device,
@@ -717,6 +1211,143 @@ int cx_genai_tokenize(cx_genai_session *s,
         write_buf(err, err_len, e.what());
         return 1;
     }
+}
+
+int cx_genai_supports_cold_kv(cx_genai_session *s) {
+    if (!s) {
+        return 0;
+    }
+    try {
+        bool supported = false;
+        s->run([&] {
+            supported = genai_cold_kv_supported_locked(s);
+        });
+        return supported ? 1 : 0;
+    } catch (...) {
+        return 0;
+    }
+}
+
+int cx_genai_export_cold_kv(cx_genai_session *s,
+                            int start,
+                            int end,
+                            const int64_t *tokens,
+                            size_t tokens_len,
+                            const int64_t *prefix_tokens,
+                            size_t prefix_tokens_len,
+                            const char *token_hash,
+                            uint8_t **out,
+                            size_t *out_len,
+                            char *err,
+                            size_t err_len) {
+    if (out) {
+        *out = nullptr;
+    }
+    if (out_len) {
+        *out_len = 0;
+    }
+    if (!s) {
+        write_buf(err, err_len, "OpenVINO GenAI session is nil");
+        return 1;
+    }
+    if (!out || !out_len) {
+        write_buf(err, err_len, "OpenVINO cold KV export output pointer is nil");
+        return 1;
+    }
+    if (start < 0 || end <= start || !tokens || tokens_len == 0 || !prefix_tokens || prefix_tokens_len == 0) {
+        write_buf(err, err_len, "OpenVINO cold KV export range is empty");
+        return 1;
+    }
+    try {
+        std::vector<int64_t> token_copy(tokens, tokens + tokens_len);
+        (void)token_copy;
+        std::vector<int64_t> prefix_copy(prefix_tokens, prefix_tokens + prefix_tokens_len);
+        std::string hash = (token_hash && token_hash[0]) ? std::string(token_hash) : std::string();
+        std::vector<uint8_t> payload;
+        s->run([&] {
+            if (!s->pipe) {
+                throw std::runtime_error("OpenVINO GenAI session is closed");
+            }
+            payload = genai_export_cold_kv_locked(
+                s,
+                static_cast<size_t>(start),
+                static_cast<size_t>(end),
+                prefix_copy,
+                hash);
+        });
+        if (payload.empty()) {
+            throw std::runtime_error("OpenVINO GenAI cold KV export returned no bytes");
+        }
+        void *buf = std::malloc(payload.size());
+        if (!buf) {
+            throw std::runtime_error("allocate OpenVINO cold KV export payload");
+        }
+        std::memcpy(buf, payload.data(), payload.size());
+        *out = reinterpret_cast<uint8_t *>(buf);
+        *out_len = payload.size();
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO cold KV export error");
+        return 1;
+    }
+}
+
+int cx_genai_import_cold_kv(cx_genai_session *s,
+                            int start,
+                            int end,
+                            int dest_start,
+                            const int64_t *tokens,
+                            size_t tokens_len,
+                            const int64_t *prefix_tokens,
+                            size_t prefix_tokens_len,
+                            const char *token_hash,
+                            const uint8_t *data,
+                            size_t data_len,
+                            char *err,
+                            size_t err_len) {
+    (void)dest_start;
+    if (!s) {
+        write_buf(err, err_len, "OpenVINO GenAI session is nil");
+        return 1;
+    }
+    if (start < 0 || end <= start || !tokens || tokens_len == 0 || !prefix_tokens || prefix_tokens_len == 0 || !data || data_len == 0) {
+        write_buf(err, err_len, "OpenVINO cold KV import range or payload is empty");
+        return 1;
+    }
+    try {
+        std::vector<int64_t> token_copy(tokens, tokens + tokens_len);
+        (void)token_copy;
+        std::vector<int64_t> prefix_copy(prefix_tokens, prefix_tokens + prefix_tokens_len);
+        std::string hash = (token_hash && token_hash[0]) ? std::string(token_hash) : std::string();
+        std::vector<uint8_t> payload(data, data + data_len);
+        s->run([&] {
+            if (!s->pipe) {
+                throw std::runtime_error("OpenVINO GenAI session is closed");
+            }
+            genai_import_cold_kv_locked(
+                s,
+                static_cast<size_t>(start),
+                static_cast<size_t>(end),
+                prefix_copy,
+                hash,
+                payload.data(),
+                payload.size());
+        });
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO cold KV import error");
+        return 1;
+    }
+}
+
+void cx_genai_kv_data_free(void *p) {
+    std::free(p);
 }
 
 int cx_genai_generate(cx_genai_session *s,

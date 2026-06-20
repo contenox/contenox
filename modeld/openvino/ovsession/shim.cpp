@@ -3,7 +3,9 @@
 #include "shim.h"
 
 #include <cstring>
+#include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -15,11 +17,11 @@ static void set_err(char *err, size_t errlen, const std::string &m) {
     err[errlen - 1] = '\0';
 }
 
-template <typename T> static void wr(std::ofstream &o, const T &v) {
+template <typename T> static void wr(std::ostream &o, const T &v) {
     o.write(reinterpret_cast<const char *>(&v), sizeof(T));
 }
 
-template <typename T> static void rd(std::ifstream &i, T &v) {
+template <typename T> static void rd(std::istream &i, T &v) {
     i.read(reinterpret_cast<char *>(&v), sizeof(T));
 }
 
@@ -70,6 +72,78 @@ static int64_t run_infer(cx_session *s, const int64_t *ids, size_t n, int64_t pa
     return best;
 }
 
+static void write_snapshot(cx_session *s, std::ostream &out) {
+    wr(out, s->cursor);
+    wr(out, s->pending);
+    auto states = s->req.query_state();
+    int32_t state_count = static_cast<int32_t>(states.size());
+    wr(out, state_count);
+
+    for (auto &state : states) {
+        ov::Tensor tensor = state.get_state();
+        ov::Shape shape = tensor.get_shape();
+        int32_t rank = static_cast<int32_t>(shape.size());
+        wr(out, rank);
+        for (size_t dim : shape) {
+            int64_t stored_dim = static_cast<int64_t>(dim);
+            wr(out, stored_dim);
+        }
+        int64_t bytes = static_cast<int64_t>(tensor.get_byte_size());
+        wr(out, bytes);
+        out.write(static_cast<const char *>(tensor.data()), bytes);
+    }
+    if (!out) {
+        throw std::runtime_error("snapshot write failed");
+    }
+}
+
+static void read_snapshot(cx_session *s, std::istream &in) {
+    rd(in, s->cursor);
+    rd(in, s->pending);
+    int32_t state_count;
+    rd(in, state_count);
+    if (!in) {
+        throw std::runtime_error("snapshot header is truncated");
+    }
+
+    s->req.reset_state();
+    auto states = s->req.query_state();
+    if (static_cast<int32_t>(states.size()) != state_count) {
+        throw std::runtime_error("state count mismatch");
+    }
+
+    for (int32_t i = 0; i < state_count; i++) {
+        int32_t rank;
+        rd(in, rank);
+        if (!in || rank < 0) {
+            throw std::runtime_error("snapshot tensor rank is invalid");
+        }
+        ov::Shape shape(static_cast<size_t>(rank));
+        for (int32_t j = 0; j < rank; j++) {
+            int64_t dim;
+            rd(in, dim);
+            if (!in || dim < 0) {
+                throw std::runtime_error("snapshot tensor shape is invalid");
+            }
+            shape[static_cast<size_t>(j)] = static_cast<size_t>(dim);
+        }
+
+        int64_t bytes;
+        rd(in, bytes);
+        // VariableState exposes f32 tensors even when the CPU plugin stores
+        // KV internally as f16. Allocate to the exposed type and byte size.
+        ov::Tensor tensor(ov::element::f32, shape);
+        if (static_cast<int64_t>(tensor.get_byte_size()) != bytes) {
+            throw std::runtime_error("state byte size mismatch");
+        }
+        in.read(static_cast<char *>(tensor.data()), bytes);
+        if (!in) {
+            throw std::runtime_error("snapshot tensor data is truncated");
+        }
+        states[static_cast<size_t>(i)].set_state(tensor);
+    }
+}
+
 extern "C" {
 
 cx_session *cx_session_new(const char *model_dir, const char *device, char *err, size_t errlen) {
@@ -116,26 +190,7 @@ int cx_snapshot_save(cx_session *s, const char *path, char *err, size_t errlen) 
     try {
         std::ofstream out(path, std::ios::binary);
         if (!out) throw std::runtime_error("cannot open snapshot for write");
-
-        wr(out, s->cursor);
-        wr(out, s->pending);
-        auto states = s->req.query_state();
-        int32_t state_count = static_cast<int32_t>(states.size());
-        wr(out, state_count);
-
-        for (auto &state : states) {
-            ov::Tensor tensor = state.get_state();
-            ov::Shape shape = tensor.get_shape();
-            int32_t rank = static_cast<int32_t>(shape.size());
-            wr(out, rank);
-            for (size_t dim : shape) {
-                int64_t stored_dim = static_cast<int64_t>(dim);
-                wr(out, stored_dim);
-            }
-            int64_t bytes = static_cast<int64_t>(tensor.get_byte_size());
-            wr(out, bytes);
-            out.write(static_cast<const char *>(tensor.data()), bytes);
-        }
+        write_snapshot(s, out);
         return 0;
     } catch (const std::exception &e) {
         set_err(err, errlen, e.what());
@@ -147,39 +202,53 @@ int cx_snapshot_restore(cx_session *s, const char *path, char *err, size_t errle
     try {
         std::ifstream in(path, std::ios::binary);
         if (!in) throw std::runtime_error("cannot open snapshot for read");
+        read_snapshot(s, in);
+        return 0;
+    } catch (const std::exception &e) {
+        set_err(err, errlen, e.what());
+        return 1;
+    }
+}
 
-        rd(in, s->cursor);
-        rd(in, s->pending);
-        int32_t state_count;
-        rd(in, state_count);
-
-        s->req.reset_state();
-        auto states = s->req.query_state();
-        if (static_cast<int32_t>(states.size()) != state_count) {
-            throw std::runtime_error("state count mismatch");
+int cx_snapshot_data(cx_session *s, uint8_t **out, size_t *out_len, char *err, size_t errlen) {
+    try {
+        if (!out || !out_len) {
+            throw std::runtime_error("snapshot output pointer is null");
         }
-
-        for (int32_t i = 0; i < state_count; i++) {
-            int32_t rank;
-            rd(in, rank);
-            ov::Shape shape(static_cast<size_t>(rank));
-            for (int32_t j = 0; j < rank; j++) {
-                int64_t dim;
-                rd(in, dim);
-                shape[static_cast<size_t>(j)] = static_cast<size_t>(dim);
-            }
-
-            int64_t bytes;
-            rd(in, bytes);
-            // VariableState exposes f32 tensors even when the CPU plugin stores
-            // KV internally as f16. Allocate to the exposed type and byte size.
-            ov::Tensor tensor(ov::element::f32, shape);
-            if (static_cast<int64_t>(tensor.get_byte_size()) != bytes) {
-                throw std::runtime_error("state byte size mismatch");
-            }
-            in.read(static_cast<char *>(tensor.data()), bytes);
-            states[static_cast<size_t>(i)].set_state(tensor);
+        std::ostringstream ss(std::ios::out | std::ios::binary);
+        write_snapshot(s, ss);
+        const std::string data = ss.str();
+        void *buf = std::malloc(data.size());
+        if (!buf && !data.empty()) {
+            throw std::runtime_error("cannot allocate snapshot data");
         }
+        if (!data.empty()) {
+            std::memcpy(buf, data.data(), data.size());
+        }
+        *out = static_cast<uint8_t *>(buf);
+        *out_len = data.size();
+        return 0;
+    } catch (const std::exception &e) {
+        set_err(err, errlen, e.what());
+        return 1;
+    }
+}
+
+void cx_snapshot_data_free(void *p) {
+    std::free(p);
+}
+
+int cx_snapshot_restore_data(cx_session *s, const uint8_t *data, size_t data_len, char *err, size_t errlen) {
+    try {
+        if (!data && data_len != 0) {
+            throw std::runtime_error("snapshot data pointer is null");
+        }
+        std::string raw;
+        if (data_len > 0) {
+            raw.assign(reinterpret_cast<const char *>(data), data_len);
+        }
+        std::istringstream in(raw, std::ios::in | std::ios::binary);
+        read_snapshot(s, in);
         return 0;
     } catch (const std::exception &e) {
         set_err(err, errlen, e.what());

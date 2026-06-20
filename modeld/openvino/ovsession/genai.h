@@ -90,6 +90,34 @@ int cx_genai_tokenize(cx_genai_session *s,
                       char *err,
                       size_t err_len);
 
+int cx_genai_supports_cold_kv(cx_genai_session *s);
+int cx_genai_export_cold_kv(cx_genai_session *s,
+                            int start,
+                            int end,
+                            const int64_t *tokens,
+                            size_t tokens_len,
+                            const int64_t *prefix_tokens,
+                            size_t prefix_tokens_len,
+                            const char *token_hash,
+                            uint8_t **out,
+                            size_t *out_len,
+                            char *err,
+                            size_t err_len);
+int cx_genai_import_cold_kv(cx_genai_session *s,
+                            int start,
+                            int end,
+                            int dest_start,
+                            const int64_t *tokens,
+                            size_t tokens_len,
+                            const int64_t *prefix_tokens,
+                            size_t prefix_tokens_len,
+                            const char *token_hash,
+                            const uint8_t *data,
+                            size_t data_len,
+                            char *err,
+                            size_t err_len);
+void cx_genai_kv_data_free(void *p);
+
 int cx_genai_generate(cx_genai_session *s,
                       const char *prompt,
                       size_t max_new_tokens,

@@ -44,6 +44,7 @@ func TestUnit_ServiceDescribeResolvesCapacity(t *testing.T) {
 	dir := writeTestIR(t)
 	svc := NewService(
 		WithMemorySource(staticMemory(2<<20)),
+		WithHostMemorySource(staticMemory(0)),
 		WithCapacityPolicy(capacity.Policy{MaxResidentBytes: 1 << 20, HeadroomFrac: 0.1}),
 	)
 
@@ -76,6 +77,7 @@ func TestUnit_ServiceDescribeDefaultsResidentCapFromDetectedFreeMemory(t *testin
 	dir := writeTestIR(t)
 	svc := NewService(
 		WithMemorySource(staticMemory(10<<20)),
+		WithHostMemorySource(staticMemory(16<<20)),
 		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
 	)
 
@@ -89,6 +91,35 @@ func TestUnit_ServiceDescribeDefaultsResidentCapFromDetectedFreeMemory(t *testin
 	}
 	if info.UserLimitBytes != 8<<20 {
 		t.Fatalf("UserLimitBytes = %d, want 80%% of detected launch free", info.UserLimitBytes)
+	}
+	if info.HostColdBudgetBytes != 4<<20 {
+		t.Fatalf("HostColdBudgetBytes = %d, want 25%% of host free", info.HostColdBudgetBytes)
+	}
+}
+
+func TestUnit_ServiceDescribeReportsPlannerAboveHotWithHostColdBudget(t *testing.T) {
+	dir := writeTestIR(t)
+	svc := NewService(
+		WithMemorySource(staticMemory(2<<20)),
+		WithHostMemorySource(staticMemory(16<<20)),
+		WithCapacityPolicy(capacity.Policy{MaxResidentBytes: 1 << 20, HeadroomFrac: 0.1}),
+	)
+
+	info, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type: "openvino",
+		Path: dir,
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.HotContextTokens != info.EffectiveContext {
+		t.Fatalf("hot/effective = %d/%d, want equal dense hot window", info.HotContextTokens, info.EffectiveContext)
+	}
+	if info.PlannerEffectiveContext <= info.HotContextTokens {
+		t.Fatalf("PlannerEffectiveContext = %d, want above hot %d", info.PlannerEffectiveContext, info.HotContextTokens)
+	}
+	if info.HostColdBudgetBytes != 4<<20 {
+		t.Fatalf("HostColdBudgetBytes = %d, want default 4MiB", info.HostColdBudgetBytes)
 	}
 }
 
@@ -127,6 +158,7 @@ func TestUnit_ServiceOpenSessionRejectsOversizedContextBeforeBackend(t *testing.
 	dir := writeTestIR(t)
 	svc := NewService(
 		WithMemorySource(staticMemory(2<<20)),
+		WithHostMemorySource(staticMemory(0)),
 		WithCapacityPolicy(capacity.Policy{MaxResidentBytes: 1 << 20, HeadroomFrac: 0.1}),
 	)
 

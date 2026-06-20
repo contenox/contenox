@@ -16,7 +16,7 @@ OPENVINO_CGO_CXXFLAGS = -std=c++17 -I$(OPENVINO_PKG)/include
 # Use DT_RPATH so OpenVINO transitive libraries resolve without LD_LIBRARY_PATH.
 OPENVINO_RPATH_DTAGS = -Wl,--disable-new-dtags
 OPENVINO_CGO_LDFLAGS = -L$(OPENVINO_PKG)/libs -l:libopenvino.so.2620 -lstdc++ $(OPENVINO_RPATH_DTAGS) -Wl,-rpath,$(OPENVINO_PKG)/libs
-OPENVINO_GENAI_CGO_CXXFLAGS = $(OPENVINO_CGO_CXXFLAGS) -I$(OPENVINO_GENAI_SRC)/src/cpp/include
+OPENVINO_GENAI_CGO_CXXFLAGS = $(OPENVINO_CGO_CXXFLAGS) -I$(OPENVINO_GENAI_SRC)/src/cpp/include -I$(OPENVINO_GENAI_SRC)/src/cpp/src -I$(OPENVINO_GENAI_SRC)/build/_deps/minja-src/include -I$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src
 
 # GenAI link flags without a runtime rpath.
 # Tests and packages append the appropriate runtime rpath.

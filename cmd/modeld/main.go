@@ -8,7 +8,7 @@
 //
 // Usage:
 //
-//	modeld serve  [--data-root DIR] [--ttl DURATION] [--mem-max 8GiB] [--mem-reserve 2GiB]
+//	modeld serve  [--data-root DIR] [--ttl DURATION] [--mem-max 8GiB] [--mem-reserve 2GiB] [--mem-cold 16GiB]
 //	modeld status [--data-root DIR] [--json]
 package main
 
@@ -52,6 +52,7 @@ func run(args []string) error {
 	listen := fs.String("listen", "127.0.0.1:0", "gRPC listen address for serve")
 	memMax := fs.String("mem-max", "", "maximum modeld resident memory budget (bytes or e.g. 8GiB)")
 	memReserve := fs.String("mem-reserve", "", "memory to leave free for desktop/other workloads (bytes or e.g. 2GiB)")
+	memCold := fs.String("mem-cold", "", "host-RAM KV cold-store budget (bytes or e.g. 16GiB)")
 	asJSON := fs.Bool("json", false, "machine-readable JSON output (status)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -64,7 +65,7 @@ func run(args []string) error {
 
 	switch cmd {
 	case "serve":
-		policy, err := resolvePolicy(resolvedRoot, *memMax, *memReserve)
+		policy, err := resolvePolicy(resolvedRoot, *memMax, *memReserve, *memCold)
 		if err != nil {
 			return err
 		}
@@ -76,7 +77,7 @@ func run(args []string) error {
 	}
 }
 
-func resolvePolicy(dataRoot, memMax, memReserve string) (capacity.Policy, error) {
+func resolvePolicy(dataRoot, memMax, memReserve, memCold string) (capacity.Policy, error) {
 	policy := capacity.LoadPolicy(dataRoot)
 	if memMax != "" {
 		v, err := capacity.ParseBytes(memMax)
@@ -91,6 +92,13 @@ func resolvePolicy(dataRoot, memMax, memReserve string) (capacity.Policy, error)
 			return capacity.Policy{}, fmt.Errorf("parse --mem-reserve: %w", err)
 		}
 		policy.MinFreeBytes = v
+	}
+	if memCold != "" {
+		v, err := capacity.ParseBytes(memCold)
+		if err != nil {
+			return capacity.Policy{}, fmt.Errorf("parse --mem-cold: %w", err)
+		}
+		policy.HostColdBudgetBytes = v
 	}
 	return policy, nil
 }

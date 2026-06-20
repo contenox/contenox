@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
+	"github.com/contenox/runtime/modeld/residency"
 	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/transport"
 )
@@ -26,6 +27,10 @@ type fakeGenAIBackend struct {
 	emit            []string
 	emitChunks      []ovsession.StreamChunk
 	closed          bool
+	supportsColdKV  bool
+	exportedColdKV  []ovsession.ColdKVRange
+	importedColdKV  []ovsession.ColdKVRange
+	importedKV      [][]byte
 }
 
 func (f *fakeGenAIBackend) Generate(_ context.Context, prompt string, opts ovsession.GenerateOptions) (ovsession.GenAIResult, error) {
@@ -80,6 +85,33 @@ func (f *fakeGenAIBackend) ApplyChatTemplate(messages []ovsession.ChatMessage, t
 }
 
 func (f *fakeGenAIBackend) Close() error { f.closed = true; return nil }
+
+func (f *fakeGenAIBackend) SupportsColdKV() bool { return f.supportsColdKV }
+
+func (f *fakeGenAIBackend) ExportColdKV(_ context.Context, r ovsession.ColdKVRange) ([]byte, error) {
+	f.exportedColdKV = append(f.exportedColdKV, cloneColdKVRange(r))
+	return append([]byte("openvino-kv:"), byte(r.End-r.Start)), nil
+}
+
+func (f *fakeGenAIBackend) ImportColdKV(_ context.Context, r ovsession.ColdKVRange, kv []byte) error {
+	f.importedColdKV = append(f.importedColdKV, cloneColdKVRange(r))
+	f.importedKV = append(f.importedKV, append([]byte(nil), kv...))
+	return nil
+}
+
+func cloneColdKVRange(r ovsession.ColdKVRange) ovsession.ColdKVRange {
+	r.Tokens = append([]int(nil), r.Tokens...)
+	r.PrefixTokens = append([]int(nil), r.PrefixTokens...)
+	return r
+}
+
+func runesFromInts(tokens []int) []rune {
+	out := make([]rune, len(tokens))
+	for i, tok := range tokens {
+		out[i] = rune(tok)
+	}
+	return out
+}
 
 func ovManifest(stableHash, runtimeDigest string) contextasm.ContextManifest {
 	return contextasm.ContextManifest{
@@ -215,6 +247,70 @@ func TestGenaiSessionExplainContextSurfacesResidencyPlan(t *testing.T) {
 	}
 	if res.Error != "" {
 		t.Fatalf("unexpected residency error: %q", res.Error)
+	}
+}
+
+func TestGenaiSessionColdStoreEvictAdmitUsesBackendKVHooks(t *testing.T) {
+	fake := &fakeGenAIBackend{supportsColdKV: true}
+	s := newGenaiSessionWithPlanner(fake, 6, 10, true)
+	ctx := context.Background()
+	m := ovManifest(contextasm.HashString("abcdef"), "r1")
+
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "abcdef", Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	report := s.ExplainContext()
+	if report.Residency == nil || !report.Residency.Capabilities.ColdStore {
+		t.Fatalf("cold-store capability not reported: %+v", report.Residency)
+	}
+
+	exec := any(s).(residency.Executor)
+	r := residency.Range{Start: 2, End: 4}
+	if err := exec.EvictRange(ctx, r); err != nil {
+		t.Fatalf("EvictRange: %v", err)
+	}
+	if len(fake.exportedColdKV) != 1 {
+		t.Fatalf("export calls = %d, want 1", len(fake.exportedColdKV))
+	}
+	if got := fake.exportedColdKV[0]; got.Start != 2 || got.End != 4 || string([]rune{rune(got.Tokens[0]), rune(got.Tokens[1])}) != "cd" || string(runesFromInts(got.PrefixTokens)) != "abcdef" || got.TokenHash == "" {
+		t.Fatalf("export range = %+v, want cd [2,4) with abcdef prefix and hash", got)
+	}
+	if got := s.ExplainContext(); got.ResidentTokens != 4 || got.PrefixTokens != 4 {
+		t.Fatalf("after evict context = %+v, want resident=4 prefix=4", got)
+	}
+
+	if err := exec.AdmitRange(ctx, r); err != nil {
+		t.Fatalf("AdmitRange: %v", err)
+	}
+	if len(fake.importedColdKV) != 1 {
+		t.Fatalf("import calls = %d, want 1", len(fake.importedColdKV))
+	}
+	if got := fake.importedColdKV[0]; got.Start != 2 || got.End != 4 || got.DestStart != 4 || string([]rune{rune(got.Tokens[0]), rune(got.Tokens[1])}) != "cd" || string(runesFromInts(got.PrefixTokens)) != "abcdef" || got.TokenHash == "" {
+		t.Fatalf("import range = %+v, want cd [2,4) -> 4 with abcdef prefix and hash", got)
+	}
+	if len(fake.importedKV) != 1 || len(fake.importedKV[0]) == 0 {
+		t.Fatalf("imported kv payload = %+v, want bytes", fake.importedKV)
+	}
+	if got := s.ExplainContext(); got.ResidentTokens != 6 {
+		t.Fatalf("after admit context = %+v, want resident=6", got)
+	}
+}
+
+func TestGenaiSessionColdStoreDisabledWithoutBackendHooks(t *testing.T) {
+	s := newGenaiSessionWithPlanner(&fakeGenAIBackend{}, 6, 10, true)
+	ctx := context.Background()
+	m := ovManifest(contextasm.HashString("abcdef"), "r1")
+
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "abcdef", Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	report := s.ExplainContext()
+	if report.Residency == nil || report.Residency.Capabilities.ColdStore {
+		t.Fatalf("cold-store capability should be disabled without hooks: %+v", report.Residency)
+	}
+	err := s.EvictRange(ctx, residency.Range{Start: 2, End: 4})
+	if !errors.Is(err, transport.ErrUnsupportedFeature) {
+		t.Fatalf("EvictRange without hooks = %v, want ErrUnsupportedFeature", err)
 	}
 }
 

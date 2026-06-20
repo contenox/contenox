@@ -26,3 +26,5 @@ func (s *Session) Prefill(tokens []int64) error      { return ErrUnavailable }
 func (s *Session) DecodeNext() (int64, error)        { return -1, ErrUnavailable }
 func (s *Session) SnapshotSave(path string) error    { return ErrUnavailable }
 func (s *Session) SnapshotRestore(path string) error { return ErrUnavailable }
+func (s *Session) SnapshotData() ([]byte, error)     { return nil, ErrUnavailable }
+func (s *Session) SnapshotRestoreData([]byte) error  { return ErrUnavailable }

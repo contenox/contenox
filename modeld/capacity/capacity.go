@@ -27,6 +27,10 @@ const DefaultHeadroomFrac = 0.1
 // can still clamp lower.
 const DefaultMaxResidentFrac = 0.8
 
+// DefaultHostColdFrac is the launch-time cap for the host-RAM KV cold store
+// when the user did not set one explicitly.
+const DefaultHostColdFrac = 0.25
+
 // kvTypeBytes is the per-element size of one KV cache entry for a precision.
 // KV is two tensors (K and V); KVBytesPerToken accounts for both. Quantized KV
 // rounds up to a whole byte — KV is tiny next to weights, so over-estimating is
@@ -59,25 +63,26 @@ func KVBytesPerToken(nLayers, nKVHeads, headDim int, kvType string) int64 {
 // an unknown ModelMaxCtx or KVBytesPerToken disables that side of the clamp
 // rather than producing a bogus window.
 type Params struct {
-	ModelMaxCtx     int     // model's trained context ceiling (0 = unknown)
-	KVBytesPerToken int64   // 0 = unknown (cannot budget by memory)
-	WeightsBytes    int64   // resident model weight footprint
-	OverheadBytes   int64   // fixed runtime buffers (compute graph, staging)
-	FreeBytes       int64   // device free memory
-	ReservedBytes   int64   // memory already reserved by resident sessions
-	UserLimitBytes  int64   // user cap for modeld resident memory (0 = no cap)
-	MinFreeBytes    int64   // memory to leave free for the desktop/other workloads
-	Request         int     // requested window (0 = use the resolved max)
-	HeadroomFrac    float64 // <=0 or >=1 falls back to DefaultHeadroomFrac
+	ModelMaxCtx         int     // model's trained context ceiling (0 = unknown)
+	KVBytesPerToken     int64   // 0 = unknown (cannot budget by memory)
+	WeightsBytes        int64   // resident model weight footprint
+	OverheadBytes       int64   // fixed runtime buffers (compute graph, staging)
+	FreeBytes           int64   // device free memory
+	ReservedBytes       int64   // memory already reserved by resident sessions
+	UserLimitBytes      int64   // user cap for modeld resident memory (0 = no cap)
+	MinFreeBytes        int64   // memory to leave free for the desktop/other workloads
+	HostColdBudgetBytes int64   // host-RAM budget for cold KV blocks (0 = none)
+	Request             int     // requested window (0 = use the resolved max)
+	HeadroomFrac        float64 // <=0 or >=1 falls back to DefaultHeadroomFrac
 }
 
 // ModelCapacity is the resolved result reported to the runtime. EffectiveContext
 // remains the dense context window modeld will actually serve today and the
 // value the cache identity must use. MemoryContextTokens is the raw KV-token
 // budget from memory before model/request clamping. HotContextTokens is the
-// physical hot KV budget for the current dense session; PlannerEffectiveContext
-// is the logical planner context and currently equals EffectiveContext until
-// sparse attention + cold KV offload are executable.
+// physical hot KV budget. PlannerEffectiveContext is the logical planner window:
+// it equals the dense window when no host cold budget exists, and can grow by the
+// cold KV token budget once host offload is configured.
 type ModelCapacity struct {
 	ModelMaxContext         int
 	EffectiveContext        int
@@ -91,13 +96,15 @@ type ModelCapacity struct {
 	ReservedBytes           int64
 	UserLimitBytes          int64
 	MinFreeBytes            int64
+	HostColdBudgetBytes     int64
 	UsableBytes             int64
 	RequiredBytes           int64
 	Clamped                 bool
 	Reason                  string
 }
 
-// Resolve computes the physical hot context window:
+// Resolve computes the dense compatibility window, physical hot context budget,
+// and logical planner window:
 //
 //	usable = min(free - minFree, userLimit - reserved) * (1 - headroom)
 //	effective = clamp(request, 0, min(modelMax, (usable - weights - overhead) / kvBytesPerToken))
@@ -159,13 +166,36 @@ func Resolve(p Params) ModelCapacity {
 	}
 
 	hotTokens := eff
+	if p.KVBytesPerToken > 0 && memoryTokens > 0 {
+		hotTokens = memoryTokens
+		if p.ModelMaxCtx > 0 && hotTokens > p.ModelMaxCtx {
+			hotTokens = p.ModelMaxCtx
+		}
+		if p.Request > 0 && hotTokens > p.Request {
+			hotTokens = p.Request
+		}
+	}
+	coldTokens := 0
+	if p.KVBytesPerToken > 0 && p.HostColdBudgetBytes > 0 {
+		coldTokens = int(p.HostColdBudgetBytes / p.KVBytesPerToken)
+	}
+	planner := hotTokens + coldTokens
+	if p.ModelMaxCtx > 0 && planner > p.ModelMaxCtx {
+		planner = p.ModelMaxCtx
+	}
+	if p.Request > 0 && planner > p.Request {
+		planner = p.Request
+	}
+	if planner < eff {
+		planner = eff
+	}
 
 	return ModelCapacity{
 		ModelMaxContext:         p.ModelMaxCtx,
 		EffectiveContext:        eff,
 		MemoryContextTokens:     memoryTokens,
 		HotContextTokens:        hotTokens,
-		PlannerEffectiveContext: eff,
+		PlannerEffectiveContext: planner,
 		KVBytesPerToken:         p.KVBytesPerToken,
 		FreeBytes:               p.FreeBytes,
 		WeightsBytes:            p.WeightsBytes,
@@ -173,6 +203,7 @@ func Resolve(p Params) ModelCapacity {
 		ReservedBytes:           p.ReservedBytes,
 		UserLimitBytes:          p.UserLimitBytes,
 		MinFreeBytes:            p.MinFreeBytes,
+		HostColdBudgetBytes:     p.HostColdBudgetBytes,
 		UsableBytes:             usable,
 		RequiredBytes:           required,
 		Clamped:                 clamped,
@@ -185,9 +216,10 @@ func Resolve(p Params) ModelCapacity {
 // footprint for the served device; MinFreeBytes preserves memory for the desktop
 // or other local workloads that may share the same device.
 type Policy struct {
-	MaxResidentBytes int64   `json:"max_resident_bytes,omitempty"`
-	MinFreeBytes     int64   `json:"min_free_bytes,omitempty"`
-	HeadroomFrac     float64 `json:"headroom_frac,omitempty"`
+	MaxResidentBytes    int64   `json:"max_resident_bytes,omitempty"`
+	MinFreeBytes        int64   `json:"min_free_bytes,omitempty"`
+	HostColdBudgetBytes int64   `json:"host_cold_budget_bytes,omitempty"`
+	HeadroomFrac        float64 `json:"headroom_frac,omitempty"`
 }
 
 // LaunchDefaults records the first observed free-memory snapshot per memory
@@ -207,6 +239,16 @@ type LaunchDefaults struct {
 func WithLaunchDefaults(p Policy, launch DeviceSnapshot) Policy {
 	if p.MaxResidentBytes <= 0 && launch.FreeBytes > 0 {
 		p.MaxResidentBytes = int64(float64(launch.FreeBytes) * DefaultMaxResidentFrac)
+	}
+	return p
+}
+
+// WithHostColdDefaults fills the host-RAM cold-store budget from a host memory
+// snapshot. It is separate from WithLaunchDefaults because the hot model budget
+// may come from VRAM while the cold store always lives in host RAM.
+func WithHostColdDefaults(p Policy, host DeviceSnapshot) Policy {
+	if p.HostColdBudgetBytes <= 0 && host.FreeBytes > 0 {
+		p.HostColdBudgetBytes = int64(float64(host.FreeBytes) * DefaultHostColdFrac)
 	}
 	return p
 }
@@ -243,23 +285,29 @@ func LoadPolicy(dataRoot string) Policy {
 	if dataRoot != "" {
 		var raw struct {
 			Memory struct {
-				MaxResidentBytes int64   `json:"max_resident_bytes"`
-				MinFreeBytes     int64   `json:"min_free_bytes"`
-				MaxResident      string  `json:"max_resident"`
-				ReserveFree      string  `json:"reserve_free"`
-				HeadroomFrac     float64 `json:"headroom_frac"`
+				MaxResidentBytes    int64   `json:"max_resident_bytes"`
+				MinFreeBytes        int64   `json:"min_free_bytes"`
+				HostColdBudgetBytes int64   `json:"host_cold_budget_bytes"`
+				MaxResident         string  `json:"max_resident"`
+				ReserveFree         string  `json:"reserve_free"`
+				HostColdBudget      string  `json:"host_cold_budget"`
+				HeadroomFrac        float64 `json:"headroom_frac"`
 			} `json:"memory"`
 		}
 		if b, err := os.ReadFile(dataRoot + string(os.PathSeparator) + "modeld.json"); err == nil {
 			_ = json.Unmarshal(b, &raw)
 			p.MaxResidentBytes = raw.Memory.MaxResidentBytes
 			p.MinFreeBytes = raw.Memory.MinFreeBytes
+			p.HostColdBudgetBytes = raw.Memory.HostColdBudgetBytes
 			p.HeadroomFrac = raw.Memory.HeadroomFrac
 			if v, err := ParseBytes(raw.Memory.MaxResident); err == nil && v > 0 {
 				p.MaxResidentBytes = v
 			}
 			if v, err := ParseBytes(raw.Memory.ReserveFree); err == nil && v > 0 {
 				p.MinFreeBytes = v
+			}
+			if v, err := ParseBytes(raw.Memory.HostColdBudget); err == nil && v > 0 {
+				p.HostColdBudgetBytes = v
 			}
 		}
 	}
@@ -268,6 +316,9 @@ func LoadPolicy(dataRoot string) Policy {
 	}
 	if v, err := ParseBytes(os.Getenv("CONTENOX_MODELD_MEM_RESERVE")); err == nil && v > 0 {
 		p.MinFreeBytes = v
+	}
+	if v, err := ParseBytes(os.Getenv("CONTENOX_MODELD_MEM_COLD")); err == nil && v > 0 {
+		p.HostColdBudgetBytes = v
 	}
 	if v := os.Getenv("CONTENOX_MODELD_MEM_HEADROOM"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f < 1 {

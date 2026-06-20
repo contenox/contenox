@@ -32,6 +32,8 @@ genai-src:
 	test -d "$(OPENVINO_GENAI_REPO)/.git" || git clone https://github.com/openvinotoolkit/openvino.genai.git "$(OPENVINO_GENAI_REPO)"
 	git -C "$(OPENVINO_GENAI_REPO)" fetch --tags --force
 	test -d "$(OPENVINO_GENAI_SRC)" || git -C "$(OPENVINO_GENAI_REPO)" worktree add --detach "$(OPENVINO_GENAI_SRC)" "$(OPENVINO_GENAI_VERSION)"
+	test -f "$(OPENVINO_GENAI_SRC)/build/_deps/minja-src/include/minja/minja.hpp" || (mkdir -p "$(OPENVINO_GENAI_SRC)/build/_deps" && git clone https://github.com/google/minja.git "$(OPENVINO_GENAI_SRC)/build/_deps/minja-src" && git -C "$(OPENVINO_GENAI_SRC)/build/_deps/minja-src" checkout 3e4c61c616eda133cfb1e440fc7a14bf1729bbee)
+	test -f "$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src/gguflib.h" || (mkdir -p "$(OPENVINO_GENAI_SRC)/build/_deps" && git clone https://github.com/Lourdle/gguf-tools.git "$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src" && git -C "$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src" checkout bac796ada809ac293e685db59b075971181cb008)
 
 model: deps
 	"$(OPENVINO_VENV)/bin/python" -c 'from huggingface_hub import snapshot_download; snapshot_download(repo_id="$(OPENVINO_REPO)", local_dir="$(OPENVINO_MODEL)")'

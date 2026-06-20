@@ -1,0 +1,259 @@
+package openvino
+
+import (
+	"context"
+	"fmt"
+	"sort"
+
+	"github.com/contenox/runtime/modeld/openvino/ovsession"
+	"github.com/contenox/runtime/modeld/residency"
+	"github.com/contenox/runtime/runtime/contextasm"
+	"github.com/contenox/runtime/runtime/transport"
+)
+
+type genaiColdKVBackend interface {
+	SupportsColdKV() bool
+	ExportColdKV(context.Context, ovsession.ColdKVRange) ([]byte, error)
+	ImportColdKV(context.Context, ovsession.ColdKVRange, []byte) error
+}
+
+type openvinoColdBlock struct {
+	Range        residency.Range
+	Tokens       []int
+	PrefixTokens []int
+	TokenHash    string
+	KV           []byte
+	CacheClass   contextasm.CacheClass
+	LastUsed     int64
+}
+
+// EvictRange moves a logical token range from OpenVINO hot KV to the host cold
+// store when the backend exposes KV import/export.
+func (s *genaiSession) EvictRange(ctx context.Context, r residency.Range) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return transport.ErrSessionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !s.coldEnabledLocked() {
+		return fmt.Errorf("%w: openvino evict range [%d,%d) requires a cold KV backend", transport.ErrUnsupportedFeature, r.Start, r.End)
+	}
+	n := len(s.resident)
+	if r.Start < 0 || r.End > n || r.Start >= r.End {
+		return fmt.Errorf("openvino: evict range [%d,%d) outside resident [0,%d)", r.Start, r.End, n)
+	}
+	block, err := s.exportColdBlockLocked(ctx, r.Start, r.End)
+	if err != nil {
+		return err
+	}
+	s.resident = append(s.resident[:r.Start], s.resident[r.End:]...)
+	oldPrefix := s.prefixLen
+	s.prefixLen = min(r.Start, oldPrefix) + max(0, oldPrefix-r.End)
+	if block != nil {
+		s.storeColdBlockLocked(block)
+	}
+	return nil
+}
+
+// AdmitRange restores a previously evicted OpenVINO cold KV block at the hot
+// tail. It matches llama's first-pass append-mode behavior.
+func (s *genaiSession) AdmitRange(ctx context.Context, r residency.Range) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return transport.ErrSessionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.admitRangeLocked(ctx, r)
+}
+
+func (s *genaiSession) coldKVBackend() genaiColdKVBackend {
+	backend, ok := s.backend.(genaiColdKVBackend)
+	if !ok || !backend.SupportsColdKV() {
+		return nil
+	}
+	return backend
+}
+
+func (s *genaiSession) coldEnabledLocked() bool {
+	return s.coldMaxTokens > 0 && s.coldKVBackend() != nil
+}
+
+func (s *genaiSession) clearColdStoreLocked() {
+	s.coldTokens = 0
+	s.coldClock = 0
+	s.coldBlocks = nil
+	s.coldRangeKey = nil
+}
+
+func (s *genaiSession) exportColdBlockLocked(ctx context.Context, a, b int) (*openvinoColdBlock, error) {
+	if !s.coldEnabledLocked() {
+		return nil, nil
+	}
+	if b <= a {
+		return nil, nil
+	}
+	tokens := append([]int(nil), s.resident[a:b]...)
+	prefixTokens := append([]int(nil), s.resident...)
+	if len(tokens) > s.coldMaxTokens {
+		return nil, nil
+	}
+	tokenHash := contextasm.HashTokenIDs(tokens)
+	r := residency.Range{Start: a, End: b}
+	kv, err := s.coldKVBackend().ExportColdKV(ctx, ovsession.ColdKVRange{
+		Start:        a,
+		End:          b,
+		Tokens:       append([]int(nil), tokens...),
+		PrefixTokens: prefixTokens,
+		TokenHash:    tokenHash,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: openvino export cold kv [%d,%d): %v", transport.ErrSessionFatal, a, b, err)
+	}
+	if len(kv) == 0 {
+		return nil, fmt.Errorf("%w: openvino export cold kv [%d,%d) returned empty data", transport.ErrSessionFatal, a, b)
+	}
+	return &openvinoColdBlock{
+		Range:        r,
+		Tokens:       tokens,
+		PrefixTokens: prefixTokens,
+		TokenHash:    tokenHash,
+		KV:           kv,
+		CacheClass:   s.cacheClassForRangeLocked(r),
+	}, nil
+}
+
+func (s *genaiSession) storeColdBlockLocked(block *openvinoColdBlock) {
+	if block == nil || len(block.Tokens) == 0 || len(block.KV) == 0 || !s.coldEnabledLocked() {
+		return
+	}
+	if s.coldBlocks == nil {
+		s.coldBlocks = map[string]*openvinoColdBlock{}
+		s.coldRangeKey = map[string]string{}
+	}
+	key := openvinoColdBlockKey(block.Range, block.TokenHash)
+	if old := s.coldBlocks[key]; old != nil {
+		s.coldTokens -= len(old.Tokens)
+	}
+	s.coldClock++
+	block.LastUsed = s.coldClock
+	s.coldBlocks[key] = block
+	s.coldRangeKey[openvinoColdRangeKey(block.Range)] = key
+	s.coldTokens += len(block.Tokens)
+	s.trimColdStoreLocked(key)
+}
+
+func (s *genaiSession) trimColdStoreLocked(protectedKey string) {
+	for s.coldTokens > s.coldMaxTokens {
+		victimKey := s.coldVictimLocked(protectedKey)
+		if victimKey == "" {
+			return
+		}
+		s.deleteColdBlockLocked(victimKey)
+	}
+}
+
+func (s *genaiSession) coldVictimLocked(protectedKey string) string {
+	type candidate struct {
+		key string
+		b   *openvinoColdBlock
+	}
+	candidates := make([]candidate, 0, len(s.coldBlocks))
+	for key, block := range s.coldBlocks {
+		if key == protectedKey {
+			continue
+		}
+		candidates = append(candidates, candidate{key: key, b: block})
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		a, b := candidates[i].b, candidates[j].b
+		if a.CacheClass != b.CacheClass {
+			return a.CacheClass.MoreEvictableThan(b.CacheClass)
+		}
+		if a.LastUsed != b.LastUsed {
+			return a.LastUsed < b.LastUsed
+		}
+		if a.Range.Start != b.Range.Start {
+			return a.Range.Start < b.Range.Start
+		}
+		return a.Range.End < b.Range.End
+	})
+	return candidates[0].key
+}
+
+func (s *genaiSession) admitRangeLocked(ctx context.Context, r residency.Range) error {
+	if !s.coldEnabledLocked() {
+		return fmt.Errorf("%w: openvino admit range [%d,%d) requires a cold KV backend", transport.ErrUnsupportedFeature, r.Start, r.End)
+	}
+	key := s.coldRangeKey[openvinoColdRangeKey(r)]
+	block := s.coldBlocks[key]
+	if block == nil {
+		return fmt.Errorf("%w: openvino no cold KV block for range [%d,%d)", transport.ErrUnsupportedFeature, r.Start, r.End)
+	}
+	if len(s.resident)+len(block.Tokens) > s.numCtx {
+		return transport.ErrContextOverflow
+	}
+
+	destStart := len(s.resident)
+	if err := s.coldKVBackend().ImportColdKV(ctx, ovsession.ColdKVRange{
+		Start:        block.Range.Start,
+		End:          block.Range.End,
+		DestStart:    destStart,
+		Tokens:       append([]int(nil), block.Tokens...),
+		PrefixTokens: append([]int(nil), block.PrefixTokens...),
+		TokenHash:    block.TokenHash,
+	}, block.KV); err != nil {
+		return fmt.Errorf("%w: openvino import cold kv [%d,%d): %v", transport.ErrSessionFatal, r.Start, r.End, err)
+	}
+	s.resident = append(s.resident, block.Tokens...)
+	s.deleteColdBlockLocked(key)
+	return nil
+}
+
+func (s *genaiSession) deleteColdBlockLocked(key string) {
+	block := s.coldBlocks[key]
+	if block == nil {
+		return
+	}
+	delete(s.coldBlocks, key)
+	delete(s.coldRangeKey, openvinoColdRangeKey(block.Range))
+	s.coldTokens -= len(block.Tokens)
+	if s.coldTokens < 0 {
+		s.coldTokens = 0
+	}
+}
+
+func (s *genaiSession) cacheClassForRangeLocked(r residency.Range) contextasm.CacheClass {
+	class := contextasm.ClassVolatile
+	for _, block := range s.residencyPlan.KeepHot {
+		if block.Range.Start < r.End && r.Start < block.Range.End {
+			if class.MoreEvictableThan(block.CacheClass) {
+				class = block.CacheClass
+			}
+		}
+	}
+	for _, block := range s.residencyPlan.EvictCold {
+		if block.Range.Start < r.End && r.Start < block.Range.End {
+			if class.MoreEvictableThan(block.CacheClass) {
+				class = block.CacheClass
+			}
+		}
+	}
+	return class
+}
+
+func openvinoColdBlockKey(r residency.Range, hash string) string {
+	return fmt.Sprintf("%d:%d:%s", r.Start, r.End, hash)
+}
+
+func openvinoColdRangeKey(r residency.Range) string {
+	return fmt.Sprintf("%d:%d", r.Start, r.End)
+}

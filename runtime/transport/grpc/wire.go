@@ -87,6 +87,7 @@ type describeResp struct {
 	ReservedBytes           int64                  `json:"reserved_bytes,omitempty"`
 	UserLimitBytes          int64                  `json:"user_limit_bytes,omitempty"`
 	MinFreeBytes            int64                  `json:"min_free_bytes,omitempty"`
+	HostColdBudgetBytes     int64                  `json:"host_cold_budget_bytes,omitempty"`
 	UsableBytes             int64                  `json:"usable_bytes,omitempty"`
 	RequiredBytes           int64                  `json:"required_bytes,omitempty"`
 	Clamped                 bool                   `json:"clamped,omitempty"`

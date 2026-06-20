@@ -152,6 +152,7 @@ func (c *Client) Describe(ctx context.Context, req transport.OpenSessionRequest)
 		ReservedBytes:           out.ReservedBytes,
 		UserLimitBytes:          out.UserLimitBytes,
 		MinFreeBytes:            out.MinFreeBytes,
+		HostColdBudgetBytes:     out.HostColdBudgetBytes,
 		UsableBytes:             out.UsableBytes,
 		RequiredBytes:           out.RequiredBytes,
 		Clamped:                 out.Clamped,

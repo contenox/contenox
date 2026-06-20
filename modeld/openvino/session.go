@@ -48,8 +48,14 @@ var _ EmbedSessionBackend = (*ovsession.EmbedSession)(nil)
 // accounting and feeds model-native prompt strings through the existing GenAI
 // session API.
 type genaiSession struct {
-	backend genaiBackend
-	numCtx  int
+	backend       genaiBackend
+	numCtx        int
+	plannerCtx    int
+	coldMaxTokens int
+	coldTokens    int
+	coldClock     int64
+	coldBlocks    map[string]*openvinoColdBlock
+	coldRangeKey  map[string]string
 
 	mu        sync.Mutex
 	closed    bool
@@ -76,7 +82,23 @@ func newGenaiSession(backend genaiBackend, numCtx int) *genaiSession {
 }
 
 func newGenaiSessionWithEviction(backend genaiBackend, numCtx int, eviction bool) *genaiSession {
-	return &genaiSession{backend: backend, numCtx: numCtx, evictionEnabled: eviction}
+	return newGenaiSessionWithPlanner(backend, numCtx, 0, eviction)
+}
+
+func newGenaiSessionWithPlanner(backend genaiBackend, numCtx, plannerCtx int, eviction bool) *genaiSession {
+	if plannerCtx <= 0 {
+		plannerCtx = numCtx
+	}
+	if plannerCtx < numCtx {
+		plannerCtx = numCtx
+	}
+	return &genaiSession{
+		backend:         backend,
+		numCtx:          numCtx,
+		plannerCtx:      plannerCtx,
+		coldMaxTokens:   max(plannerCtx-numCtx, 0),
+		evictionEnabled: eviction,
+	}
 }
 
 var newEmbedSession = func(modelPath, device string) (EmbedSessionBackend, error) {
@@ -85,6 +107,7 @@ var newEmbedSession = func(modelPath, device string) (EmbedSessionBackend, error
 
 var _ transport.Session = (*genaiSession)(nil)
 var _ residency.Controller = (*genaiSession)(nil)
+var _ residency.Executor = (*genaiSession)(nil)
 
 func (s *genaiSession) Capabilities() residency.Capabilities {
 	// OpenVINO GenAI does residency declaratively, not by imperative KV range
@@ -93,7 +116,10 @@ func (s *genaiSession) Capabilities() residency.Capabilities {
 	// CacheEvictionConfig (sink/recent/evictable). So it has no RemoveTail/
 	// RemoveMiddle/PositionShift the runtime can drive itself, but it does attend
 	// sparsely over long context on its own.
-	return residency.Capabilities{SparseAttention: true}
+	return residency.Capabilities{
+		SparseAttention: true,
+		ColdStore:       s.coldMaxTokens > 0 && s.coldKVBackend() != nil,
+	}
 }
 
 func (s *genaiSession) residentTokens() int { return len(s.resident) }
@@ -135,8 +161,13 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	}
 
 	reuse := 0
+	compatible := false
 	if ok, _ := s.manifest.CompatibleRuntime(prefix.Manifest); ok {
+		compatible = true
 		reuse = sessionkit.CommonPrefixLen(s.resident, tokens)
+	}
+	if !compatible || reuse < len(s.resident) {
+		s.clearColdStoreLocked()
 	}
 
 	// EnsurePrefix replaces the stable prefix and drops any prior suffix.
@@ -537,16 +568,18 @@ func (s *genaiSession) ExplainContext() transport.ContextReport {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return transport.ContextReport{
-		ResidentTokens:  s.residentTokens(),
-		PrefixTokens:    s.prefixLen,
-		NumCtx:          s.numCtx,
-		AvailableTokens: s.available(),
-		StableByteHash:  s.manifest.StableByteHash,
-		StableTokenHash: s.manifest.StableTokenHash,
-		ManifestDigest:  s.manifest.Digest(),
-		Manifest:        s.manifest,
-		Closed:          s.closed,
-		Residency:       sessionkit.ResidencyReport(s.residencyPlan, s.residencyErr, s.Capabilities()),
+		ResidentTokens:          s.residentTokens(),
+		PrefixTokens:            s.prefixLen,
+		NumCtx:                  s.numCtx,
+		HotContextTokens:        s.numCtx,
+		PlannerEffectiveContext: s.plannerCtx,
+		AvailableTokens:         s.available(),
+		StableByteHash:          s.manifest.StableByteHash,
+		StableTokenHash:         s.manifest.StableTokenHash,
+		ManifestDigest:          s.manifest.Digest(),
+		Manifest:                s.manifest,
+		Closed:                  s.closed,
+		Residency:               sessionkit.ResidencyReport(s.residencyPlan, s.residencyErr, s.Capabilities()),
 	}
 }
 
@@ -619,6 +652,7 @@ func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapsh
 	s.suffix = strings.TrimPrefix(prefixText, snap.StableText)
 	s.prefixLen = snap.PrefixTokens
 	s.resident = resident
+	s.clearColdStoreLocked()
 	s.tools = snap.Tools
 	s.manifest = snap.Manifest
 	if s.manifest.StableTokenHash == "" && s.prefixLen <= len(s.resident) {
@@ -635,6 +669,9 @@ func (s *genaiSession) Close() error {
 		return nil
 	}
 	s.closed = true
+	s.plannerCtx = 0
+	s.coldMaxTokens = 0
+	s.clearColdStoreLocked()
 	s.residencyPlan = residency.Plan{}
 	s.residencyErr = ""
 	if s.backend != nil {

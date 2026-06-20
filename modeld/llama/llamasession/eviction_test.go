@@ -88,6 +88,90 @@ func TestSystem_LlamaSessionEvictRange_SlidingWindowStaysDecodable(t *testing.T)
 	}
 }
 
+func TestSystem_LlamaSessionEvictAdmitTail_RestoresContinuation(t *testing.T) {
+	modelPath := os.Getenv("CONTENOX_LLAMA_TINY_GGUF")
+	requireTinyGGUF(t, modelPath)
+
+	cfg := llama.Config{
+		NumCtx:                  256,
+		PlannerEffectiveContext: 384,
+		NumBatch:                32,
+		NumThreads:              1,
+		DisableBOS:              true,
+	}
+	sess, err := New(modelPath, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stable := "system\nYou are a concise assistant.\n"
+	suffix := "user\nRepeat the final word from this list: alpha beta gamma delta epsilon.\n"
+	m := tinyManifest(stable, suffix)
+	if _, err := sess.EnsurePrefix(ctx, llama.PrefixInput{Text: stable, Manifest: m}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sess.PrefillSuffix(ctx, llama.SuffixInput{Text: suffix, Manifest: m}); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := sess.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := decodeOne(ctx, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want == "" {
+		t.Skip("tiny model produced no visible token for the reference continuation")
+	}
+
+	cold, err := New(modelPath, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cold.Close()
+	if err := cold.Restore(ctx, snap); err != nil {
+		t.Fatal(err)
+	}
+	exec, ok := cold.(residency.Executor)
+	if !ok {
+		t.Fatal("llama session does not implement residency.Executor")
+	}
+	if caps := exec.Capabilities(); !caps.ColdStore {
+		t.Fatalf("expected ColdStore capability with planner context > num_ctx, got %+v", caps)
+	}
+
+	before := cold.ExplainContext().ResidentTokens
+	const width = 4
+	if before <= width {
+		t.Skipf("not enough resident tokens to evict tail: resident=%d width=%d", before, width)
+	}
+	r := residency.Range{Start: before - width, End: before}
+	if err := exec.EvictRange(ctx, r); err != nil {
+		t.Fatalf("EvictRange: %v", err)
+	}
+	if got := cold.ExplainContext().ResidentTokens; got != before-width {
+		t.Fatalf("resident after evict = %d, want %d", got, before-width)
+	}
+	if err := exec.AdmitRange(ctx, r); err != nil {
+		t.Fatalf("AdmitRange: %v", err)
+	}
+	if got := cold.ExplainContext().ResidentTokens; got != before {
+		t.Fatalf("resident after admit = %d, want restored %d", got, before)
+	}
+	got, err := decodeOne(ctx, cold)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("cold-restored continuation %q != reference %q", got, want)
+	}
+}
+
 // TestSystem_LlamaSessionDecode_SlidesPastNumCtx generates far more tokens than
 // the context window holds. Before sliding, decode would overflow at num_ctx;
 // with it, the window slides (prefix sinks + recent tail) so generation

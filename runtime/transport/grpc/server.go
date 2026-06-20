@@ -216,6 +216,7 @@ func (s *Server) describe(ctx context.Context, in *openSessionReq) (*describeRes
 		ReservedBytes:           info.ReservedBytes,
 		UserLimitBytes:          info.UserLimitBytes,
 		MinFreeBytes:            info.MinFreeBytes,
+		HostColdBudgetBytes:     info.HostColdBudgetBytes,
 		UsableBytes:             info.UsableBytes,
 		RequiredBytes:           info.RequiredBytes,
 		Clamped:                 info.Clamped,

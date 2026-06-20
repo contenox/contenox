@@ -113,6 +113,27 @@ func (s *Session) SnapshotSave(path string) error {
 	return nil
 }
 
+// SnapshotData returns the current KV state and decode cursor as bytes.
+func (s *Session) SnapshotData() ([]byte, error) {
+	if err := s.requireOpen(); err != nil {
+		return nil, err
+	}
+	errbuf := make([]byte, errLen)
+	var data *C.uint8_t
+	var dataLen C.size_t
+	if C.cx_snapshot_data(s.ptr, &data, &dataLen, cptr(errbuf), C.size_t(len(errbuf))) != 0 {
+		return nil, fmt.Errorf("openvino snapshot data: %s", goErr(errbuf))
+	}
+	defer C.cx_snapshot_data_free(unsafe.Pointer(data))
+	if dataLen == 0 {
+		return nil, nil
+	}
+	src := unsafe.Slice((*byte)(unsafe.Pointer(data)), int(dataLen))
+	out := make([]byte, len(src))
+	copy(out, src)
+	return out, nil
+}
+
 // SnapshotRestore restores a KV snapshot into this session.
 func (s *Session) SnapshotRestore(path string) error {
 	if path == "" {
@@ -127,6 +148,29 @@ func (s *Session) SnapshotRestore(path string) error {
 	errbuf := make([]byte, errLen)
 	if C.cx_snapshot_restore(s.ptr, cPath, cptr(errbuf), C.size_t(len(errbuf))) != 0 {
 		return fmt.Errorf("openvino snapshot restore: %s", goErr(errbuf))
+	}
+	return nil
+}
+
+// SnapshotRestoreData restores KV state and decode cursor from bytes returned
+// by SnapshotData.
+func (s *Session) SnapshotRestoreData(data []byte) error {
+	if len(data) == 0 {
+		return errors.New("openvino snapshot data is empty")
+	}
+	if err := s.requireOpen(); err != nil {
+		return err
+	}
+	errbuf := make([]byte, errLen)
+	rc := C.cx_snapshot_restore_data(
+		s.ptr,
+		(*C.uint8_t)(unsafe.Pointer(&data[0])),
+		C.size_t(len(data)),
+		cptr(errbuf),
+		C.size_t(len(errbuf)),
+	)
+	if rc != 0 {
+		return fmt.Errorf("openvino snapshot restore data: %s", goErr(errbuf))
 	}
 	return nil
 }

@@ -50,9 +50,10 @@ func init() {
 // device (CPU / GPU / NPU); the runtime reaches it as a client over the
 // transport and never imports this package.
 type Service struct {
-	memory capacity.MemorySource
-	policy capacity.Policy
-	launch capacity.LaunchDefaults
+	memory     capacity.MemorySource
+	hostMemory capacity.MemorySource
+	policy     capacity.Policy
+	launch     capacity.LaunchDefaults
 }
 
 type ServiceOption func(*Service)
@@ -73,6 +74,10 @@ func WithMemorySource(src capacity.MemorySource) ServiceOption {
 	return func(s *Service) { s.memory = src }
 }
 
+func WithHostMemorySource(src capacity.MemorySource) ServiceOption {
+	return func(s *Service) { s.hostMemory = src }
+}
+
 func (s *Service) memorySource(device string) capacity.MemorySource {
 	if s.memory != nil {
 		return s.memory
@@ -82,6 +87,22 @@ func (s *Service) memorySource(device string) capacity.MemorySource {
 		return capacity.SystemRAM{}
 	}
 	return openvinoDeviceMemorySource{device: device}
+}
+
+func (s *Service) hostMemorySource() capacity.MemorySource {
+	if s.hostMemory != nil {
+		return s.hostMemory
+	}
+	return capacity.SystemRAM{}
+}
+
+func (s *Service) resolvePolicy(st capacity.DeviceSnapshot) (capacity.Policy, error) {
+	policy := s.launch.Policy(s.policy, st)
+	host, err := capacity.Snapshot(s.hostMemorySource())
+	if err != nil {
+		return capacity.Policy{}, fmt.Errorf("openvino host capacity memory probe: %w", err)
+	}
+	return capacity.WithHostColdDefaults(policy, host), nil
 }
 
 var _ transport.Service = (*Service)(nil)
@@ -108,7 +129,11 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	// Enforce the residency policy with OpenVINO's native sink+recent+evictable
 	// cache eviction (the declarative parallel to the llama slide). The budget is
 	// derived from the served window; tiny windows stay un-evicted.
-	budget := residency.DeriveEvictionBudget(cfg.NumCtx, openvinoEvictionBlock)
+	hotContext := cfg.HotContextTokens
+	if hotContext <= 0 {
+		hotContext = cfg.NumCtx
+	}
+	budget := residency.DeriveEvictionBudget(hotContext, openvinoEvictionBlock)
 	eviction := budget.Valid()
 	if eviction {
 		on := true
@@ -121,7 +146,7 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	if err != nil {
 		return nil, err
 	}
-	return newGenaiSessionWithEviction(backend, cfg.NumCtx, eviction), nil
+	return newGenaiSessionWithPlanner(backend, cfg.NumCtx, cfg.PlannerEffectiveContext, eviction), nil
 }
 
 // Describe reports the model's trained context window read from the IR's
@@ -207,13 +232,17 @@ func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Con
 		return cfg, nil
 	}
 	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = info.EffectiveContext
+		cfg.NumCtx = info.HotContextTokens
+		cfg.HotContextTokens = info.HotContextTokens
+		cfg.PlannerEffectiveContext = info.PlannerEffectiveContext
 		return cfg, nil
 	}
 	if cfg.NumCtx > info.EffectiveContext {
 		return transport.Config{}, fmt.Errorf("%w: requested num_ctx=%d exceeds modeld effective context=%d (%s)",
 			transport.ErrContextOverflow, cfg.NumCtx, info.EffectiveContext, info.Reason)
 	}
+	cfg.HotContextTokens = info.HotContextTokens
+	cfg.PlannerEffectiveContext = info.PlannerEffectiveContext
 	return cfg, nil
 }
 
@@ -224,18 +253,22 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if err != nil {
 		return transport.ModelInfo{}, fmt.Errorf("openvino capacity memory probe: %w", err)
 	}
-	policy := s.launch.Policy(s.policy, st)
+	policy, err := s.resolvePolicy(st)
+	if err != nil {
+		return transport.ModelInfo{}, err
+	}
 	genai := genAIConfigFromProfile(req.Path, device)
 	kvBytes := capacity.KVBytesPerToken(params.NumHiddenLayers, params.kvHeads(), params.headDim(), genai.KVCachePrecision)
 	resolved := capacity.Resolve(capacity.Params{
-		ModelMaxCtx:     params.MaxPositionEmbeddings,
-		KVBytesPerToken: kvBytes,
-		WeightsBytes:    dirSize(req.Path),
-		FreeBytes:       st.FreeBytes,
-		UserLimitBytes:  policy.MaxResidentBytes,
-		MinFreeBytes:    policy.MinFreeBytes,
-		Request:         req.Config.NumCtx,
-		HeadroomFrac:    policy.HeadroomFrac,
+		ModelMaxCtx:         params.MaxPositionEmbeddings,
+		KVBytesPerToken:     kvBytes,
+		WeightsBytes:        dirSize(req.Path),
+		FreeBytes:           st.FreeBytes,
+		UserLimitBytes:      policy.MaxResidentBytes,
+		MinFreeBytes:        policy.MinFreeBytes,
+		HostColdBudgetBytes: policy.HostColdBudgetBytes,
+		Request:             req.Config.NumCtx,
+		HeadroomFrac:        policy.HeadroomFrac,
 	})
 	return modelInfo(resolved, st), nil
 }
@@ -268,6 +301,7 @@ func modelInfo(c capacity.ModelCapacity, st capacity.DeviceSnapshot) transport.M
 	info.ReservedBytes = c.ReservedBytes
 	info.UserLimitBytes = c.UserLimitBytes
 	info.MinFreeBytes = c.MinFreeBytes
+	info.HostColdBudgetBytes = c.HostColdBudgetBytes
 	info.UsableBytes = c.UsableBytes
 	info.RequiredBytes = c.RequiredBytes
 	info.Clamped = c.Clamped

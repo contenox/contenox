@@ -234,14 +234,16 @@ func (s *memSession) ExplainContext() ContextReport {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return ContextReport{
-		ResidentTokens:  s.resident(),
-		PrefixTokens:    s.prefixTokens,
-		NumCtx:          s.numCtx,
-		AvailableTokens: s.available(),
-		StableByteHash:  s.residentStableHash,
-		ManifestDigest:  s.residentDigest,
-		Manifest:        s.manifest,
-		Closed:          s.closed,
+		ResidentTokens:          s.resident(),
+		PrefixTokens:            s.prefixTokens,
+		NumCtx:                  s.numCtx,
+		HotContextTokens:        s.numCtx,
+		PlannerEffectiveContext: s.numCtx,
+		AvailableTokens:         s.available(),
+		StableByteHash:          s.residentStableHash,
+		ManifestDigest:          s.residentDigest,
+		Manifest:                s.manifest,
+		Closed:                  s.closed,
 	}
 }
 

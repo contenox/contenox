@@ -27,23 +27,29 @@ const Available = true
 func init() { llama.SetSessionFactory(New) }
 
 type session struct {
-	mu         sync.Mutex
-	model      *llamacppshim.Model
-	lctx       *llamacppshim.Context
-	batch      *llamacppshim.Batch
-	numCtx     int
-	nBatch     int
-	addBOS     bool
-	resident   []int  // token IDs currently in the KV (seq 0), in order
-	prefixLen  int    // how many of resident are the stable prefix
-	stableText string // raw stable text from the runtime
-	prefixText string // the templated stable text whose tokens are resident
-	stableMsgs []chatTemplateMessage
-	tools      string // JSON tool definitions rendered into the prompt (model-native)
-	manifest   llama.ContextManifest
-	chatSyntax llamacppshim.ChatSyntax
-	reasoning  string
-	closed     bool
+	mu            sync.Mutex
+	model         *llamacppshim.Model
+	lctx          *llamacppshim.Context
+	batch         *llamacppshim.Batch
+	numCtx        int
+	plannerCtx    int
+	coldMaxTokens int
+	coldTokens    int
+	coldClock     int64
+	coldBlocks    map[string]*coldBlock
+	coldRangeKey  map[string]string
+	nBatch        int
+	addBOS        bool
+	resident      []int  // token IDs currently in the KV (seq 0), in order
+	prefixLen     int    // how many of resident are the stable prefix
+	stableText    string // raw stable text from the runtime
+	prefixText    string // the templated stable text whose tokens are resident
+	stableMsgs    []chatTemplateMessage
+	tools         string // JSON tool definitions rendered into the prompt (model-native)
+	manifest      llama.ContextManifest
+	chatSyntax    llamacppshim.ChatSyntax
+	reasoning     string
+	closed        bool
 
 	residencyPlan residency.Plan
 	residencyErr  string
@@ -57,6 +63,7 @@ func (s *session) Capabilities() residency.Capabilities {
 		RemoveTail:    true,
 		RemoveMiddle:  true,
 		PositionShift: true,
+		ColdStore:     s.coldMaxTokens > 0,
 	}
 }
 
@@ -87,6 +94,10 @@ func (s *session) evictRangeLocked(a, b int) error {
 	if a < 0 || b > n || a >= b {
 		return fmt.Errorf("llamasession: evict range [%d,%d) outside resident [0,%d)", a, b, n)
 	}
+	block, err := s.exportColdBlockLocked(a, b)
+	if err != nil {
+		return err
+	}
 	if err := s.removeKV(a, b); err != nil {
 		return err
 	}
@@ -102,6 +113,9 @@ func (s *session) evictRangeLocked(a, b int) error {
 		// Stable prefix tokens were evicted, so its cached templated text no
 		// longer maps to the resident KV.
 		s.prefixText = ""
+	}
+	if block != nil {
+		s.storeColdBlockLocked(block)
 	}
 	return nil
 }
@@ -126,11 +140,19 @@ func (s *session) slideForDecodeLocked() (bool, error) {
 	return true, nil
 }
 
-// AdmitRange would re-admit a previously evicted range into the hot KV. The
-// llama adapter evicts permanently — there is no cold KV store to restore from
-// yet — so this is unsupported, and the session advertises ColdStore=false.
-func (s *session) AdmitRange(_ context.Context, r residency.Range) error {
-	return fmt.Errorf("%w: llamasession admit range [%d,%d) requires a cold KV store", llama.ErrUnsupportedFeature, r.Start, r.End)
+// AdmitRange re-admits a previously evicted range into the hot KV in append mode:
+// the block returns at the current tail as recent context. In-place insertion is
+// intentionally left to a later pass because it needs broader position surgery.
+func (s *session) AdmitRange(ctx context.Context, r residency.Range) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return llama.ErrSessionClosed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.admitRangeLocked(r)
 }
 
 // New loads a GGUF model and opens one persistent session.
@@ -144,6 +166,14 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 	if numCtx <= 0 {
 		numCtx = 8192
 	}
+	plannerCtx := cfg.PlannerEffectiveContext
+	if plannerCtx <= 0 {
+		plannerCtx = numCtx
+	}
+	if plannerCtx < numCtx {
+		plannerCtx = numCtx
+	}
+	coldMaxTokens := max(plannerCtx-numCtx, 0)
 	nBatch := cfg.NumBatch
 	if nBatch <= 0 {
 		nBatch = 512
@@ -159,7 +189,7 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 	lctx, err := llamacppshim.NewContext(model, llamacppshim.ContextConfig{
 		NumCtx:      numCtx,
 		NumBatch:    nBatch,
-		NumSeqMax:   1,
+		NumSeqMax:   1 + min(coldMaxTokens, 1),
 		NumThreads:  nThreads,
 		FlashAttn:   cfg.FlashAttn,
 		KVCacheType: cfg.KVCacheType,
@@ -177,7 +207,17 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 		return nil, fmt.Errorf("llamasession: new batch: %w", err)
 	}
 
-	return &session{model: model, lctx: lctx, batch: batch, numCtx: numCtx, nBatch: nBatch, addBOS: addBOS, reasoning: cfg.ReasoningFormat}, nil
+	return &session{
+		model:         model,
+		lctx:          lctx,
+		batch:         batch,
+		numCtx:        numCtx,
+		plannerCtx:    plannerCtx,
+		coldMaxTokens: coldMaxTokens,
+		nBatch:        nBatch,
+		addBOS:        addBOS,
+		reasoning:     cfg.ReasoningFormat,
+	}, nil
 }
 
 func modelConfig(cfg llama.Config) llamacppshim.ModelConfig {
@@ -227,6 +267,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		if err := s.removeKV(0, -1); err != nil {
 			return llama.PrefixStatus{}, err
 		}
+		s.clearColdStoreLocked()
 		s.resident = nil
 		s.prefixLen = 0
 		s.prefixText = ""
@@ -238,6 +279,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		if err := s.removeKV(reuse, -1); err != nil {
 			return llama.PrefixStatus{}, err
 		}
+		s.clearColdStoreLocked()
 		s.resident = s.resident[:reuse]
 		if s.prefixLen > reuse {
 			s.prefixLen = reuse
@@ -504,16 +546,18 @@ func (s *session) ExplainContext() llama.ContextReport {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return llama.ContextReport{
-		ResidentTokens:  len(s.resident),
-		PrefixTokens:    s.prefixLen,
-		NumCtx:          s.numCtx,
-		AvailableTokens: s.numCtx - len(s.resident),
-		StableByteHash:  s.manifest.StableByteHash,
-		StableTokenHash: s.manifest.StableTokenHash,
-		ManifestDigest:  s.manifest.Digest(),
-		Manifest:        s.manifest,
-		Closed:          s.closed,
-		Residency:       sessionkit.ResidencyReport(s.residencyPlan, s.residencyErr, s.Capabilities()),
+		ResidentTokens:          len(s.resident),
+		PrefixTokens:            s.prefixLen,
+		NumCtx:                  s.numCtx,
+		HotContextTokens:        s.numCtx,
+		PlannerEffectiveContext: s.plannerCtx,
+		AvailableTokens:         s.numCtx - len(s.resident),
+		StableByteHash:          s.manifest.StableByteHash,
+		StableTokenHash:         s.manifest.StableTokenHash,
+		ManifestDigest:          s.manifest.Digest(),
+		Manifest:                s.manifest,
+		Closed:                  s.closed,
+		Residency:               sessionkit.ResidencyReport(s.residencyPlan, s.residencyErr, s.Capabilities()),
 	}
 }
 
@@ -585,6 +629,7 @@ func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error
 	}
 	s.resident = append([]int(nil), snap.ResidentTokenIDs...)
 	s.prefixLen = snap.PrefixTokens
+	s.clearColdStoreLocked()
 	s.stableText = snap.StableText
 	s.prefixText = snap.PrefixText
 	s.tools = snap.Tools
@@ -636,6 +681,9 @@ func (s *session) closeLocked() {
 	}
 	s.resident = nil
 	s.prefixLen = 0
+	s.plannerCtx = 0
+	s.coldMaxTokens = 0
+	s.clearColdStoreLocked()
 	s.stableText = ""
 	s.prefixText = ""
 	s.manifest = llama.ContextManifest{}

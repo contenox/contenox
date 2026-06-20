@@ -11,9 +11,10 @@ import (
 )
 
 func formatPolicy(policy capacity.Policy) string {
-	return fmt.Sprintf("max_resident=%s reserve_free=%s headroom=%.2f",
+	return fmt.Sprintf("max_resident=%s reserve_free=%s host_cold=%s headroom=%.2f",
 		formatPolicyBytes(policy.MaxResidentBytes),
 		formatPolicyBytes(policy.MinFreeBytes),
+		formatPolicyBytes(policy.HostColdBudgetBytes),
 		policy.HeadroomFrac,
 	)
 }
@@ -27,6 +28,7 @@ func logRuntimeEnv() {
 		"CONTENOX_OPENVINO_DEVICE",
 		"CONTENOX_MODELD_MEM_MAX",
 		"CONTENOX_MODELD_MEM_RESERVE",
+		"CONTENOX_MODELD_MEM_COLD",
 		"CONTENOX_MODELD_MEM_HEADROOM",
 	} {
 		if value := os.Getenv(name); value != "" {

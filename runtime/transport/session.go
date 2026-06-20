@@ -36,13 +36,15 @@ type Fence struct {
 // Config is the explicit hardware/runtime configuration for a session. Every
 // knob is a tested setting, not a magic default.
 type Config struct {
-	NumCtx       int       // context window in tokens
-	NumBatch     int       // prefill batch size
-	NumThreads   int       // CPU threads (0 = NumCPU)
-	NumGpuLayers int       // layers offloaded to the GPU (0 = CPU only)
-	TensorSplit  []float32 // multi-GPU split
-	FlashAttn    bool
-	KVCacheType  string // "", "q8_0", "q4_0"
+	NumCtx                  int       // physical engine context window in tokens
+	HotContextTokens        int       // physical hot KV budget (0 = NumCtx)
+	PlannerEffectiveContext int       // logical planner context window (0 = NumCtx)
+	NumBatch                int       // prefill batch size
+	NumThreads              int       // CPU threads (0 = NumCPU)
+	NumGpuLayers            int       // layers offloaded to the GPU (0 = CPU only)
+	TensorSplit             []float32 // multi-GPU split
+	FlashAttn               bool
+	KVCacheType             string // "", "q8_0", "q4_0"
 
 	PromptFormat         string // profile-declared prompt format, e.g. "chatml" or "llama3"
 	PromptTemplateDigest string // digest of the declared/rendered prompt template
@@ -74,6 +76,7 @@ type ModelInfo struct {
 	ReservedBytes           int64 `json:"reserved_bytes,omitempty"`
 	UserLimitBytes          int64 `json:"user_limit_bytes,omitempty"`
 	MinFreeBytes            int64 `json:"min_free_bytes,omitempty"`
+	HostColdBudgetBytes     int64 `json:"host_cold_budget_bytes,omitempty"`
 	UsableBytes             int64 `json:"usable_bytes,omitempty"`
 	RequiredBytes           int64 `json:"required_bytes,omitempty"`
 	Clamped                 bool  `json:"clamped,omitempty"`
@@ -355,15 +358,17 @@ type StreamChunk struct {
 
 // ContextReport explains the session's resident context (explain-context).
 type ContextReport struct {
-	ResidentTokens  int
-	PrefixTokens    int
-	NumCtx          int
-	AvailableTokens int
-	StableByteHash  string
-	StableTokenHash string
-	ManifestDigest  string
-	Manifest        ContextManifest
-	Closed          bool
+	ResidentTokens          int
+	PrefixTokens            int
+	NumCtx                  int
+	HotContextTokens        int
+	PlannerEffectiveContext int
+	AvailableTokens         int
+	StableByteHash          string
+	StableTokenHash         string
+	ManifestDigest          string
+	Manifest                ContextManifest
+	Closed                  bool
 	// Residency is the backend's current KV residency plan: the hot/cold
 	// partition it would apply under the derived hot budget. It is observability;
 	// the plan is enforced only when the backend can execute it (Capabilities).

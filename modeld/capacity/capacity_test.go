@@ -69,6 +69,42 @@ func TestUnit_Resolve_RequestCaps(t *testing.T) {
 	}
 }
 
+func TestUnit_Resolve_HostColdBudgetExpandsPlannerContext(t *testing.T) {
+	c := Resolve(Params{
+		ModelMaxCtx:         8192,
+		KVBytesPerToken:     1024,
+		FreeBytes:           2 << 20,
+		HostColdBudgetBytes: 3 << 20,
+		HeadroomFrac:        0.5,
+	})
+	if c.EffectiveContext != 1024 || c.HotContextTokens != 1024 {
+		t.Fatalf("dense/hot = %d/%d, want 1024/1024", c.EffectiveContext, c.HotContextTokens)
+	}
+	if c.PlannerEffectiveContext != 4096 {
+		t.Fatalf("PlannerEffectiveContext = %d, want hot 1024 + cold 3072", c.PlannerEffectiveContext)
+	}
+	if c.HostColdBudgetBytes != 3<<20 {
+		t.Fatalf("HostColdBudgetBytes = %d, want carried policy", c.HostColdBudgetBytes)
+	}
+}
+
+func TestUnit_Resolve_RequestCapsPlannerContext(t *testing.T) {
+	c := Resolve(Params{
+		ModelMaxCtx:         8192,
+		KVBytesPerToken:     1024,
+		FreeBytes:           2 << 20,
+		HostColdBudgetBytes: 3 << 20,
+		Request:             2048,
+		HeadroomFrac:        0.5,
+	})
+	if c.EffectiveContext != 1024 || c.HotContextTokens != 1024 {
+		t.Fatalf("dense/hot = %d/%d, want 1024/1024", c.EffectiveContext, c.HotContextTokens)
+	}
+	if c.PlannerEffectiveContext != 2048 {
+		t.Fatalf("PlannerEffectiveContext = %d, want request cap 2048", c.PlannerEffectiveContext)
+	}
+}
+
 func TestUnit_Resolve_UnknownKVFallsBackToModelMax(t *testing.T) {
 	c := Resolve(Params{ModelMaxCtx: 32768, KVBytesPerToken: 0, FreeBytes: 1 << 20})
 	if c.EffectiveContext != 32768 {
@@ -153,6 +189,18 @@ func TestUnit_WithLaunchDefaults_SetsMissingResidentCap(t *testing.T) {
 	}
 }
 
+func TestUnit_WithHostColdDefaults_SetsMissingColdBudget(t *testing.T) {
+	p := WithHostColdDefaults(Policy{}, DeviceSnapshot{FreeBytes: 16 << 20})
+	if p.HostColdBudgetBytes != 4<<20 {
+		t.Fatalf("HostColdBudgetBytes = %d, want 25%% of host free", p.HostColdBudgetBytes)
+	}
+
+	explicit := WithHostColdDefaults(Policy{HostColdBudgetBytes: 3 << 20}, DeviceSnapshot{FreeBytes: 16 << 20})
+	if explicit.HostColdBudgetBytes != 3<<20 {
+		t.Fatalf("explicit host cold should win, got %d", explicit.HostColdBudgetBytes)
+	}
+}
+
 func TestUnit_LaunchDefaults_AreStickyPerDevice(t *testing.T) {
 	var defaults LaunchDefaults
 
@@ -199,11 +247,12 @@ func TestUnit_ParseBytes(t *testing.T) {
 
 func TestUnit_LoadPolicy_FromConfigAndEnv(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "modeld.json"), []byte(`{"memory":{"max_resident":"4GiB","reserve_free":"1GiB","headroom_frac":0.2}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "modeld.json"), []byte(`{"memory":{"max_resident":"4GiB","reserve_free":"1GiB","host_cold_budget":"8GiB","headroom_frac":0.2}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CONTENOX_MODELD_MEM_MAX", "2GiB")
 	t.Setenv("CONTENOX_MODELD_MEM_RESERVE", "")
+	t.Setenv("CONTENOX_MODELD_MEM_COLD", "6GiB")
 	t.Setenv("CONTENOX_MODELD_MEM_HEADROOM", "")
 	p := LoadPolicy(dir)
 	if p.MaxResidentBytes != 2<<30 {
@@ -211,6 +260,9 @@ func TestUnit_LoadPolicy_FromConfigAndEnv(t *testing.T) {
 	}
 	if p.MinFreeBytes != 1<<30 {
 		t.Fatalf("MinFreeBytes = %d, want config 1GiB", p.MinFreeBytes)
+	}
+	if p.HostColdBudgetBytes != 6<<30 {
+		t.Fatalf("HostColdBudgetBytes = %d, want env override 6GiB", p.HostColdBudgetBytes)
 	}
 	if p.HeadroomFrac != 0.2 {
 		t.Fatalf("HeadroomFrac = %v, want config 0.2", p.HeadroomFrac)

@@ -15,9 +15,10 @@ import (
 // Service implements the runtime/transport.Service boundary.
 // It acts as the opener for native llama.cpp backend sessions.
 type Service struct {
-	memory capacity.MemorySource
-	policy capacity.Policy
-	launch capacity.LaunchDefaults
+	memory     capacity.MemorySource
+	hostMemory capacity.MemorySource
+	policy     capacity.Policy
+	launch     capacity.LaunchDefaults
 }
 
 type ServiceOption func(*Service)
@@ -36,6 +37,10 @@ func WithCapacityPolicy(p capacity.Policy) ServiceOption {
 
 func WithMemorySource(src capacity.MemorySource) ServiceOption {
 	return func(s *Service) { s.memory = src }
+}
+
+func WithHostMemorySource(src capacity.MemorySource) ServiceOption {
+	return func(s *Service) { s.hostMemory = src }
 }
 
 var _ transport.Service = (*Service)(nil)
@@ -59,6 +64,7 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 		"num_ctx", cfg.NumCtx,
 		"hot_context_tokens", info.HotContextTokens,
 		"planner_effective_context", info.PlannerEffectiveContext,
+		"host_cold_budget_bytes", info.HostColdBudgetBytes,
 		"num_batch", cfg.NumBatch,
 		"num_gpu_layers", cfg.NumGpuLayers,
 		"requested_gpu_layers", info.RequestedGpuLayers,
@@ -126,7 +132,9 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 			transport.ErrContextOverflow, info.RequestedGpuLayers, info.DeviceKind, info.Reason)
 	}
 	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = info.EffectiveContext
+		cfg.NumCtx = info.HotContextTokens
+		cfg.HotContextTokens = info.HotContextTokens
+		cfg.PlannerEffectiveContext = info.PlannerEffectiveContext
 		plan.config = cfg
 		return plan, nil
 	}
@@ -134,6 +142,9 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 		return sessionPlan{}, fmt.Errorf("%w: requested num_ctx=%d exceeds modeld effective context=%d (%s)",
 			transport.ErrContextOverflow, cfg.NumCtx, info.EffectiveContext, info.Reason)
 	}
+	cfg.HotContextTokens = info.HotContextTokens
+	cfg.PlannerEffectiveContext = info.PlannerEffectiveContext
+	plan.config = cfg
 	return plan, nil
 }
 
@@ -176,6 +187,22 @@ func (s *Service) memorySource(cfg transport.Config) capacity.MemorySource {
 	return defaultMemorySource(cfg)
 }
 
+func (s *Service) hostMemorySource() capacity.MemorySource {
+	if s.hostMemory != nil {
+		return s.hostMemory
+	}
+	return capacity.SystemRAM{}
+}
+
+func (s *Service) resolvePolicy(st capacity.DeviceSnapshot) (capacity.Policy, error) {
+	policy := s.launch.Policy(s.policy, st)
+	host, err := capacity.Snapshot(s.hostMemorySource())
+	if err != nil {
+		return capacity.Policy{}, fmt.Errorf("llama host capacity memory probe: %w", err)
+	}
+	return capacity.WithHostColdDefaults(policy, host), nil
+}
+
 func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInfo, error) {
 	cfg := applyDaemonEnvOverrides(req.Config)
 	params := ggufModelParams(req.Path)
@@ -183,7 +210,10 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if err != nil {
 		return transport.ModelInfo{}, fmt.Errorf("llama capacity memory probe: %w", err)
 	}
-	policy := s.launch.Policy(s.policy, st)
+	policy, err := s.resolvePolicy(st)
+	if err != nil {
+		return transport.ModelInfo{}, err
+	}
 	weights := fileSize(req.Path)
 	kvBytes := capacity.KVBytesPerToken(params.BlockCount, params.kvHeads(), params.headDim(), cfg.KVCacheType)
 	overhead := int64(0)
@@ -204,15 +234,16 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		cfg.NumGpuLayers = 0
 	}
 	resolved := capacity.Resolve(capacity.Params{
-		ModelMaxCtx:     params.ContextLength,
-		KVBytesPerToken: kvBytes,
-		WeightsBytes:    weights,
-		OverheadBytes:   overhead,
-		FreeBytes:       st.FreeBytes,
-		UserLimitBytes:  policy.MaxResidentBytes,
-		MinFreeBytes:    policy.MinFreeBytes,
-		Request:         cfg.NumCtx,
-		HeadroomFrac:    policy.HeadroomFrac,
+		ModelMaxCtx:         params.ContextLength,
+		KVBytesPerToken:     kvBytes,
+		WeightsBytes:        weights,
+		OverheadBytes:       overhead,
+		FreeBytes:           st.FreeBytes,
+		UserLimitBytes:      policy.MaxResidentBytes,
+		MinFreeBytes:        policy.MinFreeBytes,
+		HostColdBudgetBytes: policy.HostColdBudgetBytes,
+		Request:             cfg.NumCtx,
+		HeadroomFrac:        policy.HeadroomFrac,
 	})
 	info := modelInfo(resolved, st)
 	info.RequestedGpuLayers = explicitGpuLayers
@@ -251,6 +282,7 @@ func modelInfo(c capacity.ModelCapacity, st capacity.DeviceSnapshot) transport.M
 	info.ReservedBytes = c.ReservedBytes
 	info.UserLimitBytes = c.UserLimitBytes
 	info.MinFreeBytes = c.MinFreeBytes
+	info.HostColdBudgetBytes = c.HostColdBudgetBytes
 	info.UsableBytes = c.UsableBytes
 	info.RequiredBytes = c.RequiredBytes
 	info.Clamped = c.Clamped
@@ -338,15 +370,16 @@ func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, weights,
 	for slots := requestedSlots; slots >= 1; slots-- {
 		modelBytes := estimateLlamaGPUWeights(weights, params.BlockCount, slots)
 		resolved := capacity.Resolve(capacity.Params{
-			ModelMaxCtx:     params.ContextLength,
-			KVBytesPerToken: kvBytes,
-			WeightsBytes:    modelBytes,
-			OverheadBytes:   overhead,
-			FreeBytes:       st.FreeBytes,
-			UserLimitBytes:  policy.MaxResidentBytes,
-			MinFreeBytes:    policy.MinFreeBytes,
-			Request:         cfg.NumCtx,
-			HeadroomFrac:    policy.HeadroomFrac,
+			ModelMaxCtx:         params.ContextLength,
+			KVBytesPerToken:     kvBytes,
+			WeightsBytes:        modelBytes,
+			OverheadBytes:       overhead,
+			FreeBytes:           st.FreeBytes,
+			UserLimitBytes:      policy.MaxResidentBytes,
+			MinFreeBytes:        policy.MinFreeBytes,
+			HostColdBudgetBytes: policy.HostColdBudgetBytes,
+			Request:             cfg.NumCtx,
+			HeadroomFrac:        policy.HeadroomFrac,
 		})
 		if resolved.EffectiveContext <= 0 {
 			continue

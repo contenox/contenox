@@ -17,9 +17,12 @@
 - Build order: #5's derivation → thread the hot budget → #3's store → retrieval.
 
 ## #5 — Derived hot/cold sizing
-Today `capacity.Resolve` (`modeld/capacity/capacity.go`) sets
-`HotContextTokens == PlannerEffectiveContext == EffectiveContext` (`hotTokens := eff`)
-— no split. To close it:
+First plumbing pass status: `capacity.Resolve` (`modeld/capacity/capacity.go`) now
+accepts `HostColdBudgetBytes`. With no host-cold budget it preserves the old dense
+behavior; with a budget it keeps `EffectiveContext` as the dense compatibility
+window, keeps `HotContextTokens` as the physical KV budget, and lets
+`PlannerEffectiveContext` grow from `hot + hostColdBudget/KVBytesPerToken` (capped by
+the request/model ceiling for now). Target shape:
 
 1. **`capacity.Resolve`**:
    - `HotContextTokens` = physical VRAM KV budget = `memoryTokens` (already computed:
@@ -37,6 +40,17 @@ Today `capacity.Resolve` (`modeld/capacity/capacity.go`) sets
    `PlannerEffectiveContext`. `transport.ModelInfo` already carries both — pass them
    from `service.go` into the session; `DeriveEvictionBudget` takes `HotContextTokens`
    (not `numCtx`).
+
+### Plumbing landed
+- `capacity.Policy.HostColdBudgetBytes` via `modeld.json` (`host_cold_budget` /
+  `host_cold_budget_bytes`), `CONTENOX_MODELD_MEM_COLD`, and `modeld serve --mem-cold`.
+- Host-cold defaults derive from host RAM (`DefaultHostColdFrac`) separately from the
+  hot device memory source.
+- `transport.ModelInfo` reports `HostColdBudgetBytes`; `transport.Config` carries
+  `HotContextTokens` and `PlannerEffectiveContext` into sessions.
+- llama/OpenVINO services thread the split into session config; OpenVINO native
+  `CacheEvictionConfig` is derived from the hot budget.
+- Sessions surface hot/planner context in `ExplainContext`.
 
 ## #3 — Host-RAM KV cold store + retrieval
 The store holds evicted KV so it can be paged back losslessly. Backend-asymmetric.
@@ -62,6 +76,15 @@ The shim already exposes per-sequence KV export: `StateSeqGetData(seq)` /
   block on the GPU, so the KV-byte store is a real win for large stable context (repo
   map / files) scrolling out and back. Token-recompute is the fallback when no bytes are
   stored.
+
+First llama pass status: append-mode cold store is implemented behind
+`PlannerEffectiveContext > NumCtx`. `EvictRange` exports a block through scratch seq 1,
+stores KV bytes plus token/hash/range/cache-class metadata, and then removes/slides as
+before. `AdmitRange` imports that block back through scratch seq 1, shifts it to the
+current tail, copies it into seq 0, and appends its tokens. The store is bounded by
+`PlannerEffectiveContext - NumCtx` and evicts cold blocks by cache class plus LRU. It does
+not yet do runtime-driven hash matching, in-place insertion, or snapshot serialization of
+cold blocks.
 
 ### OpenVINO — KV-byte offload via a patched GenAI (proven feasible)
 OpenVINO GenAI *does* hold the KV as accessible C++ data — it just isn't in the public
@@ -103,8 +126,9 @@ tier. A modeld-internal attention-score retriever is a later, optional autonomou
    `PlannerEffectiveContext`. *Proof: llama physical resident bounded at
    `HotContextTokens` while generating a longer logical context.*
 3. **llama cold store (append-mode)** — `EvictRange` offloads KV bytes; `AdmitRange`
-   restores. *Proof (3060): evict a range, admit it back, the restored continuation
-   matches the never-evicted reference (lossless); restore latency < re-prefill.*
+   restores. *Proof: direct llama tag build passes; tail evict→admit has a system test
+   comparing the restored one-token continuation to the pre-eviction reference when
+   `CONTENOX_LLAMA_TINY_GGUF` is set. Latency benchmark still pending.*
 4. **Runtime-driven retrieval** — match re-sent segments to the cold store; restore
    instead of re-prefill. *Proof: re-sent evicted segment is a cold hit.*
 5. **OpenVINO byte-offload** — patch + rebuild GenAI with `export_kv`/`import_kv`, wire the
