@@ -33,6 +33,19 @@ struct cx_session {
     int64_t pending = -1;
 };
 
+static std::string model_xml_path(const char *model_dir) {
+    std::string base = std::string(model_dir);
+    const char *candidates[] = {"openvino_model.xml", "openvino_language_model.xml"};
+    for (const char *name : candidates) {
+        std::string path = base + "/" + name;
+        std::ifstream f(path);
+        if (f.good()) {
+            return path;
+        }
+    }
+    return base + "/openvino_model.xml";
+}
+
 static int64_t run_infer(cx_session *s, const int64_t *ids, size_t n, int64_t past) {
     size_t total = static_cast<size_t>(past) + n;
 
@@ -150,7 +163,7 @@ extern "C" {
 cx_session *cx_session_new(const char *model_dir, const char *device, char *err, size_t errlen) {
     try {
         auto *s = new cx_session();
-        std::string xml = std::string(model_dir) + "/openvino_model.xml";
+        std::string xml = model_xml_path(model_dir);
         ov::AnyMap cfg{{"KV_CACHE_PRECISION", ov::element::f16}};
         s->compiled = s->core.compile_model(xml, device, cfg);
         s->req = s->compiled.create_infer_request();

@@ -12,9 +12,8 @@ import (
 )
 
 // openvinoProvider implements modelrepo.Provider. A model lives at
-// <modelDir>/<name>/ as an OpenVINO IR (openvino_model.xml). Inference runs in
-// modeld: the provider builds the prompt plan and drives the session over the
-// transport.
+// <modelDir>/<name>/ as an OpenVINO IR. Inference runs in modeld: the provider
+// builds the prompt plan and drives the session over the transport.
 type openvinoProvider struct {
 	name     string
 	modelDir string

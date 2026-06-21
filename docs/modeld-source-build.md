@@ -93,12 +93,13 @@ Starter llama models:
 
 | VRAM | Model | Q4 size | Notes |
 | --- | --- | --- | --- |
-| ~2 GB | `granite-3.2-2b` | ~1.5 GB | good tool use |
+| ~2 GB | `granite-3.2-2b` | ~1.5 GB | |
 | ~3 GB | `qwen3-4b` | ~3 GB | |
-| ~3 GB | `gemma3-4b` | ~2.5 GB | |
+| ~3 GB | `phi-4-mini` | ~2.5 GB | |
+| ~5 GB | `gemma4-e4b` | ~5 GB | native tool format |
 | ~5 GB | `qwen3-8b` | ~5 GB | |
 | ~5 GB | `deepseek-r1-0528-qwen3-8b` | ~5 GB | |
-| ~8 GB | `gemma3-12b` | ~8 GB | |
+| ~8 GB | `gemma4-12b` | ~8 GB | |
 | ~12 GB | `gpt-oss-20b` | ~12 GB | |
 | ~19 GB | `qwen3-coder-30b-a3b` | ~19 GB | |
 
@@ -133,6 +134,8 @@ Starter OpenVINO models:
 | `qwen3-4b-ov` | ~2.3 GB | |
 | `qwen3-8b-ov` | ~4.9 GB | |
 | `phi-4-mini-ov` | ~2.4 GB | |
+| `gemma4-e4b-ov` | ~6.5 GB | |
+| `gpt-oss-20b-ov` | ~12.6 GB | |
 
 ## Choose the Backend Mode
 

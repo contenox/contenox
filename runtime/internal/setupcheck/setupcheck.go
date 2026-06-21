@@ -764,7 +764,7 @@ func noChatModelsCommand(provider string) string {
 	case "bedrock":
 		return "Enable the model in the AWS Bedrock console (Model access), then: contenox model list   # Bedrock returns AccessDeniedException until the model is enabled for your account"
 	case "llama":
-		return "contenox model pull granite-3.2-2b && contenox model local   # start modeld in llama mode, then 'contenox model list' shows loadable models"
+		return "contenox model pull qwen3-4b && contenox model local   # start modeld in llama mode, then 'contenox model list' shows loadable models"
 	case "openvino":
 		return "contenox model registry-list && contenox model pull <openvino-model> && contenox model local   # start modeld in openvino mode, then 'contenox model list' shows loadable models"
 	default:

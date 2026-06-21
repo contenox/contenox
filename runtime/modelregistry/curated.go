@@ -52,54 +52,42 @@ var curatedModels = map[string]ModelDescriptor{
 		Curated:      true,
 		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
-	// ── Llama ────────────────────────────────────────────────────────────────
-	"llama3.2-1b": {
-		Name:      "llama3.2-1b",
-		SourceURL: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-		SizeBytes: 807_694_464,
-		Curated:   true,
-	},
-	"llama4-scout": {
-		Name:      "llama4-scout",
-		SourceURL: "https://huggingface.co/bartowski/meta-llama_Llama-4-Scout-17B-16E-Instruct-GGUF/resolve/main/Llama-4-Scout-17B-16E-Instruct-Q4_K_M.gguf",
-		SizeBytes: 67_550_000_000,
-		Curated:   true,
-	},
-	// ── Google Gemma 3 ───────────────────────────────────────────────────────
-	"gemma3-1b": {
-		Name:         "gemma3-1b",
-		SourceURL:    "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf",
-		SizeBytes:    806_058_240,
+	// ── Google Gemma 4 ───────────────────────────────────────────────────────
+	"gemma4-e2b": {
+		Name:         "gemma4-e2b",
+		SourceURL:    "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q8_0.gguf",
+		SizeBytes:    4_967_494_592,
 		Curated:      true,
 		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
-	"gemma3-4b": {
-		Name:         "gemma3-4b",
-		SourceURL:    "https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf",
-		SizeBytes:    2_489_757_856,
+	"gemma4-e4b": {
+		Name:         "gemma4-e4b",
+		SourceURL:    "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf",
+		SizeBytes:    5_335_289_824,
 		Curated:      true,
 		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
-	"gemma3-12b": {
-		Name:         "gemma3-12b",
-		SourceURL:    "https://huggingface.co/ggml-org/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf",
-		SizeBytes:    7_300_574_976,
+	"gemma4-12b": {
+		Name:         "gemma4-12b",
+		SourceURL:    "https://huggingface.co/ggml-org/gemma-4-12B-it-GGUF/resolve/main/gemma-4-12B-it-Q4_K_M.gguf",
+		SizeBytes:    7_381_382_048,
 		Curated:      true,
 		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
-	"gemma3-27b": {
-		Name:         "gemma3-27b",
-		SourceURL:    "https://huggingface.co/ggml-org/gemma-3-27b-it-qat-GGUF/resolve/main/gemma-3-27b-it-qat-Q4_0.gguf",
-		SizeBytes:    15_908_791_488,
+	"gemma4-26b-a4b": {
+		Name:         "gemma4-26b-a4b",
+		SourceURL:    "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-Q4_K_M.gguf",
+		SizeBytes:    16_796_015_136,
 		Curated:      true,
 		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
 	// ── Microsoft Phi 4 ──────────────────────────────────────────────────────
 	"phi-4-mini": {
-		Name:      "phi-4-mini",
-		SourceURL: "https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/main/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf",
-		SizeBytes: 2_491_874_688,
-		Curated:   true,
+		Name:         "phi-4-mini",
+		SourceURL:    "https://huggingface.co/bartowski/microsoft_Phi-4-mini-instruct-GGUF/resolve/main/microsoft_Phi-4-mini-instruct-Q4_K_M.gguf",
+		SizeBytes:    2_491_874_688,
+		Curated:      true,
+		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
 	// ── DeepSeek ──────────────────────────────────────────────────────────────
 	"deepseek-r1-0528-qwen3-8b": {
@@ -120,49 +108,29 @@ var curatedModels = map[string]ModelDescriptor{
 		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
 		ReasoningFormat:   reasoningFormatDeepSeek,
 	},
-	"deepseek-coder-v2-lite": {
-		Name:      "deepseek-coder-v2-lite",
-		SourceURL: "https://huggingface.co/bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF/resolve/main/DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf",
-		SizeBytes: 10_364_416_768,
-		Curated:   true,
-	},
 	// ── OpenAI open-weight ───────────────────────────────────────────────────
 	"gpt-oss-20b": {
-		Name:      "gpt-oss-20b",
-		SourceURL: "https://huggingface.co/ggml-org/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-mxfp4.gguf",
-		SizeBytes: 12_109_566_560,
-		Curated:   true,
+		Name:         "gpt-oss-20b",
+		SourceURL:    "https://huggingface.co/ggml-org/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-mxfp4.gguf",
+		SizeBytes:    12_109_566_560,
+		Curated:      true,
+		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
 	// ── IBM Granite 3.2 ──────────────────────────────────────────────────────
 	"granite-3.2-2b": {
-		Name:      "granite-3.2-2b",
-		SourceURL: "https://huggingface.co/bartowski/ibm-granite_granite-3.2-2b-instruct-GGUF/resolve/main/ibm-granite_granite-3.2-2b-instruct-Q4_K_M.gguf",
-		SizeBytes: 1_545_296_512,
-		Curated:   true,
+		Name:         "granite-3.2-2b",
+		SourceURL:    "https://huggingface.co/bartowski/ibm-granite_granite-3.2-2b-instruct-GGUF/resolve/main/ibm-granite_granite-3.2-2b-instruct-Q4_K_M.gguf",
+		SizeBytes:    1_545_296_512,
+		Curated:      true,
+		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
 	"granite-3.2-8b": {
-		Name:      "granite-3.2-8b",
-		SourceURL: "https://huggingface.co/bartowski/ibm-granite_granite-3.2-8b-instruct-GGUF/resolve/main/ibm-granite_granite-3.2-8b-instruct-Q4_K_M.gguf",
-		SizeBytes: 4_942_859_808,
-		Curated:   true,
+		Name:         "granite-3.2-8b",
+		SourceURL:    "https://huggingface.co/bartowski/ibm-granite_granite-3.2-8b-instruct-GGUF/resolve/main/ibm-granite_granite-3.2-8b-instruct-Q4_K_M.gguf",
+		SizeBytes:    4_942_859_808,
+		Curated:      true,
+		ToolProtocol: toolProtocolLlamaCommonChat,
 	},
-	// ── Moonshot Kimi ─────────────────────────────────────────────────────────
-	"kimi-linear": {
-		Name:      "kimi-linear",
-		SourceURL: "https://huggingface.co/bartowski/moonshotai_Kimi-Linear-48B-A3B-Instruct-GGUF/resolve/main/moonshotai_Kimi-Linear-48B-A3B-Instruct-Q4_K_M.gguf",
-		SizeBytes: 30_061_058_720,
-		Curated:   true,
-	},
-	// ── Tiny (testing) ───────────────────────────────────────────────────────
-	"tiny": {
-		Name:              "tiny",
-		SourceURL:         "https://huggingface.co/Hjgugugjhuhjggg/FastThink-0.5B-Tiny-Q2_K-GGUF/resolve/main/fastthink-0.5b-tiny-q2_k.gguf",
-		SizeBytes:         338_607_360,
-		Curated:           true,
-		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
-		ReasoningFormat:   reasoningFormatDeepSeek,
-	},
-
 	// ── OpenVINO IR (served by modeld in openvino mode) ───────────────────────
 	// Multi-file IR repos pulled over the HF Hub HTTP API into models/openvino/.
 	"qwen2.5-coder-0.5b-ov": {
@@ -183,31 +151,23 @@ var curatedModels = map[string]ModelDescriptor{
 		Curated:      true,
 		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
-	"gemma3-4b-ov": {
-		Name:         "gemma3-4b-ov",
+	"gemma4-e4b-ov": {
+		Name:         "gemma4-e4b-ov",
 		Backend:      "openvino",
-		Repo:         "OpenVINO/gemma-3-4b-it-int4-ov",
-		SourceURL:    "https://huggingface.co/OpenVINO/gemma-3-4b-it-int4-ov",
-		SizeBytes:    3_504_681_112,
-		Curated:      true,
-		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
-	},
-	"gemma3-12b-ov": {
-		Name:         "gemma3-12b-ov",
-		Backend:      "openvino",
-		Repo:         "OpenVINO/gemma-3-12b-it-int4-ov",
-		SourceURL:    "https://huggingface.co/OpenVINO/gemma-3-12b-it-int4-ov",
-		SizeBytes:    8_103_001_155,
+		Repo:         "OpenVINO/gemma-4-E4B-it-int4-ov",
+		SourceURL:    "https://huggingface.co/OpenVINO/gemma-4-E4B-it-int4-ov",
+		SizeBytes:    6_452_439_538,
 		Curated:      true,
 		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"phi-4-mini-ov": {
-		Name:      "phi-4-mini-ov",
-		Backend:   "openvino",
-		Repo:      "OpenVINO/Phi-4-mini-instruct-int4-ov",
-		SourceURL: "https://huggingface.co/OpenVINO/Phi-4-mini-instruct-int4-ov",
-		SizeBytes: 2_388_940_940,
-		Curated:   true,
+		Name:         "phi-4-mini-ov",
+		Backend:      "openvino",
+		Repo:         "OpenVINO/Phi-4-mini-instruct-int4-ov",
+		SourceURL:    "https://huggingface.co/OpenVINO/Phi-4-mini-instruct-int4-ov",
+		SizeBytes:    2_388_940_940,
+		Curated:      true,
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"qwen3-4b-ov": {
 		Name:         "qwen3-4b-ov",
@@ -264,12 +224,13 @@ var curatedModels = map[string]ModelDescriptor{
 		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 	"gpt-oss-20b-ov": {
-		Name:      "gpt-oss-20b-ov",
-		Backend:   "openvino",
-		Repo:      "OpenVINO/gpt-oss-20b-int4-ov",
-		SourceURL: "https://huggingface.co/OpenVINO/gpt-oss-20b-int4-ov",
-		SizeBytes: 12_623_951_367,
-		Curated:   true,
+		Name:         "gpt-oss-20b-ov",
+		Backend:      "openvino",
+		Repo:         "OpenVINO/gpt-oss-20b-int4-ov",
+		SourceURL:    "https://huggingface.co/OpenVINO/gpt-oss-20b-int4-ov",
+		SizeBytes:    12_623_951_367,
+		Curated:      true,
+		ToolProtocol: toolProtocolOpenVINOJSONSchemaToolCalls,
 	},
 }
 
@@ -287,8 +248,7 @@ var defaultFamilies = []familyMapping{
 	{CanonicalName: "qwen3-14b-ov", Substrings: []string{"openvino/qwen3-14", "qwen3-14b-int4-ov", "qwen3-14b-ov"}},
 	{CanonicalName: "qwen3-8b-ov", Substrings: []string{"openvino/qwen3-8", "qwen3-8b-int4-ov", "qwen3-8b-ov"}},
 	{CanonicalName: "qwen3-4b-ov", Substrings: []string{"openvino/qwen3-4", "qwen3-4b-int4-ov", "qwen3-4b-ov"}},
-	{CanonicalName: "gemma3-12b-ov", Substrings: []string{"openvino/gemma-3-12", "gemma-3-12b-it-int4-ov", "gemma3-12b-ov"}},
-	{CanonicalName: "gemma3-4b-ov", Substrings: []string{"openvino/gemma-3-4", "gemma-3-4b-it-int4-ov", "gemma3-4b-ov"}},
+	{CanonicalName: "gemma4-e4b-ov", Substrings: []string{"openvino/gemma-4-e4", "gemma-4-e4b-it-int4-ov", "gemma4-e4b-ov"}},
 	{CanonicalName: "phi-4-mini-ov", Substrings: []string{"openvino/phi-4-mini", "phi-4-mini-instruct-int4-ov", "phi-4-mini-ov"}},
 	{CanonicalName: "deepseek-r1-distill-qwen-7b-ov", Substrings: []string{"openvino/deepseek-r1-distill-qwen-7", "deepseek-r1-distill-qwen-7b-int4-ov", "deepseek-r1-distill-qwen-7b-ov"}},
 	{CanonicalName: "gpt-oss-20b-ov", Substrings: []string{"openvino/gpt-oss-20b", "gpt-oss-20b-int4-ov", "gpt-oss-20b-ov"}},
@@ -299,25 +259,19 @@ var defaultFamilies = []familyMapping{
 	{CanonicalName: "qwen3-8b", Substrings: []string{"qwen3-8", "qwen3:8"}},
 	{CanonicalName: "qwen3-4b", Substrings: []string{"qwen3-4", "qwen3:4"}},
 	{CanonicalName: "qwen3-8b", Substrings: []string{"qwen3"}},
-	// Gemma 3.
-	{CanonicalName: "gemma3-27b", Substrings: []string{"gemma-3-27", "gemma3-27", "gemma3:27"}},
-	{CanonicalName: "gemma3-12b", Substrings: []string{"gemma-3-12", "gemma3-12", "gemma3:12"}},
-	{CanonicalName: "gemma3-1b", Substrings: []string{"gemma-3-1", "gemma3-1", "gemma3:1"}},
-	{CanonicalName: "gemma3-4b", Substrings: []string{"gemma-3-4", "gemma3-4", "gemma3:4", "gemma-3", "gemma3", "gemma"}},
+	// Gemma 4.
+	{CanonicalName: "gemma4-26b-a4b", Substrings: []string{"gemma-4-26", "gemma4-26", "gemma4:26"}},
+	{CanonicalName: "gemma4-12b", Substrings: []string{"gemma-4-12", "gemma4-12", "gemma4:12"}},
+	{CanonicalName: "gemma4-e2b", Substrings: []string{"gemma-4-e2", "gemma4-e2", "gemma4:e2"}},
+	{CanonicalName: "gemma4-e4b", Substrings: []string{"gemma-4-e4", "gemma4-e4", "gemma4:e4", "gemma-4", "gemma4", "gemma"}},
 	// Phi 4.
 	{CanonicalName: "phi-4-mini", Substrings: []string{"phi-4-mini", "phi4-mini", "phi4mini", "phi-4", "phi4"}},
 	// DeepSeek.
-	{CanonicalName: "deepseek-coder-v2-lite", Substrings: []string{"deepseek-coder-v2-lite", "deepseek-coder-v2", "deepseek-coder"}},
 	{CanonicalName: "deepseek-r1-0528-qwen3-8b", Substrings: []string{"deepseek-r1-0528", "deepseek-r1-qwen3", "deepseek-r1", "deepseek"}},
 	// OpenAI open-weight.
 	{CanonicalName: "gpt-oss-20b", Substrings: []string{"openai/gpt-oss-20b", "openai_gpt-oss-20b", "gpt-oss-20b", "gpt-oss", "openai-oss", "openai oss"}},
-	// Llama
-	{CanonicalName: "llama4-scout", Substrings: []string{"llama-4", "llama4"}},
-	{CanonicalName: "llama3.2-1b", Substrings: []string{"llama-3.2-1", "llama3.2-1", "llama3.2:1"}},
-	// Granite
+	// Granite.
 	{CanonicalName: "granite-3.2-8b", Substrings: []string{"granite-3.2-8", "granite-3.1", "granite3.", "granite"}},
-	// Kimi
-	{CanonicalName: "kimi-linear", Substrings: []string{"kimi"}},
 }
 
-const defaultFallback = "tiny"
+const defaultFallback = "qwen3-4b"

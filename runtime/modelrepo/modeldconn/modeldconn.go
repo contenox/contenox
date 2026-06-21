@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/contenox/runtime/runtime/internal/modeldprobe"
 	"github.com/contenox/runtime/runtime/transport"
@@ -19,8 +20,16 @@ import (
 // standard location and is overridable (tests, non-default installs).
 var dataRoot string
 
-// SetDataRoot overrides the data root used to locate the owner lease.
-func SetDataRoot(root string) { dataRoot = root }
+// SetDataRoot overrides the data root used to locate the owner lease. It also
+// invalidates the serveable-backend grace cache: a different data root is a
+// different modeld context, so a backend observed under the old root must not
+// keep being advertised under the new one.
+func SetDataRoot(root string) {
+	dataRoot = root
+	serveableMu.Lock()
+	serveableBackend, serveableSeenAt = "", time.Time{}
+	serveableMu.Unlock()
+}
 
 func detector() *modeldprobe.Detector { return modeldprobe.New(dataRoot) }
 
@@ -39,6 +48,46 @@ func Backend() string {
 		return ""
 	}
 	return st.Backend
+}
+
+// serveableGraceWindow is how long a previously-observed backend stays advertised
+// after the modeld lease stops reading fresh. The modeld owner renews its lease
+// well within a 30s TTL, so the only time Backend() reads "" while modeld is in
+// fact coming back is a daemon restart / lease-renewal gap (a few seconds). A
+// grace of 2x the TTL covers a restart without keeping a genuinely-down daemon's
+// models selectable for long.
+const serveableGraceWindow = 60 * time.Second
+
+var (
+	serveableMu      sync.Mutex
+	serveableBackend string
+	serveableSeenAt  time.Time
+)
+
+// ServeableBackend reports the inference backend modeld can serve, smoothed over
+// brief lease gaps so local-model capability does not flap during a daemon
+// restart. While a fresh lease is held it returns the live backend and refreshes
+// the cache; during a gap it returns the last-observed backend for up to
+// serveableGraceWindow; after that it returns "". Capability advertisement
+// (provider SessionAvailable / catalog listing) uses this; live-decode paths keep
+// using the strict Backend()/Available() so they fail honestly when modeld is
+// actually gone.
+func ServeableBackend() string { return serveableFrom(Backend(), time.Now()) }
+
+// serveableFrom is the pure core of ServeableBackend, taking the live backend and
+// clock so the grace behavior is unit-testable without a lease file.
+func serveableFrom(live string, now time.Time) string {
+	serveableMu.Lock()
+	defer serveableMu.Unlock()
+	if live != "" {
+		serveableBackend, serveableSeenAt = live, now
+		return live
+	}
+	if serveableBackend != "" && now.Sub(serveableSeenAt) <= serveableGraceWindow {
+		return serveableBackend
+	}
+	serveableBackend = ""
+	return ""
 }
 
 // connection caches a single dialed client to the current leader, keyed by

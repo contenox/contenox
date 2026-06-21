@@ -278,10 +278,10 @@ This writes default-chain.json and default-run-chain.json.
 After init, register a backend, make sure the runtime can see a model, then set your defaults:
 
   # Local llama.cpp via modeld:
-  contenox model pull granite-3.2-2b
+  contenox model pull qwen3-4b
   contenox model local
   contenox config set default-provider llama
-  contenox config set default-model granite-3.2-2b
+  contenox config set default-model qwen3-4b
 
   # Local Ollama:
   contenox backend add local --type ollama

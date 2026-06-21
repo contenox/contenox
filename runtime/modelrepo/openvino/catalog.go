@@ -50,10 +50,18 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		// user memory ceiling.
 		if sessionFactory == nil {
 			mi, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "openvino", Digest: modelDigest, Path: modelPath}, Config{NumCtx: caps.ContextLength})
-			if derr != nil || mi.EffectiveContext <= 0 {
+			switch {
+			case derr == nil && mi.EffectiveContext > 0:
+				caps.ContextLength = mi.EffectiveContext
+			case modeldconn.Available():
+				// modeld is live but cannot describe THIS model — it is genuinely
+				// unusable, so omit it rather than advertise a broken model.
 				continue
+			default:
+				// modeld is momentarily gone (lease gap / restart); keep the model
+				// listed with profile caps so the picker does not flap. The next
+				// reconcile against a live daemon fills in the physical context.
 			}
-			caps.ContextLength = mi.EffectiveContext
 		}
 		fi, _ := e.Info()
 		out = append(out, modelrepo.ObservedModel{

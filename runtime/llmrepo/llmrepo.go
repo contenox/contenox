@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/internal/llmresolver"
@@ -74,6 +75,40 @@ type modelManager struct {
 	config    ModelManagerConfig
 	mu        sync.RWMutex
 	tracker   libtracker.ActivityTracker
+
+	// reconcileMu serializes the resolution self-heal cycle and lastReconcileAt
+	// debounces it; see reconcileForResolution.
+	reconcileMu     sync.Mutex
+	lastReconcileAt time.Time
+}
+
+// minResolveReconcileInterval debounces the resolution-failure backend cycle so a
+// burst of failing requests coalesces into a single re-scan.
+const minResolveReconcileInterval = 5 * time.Second
+
+// reconcileForResolution self-heals a runtime that resolved its model state
+// before a backend was reachable. The runtime reconciles backends at startup and
+// on explicit refresh only (no periodic loop), so a backend that comes up
+// afterwards — most commonly modeld being (re)started after the runtime — stays
+// invisible and every request for its models fails with "no models found in
+// runtime state". When resolution fails for that reason this runs one debounced
+// backend cycle and reports whether the caller should retry resolution. It fires
+// only for the resolver's no-models / no-match errors so genuine downstream
+// failures are never retried.
+func (e *modelManager) reconcileForResolution(ctx context.Context, resolveErr error) bool {
+	if !errors.Is(resolveErr, llmresolver.ErrNoAvailableModels) && !errors.Is(resolveErr, llmresolver.ErrNoSatisfactoryModel) {
+		return false
+	}
+	e.reconcileMu.Lock()
+	defer e.reconcileMu.Unlock()
+	// A very recent cycle already refreshed state (e.g. a concurrent failing
+	// request); retry against it instead of re-scanning every backend again.
+	if !e.lastReconcileAt.IsZero() && time.Since(e.lastReconcileAt) < minResolveReconcileInterval {
+		return true
+	}
+	err := e.runtime.RunBackendCycle(ctx)
+	e.lastReconcileAt = time.Now()
+	return err == nil
 }
 
 type ModelConfig struct {
@@ -166,6 +201,13 @@ func (e *modelManager) PromptExecute(
 		runtimeStateResolution,
 		llmresolver.Randomly,
 	)
+	if err != nil && e.reconcileForResolution(ctx, err) {
+		client, provider, backend, err = llmresolver.PromptExecute(ctx,
+			resolverReq,
+			e.GetRuntime(ctx),
+			llmresolver.Randomly,
+		)
+	}
 	if err != nil {
 		return "", Meta{}, fmt.Errorf("prompt execute: client resolution failed: %w", err)
 	}
@@ -213,6 +255,13 @@ func (e *modelManager) Chat(
 		runtimeStateResolution,
 		llmresolver.Randomly,
 	)
+	if err != nil && e.reconcileForResolution(ctx, err) {
+		client, provider, backend, err = llmresolver.Chat(ctx,
+			resolverReq,
+			e.GetRuntime(ctx),
+			llmresolver.Randomly,
+		)
+	}
 	if err != nil {
 		return libmodelprovider.ChatResult{}, Meta{}, fmt.Errorf("chat: client resolution failed: %w", err)
 	}
@@ -256,6 +305,13 @@ func (e *modelManager) Embed(
 		runtimeStateResolution,
 		llmresolver.Randomly,
 	)
+	if err != nil && e.reconcileForResolution(ctx, err) {
+		client, provider, backend, err = llmresolver.Embed(ctx,
+			resolverReq,
+			e.GetRuntime(ctx),
+			llmresolver.Randomly,
+		)
+	}
 	if err != nil {
 		return nil, Meta{}, fmt.Errorf("embed: client resolution failed: %w", err)
 	}
@@ -304,6 +360,13 @@ func (e *modelManager) Stream(
 		runtimeStateResolution,
 		llmresolver.Randomly,
 	)
+	if err != nil && e.reconcileForResolution(ctx, err) {
+		client, provider, backend, err = llmresolver.Stream(ctx,
+			resolverReq,
+			e.GetRuntime(ctx),
+			llmresolver.Randomly,
+		)
+	}
 	if err != nil {
 		return nil, Meta{}, fmt.Errorf("stream: client resolution failed: %w", err)
 	}

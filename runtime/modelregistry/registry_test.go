@@ -68,15 +68,16 @@ func TestUnit_Registry_ResolveCuratedQwen25CoderOpenVINOTiny(t *testing.T) {
 	assert.True(t, d.Curated)
 }
 
-func TestUnit_Registry_ResolveCuratedGPTOSSOpenVINO(t *testing.T) {
+func TestUnit_Registry_ResolveCuratedDeepSeekOpenVINO(t *testing.T) {
 	reg := newCuratedOnly()
-	d, err := reg.Resolve(context.Background(), "gpt-oss-20b-ov")
+	d, err := reg.Resolve(context.Background(), "deepseek-r1-distill-qwen-7b-ov")
 	require.NoError(t, err)
 
-	assert.Equal(t, "gpt-oss-20b-ov", d.Name)
+	assert.Equal(t, "deepseek-r1-distill-qwen-7b-ov", d.Name)
 	assert.Equal(t, "openvino", d.BackendType())
-	assert.Equal(t, "OpenVINO/gpt-oss-20b-int4-ov", d.Repo)
-	assert.Equal(t, int64(12_623_951_367), d.SizeBytes)
+	assert.Equal(t, "OpenVINO/DeepSeek-R1-Distill-Qwen-7B-int4-ov", d.Repo)
+	assert.Equal(t, int64(4_503_931_427), d.SizeBytes)
+	assert.Equal(t, "openvino:json_schema_tool_calls", d.ToolProtocol)
 	assert.True(t, d.Curated)
 }
 
@@ -93,11 +94,16 @@ func TestUnit_Registry_ListIncludesCurated(t *testing.T) {
 	assert.True(t, names["qwen2.5-coder-0.5b-ov"])
 	assert.True(t, names["qwen3-coder-30b-a3b"])
 	assert.True(t, names["qwen3-coder-30b-a3b-ov"])
-	assert.True(t, names["gemma3-4b"])
+	assert.True(t, names["gemma4-e4b"])
+	assert.False(t, names["gemma3-4b"])
 	assert.True(t, names["deepseek-r1-0528-qwen3-8b"])
 	assert.True(t, names["gpt-oss-20b"])
-	assert.True(t, names["llama3.2-1b"])
-	assert.True(t, names["tiny"])
+	assert.True(t, names["phi-4-mini"])
+	assert.True(t, names["granite-3.2-2b"])
+	assert.False(t, names["tiny"])
+	for _, e := range entries {
+		assert.NotEmpty(t, e.ToolProtocol, e.Name)
+	}
 }
 
 func TestUnit_Registry_OptimalForExactCuratedMatch(t *testing.T) {
@@ -131,13 +137,13 @@ func TestUnit_Registry_OptimalForOpenVINOQwen3CoderFamilyMapping(t *testing.T) {
 func TestUnit_Registry_OptimalForCurrentFamilies(t *testing.T) {
 	reg := newCuratedOnly()
 	tests := map[string]string{
-		"google/gemma-3-4b-it":                         "gemma3-4b",
-		"google/gemma-3-1b-it":                         "gemma3-1b",
+		"google/gemma-4-E4B-it":                        "gemma4-e4b",
+		"google/gemma-4-E2B-it":                        "gemma4-e2b",
 		"microsoft/Phi-4-mini-instruct":                "phi-4-mini",
 		"DeepSeek-R1-0528-Qwen3-8B":                    "deepseek-r1-0528-qwen3-8b",
 		"bartowski/openai_gpt-oss-20b":                 "gpt-oss-20b",
 		"OpenVINO/gpt-oss-20b-int4-ov":                 "gpt-oss-20b-ov",
-		"OpenVINO/gemma-3-12b-it-int4-ov":              "gemma3-12b-ov",
+		"OpenVINO/gemma-4-E4B-it-int4-ov":              "gemma4-e4b-ov",
 		"OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov": "qwen2.5-coder-0.5b-ov",
 	}
 	for input, want := range tests {
@@ -150,8 +156,7 @@ func TestUnit_Registry_OptimalForCurrentFamilies(t *testing.T) {
 func TestUnit_Registry_OpenVINOCrossSyncWithCuratedLlamaModels(t *testing.T) {
 	reg := newCuratedOnly()
 	pairs := map[string]string{
-		"gemma3-4b":                   "gemma3-4b-ov",
-		"gemma3-12b":                  "gemma3-12b-ov",
+		"gemma4-e4b":                  "gemma4-e4b-ov",
 		"phi-4-mini":                  "phi-4-mini-ov",
 		"qwen3-4b":                    "qwen3-4b-ov",
 		"qwen3-8b":                    "qwen3-8b-ov",
@@ -225,7 +230,7 @@ func TestUnit_Registry_OptimalForFallbackOnUnknown(t *testing.T) {
 	reg := newCuratedOnly()
 	name, err := reg.OptimalFor(context.Background(), "totally-unknown-model-xyz")
 	require.NoError(t, err)
-	assert.Equal(t, "tiny", name) // defaultFallback
+	assert.Equal(t, "qwen3-4b", name) // defaultFallback
 }
 
 func TestUnit_Registry_ResolveNotFoundReturnsError(t *testing.T) {

@@ -41,10 +41,12 @@ var sessionFactory SessionFactory
 // leave this nil and talk to modeld through modeldconn.
 func SetSessionFactory(f SessionFactory) { sessionFactory = f }
 
-// SessionAvailable reports whether the modeld daemon holds a fresh lease AND is
-// serving the openvino backend (the cheap offline check). A daemon running in a
-// different mode (e.g. llama) advertises no openvino capability.
-func SessionAvailable() bool { return sessionFactory != nil || modeldconn.Backend() == "openvino" }
+// SessionAvailable reports whether the modeld daemon serves the openvino backend.
+// It uses modeldconn.ServeableBackend (not the strict Backend) so a brief lease
+// gap during a daemon restart does not momentarily drop openvino models from
+// capability advertisement / the model picker. A daemon running in a different
+// mode (e.g. llama) advertises no openvino capability.
+func SessionAvailable() bool { return sessionFactory != nil || modeldconn.ServeableBackend() == "openvino" }
 
 // newSession opens an openvino session on the modeld daemon over the transport.
 // ref.Path is the OpenVINO IR directory; modeld makes it resident after checking

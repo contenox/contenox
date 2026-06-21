@@ -38,7 +38,7 @@ func TestUnit_LlamaProvider_CuratedModelsUseCommonChatToolProtocol(t *testing.T)
 	if got != toolParserProtocolCommonChat {
 		t.Fatalf("curated tool protocol = %q, want %q", got, toolParserProtocolCommonChat)
 	}
-	if got := curatedToolProtocol(context.Background(), "gemma3-4b", "llama"); got != toolParserProtocolCommonChat {
+	if got := curatedToolProtocol(context.Background(), "gemma4-e4b", "llama"); got != toolParserProtocolCommonChat {
 		t.Fatalf("curated gemma tool protocol = %q, want %q", got, toolParserProtocolCommonChat)
 	}
 	if got := curatedToolProtocol(context.Background(), "qwen3-8b-ov", "llama"); got != "" {

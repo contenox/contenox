@@ -19,7 +19,7 @@ func TestUnit_LocalModeldSourceBuildStepsKeepModelChoices(t *testing.T) {
 		"git clone --branch v9.9.9",
 		"CONTENOX_MODELD_BACKEND=llama make run-modeld",
 		"VRAM     Model",
-		"granite-3.2-2b",
+		"qwen3-4b",
 		"qwen3-8b",
 		"contenox model registry-list",
 		"docs/modeld-source-build.md",
@@ -36,7 +36,7 @@ func TestUnit_LocalModeldSourceBuildStepsKeepModelChoices(t *testing.T) {
 		"make deps-modeld",
 		"CONTENOX_MODELD_BACKEND=openvino make run-modeld",
 		"qwen2.5-coder-0.5b-ov",
-		"phi-4-mini-ov",
+		"gemma4-e4b-ov",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("openvino modeld setup text missing %q:\n%s", want, got)

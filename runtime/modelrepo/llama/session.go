@@ -119,11 +119,12 @@ var sessionFactory SessionFactory
 func SetSessionFactory(f SessionFactory) { sessionFactory = f }
 
 // SessionAvailable reports whether local llama inference can be served: either a
-// test factory is registered, or the modeld daemon holds a fresh lease AND is
-// serving the llama backend (the cheap offline check). A daemon running in a
-// different mode (e.g. openvino) advertises no llama capability. The actual open
-// confirms reachability.
-func SessionAvailable() bool { return sessionFactory != nil || modeldconn.Backend() == "llama" }
+// test factory is registered, or the modeld daemon serves the llama backend. It
+// uses modeldconn.ServeableBackend (not the strict Backend) so a brief lease gap
+// during a daemon restart does not momentarily drop llama models from capability
+// advertisement / the model picker. A daemon running in a different mode (e.g.
+// openvino) advertises no llama capability. The actual open confirms reachability.
+func SessionAvailable() bool { return sessionFactory != nil || modeldconn.ServeableBackend() == "llama" }
 
 // newSession opens a session. A registered factory (tests) wins; otherwise the
 // session is opened on the modeld daemon over runtime/transport and adapted to
