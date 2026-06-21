@@ -45,6 +45,35 @@ func execWeb(t *testing.T, ctx context.Context, h taskengine.ToolsRepo, tool str
 	return h.Exec(ctx, time.Now(), args, false, &taskengine.ToolsCall{ToolName: tool})
 }
 
+func TestUnit_WebTools_WriteBodySchemaDeclaresType(t *testing.T) {
+	tools := newWebTools(t, &recTracker{})
+	schemas, err := tools.GetToolsForToolsByName(context.Background(), "webtools")
+	require.NoError(t, err)
+
+	writeTools := map[string]struct{}{
+		"web_post":   {},
+		"web_put":    {},
+		"web_patch":  {},
+		"web_delete": {},
+	}
+	for _, tool := range schemas {
+		if _, ok := writeTools[tool.Function.Name]; !ok {
+			continue
+		}
+		params, ok := tool.Function.Parameters.(map[string]any)
+		require.True(t, ok, tool.Function.Name)
+		props, ok := params["properties"].(map[string]any)
+		require.True(t, ok, tool.Function.Name)
+		body, ok := props["body"].(map[string]any)
+		require.True(t, ok, tool.Function.Name)
+		types, ok := body["type"].([]any)
+		require.True(t, ok, tool.Function.Name)
+		require.Contains(t, types, "string", tool.Function.Name)
+		require.Contains(t, types, "object", tool.Function.Name)
+		require.Contains(t, types, "array", tool.Function.Name)
+	}
+}
+
 // ── happy path ──────────────────────────────────────────────────────────────
 
 func TestUnit_WebTools_Get_ReturnsJSON(t *testing.T) {

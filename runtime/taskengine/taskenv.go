@@ -3,7 +3,6 @@ package taskengine
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -164,47 +163,9 @@ func NewEnv(
 }
 
 type ChainContext struct {
-	Tools                     map[string]ToolWithResolution
-	ClientTools               []Tool
-	UnavailableToolsProviders []UnavailableToolsProvider
-	Debug                     bool
-}
-
-type UnavailableToolsProvider struct {
-	Name   string
-	Reason string
-}
-
-func buildUnavailableToolsPrelude(unavail []UnavailableToolsProvider) []Message {
-	if len(unavail) == 0 {
-		return nil
-	}
-	type entry struct {
-		Name  string `json:"name"`
-		Error string `json:"error"`
-	}
-	entries := make([]entry, len(unavail))
-	for i, u := range unavail {
-		entries[i] = entry{Name: u.Name, Error: u.Reason}
-	}
-	payload, err := json.Marshal(map[string]any{"unavailable_tools_providers": entries})
-	if err != nil {
-		return nil
-	}
-	return []Message{{Role: "system", Content: string(payload), Timestamp: time.Now().UTC()}}
-}
-
-func shortenChainErr(err error) string {
-	if err == nil {
-		return ""
-	}
-	msg := strings.TrimSpace(err.Error())
-	msg = strings.ReplaceAll(msg, "\n", " ")
-	const max = 200
-	if len(msg) > max {
-		return msg[:max-3] + "..."
-	}
-	return msg
+	Tools       map[string]ToolWithResolution
+	ClientTools []Tool
+	Debug       bool
 }
 
 type ToolWithResolution struct {
@@ -214,7 +175,7 @@ type ToolWithResolution struct {
 
 // ExecEnv executes the given chain with the provided input.
 func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, input any, dataType DataType) (result any, resultType DataType, history []CapturedStateUnit, retErr error) {
-	reportErrChain, _, endChain := env.tracker.Start(ctx, "chain_exec", chain.ID, "chain_id", chain.ID)
+	_, reportChangeChain, endChain := env.tracker.Start(ctx, "chain_exec", chain.ID, "chain_id", chain.ID)
 	defer endChain()
 
 	stack := env.inspector.Start(ctx)
@@ -268,6 +229,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 		Debug:       chain.Debug,
 	}
 	filter := map[string]ToolWithResolution{}
+	unavailableTools := map[string]struct{}{}
 	for _, task := range chain.Tasks {
 		if task.ExecuteConfig == nil {
 			continue
@@ -277,6 +239,9 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: failed to resolve tools: %w", currentTask.ID, err)
 		}
 		for _, toolsName := range toolsNames {
+			if _, unavailable := unavailableTools[toolsName]; unavailable {
+				continue
+			}
 			// Build a task-scoped context carrying any chain-level policy args for
 			// this tools. WithToolsArgs copies the map, so the stored value is
 			// immutable and safe to read concurrently without locks.
@@ -300,20 +265,11 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 					continue
 				}
 				if errors.Is(err, ErrToolsToolsUnavailable) {
-					reportErrChain(err)
-					already := false
-					for _, u := range chainContext.UnavailableToolsProviders {
-						if u.Name == toolsName {
-							already = true
-							break
-						}
-					}
-					if !already {
-						chainContext.UnavailableToolsProviders = append(chainContext.UnavailableToolsProviders, UnavailableToolsProvider{
-							Name:   toolsName,
-							Reason: shortenChainErr(err),
-						})
-					}
+					unavailableTools[toolsName] = struct{}{}
+					reportChangeChain("tools_unavailable", map[string]any{
+						"name":  toolsName,
+						"error": err.Error(),
+					})
 					continue
 				}
 				return nil, DataTypeAny, stack.GetExecutionHistory(), fmt.Errorf("task %s: failed to get tools for tools %s: %w", currentTask.ID, toolsName, err)

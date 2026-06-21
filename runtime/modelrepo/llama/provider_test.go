@@ -33,13 +33,13 @@ func TestUnit_LocalNodeProvider_DefaultBuildReportsNotWired(t *testing.T) {
 	}
 }
 
-func TestUnit_LlamaProvider_CuratedQwenUsesCommonChatToolProtocol(t *testing.T) {
+func TestUnit_LlamaProvider_CuratedModelsUseCommonChatToolProtocol(t *testing.T) {
 	got := curatedToolProtocol(context.Background(), "qwen3-8b", "llama")
 	if got != toolParserProtocolCommonChat {
 		t.Fatalf("curated tool protocol = %q, want %q", got, toolParserProtocolCommonChat)
 	}
-	if got := curatedToolProtocol(context.Background(), "gemma3-4b", "llama"); got != "" {
-		t.Fatalf("gemma should not declare a tool protocol, got %q", got)
+	if got := curatedToolProtocol(context.Background(), "gemma3-4b", "llama"); got != toolParserProtocolCommonChat {
+		t.Fatalf("curated gemma tool protocol = %q, want %q", got, toolParserProtocolCommonChat)
 	}
 	if got := curatedToolProtocol(context.Background(), "qwen3-8b-ov", "llama"); got != "" {
 		t.Fatalf("backend mismatch should not return a protocol, got %q", got)

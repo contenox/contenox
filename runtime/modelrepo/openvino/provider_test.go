@@ -170,8 +170,8 @@ func TestUnit_OpenVINOProvider_CuratedQwenUsesNativeOpenVINOProtocol(t *testing.
 	if got := curatedToolProtocol(context.Background(), "qwen2.5-coder-0.5b-ov", "openvino"); got != "openvino:json_schema_tool_calls" {
 		t.Fatalf("curated OpenVINO qwen2.5 protocol = %q, want native JSON schema protocol", got)
 	}
-	if got := curatedToolProtocol(context.Background(), "gemma3-4b-ov", "openvino"); got != "" {
-		t.Fatalf("gemma should not declare a tool protocol, got %q", got)
+	if got := curatedToolProtocol(context.Background(), "gemma3-4b-ov", "openvino"); got != toolProtocolJSONSchemaToolCalls {
+		t.Fatalf("curated gemma tool protocol = %q, want %q", got, toolProtocolJSONSchemaToolCalls)
 	}
 	if got := curatedToolProtocol(context.Background(), "qwen3-8b", "openvino"); got != "" {
 		t.Fatalf("backend mismatch should not return a protocol, got %q", got)

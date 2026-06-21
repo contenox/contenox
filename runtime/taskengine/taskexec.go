@@ -370,7 +370,7 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 		Tracker:       exe.tracker,
 	}
 
-		// Keep prompt/route temperature behavior stable: unset is sent as 0.
+	// Keep prompt/route temperature behavior stable: unset is sent as 0.
 	// Preserve that — route handlers depend on temp-0 determinism to emit exactly
 	// one label. Only the chat path treats nil as "use the provider default".
 	promptTemp, _ := temperatureValue(llmCall.Temperature)
@@ -710,8 +710,6 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			}
 		}
 
-		prelude := buildUnavailableToolsPrelude(chainContext.UnavailableToolsProviders)
-
 		output, outputType, transitionEval, taskErr = exe.executeLLM(
 			taskCtx,
 			chatHistory,
@@ -719,7 +717,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			finalExecConfig,
 			chainContext.ClientTools,
 			chainContext.Tools,
-			prelude,
+			nil,
 		)
 
 	case HandleExecuteToolCalls:
@@ -1176,7 +1174,7 @@ func (exe *SimpleExec) executeLLM(
 	}
 
 	// Prepare chat arguments
-	chatArgs := []libmodelprovider.ChatArgument{libmodelprovider.WithTools(tools...)}
+	chatArgs := chatArgsForLLMCall(llmCall, tools)
 	toolSchemaBytes := 0
 	if len(tools) > 0 {
 		if b, err := json.Marshal(tools); err == nil {
@@ -1198,23 +1196,6 @@ func (exe *SimpleExec) executeLLM(
 			"messages": preludeContents,
 		})
 	}
-	if v, ok := temperatureValue(llmCall.Temperature); ok {
-		chatArgs = append(chatArgs, libmodelprovider.WithTemperature(float64(v)))
-	}
-	if llmCall.Think != "" {
-		chatArgs = append(chatArgs, libmodelprovider.WithThink(llmCall.Think))
-	}
-	// Only forward an explicit max_tokens. Falling back to ctxLength conflates
-	// the input+output context window with the per-response output cap and trips
-	// per-model output limits (e.g. Vertex Gemini 2.5 Pro caps maxOutputTokens
-	// at 65536, well below typical 131072 ctxLength settings).
-	if llmCall.MaxTokens != nil && *llmCall.MaxTokens > 0 {
-		chatArgs = append(chatArgs, libmodelprovider.WithMaxTokens(*llmCall.MaxTokens))
-	}
-	if llmCall.Shift {
-		chatArgs = append(chatArgs, libmodelprovider.WithShift{})
-	}
-
 	providerNames := []string{}
 	if llmCall.Provider != "" {
 		providerNames = append(providerNames, llmCall.Provider)
@@ -1264,6 +1245,25 @@ func (exe *SimpleExec) executeLLM(
 
 	resp, meta, err := exe.chatWithRetry(ctx, reportChange, llmCall, req, messagesC, chatArgs)
 	if err != nil {
+		if len(tools) > 0 && isRecoverableToolSurfaceError(err) {
+			reportChange("tools_disabled_after_tool_surface_error", map[string]any{
+				"tool_count": len(tools),
+				"error":      err.Error(),
+			})
+			noToolReq := req
+			noToolReq.ContextLength = totalTokens - toolTokens
+			noToolMessages := stripToolProtocolMessages(messagesC)
+			noToolArgs := chatArgsForLLMCall(llmCall, nil)
+			resp, meta, err = exe.chatWithRetry(ctx, reportChange, llmCall, noToolReq, noToolMessages, noToolArgs)
+			if err == nil {
+				reportChange("tools_disabled_chat_succeeded", map[string]any{
+					"model":         meta.ModelName,
+					"provider_type": meta.ProviderType,
+				})
+			}
+		}
+	}
+	if err != nil {
 		return nil, DataTypeAny, "", fmt.Errorf("chat failed: %w", err)
 	}
 
@@ -1307,6 +1307,64 @@ func (exe *SimpleExec) executeLLM(
 		return input, DataTypeChatHistory, TransitionToolCall, nil
 	}
 	return input, DataTypeChatHistory, TransitionExecuted, nil
+}
+
+func chatArgsForLLMCall(llmCall *LLMExecutionConfig, tools []libmodelprovider.Tool) []libmodelprovider.ChatArgument {
+	chatArgs := make([]libmodelprovider.ChatArgument, 0, 5)
+	if len(tools) > 0 {
+		chatArgs = append(chatArgs, libmodelprovider.WithTools(tools...))
+	}
+	if v, ok := temperatureValue(llmCall.Temperature); ok {
+		chatArgs = append(chatArgs, libmodelprovider.WithTemperature(float64(v)))
+	}
+	if llmCall.Think != "" {
+		chatArgs = append(chatArgs, libmodelprovider.WithThink(llmCall.Think))
+	}
+	// Only forward an explicit max_tokens. Falling back to ctxLength conflates
+	// the input+output context window with the per-response output cap and trips
+	// per-model output limits (e.g. Vertex Gemini 2.5 Pro caps maxOutputTokens
+	// at 65536, well below typical 131072 ctxLength settings).
+	if llmCall.MaxTokens != nil && *llmCall.MaxTokens > 0 {
+		chatArgs = append(chatArgs, libmodelprovider.WithMaxTokens(*llmCall.MaxTokens))
+	}
+	if llmCall.Shift {
+		chatArgs = append(chatArgs, libmodelprovider.WithShift{})
+	}
+	return chatArgs
+}
+
+func isRecoverableToolSurfaceError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	if strings.Contains(s, "unsupported feature") && strings.Contains(s, "tool call") {
+		return true
+	}
+	if strings.Contains(s, "json schema conversion failed") || strings.Contains(s, "unrecognized schema") {
+		return true
+	}
+	if strings.Contains(s, "chat template") && strings.Contains(s, "tool") {
+		return true
+	}
+	return strings.Contains(s, "context overflow") || strings.Contains(s, "exceeded the session context window")
+}
+
+func stripToolProtocolMessages(messages []libmodelprovider.Message) []libmodelprovider.Message {
+	out := make([]libmodelprovider.Message, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Role == "tool" {
+			continue
+		}
+		hadToolCalls := len(msg.ToolCalls) > 0
+		msg.ToolCalls = nil
+		msg.ToolCallID = ""
+		if msg.Role == "assistant" && hadToolCalls && strings.TrimSpace(msg.Content) == "" {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
 }
 
 // toolsengine handles the execution of a tools, including output templating.

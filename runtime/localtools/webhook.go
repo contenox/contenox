@@ -554,7 +554,10 @@ func writeVerbProps() map[string]any {
 			"url":     map[string]any{"type": "string", "description": "Absolute URL to call. Subject to _allowed_schemes and host allow/deny policy."},
 			"headers": map[string]any{"type": "object", "description": "Optional HTTP headers as a JSON object {\"X-Foo\":\"bar\"}.", "additionalProperties": map[string]any{"type": "string"}},
 			"query":   map[string]any{"type": "string", "description": "Optional URL-encoded query string."},
-			"body":    map[string]any{"description": "Request body. A string is sent as-is; any other JSON value is marshalled. Capped by tools_policies.webtools._max_request_body_bytes (default 256 KiB)."},
+			"body": map[string]any{
+				"type":        []any{"string", "number", "integer", "boolean", "object", "array", "null"},
+				"description": "Request body. A string is sent as-is; any other JSON value is marshalled. Capped by tools_policies.webtools._max_request_body_bytes (default 256 KiB).",
+			},
 		},
 		"required": []string{"url"},
 	}
