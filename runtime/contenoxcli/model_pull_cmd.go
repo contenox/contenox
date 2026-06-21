@@ -45,6 +45,11 @@ Curated models — run 'contenox model registry-list' to see full list with size
   ~19 GB  qwen3-30b       Qwen 3 30B-A3B (MoE)
   ~19 GB  qwen3-coder-30b-a3b
 
+VS Code autocomplete can use a separate model from chat. For local ghost text:
+  contenox model pull qwen3-coder-30b-a3b
+  contenox config set default-autocomplete-provider llama
+  contenox config set default-autocomplete-model qwen3-coder-30b-a3b
+
 Or provide an explicit URL:
   contenox model pull my-model --url https://huggingface.co/.../model.gguf
 

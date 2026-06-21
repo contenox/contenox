@@ -221,6 +221,8 @@ func printLocalModeldSourceBuildSteps(out io.Writer, backend string) {
 		printLlamaModelChoices(out)
 	}
 	fmt.Fprintln(out, "")
+	printAutocompleteModeldTip(out, backend)
+	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "    contenox model local           # installed local artifacts")
 	fmt.Fprintln(out, "    contenox model list            # loadable by the live daemon")
 	fmt.Fprintln(out, "    contenox doctor")
@@ -232,6 +234,21 @@ func printLocalModeldSourceBuildSteps(out io.Writer, backend string) {
 	fmt.Fprintln(out, "    https://github.com/contenox/runtime/blob/main/docs/modeld-source-build.md")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  The first pulled model becomes default-model automatically.")
+}
+
+func printAutocompleteModeldTip(out io.Writer, backend string) {
+	fmt.Fprintln(out, "  Optional VS Code autocomplete model:")
+	fmt.Fprintln(out, "    Autocomplete is separate from chat, so you can keep chat on a hosted")
+	fmt.Fprintln(out, "    model and use a separate coder model for ghost text.")
+	if backend == "openvino" {
+		fmt.Fprintln(out, "    contenox model pull qwen2.5-coder-1.5b-ov")
+		fmt.Fprintln(out, "    contenox config set default-autocomplete-provider openvino")
+		fmt.Fprintln(out, "    contenox config set default-autocomplete-model qwen2.5-coder-1.5b-ov")
+	} else {
+		fmt.Fprintln(out, "    contenox model pull qwen3-coder-30b-a3b")
+		fmt.Fprintln(out, "    contenox config set default-autocomplete-provider llama")
+		fmt.Fprintln(out, "    contenox config set default-autocomplete-model qwen3-coder-30b-a3b")
+	}
 }
 
 func printLlamaModelChoices(out io.Writer) {

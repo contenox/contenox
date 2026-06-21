@@ -186,6 +186,32 @@ contenox config list   # review current settings
 
 `default-think` controls the requested reasoning level for models whose effective runtime capability has `think` enabled. Valid values are `auto`, `off`, `minimal`, `low`, `medium`, `high`, and `xhigh`. CLI and ACP sessions default to `high` when no config is set; `--think <level>` overrides it for one CLI invocation. If a provider does not advertise thinking support, add a provider/model override with `contenox model capability set ... --think true`.
 
+### Set autocomplete defaults separately
+
+VS Code inline autocomplete uses `default-autocomplete-provider` and
+`default-autocomplete-model`, not necessarily the chat defaults. This lets you
+keep chat on one model while ghost text uses a separate coder model.
+
+```bash
+# Hosted chat, local modeld autocomplete:
+contenox config set default-provider openai
+contenox config set default-model    gpt-5-mini
+contenox config set default-autocomplete-provider llama
+contenox config set default-autocomplete-model    qwen3-coder-30b-a3b
+
+# OpenVINO/modeld autocomplete:
+contenox config set default-autocomplete-provider openvino
+contenox config set default-autocomplete-model    qwen2.5-coder-1.5b-ov
+
+# Ollama autocomplete:
+contenox config set default-autocomplete-provider ollama
+contenox config set default-autocomplete-model    qwen2.5-coder:7b
+
+# Hosted code model autocomplete:
+contenox config set default-autocomplete-provider mistral
+contenox config set default-autocomplete-model    codestral-latest
+```
+
 ### Supported backends
 
 | `--type` | Provider | Notes                                                                                                     |

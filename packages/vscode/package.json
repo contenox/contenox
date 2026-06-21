@@ -32,6 +32,7 @@
     "workflow",
     "automation",
     "local-first",
+    "model-routing",
     "reviewable-workflows",
     "mcp",
     "human-in-the-loop",
@@ -548,12 +549,12 @@
         "contenox.autocompleteProvider": {
           "type": "string",
           "default": "",
-          "description": "Optional VS Code workspace provider override for inline autocomplete. Empty uses Contenox runtime autocomplete defaults."
+          "description": "Optional workspace provider override for inline autocomplete. Use this to route ghost text to local modeld, local-network Ollama, or a cloud code model. Empty uses Contenox runtime autocomplete defaults."
         },
         "contenox.autocompleteModel": {
           "type": "string",
           "default": "",
-          "description": "Optional VS Code workspace model override for inline autocomplete. Empty uses Contenox runtime autocomplete defaults."
+          "description": "Optional workspace model override for inline autocomplete, independent from the chat model. Empty uses Contenox runtime autocomplete defaults."
         },
         "contenox.maxOutputTokens": {
           "type": "number",
@@ -564,7 +565,7 @@
         "contenox.autocomplete.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Request Contenox inline completions from VS Code editors. Disabled by default; enable deliberately after choosing an autocomplete provider/model."
+          "description": "Request Contenox inline completions from VS Code editors. Disabled by default; enable deliberately after choosing or accepting an autocomplete provider/model."
         },
         "contenox.autocomplete.maxPrefixChars": {
           "type": "number",

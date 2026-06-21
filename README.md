@@ -1,12 +1,25 @@
 # Contenox
 **AI workflows you can run, review, and own.**
 
-Contenox is an open-source, local-first AI workflow runtime for developers. It
-turns repeatable coding and tool workflows into versioned Chains: files that
-declare prompts, model/provider routing, tool allowlists, retries, branches,
-budgets, and human approval gates. Run the same workflow from the CLI, VS Code,
-or any ACP-compatible client, using local models, Ollama, or hosted providers
-while sessions, config, telemetry, and runtime state stay on your machine.
+Contenox is an open-source AI workflow runtime for developers. It turns
+repeatable coding and tool workflows into versioned Chains: files that declare
+prompts, model/provider routing, tool allowlists, retries, branches, budgets,
+and human approval gates.
+
+Many coding workflows do not need a frontier model. Contenox gives you a way to
+run that work where the code is, with a proper agent loop instead of hidden
+prompt habits or one-off glue, and route to network or cloud models when the job
+needs them.
+
+Run the same workflow from the CLI, VS Code, or any ACP client. Use `modeld` for
+the edge path, Ollama or vLLM on your network, or hosted providers, while
+sessions, config, telemetry, and runtime state stay on your machine.
+
+- **It speaks Unix:** Pipe data directly into your workflows. `git diff | contenox run commit-msg` or `git log | contenox run release-notes`.
+- **It respects boundaries:** Human-in-the-loop isn't a UI toggle, it's a strict policy file. The AI pauses and asks for terminal approval before running destructive commands.
+- **It routes inference:** Use edge `modeld`, private-network backends, or hosted providers per workflow. `modeld` is built for one active local model and resident coding context, not model multiplexing.
+
+You own the workflow. The vendor doesn't decide how it behaves on your machine. You do.
 
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -27,11 +40,13 @@ Package a repeatable AI task as a chain, then run it the same way every time:
 - **Draft release evidence** — turn git log, PRs, and CI output into a changelog and reviewer packet.
 - **Wrap an internal API** — expose a safe, curated tool subset with approval required on mutating calls.
 - **Automate repo chores** — take an issue, produce a patch, run the tests, write the PR description.
-- **Ask a local model** — codebase chat and one-off prompts from the CLI or your editor, no API key required.
+- **Ask an owned model** — codebase chat and one-off prompts through local modeld or a private inference endpoint.
+- **Use edge autocomplete** — keep VS Code ghost text on a local or local-network coder model while chat uses a larger hosted model.
 
-The same chains run from the CLI, VS Code, or any ACP client, against local or hosted
-models, with sessions and state staying on your machine. Detailed examples are in
-[What it is good for](#what-it-is-good-for) below.
+The same chains run from the CLI, VS Code, or any ACP client. Inference can sit
+on the device, on your network, or with a cloud vendor, while sessions and state
+stay local. Detailed examples are in [What it is good for](#what-it-is-good-for)
+below.
 
 ---
 
@@ -57,10 +72,10 @@ contenox "say hello world in python"
 contenox chat -e                        # open $EDITOR to compose a prompt
 ```
 
-For normal CLI/VS Code installs, choose Ollama or a hosted provider in setup.
-Local llama/OpenVINO uses the separate native `modeld` daemon, which is not
-bundled in release installs yet. If you choose a local modeld provider, setup
-prints source-build commands. Full guide:
+For normal CLI/VS Code installs, choose local Ollama, a private network backend,
+or a hosted provider in setup. Owned local GGUF/OpenVINO inference uses the
+separate native `modeld` daemon, which is not bundled in release installs yet.
+If you choose a local modeld provider, setup prints source-build commands. Full guide:
 [modeld Source Build and Packaging](docs/modeld-source-build.md).
 
 Resume past sessions with `contenox session list` and
@@ -68,6 +83,29 @@ Resume past sessions with `contenox session list` and
 
 Developing the source-built local backend? See
 [modeld Source Build and Packaging](docs/modeld-source-build.md).
+
+### VS Code autocomplete can use a different model
+
+Inline autocomplete is intentionally separate from chat. That lets you run
+low-latency ghost text at the edge, on a LAN Ollama box, or on a FIM/coder cloud
+model while keeping chat and tool workflows on a larger provider.
+
+```bash
+# Chat can stay on a hosted model:
+contenox config set default-provider openai
+contenox config set default-model    gpt-5-mini
+
+# Autocomplete can stay local via modeld:
+contenox config set default-autocomplete-provider llama
+contenox config set default-autocomplete-model    qwen3-coder-30b-a3b
+
+# Or point autocomplete at a local-network Ollama coder model:
+contenox config set default-autocomplete-provider ollama
+contenox config set default-autocomplete-model    qwen2.5-coder:7b
+```
+
+In VS Code, enable it with `Contenox: Enable Autocomplete` and verify with
+`Contenox: Test Autocomplete At Cursor`.
 
 ---
 
@@ -149,14 +187,21 @@ Output: patch, test run, PR description
 Gate: shell/filesystem approval and human merge
 ```
 
-State lives locally in SQLite. Sessions persist across invocations. The AI provider is a config line: llama modeld, Ollama, OpenAI, Anthropic, Mistral, Gemini, AWS Bedrock, vLLM, or Vertex (Gemini). Use a cloud model, a local server, or a local GGUF model depending on the workflow and data boundary.
+State lives locally in SQLite. Sessions persist across invocations. The AI
+provider is a config line: local modeld (`llama`/`openvino`), Ollama, vLLM,
+OpenAI, Anthropic, Mistral, Gemini, AWS Bedrock, OpenRouter, or Vertex. Use
+edge inference, private network inference, or a hosted vendor depending on the
+workflow, latency target, cost, and data boundary. Autocomplete has its own
+provider/model defaults, so editor ghost text can stay local even when chat
+uses the cloud.
 
 ---
 
 ## Where it fits
 
 Contenox is the agent layer you control from terminal to editor. The category is
-local-first AI workflow runtime; the architecture is developer agent runtime.
+AI workflow runtime with edge, private network, and cloud inference routing; the
+architecture is developer agent runtime.
 
 | Nearby world | Why Contenox is different |
 |--------------|---------------------------|
@@ -164,7 +209,7 @@ local-first AI workflow runtime; the architecture is developer agent runtime.
 | Aider / CLI coding agents | Broader workflow, session, tool policy, and provider scope than a single coding loop. |
 | LangChain / agent frameworks | End-user executable product, not just a library you wire into an app. |
 | Dify / n8n / web AI workflow tools | Local desktop/workspace-first, not web-app/SaaS-first. |
-| Ollama wrappers | Provider-neutral and workflow/tool/HITL-oriented, with local and hosted models. |
+| Ollama wrappers | Provider-neutral and workflow/tool/HITL-oriented, spanning owned local inference, private network backends, and hosted vendors. |
 
 ---
 
@@ -265,11 +310,11 @@ source build for now:
 To add other backends:
 
 ```bash
-# Other local servers
+# Private network / self-hosted inference
 contenox backend add ollama    --type ollama
 contenox backend add myvllm    --type vllm   --url http://gpu-host:8000
 
-# Cloud providers
+# Hosted AI vendors
 contenox backend add openai    --type openai    --api-key-env OPENAI_API_KEY
 contenox backend add anthropic --type anthropic --api-key-env ANTHROPIC_API_KEY
 contenox backend add mistral   --type mistral   --api-key-env MISTRAL_API_KEY

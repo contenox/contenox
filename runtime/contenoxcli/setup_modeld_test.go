@@ -21,6 +21,9 @@ func TestUnit_LocalModeldSourceBuildStepsKeepModelChoices(t *testing.T) {
 		"VRAM     Model",
 		"qwen3-4b",
 		"qwen3-8b",
+		"Optional VS Code autocomplete model",
+		"default-autocomplete-provider llama",
+		"default-autocomplete-model qwen3-coder-30b-a3b",
 		"contenox model registry-list",
 		"docs/modeld-source-build.md",
 	} {
@@ -37,6 +40,8 @@ func TestUnit_LocalModeldSourceBuildStepsKeepModelChoices(t *testing.T) {
 		"CONTENOX_MODELD_BACKEND=openvino make run-modeld",
 		"qwen2.5-coder-0.5b-ov",
 		"gemma4-e4b-ov",
+		"default-autocomplete-provider openvino",
+		"default-autocomplete-model qwen2.5-coder-1.5b-ov",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("openvino modeld setup text missing %q:\n%s", want, got)

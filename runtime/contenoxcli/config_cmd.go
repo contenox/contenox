@@ -22,8 +22,8 @@ var validConfigKeys = map[string]string{
 	"default-provider":              "Default LLM provider type (e.g. llama, ollama, openrouter, openai, gemini; local aliases llama)",
 	"default-alt-model":             "Optional alt LLM model name. Used by chains referencing {{var:alt_model}}.",
 	"default-alt-provider":          "Optional alt LLM provider type. Used by chains referencing {{var:alt_provider}}.",
-	"default-autocomplete-model":    "Optional autocomplete model name. Used by chains referencing {{var:autocomplete_model}}.",
-	"default-autocomplete-provider": "Optional autocomplete provider type. Used by chains referencing {{var:autocomplete_provider}}.",
+	"default-autocomplete-model":    "Optional VS Code autocomplete model name, independent from default-model.",
+	"default-autocomplete-provider": "Optional VS Code autocomplete provider type, independent from default-provider.",
 	"default-max-tokens":            "Optional default response token cap. Used by chains referencing {{var:max_tokens}}.",
 	"default-think":                 "Default reasoning level: auto, off, minimal, low, medium, high, xhigh.",
 	"default-chain":                 "Default chain file path (relative to .contenox/ or absolute)",
@@ -45,8 +45,8 @@ Supported keys:
   default-provider               Default LLM provider type (e.g. llama, ollama, openrouter, openai, gemini; local aliases llama)
   default-alt-model              Optional alt LLM model name (chains using {{var:alt_model}})
   default-alt-provider           Optional alt LLM provider (chains using {{var:alt_provider}})
-  default-autocomplete-model     Optional autocomplete model (chains using {{var:autocomplete_model}})
-  default-autocomplete-provider  Optional autocomplete provider (chains using {{var:autocomplete_provider}})
+  default-autocomplete-model     Optional VS Code autocomplete model, separate from chat
+  default-autocomplete-provider  Optional VS Code autocomplete provider, separate from chat
   default-max-tokens             Optional response token cap (chains using {{var:max_tokens}})
   default-think                  Default reasoning level: auto, off, minimal, low, medium, high, xhigh
   telemetry-enabled              Enable local telemetry logs (true/false)
@@ -67,6 +67,17 @@ workspace and fall back to the global value when not set locally.
 Examples:
   contenox config set default-model    qwen2.5:7b
   contenox config set default-provider ollama
+
+  # Keep chat on a hosted provider, but run VS Code ghost text on local modeld:
+  contenox config set default-provider openai
+  contenox config set default-model    gpt-5-mini
+  contenox config set default-autocomplete-provider llama
+  contenox config set default-autocomplete-model    qwen3-coder-30b-a3b
+
+  # Local-network Ollama autocomplete only:
+  contenox config set default-autocomplete-provider ollama
+  contenox config set default-autocomplete-model    qwen2.5-coder:7b
+
   contenox config set default-autocomplete-provider mistral
   contenox config set default-autocomplete-model    mistral-code-fim-latest
   contenox config set default-max-tokens 8192

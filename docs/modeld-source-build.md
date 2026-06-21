@@ -137,6 +137,33 @@ Starter OpenVINO models:
 | `gemma4-e4b-ov` | ~6.5 GB | |
 | `gpt-oss-20b-ov` | ~12.6 GB | |
 
+## Use Local modeld for VS Code Autocomplete
+
+VS Code autocomplete has its own provider/model defaults. You can keep chat on
+OpenAI, Gemini, Mistral, OpenRouter, or another provider and route only ghost
+text to local modeld.
+
+For llama.cpp GGUF:
+
+```bash
+contenox model pull qwen3-coder-30b-a3b
+contenox config set default-autocomplete-provider llama
+contenox config set default-autocomplete-model qwen3-coder-30b-a3b
+```
+
+For OpenVINO IR:
+
+```bash
+contenox model pull qwen2.5-coder-1.5b-ov
+contenox config set default-autocomplete-provider openvino
+contenox config set default-autocomplete-model qwen2.5-coder-1.5b-ov
+```
+
+Then run `Contenox: Enable Autocomplete` and `Contenox: Test Autocomplete At
+Cursor` in VS Code. Autocomplete uses the FIM chain with tools disabled, so
+tool-call support is not required for this path; coder/FIM quality and latency
+matter more.
+
 ## Choose the Backend Mode
 
 One `modeld` process serves one local backend mode at a time:

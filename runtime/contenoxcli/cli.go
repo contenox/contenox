@@ -203,6 +203,13 @@ work directly from the CLI; local GGUF/OpenVINO inference is served by modeld.
     contenox config set default-model    deepseek/deepseek-chat-v3-5
     contenox config set default-provider openrouter
 
+  VS Code autocomplete can use a separate model from chat:
+    # Example: chat on OpenAI, ghost text on local modeld llama.
+    contenox config set default-provider openai
+    contenox config set default-model    gpt-5-mini
+    contenox config set default-autocomplete-provider llama
+    contenox config set default-autocomplete-model    qwen3-coder-30b-a3b
+
   Scope note:
     Backends and config are GLOBAL (stored in ~/.contenox/local.db).
     Chain files (.contenox/) are LOCAL to each project directory — like .git/.
@@ -307,6 +314,10 @@ After init, register a backend, make sure the runtime can see a model, then set 
   contenox backend add openrouter --type openrouter --api-key-env OPENROUTER_API_KEY
   contenox config set default-provider openrouter
   contenox config set default-model deepseek/deepseek-chat-v3-5
+
+  # Optional VS Code autocomplete model, independent from chat:
+  contenox config set default-autocomplete-provider llama
+  contenox config set default-autocomplete-model qwen3-coder-30b-a3b
 
 Use --force to overwrite existing files, or --update to refresh unchanged default files to the latest version.`,
 	Args: cobra.MaximumNArgs(1),

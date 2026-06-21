@@ -82,17 +82,35 @@ Contenox is designed around:
 Contenox can provide inline ghost-text suggestions as you type. It is disabled
 by default; enable it after choosing an autocomplete model.
 
-Autocomplete uses a **separate model from chat**, and that model must be
-FIM-capable (fill-in-the-middle). Set it from the CLI:
+Autocomplete uses a **separate model from chat**. Use a FIM/coder model when
+you can; the autocomplete chain sends prefix/suffix context and asks the model
+to fill the middle. This is useful when you want low-latency ghost text without
+changing the model used for chat and agent workflows.
 
 ```sh
+# Chat can stay hosted:
+contenox config set default-provider openai
+contenox config set default-model gpt-5-mini
+
+# Ghost text can run locally through modeld:
+contenox config set default-autocomplete-provider llama
+contenox config set default-autocomplete-model qwen3-coder-30b-a3b
+
+# Or on OpenVINO/modeld:
+contenox config set default-autocomplete-provider openvino
+contenox config set default-autocomplete-model qwen2.5-coder-1.5b-ov
+
+# Or on another code model:
+contenox config set default-autocomplete-provider ollama
+contenox config set default-autocomplete-model qwen2.5-coder:7b
 contenox config set default-autocomplete-provider mistral
 contenox config set default-autocomplete-model codestral-latest
 ```
 
 or override it per workspace with `contenox.autocompleteModel` /
-`contenox.autocompleteProvider`. If no autocomplete model is configured, no
-suggestions appear and the reason is only logged to the output channel.
+`contenox.autocompleteProvider`. If you leave these empty, Contenox uses its
+runtime defaults and may auto-route to a configured code backend. Set them
+explicitly when you want predictable autocomplete behavior.
 
 Enable autocomplete from the status bar or with `Contenox: Enable Autocomplete`.
 If nothing shows up after enabling it, run `Contenox: Test Autocomplete At Cursor`
@@ -127,6 +145,12 @@ contenox config set default-provider mistral
 contenox config set default-model codestral-latest
 contenox config set default-autocomplete-provider mistral
 contenox config set default-autocomplete-model codestral-latest
+
+# Mix hosted chat with local autocomplete:
+contenox config set default-provider openai
+contenox config set default-model gpt-5-mini
+contenox config set default-autocomplete-provider llama
+contenox config set default-autocomplete-model qwen3-coder-30b-a3b
 ```
 
 ## Links
