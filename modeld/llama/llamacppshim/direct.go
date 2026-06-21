@@ -459,13 +459,28 @@ func ParseChatResponse(input string, partial bool, syntax ChatSyntax, reasoningF
 	}, nil
 }
 
+// FlashAttnMode selects llama.cpp Flash Attention behavior. The zero value is
+// Off, so a context that does not set it keeps FA disabled (the legacy default).
+type FlashAttnMode int
+
+const (
+	// FlashAttnOff never uses Flash Attention.
+	FlashAttnOff FlashAttnMode = iota
+	// FlashAttnOn forces Flash Attention on without a support check.
+	FlashAttnOn
+	// FlashAttnAuto lets llama.cpp enable Flash Attention wherever the device
+	// supports it (probed per layer at context build) and fall back to off
+	// otherwise. With FA on, the V cache is not transposed.
+	FlashAttnAuto
+)
+
 // ContextConfig controls direct llama_context construction.
 type ContextConfig struct {
 	NumCtx       int
 	NumBatch     int
 	NumSeqMax    int
 	NumThreads   int
-	FlashAttn    bool
+	FlashAttn    FlashAttnMode
 	KVCacheType  string
 	Embeddings   bool
 	OffloadKQV   bool
@@ -502,9 +517,12 @@ func NewContext(model *Model, cfg ContextConfig) (*Context, error) {
 		params.n_threads = C.int32_t(cfg.NumThreads)
 		params.n_threads_batch = C.int32_t(cfg.NumThreads)
 	}
-	if cfg.FlashAttn {
+	switch cfg.FlashAttn {
+	case FlashAttnOn:
 		params.flash_attn_type = C.LLAMA_FLASH_ATTN_TYPE_ENABLED
-	} else {
+	case FlashAttnAuto:
+		params.flash_attn_type = C.LLAMA_FLASH_ATTN_TYPE_AUTO
+	default:
 		params.flash_attn_type = C.LLAMA_FLASH_ATTN_TYPE_DISABLED
 	}
 	params.type_k = kvCacheType(cfg.KVCacheType)

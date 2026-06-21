@@ -53,7 +53,6 @@ type Service struct {
 	memory     capacity.MemorySource
 	hostMemory capacity.MemorySource
 	policy     capacity.Policy
-	launch     capacity.LaunchDefaults
 }
 
 type ServiceOption func(*Service)
@@ -97,7 +96,7 @@ func (s *Service) hostMemorySource() capacity.MemorySource {
 }
 
 func (s *Service) resolvePolicy(st capacity.DeviceSnapshot) (capacity.Policy, error) {
-	policy := s.launch.Policy(s.policy, st)
+	policy := capacity.WithResidentDefault(s.policy, st)
 	host, err := capacity.Snapshot(s.hostMemorySource())
 	if err != nil {
 		return capacity.Policy{}, fmt.Errorf("openvino host capacity memory probe: %w", err)

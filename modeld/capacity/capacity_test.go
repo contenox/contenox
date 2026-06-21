@@ -177,13 +177,13 @@ func TestUnit_Resolve_OverheadConsumesBudget(t *testing.T) {
 	}
 }
 
-func TestUnit_WithLaunchDefaults_SetsMissingResidentCap(t *testing.T) {
-	p := WithLaunchDefaults(Policy{}, DeviceSnapshot{FreeBytes: 10 << 20})
+func TestUnit_WithResidentDefault_SetsMissingResidentCap(t *testing.T) {
+	p := WithResidentDefault(Policy{}, DeviceSnapshot{FreeBytes: 10 << 20})
 	if p.MaxResidentBytes != 8<<20 {
-		t.Fatalf("MaxResidentBytes = %d, want 80%% of launch free", p.MaxResidentBytes)
+		t.Fatalf("MaxResidentBytes = %d, want 80%% of current free", p.MaxResidentBytes)
 	}
 
-	explicit := WithLaunchDefaults(Policy{MaxResidentBytes: 3 << 20}, DeviceSnapshot{FreeBytes: 10 << 20})
+	explicit := WithResidentDefault(Policy{MaxResidentBytes: 3 << 20}, DeviceSnapshot{FreeBytes: 10 << 20})
 	if explicit.MaxResidentBytes != 3<<20 {
 		t.Fatalf("explicit max should win, got %d", explicit.MaxResidentBytes)
 	}
@@ -201,27 +201,28 @@ func TestUnit_WithHostColdDefaults_SetsMissingColdBudget(t *testing.T) {
 	}
 }
 
-func TestUnit_LaunchDefaults_AreStickyPerDevice(t *testing.T) {
-	var defaults LaunchDefaults
+func TestUnit_WithResidentDefault_TracksCurrentFree(t *testing.T) {
+	dev := DeviceSnapshot{Kind: "gpu", DeviceID: "0", TotalBytes: 16 << 20}
 
-	first := defaults.Policy(Policy{}, DeviceSnapshot{Kind: "gpu", DeviceID: "0", TotalBytes: 16 << 20, FreeBytes: 10 << 20})
-	if first.MaxResidentBytes != 8<<20 {
-		t.Fatalf("first MaxResidentBytes = %d, want 8MiB", first.MaxResidentBytes)
+	// Tight launch window — e.g. another process (or a stale modeld mid-teardown)
+	// still holds VRAM, so the device reports little free memory.
+	dev.FreeBytes = 4 << 20
+	tight := WithResidentDefault(Policy{}, dev)
+	if want := int64(float64(dev.FreeBytes) * DefaultMaxResidentFrac); tight.MaxResidentBytes != want {
+		t.Fatalf("tight MaxResidentBytes = %d, want %d", tight.MaxResidentBytes, want)
 	}
 
-	later := defaults.Policy(Policy{}, DeviceSnapshot{Kind: "gpu", DeviceID: "0", TotalBytes: 16 << 20, FreeBytes: 12 << 20})
-	if later.MaxResidentBytes != 8<<20 {
-		t.Fatalf("later MaxResidentBytes = %d, want sticky 8MiB", later.MaxResidentBytes)
+	// Same device, memory later freed up: the default cap must RISE to match the
+	// current free memory, not stay frozen at the tight launch value. This is the
+	// regression that pinned offload to ~0 layers after a stale process was killed.
+	dev.FreeBytes = 12 << 20
+	roomy := WithResidentDefault(Policy{}, dev)
+	if want := int64(float64(dev.FreeBytes) * DefaultMaxResidentFrac); roomy.MaxResidentBytes != want {
+		t.Fatalf("roomy MaxResidentBytes = %d, want %d (cap must track current free, not stick)", roomy.MaxResidentBytes, want)
 	}
 
-	otherFree := int64(4 << 20)
-	other := defaults.Policy(Policy{}, DeviceSnapshot{Kind: "gpu", DeviceID: "1", TotalBytes: 16 << 20, FreeBytes: otherFree})
-	wantOther := int64(float64(otherFree) * DefaultMaxResidentFrac)
-	if other.MaxResidentBytes != wantOther {
-		t.Fatalf("other MaxResidentBytes = %d, want 80%% of other device", other.MaxResidentBytes)
-	}
-
-	explicit := defaults.Policy(Policy{MaxResidentBytes: 3 << 20}, DeviceSnapshot{Kind: "gpu", DeviceID: "0", TotalBytes: 16 << 20, FreeBytes: 12 << 20})
+	// An explicit user cap is always honored and never overwritten by the default.
+	explicit := WithResidentDefault(Policy{MaxResidentBytes: 3 << 20}, dev)
 	if explicit.MaxResidentBytes != 3<<20 {
 		t.Fatalf("explicit MaxResidentBytes = %d, want 3MiB", explicit.MaxResidentBytes)
 	}

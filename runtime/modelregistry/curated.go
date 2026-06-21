@@ -56,7 +56,7 @@ var curatedModels = map[string]ModelDescriptor{
 	"llama3.2-1b": {
 		Name:      "llama3.2-1b",
 		SourceURL: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-		SizeBytes: 800_000_000,
+		SizeBytes: 807_694_464,
 		Curated:   true,
 	},
 	"llama4-scout": {
@@ -68,26 +68,26 @@ var curatedModels = map[string]ModelDescriptor{
 	// ── Google Gemma 3 ───────────────────────────────────────────────────────
 	"gemma3-1b": {
 		Name:      "gemma3-1b",
-		SourceURL: "https://huggingface.co/google/gemma-3-1b-it-qat-q4_0-gguf/resolve/main/gemma-3-1b-it-q4_0.gguf",
-		SizeBytes: 1_003_541_152,
+		SourceURL: "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf",
+		SizeBytes: 806_058_240,
 		Curated:   true,
 	},
 	"gemma3-4b": {
 		Name:      "gemma3-4b",
-		SourceURL: "https://huggingface.co/google/gemma-3-4b-it-qat-q4_0-gguf/resolve/main/gemma-3-4b-it-q4_0.gguf",
-		SizeBytes: 3_155_051_328,
+		SourceURL: "https://huggingface.co/ggml-org/gemma-3-4b-it-GGUF/resolve/main/gemma-3-4b-it-Q4_K_M.gguf",
+		SizeBytes: 2_489_757_856,
 		Curated:   true,
 	},
 	"gemma3-12b": {
 		Name:      "gemma3-12b",
-		SourceURL: "https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-gguf/resolve/main/gemma-3-12b-it-q4_0.gguf",
-		SizeBytes: 8_074_473_920,
+		SourceURL: "https://huggingface.co/ggml-org/gemma-3-12b-it-GGUF/resolve/main/gemma-3-12b-it-Q4_K_M.gguf",
+		SizeBytes: 7_300_574_976,
 		Curated:   true,
 	},
 	"gemma3-27b": {
 		Name:      "gemma3-27b",
-		SourceURL: "https://huggingface.co/google/gemma-3-27b-it-qat-q4_0-gguf/resolve/main/gemma-3-27b-it-q4_0.gguf",
-		SizeBytes: 17_229_630_496,
+		SourceURL: "https://huggingface.co/ggml-org/gemma-3-27b-it-qat-GGUF/resolve/main/gemma-3-27b-it-qat-Q4_0.gguf",
+		SizeBytes: 15_908_791_488,
 		Curated:   true,
 	},
 	// ── Microsoft Phi 4 ──────────────────────────────────────────────────────
@@ -132,28 +132,28 @@ var curatedModels = map[string]ModelDescriptor{
 	// ── IBM Granite 3.2 ──────────────────────────────────────────────────────
 	"granite-3.2-2b": {
 		Name:      "granite-3.2-2b",
-		SourceURL: "https://huggingface.co/bartowski/ibm-granite_granite-3.2-2b-instruct-GGUF/resolve/main/granite-3.2-2b-instruct-Q4_K_M.gguf",
-		SizeBytes: 1_665_000_000,
+		SourceURL: "https://huggingface.co/bartowski/ibm-granite_granite-3.2-2b-instruct-GGUF/resolve/main/ibm-granite_granite-3.2-2b-instruct-Q4_K_M.gguf",
+		SizeBytes: 1_545_296_512,
 		Curated:   true,
 	},
 	"granite-3.2-8b": {
 		Name:      "granite-3.2-8b",
-		SourceURL: "https://huggingface.co/bartowski/ibm-granite_granite-3.2-8b-instruct-GGUF/resolve/main/granite-3.2-8b-instruct-Q4_K_M.gguf",
-		SizeBytes: 5_303_304_806,
+		SourceURL: "https://huggingface.co/bartowski/ibm-granite_granite-3.2-8b-instruct-GGUF/resolve/main/ibm-granite_granite-3.2-8b-instruct-Q4_K_M.gguf",
+		SizeBytes: 4_942_859_808,
 		Curated:   true,
 	},
 	// ── Moonshot Kimi ─────────────────────────────────────────────────────────
 	"kimi-linear": {
 		Name:      "kimi-linear",
-		SourceURL: "https://huggingface.co/bartowski/moonshotai_Kimi-Linear-48B-A3B-Instruct-GGUF/resolve/main/Kimi-Linear-48B-A3B-Instruct-Q4_K_M.gguf",
-		SizeBytes: 30_060_000_000,
+		SourceURL: "https://huggingface.co/bartowski/moonshotai_Kimi-Linear-48B-A3B-Instruct-GGUF/resolve/main/moonshotai_Kimi-Linear-48B-A3B-Instruct-Q4_K_M.gguf",
+		SizeBytes: 30_061_058_720,
 		Curated:   true,
 	},
 	// ── Tiny (testing) ───────────────────────────────────────────────────────
 	"tiny": {
 		Name:              "tiny",
 		SourceURL:         "https://huggingface.co/Hjgugugjhuhjggg/FastThink-0.5B-Tiny-Q2_K-GGUF/resolve/main/fastthink-0.5b-tiny-q2_k.gguf",
-		SizeBytes:         200_000_000,
+		SizeBytes:         338_607_360,
 		Curated:           true,
 		ReasoningProtocol: reasoningProtocolLlamaCommonChat,
 		ReasoningFormat:   reasoningFormatDeepSeek,

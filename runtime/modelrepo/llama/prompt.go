@@ -41,6 +41,10 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 	if err != nil {
 		return promptPlan{}, err
 	}
+	messages, err = normalizeMessagesForTemplate(messages, toolsJSON)
+	if err != nil {
+		return promptPlan{}, err
+	}
 
 	var stable, volatile strings.Builder
 	var segments []ManifestSegment
@@ -108,6 +112,115 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 		Stable:   PrefixInput{Text: stableText, Manifest: manifest, Tools: toolsJSON},
 		Volatile: SuffixInput{Text: volatileText, Manifest: manifest},
 	}, nil
+}
+
+func normalizeMessagesForTemplate(messages []modelrepo.Message, toolsJSON string) ([]modelrepo.Message, error) {
+	textOnly := strings.TrimSpace(toolsJSON) == ""
+	systemParts := make([]string, 0, 1)
+	turns := make([]modelrepo.Message, 0, len(messages))
+	for _, m := range messages {
+		if err := validateMessage(m); err != nil {
+			return nil, err
+		}
+		switch m.Role {
+		case "system":
+			if content := strings.TrimSpace(m.Content); content != "" {
+				systemParts = append(systemParts, content)
+			}
+		case "tool":
+			if textOnly {
+				turns = append(turns, modelrepo.Message{Role: "user", Content: toolResultText(m)})
+			} else {
+				turns = append(turns, m)
+			}
+		case "assistant":
+			if textOnly && len(m.ToolCalls) > 0 {
+				m.Content = assistantToolCallText(m)
+				m.ToolCalls = nil
+			}
+			turns = append(turns, m)
+		default:
+			turns = append(turns, m)
+		}
+	}
+	if textOnly {
+		turns = coalesceAlternatingTextTurns(turns)
+	}
+	out := make([]modelrepo.Message, 0, len(turns)+1)
+	if len(systemParts) > 0 {
+		out = append(out, modelrepo.Message{Role: "system", Content: strings.Join(systemParts, "\n\n")})
+	}
+	out = append(out, turns...)
+	return out, nil
+}
+
+func coalesceAlternatingTextTurns(messages []modelrepo.Message) []modelrepo.Message {
+	out := make([]modelrepo.Message, 0, len(messages))
+	for _, m := range messages {
+		switch m.Role {
+		case "user", "assistant":
+		default:
+			m.Content = roleLabel(m.Role) + ":\n" + m.Content
+			m.Role = "user"
+		}
+		m.ToolCalls = nil
+		m.ToolCallID = ""
+		if strings.TrimSpace(m.Content) == "" {
+			continue
+		}
+		if len(out) == 0 && m.Role != "user" {
+			m.Content = roleLabel(m.Role) + ":\n" + m.Content
+			m.Role = "user"
+		}
+		if n := len(out); n > 0 && out[n-1].Role == m.Role {
+			out[n-1].Content = joinTurnText(out[n-1].Content, m.Content)
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func assistantToolCallText(m modelrepo.Message) string {
+	var b strings.Builder
+	if content := strings.TrimSpace(m.Content); content != "" {
+		b.WriteString(content)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("Assistant requested tool calls:")
+	if payload, err := json.Marshal(m.ToolCalls); err == nil {
+		b.WriteByte('\n')
+		b.Write(payload)
+	}
+	return b.String()
+}
+
+func toolResultText(m modelrepo.Message) string {
+	label := "Tool result"
+	if id := strings.TrimSpace(m.ToolCallID); id != "" {
+		label += " for " + id
+	}
+	if content := strings.TrimSpace(m.Content); content != "" {
+		return label + ":\n" + content
+	}
+	return label + "."
+}
+
+func roleLabel(role string) string {
+	if strings.TrimSpace(role) == "" {
+		return "Message"
+	}
+	return strings.ToUpper(role[:1]) + role[1:] + " message"
+}
+
+func joinTurnText(a, b string) string {
+	if strings.TrimSpace(a) == "" {
+		return b
+	}
+	if strings.TrimSpace(b) == "" {
+		return a
+	}
+	return a + "\n\n" + b
 }
 
 func validateMessage(m modelrepo.Message) error {

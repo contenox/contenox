@@ -47,9 +47,14 @@ func NewWarmCache[S WarmSession]() *WarmCache[S] {
 }
 
 // Acquire returns the warm entry for key, opening one via open on a miss. The
-// caller must Turn.Lock() the returned entry for the duration of a turn. After
-// admitting a new entry the cache reaps idle and over-cap sessions (closing them
-// outside the lock).
+// caller must Turn.Lock() the returned entry for the duration of a turn.
+//
+// On a miss it first evicts (and closes) enough idle/over-cap sessions to leave
+// room for the one about to open — BEFORE calling open — so a single-slot backend
+// (modeld holds exactly one active model) frees the slot before the new session
+// claims it. Opening first and trimming after would make the new open race a
+// still-resident handle and fail with "slot busy". A post-admit reap stays as a
+// backstop for entries that were mid-turn during the pre-open pass.
 func (c *WarmCache[S]) Acquire(key string, open func() (S, error)) (*WarmEntry[S], error) {
 	c.mu.Lock()
 	if e, ok := c.m[key]; ok {
@@ -60,7 +65,7 @@ func (c *WarmCache[S]) Acquire(key string, open func() (S, error)) (*WarmEntry[S
 	c.mu.Unlock()
 
 	c.mu.Lock()
-	preVictims := c.selectVictimsLocked(nil)
+	preVictims := c.selectVictimsLocked(nil, 1) // reserve a slot for the open below
 	c.mu.Unlock()
 	closeAll(preVictims)
 
@@ -77,7 +82,7 @@ func (c *WarmCache[S]) Acquire(key string, open func() (S, error)) (*WarmEntry[S
 	}
 	e := &WarmEntry[S]{Sess: s, key: key, lastUsed: c.now()}
 	c.m[key] = e
-	victims := c.selectVictimsLocked(e)
+	victims := c.selectVictimsLocked(e, 0)
 	c.mu.Unlock()
 
 	closeAll(victims)
@@ -103,7 +108,7 @@ func (c *WarmCache[S]) Drop(e *WarmEntry[S]) {
 // exported for callers (and tests) that want to force it.
 func (c *WarmCache[S]) Reap() {
 	c.mu.Lock()
-	victims := c.selectVictimsLocked(nil)
+	victims := c.selectVictimsLocked(nil, 0)
 	c.mu.Unlock()
 	closeAll(victims)
 }
@@ -121,9 +126,12 @@ func (c *WarmCache[S]) Clear() {
 
 // selectVictimsLocked removes idle-past-TTL and over-cap (LRU) entries from the
 // map and returns them for closing outside the lock. keep (may be nil) is never
-// evicted — it is the just-acquired entry. A victim's Turn is left locked so a
-// concurrent holder can never resurrect it; the entry is discarded afterward.
-func (c *WarmCache[S]) selectVictimsLocked(keep *WarmEntry[S]) []*WarmEntry[S] {
+// evicted — it is the just-acquired entry. reserve is how many not-yet-admitted
+// sessions to make room for, so the cap is enforced against len(c.m)+reserve:
+// pass reserve=1 before opening a new session so room is freed up front. A
+// victim's Turn is left locked so a concurrent holder can never resurrect it; the
+// entry is discarded afterward.
+func (c *WarmCache[S]) selectVictimsLocked(keep *WarmEntry[S], reserve int) []*WarmEntry[S] {
 	var victims []*WarmEntry[S]
 	now := c.now()
 
@@ -141,7 +149,7 @@ func (c *WarmCache[S]) selectVictimsLocked(keep *WarmEntry[S]) []*WarmEntry[S] {
 
 	// Trim to the resident cap by least-recently-used, skipping mid-turn entries.
 	skip := map[*WarmEntry[S]]bool{}
-	for WarmCacheMaxResident > 0 && len(c.m) > WarmCacheMaxResident {
+	for WarmCacheMaxResident > 0 && len(c.m)+reserve > WarmCacheMaxResident {
 		var lru *WarmEntry[S]
 		var lruKey string
 		for k, e := range c.m {

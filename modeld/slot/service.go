@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/contenox/runtime/runtime/transport"
 )
@@ -28,6 +29,13 @@ type Service struct {
 	state      transport.SlotState
 	busyOp     string
 	lastErr    string
+
+	// idleTTL is how long a resident model may sit idle (no EnsurePrefix /
+	// PrefillSuffix / Decode / Embed) before the reaper releases it to free device
+	// memory. Zero disables idle reaping. now is injectable for tests.
+	idleTTL      time.Duration
+	lastActivity time.Time
+	now          func() time.Time
 }
 
 type activeSlot struct {
@@ -53,12 +61,29 @@ func WithBackend(backend string) Option {
 	return func(s *Service) { s.backendName = backend }
 }
 
+// WithIdleTTL sets how long a resident model may sit idle before the background
+// reaper releases it (freeing device memory so the GPU can return to idle).
+// Zero (the default) disables idle reaping. Reaping requires StartReaper.
+func WithIdleTTL(ttl time.Duration) Option {
+	return func(s *Service) { s.idleTTL = ttl }
+}
+
+// WithClock overrides the time source (tests).
+func WithClock(now func() time.Time) Option {
+	return func(s *Service) {
+		if now != nil {
+			s.now = now
+		}
+	}
+}
+
 // New returns a transport service that allows only one active resident model.
 func New(backend transport.Service, opts ...Option) *Service {
-	s := &Service{backend: backend, op: make(chan struct{}, 1), state: transport.SlotEmpty}
+	s := &Service{backend: backend, op: make(chan struct{}, 1), state: transport.SlotEmpty, now: time.Now}
 	for _, opt := range opts {
 		opt(s)
 	}
+	s.lastActivity = s.now()
 	return s
 }
 
@@ -110,6 +135,7 @@ func (s *Service) LoadModel(ctx context.Context, req transport.LoadModelRequest)
 		s.state = transport.SlotReady
 		s.busyOp = ""
 		s.lastErr = ""
+		s.touchLocked()
 		s.mu.Unlock()
 		return active, nil
 	}
@@ -151,6 +177,7 @@ func (s *Service) LoadModel(ctx context.Context, req transport.LoadModelRequest)
 	s.state = transport.SlotReady
 	s.busyOp = ""
 	s.lastErr = ""
+	s.touchLocked()
 	active := activeModel(openReq, gen)
 	s.mu.Unlock()
 	return active, nil
@@ -241,6 +268,7 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 			s.state = transport.SlotReady
 			s.busyOp = ""
 			s.lastErr = ""
+			s.touchLocked()
 			gen := s.active.generation
 			s.mu.Unlock()
 			return &slotSession{svc: s, generation: gen}, nil
@@ -272,6 +300,7 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	s.state = transport.SlotReady
 	s.busyOp = ""
 	s.lastErr = ""
+	s.touchLocked()
 	s.mu.Unlock()
 	return &slotSession{svc: s, generation: gen}, nil
 }
@@ -435,6 +464,79 @@ func (s *Service) release(gen uint64) error {
 	return nil
 }
 
+// StartReaper runs the idle-reaper loop until ctx is canceled. While modeld holds
+// the lease it periodically releases a resident model that has sat idle past the
+// configured TTL, so device memory is freed and the GPU can return to idle (the
+// 24/7-on-a-laptop case). It is a no-op when the TTL is zero. The tick is
+// CPU-only and never touches the GPU.
+func (s *Service) StartReaper(ctx context.Context) {
+	if s.idleTTL <= 0 {
+		return
+	}
+	interval := max(s.idleTTL/3, time.Second)
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.reapIdle()
+			}
+		}
+	}()
+}
+
+// reapIdle releases the resident model when it has been idle past the TTL. It
+// reaps regardless of open session handles — a warm-cache-pinned but idle session
+// is exactly what must be reclaimed: the generation bump invalidates stale handles
+// and clients reopen transparently on their next call (ErrSlotGenerationStale).
+// It never interrupts work: a non-blocking op-lock acquire plus the SlotReady
+// guard guarantee no operation is in flight. Tests call it directly.
+func (s *Service) reapIdle() {
+	if s.idleTTL <= 0 {
+		return
+	}
+	// Non-blocking op-lock: if any operation holds it, the slot is in use this
+	// tick; skip and re-check next tick.
+	select {
+	case s.op <- struct{}{}:
+	default:
+		return
+	}
+	defer func() { <-s.op }()
+
+	s.mu.Lock()
+	if s.active == nil || s.state != transport.SlotReady {
+		s.mu.Unlock()
+		return
+	}
+	if s.now().Sub(s.lastActivity) < s.idleTTL {
+		s.mu.Unlock()
+		return
+	}
+	old := s.active
+	s.active = nil
+	s.generation++
+	s.state = transport.SlotIdle
+	s.busyOp = "idle_reap"
+	s.lastErr = ""
+	s.mu.Unlock()
+
+	err := old.sess.Close()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.busyOp = ""
+	if err != nil {
+		s.state = transport.SlotFailed
+		s.lastErr = err.Error()
+		return
+	}
+	s.state = transport.SlotIdle
+}
+
 func (s *Service) withSession(ctx context.Context, gen uint64, op string, fn func(transport.Session) error) error {
 	unlock, err := s.lockOperation(ctx)
 	if err != nil {
@@ -454,6 +556,10 @@ func (s *Service) withSession(ctx context.Context, gen uint64, op string, fn fun
 	return err
 }
 
+// touchLocked records session activity so the idle reaper defers reaping.
+// Callers must hold s.mu.
+func (s *Service) touchLocked() { s.lastActivity = s.now() }
+
 func (s *Service) beginOperation(gen uint64, op string) (transport.Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -469,6 +575,7 @@ func (s *Service) beginOperation(gen uint64, op string) (transport.Session, erro
 	s.state = transport.SlotBusy
 	s.busyOp = op
 	s.lastErr = ""
+	s.touchLocked()
 	return s.active.sess, nil
 }
 
@@ -476,6 +583,7 @@ func (s *Service) markReadyOrError(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.busyOp = ""
+	s.touchLocked()
 	if err != nil && !errors.Is(err, context.Canceled) {
 		s.lastErr = err.Error()
 		if errors.Is(err, transport.ErrSessionClosed) || errors.Is(err, transport.ErrSlotGenerationStale) {

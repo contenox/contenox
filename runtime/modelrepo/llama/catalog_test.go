@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 )
 
 func withSessionFactory(t *testing.T, f SessionFactory) {
@@ -19,10 +20,20 @@ func withSessionFactory(t *testing.T, f SessionFactory) {
 	})
 }
 
+// isolateModeldDataRoot points the modeld detector at an empty data root so
+// SessionAvailable() cannot observe a real modeld lease on the dev machine —
+// otherwise "no backend compiled" assertions flake whenever modeld is running.
+func isolateModeldDataRoot(t *testing.T) {
+	t.Helper()
+	modeldconn.SetDataRoot(t.TempDir())
+	t.Cleanup(func() { modeldconn.SetDataRoot("") })
+}
+
 func TestUnit_LocalNodeCatalog_HiddenWhenBackendNotCompiled(t *testing.T) {
 	old := sessionFactory
 	sessionFactory = nil
 	t.Cleanup(func() { sessionFactory = old })
+	isolateModeldDataRoot(t)
 
 	dir := t.TempDir()
 	modelDir := filepath.Join(dir, "coder")

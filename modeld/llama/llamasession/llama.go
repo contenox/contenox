@@ -170,6 +170,14 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 	if numCtx <= 0 {
 		numCtx = 8192
 	}
+	// llama.cpp stores the V cache TRANSPOSED when flash attention is off (the
+	// default here), so its CUDA row stride equals n_ctx. The MMF attention kernel
+	// used for decode and small prefills (src1_ncols<=16) asserts stride_row%2==0,
+	// so an ODD n_ctx aborts the whole daemon via a C-level GGML_ASSERT that Go
+	// cannot recover. The planner emits arbitrary parity (e.g. 7151), so round
+	// n_ctx down to even at this KV-allocation site; rounding down stays within the
+	// planned budget.
+	numCtx -= numCtx % 2
 	plannerCtx := cfg.PlannerEffectiveContext
 	if plannerCtx <= 0 {
 		plannerCtx = numCtx
@@ -196,10 +204,16 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 		NumBatch:    nBatch,
 		NumSeqMax:   1 + min(coldMaxTokens, 1),
 		NumThreads:  nThreads,
-		FlashAttn:   cfg.FlashAttn,
+		FlashAttn:   flashAttnMode(cfg.FlashAttn),
 		KVCacheType: cfg.KVCacheType,
-		Embeddings:  true,
-		OffloadKQV:  cfg.NumGpuLayers != 0,
+		// Chat/decode needs per-token LOGITS for sampling, not embeddings. Enabling
+		// embeddings forces every prefill token to be an output and routes the batch
+		// through a CUDA matmul that asserts (mmf.cuh: stride_row%2==0) under partial
+		// GPU offload — a C-level abort() that takes down the whole daemon (Go cannot
+		// recover it). Embeddings have their own dedicated non-causal context in
+		// embed.go, so this session never needs embeddings mode.
+		Embeddings: false,
+		OffloadKQV: cfg.NumGpuLayers != 0,
 	})
 	if err != nil {
 		model.Close()
@@ -233,6 +247,17 @@ func modelConfig(cfg llama.Config) llamacppshim.ModelConfig {
 		TensorSplit:  cfg.TensorSplit,
 		UseMmap:      true,
 	}
+}
+
+// flashAttnMode maps the optional profile force-on flag to a context mode. An
+// explicit true forces Flash Attention on; otherwise modeld defers to llama.cpp,
+// which enables FA wherever the device supports it (probed per layer) and falls
+// back to off — the dynamic default, no per-model knob required.
+func flashAttnMode(forceOn bool) llamacppshim.FlashAttnMode {
+	if forceOn {
+		return llamacppshim.FlashAttnOn
+	}
+	return llamacppshim.FlashAttnAuto
 }
 
 func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (llama.PrefixStatus, error) {
@@ -507,6 +532,11 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 			default:
 			}
 			id := sampler.Sample(s.lctx, -1)
+			if id < 0 {
+				s.closeLocked()
+				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode sample returned no token", llama.ErrSessionFatal)})
+				return
+			}
 			sampler.Accept(id)
 			if s.model.TokenIsEOG(id) {
 				emitParsed("", false)

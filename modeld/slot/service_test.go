@@ -272,6 +272,146 @@ func TestUnit_Slot_CanceledLoadWhileBusyDoesNotRunLater(t *testing.T) {
 	}
 }
 
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+func TestUnit_Slot_IdleReaperReleasesIdleModelThenReopens(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	clk := &fakeClock{t: time.Unix(1_700_000_000, 0)}
+	svc := New(backend, WithBackend("llama"), WithIdleTTL(5*time.Minute), WithClock(clk.now))
+
+	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+
+	// Not yet idle: the reaper leaves the model resident.
+	clk.advance(4 * time.Minute)
+	svc.reapIdle()
+	if st, _ := svc.Status(ctx); st.Active == nil {
+		t.Fatalf("model reaped before TTL: %+v", st)
+	}
+
+	// Past the TTL: reaped, device memory freed (backend session closed).
+	clk.advance(2 * time.Minute)
+	svc.reapIdle()
+	st, _ := svc.Status(ctx)
+	if st.State != transport.SlotIdle || st.Active != nil {
+		t.Fatalf("status after idle reap = %+v, want Idle/no-active", st)
+	}
+	if len(backend.sessions) != 1 || !backend.sessions[0].closed {
+		t.Fatalf("idle reap did not close the backend session: %+v", backend.sessions)
+	}
+
+	// The next request reopens transparently.
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession after reap: %v", err)
+	}
+	defer sess.Close()
+	if len(backend.opened) != 2 {
+		t.Fatalf("expected a reopen after reap, backend.opened = %v", backend.opened)
+	}
+}
+
+func TestUnit_Slot_IdleReaperReapsHeldButIdleSession(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	clk := &fakeClock{t: time.Unix(1_700_000_000, 0)}
+	svc := New(backend, WithBackend("llama"), WithIdleTTL(time.Minute), WithClock(clk.now))
+
+	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	// A warm-cache-style held handle (refs>0) that is nonetheless idle must still
+	// be reclaimed — modeld cannot trust the client to release.
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+
+	clk.advance(2 * time.Minute)
+	svc.reapIdle()
+
+	if st, _ := svc.Status(ctx); st.Active != nil {
+		t.Fatalf("held-but-idle session was not reaped: %+v", st)
+	}
+	// The held handle is now stale; the client maps this to drop+reopen.
+	if _, err := sess.EnsurePrefix(ctx, transport.PrefixInput{}); !errors.Is(err, transport.ErrSlotGenerationStale) {
+		t.Fatalf("stale handle after reap = %v, want ErrSlotGenerationStale", err)
+	}
+}
+
+func TestUnit_Slot_IdleReaperNeverReapsBusySlot(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	clk := &fakeClock{t: time.Unix(1_700_000_000, 0)}
+	svc := New(backend, WithBackend("llama"), WithIdleTTL(time.Minute), WithClock(clk.now))
+	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+
+	block := make(chan transport.StreamChunk)
+	backend.sessions[0].decodeCh = block
+	decodeCtx, cancelDecode := context.WithCancel(ctx)
+	ch, err := sess.Decode(decodeCtx, transport.DecodeConfig{})
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+
+	// Even far past the TTL, an in-flight decode (op-lock held, SlotBusy) is never
+	// reaped: the reaper's non-blocking op-lock acquire fails.
+	clk.advance(10 * time.Minute)
+	svc.reapIdle()
+	if st, _ := svc.Status(ctx); st.Active == nil {
+		t.Fatalf("busy slot was reaped: %+v", st)
+	}
+	if backend.sessions[0].closed {
+		t.Fatalf("reaper closed a busy slot's backend session")
+	}
+
+	cancelDecode()
+	close(block)
+	for range ch {
+	}
+	_ = sess.Close()
+}
+
+func TestUnit_Slot_IdleReaperDisabledWhenTTLZero(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	clk := &fakeClock{t: time.Unix(1_700_000_000, 0)}
+	svc := New(backend, WithBackend("llama"), WithIdleTTL(0), WithClock(clk.now))
+	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	clk.advance(24 * time.Hour)
+	svc.reapIdle()
+	if st, _ := svc.Status(ctx); st.Active == nil {
+		t.Fatalf("TTL=0 must disable reaping, but model was reaped: %+v", st)
+	}
+	// StartReaper is also a no-op when disabled.
+	svc.StartReaper(ctx)
+}
+
 func TestUnit_Slot_DecodeCancellationReleasesBusyWhenOutputNotDrained(t *testing.T) {
 	ctx := context.Background()
 	backend := &fakeBackend{}

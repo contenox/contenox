@@ -84,4 +84,8 @@ func TestUnit_LocalModelPresentChecksBackendMarkers(t *testing.T) {
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "openvino_model.xml"), []byte("<xml/>"), 0o644))
 	assert.True(t, localModelPresent("openvino", dir))
+
+	langDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(langDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644))
+	assert.True(t, localModelPresent("openvino", langDir))
 }

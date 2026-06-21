@@ -167,6 +167,11 @@ work directly from the CLI; local GGUF/OpenVINO inference is served by modeld.
     contenox init                          # scaffold .contenox/ with default chains
     contenox "list files in my home dir"   # one-shot chain run using your configured policy
 
+  Inspect models:
+    contenox model list                    # models exposed by registered live backends
+    contenox model registry-list           # curated local models available for 'model pull'
+    contenox model local                   # installed local GGUF/OpenVINO artifacts
+
   Or register an LLM backend manually:
     # Local llama.cpp GGUF via modeld (no provider API key, no network):
     contenox backend add llama --type llama --url <models-dir>

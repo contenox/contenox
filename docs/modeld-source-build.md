@@ -93,9 +93,9 @@ Starter llama models:
 
 | VRAM | Model | Q4 size | Notes |
 | --- | --- | --- | --- |
-| ~2 GB | `granite-3.2-2b` | ~1-2 GB | good tool use |
+| ~2 GB | `granite-3.2-2b` | ~1.5 GB | good tool use |
 | ~3 GB | `qwen3-4b` | ~3 GB | |
-| ~3 GB | `gemma3-4b` | ~3 GB | |
+| ~3 GB | `gemma3-4b` | ~2.5 GB | |
 | ~5 GB | `qwen3-8b` | ~5 GB | |
 | ~5 GB | `deepseek-r1-0528-qwen3-8b` | ~5 GB | |
 | ~8 GB | `gemma3-12b` | ~8 GB | |

@@ -122,9 +122,20 @@ func ggufModelParams(path string) ggufParams {
 	return p
 }
 
+// ggufMaxStringLen caps a single GGUF metadata string. modeld only needs small
+// architecture facts; real metadata strings (chat templates, tokenizer model
+// names) are at most a few MiB. The cap stops a corrupt or hostile header from
+// requesting a multi-gigabyte allocation — or tripping makeslice on a bogus
+// 64-bit length — and crashing the daemon: parsing just stops and modeld falls
+// back to zero/partial params (and thus model defaults).
+const ggufMaxStringLen = 64 << 20
+
 func ggufReadString(r io.Reader) (string, bool) {
 	var n uint64
 	if binary.Read(r, binary.LittleEndian, &n) != nil {
+		return "", false
+	}
+	if n > ggufMaxStringLen {
 		return "", false
 	}
 	buf := make([]byte, n)

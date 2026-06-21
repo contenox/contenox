@@ -371,7 +371,7 @@ func localModelArtifactPath(typ, dir string) (string, bool) {
 			return path, true
 		}
 	case "openvino":
-		if _, err := os.Stat(filepath.Join(dir, "openvino_model.xml")); err == nil {
+		if _, ok := openVINOModelEntrypointPath(dir); ok {
 			return dir, true
 		}
 	}

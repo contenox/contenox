@@ -2,9 +2,13 @@ package grpc
 
 import (
 	"context"
+	"log/slog"
+	"runtime/debug"
 
 	"github.com/contenox/runtime/runtime/transport"
 	grpclib "google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // serviceName is the fully-qualified gRPC service for the session contract.
@@ -283,7 +287,12 @@ var serviceDesc = grpclib.ServiceDesc{
 		{
 			StreamName:    "Decode",
 			ServerStreams: true,
-			Handler: func(srv any, stream grpclib.ServerStream) error {
+			Handler: func(srv any, stream grpclib.ServerStream) (err error) {
+				defer func() {
+					if r := recover(); r != nil {
+						err = recoveredHandlerPanic("Decode", r)
+					}
+				}()
 				in := new(decodeReq)
 				if err := stream.RecvMsg(in); err != nil {
 					return err
@@ -297,9 +306,25 @@ var serviceDesc = grpclib.ServiceDesc{
 
 // unaryHandler adapts a typed (*Server, ctx, dec) func to grpc's methodHandler
 // signature. Fencing and error mapping live inside the server methods, so no
-// unary interceptor is configured and the interceptor argument is unused.
-func unaryHandler(_ string, call func(*Server, context.Context, func(any) error) (any, error)) func(any, context.Context, func(any) error, grpclib.UnaryServerInterceptor) (any, error) {
-	return func(srv any, ctx context.Context, dec func(any) error, _ grpclib.UnaryServerInterceptor) (any, error) {
+// unary interceptor is configured and the interceptor argument is unused. A
+// recover guards every handler so a single malformed request cannot unwind a
+// panic through grpc's per-stream goroutine and crash the daemon.
+func unaryHandler(name string, call func(*Server, context.Context, func(any) error) (any, error)) func(any, context.Context, func(any) error, grpclib.UnaryServerInterceptor) (any, error) {
+	return func(srv any, ctx context.Context, dec func(any) error, _ grpclib.UnaryServerInterceptor) (resp any, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = recoveredHandlerPanic(name, r)
+			}
+		}()
 		return call(srv.(*Server), ctx, dec)
 	}
+}
+
+// recoveredHandlerPanic converts a recovered handler panic into an Internal gRPC
+// error instead of letting it crash the whole daemon (which would drop the
+// resident model and the lease for every client). The panic and its stack are
+// logged so the fault stays diagnosable.
+func recoveredHandlerPanic(method string, r any) error {
+	slog.Error("modeld transport handler panic", "method", method, "panic", r, "stack", string(debug.Stack()))
+	return status.Errorf(codes.Internal, "internal: handler %s panicked: %v", method, r)
 }

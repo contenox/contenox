@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/contenox/runtime/modeld/slot"
 	"github.com/contenox/runtime/runtime/contextasm"
@@ -482,6 +483,72 @@ func TestSlotControlRoundTripOverWire(t *testing.T) {
 	if err := client.UnloadModel(ctx, transport.UnloadModelRequest{ExpectedGeneration: active.Generation}); err != nil {
 		t.Fatalf("UnloadModel: %v", err)
 	}
+}
+
+func TestServerClosesSlotSessionWhenClientConnectionEnds(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	svc := slot.New(
+		transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		slot.WithOwner("owner-1"),
+		slot.WithBackend("llama"),
+	)
+	go func() { _ = transportgrpc.Serve(ctx, lis, svc, "owner-1", "llama") }()
+
+	client1, err := transportgrpc.DialLeader(lis.Addr().String(), "owner-1")
+	if err != nil {
+		t.Fatalf("dial client1: %v", err)
+	}
+	if _, err := client1.OpenSession(ctx, transport.OpenSessionRequest{
+		Fence:     transport.Fence{OwnerInstanceID: "owner-1"},
+		ModelName: "a",
+		Type:      "llama",
+		Digest:    "digest-a",
+		Path:      "/models/a.gguf",
+		Config:    transport.Config{NumCtx: 100},
+	}); err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	if err := client1.Close(); err != nil {
+		t.Fatalf("close client1 connection: %v", err)
+	}
+
+	client2, err := transportgrpc.DialLeader(lis.Addr().String(), "owner-1")
+	if err != nil {
+		t.Fatalf("dial client2: %v", err)
+	}
+	t.Cleanup(func() { _ = client2.Close() })
+
+	loadReq := transport.LoadModelRequest{
+		Fence:     transport.Fence{OwnerInstanceID: "owner-1"},
+		ModelName: "b",
+		Type:      "llama",
+		Digest:    "digest-b",
+		Path:      "/models/b.gguf",
+		Config:    transport.Config{NumCtx: 100},
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		active, err := client2.LoadModel(ctx, loadReq)
+		if err == nil {
+			if active.ModelName != "b" {
+				t.Fatalf("active model = %+v, want b", active)
+			}
+			return
+		}
+		lastErr = err
+		if !errors.Is(err, transport.ErrModelBusy) {
+			t.Fatalf("LoadModel after client disconnect = %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("slot stayed busy after client disconnect: %v", lastErr)
 }
 
 func TestStreamChunkSentinelErrorOverWire(t *testing.T) {

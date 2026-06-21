@@ -4,6 +4,7 @@ package llama
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/contenox/runtime/modeld/capacity"
@@ -13,12 +14,17 @@ import (
 
 func init() {
 	defaultMemorySource = func(cfg transport.Config) capacity.MemorySource {
-		if cfg.NumGpuLayers != 0 {
-			return ggmlDeviceMemorySource{requireGPU: true}
+		if forceCPUFromEnv() {
+			return capacity.SystemRAM{}
 		}
-		return capacity.SystemRAM{}
+		return ggmlDeviceMemorySource{requireGPU: false}
 	}
 	llamaRuntimeInfo = directRuntimeInfo
+}
+
+func forceCPUFromEnv() bool {
+	v, ok := os.LookupEnv("CONTENOX_LLAMA_GPU_LAYERS")
+	return ok && strings.TrimSpace(v) == "0"
 }
 
 type ggmlDeviceMemorySource struct {

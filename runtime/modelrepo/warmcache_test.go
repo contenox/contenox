@@ -41,6 +41,36 @@ func mustAcquire(t *testing.T, c *WarmCache[*fakeWarmSession], key string, s *fa
 	return e
 }
 
+// TestUnit_WarmCache_EvictsBeforeOpeningOnSingleSlot is the slot-busy proof: on a
+// single-slot backend (cap 1) a second, differently-keyed acquire must close the
+// resident session BEFORE opening the new one, or modeld reports the slot busy.
+func TestUnit_WarmCache_EvictsBeforeOpeningOnSingleSlot(t *testing.T) {
+	withWarmCacheConfig(t, 1, 0) // cap 1, TTL disabled
+
+	c := NewWarmCache[*fakeWarmSession]()
+	a := &fakeWarmSession{}
+	mustAcquire(t, c, "a", a) // resident, now idle (Turn not held)
+
+	opened := false
+	_, err := c.Acquire("b", func() (*fakeWarmSession, error) {
+		opened = true
+		// The slot must already be free: "a" closed before "b" opens.
+		if !a.isClosed() {
+			t.Error("session 'a' not closed before opening 'b': modeld slot would be busy")
+		}
+		return &fakeWarmSession{}, nil
+	})
+	if err != nil {
+		t.Fatalf("acquire b: %v", err)
+	}
+	if !opened {
+		t.Fatal("open for 'b' was never called")
+	}
+	if !a.isClosed() {
+		t.Fatal("LRU session 'a' should have been evicted and closed")
+	}
+}
+
 // TestUnit_WarmCache_CapEvictsLRUAndCloses is the model-switch leak proof: with a
 // resident cap, opening more distinct sessions than the cap evicts and closes the
 // least-recently-used one (releasing its model in modeld) instead of stacking.

@@ -199,6 +199,30 @@ func TestUnit_LlamaPromptPlan_UserOnlyHasEmptyStablePrefix(t *testing.T) {
 	}
 }
 
+func TestUnit_LlamaPromptPlan_MergesStackedSystemInstructions(t *testing.T) {
+	plan, err := buildPromptPlan([]modelrepo.Message{
+		{Role: "system", Content: "main rules"},
+		{Role: "system", Content: "recovery rules"},
+		{Role: "user", Content: "what happened?"},
+	}, Config{}, promptIdentity{ProfileID: "coder"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Stable.Text != "main rules\n\nrecovery rules" {
+		t.Fatalf("stable text = %q, want merged system instructions", plan.Stable.Text)
+	}
+	if plan.Volatile.Text != "what happened?" {
+		t.Fatalf("volatile text = %q, want user turn", plan.Volatile.Text)
+	}
+	var roles []string
+	for _, seg := range plan.Stable.Manifest.Segments {
+		roles = append(roles, seg.Kind)
+	}
+	if strings.Join(roles, ",") != "system,user" {
+		t.Fatalf("roles = %v, want one system followed by user", roles)
+	}
+}
+
 func TestUnit_LocalNodeManifest_FillsStableAndVolatileTokenRanges(t *testing.T) {
 	plan, err := buildPromptPlan([]modelrepo.Message{
 		{Role: "system", Content: "rules"},
@@ -366,7 +390,7 @@ func TestUnit_LocalNodePromptPlan_PropagatesToolHistory(t *testing.T) {
 	plan, err := buildPromptPlan([]modelrepo.Message{
 		{Role: "assistant", Content: "thinking", ToolCalls: []modelrepo.ToolCall{{ID: "call_123", Type: "function"}}},
 		{Role: "tool", Content: "result", ToolCallID: "call_123"},
-	}, Config{}, promptIdentity{}, "")
+	}, Config{}, promptIdentity{}, `[{"type":"function"}]`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,6 +410,46 @@ func TestUnit_LocalNodePromptPlan_PropagatesToolHistory(t *testing.T) {
 	toolSeg := plan.Volatile.Manifest.Segments[1]
 	if toolSeg.Kind != "tool" || toolSeg.ToolCallID != "call_123" {
 		t.Fatalf("tool segment missing or incorrect tool call ID: %+v", toolSeg)
+	}
+}
+
+func TestUnit_LocalNodePromptPlan_TextOnlyCallsFlattenToolHistoryAndAlternateTurns(t *testing.T) {
+	plan, err := buildPromptPlan([]modelrepo.Message{
+		{Role: "system", Content: "main rules"},
+		{Role: "system", Content: "summary rules"},
+		{Role: "user", Content: "start"},
+		{Role: "user", Content: "extra user detail"},
+		{Role: "assistant", Content: "calling", ToolCalls: []modelrepo.ToolCall{{ID: "call_123", Type: "function"}}},
+		{Role: "tool", Content: "result", ToolCallID: "call_123"},
+		{Role: "assistant", Content: "final note"},
+	}, Config{}, promptIdentity{}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if plan.Stable.Text != "main rules\n\nsummary rules" {
+		t.Fatalf("stable text = %q, want merged systems", plan.Stable.Text)
+	}
+	if strings.Contains(plan.Volatile.Text, "tool_calls") {
+		t.Fatalf("text-only volatile prompt leaked OpenAI tool_calls JSON field: %q", plan.Volatile.Text)
+	}
+	wantParts := []string{"start", "extra user detail", "Assistant requested tool calls", "Tool result for call_123", "final note"}
+	for _, want := range wantParts {
+		if !strings.Contains(plan.Volatile.Text, want) {
+			t.Fatalf("volatile text %q missing %q", plan.Volatile.Text, want)
+		}
+	}
+	var roles []string
+	for _, seg := range plan.Stable.Manifest.Segments {
+		roles = append(roles, seg.Kind)
+	}
+	if strings.Join(roles, ",") != "system,user,assistant,user,assistant" {
+		t.Fatalf("roles = %v, want strict alternating text turns", roles)
+	}
+	for _, seg := range plan.Stable.Manifest.Segments {
+		if seg.ToolCallsJSON != "" || seg.ToolCallID != "" {
+			t.Fatalf("text-only segment retained tool metadata: %+v", seg)
+		}
 	}
 }
 

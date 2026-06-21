@@ -58,6 +58,28 @@ func TestUnit_LocalModelInventoryScansInstalledArtifactsWithoutModeld(t *testing
 	}
 }
 
+func TestUnit_LocalModelInventoryScansOpenVINOLanguageModelEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "gemma-ov")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := scanLocalModelRoot("local-ov", "openvino", root, transport.DaemonStatus{})
+	if err != nil {
+		t.Fatalf("scanLocalModelRoot: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("entries = %+v, want one", got)
+	}
+	if got[0].Model != "gemma-ov" || got[0].Path != modelDir || got[0].Status != "installed" {
+		t.Fatalf("entry = %+v", got[0])
+	}
+}
+
 func TestUnit_LocalModelInventoryMarksActiveSlot(t *testing.T) {
 	root := t.TempDir()
 	modelDir := filepath.Join(root, "qwen-ov")

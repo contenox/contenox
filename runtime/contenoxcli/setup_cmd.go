@@ -237,9 +237,9 @@ func printLocalModeldSourceBuildSteps(out io.Writer, backend string) {
 func printLlamaModelChoices(out io.Writer) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "       VRAM     Model               Q4 size   Notes")
-	fmt.Fprintln(out, "       ~2 GB    granite-3.2-2b      ~1-2 GB   good tool use")
+	fmt.Fprintln(out, "       ~2 GB    granite-3.2-2b      ~1.5 GB   good tool use")
 	fmt.Fprintln(out, "       ~3 GB    qwen3-4b            ~3 GB")
-	fmt.Fprintln(out, "       ~3 GB    gemma3-4b           ~3 GB")
+	fmt.Fprintln(out, "       ~3 GB    gemma3-4b           ~2.5 GB")
 	fmt.Fprintln(out, "       ~5 GB    qwen3-8b            ~5 GB")
 	fmt.Fprintln(out, "       ~5 GB    deepseek-r1-0528-qwen3-8b")
 	fmt.Fprintln(out, "       ~8 GB    gemma3-12b          ~8 GB")

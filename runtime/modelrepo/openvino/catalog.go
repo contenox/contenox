@@ -36,7 +36,7 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			continue
 		}
 		modelPath := filepath.Join(c.dir, e.Name())
-		if _, err := os.Stat(filepath.Join(modelPath, "openvino_model.xml")); err != nil {
+		if _, ok := modelEntrypointPath(modelPath); !ok {
 			continue
 		}
 		profile, err := loadModelProfile(modelPath)

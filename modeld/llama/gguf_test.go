@@ -93,6 +93,29 @@ func TestUnit_GGUFModelParams_ParsesSlidingWindowAttention(t *testing.T) {
 	}
 }
 
+// TestUnit_GGUFModelParams_RejectsHugeStringLengthWithoutCrashing feeds a header
+// whose metadata string declares a near-2^63 length. Before the bound this made
+// ggufReadString call make([]byte, n) and panic/OOM, crashing the daemon. Now
+// parsing aborts cleanly and modeld falls back to zero params (model defaults).
+func TestUnit_GGUFModelParams_RejectsHugeStringLengthWithoutCrashing(t *testing.T) {
+	var b bytes.Buffer
+	b.WriteString("GGUF")
+	_ = binary.Write(&b, binary.LittleEndian, uint32(3))     // version
+	_ = binary.Write(&b, binary.LittleEndian, uint64(0))     // tensor count
+	_ = binary.Write(&b, binary.LittleEndian, uint64(1))     // kv count
+	writeGGUFString(&b, "general.name")                      // key
+	_ = binary.Write(&b, binary.LittleEndian, ggufString)    // value type
+	_ = binary.Write(&b, binary.LittleEndian, uint64(1)<<63) // bogus value length, no bytes follow
+
+	path := filepath.Join(t.TempDir(), "evil.gguf")
+	if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ggufModelParams(path); got != (ggufParams{}) {
+		t.Fatalf("ggufModelParams = %+v, want zero value for a header with a bogus string length", got)
+	}
+}
+
 // TestUnit_GGUFContextLength_RealModel reads an actual GGUF if one is provided,
 // so the parser can be checked against a real model (e.g. a pulled qwen).
 func TestUnit_GGUFContextLength_RealModel(t *testing.T) {

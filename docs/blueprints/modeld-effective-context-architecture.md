@@ -1,7 +1,7 @@
 # Blueprint: modeld effective-context beyond the model's window
 
-> Status: architecture / direction — not a roadmap. Captures the required mechanism,
-> the code seams it attaches to, and the gotchas. Scope is **`modeld/` only**: the
+> Status: implementation snapshot plus remaining architecture. Captures the required
+> mechanism, the code seams it attaches to, and the gotchas. Scope is **`modeld/` only**: the
 > daemon owns resident KV, the device budget, the session lifecycle, and
 > snapshot/restore. Runtime-side context authoring (`runtime/modelrepo`,
 > `runtime/contextasm` producers) is out of scope; modeld consumes the
@@ -56,8 +56,8 @@ The architecture that follows:
 4. **Sparse/streaming attention over the retrieved set** — sinks + sliding window +
    selected blocks, via a custom attention mask or an engine feature.
 5. **Derived sizing** — the VRAM/host split and the hot-set budget come from
-   `capacity.Resolve` (model + device), never a constant. (Exists today for the simple
-   resident case; must extend to the hot-set/cold-store split.)
+   `capacity.Resolve` (model + device), never a constant. The hot/cold split now exists;
+   automatic retrieval policy is the remaining sizing consumer.
 
 Orthogonal multipliers (not requirements, do **not** gate the architecture):
 KV quantization (`KVCacheType` — fit more per VRAM byte) and recompute-from-tokens
@@ -67,11 +67,11 @@ KV quantization (`KVCacheType` — fit more per VRAM byte) and recompute-from-to
 
 | Seam | File(s) | Provides | Lacks for this |
 |---|---|---|---|
-| Session contract | `runtime/transport/session.go` | `EnsurePrefix/PrefillSuffix/Decode`, warm reuse, `Snapshot/Restore` | block-granular ops; today overflow → `ErrContextOverflow` |
-| llama adapter | `modeld/llama/llamasession/llama.go` | `resident []int`, `prefixLen`, `removeKV(seq,p0,p1)`, `prefillAt(pos)`, per-segment token ranges (`enrichStable/VolatileSegments`) | offload store, retrieval, sparse mask, position-shift after middle removal |
-| OpenVINO adapter | `modeld/openvino/session.go`, `ovsession/genai.go` | `resident []int`; CB pipeline owns physical KV + its own prefix cache | no direct KV block control; no per-segment token ranges yet |
-| Retention model | `runtime/contextasm/segments.go`, `manifest.go` | `CacheClass` (`task_pinned/repo_map/volatile`), `MoreEvictableThan`, per-segment `TokenStart/TokenEnd`, `Invalidation` | consumed nowhere in modeld; producer doesn't populate `CacheClass` yet (out of scope) |
-| Capacity | `modeld/capacity/capacity.go` | `KVBytesPerToken`, `Resolve` → `EffectiveContext` from device memory | no hot-set/cold-store split |
+| Session contract | `runtime/transport/session.go` | `EnsurePrefix/PrefillSuffix/Decode`, warm reuse, `Snapshot/Restore`, hot/planner context reporting, sparse/SWA metadata, residency capabilities | no runtime-facing "admit this cold block" API; cold retrieval is still adapter-internal/manual |
+| llama adapter | `modeld/llama/llamasession/llama.go`, `llamacppshim/direct.go` | `resident []int`, `prefixLen`, `removeKV(seq,p0,p1)`, position shift, `StateSeqGetData/SetData`, append-mode cold KV store/restore, per-segment token ranges, model-native SWA detection via `llama_model_n_swa` | runtime-driven cold-hit matching, in-place reinsertion, cold-block snapshot serialization, arbitrary custom sparse masks over retrieved blocks |
+| OpenVINO adapter | `modeld/openvino/session.go`, `ovsession/genai*.go/.cpp` | `resident []int`; backend-resolved segment token ranges; native XAttention + `CacheEvictionConfig`; cold KV export/import through the GenAI bridge; shifted tail import into destination prefix-cache blocks with RoPE key rotation for f16/f32 KV | quantized cold KV import (`u8`/`i8`), in-place reinsertion, cold-block snapshot serialization, runtime-driven cold-hit matching |
+| Retention model | `runtime/contextasm/segments.go`, `manifest.go` | `CacheClass` (`task_pinned/repo_map/volatile`), `MoreEvictableThan`, per-segment `TokenStart/TokenEnd`, `Invalidation`; modeld planners consume backend-filled token ranges | producer doesn't populate `CacheClass` reliably yet (out of scope), so modeld still relies on defaults |
+| Capacity | `modeld/capacity/capacity.go` | `KVBytesPerToken`, `Resolve`, host-cold budget, `HotContextTokens`, `PlannerEffectiveContext`, dense-compatible `EffectiveContext` | no long-context quality proof; planner still lacks automatic retrieval decisions |
 | Single owner/slot | `modeld/owner/owner.go`, `modeld/slot/service.go` | one writer, one active model — all device memory to one context | — |
 
 ## Gotchas
@@ -82,18 +82,22 @@ KV quantization (`KVCacheType` — fit more per VRAM byte) and recompute-from-to
 - **Sizing is derived, never asserted.** The VRAM KV budget is a function of the model's
   `KVBytesPerToken` and the device's free memory (`capacity.Resolve`). It can rival the
   weights. No GB constants in the design.
-- **Middle eviction leaves positional holes.** Removing a token-range from llama.cpp KV
-  (`removeKV`) requires position handling; StreamingLLM keeps sinks + recent and shifts
-  positions. Whether the engine exposes enough to do this cleanly is the key unknown.
-- **OpenVINO does residency declaratively, not by KV surgery.** The CB pipeline manages
-  its own cache, so the runtime cannot do `EvictRange`-style ops — but OpenVINO does the
-  policy *natively*: XAttention sparse attention (on by default) plus a `SchedulerConfig`
-  `CacheEvictionConfig(start_size, recent_size, max_cache_size, NORM_SUM)` — sink + recent
-  + attention-scored evictable middle. Verified end-to-end through the shim
-  (`use_cache_eviction`, `cache_eviction_test.go`). So the two backends express the same
-  policy differently: llama = imperative range surgery, OpenVINO = declarative config.
-- **OpenVINO lacks per-segment token ranges.** It populates only `StableTokenHash`; the
-  block policy needs `TokenStart/TokenEnd` per segment (llama already has them).
+- **llama sparse attention is model-native only today.** Stock llama.cpp executes SWA for
+  models that declare it (`attention.sliding_window` / `llama_model_n_swa`). modeld now
+  reports that capability and window size, but it does not force XAttention or an
+  arbitrary retrieved-block sparse mask onto dense llama models.
+- **Middle eviction is implemented, but in-place reinsertion remains hard.** llama removes
+  ranges and shifts the surviving tail; both llama and OpenVINO can restore cold KV in
+  append/tail mode. Reopening a hole at the original position without corrupting RoPE/KV
+  layout is still a later pass.
+- **OpenVINO is both declarative and KV-capable.** The CB pipeline still owns physical KV
+  blocks and runs the policy natively with XAttention plus `CacheEvictionConfig`; the shim
+  now also reaches the prefix-cache block store to export/import cold KV. Shifted imports
+  compose destination cache blocks and rotate RoPE-positioned keys.
+- **OpenVINO cold KV is precision-gated.** The shifted import path is advertised only for
+  exact float KV precisions currently exposed by config (`f16`/`f32`). Quantized `u8`/`i8`
+  KV is allowed for normal generation but does not claim cold-KV support because rotating
+  and re-encoding quantized keys is not implemented.
 - **Retrieval is approximate and locality-dependent.** A missed block = a quality hit;
   it only stays fast if the selected set changes slowly (good locality).
 - **KV quantization is lossy by precision.** Default 8-bit KV is lossy; f16 round-trips
@@ -110,8 +114,12 @@ KV quantization (`KVCacheType` — fit more per VRAM byte) and recompute-from-to
 
 ## Status: proven vs. open
 
-- **Proven seams:** warm reuse, manifest cache key, capacity-derived `EffectiveContext`,
-  single-slot/single-owner, whole-session snapshot/restore, llama `removeKV`.
-- **Open / hard:** engine-level block evict→host→reinsert, sparse/streaming attention
-  integration, and whether stock llama.cpp / OpenVINO expose enough — or whether custom
-  attention/KV handling is required. This is the riskiest surface and is unproven.
+- **Proven seams:** warm reuse, manifest cache key, backend-resolved segment token ranges
+  in both adapters, capacity-derived hot/planner split, single-slot/single-owner,
+  whole-session snapshot/restore, llama range removal/shift, llama append-mode cold KV,
+  OpenVINO cold KV export/import with shifted f16/f32 restore, OpenVINO native XAttention,
+  and llama native-SWA reporting.
+- **Open / hard:** runtime-driven retrieval against the cold store, in-place reinsertion,
+  cold-block snapshot serialization, latency policy for restore-vs-recompute, quantized
+  OpenVINO cold KV import, arbitrary sparse masks for dense llama models, and long-context
+  quality proof.

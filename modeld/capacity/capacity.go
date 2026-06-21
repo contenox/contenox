@@ -12,7 +12,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/shirou/gopsutil/v4/mem"
 )
@@ -21,10 +20,10 @@ import (
 // graph, and fragmentation, leaving the rest for model weights + KV cache.
 const DefaultHeadroomFrac = 0.1
 
-// DefaultMaxResidentFrac is the launch-time cap used when the user did not set
-// a memory ceiling. modeld will not grow past this fraction of the memory that
-// was free when the backend service was created; per-call current free memory
-// can still clamp lower.
+// DefaultMaxResidentFrac caps modeld's resident footprint at this fraction of
+// the device's CURRENTLY free memory when the user did not set an explicit
+// ceiling. It is evaluated fresh on every resolution, so the budget tracks the
+// device live instead of freezing a launch-time view.
 const DefaultMaxResidentFrac = 0.8
 
 // DefaultHostColdFrac is the launch-time cap for the host-RAM KV cold store
@@ -222,58 +221,26 @@ type Policy struct {
 	HeadroomFrac        float64 `json:"headroom_frac,omitempty"`
 }
 
-// LaunchDefaults records the first observed free-memory snapshot per memory
-// pool. It lets services apply the "80% of launch-free memory" default lazily
-// for the actual selected device, while keeping an explicit MaxResidentBytes as
-// a hard user cap.
-type LaunchDefaults struct {
-	mu                  sync.Mutex
-	maxResidentByDevice map[string]int64
-}
-
-// WithLaunchDefaults fills missing policy values from the launch-time device
-// snapshot. The default resident cap is intentionally a top floor based on
-// launch free memory, not a moving target: if memory later gets tighter, the
-// current FreeBytes in Resolve clamps lower; if memory later gets freer, modeld
-// does not opportunistically consume more than the launch budget.
-func WithLaunchDefaults(p Policy, launch DeviceSnapshot) Policy {
-	if p.MaxResidentBytes <= 0 && launch.FreeBytes > 0 {
-		p.MaxResidentBytes = int64(float64(launch.FreeBytes) * DefaultMaxResidentFrac)
+// WithResidentDefault fills a missing resident-memory cap from the device's
+// CURRENT free memory. Services call it with a fresh snapshot on every
+// resolution, so the default tracks the device live — it rises when memory frees
+// up and falls when other workloads claim it. An explicit MaxResidentBytes (the
+// user's hard cap) always wins and is left untouched.
+func WithResidentDefault(p Policy, dev DeviceSnapshot) Policy {
+	if p.MaxResidentBytes <= 0 && dev.FreeBytes > 0 {
+		p.MaxResidentBytes = int64(float64(dev.FreeBytes) * DefaultMaxResidentFrac)
 	}
 	return p
 }
 
 // WithHostColdDefaults fills the host-RAM cold-store budget from a host memory
-// snapshot. It is separate from WithLaunchDefaults because the hot model budget
+// snapshot. It is separate from WithResidentDefault because the hot model budget
 // may come from VRAM while the cold store always lives in host RAM.
 func WithHostColdDefaults(p Policy, host DeviceSnapshot) Policy {
 	if p.HostColdBudgetBytes <= 0 && host.FreeBytes > 0 {
 		p.HostColdBudgetBytes = int64(float64(host.FreeBytes) * DefaultHostColdFrac)
 	}
 	return p
-}
-
-// Policy returns base with a default MaxResidentBytes filled from the first
-// snapshot seen for this device. It is intentionally sticky per memory pool: if
-// memory later gets tighter, Resolve clamps on current FreeBytes; if memory gets
-// freer, modeld does not grow past the launch budget.
-func (d *LaunchDefaults) Policy(base Policy, st DeviceSnapshot) Policy {
-	if base.MaxResidentBytes > 0 || st.FreeBytes <= 0 {
-		return base
-	}
-	key := st.Key()
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if d.maxResidentByDevice == nil {
-		d.maxResidentByDevice = make(map[string]int64)
-	}
-	max, ok := d.maxResidentByDevice[key]
-	if !ok {
-		max = int64(float64(st.FreeBytes) * DefaultMaxResidentFrac)
-		d.maxResidentByDevice[key] = max
-	}
-	base.MaxResidentBytes = max
-	return base
 }
 
 // LoadPolicy reads <dataRoot>/modeld.json and then applies env overrides. The
@@ -383,21 +350,6 @@ type DeviceSnapshot struct {
 	TotalBytes        int64  `json:"total_bytes,omitempty"`
 	FreeBytes         int64  `json:"free_bytes,omitempty"`
 	SharedWithDisplay bool   `json:"shared_with_display,omitempty"`
-}
-
-// Key identifies the memory pool for launch-default budgeting. Kind+ID is the
-// normal path; total/shared are included so anonymous test or fallback sources
-// still get stable separation when possible.
-func (d DeviceSnapshot) Key() string {
-	kind := strings.TrimSpace(strings.ToLower(d.Kind))
-	if kind == "" {
-		kind = "unknown"
-	}
-	id := strings.TrimSpace(d.DeviceID)
-	if id == "" {
-		id = "default"
-	}
-	return fmt.Sprintf("%s|%s|%d|%t", kind, id, d.TotalBytes, d.SharedWithDisplay)
 }
 
 // SystemRAM reports available host RAM via gopsutil — the CPU-device source.

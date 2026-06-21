@@ -30,13 +30,13 @@ names ending in -ov) are fetched as a multi-file repo into
 
 Curated models — run 'contenox model registry-list' to see full list with sizes.
   By model file size (approximate resident memory still depends on context/KV):
-  ~1 GB   tiny            FastThink 0.5B (testing only)
-  ~1 GB   llama3.2-1b     Llama 3.2 1B
-  ~1-2 GB granite-3.2-2b  IBM Granite 3.2 2B
-  ~1 GB   gemma3-1b       Gemma 3 1B
+  ~350 MB tiny            FastThink 0.5B (testing only)
+  ~800 MB llama3.2-1b     Llama 3.2 1B
+  ~1.5 GB granite-3.2-2b  IBM Granite 3.2 2B
+  ~800 MB gemma3-1b       Gemma 3 1B
   ~2-3 GB phi-4-mini      Phi-4 Mini
   ~3 GB   qwen3-4b        Qwen 3 4B
-  ~3 GB   gemma3-4b       Gemma 3 4B
+  ~2.5 GB gemma3-4b       Gemma 3 4B
   ~5 GB   granite-3.2-8b  IBM Granite 3.2 8B
   ~5 GB   qwen3-8b        Qwen 3 8B
   ~5 GB   deepseek-r1-0528-qwen3-8b
@@ -44,7 +44,7 @@ Curated models — run 'contenox model registry-list' to see full list with size
   ~9 GB   qwen3-14b       Qwen 3 14B
   ~10 GB  deepseek-coder-v2-lite
   ~12 GB  gpt-oss-20b     OpenAI gpt-oss 20B
-  ~17 GB  gemma3-27b      Gemma 3 27B
+  ~16 GB  gemma3-27b      Gemma 3 27B
   ~19 GB  qwen3-30b       Qwen 3 30B-A3B (MoE)
   ~19 GB  qwen3-coder-30b-a3b
   ~30 GB  kimi-linear     Kimi Linear 48B (MoE)
@@ -111,7 +111,7 @@ model if none is set yet:
 			if repo == "" {
 				return fmt.Errorf("openvino model %q has no source repo in the registry", name)
 			}
-			if _, err := os.Stat(filepath.Join(modelDir, "openvino_model.xml")); err == nil {
+			if _, ok := openVINOModelEntrypointPath(modelDir); ok {
 				fmt.Fprintf(cmd.OutOrStdout(), "Model %q already downloaded at %s\n", name, modelDir)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "Downloading OpenVINO IR %s (repo %s)...\n  → %s\n", name, repo, modelDir)
@@ -220,7 +220,7 @@ type hfModelInfo struct {
 // downloadOpenVINOIR fetches every file of an OpenVINO IR repo from the Hugging
 // Face Hub HTTP API (no Python, no git-lfs) into destDir, mirroring the repo
 // layout, then verifies the IR entrypoint so the openvino catalog scanner finds
-// <destDir>/openvino_model.xml.
+// a loadable model directory.
 func downloadOpenVINOIR(ctx context.Context, repo, destDir string, out io.Writer) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://huggingface.co/api/models/"+repo, nil)
 	if err != nil {
@@ -254,8 +254,8 @@ func downloadOpenVINOIR(ctx context.Context, repo, destDir string, out io.Writer
 			return fmt.Errorf("download %s: %w", s.RFilename, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(destDir, "openvino_model.xml")); err != nil {
-		return fmt.Errorf("repo %s did not yield openvino_model.xml (not an OpenVINO IR model?)", repo)
+	if _, ok := openVINOModelEntrypointPath(destDir); !ok {
+		return fmt.Errorf("repo %s did not yield openvino_model.xml or openvino_language_model.xml (not an OpenVINO IR model?)", repo)
 	}
 	return nil
 }
@@ -375,7 +375,8 @@ func localModelPresent(modelBackend, modelDir string) bool {
 	case "llama":
 		marker = "model.gguf"
 	case "openvino":
-		marker = "openvino_model.xml"
+		_, ok := openVINOModelEntrypointPath(modelDir)
+		return ok
 	default:
 		return false
 	}

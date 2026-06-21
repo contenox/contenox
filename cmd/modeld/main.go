@@ -53,6 +53,7 @@ func run(args []string) error {
 	memMax := fs.String("mem-max", "", "maximum modeld resident memory budget (bytes or e.g. 8GiB)")
 	memReserve := fs.String("mem-reserve", "", "memory to leave free for desktop/other workloads (bytes or e.g. 2GiB)")
 	memCold := fs.String("mem-cold", "", "host-RAM KV cold-store budget (bytes or e.g. 16GiB)")
+	idleTTL := fs.String("idle-ttl", "", "release the resident model after it sits idle this long, freeing device memory (e.g. 5m; 0/off disables; default 5m)")
 	asJSON := fs.Bool("json", false, "machine-readable JSON output (status)")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -69,7 +70,11 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		return serve(resolvedRoot, leasePath, *ttl, *listen, policy)
+		idle, err := resolveIdleTTL(resolvedRoot, *idleTTL)
+		if err != nil {
+			return err
+		}
+		return serve(resolvedRoot, leasePath, *ttl, *listen, policy, idle)
 	case "status":
 		return status(leasePath, *asJSON)
 	default:
@@ -103,6 +108,57 @@ func resolvePolicy(dataRoot, memMax, memReserve, memCold string) (capacity.Polic
 	return policy, nil
 }
 
+// defaultIdleTTL is the launch default for releasing an idle resident model. It
+// matches the runtime warm-cache idle TTL so the two tiers agree by default.
+const defaultIdleTTL = 5 * time.Minute
+
+// resolveIdleTTL picks the idle-release TTL with precedence flag > env >
+// modeld.json > default. "0" or "off" (any source) disables idle reaping. modeld
+// is safe with zero configuration: the default keeps it from holding device
+// memory indefinitely when left running idle.
+func resolveIdleTTL(dataRoot, flagVal string) (time.Duration, error) {
+	raw := strings.TrimSpace(flagVal)
+	if raw == "" {
+		raw = strings.TrimSpace(os.Getenv("CONTENOX_MODELD_IDLE_TTL"))
+	}
+	if raw == "" {
+		raw = idleTTLFromJSON(dataRoot)
+	}
+	if raw == "" {
+		return defaultIdleTTL, nil
+	}
+	if raw == "0" || strings.EqualFold(raw, "off") || strings.EqualFold(raw, "none") {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("parse --idle-ttl %q: %w", raw, err)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("parse --idle-ttl %q: must not be negative", raw)
+	}
+	return d, nil
+}
+
+// idleTTLFromJSON reads {"idle":{"ttl":"5m"}} from <dataRoot>/modeld.json. A
+// missing file or field returns "" so the caller falls back to the default.
+func idleTTLFromJSON(dataRoot string) string {
+	if dataRoot == "" {
+		return ""
+	}
+	b, err := os.ReadFile(filepath.Join(dataRoot, "modeld.json"))
+	if err != nil {
+		return ""
+	}
+	var raw struct {
+		Idle struct {
+			TTL string `json:"ttl"`
+		} `json:"idle"`
+	}
+	_ = json.Unmarshal(b, &raw)
+	return strings.TrimSpace(raw.Idle.TTL)
+}
+
 func resolvePaths(dataRoot string) (string, string, error) {
 	if dataRoot == "" {
 		home, err := os.UserHomeDir()
@@ -117,12 +173,12 @@ func resolvePaths(dataRoot string) (string, string, error) {
 	return dataRoot, filepath.Join(dataRoot, "modeld.lease"), nil
 }
 
-func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy capacity.Policy) error {
+func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy capacity.Policy, idleTTL time.Duration) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	fmt.Fprintf(os.Stderr, "modeld starting: data_root=%q lease=%q listen=%q ttl=%s memory={%s}\n",
-		dataRoot, leasePath, listen, ttl, formatPolicy(policy))
+	fmt.Fprintf(os.Stderr, "modeld starting: data_root=%q lease=%q listen=%q ttl=%s idle_ttl=%s memory={%s}\n",
+		dataRoot, leasePath, listen, ttl, formatIdleTTL(idleTTL), formatPolicy(policy))
 	logRuntimeEnv()
 
 	lis, err := net.Listen("tcp", listen)
@@ -164,10 +220,14 @@ func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy 
 
 	// Serve the runtime/transport.Service contract over gRPC, fenced by the owner
 	// instance id, while we hold the lease.
-	svc = slot.New(svc, slot.WithOwner(o.InstanceID()), slot.WithBackend(backend))
-	fmt.Printf("modeld transport serving: instance=%s endpoint=%s backend=%s\n", o.InstanceID(), endpoint, backend)
+	slotSvc := slot.New(svc, slot.WithOwner(o.InstanceID()), slot.WithBackend(backend), slot.WithIdleTTL(idleTTL))
+	svc = slotSvc
+	fmt.Printf("modeld transport serving: instance=%s endpoint=%s backend=%s idle_ttl=%s\n", o.InstanceID(), endpoint, backend, formatIdleTTL(idleTTL))
 	serveCtx, serveCancel := context.WithCancel(ctx)
 	defer serveCancel()
+	// Release a resident-but-idle model so device memory is freed and the GPU can
+	// return to idle while the daemon keeps holding the lease. Stops with serveCtx.
+	slotSvc.StartReaper(serveCtx)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- transportgrpc.Serve(serveCtx, lis, svc, o.InstanceID(), backend) }()
 

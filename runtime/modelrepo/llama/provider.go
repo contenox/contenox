@@ -100,12 +100,7 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 	backendID := backendVersion()
 	if sessionFactory == nil {
 		if info, derr := modeldconn.Describe(ctx, ref, transport.Config(cfg)); derr == nil {
-			if info.EffectiveContext > 0 {
-				cfg = clampContextForModeld(cfg, info.EffectiveContext)
-			}
-			if info.RequestedGpuLayers > 0 {
-				cfg.NumGpuLayers = info.ResolvedGpuLayers
-			}
+			cfg = applyModeldInfoToConfig(cfg, info)
 			if v := backendVersionFromModelInfo(info); v != "" {
 				backendID = v
 			}
@@ -171,6 +166,16 @@ func backendVersionFromModelInfo(info transport.ModelInfo) string {
 	default:
 		return ""
 	}
+}
+
+func applyModeldInfoToConfig(cfg Config, info transport.ModelInfo) Config {
+	if info.EffectiveContext > 0 {
+		cfg = clampContextForModeld(cfg, info.EffectiveContext)
+	}
+	if info.RequestedGpuLayers > 0 || info.ResolvedGpuLayers > 0 {
+		cfg.NumGpuLayers = info.ResolvedGpuLayers
+	}
+	return cfg
 }
 
 func clampContext(cfg Config, cap int) Config {

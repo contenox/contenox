@@ -5,10 +5,19 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/runtime/transport"
 )
+
+// formatIdleTTL renders the idle-release TTL for logs; zero means disabled.
+func formatIdleTTL(ttl time.Duration) string {
+	if ttl <= 0 {
+		return "off"
+	}
+	return ttl.String()
+}
 
 func formatPolicy(policy capacity.Policy) string {
 	return fmt.Sprintf("max_resident=%s reserve_free=%s host_cold=%s headroom=%.2f",
@@ -30,6 +39,7 @@ func logRuntimeEnv() {
 		"CONTENOX_MODELD_MEM_RESERVE",
 		"CONTENOX_MODELD_MEM_COLD",
 		"CONTENOX_MODELD_MEM_HEADROOM",
+		"CONTENOX_MODELD_IDLE_TTL",
 	} {
 		if value := os.Getenv(name); value != "" {
 			fmt.Fprintf(os.Stderr, "modeld env: %s=%s\n", name, quoteLogValue(value))

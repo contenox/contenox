@@ -41,7 +41,7 @@ type Config struct {
 	PlannerEffectiveContext int       // logical planner context window (0 = NumCtx)
 	NumBatch                int       // prefill batch size
 	NumThreads              int       // CPU threads (0 = NumCPU)
-	NumGpuLayers            int       // layers offloaded to the GPU (0 = CPU only)
+	NumGpuLayers            int       // llama GPU layer cap/resolved count (0 = auto; daemon env may force CPU)
 	TensorSplit             []float32 // multi-GPU split
 	FlashAttn               bool
 	KVCacheType             string // "", "q8_0", "q4_0"
@@ -180,6 +180,11 @@ const (
 	SlotFailed       SlotState = "Failed"
 	SlotShuttingDown SlotState = "ShuttingDown"
 	SlotLostOwner    SlotState = "LostOwner"
+	// SlotIdle means the daemon released a resident model after it sat idle past
+	// the configured TTL, freeing device memory so the GPU can return to idle. The
+	// next request reopens the slot transparently (the client's stale handle gets
+	// ErrSlotGenerationStale and reopens).
+	SlotIdle SlotState = "Idle"
 )
 
 // ActiveModel describes the model identity and runtime config currently loaded

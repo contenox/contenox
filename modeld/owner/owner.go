@@ -11,6 +11,7 @@ package owner
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -154,24 +155,82 @@ func Join(ctx context.Context, cfg Config) (*Owner, error) {
 		cancel: cancel,
 		lost:   make(chan struct{}),
 	}
-	go o.renewLoop(rctx, interval)
+	go o.renewLoop(rctx, cfg.TTL, interval)
 	return o, nil
 }
 
-func (o *Owner) renewLoop(ctx context.Context, interval time.Duration) {
-	t := time.NewTicker(interval)
-	defer t.Stop()
+// minRenewRetryInterval floors the retry cadence so a near-expiry burst of
+// failing renews cannot spin the CPU.
+const minRenewRetryInterval = 250 * time.Millisecond
+
+// renewLoop renews the lease on the normal interval and, crucially, does NOT
+// forfeit ownership on a single transient renew failure (an fs/IO blip). It
+// keeps retrying — more aggressively as expiry nears — and only declares the
+// lease lost when either the holder is definitively gone (liblease.ErrLost: a
+// takeover or a locally-expired lease) or it can no longer PROVE it still holds
+// the lease (within renewGiveUpMargin of its own validity end). Giving up before
+// expiry preserves the self-fence: a challenger can only Acquire after the lease
+// lapses, so the owner never keeps touching state past the point another
+// instance could take over.
+func (o *Owner) renewLoop(ctx context.Context, ttl, interval time.Duration) {
+	margin := renewGiveUpMargin(ttl)
+	// validUntil is the wall-clock time our last successful renew (or the initial
+	// acquisition) guarantees we still hold the lease.
+	validUntil := o.holder.ExpiresAt()
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return // graceful stop (parent ctx or Release); not a loss
-		case <-t.C:
-			if err := o.lease.Renew(); err != nil {
-				o.markLost(err)
-				return
-			}
+		case <-timer.C:
 		}
+
+		attemptStart := time.Now()
+		err := o.lease.Renew()
+		if err == nil {
+			validUntil = attemptStart.Add(ttl)
+			timer.Reset(interval)
+			continue
+		}
+		// A definitive loss — taken over, or our lease already expired. Retrying
+		// cannot help and is unsafe; self-fence now.
+		if errors.Is(err, liblease.ErrLost) {
+			o.markLost(err)
+			return
+		}
+		// Transient failure: keep the lease until we can no longer prove we hold it.
+		if renewGaveUp(time.Now(), validUntil, margin) {
+			o.markLost(err)
+			return
+		}
+		retry := renewRetryDelay(interval, time.Until(validUntil))
+		slog.Warn("modeld lease renew failed; retrying before forfeiting",
+			"instance", o.id, "err", err, "retry_in", retry, "valid_until", validUntil)
+		timer.Reset(retry)
 	}
+}
+
+// renewGiveUpMargin is how long before its own validity end the owner stops
+// retrying a failing renew and forfeits. It must be positive so the owner always
+// self-fences before expiry (with headroom for clock skew between the owner and
+// a challenger), never after.
+func renewGiveUpMargin(ttl time.Duration) time.Duration {
+	return max(ttl/4, minRenewRetryInterval)
+}
+
+// renewGaveUp reports whether the owner can no longer prove it holds the lease:
+// the safety margin before validUntil has elapsed, so it must self-fence rather
+// than keep retrying.
+func renewGaveUp(now, validUntil time.Time, margin time.Duration) bool {
+	return !now.Add(margin).Before(validUntil)
+}
+
+// renewRetryDelay picks the wait before retrying a failed-but-not-lost renew. It
+// never waits longer than the normal interval and grows more aggressive as the
+// remaining validity shrinks (remaining/2), floored so it cannot spin.
+func renewRetryDelay(interval, remaining time.Duration) time.Duration {
+	return max(min(remaining/2, interval), minRenewRetryInterval)
 }
 
 func (o *Owner) markLost(err error) {

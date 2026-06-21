@@ -20,71 +20,32 @@ import (
 	"github.com/contenox/runtime/runtime/transport"
 )
 
-// Config is the explicit runtime configuration for a local session. The toy
-// constants (4096 ctx, 512 batch, Flash Attention off, 0 GPU layers, fresh
-// context per call) die here — every knob is a tested setting, not a magic
-// default.
-type Config struct {
-	NumCtx       int       // context window in tokens
-	NumBatch     int       // prefill batch size
-	NumThreads   int       // CPU threads (0 = NumCPU)
-	NumGpuLayers int       // layers offloaded to GPU (0 = CPU only)
-	TensorSplit  []float32 // multi-GPU split
-	FlashAttn    bool
-	KVCacheType  string // "", "q8_0", "q4_0"
-
-	PromptFormat         string // profile-declared prompt format, e.g. "chatml" or "llama3"
-	PromptTemplateDigest string // digest of the declared/rendered prompt template
-	DisableBOS           bool   // false means tokenize the stable prefix with backend BOS handling
-	ReasoningFormat      string // llama.cpp common-chat reasoning format, e.g. "deepseek"
-}
-
-// PrefixInput is the stable prefix text plus the profile/runtime manifest that
-// makes reuse valid. Byte equality alone is not enough: tokenizer, template,
-// runtime config, BOS policy, and model identity are part of the cache key.
-type PrefixInput struct {
-	Text     string
-	Manifest ContextManifest
-	// Tools is a JSON array of tool definitions rendered into the prompt via the
-	// model's own GGUF chat template (model-native tool calls) by the daemon.
-	Tools string `json:",omitempty"`
-}
-
-// SuffixInput is the volatile text appended after the stable prefix. It carries
-// the same manifest so direct Session callers cannot accidentally prefill a
-// suffix against resident KV from a different profile/template/runtime.
-type SuffixInput struct {
-	Text     string
-	Manifest ContextManifest
-	// EnableThinking controls model-owned chat-template rendering for the
-	// assistant generation prompt when modeld supports it. nil means backend
-	// default.
-	EnableThinking *bool `json:",omitempty"`
-}
-
-// PrefixStatus reports what EnsurePrefix reused versus had to (re)compute. This
-// is the live-reuse signal: ReusedTokens > 0 means a warm hit.
-type PrefixStatus struct {
-	ReusedTokens    int // tokens kept warm from the resident prefix
-	PrefilledTokens int // divergent tail that had to be (re)prefilled
-	DroppedTokens   int // old resident tokens removed before prefill
-	PrefixTokens    int // total prefix tokens now resident
-	ResidentTokens  int // total resident tokens after EnsurePrefix
-	AvailableTokens int // remaining context capacity
-	StableByteHash  string
-	StableTokenHash string
-	ManifestDigest  string
-}
-
-// SuffixStatus reports the volatile suffix that was added after the stable
-// prefix. It is the measurement point for suffix-growth TTFT curves.
-type SuffixStatus struct {
-	SuffixTokens    int
-	PrefixTokens    int
-	ResidentTokens  int
-	AvailableTokens int
-	ManifestDigest  string
-}
+// The session contract types below are aliases of the backend-neutral
+// runtime/transport wire types modeld implements. They are aliases, not
+// hand-maintained mirror structs, so new session fields (e.g. the
+// effective-context hot/planner budgets) stay in sync automatically instead of
+// silently breaking the struct conversions in remoteSession. This matches the
+// runtime/modelrepo/openvino sibling. Types the local surface deliberately
+// curates (DecodeConfig drops StructuredOutput; StreamChunk remaps per-chunk
+// errors) stay distinct and are mapped explicitly below.
+type (
+	// Config is the explicit runtime configuration for a local session — every
+	// knob is a tested setting, not a magic default.
+	Config = transport.Config
+	// PrefixInput is the stable prefix text plus the manifest that makes reuse
+	// valid (tokenizer, template, runtime config, BOS policy, and model identity
+	// are part of the cache key — byte equality alone is not enough).
+	PrefixInput = transport.PrefixInput
+	// SuffixInput is the volatile text appended after the stable prefix, carrying
+	// the same manifest so a suffix cannot be prefilled against resident KV from a
+	// different profile/template/runtime.
+	SuffixInput = transport.SuffixInput
+	// PrefixStatus reports what EnsurePrefix reused versus (re)computed — the
+	// live-reuse signal: ReusedTokens > 0 means a warm hit.
+	PrefixStatus = transport.PrefixStatus
+	// SuffixStatus reports the volatile suffix added after the stable prefix.
+	SuffixStatus = transport.SuffixStatus
+)
 
 // DecodeConfig controls a single decode pass.
 type DecodeConfig struct {
@@ -107,19 +68,10 @@ type StreamChunk struct {
 	Error     error
 }
 
-// ContextReport explains the session's resident context (explain-context).
-type ContextReport struct {
-	ResidentTokens  int
-	PrefixTokens    int
-	NumCtx          int
-	AvailableTokens int
-	StableByteHash  string
-	StableTokenHash string
-	ManifestDigest  string
-	Manifest        ContextManifest
-	Closed          bool
-	Residency       *transport.ResidencyReport `json:"residency,omitempty"`
-}
+// ContextReport explains the session's resident context (explain-context). It
+// aliases the transport wire type for the same anti-drift reason as the inputs
+// above.
+type ContextReport = transport.ContextReport
 
 type SessionSnapshot = transport.SessionSnapshot
 
@@ -190,20 +142,21 @@ func newSession(ref modeldconn.ModelRef, cfg Config) (Session, error) {
 }
 
 // remoteSession adapts a runtime/transport.Session (resident in modeld) to the
-// package-local Session interface. The two type families are field-identical, so
-// inputs and outputs convert directly; sentinel errors are remapped so the
-// session cache evicts a closed/stale/fatal session and reopens against the
-// current leader.
+// package-local Session interface. The session-contract types are aliases of the
+// transport types, so inputs and outputs pass through directly; this adapter
+// exists to remap sentinel errors (so the session cache evicts a closed/stale/
+// fatal session and reopens against the current leader) and to curate the
+// DecodeConfig/StreamChunk surface.
 type remoteSession struct{ s transport.Session }
 
 func (r remoteSession) EnsurePrefix(ctx context.Context, p PrefixInput) (PrefixStatus, error) {
-	st, err := r.s.EnsurePrefix(ctx, transport.PrefixInput(p))
-	return PrefixStatus(st), mapSessionErr(err)
+	st, err := r.s.EnsurePrefix(ctx, p)
+	return st, mapSessionErr(err)
 }
 
 func (r remoteSession) PrefillSuffix(ctx context.Context, s SuffixInput) (SuffixStatus, error) {
-	st, err := r.s.PrefillSuffix(ctx, transport.SuffixInput(s))
-	return SuffixStatus(st), mapSessionErr(err)
+	st, err := r.s.PrefillSuffix(ctx, s)
+	return st, mapSessionErr(err)
 }
 
 func (r remoteSession) Decode(ctx context.Context, cfg DecodeConfig) (<-chan StreamChunk, error) {
@@ -233,7 +186,7 @@ func transportDecodeConfig(cfg DecodeConfig) transport.DecodeConfig {
 	}
 }
 
-func (r remoteSession) ExplainContext() ContextReport { return ContextReport(r.s.ExplainContext()) }
+func (r remoteSession) ExplainContext() ContextReport { return r.s.ExplainContext() }
 
 func (r remoteSession) Snapshot(ctx context.Context) (SessionSnapshot, error) {
 	snap, err := r.s.Snapshot(ctx)

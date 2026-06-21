@@ -7,12 +7,14 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 func TestUnit_LocalNodeProvider_DefaultBuildReportsNotWired(t *testing.T) {
 	old := sessionFactory
 	sessionFactory = nil
 	t.Cleanup(func() { sessionFactory = old })
+	isolateModeldDataRoot(t)
 
 	p := newProvider("coder", "/models", modelrepo.CapabilityConfig{ContextLength: 8192})
 
@@ -71,5 +73,16 @@ func TestUnit_LlamaProvider_ModeldClampLeavesCapacitySafetyMargin(t *testing.T) 
 	cfg = clampContextForModeld(Config{NumCtx: 100}, 50)
 	if cfg.NumCtx != 50 {
 		t.Fatalf("small cap should not subtract safety margin, got %d", cfg.NumCtx)
+	}
+}
+
+func TestUnit_LlamaProvider_UsesResolvedAutoGpuLayersFromModeld(t *testing.T) {
+	cfg := applyModeldInfoToConfig(Config{NumCtx: 8192}, transport.ModelInfo{
+		EffectiveContext:   8192,
+		RequestedGpuLayers: 0,
+		ResolvedGpuLayers:  27,
+	})
+	if cfg.NumGpuLayers != 27 {
+		t.Fatalf("NumGpuLayers = %d, want resolved auto offload count", cfg.NumGpuLayers)
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/contenox/runtime/runtime/transport"
 	grpclib "google.golang.org/grpc"
+	"google.golang.org/grpc/stats"
 )
 
 // Server adapts a transport.Service to the gRPC wire. It is generic: modeld
@@ -23,6 +24,10 @@ type Server struct {
 	mu       sync.Mutex
 	seq      uint64
 	sessions map[string]transport.Session
+
+	connSeq       uint64
+	handlesByConn map[uint64]map[string]struct{}
+	handleConn    map[string]uint64
 }
 
 // NewServer wraps a transport.Service. instanceID is the owner's lease instance
@@ -30,7 +35,14 @@ type Server struct {
 // backend is the served inference backend ("llama"/"openvino"/"none"/"") echoed
 // on the health probe so the runtime learns the daemon's mode over the wire.
 func NewServer(svc transport.Service, instanceID, backend string) *Server {
-	return &Server{svc: svc, instanceID: instanceID, backend: backend, sessions: map[string]transport.Session{}}
+	return &Server{
+		svc:           svc,
+		instanceID:    instanceID,
+		backend:       backend,
+		sessions:      map[string]transport.Session{},
+		handlesByConn: map[uint64]map[string]struct{}{},
+		handleConn:    map[string]uint64{},
+	}
 }
 
 // Register mounts the service on a gRPC server.
@@ -39,8 +51,9 @@ func (s *Server) Register(reg grpclib.ServiceRegistrar) { reg.RegisterService(&s
 // Serve runs a gRPC server for svc on lis until ctx is cancelled, then stops it
 // gracefully. This is the entry point modeld calls once it holds the lease.
 func Serve(ctx context.Context, lis net.Listener, svc transport.Service, instanceID, backend string) error {
-	gs := grpclib.NewServer()
-	NewServer(svc, instanceID, backend).Register(gs)
+	srv := NewServer(svc, instanceID, backend)
+	gs := grpclib.NewServer(grpclib.StatsHandler(srv))
+	srv.Register(gs)
 	go func() {
 		<-ctx.Done()
 		gs.GracefulStop()
@@ -48,7 +61,55 @@ func Serve(ctx context.Context, lis net.Listener, svc transport.Service, instanc
 	return gs.Serve(lis)
 }
 
-func (s *Server) register(sess transport.Session) string {
+type connIDKey struct{}
+
+func (s *Server) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	s.mu.Lock()
+	s.connSeq++
+	id := s.connSeq
+	s.mu.Unlock()
+	return context.WithValue(ctx, connIDKey{}, id)
+}
+
+func (s *Server) HandleConn(ctx context.Context, st stats.ConnStats) {
+	if _, ok := st.(*stats.ConnEnd); !ok {
+		return
+	}
+	id, _ := ctx.Value(connIDKey{}).(uint64)
+	if id == 0 {
+		return
+	}
+	s.closeConnSessions(id)
+}
+
+func (s *Server) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context { return ctx }
+func (s *Server) HandleRPC(context.Context, stats.RPCStats)                       {}
+
+func (s *Server) closeConnSessions(connID uint64) {
+	s.mu.Lock()
+	handles := s.handlesByConn[connID]
+	delete(s.handlesByConn, connID)
+	sessions := make([]transport.Session, 0, len(handles))
+	for handle := range handles {
+		if sess := s.sessions[handle]; sess != nil {
+			sessions = append(sessions, sess)
+		}
+		delete(s.sessions, handle)
+		delete(s.handleConn, handle)
+	}
+	s.mu.Unlock()
+
+	for _, sess := range sessions {
+		_ = sess.Close()
+	}
+}
+
+func connIDFromContext(ctx context.Context) uint64 {
+	id, _ := ctx.Value(connIDKey{}).(uint64)
+	return id
+}
+
+func (s *Server) register(ctx context.Context, sess transport.Session) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seq++
@@ -57,6 +118,13 @@ func (s *Server) register(sess transport.Session) string {
 		handle = s.instanceID + "/" + strconv.FormatUint(gen, 10) + "/" + strconv.FormatUint(s.seq, 10)
 	}
 	s.sessions[handle] = sess
+	if connID := connIDFromContext(ctx); connID != 0 {
+		if s.handlesByConn[connID] == nil {
+			s.handlesByConn[connID] = map[string]struct{}{}
+		}
+		s.handlesByConn[connID][handle] = struct{}{}
+		s.handleConn[handle] = connID
+	}
 	return handle
 }
 
@@ -185,7 +253,7 @@ func (s *Server) openSession(ctx context.Context, in *openSessionReq) (*openSess
 	if err != nil {
 		return nil, encodeError(err)
 	}
-	return &openSessionResp{Handle: s.register(sess)}, nil
+	return &openSessionResp{Handle: s.register(ctx, sess)}, nil
 }
 
 func (s *Server) describe(ctx context.Context, in *openSessionReq) (*describeResp, error) {
@@ -334,6 +402,13 @@ func (s *Server) closeSession(ctx context.Context, in *closeReq) (*closeResp, er
 	s.mu.Lock()
 	sess := s.sessions[in.Handle]
 	delete(s.sessions, in.Handle)
+	if connID := s.handleConn[in.Handle]; connID != 0 {
+		delete(s.handleConn, in.Handle)
+		delete(s.handlesByConn[connID], in.Handle)
+		if len(s.handlesByConn[connID]) == 0 {
+			delete(s.handlesByConn, connID)
+		}
+	}
 	s.mu.Unlock()
 	if sess != nil {
 		if err := sess.Close(); err != nil {
