@@ -9,9 +9,11 @@ Current distribution status:
 - VS Code packages ship `bin/contenox`, not `modeld`.
 - Local llama/OpenVINO providers therefore require a source-built `modeld`
   daemon for now.
-- The relocatable `package-modeld` target is currently Linux-oriented
-  (`.so` libraries, rpath, shell wrapper). macOS and Windows modeld packages
-  need platform-specific packaging work.
+- The dev `package-modeld` target is Linux-oriented (`.so`, rpath, shell wrapper).
+  Official release packaging has per-OS targets (`bundle-modeld-deps-<os>`,
+  `package-modeld-release-<os>`) for linux/darwin/windows — see
+  [Cross-Platform Release Bundles](#cross-platform-release-bundles). The Linux path is
+  verified end-to-end; the darwin/windows native build chain still needs porting work.
 
 ## Prerequisites
 
@@ -217,6 +219,37 @@ If `modeld` is not on `PATH`, point the runtime at it:
 export CONTENOX_MODELD_BIN="$HOME/.local/share/contenox/modeld/modeld"
 ```
 
+## Cross-Platform Release Bundles
+
+Official `modeld` packaging is per-OS and device-driven: each device builds the native
+dependency variants it can and pushes them to an S3 store; packaging links against a
+bundle pulled from that store. The native library names and backends differ per OS, so
+there is one producer/packager per OS (`scripts/modeld-deps-bundle-<os>.sh`); the
+bare targets dispatch to the host OS. See
+[the release blueprint](blueprints/modeld-release-artifacts.md) for the full design.
+
+| OS | Backends | Notes |
+| --- | --- | --- |
+| linux | llama.cpp (CPU/CUDA/HIP) + OpenVINO | verified end-to-end |
+| darwin (Apple Silicon) | llama.cpp + Metal | **llama-only — no OpenVINO** (not supported on Apple Silicon) |
+| windows | llama.cpp (CPU/CUDA) + OpenVINO | MinGW/UCRT toolchain; `.dll` + DLL-next-to-exe; unverified |
+
+On the matching build device:
+
+```bash
+make bundle-modeld-deps                 # build this host's dep bundle (dispatches by OS)
+make push-modeld-deps  MODELD_DEPS_S3_URI=s3://bucket/modeld-deps
+
+# package + publish (on a device of the target platform):
+make pull-modeld-deps  MODELD_DEPS_S3_URI=s3://bucket/modeld-deps
+make package-modeld-release MODELD_DEPS_ROOT=<pulled-bundle-dir>
+make push-modeld-release MODELD_RELEASE_S3_URI=s3://bucket/modeld
+```
+
+For darwin, OpenVINO is off by default; override with `MODELD_RELEASE_OPENVINO=1` only if
+you have OpenVINO GenAI working on the target. Point the S3 URIs at a local directory to
+exercise the whole push/pull/package flow without AWS credentials.
+
 ## Useful Commands
 
 ```bash
@@ -224,6 +257,7 @@ modeld status
 modeld status --json
 modeld serve --mem-max 8GiB --mem-reserve 2GiB
 CONTENOX_MODELD_BACKEND=llama modeld serve
+modeld version --json   # report the compiled-in backends
 ```
 
 The daemon writes a lease under the Contenox data root, normally:

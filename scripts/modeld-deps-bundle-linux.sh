@@ -35,18 +35,6 @@ OPENVINO_PKG=${OPENVINO_PKG:-}
 GENAI_SRC=${GENAI_SRC:-}; GENAI_PKG=${GENAI_PKG:-}; TOKENIZERS_LIB=${TOKENIZERS_LIB:-}
 OPENVINO_GENAI_VERSION=${OPENVINO_GENAI_VERSION:-}
 
-# Shared-library suffix by target OS. Only linux is implemented end-to-end today:
-# the native build chain (Makefile.llamacpp-direct, mk/*.mk) is Linux/ELF-only, so a
-# darwin/windows device has no .dylib/.dll runtimes to bundle yet. Fail with a precise
-# signpost instead of a cryptic "missing .so" so the gap is obvious on those devices.
-OS=${PLATFORM%%-*}
-case "$OS" in
-  linux)   LIB_EXT=so ;;
-  darwin)  fail "darwin bundles not implemented yet: the llama.cpp/OpenVINO native build (Makefile.llamacpp-direct, mk/*.mk) is Linux/ELF-only — it must first emit .dylib runtimes and @loader_path link flags before this can bundle them" ;;
-  windows) fail "windows bundles not implemented yet: native build is Linux-only — needs a MinGW/.dll toolchain, import libs, and DLL-search packaging before this can bundle them" ;;
-  *)       fail "unknown target OS '$OS' (PLATFORM=$PLATFORM)" ;;
-esac
-
 # A bundle is OpenVINO-capable only if every OpenVINO input resolves; otherwise it
 # is a llama-only bundle. The release decides per platform whether that is allowed.
 HAVE_OPENVINO=0

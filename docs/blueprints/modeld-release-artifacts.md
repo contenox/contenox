@@ -80,8 +80,8 @@ inputs, not user-facing packages.
 Bundle production is **decentralized**: no single device can build every variant — a
 Linux box cannot produce the Windows or macOS native deps, and only a CUDA host can
 build the CUDA llama plugin. So each device builds the variants it *can*
-(`make bundle-modeld-deps`, `scripts/modeld-deps-bundle.sh`) and pushes them to S3
-(`make push-modeld-deps`). S3 accumulates the union of all contributed variants, and
+(`make bundle-modeld-deps`, dispatching to the per-OS `scripts/modeld-deps-bundle-<os>.sh`)
+and pushes them to S3 (`make push-modeld-deps`). S3 accumulates the union of all contributed variants, and
 the release job downloads whatever it needs per platform — including variants the
 release runner itself cannot build.
 
@@ -242,6 +242,30 @@ native dependency bundle instead of rebuilding native dependencies:
 ```bash
 MODELD_DEPS_ROOT=/path/to/modeld-deps-linux-amd64 make package-modeld-release
 ```
+
+### Per-OS targets and backend matrix
+
+Native library names, link flags, wrapper, and archive format differ per OS, so both
+the bundle producer and the packager have one target per OS, in separate scripts
+(`scripts/modeld-deps-bundle-<os>.sh`); the bare targets dispatch to the host OS:
+
+```text
+bundle-modeld-deps[-linux|-darwin|-windows]
+package-modeld-release[-linux|-darwin|-windows]
+```
+
+The compiled backend set is per platform — and OpenVINO is **not** universal:
+
+| Platform | Backends | Accelerator | OpenVINO |
+| --- | --- | --- | --- |
+| linux-amd64 | llama.cpp + OpenVINO | CUDA / HIP (DL plugins) | required (`MODELD_RELEASE_OPENVINO=1`) |
+| darwin-arm64 | llama.cpp | Metal | **off** — OpenVINO GenAI is not supported on Apple Silicon |
+| windows-amd64 | llama.cpp + OpenVINO | CUDA | required (MinGW toolchain) |
+
+Apple Silicon is llama + Metal: the darwin producer is llama-only and the darwin
+packager defaults `MODELD_RELEASE_OPENVINO=0`, so the Mac path is never gated on
+OpenVINO. CUDA/HIP/Metal are not separate artifacts — they ride the llama runtime the
+device built (recorded as the bundle `variant` and `accelerator`).
 
 This target is a **variant of the existing `package-modeld`** (`Makefile:153`).
 `package-modeld` already produces the relocatable bundle described in

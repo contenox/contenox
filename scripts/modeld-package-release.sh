@@ -23,9 +23,11 @@ done
 [ -x "$DIST_DIR/modeld" ] || fail "missing packaged launcher: $DIST_DIR/modeld"
 
 # Smoke gate: the packaged binary must run and report the expected backends. The
-# wrapper resolves the bundled native libs, so this also proves the link is sound.
-echo "modeld-package-release: smoke -> $DIST_DIR/modeld version --json"
-report=$("$DIST_DIR/modeld" version --json) || fail "packaged binary failed to run 'version'"
+# wrapper/launcher resolves the bundled native libs, so this also proves the link is sound.
+LAUNCHER=${LAUNCHER:-modeld}
+TARGET_OS=${TARGET_OS:-linux}
+echo "modeld-package-release: smoke -> $DIST_DIR/$LAUNCHER version --json"
+report=$("$DIST_DIR/$LAUNCHER" version --json) || fail "packaged binary failed to run 'version'"
 echo "$report"
 
 reported_version=$(printf '%s' "$report" | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -1)
@@ -58,8 +60,15 @@ EOF
 mkdir -p "$RELEASE_OUT"
 parent=$(CDPATH= cd -- "$(dirname -- "$DIST_DIR")" && pwd)
 base=$(basename -- "$DIST_DIR")
-archive="$RELEASE_OUT/$NAME.tar.gz"
-tar -czf "$archive" -C "$parent" "$base"
-( cd "$RELEASE_OUT" && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256" )
+# Windows ships a .zip; other platforms a .tar.gz.
+if [ "$TARGET_OS" = "windows" ]; then
+  archive="$RELEASE_OUT/$NAME.zip"
+  ( cd "$parent" && zip -qr "$archive" "$base" )
+else
+  archive="$RELEASE_OUT/$NAME.tar.gz"
+  tar -czf "$archive" -C "$parent" "$base"
+fi
+arcbase=$(basename -- "$archive")
+( cd "$RELEASE_OUT" && sha256sum "$arcbase" > "$arcbase.sha256" )
 echo "modeld-package-release: archive -> $archive"
-echo "modeld-package-release: checksum -> $RELEASE_OUT/$NAME.tar.gz.sha256"
+echo "modeld-package-release: checksum -> $RELEASE_OUT/$arcbase.sha256"

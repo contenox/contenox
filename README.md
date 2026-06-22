@@ -364,4 +364,29 @@ complete local modeld flow.
 
 ---
 
+## Built on
+
+The `contenox` CLI is pure Go. Local inference lives in the separate `modeld`
+daemon, which builds on these upstream projects (pinned in `mk/llama-flags.mk` and
+`mk/openvino-flags.mk`):
+
+| Project | Role | License |
+| --- | --- | --- |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | GGUF inference and the ggml CPU/CUDA/HIP/Metal backends | MIT |
+| [OpenVINO](https://github.com/openvinotoolkit/openvino) | Inference runtime (CPU / iGPU / NPU) | Apache-2.0 |
+| [OpenVINO GenAI](https://github.com/openvinotoolkit/openvino.genai) | LLM pipeline over OpenVINO | Apache-2.0 |
+| [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) | Tokenizer extension for OpenVINO GenAI | Apache-2.0 |
+| [minja](https://github.com/google/minja) | Chat-template engine (vendored by OpenVINO GenAI) | MIT |
+| [gguf-tools](https://github.com/Lourdle/gguf-tools) | GGUF parsing headers (vendored by OpenVINO GenAI) | see upstream |
+
+Native backends are compiled, not embedded: `modeld` links these at build time and
+ships their runtime libraries inside each release package. Upstream license texts
+travel with the artifacts (`licenses/` in dependency bundles, `LICENSES/` in modeld
+packages). Other Go dependencies are listed in `go.mod`.
+
+Provider integrations contenox talks to over the network (Ollama, vLLM, and hosted
+OpenAI-compatible vendors) are not built into contenox and are not listed here.
+
+---
+
 > Questions: **hello@contenox.com**

@@ -216,8 +216,30 @@ make package-modeld
 ```
 
 The bundle includes llama.cpp and adds OpenVINO when the SDK/GenAI dependencies
-are present. CUDA support follows the generated llama.cpp runtime. See
-`docs/modeld-source-build.md` for source-build and packaging details.
+are present. CUDA support follows the generated llama.cpp runtime.
+
+#### Cross-platform release packaging
+
+Official release packaging is per-OS and device-driven (build native dep bundles on a
+device, push to an S3 store, link a package against a pulled bundle). The native library
+names and backends differ per OS, so there is one producer/packager per OS — the bare
+targets dispatch to the host:
+
+| OS | Backends | Status |
+| --- | --- | --- |
+| linux | llama.cpp (CPU/CUDA/HIP) + OpenVINO | verified |
+| darwin (Apple Silicon) | llama.cpp + Metal (no OpenVINO) | scripts in place, native build chain unported |
+| windows | llama.cpp (CPU/CUDA) + OpenVINO (MinGW) | scripts in place, unverified |
+
+```bash
+make bundle-modeld-deps        # this host's dep bundle (-> bundle-modeld-deps-<os>)
+make package-modeld-release MODELD_DEPS_ROOT=<bundle>   # (-> package-modeld-release-<os>)
+```
+
+Point `MODELD_DEPS_S3_URI` / `MODELD_RELEASE_S3_URI` at a local directory to test the
+push/pull/package flow without AWS. See
+[`docs/blueprints/modeld-release-artifacts.md`](docs/blueprints/modeld-release-artifacts.md)
+for the design and `docs/modeld-source-build.md` for source-build details.
 
 ### VS Code extension development
 
