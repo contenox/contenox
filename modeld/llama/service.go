@@ -181,6 +181,12 @@ func RuntimeInfo() transport.ModelInfo {
 // source used for the direct runtime.
 var llamaCPPCommit string
 
+// BuildCommit returns the pinned llama.cpp source commit this backend was built
+// against, as injected at link time. It is empty for a plain `go build` with no
+// -ldflags. Cheap and side-effect free, so `modeld version` can report it without
+// loading native libraries.
+func BuildCommit() string { return llamaCPPCommit }
+
 func (s *Service) memorySource(cfg transport.Config) capacity.MemorySource {
 	if s.memory != nil {
 		return s.memory

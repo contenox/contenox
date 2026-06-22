@@ -17,4 +17,7 @@ func init() {
 	}, openvino.HasAccelerator, func() backendDiagnostic {
 		return backendDiagnosticFromModelInfo(openvino.RuntimeInfo())
 	})
+	registerBackendBuildInfo("openvino", map[string]string{
+		"openvino_genai_version": openvino.BuildGenAIVersion(),
+	})
 }

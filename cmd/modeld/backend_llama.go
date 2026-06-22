@@ -20,4 +20,7 @@ func init() {
 	}, llama.HasAccelerator, func() backendDiagnostic {
 		return backendDiagnosticFromModelInfo(llama.RuntimeInfo())
 	})
+	registerBackendBuildInfo("llama", map[string]string{
+		"llama_cpp_commit": llama.BuildCommit(),
+	})
 }

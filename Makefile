@@ -16,8 +16,45 @@ LLAMA_LIBS_DIR ?= $(PROJECT_ROOT)lib/llamacpp
 LLAMA_LIBS_COPY ?=
 MODELD_DIST_DIR ?= $(PROJECT_ROOT)bin/dist
 
+# Release packaging (see docs/blueprints/modeld-release-artifacts.md).
+# MODELD_PLATFORM names the goos-goarch of this host's outputs.
+# bundle-modeld-deps writes native dependency bundles under MODELD_DEPS_OUT; they
+# are pushed to S3 (push-modeld-deps) and consumed by package-modeld-release via
+# MODELD_DEPS_ROOT, which links modeld without rebuilding llama.cpp / OpenVINO.
+MODELD_PLATFORM ?= $(shell go env GOOS)-$(shell go env GOARCH)
+MODELD_DEPS_OUT ?= $(PROJECT_ROOT)bin/modeld-deps
+MODELD_DEPS_ROOT ?=
+MODELD_PULL_DIR ?= $(MODELD_DEPS_OUT)/pulled
+# Artifact store URIs. s3:// uses the aws CLI; any other value is a local directory
+# (so the whole push/pull/dedup flow is testable without aws). Dep bundles and final
+# modeld packages both live in the store, not GitHub Releases.
+MODELD_DEPS_S3_URI ?=
+MODELD_RELEASE_S3_URI ?=
+MODELD_STORE := bash $(PROJECT_ROOT)scripts/modeld-store.sh
+MODELD_RELEASE_DIST_DIR ?= $(PROJECT_ROOT)dist
+MODELD_RELEASE_NAME ?= modeld-$(MODELD_VERSION)-$(MODELD_PLATFORM)
+# Release requires OpenVINO by default; package-modeld-release hard-fails if the
+# bundle lacks it. Set MODELD_RELEASE_OPENVINO=0 for llama-only platforms.
+MODELD_RELEASE_OPENVINO ?= 1
+
+# Fingerprint profile (modeld-deps-fingerprint). Defaults describe THIS host's
+# variant; override to compute the fingerprint of a variant built on another device
+# (e.g. a windows/darwin bundle this Linux box cannot build) so the release can find
+# and download it from S3. Build-type/ABI mirror Makefile.llamacpp-direct.
+MODELD_FP_CUDA ?= $(if $(shell command -v nvcc 2>/dev/null),ON,OFF)
+MODELD_FP_HIP ?= $(if $(shell command -v hipcc 2>/dev/null),ON,OFF)
+MODELD_FP_OPENVINO ?= $(if $(MODELD_HAVE_OPENVINO),1,0)
+MODELD_FP_BUILD_TYPE ?= Release
+MODELD_FP_RUNTIME_ABI ?= dl-v1
+
+# modeld release version, stamped into `modeld version`. Defaults to the tracked
+# version file; release builds may override MODELD_VERSION with the tag.
+MODELD_VERSION ?= $(shell tr -d '\r\n' < $(PROJECT_ROOT)/runtime/version/version.txt 2>/dev/null)
+# cmd/modeld is package main, so the linker binds -X against `main`, not the
+# full import path (the import-path form is silently ignored for main packages).
+MODELD_VERSION_LD_FLAGS = -X 'main.version=$(MODELD_VERSION)'
 MODELD_LLAMA_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/llama.llamaCPPCommit=$(LLAMA_CPP_COMMIT)'
-MODELD_OPENVINO_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/openvino.buildTokenizersPath=$(OPENVINO_TOKENIZERS_SO)'
+MODELD_OPENVINO_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/openvino.buildTokenizersPath=$(OPENVINO_TOKENIZERS_SO)' -X 'github.com/contenox/runtime/modeld/openvino.buildGenAIVersion=$(OPENVINO_GENAI_VERSION)'
 
 # modeld always includes llama.cpp. OpenVINO is enabled when its SDK is present;
 # CUDA support follows the llama.cpp runtime build. Set CONTENOX_MODELD_BACKEND
@@ -26,13 +63,13 @@ MODELD_HAVE_OPENVINO := $(shell test -n "$(strip $(OPENVINO_PKG))" && test -d "$
 
 ifeq ($(MODELD_HAVE_OPENVINO),1)
 MODELD_TAGS := llamanode llamacpp_direct openvino openvino_genai
-MODELD_LD_FLAGS := $(MODELD_LLAMA_LD_FLAGS) $(MODELD_OPENVINO_LD_FLAGS)
+MODELD_LD_FLAGS := $(MODELD_VERSION_LD_FLAGS) $(MODELD_LLAMA_LD_FLAGS) $(MODELD_OPENVINO_LD_FLAGS)
 MODELD_OV_CXXFLAGS = $(OPENVINO_GENAI_CGO_CXXFLAGS)
 MODELD_OV_DEV_LDFLAGS = $(OPENVINO_GENAI_LINK_FLAGS) -Wl,-rpath,\$$ORIGIN/modeld-libs
 MODELD_OV_PKG_LDFLAGS = $(OPENVINO_GENAI_LINK_FLAGS)
 else
 MODELD_TAGS := llamanode llamacpp_direct
-MODELD_LD_FLAGS := $(MODELD_LLAMA_LD_FLAGS)
+MODELD_LD_FLAGS := $(MODELD_VERSION_LD_FLAGS) $(MODELD_LLAMA_LD_FLAGS)
 MODELD_OV_CXXFLAGS =
 MODELD_OV_DEV_LDFLAGS =
 MODELD_OV_PKG_LDFLAGS =
@@ -70,6 +107,7 @@ VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET
 
 .PHONY: help \
 	build-contenox build-contenox-windows build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
+	bundle-modeld-deps push-modeld-deps pull-modeld-deps push-modeld-release modeld-deps-fingerprint check-modeld-deps-bundle package-modeld-release \
 	check-modeld-llama-deps \
 	clean clean-vscode \
 	deps-modeld deps-llamacpp-ref deps-openvino deps-vscode \
@@ -79,7 +117,8 @@ VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET
 
 help:
 	@echo "build-*    build-contenox build-contenox-windows build-llamacpp-runtime build-modeld build-vscode"
-	@echo "package-*  package-modeld package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
+	@echo "package-*  package-modeld package-modeld-release package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
+	@echo "release-*  bundle-modeld-deps push/pull-modeld-deps package-modeld-release push-modeld-release (device -> S3 store -> linked package; see docs/blueprints/modeld-release-artifacts.md)"
 	@echo "test-*     test test-unit test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
 	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
@@ -175,6 +214,161 @@ package-modeld: build-llamacpp-runtime check-modeld-llama-deps
 	@if [ "$(MODELD_HAVE_OPENVINO)" = "1" ]; then $(MAKE) --no-print-directory MODELD_LIBS_DIR="$(MODELD_DIST_DIR)/modeld-libs" MODELD_LIBS_COPY=1 bundle-modeld-libs; fi
 	@$(MAKE) --no-print-directory LLAMA_LIBS_DIR="$(MODELD_DIST_DIR)/lib/llamacpp" LLAMA_LIBS_COPY=1 bundle-llama-libs
 	@echo "relocatable modeld package -> $(MODELD_DIST_DIR) (run: $(MODELD_DIST_DIR)/modeld serve)"
+
+# Produce a native dependency bundle from this host's build outputs. The bundle is a
+# build input for package-modeld-release, not a user-facing package. A device builds
+# whatever variant it can compile (CPU / CUDA / HIP, with or without OpenVINO); the
+# bundle name and manifest record the accelerator profile. Run `make deps-modeld`
+# first for an OpenVINO-capable bundle.
+bundle-modeld-deps: build-llamacpp-runtime check-modeld-llama-deps
+	@PLATFORM="$(MODELD_PLATFORM)" \
+	OUT="$(MODELD_DEPS_OUT)" \
+	LLAMA_REF="$(LLAMA_CPP_REF_DIR)" \
+	LLAMA_RUNTIME="$(LLAMA_RUNTIME_DIR)" \
+	LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
+	OPENVINO_PKG="$(OPENVINO_PKG)" \
+	GENAI_SRC="$(OPENVINO_GENAI_SRC)" \
+	GENAI_PKG="$(OPENVINO_GENAI_PKG)" \
+	TOKENIZERS_LIB="$(OPENVINO_TOKENIZERS_LIB)" \
+	OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
+	bash $(PROJECT_ROOT)scripts/modeld-deps-bundle.sh
+
+# Print the fingerprint of a bundle's build inputs (pins). Pin-only, so it needs no
+# built artifacts: a device can compute another platform's fingerprint (override
+# MODELD_PLATFORM/MODELD_FP_*) to locate that variant on S3 without building it.
+modeld-deps-fingerprint:
+	@PLATFORM="$(MODELD_PLATFORM)" \
+	LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
+	LLAMA_BUILD_TYPE="$(MODELD_FP_BUILD_TYPE)" \
+	LLAMA_RUNTIME_ABI="$(MODELD_FP_RUNTIME_ABI)" \
+	CUDA="$(MODELD_FP_CUDA)" HIP="$(MODELD_FP_HIP)" \
+	OPENVINO="$(MODELD_FP_OPENVINO)" \
+	OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
+	bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh
+
+# Upload native dependency bundles to the store as plain files (no archive), keyed by
+# platform/fingerprint. Each device pushes the variants it can build; the union in the
+# store lets the release assemble platforms no single device can build (windows/darwin).
+# A fingerprint already present is skipped, so we never re-upload a version we have.
+push-modeld-deps:
+	@test -n "$(MODELD_DEPS_S3_URI)" || { echo "set MODELD_DEPS_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
+	@found=0; \
+	for envf in $(MODELD_DEPS_OUT)/*/bundle.env; do \
+		[ -f "$$envf" ] || continue; found=1; \
+		bdir=$$(dirname "$$envf"); \
+		( . "$$envf"; \
+		  key="$(MODELD_DEPS_S3_URI)/$$MODELD_BUNDLE_PLATFORM/$$MODELD_BUNDLE_FINGERPRINT"; \
+		  if $(MODELD_STORE) exists "$$key/manifest.json"; then \
+		    echo "skip (already in store): $$MODELD_BUNDLE_PLATFORM/$$MODELD_BUNDLE_FINGERPRINT"; \
+		  else \
+		    echo "put $$bdir -> $$key/"; \
+		    $(MODELD_STORE) put "$$bdir" "$$key"; \
+		  fi ) || exit 1; \
+	done; \
+	[ "$$found" = 1 ] || { echo "no bundles in $(MODELD_DEPS_OUT); run: make bundle-modeld-deps"; exit 1; }
+
+# Fetch a native dependency bundle from the store into a local dir for packaging. The
+# fingerprint is computed from the pin profile, so override MODELD_PLATFORM/MODELD_FP_*
+# to pull a variant this device cannot build (e.g. a windows/darwin bundle).
+pull-modeld-deps:
+	@test -n "$(MODELD_DEPS_S3_URI)" || { echo "set MODELD_DEPS_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
+	@fp=$$(PLATFORM="$(MODELD_PLATFORM)" LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
+		LLAMA_BUILD_TYPE="$(MODELD_FP_BUILD_TYPE)" LLAMA_RUNTIME_ABI="$(MODELD_FP_RUNTIME_ABI)" \
+		CUDA="$(MODELD_FP_CUDA)" HIP="$(MODELD_FP_HIP)" OPENVINO="$(MODELD_FP_OPENVINO)" \
+		OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
+		bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh); \
+	key="$(MODELD_DEPS_S3_URI)/$(MODELD_PLATFORM)/$$fp"; \
+	dest="$(MODELD_PULL_DIR)/$(MODELD_PLATFORM)-$$fp"; \
+	$(MODELD_STORE) exists "$$key/manifest.json" || { echo "variant not in store: $$key — build+push it on a $(MODELD_PLATFORM) device first"; exit 1; }; \
+	$(MODELD_STORE) get "$$key" "$$dest"; \
+	echo "pulled $(MODELD_PLATFORM) ($$fp) -> $$dest"; \
+	echo "next: make package-modeld-release MODELD_DEPS_ROOT=$$dest"
+
+# Upload final modeld packages to the store, keyed by version. Final binaries live in
+# the store (S3), not GitHub Releases.
+push-modeld-release:
+	@test -n "$(MODELD_RELEASE_S3_URI)" || { echo "set MODELD_RELEASE_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
+	@found=0; \
+	for f in $(MODELD_RELEASE_DIST_DIR)/*.tar.gz; do \
+		[ -f "$$f" ] || continue; found=1; \
+		base=$$(basename "$$f"); dest="$(MODELD_RELEASE_S3_URI)/$(MODELD_VERSION)"; \
+		echo "cp $$f -> $$dest/$$base"; \
+		$(MODELD_STORE) cp "$$f" "$$dest/$$base" || exit 1; \
+		$(MODELD_STORE) cp "$$f.sha256" "$$dest/$$base.sha256" || exit 1; \
+	done; \
+	[ "$$found" = 1 ] || { echo "no packages in $(MODELD_RELEASE_DIST_DIR); run: make package-modeld-release"; exit 1; }
+
+# Validate that an extracted dependency bundle has everything the release link needs.
+# Hard-fails when OpenVINO is required but the bundle does not declare/contain it, so
+# a release can never silently fall back to a reduced backend set.
+check-modeld-deps-bundle:
+	@test -n "$(MODELD_DEPS_ROOT)" || { echo "set MODELD_DEPS_ROOT=/path/to/modeld-deps-<platform>"; exit 1; }
+	@test -f "$(MODELD_DEPS_ROOT)/manifest.json" || { echo "bundle missing manifest.json: $(MODELD_DEPS_ROOT)"; exit 1; }
+	@test -f "$(MODELD_DEPS_ROOT)/llama/ref/common/chat.h" || { echo "bundle missing llama.cpp ref headers"; exit 1; }
+	@test -f "$(MODELD_DEPS_ROOT)/llama/runtime/lib/libllama.so" || { echo "bundle missing llama runtime libllama.so"; exit 1; }
+	@test -f "$(MODELD_DEPS_ROOT)/llama/runtime/lib/libcommon.a" || { echo "bundle missing llama libcommon.a"; exit 1; }
+	@if [ "$(MODELD_RELEASE_OPENVINO)" = "1" ]; then \
+		grep -q '"openvino": *true' "$(MODELD_DEPS_ROOT)/manifest.json" || { echo "MODELD_RELEASE_OPENVINO=1 but bundle manifest does not declare openvino:true (refusing to silently drop OpenVINO)"; exit 1; }; \
+		test -d "$(MODELD_DEPS_ROOT)/openvino/genai/src/cpp/include" || { echo "bundle missing OpenVINO GenAI headers"; exit 1; }; \
+		ls "$(MODELD_DEPS_ROOT)"/openvino/genai/libopenvino_genai.so* >/dev/null 2>&1 || { echo "bundle missing libopenvino_genai.so"; exit 1; }; \
+		test -f "$(MODELD_DEPS_ROOT)/openvino/tokenizers/lib/libopenvino_tokenizers.so" || { echo "bundle missing libopenvino_tokenizers.so"; exit 1; }; \
+		ls "$(MODELD_DEPS_ROOT)"/openvino/openvino/libs/libopenvino.so* >/dev/null 2>&1 || { echo "bundle missing libopenvino.so"; exit 1; }; \
+	fi
+	@echo "modeld deps bundle OK: $(MODELD_DEPS_ROOT) (openvino required=$(MODELD_RELEASE_OPENVINO))"
+
+# Package a release modeld bundle by linking against an extracted native dependency
+# bundle (MODELD_DEPS_ROOT) instead of rebuilding native deps. The root paths and
+# build tags are re-pointed at the bundle via target-specific variables; the existing
+# mk/*.mk flag expressions recompute against them. Deterministic and self-contained:
+# it does not rebuild llama.cpp / OpenVINO and refuses to drop an expected backend.
+package-modeld-release: MODELD_DIST_DIR := $(MODELD_RELEASE_DIST_DIR)/$(MODELD_RELEASE_NAME)
+package-modeld-release: LLAMA_CPP_REF_DIR := $(MODELD_DEPS_ROOT)/llama/ref
+package-modeld-release: LLAMA_RUNTIME_DIR := $(MODELD_DEPS_ROOT)/llama/runtime
+package-modeld-release: LLAMA_RUNTIME_LIB_DIR := $(MODELD_DEPS_ROOT)/llama/runtime/lib
+package-modeld-release: OPENVINO_PKG := $(MODELD_DEPS_ROOT)/openvino/openvino
+package-modeld-release: OPENVINO_GENAI_SRC := $(MODELD_DEPS_ROOT)/openvino/genai
+package-modeld-release: OPENVINO_GENAI_PKG := $(MODELD_DEPS_ROOT)/openvino/genai
+package-modeld-release: OPENVINO_TOKENIZERS_LIB := $(MODELD_DEPS_ROOT)/openvino/tokenizers/lib
+package-modeld-release: OPENVINO_TOKENIZERS_SO := $(MODELD_DEPS_ROOT)/openvino/tokenizers/lib/libopenvino_tokenizers.so
+package-modeld-release: MODELD_TAGS := $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),llamanode llamacpp_direct openvino openvino_genai,llamanode llamacpp_direct)
+package-modeld-release: MODELD_OV_CXXFLAGS = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(OPENVINO_GENAI_CGO_CXXFLAGS),)
+package-modeld-release: MODELD_OV_PKG_LDFLAGS = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(OPENVINO_GENAI_LINK_FLAGS),)
+package-modeld-release: MODELD_LD_FLAGS = $(MODELD_VERSION_LD_FLAGS) $(MODELD_LLAMA_LD_FLAGS) $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(MODELD_OPENVINO_LD_FLAGS),)
+package-modeld-release: check-modeld-deps-bundle
+	@rm -rf "$(MODELD_DIST_DIR)" && mkdir -p "$(MODELD_DIST_DIR)"
+	@echo "packaging modeld release: $(MODELD_RELEASE_NAME) tags=[$(MODELD_TAGS)] openvino=$(MODELD_RELEASE_OPENVINO) deps=$(MODELD_DEPS_ROOT)"
+	CGO_ENABLED=1 \
+	CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_CXXFLAGS="$(MODELD_OV_CXXFLAGS)" \
+	CGO_LDFLAGS="-L$(LLAMA_RUNTIME_LIB_DIR) -Wl,--disable-new-dtags -Wl,-rpath,\$$ORIGIN/lib/llamacpp -Wl,-rpath,\$$ORIGIN/modeld-libs -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS) $(MODELD_OV_PKG_LDFLAGS)" \
+	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_TAGS)' \
+		-ldflags "$(MODELD_LD_FLAGS)" \
+		-o "$(MODELD_DIST_DIR)/modeld.bin" $(PROJECT_ROOT)/cmd/modeld
+	@{ \
+		printf '%s\n' '#!/usr/bin/env sh'; \
+		printf '%s\n' 'set -eu'; \
+		printf '%s\n' 'SELF_DIR=$$(CDPATH= cd -- "$$(dirname -- "$$0")" && pwd)'; \
+		printf '%s\n' 'LIB_DIR="$$SELF_DIR/lib/llamacpp"'; \
+		printf '%s\n' 'if [ -d "$$LIB_DIR" ]; then'; \
+		printf '%s\n' '  export LD_LIBRARY_PATH="$$LIB_DIR$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"'; \
+		printf '%s\n' '  export CONTENOX_LLAMA_BACKEND_DIR="$${CONTENOX_LLAMA_BACKEND_DIR:-$$LIB_DIR}"'; \
+		printf '%s\n' 'fi'; \
+		printf '%s\n' 'exec "$$SELF_DIR/modeld.bin" "$$@"'; \
+	} > "$(MODELD_DIST_DIR)/modeld"
+	@chmod +x "$(MODELD_DIST_DIR)/modeld"
+	@if [ "$(MODELD_RELEASE_OPENVINO)" = "1" ]; then $(MAKE) --no-print-directory \
+		OPENVINO_PKG="$(OPENVINO_PKG)" OPENVINO_GENAI_PKG="$(OPENVINO_GENAI_PKG)" OPENVINO_TOKENIZERS_SO="$(OPENVINO_TOKENIZERS_SO)" \
+		MODELD_LIBS_DIR="$(MODELD_DIST_DIR)/modeld-libs" MODELD_LIBS_COPY=1 bundle-modeld-libs; fi
+	@$(MAKE) --no-print-directory LLAMA_RUNTIME_LIB_SRC="$(LLAMA_RUNTIME_LIB_DIR)" LLAMA_LIBS_DIR="$(MODELD_DIST_DIR)/lib/llamacpp" LLAMA_LIBS_COPY=1 bundle-llama-libs
+	@if [ -d "$(MODELD_DEPS_ROOT)/licenses" ]; then rm -rf "$(MODELD_DIST_DIR)/LICENSES"; cp -a "$(MODELD_DEPS_ROOT)/licenses" "$(MODELD_DIST_DIR)/LICENSES"; fi
+	@DIST_DIR="$(MODELD_DIST_DIR)" \
+	RELEASE_OUT="$(MODELD_RELEASE_DIST_DIR)" \
+	NAME="$(MODELD_RELEASE_NAME)" \
+	VERSION="$(MODELD_VERSION)" \
+	PLATFORM="$(MODELD_PLATFORM)" \
+	EXPECT_OPENVINO="$(MODELD_RELEASE_OPENVINO)" \
+	bash $(PROJECT_ROOT)scripts/modeld-package-release.sh
+	@echo "release modeld package -> $(MODELD_RELEASE_DIST_DIR)/$(MODELD_RELEASE_NAME).tar.gz"
 
 build-vscode: deps-vscode
 	cd $(VSCODE_DIR) && npm run build

@@ -34,6 +34,22 @@ var backendHasAccel = map[string]func() bool{}
 // still works with just backendHasAccel for tests and minimal builds.
 var backendDiagnostics = map[string]func() backendDiagnostic{}
 
+// backendBuildInfo holds optional static build metadata for a compiled-in
+// backend (e.g. the pinned native source version), keyed by backend name then
+// field. Registered from backend init()s. Unlike backendDiagnostics it must stay
+// cheap and side-effect free — no native lib load, no device probe — so
+// `modeld version` can report it for a release smoke check.
+var backendBuildInfo = map[string]map[string]string{}
+
+// registerBackendBuildInfo records static build metadata for a compiled-in
+// backend. Called from backend init()s alongside registerBackend.
+func registerBackendBuildInfo(name string, info map[string]string) {
+	if len(info) == 0 {
+		return
+	}
+	backendBuildInfo[name] = info
+}
+
 type backendDiagnostic struct {
 	RuntimeName        string
 	RuntimeDigest      string

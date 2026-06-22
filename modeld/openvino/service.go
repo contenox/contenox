@@ -23,6 +23,15 @@ const openvinoEvictionBlock = 32
 // the venv. OpenVINO GenAI loads that extension via OPENVINO_TOKENIZERS_PATH_GENAI.
 var buildTokenizersPath string
 
+// buildGenAIVersion is the pinned OpenVINO GenAI version this backend was built
+// against, injected at link time (empty for a plain `go build`). It lets
+// `modeld version` cross-check that a packaged binary matches its bundle manifest.
+var buildGenAIVersion string
+
+// BuildGenAIVersion returns the pinned OpenVINO GenAI version. Cheap and
+// side-effect free, so `modeld version` can report it without loading native libs.
+func BuildGenAIVersion() string { return buildGenAIVersion }
+
 // tokenizersLibName is the extension file the bundle/venv provides.
 const tokenizersLibName = "libopenvino_tokenizers.so"
 

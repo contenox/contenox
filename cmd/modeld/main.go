@@ -8,8 +8,9 @@
 //
 // Usage:
 //
-//	modeld serve  [--data-root DIR] [--ttl DURATION] [--mem-max 8GiB] [--mem-reserve 2GiB] [--mem-cold 16GiB]
-//	modeld status [--data-root DIR] [--json]
+//	modeld serve   [--data-root DIR] [--ttl DURATION] [--mem-max 8GiB] [--mem-reserve 2GiB] [--mem-cold 16GiB]
+//	modeld status  [--data-root DIR] [--json]
+//	modeld version [--json]
 package main
 
 import (
@@ -59,6 +60,12 @@ func run(args []string) error {
 		return err
 	}
 
+	// version needs neither a data root nor the lease: it reports build metadata
+	// (compiled backends) so a release smoke check can run against a fresh binary.
+	if cmd == "version" {
+		return printVersion(*asJSON)
+	}
+
 	resolvedRoot, leasePath, err := resolvePaths(*dataRoot)
 	if err != nil {
 		return err
@@ -78,7 +85,7 @@ func run(args []string) error {
 	case "status":
 		return status(leasePath, *asJSON)
 	default:
-		return fmt.Errorf("unknown command %q (want: serve | status)", cmd)
+		return fmt.Errorf("unknown command %q (want: serve | status | version)", cmd)
 	}
 }
 
