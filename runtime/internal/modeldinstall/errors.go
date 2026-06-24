@@ -7,19 +7,23 @@ import "errors"
 // mismatch is a hard failure: the download must not be treated as merely
 // unavailable.
 var (
-	// ErrNoOfficialVersion: the CLI version is not a release tag (dev build).
-	ErrNoOfficialVersion = errors.New("modeld setup: CLI version is not an official release")
-	// ErrNoPrebuiltArtifact: no package is published for this version/platform
-	// (the .sha256 returned 404).
-	ErrNoPrebuiltArtifact = errors.New("modeld setup: no prebuilt artifact for version/platform")
+	// ErrNoIndex: the public release index is missing, inaccessible, or not
+	// readable by anonymous setup clients.
+	ErrNoIndex = errors.New("modeld setup: no public release index")
+	// ErrNoCompatibleArtifact: the index has no stable build for this platform,
+	// provider backend, and transport protocol window.
+	ErrNoCompatibleArtifact = errors.New("modeld setup: no compatible prebuilt artifact")
+	// ErrArtifactUnavailable: the index selected an artifact whose archive or
+	// checksum object could not be fetched.
+	ErrArtifactUnavailable = errors.New("modeld setup: selected artifact is unavailable")
 	// ErrChecksumMismatch: the archive did not match its published checksum.
 	ErrChecksumMismatch = errors.New("modeld setup: checksum mismatch")
 	// ErrUnsupportedPlatform: this GOOS has no published package format.
 	ErrUnsupportedPlatform = errors.New("modeld setup: unsupported platform")
+	// ErrProtocolMismatch: the installed modeld speaks a transport protocol this
+	// runtime build does not support.
+	ErrProtocolMismatch = errors.New("modeld setup: incompatible modeld transport protocol")
 	// ErrBackendMissing: the installed modeld lacks the compiled backend the
 	// selected provider needs.
 	ErrBackendMissing = errors.New("modeld setup: installed modeld lacks required compiled backend")
-	// ErrPublicAccess: the artifact exists but is not publicly readable (HTTP 403),
-	// which is a release-side configuration problem, not a "no package" answer.
-	ErrPublicAccess = errors.New("modeld setup: prebuilt artifact is not publicly accessible")
 )

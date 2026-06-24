@@ -1,16 +1,18 @@
 // Package modeldinstall discovers, downloads, verifies, installs, and validates a
 // prebuilt modeld package for the current machine. It is the implementation behind
 // the `contenox setup` check for the local llama/openvino providers: see
-// docs/blueprints/modeld-setup-artifact-detection.md.
+// docs/blueprints/modeld-version-decoupling.md.
 //
 // It speaks plain HTTPS to the public release prefix — no AWS SDK, no bucket
-// listing, no credentials. The .sha256 file is the availability probe; the archive
-// is verified against it before extraction, and the extracted binary is validated
-// with `modeld version --json` before it is moved into place.
+// listing, no credentials. The public index is the availability source of truth;
+// selected archives are verified against their checksum before extraction, and
+// the extracted binary is validated with `modeld version --json` before it is
+// moved into place.
 package modeldinstall
 
 import (
 	"fmt"
+	"path"
 	"strings"
 )
 
@@ -45,50 +47,69 @@ func LauncherName(goos string) string {
 	return "modeld"
 }
 
-// IsOfficialVersion reports whether v is an official release tag the default
-// download path may use. Dev builds ("", "dev", "main", "unknown", commit shas)
-// are not official: setup must fall back to source-build instead of silently
-// downloading an arbitrary package.
-func IsOfficialVersion(v string) bool {
-	return strings.HasPrefix(strings.TrimSpace(v), "v")
-}
-
-// artifact holds the deterministic release names and URLs for a version+platform.
+// artifact holds the release object selected from the public index.
 type artifact struct {
 	version    string
 	platform   string
-	name       string // modeld-<version>-<platform>.<ext>
+	protocol   int
+	backends   []string
+	name       string
 	archiveURL string
 	sumURL     string
+	size       int64
 }
 
 // topLevelDir is the single directory the archive unpacks to:
-// modeld-<version>-<platform> (the name without its archive extension). The
-// release packer tars/zips that directory, so extraction yields exactly one entry.
+// modeld-<version>-<platform> (the archive name without its archive extension).
+// The release packer tars/zips that directory, so extraction yields exactly one
+// entry.
 func (a artifact) topLevelDir() string {
-	return fmt.Sprintf("modeld-%s-%s", a.version, a.platform)
+	name := a.name
+	name = strings.TrimSuffix(name, ".tar.gz")
+	name = strings.TrimSuffix(name, ".zip")
+	return name
 }
 
-// resolveArtifact builds the release names/URLs, or returns ErrNoOfficialVersion /
-// ErrUnsupportedPlatform when no package could exist for this version/platform.
-func resolveArtifact(baseURL, version, goos, goarch string) (artifact, error) {
-	version = strings.TrimSpace(version)
-	if !IsOfficialVersion(version) {
-		return artifact{}, ErrNoOfficialVersion
-	}
+func artifactFromBuild(baseURL string, b indexBuild, goos string) (artifact, error) {
 	ext := archiveExt(goos)
 	if ext == "" {
 		return artifact{}, ErrUnsupportedPlatform
 	}
-	plat := Platform(goos, goarch)
-	name := fmt.Sprintf("modeld-%s-%s%s", version, plat, ext)
-	base := strings.TrimRight(baseURL, "/")
-	archiveURL := fmt.Sprintf("%s/%s/%s", base, version, name)
+	if !strings.HasSuffix(b.Archive, ext) {
+		return artifact{}, fmt.Errorf("modeld setup: index archive %q does not match expected %s package", b.Archive, ext)
+	}
+	if err := validateRelativeObjectPath(b.Archive); err != nil {
+		return artifact{}, fmt.Errorf("modeld setup: invalid archive path in index: %w", err)
+	}
+	if err := validateRelativeObjectPath(b.SHA256); err != nil {
+		return artifact{}, fmt.Errorf("modeld setup: invalid checksum path in index: %w", err)
+	}
 	return artifact{
-		version:    version,
-		platform:   plat,
-		name:       name,
-		archiveURL: archiveURL,
-		sumURL:     archiveURL + ".sha256",
+		version:    strings.TrimSpace(b.Version),
+		platform:   b.Platform,
+		protocol:   b.Protocol,
+		backends:   append([]string(nil), b.Backends...),
+		name:       path.Base(b.Archive),
+		archiveURL: objectURL(baseURL, b.Archive),
+		sumURL:     objectURL(baseURL, b.SHA256),
+		size:       b.Size,
 	}, nil
+}
+
+func objectURL(baseURL, rel string) string {
+	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(rel, "/")
+}
+
+func validateRelativeObjectPath(p string) error {
+	if strings.TrimSpace(p) == "" {
+		return fmt.Errorf("empty path")
+	}
+	if strings.HasPrefix(p, "/") {
+		return fmt.Errorf("%q is absolute", p)
+	}
+	clean := path.Clean(p)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("%q escapes the release prefix", p)
+	}
+	return nil
 }

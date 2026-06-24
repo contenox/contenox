@@ -21,6 +21,7 @@ import (
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/transport"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -202,17 +203,17 @@ func isLocalModeldProvider(provider string) bool {
 	}
 }
 
-// setupLocalModeld checks the public release surface for a prebuilt modeld package
-// matching this CLI version + platform and installs it. On any soft failure (no
-// package, dev build, unsupported platform, network error) it falls back to the
-// source-build instructions; a checksum mismatch is reported as a hard failure
-// without falling back. Backend selection is never forced here — modeld picks its
-// live backend at `serve` time.
+// setupLocalModeld resolves a protocol-compatible prebuilt modeld package for
+// this platform and installs it. On any soft failure (no index, no compatible
+// package, unsupported platform, network error) it falls back to the source-build
+// instructions; a checksum mismatch is reported as a hard failure without
+// falling back. Backend selection is never forced here — modeld picks its live
+// backend at `serve` time.
 func setupLocalModeld(out io.Writer, provider string) {
 	runLocalModeldSetup(out, provider, modeldinstall.Options{
-		Version:  strings.TrimSpace(CLIVersion()),
-		DataRoot: modeldprobe.DefaultDataRoot(),
-		Progress: out,
+		ClientVersion: strings.TrimSpace(CLIVersion()),
+		DataRoot:      modeldprobe.DefaultDataRoot(),
+		Progress:      out,
 	})
 }
 
@@ -220,10 +221,6 @@ func setupLocalModeld(out io.Writer, provider string) {
 // install options (so tests can point at a fake server + temp data root) and
 // drives the prebuilt-check / install / fallback UX.
 func runLocalModeldSetup(out io.Writer, provider string, opts modeldinstall.Options) {
-	version := opts.Version
-	if version == "" {
-		version = strings.TrimSpace(CLIVersion())
-	}
 	goos := opts.GOOS
 	if goos == "" {
 		goos = runtime.GOOS
@@ -238,18 +235,18 @@ func runLocalModeldSetup(out io.Writer, provider string, opts modeldinstall.Opti
 	}
 	fmt.Fprintln(out, "")
 	fmt.Fprintf(out, "  Local modeld provider selected: %s\n", provider)
-	fmt.Fprintf(out, "  Checking prebuilt modeld package for %s %s...\n", version, platform)
+	fmt.Fprintf(out, "  Resolving a compatible modeld build (protocol %d, %s)...\n", transport.ProtocolVersion, platform)
 
 	res, err := modeldinstall.EnsureInstalled(context.Background(), provider, opts)
 	if err != nil {
-		printModeldInstallFallback(out, provider, version, platform, err)
+		printModeldInstallFallback(out, provider, platform, err)
 		return
 	}
 
 	if res.AlreadyInstalled {
 		fmt.Fprintf(out, "  Using installed modeld at %s\n", res.LauncherPath)
 	}
-	fmt.Fprintf(out, "  Validated modeld %s with compiled backends: %s\n", res.Version, strings.Join(res.Backends, ", "))
+	fmt.Fprintf(out, "  Validated modeld %s (protocol %d) with compiled backends: %s\n", res.Version, res.Protocol, strings.Join(res.Backends, ", "))
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  Start modeld:")
 	fmt.Fprintf(out, "    %s serve\n", res.LauncherPath)
@@ -268,23 +265,27 @@ func runLocalModeldSetup(out io.Writer, provider string, opts modeldinstall.Opti
 
 // printModeldInstallFallback explains why the prebuilt path did not apply and,
 // except for a checksum mismatch, prints the source-build instructions.
-func printModeldInstallFallback(out io.Writer, provider, version, platform string, err error) {
+func printModeldInstallFallback(out io.Writer, provider, platform string, err error) {
 	switch {
 	case errors.Is(err, modeldinstall.ErrChecksumMismatch):
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "  Downloaded modeld package failed checksum verification.")
 		fmt.Fprintln(out, "  The package was not installed.")
 		return
-	case errors.Is(err, modeldinstall.ErrNoPrebuiltArtifact):
-		fmt.Fprintf(out, "\n  No prebuilt modeld package is published for %s %s yet.\n", version, platform)
+	case errors.Is(err, modeldinstall.ErrNoIndex):
+		fmt.Fprintln(out, "\n  Could not reach the modeld release index. Config is saved; rerun `contenox setup` later.")
+	case errors.Is(err, modeldinstall.ErrNoCompatibleArtifact):
+		fmt.Fprintf(out, "\n  No prebuilt modeld build is compatible with this contenox (protocol %d, %s).\n", transport.ProtocolVersion, platform)
+	case errors.Is(err, modeldinstall.ErrArtifactUnavailable):
+		fmt.Fprintln(out, "\n  The selected prebuilt modeld artifact is not available from the release store.")
 	case errors.Is(err, modeldinstall.ErrUnsupportedPlatform):
 		fmt.Fprintf(out, "\n  No prebuilt modeld package format exists for %s.\n", platform)
-	case errors.Is(err, modeldinstall.ErrNoOfficialVersion):
-		fmt.Fprintln(out, "\n  This is a development CLI build, so no exact prebuilt package is selected.")
+	case errors.Is(err, modeldinstall.ErrProtocolMismatch):
+		fmt.Fprintf(out, "\n  The installed modeld speaks an unsupported transport protocol for this contenox (supported: %d..%d).\n", transport.MinProtocol, transport.ProtocolVersion)
 	case errors.Is(err, modeldinstall.ErrBackendMissing):
 		fmt.Fprintf(out, "\n  The prebuilt modeld package does not include the %s backend.\n", provider)
 	default:
-		fmt.Fprintf(out, "\n  Could not check prebuilt modeld packages: %v\n", err)
+		fmt.Fprintf(out, "\n  Could not check prebuilt modeld builds: %v\n", err)
 		fmt.Fprintln(out, "  Config is saved. You can rerun `contenox setup` later.")
 	}
 	fmt.Fprintln(out, "  Use the source-build path for now:")

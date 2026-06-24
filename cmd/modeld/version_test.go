@@ -34,6 +34,9 @@ func TestUnit_VersionInfo(t *testing.T) {
 		if got.Version != "v1.2.3" {
 			t.Fatalf("Version = %q, want v1.2.3", got.Version)
 		}
+		if got.Protocol != transport.ProtocolVersion {
+			t.Fatalf("Protocol = %d, want %d", got.Protocol, transport.ProtocolVersion)
+		}
 		if want := []string{"llama", "openvino"}; !equalStrings(got.Backends, want) {
 			t.Fatalf("Backends = %v, want %v", got.Backends, want)
 		}
@@ -50,6 +53,9 @@ func TestUnit_VersionInfo(t *testing.T) {
 		got := collectVersionInfo()
 		if got.Version != "dev" {
 			t.Fatalf("Version = %q, want dev", got.Version)
+		}
+		if got.Protocol != transport.ProtocolVersion {
+			t.Fatalf("Protocol = %d, want %d", got.Protocol, transport.ProtocolVersion)
 		}
 		if got.Backends == nil || len(got.Backends) != 0 {
 			t.Fatalf("Backends = %#v, want non-nil empty slice", got.Backends)

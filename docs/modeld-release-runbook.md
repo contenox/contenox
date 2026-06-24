@@ -242,13 +242,15 @@ after deciding that local package is the release artifact to publish.
 The final package upload path is:
 
 ```text
-$MODELD_RELEASE_S3_URI/$(cat runtime/version/version.txt)/
+$MODELD_RELEASE_S3_URI/$(cat cmd/modeld/version.txt)/
 ```
 
 Verify:
 
 ```bash
-aws s3 ls "$MODELD_RELEASE_S3_URI/$(cat runtime/version/version.txt)/"
+MODELD_VERSION="$(tr -d '\r\n' < cmd/modeld/version.txt)"
+aws s3 ls "$MODELD_RELEASE_S3_URI/$MODELD_VERSION/"
+aws s3 cp "$MODELD_RELEASE_S3_URI/index.json" -
 ```
 
 ## Public Download Surface
@@ -271,7 +273,9 @@ aws s3api put-bucket-policy \
 Verify anonymous access:
 
 ```bash
-curl -fsSL "$MODELD_RELEASE_BASE_URL/$(cat runtime/version/version.txt)/modeld-$(cat runtime/version/version.txt)-linux-amd64.tar.gz.sha256"
+MODELD_VERSION="$(tr -d '\r\n' < cmd/modeld/version.txt)"
+curl -fsSL "$MODELD_RELEASE_BASE_URL/index.json"
+curl -fsSL "$MODELD_RELEASE_BASE_URL/$MODELD_VERSION/modeld-$MODELD_VERSION-linux-amd64.tar.gz.sha256"
 ```
 
 Expected names look like:

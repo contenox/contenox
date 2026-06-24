@@ -14,6 +14,8 @@
 #   VERSION          expected modeld version, e.g. v0.32.5
 #   PLATFORM         e.g. linux-amd64
 #   EXPECT_OPENVINO  1 to require the openvino backend, 0 for llama-only
+#   MIN_PROTOCOL     oldest supported transport protocol for this runtime
+#   PROTOCOL_VERSION newest supported transport protocol for this runtime
 set -euo pipefail
 
 fail() { echo "modeld-package-release: $*" >&2; exit 1; }
@@ -33,6 +35,16 @@ echo "$report"
 reported_version=$(printf '%s' "$report" | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -1)
 [ "$reported_version" = "$VERSION" ] || fail "version mismatch: binary reports '$reported_version', expected '$VERSION'"
 
+reported_protocol=$(printf '%s' "$report" | sed -n 's/.*"protocol": *\([0-9][0-9]*\).*/\1/p' | head -1)
+[ -n "$reported_protocol" ] || fail "packaged binary did not report transport protocol"
+[ "$reported_protocol" -gt 0 ] || fail "packaged binary reported invalid protocol: $reported_protocol"
+if [ -n "${MIN_PROTOCOL:-}" ] && [ "$reported_protocol" -lt "$MIN_PROTOCOL" ]; then
+  fail "protocol mismatch: binary reports $reported_protocol, minimum supported is $MIN_PROTOCOL"
+fi
+if [ -n "${PROTOCOL_VERSION:-}" ] && [ "$reported_protocol" -gt "$PROTOCOL_VERSION" ]; then
+  fail "protocol mismatch: binary reports $reported_protocol, maximum supported is $PROTOCOL_VERSION"
+fi
+
 have_backend() { printf '%s' "$report" | grep -q "\"$1\""; }
 have_backend llama || fail "packaged binary does not report the 'llama' backend"
 if [ "$EXPECT_OPENVINO" = "1" ]; then
@@ -48,6 +60,7 @@ backends_json=$(printf '%s' "$report" | tr -d '\n' | sed -n 's/.*"backends": *\(
 cat > "$DIST_DIR/manifest.json" <<EOF
 {
   "modeld_version": "$VERSION",
+  "protocol": $reported_protocol,
   "platform": "$PLATFORM",
   "backends": $backends_json,
   "llama_cpp_commit": "$llama_commit",
@@ -70,5 +83,20 @@ else
 fi
 arcbase=$(basename -- "$archive")
 ( cd "$RELEASE_OUT" && sha256sum "$arcbase" > "$arcbase.sha256" )
+size=$(wc -c < "$archive" | tr -d ' ')
+channel=${MODELD_RELEASE_CHANNEL:-stable}
+cat > "$archive.build.json" <<EOF
+{
+  "version": "$VERSION",
+  "platform": "$PLATFORM",
+  "protocol": $reported_protocol,
+  "backends": $backends_json,
+  "channel": "$channel",
+  "archive": "$VERSION/$arcbase",
+  "sha256": "$VERSION/$arcbase.sha256",
+  "size": $size
+}
+EOF
 echo "modeld-package-release: archive -> $archive"
 echo "modeld-package-release: checksum -> $RELEASE_OUT/$arcbase.sha256"
+echo "modeld-package-release: build metadata -> $archive.build.json"

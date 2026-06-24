@@ -12,7 +12,7 @@ import (
 const maxSumBytes = 64 * 1024
 
 // httpStatusError carries a non-200 status for resources where the status has no
-// dedicated sentinel (the .sha256 maps 404/403 to typed errors before this).
+// dedicated sentinel.
 type httpStatusError struct {
 	status int
 	url    string
@@ -23,13 +23,12 @@ func (e *httpStatusError) Error() string {
 }
 
 func (c *client) userAgent() string {
-	return fmt.Sprintf("contenox/%s modeld-setup", c.version)
+	return fmt.Sprintf("contenox/%s modeld-setup", c.clientVersion)
 }
 
-// getSmallText fetches a small text resource (the .sha256 file). 404 maps to
-// ErrNoPrebuiltArtifact (the availability answer), 403 to ErrPublicAccess (a
-// release-side misconfiguration), other non-200 to an httpStatusError. Network
-// errors propagate as-is so the caller can fall back to source-build.
+// getSmallText fetches a small text resource (the .sha256 file). The index is
+// the availability source of truth, so 403 and 404 on selected objects both map
+// to artifact-unavailable fallback.
 func (c *client) getSmallText(ctx context.Context, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -44,10 +43,8 @@ func (c *client) getSmallText(ctx context.Context, url string) (string, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		// proceed
-	case http.StatusNotFound:
-		return "", ErrNoPrebuiltArtifact
-	case http.StatusForbidden:
-		return "", ErrPublicAccess
+	case http.StatusForbidden, http.StatusNotFound:
+		return "", ErrArtifactUnavailable
 	default:
 		return "", &httpStatusError{status: resp.StatusCode, url: url}
 	}
@@ -73,6 +70,9 @@ func (c *client) downloadToTemp(ctx context.Context, url, dir, pattern string) (
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusNotFound {
+			return "", ErrArtifactUnavailable
+		}
 		return "", &httpStatusError{status: resp.StatusCode, url: url}
 	}
 

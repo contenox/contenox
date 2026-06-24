@@ -41,6 +41,8 @@ MODELD_RELEASE_S3_URI ?=
 MODELD_STORE := bash $(PROJECT_ROOT)scripts/modeld-store.sh
 MODELD_RELEASE_DIST_DIR ?= $(PROJECT_ROOT)dist
 MODELD_RELEASE_NAME ?= modeld-$(MODELD_VERSION)-$(MODELD_PLATFORM)
+MODELD_PROTOCOL_VERSION ?= $(shell sed -n 's/^const ProtocolVersion = //p' $(PROJECT_ROOT)/runtime/transport/protocol.go | head -1)
+MODELD_MIN_PROTOCOL ?= $(shell sed -n 's/^const MinProtocol = //p' $(PROJECT_ROOT)/runtime/transport/protocol.go | head -1)
 # Release requires OpenVINO by default; package-modeld-release hard-fails if the
 # bundle lacks it. Set MODELD_RELEASE_OPENVINO=0 for llama-only platforms.
 MODELD_RELEASE_OPENVINO ?= 1
@@ -71,9 +73,10 @@ else
 MODELD_EXPECT_OPENVINO ?= $(if $(filter darwin%,$(MODELD_PLATFORM)),0,$(MODELD_RELEASE_OPENVINO))
 endif
 
-# modeld release version, stamped into `modeld version`. Defaults to the tracked
-# version file; release builds may override MODELD_VERSION with the tag.
-MODELD_VERSION ?= $(shell tr -d '\r\n' < $(PROJECT_ROOT)/runtime/version/version.txt 2>/dev/null)
+# modeld release version, stamped into `modeld version`. This is intentionally
+# independent from runtime/version/version.txt, which belongs to the CLI and
+# VS Code extension release cadence.
+MODELD_VERSION ?= $(shell tr -d '\r\n' < $(PROJECT_ROOT)/cmd/modeld/version.txt 2>/dev/null)
 # cmd/modeld is package main, so the linker binds -X against `main`, not the
 # full import path (the import-path form is silently ignored for main packages).
 MODELD_VERSION_LD_FLAGS = -X 'main.version=$(MODELD_VERSION)'
@@ -415,8 +418,10 @@ push-modeld-release:
 		echo "cp $$f -> $$dest/$$base"; \
 		$(MODELD_STORE) cp "$$f" "$$dest/$$base" || exit 1; \
 		$(MODELD_STORE) cp "$$f.sha256" "$$dest/$$base.sha256" || exit 1; \
+		$(MODELD_STORE) cp "$$f.build.json" "$$dest/$$base.build.json" || exit 1; \
 	done; \
-	[ "$$found" = 1 ] || { echo "no packages in $(MODELD_RELEASE_DIST_DIR); run: make package-modeld-release"; exit 1; }
+	[ "$$found" = 1 ] || { echo "no packages in $(MODELD_RELEASE_DIST_DIR); run: make package-modeld-release"; exit 1; }; \
+	bash $(PROJECT_ROOT)scripts/modeld-index-refresh.sh "$(MODELD_RELEASE_S3_URI)"
 
 # Validate that an extracted dependency bundle has everything the release link needs.
 # Hard-fails when OpenVINO is required but the bundle does not declare/contain it, so
@@ -524,6 +529,7 @@ $(MODELD_RELEASE_TARGETS): package-modeld-release-%: check-modeld-deps-bundle
 	@if [ -d "$(MODELD_DEPS_ROOT)/licenses" ]; then rm -rf "$(MODELD_DIST_DIR)/LICENSES"; cp -a "$(MODELD_DEPS_ROOT)/licenses" "$(MODELD_DIST_DIR)/LICENSES"; fi
 	@DIST_DIR="$(MODELD_DIST_DIR)" RELEASE_OUT="$(MODELD_RELEASE_DIST_DIR)" \
 	NAME="$(MODELD_RELEASE_NAME)" VERSION="$(MODELD_VERSION)" PLATFORM="$(MODELD_PLATFORM)" \
+	MIN_PROTOCOL="$(MODELD_MIN_PROTOCOL)" PROTOCOL_VERSION="$(MODELD_PROTOCOL_VERSION)" \
 	EXPECT_OPENVINO="$(MODELD_RELEASE_OPENVINO)" TARGET_OS="$*" LAUNCHER="$(MODELD_PKG_LAUNCHER_$*)" \
 	bash $(PROJECT_ROOT)scripts/modeld-package-release.sh
 

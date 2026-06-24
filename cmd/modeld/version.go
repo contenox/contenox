@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 // version is the modeld release version, injected at link time by the Makefile
@@ -26,6 +28,7 @@ func resolvedVersion() string {
 // ship fewer backends than expected.
 type versionInfo struct {
 	Version     string                       `json:"version"`
+	Protocol    int                          `json:"protocol"`
 	Backends    []string                     `json:"backends"`
 	BackendInfo map[string]map[string]string `json:"backend_info,omitempty"`
 }
@@ -41,6 +44,7 @@ func collectVersionInfo() versionInfo {
 	}
 	return versionInfo{
 		Version:     resolvedVersion(),
+		Protocol:    transport.ProtocolVersion,
 		Backends:    names,
 		BackendInfo: info,
 	}
@@ -60,6 +64,7 @@ func printVersion(asJSON bool) error {
 		return nil
 	}
 	fmt.Printf("modeld version %s\n", info.Version)
+	fmt.Printf("protocol: %d\n", info.Protocol)
 	if len(info.Backends) == 0 {
 		fmt.Println("backends: none")
 		return nil

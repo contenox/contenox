@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/contenox/runtime/runtime/version"
+	runtimeversion "github.com/contenox/runtime/runtime/version"
 )
 
 // sumCheckTimeout bounds the .sha256 availability probe so a hung network reads
@@ -22,43 +22,44 @@ const sumCheckTimeout = 30 * time.Second
 // defaults to the released behavior. Non-default fields exist for tests and dev
 // builds; end users never set them.
 type Options struct {
-	BaseURL    string       // default DefaultBaseURL
-	Version    string       // default version.Get(); must be an official tag
-	DataRoot   string       // install root parent; default ~/.contenox
-	GOOS       string       // default runtime.GOOS
-	GOARCH     string       // default runtime.GOARCH
-	HTTPClient *http.Client // default a no-overall-timeout client
-	Progress   io.Writer    // download progress sink; default io.Discard
+	BaseURL       string       // default DefaultBaseURL
+	ClientVersion string       // default runtime version.Get(); used only for User-Agent
+	DataRoot      string       // install root parent; default ~/.contenox
+	GOOS          string       // default runtime.GOOS
+	GOARCH        string       // default runtime.GOARCH
+	HTTPClient    *http.Client // default a no-overall-timeout client
+	Progress      io.Writer    // download progress sink; default io.Discard
 }
 
 // Result describes a successful install (or a compatible pre-existing install).
 type Result struct {
 	LauncherPath     string   // absolute path to the runnable modeld launcher
 	Version          string   // version the installed binary reports
+	Protocol         int      // transport protocol the installed binary reports
 	Platform         string   // e.g. "linux-amd64"
 	Backends         []string // compiled backends the binary reports
 	AlreadyInstalled bool     // true when a compatible binary was already present
 }
 
 type client struct {
-	baseURL  string
-	version  string
-	dataRoot string
-	goos     string
-	goarch   string
-	http     *http.Client
-	progress io.Writer
+	baseURL       string
+	clientVersion string
+	dataRoot      string
+	goos          string
+	goarch        string
+	http          *http.Client
+	progress      io.Writer
 }
 
 func newClient(opts Options) (*client, error) {
 	c := &client{
-		baseURL:  firstNonEmpty(opts.BaseURL, DefaultBaseURL),
-		version:  strings.TrimSpace(firstNonEmpty(opts.Version, version.Get())),
-		dataRoot: opts.DataRoot,
-		goos:     firstNonEmpty(opts.GOOS, runtime.GOOS),
-		goarch:   firstNonEmpty(opts.GOARCH, runtime.GOARCH),
-		http:     opts.HTTPClient,
-		progress: opts.Progress,
+		baseURL:       firstNonEmpty(opts.BaseURL, DefaultBaseURL),
+		clientVersion: strings.TrimSpace(firstNonEmpty(opts.ClientVersion, runtimeversion.Get())),
+		dataRoot:      opts.DataRoot,
+		goos:          firstNonEmpty(opts.GOOS, runtime.GOOS),
+		goarch:        firstNonEmpty(opts.GOARCH, runtime.GOARCH),
+		http:          opts.HTTPClient,
+		progress:      opts.Progress,
 	}
 	if c.dataRoot == "" {
 		home, err := os.UserHomeDir()
@@ -79,12 +80,13 @@ func newClient(opts Options) (*client, error) {
 }
 
 // EnsureInstalled makes a compatible modeld available for the selected provider
-// ("llama" or "openvino"): it reuses a compatible existing install, otherwise it
-// checks the public release surface, downloads, verifies, safely extracts,
-// validates with `modeld version --json`, and atomically installs into
-// ~/.contenox/modeld/<version>/<platform>/. Errors are typed (see errors.go) so
-// the caller can fall back to source-build for soft failures and surface a
-// checksum mismatch as a hard failure.
+// ("llama" or "openvino"): it reuses a compatible managed install, otherwise it
+// resolves the newest compatible stable build from the public index, downloads,
+// verifies, safely extracts, validates with `modeld version --json`, atomically
+// installs into ~/.contenox/modeld/<modeld-version>/<platform>/, and writes the
+// current pointer. Errors are typed (see errors.go) so the caller can fall back
+// to source-build for soft failures and surface a checksum mismatch as a hard
+// failure.
 func EnsureInstalled(ctx context.Context, provider string, opts Options) (Result, error) {
 	c, err := newClient(opts)
 	if err != nil {
@@ -94,19 +96,49 @@ func EnsureInstalled(ctx context.Context, provider string, opts Options) (Result
 }
 
 func (c *client) ensure(ctx context.Context, provider string) (Result, error) {
-	art, err := resolveArtifact(c.baseURL, c.version, c.goos, c.goarch)
-	if err != nil {
-		return Result{}, err // ErrNoOfficialVersion / ErrUnsupportedPlatform
+	platform := Platform(c.goos, c.goarch)
+	if archiveExt(c.goos) == "" {
+		return Result{}, ErrUnsupportedPlatform
 	}
+
+	if inst, err := FindCompatibleInstall(ctx, c.dataRoot, c.goos, c.goarch, provider); err == nil {
+		return Result{
+			LauncherPath:     inst.LauncherPath,
+			Version:          inst.Version,
+			Protocol:         inst.Protocol,
+			Platform:         inst.Platform,
+			Backends:         inst.Backends,
+			AlreadyInstalled: true,
+		}, nil
+	}
+
+	idx, err := c.fetchIndex(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	build, err := selectBuild(idx, platform, provider)
+	if err != nil {
+		return Result{}, err
+	}
+	art, err := artifactFromBuild(c.baseURL, build, c.goos)
+	if err != nil {
+		return Result{}, err
+	}
+	fmt.Fprintf(c.progress, "Selected modeld %s (protocol %d, backends: %s)\n", art.version, art.protocol, strings.Join(art.backends, ", "))
+
 	installDir := ManagedInstallDir(c.dataRoot, art.version, c.goos, c.goarch)
 	launcher := filepath.Join(installDir, LauncherName(c.goos))
 
 	// 1. Reuse a compatible existing install rather than re-downloading.
 	if info, perr := c.probeBinary(ctx, launcher); perr == nil {
-		if checkCapability(info, c.version, provider) == nil {
+		if checkCapability(info, provider) == nil {
+			if err := WriteCurrentPointer(c.dataRoot, installDir); err != nil {
+				return Result{}, err
+			}
 			return Result{
 				LauncherPath:     launcher,
 				Version:          info.Version,
+				Protocol:         info.Protocol,
 				Platform:         art.platform,
 				Backends:         info.Backends,
 				AlreadyInstalled: true,
@@ -114,7 +146,7 @@ func (c *client) ensure(ctx context.Context, provider string) (Result, error) {
 		}
 	}
 
-	// 2. The .sha256 is the availability probe (404 => ErrNoPrebuiltArtifact).
+	// 2. Fetch the selected checksum from the index-provided path.
 	sumCtx, cancel := context.WithTimeout(ctx, sumCheckTimeout)
 	defer cancel()
 	sumText, err := c.getSmallText(sumCtx, art.sumURL)
@@ -170,7 +202,7 @@ func (c *client) ensure(ctx context.Context, provider string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := checkCapability(info, c.version, provider); err != nil {
+	if err := checkCapability(info, provider); err != nil {
 		return Result{}, err
 	}
 
@@ -181,10 +213,14 @@ func (c *client) ensure(ctx context.Context, provider string) (Result, error) {
 	if err := replaceDir(extractedRoot, installDir); err != nil {
 		return Result{}, err
 	}
+	if err := WriteCurrentPointer(c.dataRoot, installDir); err != nil {
+		return Result{}, err
+	}
 	fmt.Fprintf(c.progress, "Installed modeld to %s\n", launcher)
 	return Result{
 		LauncherPath: launcher,
 		Version:      info.Version,
+		Protocol:     info.Protocol,
 		Platform:     art.platform,
 		Backends:     info.Backends,
 	}, nil

@@ -460,8 +460,10 @@ never rebuilds llama.cpp or OpenVINO from source.
 This is separate from the `contenox` / VS Code release (`.github/workflows/release.yml`
 and `docs/blueprints/ci-release-hardening.md`, which cover the GitHub-Actions tag-gated
 publish of the pure-Go CLI and the extension). modeld binaries are not GitHub-Release
-assets; they live in the S3 store. The two share the version in `runtime/version/version.txt`
-but are produced and published by different mechanisms.
+assets; they live in the S3 store. modeld now has its own release version in
+`cmd/modeld/version.txt`, while `runtime/version/version.txt` continues to drive the
+CLI and VS Code extension. The selection contract is protocol compatibility, as
+described in [modeld version decoupling](modeld-version-decoupling.md).
 
 ## Decisions
 

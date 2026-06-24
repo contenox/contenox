@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/runtime/internal/modeldinstall"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 func TestUnit_LocalModeldSourceBuildStepsKeepModelChoices(t *testing.T) {
@@ -67,8 +68,12 @@ func TestUnit_RunLocalModeldSetup_InstallsPrebuilt(t *testing.T) {
 	const version = "v9.9.9"
 	platform := runtime.GOOS + "-" + runtime.GOARCH
 	archive, sum := buildFakeModeldArchive(t, version, platform)
+	index := buildFakeModeldIndex(version, platform)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/index.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(index))
 		case strings.HasSuffix(r.URL.Path, ".sha256"):
 			fmt.Fprintf(w, "%s  modeld-%s-%s.tar.gz\n", sum, version, platform)
 		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
@@ -81,15 +86,16 @@ func TestUnit_RunLocalModeldSetup_InstallsPrebuilt(t *testing.T) {
 
 	var out bytes.Buffer
 	runLocalModeldSetup(&out, "openvino", modeldinstall.Options{
-		BaseURL:  srv.URL,
-		Version:  version,
-		DataRoot: t.TempDir(),
-		Progress: &out,
+		BaseURL:       srv.URL,
+		ClientVersion: "v99.99.99",
+		DataRoot:      t.TempDir(),
+		Progress:      &out,
 	})
 	got := out.String()
 	for _, want := range []string{
-		"Checking prebuilt modeld package for v9.9.9",
-		"Validated modeld v9.9.9 with compiled backends: llama, openvino",
+		"Resolving a compatible modeld build",
+		"Selected modeld v9.9.9",
+		"Validated modeld v9.9.9 (protocol 1) with compiled backends: llama, openvino",
 		"Start modeld:",
 		"serve",
 		"qwen2.5-coder-0.5b-ov", // openvino model choices still shown
@@ -103,9 +109,9 @@ func TestUnit_RunLocalModeldSetup_InstallsPrebuilt(t *testing.T) {
 	}
 }
 
-// When no package is published (404 on .sha256), setup keeps the source-build
+// When the release index is unavailable, setup keeps the source-build
 // guidance and the model choices remain visible.
-func TestUnit_RunLocalModeldSetup_FallsBackOn404(t *testing.T) {
+func TestUnit_RunLocalModeldSetup_FallsBackOnMissingIndex(t *testing.T) {
 	oldVersion := Version
 	Version = "v9.9.9"
 	t.Cleanup(func() { Version = oldVersion })
@@ -118,13 +124,12 @@ func TestUnit_RunLocalModeldSetup_FallsBackOn404(t *testing.T) {
 	var out bytes.Buffer
 	runLocalModeldSetup(&out, "llama", modeldinstall.Options{
 		BaseURL:  srv.URL,
-		Version:  "v9.9.9",
 		DataRoot: t.TempDir(),
 		Progress: &out,
 	})
 	got := out.String()
 	for _, want := range []string{
-		"No prebuilt modeld package is published",
+		"Could not reach the modeld release index",
 		"Use the source-build path",
 		"git clone --branch v9.9.9",
 		"qwen3-8b", // llama model choices still shown
@@ -144,8 +149,12 @@ func TestUnit_RunLocalModeldSetup_ChecksumMismatchIsHardFailure(t *testing.T) {
 	const version = "v9.9.9"
 	platform := runtime.GOOS + "-" + runtime.GOARCH
 	archive, _ := buildFakeModeldArchive(t, version, platform)
+	index := buildFakeModeldIndex(version, platform)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/index.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(index))
 		case strings.HasSuffix(r.URL.Path, ".sha256"):
 			fmt.Fprintf(w, "%s  modeld-%s-%s.tar.gz\n", strings.Repeat("0", 64), version, platform)
 		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
@@ -159,7 +168,6 @@ func TestUnit_RunLocalModeldSetup_ChecksumMismatchIsHardFailure(t *testing.T) {
 	var out bytes.Buffer
 	runLocalModeldSetup(&out, "llama", modeldinstall.Options{
 		BaseURL:  srv.URL,
-		Version:  version,
 		DataRoot: t.TempDir(),
 		Progress: &out,
 	})
@@ -175,7 +183,7 @@ func TestUnit_RunLocalModeldSetup_ChecksumMismatchIsHardFailure(t *testing.T) {
 func buildFakeModeldArchive(t *testing.T, version, platform string) ([]byte, string) {
 	t.Helper()
 	top := fmt.Sprintf("modeld-%s-%s", version, platform)
-	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' '{\"version\":\"%s\",\"backends\":[\"llama\",\"openvino\"]}'\n", version)
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' '{\"version\":\"%s\",\"protocol\":%d,\"backends\":[\"llama\",\"openvino\"]}'\n", version, transport.ProtocolVersion)
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
@@ -197,4 +205,10 @@ func buildFakeModeldArchive(t *testing.T, version, platform string) ([]byte, str
 	}
 	sum := sha256.Sum256(buf.Bytes())
 	return buf.Bytes(), hex.EncodeToString(sum[:])
+}
+
+func buildFakeModeldIndex(version, platform string) string {
+	name := fmt.Sprintf("modeld-%s-%s.tar.gz", version, platform)
+	return fmt.Sprintf(`{"schema":1,"builds":[{"version":%q,"platform":%q,"protocol":%d,"backends":["llama","openvino"],"channel":"stable","archive":%q,"sha256":%q,"size":123}]}`,
+		version, platform, transport.ProtocolVersion, version+"/"+name, version+"/"+name+".sha256")
 }

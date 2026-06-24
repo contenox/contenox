@@ -28,7 +28,6 @@ import (
 	"github.com/contenox/runtime/liblease"
 	"github.com/contenox/runtime/runtime/internal/modeldinstall"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
-	"github.com/contenox/runtime/runtime/version"
 )
 
 // Convention shared with the daemon; kept local so runtime does not depend on
@@ -120,9 +119,10 @@ func (s Status) Err() error {
 type Detector struct {
 	leasePath      string
 	binaryOverride string
-	managedBinary  string // Contenox-managed install path, derived from CLI version+platform
+	dataRoot       string
 	lookPath       func(string) (string, error)
 	statBinary     func(string) bool
+	findManaged    func(context.Context, string) (string, error)
 	now            func() time.Time
 	// health performs the reachability ping; injectable for tests. nil disables
 	// the ping (Probe then behaves like Detect).
@@ -138,24 +138,21 @@ func New(dataRoot string) *Detector {
 	return &Detector{
 		leasePath:      filepath.Join(dataRoot, leaseFileName),
 		binaryOverride: os.Getenv(binaryEnv),
-		managedBinary:  managedModeldBinary(dataRoot),
+		dataRoot:       dataRoot,
 		lookPath:       exec.LookPath,
 		statBinary:     fileExists,
+		findManaged:    findManagedModeldBinary,
 		now:            time.Now,
 		health:         grpcHealthCheck,
 	}
 }
 
-// managedModeldBinary derives the path of a `contenox setup`-installed modeld for
-// the current CLI version and platform, or "" for dev builds (which never install
-// a managed package). The layout is owned by modeldinstall so install and
-// discovery cannot drift.
-func managedModeldBinary(dataRoot string) string {
-	v := version.Get()
-	if !modeldinstall.IsOfficialVersion(v) {
-		return ""
+func findManagedModeldBinary(ctx context.Context, dataRoot string) (string, error) {
+	inst, err := modeldinstall.FindCompatibleInstall(ctx, dataRoot, runtime.GOOS, runtime.GOARCH, "")
+	if err != nil {
+		return "", err
 	}
-	return modeldinstall.ManagedLauncherPath(dataRoot, v, runtime.GOOS, runtime.GOARCH)
+	return inst.LauncherPath, nil
 }
 
 // Probe resolves the state and, when a fresh lease names a live owner, confirms
@@ -229,7 +226,7 @@ func (d *Detector) Detect() Status {
 
 // locate resolves the modeld binary: an explicit override first (required for
 // installs that are not on PATH, like the VS Code extension dir), then a
-// Contenox-managed install (what `contenox setup` downloads), then PATH.
+// protocol-compatible Contenox-managed install, then PATH.
 func (d *Detector) locate() string {
 	if d.binaryOverride != "" {
 		if d.statBinary(d.binaryOverride) {
@@ -237,8 +234,10 @@ func (d *Detector) locate() string {
 		}
 		return ""
 	}
-	if d.managedBinary != "" && d.statBinary(d.managedBinary) {
-		return d.managedBinary
+	if d.findManaged != nil {
+		if p, err := d.findManaged(context.Background(), d.dataRoot); err == nil && p != "" && d.statBinary(p) {
+			return p
+		}
 	}
 	if p, err := d.lookPath(binaryName); err == nil {
 		return p
