@@ -3,9 +3,9 @@
 #
 # A bundle is a *build input* consumed by `make package-modeld-release` via
 # MODELD_DEPS_ROOT. Bundles are built on whatever device/platform can compile the
-# variant (CPU-only, CUDA, HIP, with or without OpenVINO) and pushed to S3; the
-# release job downloads the right variant per platform and links modeld against it
-# without rebuilding llama.cpp or OpenVINO.
+# variant (CPU-only, CUDA, HIP, with or without OpenVINO) and pushed to S3; dev
+# flows and release assembly download the right variant per platform and link
+# modeld against it without rebuilding llama.cpp or OpenVINO.
 #
 # The layout faithfully relocates the dependency roots so the existing CGo flag
 # expressions in mk/llama-flags.mk and mk/openvino-flags.mk resolve unchanged when
@@ -154,7 +154,7 @@ MODELD_BUNDLE_GENAI_VERSION=$OPENVINO_GENAI_VERSION
 EOF
 
 # Note: no archive. Dependency bundles are uploaded to S3 as plain files
-# (aws s3 sync), so the release job downloads only the variant it needs.
+# (aws s3 sync), so consumers download only the variant they need.
 echo "modeld-deps-bundle: bundle dir -> $BUNDLE"
 echo "modeld-deps-bundle: fingerprint -> $FINGERPRINT"
 echo "$NAME"

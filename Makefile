@@ -1,6 +1,14 @@
 PROJECT_ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 .DEFAULT_GOAL := help
 
+# Optional local environment. This lets ignored repo-local `.env` files provide
+# release-store settings such as MODELD_DEPS_S3_URI and AWS_REGION.
+LOCAL_ENV_FILE := $(PROJECT_ROOT).env
+ifneq (,$(wildcard $(LOCAL_ENV_FILE)))
+include $(LOCAL_ENV_FILE)
+export $(shell sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*=.*/\1/p' $(LOCAL_ENV_FILE))
+endif
+
 # Shared native build flags for modeld and native backend tests.
 include $(PROJECT_ROOT)mk/openvino-flags.mk
 include $(PROJECT_ROOT)mk/llama-flags.mk
@@ -39,8 +47,9 @@ MODELD_RELEASE_OPENVINO ?= 1
 
 # Fingerprint profile (modeld-deps-fingerprint). Defaults describe THIS host's
 # variant; override to compute the fingerprint of a variant built on another device
-# (e.g. a windows/darwin bundle this Linux box cannot build) so the release can find
-# and download it from S3. Build-type/ABI mirror Makefile.llamacpp-direct.
+# (e.g. a windows/darwin bundle this Linux box cannot build). Build-type/ABI mirror
+# Makefile.llamacpp-direct.
+MODELD_FP_OPENVINO_WAS_SET := $(filter-out undefined default,$(origin MODELD_FP_OPENVINO))
 MODELD_FP_CUDA ?= $(if $(shell command -v nvcc 2>/dev/null),ON,OFF)
 MODELD_FP_HIP ?= $(if $(shell command -v hipcc 2>/dev/null),ON,OFF)
 # macOS is llama + Metal only; OpenVINO is never part of a darwin build, so its
@@ -48,6 +57,19 @@ MODELD_FP_HIP ?= $(if $(shell command -v hipcc 2>/dev/null),ON,OFF)
 MODELD_FP_OPENVINO ?= $(if $(filter darwin%,$(MODELD_PLATFORM)),0,$(if $(MODELD_HAVE_OPENVINO),1,0))
 MODELD_FP_BUILD_TYPE ?= Release
 MODELD_FP_RUNTIME_ABI ?= dl-v1
+
+# Consumer/preflight profile. Defaults describe the bundle we want to consume, not
+# what this checkout can build locally. That lets dev/release machines without
+# OpenVINO installed still discover and pull the official OpenVINO bundle.
+MODELD_EXPECT_CUDA ?= $(MODELD_FP_CUDA)
+MODELD_EXPECT_HIP ?= $(MODELD_FP_HIP)
+MODELD_EXPECT_BUILD_TYPE ?= $(MODELD_FP_BUILD_TYPE)
+MODELD_EXPECT_RUNTIME_ABI ?= $(MODELD_FP_RUNTIME_ABI)
+ifneq ($(MODELD_FP_OPENVINO_WAS_SET),)
+MODELD_EXPECT_OPENVINO ?= $(MODELD_FP_OPENVINO)
+else
+MODELD_EXPECT_OPENVINO ?= $(if $(filter darwin%,$(MODELD_PLATFORM)),0,$(MODELD_RELEASE_OPENVINO))
+endif
 
 # modeld release version, stamped into `modeld version`. Defaults to the tracked
 # version file; release builds may override MODELD_VERSION with the tag.
@@ -108,9 +130,9 @@ VSCODE_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCOD
 VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
 
 .PHONY: help \
-	build-contenox build-contenox-windows build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
+	build-contenox build-contenox-windows build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-prebuilt build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
 	bundle-modeld-deps bundle-modeld-deps-linux bundle-modeld-deps-darwin bundle-modeld-deps-windows \
-	push-modeld-deps pull-modeld-deps push-modeld-release modeld-deps-fingerprint check-modeld-deps-bundle \
+	push-modeld-deps pull-modeld-deps push-modeld-release modeld-deps-fingerprint modeld-deps-profile modeld-deps-pull-dir check-modeld-deps-store check-modeld-deps-bundle deps-modeld-prebuilt \
 	package-modeld-release package-modeld-release-linux package-modeld-release-darwin package-modeld-release-windows \
 	check-modeld-llama-deps \
 	clean clean-vscode \
@@ -121,13 +143,14 @@ VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET
 
 help:
 	@echo "build-*    build-contenox build-contenox-windows build-llamacpp-runtime build-modeld build-vscode"
-	@echo "package-*  package-modeld package-modeld-release package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
+	@echo "package-*  package-modeld package-modeld-prebuilt package-modeld-release package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
 	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] push-modeld-release"
-	@echo "           (per-OS device builds its variant -> S3 store -> linked package; bare targets dispatch to host OS; see docs/blueprints/modeld-release-artifacts.md)"
+	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/modeld-release-runbook.md)"
 	@echo "test-*     test test-unit test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
 	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
-	@echo "deps-*     deps-modeld deps-llamacpp-ref deps-openvino deps-vscode"
+	@echo "deps-*     deps-modeld deps-modeld-prebuilt deps-llamacpp-ref deps-openvino deps-vscode"
+	@echo "           (deps-modeld-prebuilt checks/pulls the expected native dep bundle from the store)"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
 
@@ -248,8 +271,8 @@ bundle-modeld-deps-windows:
 	@$(MODELD_DEPS_BUNDLE_ENV) bash $(PROJECT_ROOT)scripts/modeld-deps-bundle-windows.sh
 
 # Print the fingerprint of a bundle's build inputs (pins). Pin-only, so it needs no
-# built artifacts: a device can compute another platform's fingerprint (override
-# MODELD_PLATFORM/MODELD_FP_*) to locate that variant on S3 without building it.
+# built artifacts. Producer checks can override MODELD_PLATFORM/MODELD_FP_*;
+# consumer preflight/pull targets use MODELD_PLATFORM/MODELD_EXPECT_*.
 modeld-deps-fingerprint:
 	@PLATFORM="$(MODELD_PLATFORM)" \
 	LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
@@ -259,6 +282,59 @@ modeld-deps-fingerprint:
 	OPENVINO="$(MODELD_FP_OPENVINO)" \
 	OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
 	bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh
+
+# Print the consumer-side dependency profile and fingerprint. This is the pre-build
+# answer to "which native dep bundle do I need?" and does not require built deps.
+modeld-deps-profile:
+	@fp=$$(PLATFORM="$(MODELD_PLATFORM)" LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
+		LLAMA_BUILD_TYPE="$(MODELD_EXPECT_BUILD_TYPE)" LLAMA_RUNTIME_ABI="$(MODELD_EXPECT_RUNTIME_ABI)" \
+		CUDA="$(MODELD_EXPECT_CUDA)" HIP="$(MODELD_EXPECT_HIP)" OPENVINO="$(MODELD_EXPECT_OPENVINO)" \
+		OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
+		bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh); \
+	echo "platform=$(MODELD_PLATFORM)"; \
+	echo "fingerprint=$$fp"; \
+	echo "llama_cpp_commit=$(LLAMA_CPP_COMMIT)"; \
+	echo "llama_build_type=$(MODELD_EXPECT_BUILD_TYPE)"; \
+	echo "llama_runtime_abi=$(MODELD_EXPECT_RUNTIME_ABI)"; \
+	echo "cuda=$(MODELD_EXPECT_CUDA)"; \
+	echo "hip=$(MODELD_EXPECT_HIP)"; \
+	echo "openvino=$(MODELD_EXPECT_OPENVINO)"; \
+	echo "openvino_genai_version=$(OPENVINO_GENAI_VERSION)"; \
+	echo "pull_dir=$(MODELD_PULL_DIR)/$(MODELD_PLATFORM)-$$fp"; \
+	if [ -n "$(MODELD_DEPS_S3_URI)" ]; then \
+		echo "manifest=$(MODELD_DEPS_S3_URI)/$(MODELD_PLATFORM)/$$fp/manifest.json"; \
+	else \
+		echo "manifest=(set MODELD_DEPS_S3_URI to check a store)"; \
+	fi
+
+modeld-deps-pull-dir:
+	@fp=$$(PLATFORM="$(MODELD_PLATFORM)" LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
+		LLAMA_BUILD_TYPE="$(MODELD_EXPECT_BUILD_TYPE)" LLAMA_RUNTIME_ABI="$(MODELD_EXPECT_RUNTIME_ABI)" \
+		CUDA="$(MODELD_EXPECT_CUDA)" HIP="$(MODELD_EXPECT_HIP)" OPENVINO="$(MODELD_EXPECT_OPENVINO)" \
+		OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
+		bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh); \
+	echo "$(MODELD_PULL_DIR)/$(MODELD_PLATFORM)-$$fp"
+
+# Preflight the store before building native deps. Exit 0 only when the exact
+# expected platform/fingerprint manifest exists.
+check-modeld-deps-store:
+	@test -n "$(MODELD_DEPS_S3_URI)" || { echo "set MODELD_DEPS_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
+	@fp=$$(PLATFORM="$(MODELD_PLATFORM)" LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
+		LLAMA_BUILD_TYPE="$(MODELD_EXPECT_BUILD_TYPE)" LLAMA_RUNTIME_ABI="$(MODELD_EXPECT_RUNTIME_ABI)" \
+		CUDA="$(MODELD_EXPECT_CUDA)" HIP="$(MODELD_EXPECT_HIP)" OPENVINO="$(MODELD_EXPECT_OPENVINO)" \
+		OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
+		bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh); \
+	key="$(MODELD_DEPS_S3_URI)/$(MODELD_PLATFORM)/$$fp"; \
+	echo "checking modeld deps: platform=$(MODELD_PLATFORM) fingerprint=$$fp"; \
+	echo "profile: llama=$(LLAMA_CPP_COMMIT) build=$(MODELD_EXPECT_BUILD_TYPE) abi=$(MODELD_EXPECT_RUNTIME_ABI) cuda=$(MODELD_EXPECT_CUDA) hip=$(MODELD_EXPECT_HIP) openvino=$(MODELD_EXPECT_OPENVINO) genai=$(OPENVINO_GENAI_VERSION)"; \
+	if $(MODELD_STORE) exists "$$key/manifest.json"; then \
+		echo "available: $$key/manifest.json"; \
+		echo "pull: make pull-modeld-deps"; \
+	else \
+		echo "missing: $$key/manifest.json"; \
+		echo "build/push on a capable producer device: make deps-modeld bundle-modeld-deps push-modeld-deps"; \
+		exit 1; \
+	fi
 
 # Upload native dependency bundles to the store as plain files (no archive), keyed by
 # platform/fingerprint. Each device pushes the variants it can build; the union in the
@@ -282,13 +358,13 @@ push-modeld-deps:
 	[ "$$found" = 1 ] || { echo "no bundles in $(MODELD_DEPS_OUT); run: make bundle-modeld-deps"; exit 1; }
 
 # Fetch a native dependency bundle from the store into a local dir for packaging. The
-# fingerprint is computed from the pin profile, so override MODELD_PLATFORM/MODELD_FP_*
-# to pull a variant this device cannot build (e.g. a windows/darwin bundle).
+# fingerprint is computed from the expected consumer profile, so override
+# MODELD_PLATFORM/MODELD_EXPECT_* to pull a different platform or variant.
 pull-modeld-deps:
 	@test -n "$(MODELD_DEPS_S3_URI)" || { echo "set MODELD_DEPS_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
 	@fp=$$(PLATFORM="$(MODELD_PLATFORM)" LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
-		LLAMA_BUILD_TYPE="$(MODELD_FP_BUILD_TYPE)" LLAMA_RUNTIME_ABI="$(MODELD_FP_RUNTIME_ABI)" \
-		CUDA="$(MODELD_FP_CUDA)" HIP="$(MODELD_FP_HIP)" OPENVINO="$(MODELD_FP_OPENVINO)" \
+		LLAMA_BUILD_TYPE="$(MODELD_EXPECT_BUILD_TYPE)" LLAMA_RUNTIME_ABI="$(MODELD_EXPECT_RUNTIME_ABI)" \
+		CUDA="$(MODELD_EXPECT_CUDA)" HIP="$(MODELD_EXPECT_HIP)" OPENVINO="$(MODELD_EXPECT_OPENVINO)" \
 		OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
 		bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh); \
 	key="$(MODELD_DEPS_S3_URI)/$(MODELD_PLATFORM)/$$fp"; \
@@ -297,6 +373,36 @@ pull-modeld-deps:
 	$(MODELD_STORE) get "$$key" "$$dest"; \
 	echo "pulled $(MODELD_PLATFORM) ($$fp) -> $$dest"; \
 	echo "next: make package-modeld-release MODELD_DEPS_ROOT=$$dest"
+
+# Dev/release consumer convenience: preflight, pull, and validate the expected
+# prebuilt native dependency bundle without building llama.cpp/OpenVINO locally.
+deps-modeld-prebuilt:
+	@test -n "$(MODELD_DEPS_S3_URI)" || { echo "set MODELD_DEPS_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
+	@fp=$$(PLATFORM="$(MODELD_PLATFORM)" LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
+		LLAMA_BUILD_TYPE="$(MODELD_EXPECT_BUILD_TYPE)" LLAMA_RUNTIME_ABI="$(MODELD_EXPECT_RUNTIME_ABI)" \
+		CUDA="$(MODELD_EXPECT_CUDA)" HIP="$(MODELD_EXPECT_HIP)" OPENVINO="$(MODELD_EXPECT_OPENVINO)" \
+		OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
+		bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh); \
+	key="$(MODELD_DEPS_S3_URI)/$(MODELD_PLATFORM)/$$fp"; \
+	dest="$(MODELD_PULL_DIR)/$(MODELD_PLATFORM)-$$fp"; \
+	echo "checking modeld deps: platform=$(MODELD_PLATFORM) fingerprint=$$fp"; \
+	$(MODELD_STORE) exists "$$key/manifest.json" || { echo "prebuilt modeld deps missing: $$key/manifest.json"; echo "build/push on a capable producer device: make deps-modeld bundle-modeld-deps push-modeld-deps"; exit 1; }; \
+	$(MODELD_STORE) get "$$key" "$$dest"; \
+	$(MAKE) --no-print-directory check-modeld-deps-bundle MODELD_DEPS_ROOT="$$dest" MODELD_RELEASE_OPENVINO="$(MODELD_EXPECT_OPENVINO)"; \
+	echo "prebuilt modeld deps ready: MODELD_DEPS_ROOT=$$dest"
+
+# Local/dev packaging path that consumes the prebuilt native dependency bundle
+# instead of building heavy C/C++ dependencies on this machine. It does not upload.
+package-modeld-prebuilt:
+	@test -n "$(MODELD_DEPS_S3_URI)" || { echo "set MODELD_DEPS_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
+	@fp=$$(PLATFORM="$(MODELD_PLATFORM)" LLAMA_CPP_COMMIT="$(LLAMA_CPP_COMMIT)" \
+		LLAMA_BUILD_TYPE="$(MODELD_EXPECT_BUILD_TYPE)" LLAMA_RUNTIME_ABI="$(MODELD_EXPECT_RUNTIME_ABI)" \
+		CUDA="$(MODELD_EXPECT_CUDA)" HIP="$(MODELD_EXPECT_HIP)" OPENVINO="$(MODELD_EXPECT_OPENVINO)" \
+		OPENVINO_GENAI_VERSION="$(OPENVINO_GENAI_VERSION)" \
+		bash $(PROJECT_ROOT)scripts/modeld-deps-fingerprint.sh); \
+	dest="$(MODELD_PULL_DIR)/$(MODELD_PLATFORM)-$$fp"; \
+	$(MAKE) --no-print-directory deps-modeld-prebuilt; \
+	$(MAKE) --no-print-directory package-modeld-release MODELD_DEPS_ROOT="$$dest" MODELD_RELEASE_OPENVINO="$(MODELD_EXPECT_OPENVINO)"
 
 # Upload final modeld packages to the store, keyed by version. Final binaries live in
 # the store (S3), not GitHub Releases.

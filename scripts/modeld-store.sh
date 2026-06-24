@@ -4,10 +4,10 @@
 # an `s3://...` URI uses the aws CLI, anything else is treated as a local directory.
 #
 # This keeps the only S3-specific code in one place. Every other step — bundle
-# production, fingerprinting, dedup decisions, packaging, the smoke gate, and the
-# push -> pull -> package round-trip — is exercised by pointing the store at a local
-# directory, so it all tests without credentials. The literal `aws s3` transfer is the
-# only part that needs a real bucket.
+# production, fingerprinting, dedup decisions, consumer preflight, packaging, and
+# smoke gates are exercised by pointing the store at a local directory, so they test
+# without credentials. The literal `aws s3` transfer is the only part that needs a
+# real bucket.
 #
 # Verbs:
 #   exists <uri>            exit 0 if the object/prefix exists

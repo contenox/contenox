@@ -221,12 +221,19 @@ export CONTENOX_MODELD_BIN="$HOME/.local/share/contenox/modeld/modeld"
 
 ## Cross-Platform Release Bundles
 
-Official `modeld` packaging is per-OS and device-driven: each device builds the native
-dependency variants it can and pushes them to an S3 store; packaging links against a
-bundle pulled from that store. The native library names and backends differ per OS, so
-there is one producer/packager per OS (`scripts/modeld-deps-bundle-<os>.sh`); the
-bare targets dispatch to the host OS. See
-[the release blueprint](blueprints/modeld-release-artifacts.md) for the full design.
+Official `modeld` release work has two separate roles. Dependency producer
+devices build the native dependency variants they can and push those plain-file
+bundles to an S3 store. A later release assembly step pulls one of those bundles
+and links/packages `modeld` from it.
+
+The native library names and backends differ per OS, so there is one dependency
+producer per OS (`scripts/modeld-deps-bundle-<os>.sh`); the bare targets dispatch
+to the host OS.
+
+Use [the modeld release runbook](modeld-release-runbook.md) for the complete
+maintainer procedure: S3 bucket setup, repo-local `.env`, cross-device
+dependency handoff, release assembly, upload, and verification. See
+[the release blueprint](blueprints/modeld-release-artifacts.md) for the design.
 
 | OS | Backends | Notes |
 | --- | --- | --- |
@@ -234,21 +241,79 @@ bare targets dispatch to the host OS. See
 | darwin (Apple Silicon) | llama.cpp + Metal | **llama-only — no OpenVINO** (not supported on Apple Silicon) |
 | windows | llama.cpp (CPU/CUDA) + OpenVINO | MinGW/UCRT toolchain; `.dll` + DLL-next-to-exe; unverified |
 
-On the matching build device:
+The Makefile automatically loads a repo-root `.env` when present. A dependency
+producer device needs:
 
 ```bash
-make bundle-modeld-deps                 # build this host's dep bundle (dispatches by OS)
-make push-modeld-deps  MODELD_DEPS_S3_URI=s3://bucket/modeld-deps
-
-# package + publish (on a device of the target platform):
-make pull-modeld-deps  MODELD_DEPS_S3_URI=s3://bucket/modeld-deps
-make package-modeld-release MODELD_DEPS_ROOT=<pulled-bundle-dir>
-make push-modeld-release MODELD_RELEASE_S3_URI=s3://bucket/modeld
+AWS_REGION=us-east-1
+AWS_DEFAULT_REGION=us-east-1
+MODELD_DEPS_S3_URI=s3://bucket/modeld-deps
+MODELD_EXPECT_OPENVINO=1
 ```
 
-For darwin, OpenVINO is off by default; override with `MODELD_RELEASE_OPENVINO=1` only if
-you have OpenVINO GenAI working on the target. Point the S3 URIs at a local directory to
-exercise the whole push/pull/package flow without AWS credentials.
+The release assembly checkout also needs:
+
+```bash
+MODELD_RELEASE_S3_URI=s3://bucket/modeld
+```
+
+Then, on the matching dependency producer device:
+
+```bash
+make bundle-modeld-deps
+make push-modeld-deps
+```
+
+Verify the uploaded bundle:
+
+```bash
+for envf in bin/modeld-deps/*/bundle.env; do
+  (
+    . "$envf"
+    aws s3 ls "$MODELD_DEPS_S3_URI/$MODELD_BUNDLE_PLATFORM/$MODELD_BUNDLE_FINGERPRINT/manifest.json"
+  )
+done
+```
+
+On a dev or release consumer machine, precheck the exact dependency profile before
+building anything heavy:
+
+```bash
+make modeld-deps-profile
+make check-modeld-deps-store
+```
+
+If the prebuilt bundle exists, pull and validate it instead of rebuilding
+llama.cpp/OpenVINO locally:
+
+```bash
+make deps-modeld-prebuilt
+```
+
+For a local package built from the pulled prebuilt dependencies:
+
+```bash
+make package-modeld-prebuilt
+```
+
+The later release assembly step, not the dependency producer step, consumes a
+prebuilt bundle and publishes the final package:
+
+```bash
+make pull-modeld-deps
+DEPS_ROOT="$(make -s modeld-deps-pull-dir)"
+
+make package-modeld-release MODELD_DEPS_ROOT="$DEPS_ROOT"
+make push-modeld-release
+```
+
+For darwin, OpenVINO is off by default; override with
+`MODELD_RELEASE_OPENVINO=1` only if you have OpenVINO GenAI working on the target.
+For consumer preflight, override `MODELD_EXPECT_*` when you intentionally want a
+different variant from the defaults, such as `MODELD_EXPECT_CUDA=OFF` or
+`MODELD_PLATFORM=darwin-arm64 MODELD_EXPECT_OPENVINO=0`.
+Point the S3 URIs at local directories to exercise the dependency upload and
+release assembly flows without AWS credentials.
 
 ## Useful Commands
 

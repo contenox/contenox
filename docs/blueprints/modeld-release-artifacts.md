@@ -1,8 +1,10 @@
 # Blueprint: modeld Release Artifacts
 
 > Status: packaging blueprint. Scope is only how official `modeld` binaries are
-> built, packaged, checksummed, and uploaded. It deliberately does not define the
-> later `contenox setup` installer UX, service management, or daemon lifecycle.
+> built, packaged, checksummed, and uploaded. The `contenox setup` artifact
+> detection path is defined separately in
+> [modeld setup artifact detection](modeld-setup-artifact-detection.md). Service
+> management and daemon lifecycle remain follow-up work.
 
 ## Problem
 
@@ -33,7 +35,7 @@ Two constraints shape the release design:
 1. **Native dependencies are too heavy to rebuild on every tag.** Building llama.cpp
    and OpenVINO from source, per platform, with CUDA / macOS / Windows native
    toolchains, would make every tagged release slow and fragile. Instead, native
-   dependency bundles are produced out of band, and the release job only links
+   dependency bundles are produced out of band, and release assembly only links
    Go/CGO against an extracted bundle.
 
 2. **A release must never silently ship fewer backends.** The development build
@@ -63,12 +65,12 @@ and normal `contenox` commands do not build or link native inference code.
 
 For the reasons in [Problem](#problem), the release pipeline has two layers:
 
-1. Native dependency bundles, produced outside the normal release job.
-2. Final `modeld` packages, produced during the release job by linking Go/CGO
+1. Native dependency bundles, produced outside the normal release assembly step.
+2. Final `modeld` packages, produced during release assembly by linking Go/CGO
    against the extracted native dependency bundle.
 
 This avoids rebuilding heavyweight native runtimes on every release while still
-letting the release job produce the final versioned `modeld` executable. The split
+letting release assembly produce the final versioned `modeld` executable. The split
 is also what lets the release target be deterministic: it consumes a fixed,
 versioned dependency tree instead of whatever happens to be installed on the runner.
 
@@ -79,11 +81,11 @@ inputs, not user-facing packages.
 
 Bundle production is **decentralized**: no single device can build every variant — a
 Linux box cannot produce the Windows or macOS native deps, and only a CUDA host can
-build the CUDA llama plugin. So each device builds the variants it *can*
+build the CUDA llama plugin. So each dependency producer device builds the variants it *can*
 (`make bundle-modeld-deps`, dispatching to the per-OS `scripts/modeld-deps-bundle-<os>.sh`)
 and pushes them to S3 (`make push-modeld-deps`). S3 accumulates the union of all contributed variants, and
-the release job downloads whatever it needs per platform — including variants the
-release runner itself cannot build.
+the release assembly step downloads whatever it needs per platform — including
+variants the assembly host itself cannot build.
 
 Bundles are stored on S3 as **plain files (not archived)** via `aws s3 sync`, keyed by
 platform and a fingerprint of the build inputs:
@@ -210,7 +212,7 @@ the exact build inputs (see [Fingerprinting](#fingerprinting-and-dedup)). A
 machine-readable `bundle.env` companion carries the same fields for shell consumers
 (the release path sources it instead of parsing JSON).
 
-The release job verifies this manifest before building. If a platform's official
+The release assembly step verifies this manifest before building. If a platform's official
 artifact is expected to include OpenVINO support, missing OpenVINO metadata or
 libraries must fail the release build. Likewise, if `accelerator.cuda` is true, the
 CUDA plugin must be present in the bundle or the release fails.
@@ -224,15 +226,24 @@ version. Two properties matter:
 
 - **Pin-only.** It uses identifiers, not built artifacts, so it can be evaluated
   before the expensive runtime build — and a device can compute the fingerprint for a
-  platform it cannot build (override `MODELD_PLATFORM` / `MODELD_FP_*`) to address that
-  variant's S3 location.
+  platform it cannot build. Producer-oriented hash checks use `MODELD_FP_*`; consumer
+  preflight and pulls use `MODELD_EXPECT_*` to address the intended S3 variant.
 - **Single definition.** The producer (from the llama runtime stamp) and the pin-only
   target compute the same value, so the manifest's fingerprint always matches what a
   lookup computes.
 
 This is what makes the decentralized model safe: `push-modeld-deps` skips a fingerprint
-already on S3 (no rebuild/re-upload of a version we have), and the release resolves each
-platform's expected fingerprint to fetch the right variant.
+already on S3 (no rebuild/re-upload of a version we have), and release assembly resolves
+each platform's expected fingerprint to fetch the right variant.
+
+Consumer/dev flows use the same fingerprint before building anything heavy:
+`make modeld-deps-profile` prints the expected platform profile, fingerprint, and
+manifest URI; `make check-modeld-deps-store` exits successfully only when that exact
+manifest exists. `make deps-modeld-prebuilt` then pulls and validates the bundle, and
+`make package-modeld-prebuilt` builds a local package from it without uploading. The
+consumer profile is intentionally separate from producer auto-detection: a machine that
+does not have OpenVINO installed can still look for the official OpenVINO bundle by
+hash instead of silently deciding it needs a llama-only bundle.
 
 ## Makefile Contract
 
@@ -365,20 +376,37 @@ used to build the package.
 ## Release Procedure
 
 modeld is **not** released through GitHub Actions / `release.yml`. That workflow builds
-the pure-Go `contenox` CLI and the VS Code extension. modeld is a device-driven flow over
-the S3 store: devices build native dep bundles for the variants they can and push them;
-packaging pulls a bundle and links against it; final packages are pushed back to S3. No
-CI release job orchestrates it.
+the pure-Go `contenox` CLI and the VS Code extension.
+
+modeld has two S3-backed phases:
+
+1. Dependency contribution: devices build native dependency bundles for the
+   variants they can and push only those bundles to S3.
+2. Release assembly: a release host/process pulls an existing dependency bundle,
+   links/packages `modeld`, smoke-tests it, and pushes the final package back to S3.
+
+No GitHub Actions workflow orchestrates these phases yet.
+
+The maintainer command sequence lives in
+[the modeld release runbook](../modeld-release-runbook.md). This blueprint defines
+the artifact shape and invariants; the runbook is the operational source for
+bucket setup, repo-local `.env`, cross-device dependency handoff, release
+assembly, upload, and verification.
 
 The CGo link cannot meaningfully cross-compile, so the final package for a platform is
-built on a device of that platform (or with that platform's cross toolchain) — which has,
-or pulls from the store, that platform's dep bundle. The store is what lets a platform's
-package be built even though no single device can build every platform's deps.
+built on a device of that platform (or with that platform's cross toolchain) which pulls
+that platform's dep bundle from the store. The store is what lets release assembly happen
+without rebuilding heavyweight native dependencies.
 
-Per platform, the procedure is:
+Dependency contribution for each platform/variant:
 
-1. Have the dep bundle: `make bundle-modeld-deps` on a device that can build it, or
-   `make pull-modeld-deps` to fetch it from the store. `pull-modeld-deps` computes the
+1. On a device that can build the native dependencies, run `make bundle-modeld-deps`.
+2. Run `make push-modeld-deps`. This uploads only the dependency bundle under
+   `<platform>/<fingerprint>/` and skips it if that fingerprint is already present.
+
+Release assembly for each final package:
+
+1. `make pull-modeld-deps` fetches the expected bundle from the store. It computes the
    expected fingerprint from the pin profile and fails clearly if that variant is not in
    the store yet ("build it on a `<platform>` device first").
 2. `make check-modeld-deps-bundle MODELD_DEPS_ROOT=...` verifies the bundle manifest and
@@ -389,11 +417,12 @@ Per platform, the procedure is:
 4. `make push-modeld-release` uploads the package + checksum to the store under the
    version key.
 
-Every step except the literal upload runs locally with no S3: the store backend is chosen
-by URI scheme (`scripts/modeld-store.sh`), so pointing `MODELD_DEPS_S3_URI` /
-`MODELD_RELEASE_S3_URI` at a local directory exercises the full push → dedup → pull →
-package → push round-trip without credentials. Only the `aws s3` transfer itself needs a
-real bucket.
+Every step except the literal S3 transfer runs locally with no AWS: the store backend is
+chosen by URI scheme (`scripts/modeld-store.sh`), so pointing `MODELD_DEPS_S3_URI` and
+`MODELD_RELEASE_S3_URI` at local directories exercises the dependency upload, dedup,
+pull, package, and final-package upload paths without credentials. Only `s3://` URIs need
+a real bucket. For maintainer machines, the root Makefile auto-loads a repo-local `.env`
+when present, so these store URIs do not have to be passed to every command.
 
 ### Smoke test must prove the backend set
 
