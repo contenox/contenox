@@ -135,7 +135,7 @@ VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET
 .PHONY: help \
 	build-contenox build-contenox-windows build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-prebuilt build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
 	bundle-modeld-deps bundle-modeld-deps-linux bundle-modeld-deps-darwin bundle-modeld-deps-windows \
-	push-modeld-deps pull-modeld-deps push-modeld-release modeld-deps-fingerprint modeld-deps-profile modeld-deps-pull-dir check-modeld-deps-store check-modeld-deps-bundle deps-modeld-prebuilt \
+	push-modeld-deps pull-modeld-deps push-modeld-release push-modeld-index modeld-release-metadata modeld-deps-fingerprint modeld-deps-profile modeld-deps-pull-dir check-modeld-deps-store check-modeld-deps-bundle deps-modeld-prebuilt \
 	package-modeld-release package-modeld-release-linux package-modeld-release-darwin package-modeld-release-windows \
 	check-modeld-llama-deps \
 	clean clean-vscode \
@@ -147,7 +147,7 @@ VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET
 help:
 	@echo "build-*    build-contenox build-contenox-windows build-llamacpp-runtime build-modeld build-vscode"
 	@echo "package-*  package-modeld package-modeld-prebuilt package-modeld-release package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
-	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] push-modeld-release"
+	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] modeld-release-metadata push-modeld-release push-modeld-index"
 	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/modeld-release-runbook.md)"
 	@echo "test-*     test test-unit test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
@@ -409,19 +409,36 @@ package-modeld-prebuilt:
 
 # Upload final modeld packages to the store, keyed by version. Final binaries live in
 # the store (S3), not GitHub Releases.
-push-modeld-release:
+push-modeld-release: modeld-release-metadata
 	@test -n "$(MODELD_RELEASE_S3_URI)" || { echo "set MODELD_RELEASE_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
-	@found=0; \
-	for f in $(MODELD_RELEASE_DIST_DIR)/*.tar.gz $(MODELD_RELEASE_DIST_DIR)/*.zip; do \
+	@set -- $(MODELD_RELEASE_DIST_DIR)/modeld-$(MODELD_VERSION)-*.tar.gz $(MODELD_RELEASE_DIST_DIR)/modeld-$(MODELD_VERSION)-*.zip; \
+	found=0; \
+	for f do \
 		[ -f "$$f" ] || continue; found=1; \
+		[ -f "$$f.sha256" ] || { echo "missing checksum for $$f; run: make package-modeld-release"; exit 1; }; \
+		[ -f "$$f.build.json" ] || { echo "missing release metadata for $$f; run: make package-modeld-release with the updated packaging scripts"; exit 1; }; \
+	done; \
+	[ "$$found" = 1 ] || { echo "no modeld $(MODELD_VERSION) packages in $(MODELD_RELEASE_DIST_DIR); run: make package-modeld-release"; exit 1; }; \
+	for f do \
+		[ -f "$$f" ] || continue; \
 		base=$$(basename "$$f"); dest="$(MODELD_RELEASE_S3_URI)/$(MODELD_VERSION)"; \
 		echo "cp $$f -> $$dest/$$base"; \
 		$(MODELD_STORE) cp "$$f" "$$dest/$$base" || exit 1; \
 		$(MODELD_STORE) cp "$$f.sha256" "$$dest/$$base.sha256" || exit 1; \
 		$(MODELD_STORE) cp "$$f.build.json" "$$dest/$$base.build.json" || exit 1; \
 	done; \
-	[ "$$found" = 1 ] || { echo "no packages in $(MODELD_RELEASE_DIST_DIR); run: make package-modeld-release"; exit 1; }; \
-	bash $(PROJECT_ROOT)scripts/modeld-index-refresh.sh "$(MODELD_RELEASE_S3_URI)"
+	$(MAKE) --no-print-directory push-modeld-index
+
+push-modeld-index:
+	@test -n "$(MODELD_RELEASE_S3_URI)" || { echo "set MODELD_RELEASE_S3_URI=s3://bucket/prefix (or a local dir to test)"; exit 1; }
+	@bash $(PROJECT_ROOT)scripts/modeld-index-refresh.sh "$(MODELD_RELEASE_S3_URI)"
+
+modeld-release-metadata:
+	@set -- $(MODELD_RELEASE_DIST_DIR)/modeld-$(MODELD_VERSION)-*.tar.gz $(MODELD_RELEASE_DIST_DIR)/modeld-$(MODELD_VERSION)-*.zip; \
+	found=0; \
+	for f do [ ! -f "$$f" ] || found=1; done; \
+	[ "$$found" = 1 ] || { echo "no modeld $(MODELD_VERSION) packages in $(MODELD_RELEASE_DIST_DIR); run: make package-modeld-release"; exit 1; }; \
+	MODELD_RELEASE_PROTOCOL="$(MODELD_MIN_PROTOCOL)" bash $(PROJECT_ROOT)scripts/modeld-release-metadata.sh "$$@"
 
 # Validate that an extracted dependency bundle has everything the release link needs.
 # Hard-fails when OpenVINO is required but the bundle does not declare/contain it, so

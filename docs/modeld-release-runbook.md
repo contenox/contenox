@@ -239,6 +239,15 @@ pull directory for you, `make package-modeld-prebuilt` performs the preflight,
 pull, validation, and local package build. Run `make push-modeld-release` only
 after deciding that local package is the release artifact to publish.
 
+`push-modeld-release` generates/refreshes the matching `.build.json` sidecar from
+each package archive before upload, then refuses to upload unless both `.sha256`
+and `.build.json` exist. The sidecar is what feeds `modeld/index.json`. To
+generate sidecars without uploading:
+
+```bash
+make modeld-release-metadata
+```
+
 The final package upload path is:
 
 ```text
@@ -251,6 +260,13 @@ Verify:
 MODELD_VERSION="$(tr -d '\r\n' < cmd/modeld/version.txt)"
 aws s3 ls "$MODELD_RELEASE_S3_URI/$MODELD_VERSION/"
 aws s3 cp "$MODELD_RELEASE_S3_URI/index.json" -
+```
+
+If only sidecars changed and the packages are already in the store, regenerate the
+public index without re-uploading packages:
+
+```bash
+make push-modeld-index
 ```
 
 ## Public Download Surface
