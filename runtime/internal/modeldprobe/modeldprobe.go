@@ -22,10 +22,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/contenox/runtime/liblease"
+	"github.com/contenox/runtime/runtime/internal/modeldinstall"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
+	"github.com/contenox/runtime/runtime/version"
 )
 
 // Convention shared with the daemon; kept local so runtime does not depend on
@@ -117,6 +120,7 @@ func (s Status) Err() error {
 type Detector struct {
 	leasePath      string
 	binaryOverride string
+	managedBinary  string // Contenox-managed install path, derived from CLI version+platform
 	lookPath       func(string) (string, error)
 	statBinary     func(string) bool
 	now            func() time.Time
@@ -134,11 +138,24 @@ func New(dataRoot string) *Detector {
 	return &Detector{
 		leasePath:      filepath.Join(dataRoot, leaseFileName),
 		binaryOverride: os.Getenv(binaryEnv),
+		managedBinary:  managedModeldBinary(dataRoot),
 		lookPath:       exec.LookPath,
 		statBinary:     fileExists,
 		now:            time.Now,
 		health:         grpcHealthCheck,
 	}
+}
+
+// managedModeldBinary derives the path of a `contenox setup`-installed modeld for
+// the current CLI version and platform, or "" for dev builds (which never install
+// a managed package). The layout is owned by modeldinstall so install and
+// discovery cannot drift.
+func managedModeldBinary(dataRoot string) string {
+	v := version.Get()
+	if !modeldinstall.IsOfficialVersion(v) {
+		return ""
+	}
+	return modeldinstall.ManagedLauncherPath(dataRoot, v, runtime.GOOS, runtime.GOARCH)
 }
 
 // Probe resolves the state and, when a fresh lease names a live owner, confirms
@@ -211,13 +228,17 @@ func (d *Detector) Detect() Status {
 }
 
 // locate resolves the modeld binary: an explicit override first (required for
-// installs that are not on PATH, like the VS Code extension dir), then PATH.
+// installs that are not on PATH, like the VS Code extension dir), then a
+// Contenox-managed install (what `contenox setup` downloads), then PATH.
 func (d *Detector) locate() string {
 	if d.binaryOverride != "" {
 		if d.statBinary(d.binaryOverride) {
 			return d.binaryOverride
 		}
 		return ""
+	}
+	if d.managedBinary != "" && d.statBinary(d.managedBinary) {
+		return d.managedBinary
 	}
 	if p, err := d.lookPath(binaryName); err == nil {
 		return p

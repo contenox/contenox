@@ -285,9 +285,20 @@ func addDefaultProviderIssues(r *Result) {
 		return
 	}
 
-	defaultChecks := filterBackendChecks(r.BackendChecks, func(check BackendCheck) bool {
+	// modeld is one logical local provider whose engine is autodetected, so a
+	// local default (llama/openvino/local/modeld) is satisfied by ANY live local
+	// backend — not only the sub-type the user happened to name. Treat the local
+	// family as one when matching backend checks, mirroring how resolution serves
+	// whichever engine modeld is actually running.
+	localDefault := modelrepo.IsLocalBackendType(defaultProvider)
+	matchesDefault := func(check BackendCheck) bool {
+		if localDefault {
+			return modelrepo.IsLocalBackendType(check.Type)
+		}
 		return modelrepo.CanonicalBackendType(check.Type) == defaultProvider
-	})
+	}
+
+	defaultChecks := filterBackendChecks(r.BackendChecks, matchesDefault)
 	if len(defaultChecks) == 0 && r.BackendCount > 0 {
 		addIssue(r, Issue{
 			Code:       "default_provider_backend_missing",

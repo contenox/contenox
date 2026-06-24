@@ -248,6 +248,55 @@ func TestUnit_ModelProviderAdapter_CreatesOpenAIProviderViaCatalog(t *testing.T)
 	require.True(t, provider.CanStream())
 }
 
+// modeld is one daemon whose engine is autodetected, so any local alias must
+// resolve to the live engine's providers — a user who picked "openvino" still
+// gets the live llama models. This is the core of the one-local-provider fix.
+func TestUnit_ModelProviderAdapter_LocalFamilyResolvesLiveEngine(t *testing.T) {
+	ctx := context.Background()
+	liveID := "live-llama"
+	dormantID := "dormant-openvino"
+	runtime := map[string]statetype.BackendRuntimeState{
+		// Live engine: llama, with a pulled model.
+		liveID: {
+			ID:      liveID,
+			Name:    "llama",
+			Backend: runtimetypes.Backend{ID: liveID, Name: "llama", Type: "llama", BaseURL: t.TempDir()},
+			PulledModels: []statetype.ModelPullStatus{
+				{Name: "coder", Model: "coder", CanChat: true, CanPrompt: true, CanStream: true, ContextLength: 8192},
+			},
+		},
+		// Dormant engine: openvino reconciled to an error, so it contributes nothing.
+		dormantID: {
+			ID:      dormantID,
+			Name:    "openvino",
+			Backend: runtimetypes.Backend{ID: dormantID, Name: "openvino", Type: "openvino", BaseURL: t.TempDir()},
+			Error:   "modeld is running the \"llama\" engine; \"openvino\" models are dormant",
+		},
+	}
+
+	adapterFunc := runtimestate.LocalProviderAdapter(ctx, nil, runtime)
+
+	// Every local alias — including the one the user did NOT install — resolves to
+	// the live llama provider.
+	for _, requested := range []string{"llama", "openvino", "local", "modeld"} {
+		providers, err := adapterFunc(ctx, requested)
+		require.NoError(t, err, "requested=%s", requested)
+		require.Len(t, providers, 1, "requested=%s should resolve the live llama model", requested)
+		require.Equal(t, "llama", providers[0].GetType(), "requested=%s", requested)
+		require.Equal(t, "coder", providers[0].ModelName(), "requested=%s", requested)
+	}
+
+	// A non-local type does not pick up local providers.
+	ollama, err := adapterFunc(ctx, "ollama")
+	require.NoError(t, err)
+	require.Empty(t, ollama, "ollama request must not return local providers")
+
+	// Requesting several local aliases at once must not duplicate the provider.
+	multi, err := adapterFunc(ctx, "llama", "openvino")
+	require.NoError(t, err)
+	require.Len(t, multi, 1, "local providers must be added at most once")
+}
+
 func TestUnit_ModelProviderAdapter_LocalAliasResolvesLlamaProvider(t *testing.T) {
 	t.Skip("llama backend is temporarily disabled pending modeld local runtime transition")
 	ctx := context.Background()

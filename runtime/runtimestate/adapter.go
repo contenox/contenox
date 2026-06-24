@@ -44,6 +44,19 @@ func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracke
 		}
 	}
 
+	// Collapse the local modeld family into one logical provider. modeld is a
+	// single daemon whose engine is autodetected, so only the live engine's
+	// catalog yields providers (the dormant format reconciles to an error/empty
+	// entry); localProviders is therefore exactly what modeld can serve now.
+	// Resolving any local alias to this set means the user's llama-vs-openvino
+	// pick (and the two registered rows) no longer has to match the live engine.
+	var localProviders []modelrepo.Provider
+	for backendType, typeProviders := range providersByType {
+		if modelrepo.IsLocalBackendType(backendType) {
+			localProviders = append(localProviders, typeProviders...)
+		}
+	}
+
 	return func(ctx context.Context, backendTypes ...string) ([]modelrepo.Provider, error) {
 		// If no specific backend types requested (or only empty strings from an
 		// unconfigured default-provider), return providers from ALL backend types.
@@ -62,7 +75,17 @@ func LocalProviderAdapter(ctx context.Context, tracker libtracker.ActivityTracke
 			return all, nil
 		}
 		var providers []modelrepo.Provider
+		localAdded := false
 		for _, backendType := range backendTypes {
+			// Any local alias resolves to the live modeld engine's providers,
+			// added at most once even if several local types are requested.
+			if modelrepo.IsLocalBackendType(backendType) {
+				if !localAdded {
+					providers = append(providers, localProviders...)
+					localAdded = true
+				}
+				continue
+			}
 			backendType = modelrepo.CanonicalBackendType(backendType)
 			if typeProviders, ok := providersByType[backendType]; ok {
 				providers = append(providers, typeProviders...)

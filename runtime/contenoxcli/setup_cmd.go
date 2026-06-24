@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -14,6 +16,8 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/backendservice"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/internal/modeldinstall"
+	"github.com/contenox/runtime/runtime/internal/modeldprobe"
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -49,8 +53,8 @@ var setupProviders = []setupProvider{
 	{key: "openai", label: "OpenAI", defaultModel: "gpt-5-mini", envKey: "OPENAI_API_KEY", needsAPIKey: true},
 	{key: "openrouter", label: "OpenRouter (300+ models, one API key — deepseek, qwen, llama, gemini, gpt and more)", defaultModel: "deepseek/deepseek-chat-v3-5", envKey: "OPENROUTER_API_KEY", needsAPIKey: true},
 	{key: "gemini", label: "Google Gemini", defaultModel: "gemini-flash-latest", envKey: "GEMINI_API_KEY", needsAPIKey: true},
-	{key: "llama", label: "Llama.cpp GGUF (local modeld source build)", defaultModel: "", needsAPIKey: false},
-	{key: "openvino", label: "OpenVINO IR (local modeld source build)", defaultModel: "", needsAPIKey: false},
+	{key: "llama", label: "Llama.cpp GGUF (local modeld)", defaultModel: "", needsAPIKey: false},
+	{key: "openvino", label: "OpenVINO IR (local modeld)", defaultModel: "", needsAPIKey: false},
 }
 
 func runSetup(cmd *cobra.Command, out io.Writer) error {
@@ -151,7 +155,7 @@ func runSetup(cmd *cobra.Command, out io.Writer) error {
 	case "ollama":
 		model = promptOllamaModel(out, scanner, model)
 	case "llama", "openvino":
-		printLocalModeldSourceBuildSteps(out, sp.key)
+		setupLocalModeld(out, sp.key)
 	default:
 		model = promptLine(out, scanner, fmt.Sprintf("  Model [%s]", model), model)
 	}
@@ -198,10 +202,96 @@ func isLocalModeldProvider(provider string) bool {
 	}
 }
 
-func printLocalModeldSourceBuildSteps(out io.Writer, backend string) {
+// setupLocalModeld checks the public release surface for a prebuilt modeld package
+// matching this CLI version + platform and installs it. On any soft failure (no
+// package, dev build, unsupported platform, network error) it falls back to the
+// source-build instructions; a checksum mismatch is reported as a hard failure
+// without falling back. Backend selection is never forced here — modeld picks its
+// live backend at `serve` time.
+func setupLocalModeld(out io.Writer, provider string) {
+	runLocalModeldSetup(out, provider, modeldinstall.Options{
+		Version:  strings.TrimSpace(CLIVersion()),
+		DataRoot: modeldprobe.DefaultDataRoot(),
+		Progress: out,
+	})
+}
+
+// runLocalModeldSetup is the testable core of setupLocalModeld: it takes the
+// install options (so tests can point at a fake server + temp data root) and
+// drives the prebuilt-check / install / fallback UX.
+func runLocalModeldSetup(out io.Writer, provider string, opts modeldinstall.Options) {
+	version := opts.Version
+	if version == "" {
+		version = strings.TrimSpace(CLIVersion())
+	}
+	goos := opts.GOOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	goarch := opts.GOARCH
+	if goarch == "" {
+		goarch = runtime.GOARCH
+	}
+	platform := goos + "-" + goarch
+	if opts.Progress == nil {
+		opts.Progress = out
+	}
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "  Local modeld is not bundled with the normal CLI/VS Code install yet.")
-	fmt.Fprintln(out, "  This provider currently requires a source-built modeld daemon.")
+	fmt.Fprintf(out, "  Local modeld provider selected: %s\n", provider)
+	fmt.Fprintf(out, "  Checking prebuilt modeld package for %s %s...\n", version, platform)
+
+	res, err := modeldinstall.EnsureInstalled(context.Background(), provider, opts)
+	if err != nil {
+		printModeldInstallFallback(out, provider, version, platform, err)
+		return
+	}
+
+	if res.AlreadyInstalled {
+		fmt.Fprintf(out, "  Using installed modeld at %s\n", res.LauncherPath)
+	}
+	fmt.Fprintf(out, "  Validated modeld %s with compiled backends: %s\n", res.Version, strings.Join(res.Backends, ", "))
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  Start modeld:")
+	fmt.Fprintf(out, "    %s serve\n", res.LauncherPath)
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  Install a local model:")
+	if provider == "openvino" {
+		printOpenVINOModelChoices(out)
+	} else {
+		printLlamaModelChoices(out)
+	}
+	fmt.Fprintln(out, "")
+	printAutocompleteModeldTip(out, provider)
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  The first pulled model becomes default-model automatically.")
+}
+
+// printModeldInstallFallback explains why the prebuilt path did not apply and,
+// except for a checksum mismatch, prints the source-build instructions.
+func printModeldInstallFallback(out io.Writer, provider, version, platform string, err error) {
+	switch {
+	case errors.Is(err, modeldinstall.ErrChecksumMismatch):
+		fmt.Fprintln(out, "")
+		fmt.Fprintln(out, "  Downloaded modeld package failed checksum verification.")
+		fmt.Fprintln(out, "  The package was not installed.")
+		return
+	case errors.Is(err, modeldinstall.ErrNoPrebuiltArtifact):
+		fmt.Fprintf(out, "\n  No prebuilt modeld package is published for %s %s yet.\n", version, platform)
+	case errors.Is(err, modeldinstall.ErrUnsupportedPlatform):
+		fmt.Fprintf(out, "\n  No prebuilt modeld package format exists for %s.\n", platform)
+	case errors.Is(err, modeldinstall.ErrNoOfficialVersion):
+		fmt.Fprintln(out, "\n  This is a development CLI build, so no exact prebuilt package is selected.")
+	case errors.Is(err, modeldinstall.ErrBackendMissing):
+		fmt.Fprintf(out, "\n  The prebuilt modeld package does not include the %s backend.\n", provider)
+	default:
+		fmt.Fprintf(out, "\n  Could not check prebuilt modeld packages: %v\n", err)
+		fmt.Fprintln(out, "  Config is saved. You can rerun `contenox setup` later.")
+	}
+	fmt.Fprintln(out, "  Use the source-build path for now:")
+	printLocalModeldSourceBuildSteps(out, provider)
+}
+
+func printLocalModeldSourceBuildSteps(out io.Writer, backend string) {
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  In another terminal:")
 	fmt.Fprintln(out, "")

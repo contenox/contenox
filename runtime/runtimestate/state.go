@@ -23,6 +23,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/statetype"
 )
@@ -409,6 +410,20 @@ func (s *State) processLocalBackend(ctx context.Context, backend *runtimetypes.B
 	if err != nil {
 		storeBackendError(s, backend, "", err, nil)
 		return
+	}
+	// modeld is single-slot and autodetects its engine from the hardware. When the
+	// daemon is live but serving a different engine than this backend's format,
+	// the format is dormant — report that honestly instead of a silent empty
+	// entry, so doctor explains the state. The live engine's row reconciles its
+	// models normally, and resolution serves whichever engine is live regardless
+	// of which local row a request named (see LocalProviderAdapter).
+	if len(observedModels) == 0 {
+		if live := modeldconn.ServeableBackend(); live != "" && live != modelrepo.CanonicalBackendType(backend.Type) {
+			storeBackendError(s, backend, "",
+				fmt.Errorf("modeld is running the %q engine; %q models are dormant until modeld runs that engine",
+					live, modelrepo.CanonicalBackendType(backend.Type)), nil)
+			return
+		}
 	}
 	stateservice := &statetype.BackendRuntimeState{
 		ID:      backend.ID,
