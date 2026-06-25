@@ -15,8 +15,11 @@ import {
   HITLPolicy,
   LocalHook,
   MCPServer,
+  ModeldCapacityResponse,
   ModelDescriptor,
+  ModeldLocalModel,
   ModeldStatusResponse,
+  ModeldUnloadResponse,
   ModelRegistryEntry,
   RemoteHook,
   SetupStatus,
@@ -202,6 +205,11 @@ export const api = {
 
   /** Local modeld daemon state exposed by contenox serve, not a direct browser daemon client. */
   getModeldStatus: () => apiFetch<ModeldStatusResponse>('/api/modeld/status'),
+  getModeldModels: () => apiFetch<ModeldLocalModel[]>('/api/modeld/models'),
+  getModeldCapacity: (model: string) =>
+    apiFetch<ModeldCapacityResponse>(`/api/modeld/capacity?model=${encodeURIComponent(model)}`),
+  unloadModeld: (expectedGeneration: number) =>
+    apiFetch<ModeldUnloadResponse>('/api/modeld/unload', options('POST', { expectedGeneration })),
 
   taskEvents(requestId: string): EventSource {
     // Must be root-absolute: on routes like /chat/:id, a relative "api/..." resolves to
@@ -217,8 +225,10 @@ export const api = {
   getSupportedProviders: () => apiFetch<SupportedProvider[]>('/api/providers/supported'),
 
   // Auth endpoints
-  login: async (_data: { email?: string; password?: string }): Promise<AuthenticatedUser> =>
-    localAuthenticatedUser,
+  login: async (_data: { email?: string; password?: string }): Promise<AuthenticatedUser> => {
+    void _data;
+    return localAuthenticatedUser;
+  },
   getCurrentUser: async (): Promise<AuthenticatedUser> => localAuthenticatedUser,
 
   // First-run account
@@ -226,7 +236,10 @@ export const api = {
   initAccount: async (_data: {
     username: string;
     password: string;
-  }): Promise<{ initialized: boolean }> => ({ initialized: true }),
+  }): Promise<{ initialized: boolean }> => {
+    void _data;
+    return { initialized: true };
+  },
 
   executeTaskChain: (
     data: TaskExecutionRequest,

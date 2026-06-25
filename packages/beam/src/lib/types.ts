@@ -87,6 +87,75 @@ export type ModeldStatusResponse = {
   slot?: ModeldSlotStatus;
 };
 
+export type ModeldLocalModel = {
+  id: string;
+  model: string;
+  name?: string;
+  backendId?: string;
+  backendName?: string;
+  backendType: string;
+  digest?: string;
+  contextLength?: number;
+  maxOutputTokens?: number;
+  canChat: boolean;
+  canEmbed: boolean;
+  canPrompt: boolean;
+  canStream: boolean;
+  canThink?: boolean;
+};
+
+export type ModeldCapacityDevice = {
+  index: number;
+  name?: string;
+  description?: string;
+  type?: string;
+  memoryFree?: number;
+  memoryTotal?: number;
+};
+
+export type ModeldCapacityInfo = {
+  modelMaxContext: number;
+  effectiveContext: number;
+  memoryContextTokens?: number;
+  hotContextTokens?: number;
+  plannerEffectiveContext?: number;
+  kvBytesPerToken?: number;
+  freeBytes?: number;
+  weightsBytes?: number;
+  overheadBytes?: number;
+  reservedBytes?: number;
+  userLimitBytes?: number;
+  minFreeBytes?: number;
+  hostColdBudgetBytes?: number;
+  usableBytes?: number;
+  requiredBytes?: number;
+  clamped?: boolean;
+  reason?: string;
+  deviceKind?: string;
+  deviceId?: string;
+  deviceTotalBytes?: number;
+  sharedWithDisplay?: boolean;
+  requestedGpuLayers?: number;
+  resolvedGpuLayers?: number;
+  sparseAttention?: boolean;
+  slidingWindowAttentionTokens?: number;
+  runtimeName?: string;
+  runtimeDigest?: string;
+  runtimeSystemInfo?: string;
+  supportsGpuOffload?: boolean;
+  devices?: ModeldCapacityDevice[];
+};
+
+export type ModeldCapacityResponse = {
+  model: ModeldLocalModel;
+  info: ModeldCapacityInfo;
+};
+
+export type ModeldUnloadResponse = {
+  unloaded: boolean;
+  expectedGeneration: number;
+};
+
 export type ObservedModel = {
   name?: string;
   model: string;

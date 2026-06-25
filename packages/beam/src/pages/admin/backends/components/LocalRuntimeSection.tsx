@@ -5,14 +5,17 @@ import {
   LoadingState,
   Panel,
   Section,
+  Select,
   Span,
   Table,
   TableCell,
   TableRow,
 } from '@contenox/ui';
-import { RefreshCw } from 'lucide-react';
+import { Power, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
+  ModeldCapacityResponse,
+  ModeldLocalModel,
   ModeldRuntimeConfig,
   ModeldSlotStatus,
   ModeldStatusResponse,
@@ -24,6 +27,18 @@ type LocalRuntimeSectionProps = {
   isError: boolean;
   isFetching: boolean;
   errorMessage?: string;
+  models: ModeldLocalModel[];
+  modelsLoading: boolean;
+  modelsErrorMessage?: string;
+  selectedModelId: string;
+  onSelectModel: (model: string) => void;
+  capacity: ModeldCapacityResponse | undefined;
+  capacityLoading: boolean;
+  capacityFetching: boolean;
+  capacityErrorMessage?: string;
+  onUnload: (generation: number) => void;
+  isUnloading: boolean;
+  unloadErrorMessage?: string;
   onRefresh: () => void;
 };
 
@@ -57,6 +72,18 @@ const presentRows = (rows: DetailRow[]): DetailRow[] =>
     return true;
   });
 
+const formatBytes = (value: number | undefined): string | undefined => {
+  if (!value || value <= 0) return undefined;
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let next = value;
+  let unit = 0;
+  while (next >= 1024 && unit < units.length - 1) {
+    next /= 1024;
+    unit += 1;
+  }
+  return `${next >= 10 || unit === 0 ? next.toFixed(0) : next.toFixed(1)} ${units[unit]}`;
+};
+
 function DetailTable({ rows }: { rows: DetailRow[] }) {
   const { t } = useTranslation();
   return (
@@ -72,6 +99,125 @@ function DetailTable({ rows }: { rows: DetailRow[] }) {
         </TableRow>
       ))}
     </Table>
+  );
+}
+
+function CapacityDetails({
+  models,
+  modelsLoading,
+  modelsErrorMessage,
+  selectedModelId,
+  onSelectModel,
+  capacity,
+  capacityLoading,
+  capacityFetching,
+  capacityErrorMessage,
+}: {
+  models: ModeldLocalModel[];
+  modelsLoading: boolean;
+  modelsErrorMessage?: string;
+  selectedModelId: string;
+  onSelectModel: (model: string) => void;
+  capacity: ModeldCapacityResponse | undefined;
+  capacityLoading: boolean;
+  capacityFetching: boolean;
+  capacityErrorMessage?: string;
+}) {
+  const { t } = useTranslation();
+  const options = models.map(model => ({
+    value: model.id,
+    label: `${model.model} (${model.backendType})`,
+  }));
+  const info = capacity?.info;
+  const rows = info
+    ? presentRows([
+        { label: t('state.local_runtime_capacity_model_max'), value: info.modelMaxContext },
+        { label: t('state.local_runtime_capacity_effective'), value: info.effectiveContext },
+        {
+          label: t('state.local_runtime_capacity_memory_context'),
+          value: info.memoryContextTokens,
+        },
+        { label: t('state.local_runtime_cfg_hot_context'), value: info.hotContextTokens },
+        {
+          label: t('state.local_runtime_cfg_planner_context'),
+          value: info.plannerEffectiveContext,
+        },
+        {
+          label: t('state.local_runtime_capacity_kv_bytes'),
+          value: formatBytes(info.kvBytesPerToken),
+        },
+        {
+          label: t('state.local_runtime_capacity_free'),
+          value: formatBytes(info.freeBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_required'),
+          value: formatBytes(info.requiredBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_usable'),
+          value: formatBytes(info.usableBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_weights'),
+          value: formatBytes(info.weightsBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_host_cold'),
+          value: formatBytes(info.hostColdBudgetBytes),
+        },
+        { label: t('state.local_runtime_capacity_clamped'), value: info.clamped },
+        { label: t('state.local_runtime_capacity_reason'), value: info.reason },
+        { label: t('state.local_runtime_capacity_device'), value: info.deviceKind },
+        { label: t('state.local_runtime_capacity_device_id'), value: info.deviceId },
+        {
+          label: t('state.local_runtime_capacity_device_total'),
+          value: formatBytes(info.deviceTotalBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_gpu_offload'),
+          value: info.supportsGpuOffload,
+        },
+        {
+          label: t('state.local_runtime_capacity_requested_layers'),
+          value: info.requestedGpuLayers,
+        },
+        {
+          label: t('state.local_runtime_capacity_resolved_layers'),
+          value: info.resolvedGpuLayers,
+        },
+        { label: t('state.local_runtime_capacity_runtime'), value: info.runtimeName },
+        { label: t('state.local_runtime_capacity_runtime_digest'), value: info.runtimeDigest },
+      ])
+    : [];
+
+  return (
+    <Section title={t('state.local_runtime_capacity_title')}>
+      <div className="space-y-4">
+        {modelsErrorMessage && <Panel variant="error">{modelsErrorMessage}</Panel>}
+        {models.length > 0 ? (
+          <div className="max-w-md">
+            <Select
+              value={selectedModelId}
+              onChange={event => onSelectModel(event.target.value)}
+              options={options}
+              disabled={modelsLoading || capacityFetching}
+              className="w-full"
+            />
+          </div>
+        ) : modelsLoading ? (
+          <LoadingState />
+        ) : (
+          <Panel variant="empty" className="text-text-muted dark:text-dark-text-muted text-sm">
+            {t('state.local_runtime_capacity_empty')}
+          </Panel>
+        )}
+
+        {capacityErrorMessage && <Panel variant="error">{capacityErrorMessage}</Panel>}
+        {capacityLoading && selectedModelId && <LoadingState />}
+        {!capacityLoading && rows.length > 0 && <DetailTable rows={rows} />}
+      </div>
+    </Section>
   );
 }
 
@@ -145,9 +291,22 @@ export default function LocalRuntimeSection({
   isError,
   isFetching,
   errorMessage,
+  models,
+  modelsLoading,
+  modelsErrorMessage,
+  selectedModelId,
+  onSelectModel,
+  capacity,
+  capacityLoading,
+  capacityFetching,
+  capacityErrorMessage,
+  onUnload,
+  isUnloading,
+  unloadErrorMessage,
   onRefresh,
 }: LocalRuntimeSectionProps) {
   const { t } = useTranslation();
+  const activeGeneration = data?.slot?.active?.generation;
   const statusRows = data
     ? presentRows([
         { label: t('state.local_runtime_daemon_state'), value: data.state },
@@ -165,7 +324,20 @@ export default function LocalRuntimeSection({
   return (
     <div className="space-y-6">
       <Section title={t('state.local_runtime_title')} description={t('state.local_runtime_intro')}>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              if (activeGeneration !== undefined) onUnload(activeGeneration);
+            }}
+            isLoading={isUnloading}
+            disabled={activeGeneration === undefined || isUnloading}
+            className="gap-2">
+            <Power className="h-4 w-4" aria-hidden="true" />
+            {t('state.local_runtime_unload')}
+          </Button>
           <Button
             type="button"
             variant="secondary"
@@ -182,6 +354,7 @@ export default function LocalRuntimeSection({
         {isError && (
           <Panel variant="error">{errorMessage || t('state.local_runtime_load_error')}</Panel>
         )}
+        {unloadErrorMessage && <Panel variant="error">{unloadErrorMessage}</Panel>}
       </Section>
 
       {!isLoading && !isError && data && (
@@ -232,6 +405,18 @@ export default function LocalRuntimeSection({
               </Panel>
             </Section>
           )}
+
+          <CapacityDetails
+            models={models}
+            modelsLoading={modelsLoading}
+            modelsErrorMessage={modelsErrorMessage}
+            selectedModelId={selectedModelId}
+            onSelectModel={onSelectModel}
+            capacity={capacity}
+            capacityLoading={capacityLoading}
+            capacityFetching={capacityFetching}
+            capacityErrorMessage={capacityErrorMessage}
+          />
         </>
       )}
     </div>

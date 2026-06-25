@@ -1,10 +1,4 @@
-import {
-  Database,
-  Link as LinkIcon,
-  Package,
-  Settings,
-  type LucideIcon,
-} from 'lucide-react';
+import { Cpu, Database, Link as LinkIcon, Package, Settings, type LucideIcon } from 'lucide-react';
 import { lazy } from 'react';
 import { Navigate } from 'react-router-dom';
 import i18n from '../i18n';
@@ -51,21 +45,44 @@ type AdminRouteDefinition = {
 
 const adminRouteDefinitions: AdminRouteDefinition[] = [
   { path: '/backends', element: BackendsPage, labelKey: 'navbar.backends', Icon: Database },
-  { path: '/model-registry', element: ModelRegistryPage, labelKey: 'navbar.model_registry', Icon: Package },
+  {
+    path: '/model-registry',
+    element: ModelRegistryPage,
+    labelKey: 'navbar.model_registry',
+    Icon: Package,
+  },
   { path: '/hooks/remote', element: RemoteHooksPage, labelKey: 'navbar.hooks', Icon: LinkIcon },
   { path: '/chains', element: ChainsPage, labelKey: 'navbar.chains', Icon: LinkIcon },
-  { path: '/hitl-policies', element: HITLPoliciesPage, labelKey: 'navbar.hitl_policies', Icon: Settings },
+  {
+    path: '/hitl-policies',
+    element: HITLPoliciesPage,
+    labelKey: 'navbar.hitl_policies',
+    Icon: Settings,
+  },
   { path: '/settings', element: SettingsPage, labelKey: 'navbar.settings', Icon: Settings },
 ];
 
 /** Admin destinations for the control-plane menu and hub; route paths unchanged. */
-export const adminNavItems: AdminNavItem[] = adminRouteDefinitions.map(
-  ({ path, labelKey, Icon }) => ({
-    path,
-    label: i18n.t(labelKey),
-    icon: <Icon className="h-[1em] w-[1em]" />,
-  }),
-);
+export const adminNavItems: AdminNavItem[] = adminRouteDefinitions
+  .map(({ path, labelKey, Icon }) => {
+    const item = {
+      path,
+      label: i18n.t(labelKey),
+      icon: <Icon className="h-[1em] w-[1em]" />,
+    };
+    if (path !== '/backends') {
+      return [item];
+    }
+    return [
+      item,
+      {
+        path: '/backends?tab=local-runtime',
+        label: i18n.t('navbar.local_runtime_modeld'),
+        icon: <Cpu className="h-[1em] w-[1em]" />,
+      },
+    ];
+  })
+  .flat();
 
 const adminRoutes: RouteConfig[] = adminRouteDefinitions.map(def => ({
   path: def.path,

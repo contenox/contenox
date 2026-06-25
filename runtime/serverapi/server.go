@@ -52,6 +52,7 @@ type Config struct {
 	UIBaseURL         string `json:"ui_base_url"`
 	AllowedAPIOrigins string `json:"allowed_api_origins"`
 	ProxyOrigin       string `json:"proxy_origin"`
+	BeamDevProxyURL   string `json:"beam_dev_proxy_url"`
 }
 
 // Dependencies are the services the product routes are mounted on. All fields
@@ -117,7 +118,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	backendapi.AddStateRoutes(mux, stateSvc)
 	backendapi.AddModelRoutes(mux, stateSvc, deps.DefaultModel)
 	backendapi.AddBackendRoutes(mux, backendSvc, stateSvc)
-	modeldapi.AddRoutes(mux)
+	modeldapi.AddRoutes(mux, modeldapi.WithStateReader(stateSvc))
 
 	registrySvc := modelregistryservice.New(deps.DB)
 	registry := modelregistry.New(registrySvc)

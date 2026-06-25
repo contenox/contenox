@@ -2,45 +2,93 @@ package modeldapi
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	apiframework "github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/internal/modeldprobe"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
+	"github.com/contenox/runtime/runtime/statetype"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
 const statusTimeout = 2 * time.Second
+const controlTimeout = 10 * time.Second
 
-// AddRoutes registers read-only modeld observability routes. Routes are mounted
-// below /api by the containing server.
-func AddRoutes(mux *http.ServeMux) {
-	addRoutesWithProvider(mux, liveStatusProvider{})
+// AddRoutes registers modeld observability and safe single-slot control routes.
+// Routes are mounted below /api by the containing server.
+func AddRoutes(mux *http.ServeMux, opts ...Option) {
+	h := &handler{provider: liveModeldProvider{}}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(h)
+		}
+	}
+	h.register(mux)
 }
 
-type statusProvider interface {
+// Option configures modeld routes.
+type Option func(*handler)
+
+type stateReader interface {
+	Get(context.Context) ([]statetype.BackendRuntimeState, error)
+}
+
+// WithStateReader enables registry-backed local model listing and capacity
+// diagnostics. The reader is normally the runtime stateservice.
+func WithStateReader(reader stateReader) Option {
+	return func(h *handler) {
+		h.state = reader
+	}
+}
+
+type modeldProvider interface {
 	Detect(context.Context) modeldprobe.Status
 	Status(context.Context) (transport.DaemonStatus, error)
+	UnloadModel(context.Context, uint64) error
+	Describe(context.Context, modeldconn.ModelRef, transport.Config) (transport.ModelInfo, error)
 }
 
-type liveStatusProvider struct{}
+type liveModeldProvider struct{}
 
-func (liveStatusProvider) Detect(ctx context.Context) modeldprobe.Status {
+func (liveModeldProvider) Detect(ctx context.Context) modeldprobe.Status {
 	return modeldprobe.New("").Probe(ctx)
 }
 
-func (liveStatusProvider) Status(ctx context.Context) (transport.DaemonStatus, error) {
+func (liveModeldProvider) Status(ctx context.Context) (transport.DaemonStatus, error) {
 	return modeldconn.Status(ctx)
 }
 
-func addRoutesWithProvider(mux *http.ServeMux, provider statusProvider) {
+func (liveModeldProvider) UnloadModel(ctx context.Context, expectedGeneration uint64) error {
+	return modeldconn.UnloadModel(ctx, expectedGeneration)
+}
+
+func (liveModeldProvider) Describe(ctx context.Context, ref modeldconn.ModelRef, cfg transport.Config) (transport.ModelInfo, error) {
+	return modeldconn.Describe(ctx, ref, cfg)
+}
+
+func addRoutesWithProvider(mux *http.ServeMux, provider modeldProvider) {
 	h := &handler{provider: provider}
+	h.register(mux)
+}
+
+func addRoutesForTest(mux *http.ServeMux, provider modeldProvider, state stateReader) {
+	h := &handler{provider: provider, state: state}
+	h.register(mux)
+}
+
+func (h *handler) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /modeld/status", h.status)
+	mux.HandleFunc("POST /modeld/unload", h.unload)
+	mux.HandleFunc("GET /modeld/models", h.models)
+	mux.HandleFunc("GET /modeld/capacity", h.capacity)
 }
 
 type handler struct {
-	provider statusProvider
+	provider modeldProvider
+	state    stateReader
 }
 
 // StatusResponse is Beam's curated view of modeld daemon state. It deliberately
@@ -92,6 +140,15 @@ type RuntimeConfig struct {
 	ReasoningFormat         string    `json:"reasoningFormat,omitempty"`
 }
 
+type UnloadRequest struct {
+	ExpectedGeneration *uint64 `json:"expectedGeneration" example:"3"`
+}
+
+type UnloadResponse struct {
+	Unloaded           bool   `json:"unloaded" example:"true"`
+	ExpectedGeneration uint64 `json:"expectedGeneration" example:"3"`
+}
+
 func (h *handler) status(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), statusTimeout)
 	defer cancel()
@@ -126,6 +183,85 @@ func (h *handler) status(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.Slot = sanitizeSlot(slot)
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response modeldapi.StatusResponse
+}
+
+func (h *handler) unload(w http.ResponseWriter, r *http.Request) {
+	req, err := apiframework.Decode[UnloadRequest](r) // @request modeldapi.UnloadRequest
+	if err != nil {
+		_ = apiframework.Error(w, r, fmt.Errorf("%w: %v", apiframework.ErrBadRequest, err), apiframework.ExecuteOperation)
+		return
+	}
+	if req.ExpectedGeneration == nil {
+		_ = apiframework.Error(w, r, apiframework.MissingParameter("expectedGeneration"), apiframework.ExecuteOperation)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), controlTimeout)
+	defer cancel()
+	if err := h.provider.UnloadModel(ctx, *req.ExpectedGeneration); err != nil {
+		_ = apiframework.Error(w, r, modeldAPIError(err), apiframework.ExecuteOperation)
+		return
+	}
+	_ = apiframework.Encode(w, r, http.StatusOK, UnloadResponse{
+		Unloaded:           true,
+		ExpectedGeneration: *req.ExpectedGeneration,
+	}) // @response modeldapi.UnloadResponse
+}
+
+func (h *handler) models(w http.ResponseWriter, r *http.Request) {
+	if h.state == nil {
+		_ = apiframework.Encode(w, r, http.StatusOK, []LocalModel{}) // @response []modeldapi.LocalModel
+		return
+	}
+	models, err := h.listLocalModels(r.Context())
+	if err != nil {
+		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
+		return
+	}
+	_ = apiframework.Encode(w, r, http.StatusOK, models) // @response []modeldapi.LocalModel
+}
+
+func (h *handler) capacity(w http.ResponseWriter, r *http.Request) {
+	name := apiframework.GetQueryParam(r, "model", "", "Registered local model name or id to describe.")
+	if name == "" {
+		_ = apiframework.Error(w, r, apiframework.MissingParameter("model"), apiframework.GetOperation)
+		return
+	}
+	if h.state == nil {
+		_ = apiframework.Error(w, r, apiframework.NotFound("local model registry is not available"), apiframework.GetOperation)
+		return
+	}
+
+	resolved, err := h.resolveLocalModel(r.Context(), name)
+	if err != nil {
+		_ = apiframework.Error(w, r, err, apiframework.GetOperation)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), controlTimeout)
+	defer cancel()
+	info, err := h.provider.Describe(ctx, resolved.Ref, resolved.Config)
+	if err != nil {
+		_ = apiframework.Error(w, r, modeldAPIError(err), apiframework.GetOperation)
+		return
+	}
+	_ = apiframework.Encode(w, r, http.StatusOK, CapacityResponse{
+		Model: resolved.Model,
+		Info:  capacityInfoFromTransport(info),
+	}) // @response modeldapi.CapacityResponse
+}
+
+func modeldAPIError(err error) error {
+	switch {
+	case errors.Is(err, transport.ErrSlotGenerationStale), errors.Is(err, transport.ErrStaleFence), errors.Is(err, transport.ErrModelBusy):
+		return apiframework.Conflict(err.Error())
+	case errors.Is(err, transport.ErrBackendMismatch), errors.Is(err, transport.ErrUnsupportedFeature):
+		return apiframework.BadRequest(err.Error())
+	case errors.Is(err, transport.ErrInsufficientMemory), errors.Is(err, transport.ErrModelLoadFailed):
+		return apiframework.UnprocessableEntity(err.Error())
+	default:
+		return err
+	}
 }
 
 func sanitizeSlot(status transport.DaemonStatus) *SlotStatus {

@@ -58,7 +58,9 @@ task execution, approvals, task events). The Beam web UI is served at /.
 
 The server binds to 127.0.0.1:32123 by default. Override with ADDR and PORT.
 Set TOKEN to require a bearer token on mutating requests; TOKEN is mandatory
-when ADDR is not a loopback address. A configured model is required — run
+when ADDR is not a loopback address. Set BEAM_DEV_PROXY_URL to proxy Beam UI
+requests to a Vite dev server while keeping /api on this server. A configured
+model is required — run
 ` + "`contenox setup`" + ` first if you have not configured one.`,
 	RunE: runServe,
 }
@@ -229,7 +231,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// Mutating /api/* requests require the bearer token (when configured); the
 	// StripPrefix lets route packages register clean paths (/state, /models, ...).
 	rootMux.Handle("/api/", http.StripPrefix("/api", serverapi.ProtectMutatingAPI(config.Token, apiMux)))
-	rootMux.Handle("/", internalweb.SPAHandler())
+	uiHandler := internalweb.SPAHandler()
+	if strings.TrimSpace(config.BeamDevProxyURL) != "" {
+		devProxy, err := internalweb.DevProxyHandler(config.BeamDevProxyURL)
+		if err != nil {
+			return fmt.Errorf("beam dev proxy: %w", err)
+		}
+		uiHandler = devProxy
+		fmt.Fprintf(cmd.OutOrStdout(), "Beam dev proxy: %s\n", config.BeamDevProxyURL)
+	}
+	rootMux.Handle("/", uiHandler)
 
 	handler := middleware.EnableCORS(&middleware.CORSConfig{
 		AllowedAPIOrigins: middleware.DefaultAllowedAPIOrigins,

@@ -1,8 +1,14 @@
 // src/pages/admin/backends/index.tsx
 import { Page, TabbedPage } from '@contenox/ui';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { useModeldStatus } from '../../../hooks/useModeldStatus';
+import {
+  useModeldCapacity,
+  useModeldModels,
+  useModeldStatus,
+  useUnloadModeld,
+} from '../../../hooks/useModeldStatus';
 import { useRuntimeBackendState } from '../../../hooks/useRuntimeBackendState';
 import BackendsSection from './components/BackendsSection';
 import CloudProvidersSection from './components/CloudProvidersSection';
@@ -18,6 +24,26 @@ export default function BackendsPage() {
   const activeTab = (BACKEND_TAB_IDS as readonly string[]).includes(rawTab) ? rawTab : 'backends';
   const runtime = useRuntimeBackendState();
   const modeld = useModeldStatus();
+  const modeldModels = useModeldModels();
+  const [selectedLocalModel, setSelectedLocalModel] = useState('');
+  const modeldCapacity = useModeldCapacity(selectedLocalModel);
+  const unloadModeld = useUnloadModeld();
+
+  useEffect(() => {
+    if (selectedLocalModel) return;
+
+    const active = modeld.data?.slot?.active;
+    const activeID =
+      active?.type && active?.modelName ? `${active.type}:${active.modelName}` : undefined;
+    const models = modeldModels.data ?? [];
+    if (activeID && models.some(model => model.id === activeID)) {
+      setSelectedLocalModel(activeID);
+      return;
+    }
+    if (models[0]?.id) {
+      setSelectedLocalModel(models[0].id);
+    }
+  }, [modeld.data?.slot?.active, modeldModels.data, selectedLocalModel]);
 
   const tabs = [
     {
@@ -40,8 +66,24 @@ export default function BackendsPage() {
           isError={modeld.isError}
           isFetching={modeld.isFetching}
           errorMessage={modeld.error?.message}
+          models={modeldModels.data ?? []}
+          modelsLoading={modeldModels.isLoading}
+          modelsErrorMessage={modeldModels.error?.message}
+          selectedModelId={selectedLocalModel}
+          onSelectModel={setSelectedLocalModel}
+          capacity={modeldCapacity.data}
+          capacityLoading={modeldCapacity.isLoading}
+          capacityFetching={modeldCapacity.isFetching}
+          capacityErrorMessage={modeldCapacity.error?.message}
+          onUnload={generation => unloadModeld.mutate(generation)}
+          isUnloading={unloadModeld.isPending}
+          unloadErrorMessage={unloadModeld.error?.message}
           onRefresh={() => {
             void modeld.refetch();
+            void modeldModels.refetch();
+            if (selectedLocalModel) {
+              void modeldCapacity.refetch();
+            }
           }}
         />
       ),

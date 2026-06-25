@@ -3,8 +3,11 @@ package web
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 )
 
@@ -39,4 +42,34 @@ func SPAHandler() http.Handler {
 		r2.URL.Path = "/"
 		fileServer.ServeHTTP(w, r2)
 	})
+}
+
+// DevProxyHandler proxies Beam UI requests to a Vite dev server while the Go
+// server remains the browser origin for /api and auth cookies.
+func DevProxyHandler(target string) (http.Handler, error) {
+	raw := strings.TrimSpace(target)
+	if raw == "" {
+		return nil, fmt.Errorf("target URL is required")
+	}
+	targetURL, err := url.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse target URL: %w", err)
+	}
+	if targetURL.Scheme != "http" && targetURL.Scheme != "https" {
+		return nil, fmt.Errorf("target URL must use http or https")
+	}
+	if targetURL.Host == "" {
+		return nil, fmt.Errorf("target URL must include a host")
+	}
+
+	return &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(targetURL)
+			pr.Out.Host = pr.In.Host
+			pr.SetXForwarded()
+		},
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, _ error) {
+			http.Error(w, "beam dev proxy unavailable", http.StatusBadGateway)
+		},
+	}, nil
 }

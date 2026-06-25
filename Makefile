@@ -133,6 +133,12 @@ VSCODE_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCOD
 VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
 UI_DIR := $(PROJECT_ROOT)/packages/ui
 BEAM_DIR := $(PROJECT_ROOT)/packages/beam
+BEAM_DEV_HOST ?= 127.0.0.1
+BEAM_DEV_PORT ?= 5173
+BEAM_DEV_PROXY_URL ?= http://127.0.0.1:$(BEAM_DEV_PORT)
+CONTENOX_DEV_ADDR ?= 127.0.0.1
+CONTENOX_DEV_PORT ?= 32123
+CONTENOX_DEV_URL ?= http://$(CONTENOX_DEV_ADDR):$(CONTENOX_DEV_PORT)
 
 .PHONY: help \
 	openapi \
@@ -143,7 +149,7 @@ BEAM_DIR := $(PROJECT_ROOT)/packages/beam
 	check-modeld-llama-deps \
 	clean clean-vscode \
 	deps-modeld deps-llamacpp-ref deps-openvino deps-ui deps-vscode \
-	dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
+	dev-beam dev-web-proxy dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
 	run-modeld \
 	test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help \
 	verify-ui-embed
@@ -154,7 +160,7 @@ help:
 	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] modeld-release-metadata push-modeld-release push-modeld-index"
 	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/modeld-release-runbook.md)"
 	@echo "test-*     test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
-	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
+	@echo "dev-*      dev-beam dev-web-proxy dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
 	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
 	@echo "deps-*     deps-modeld deps-modeld-prebuilt deps-llamacpp-ref deps-openvino deps-ui deps-vscode"
 	@echo "           (deps-modeld-prebuilt checks/pulls the expected native dep bundle from the store)"
@@ -631,6 +637,21 @@ test-contenox-help: build-contenox
 	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/verify_cli_help.sh
 
 # dev
+dev-beam:
+	@test -d "$(BEAM_DIR)/node_modules" || { echo "missing Beam node_modules; run: make deps-ui"; exit 1; }
+	@set -eu; \
+	cd "$(BEAM_DIR)" && VITE_DEV_API_PROXY=1 VITE_DEV_PROXY_TARGET="$(CONTENOX_DEV_URL)" npm run dev -- --host "$(BEAM_DEV_HOST)" --port "$(BEAM_DEV_PORT)" --strictPort & \
+	vite_pid=$$!; \
+	trap 'kill $$vite_pid 2>/dev/null || true; wait $$vite_pid 2>/dev/null || true' EXIT INT TERM; \
+	sleep 1; \
+	if ! kill -0 $$vite_pid 2>/dev/null; then wait $$vite_pid; exit $$?; fi; \
+	echo "Beam dev UI: $(BEAM_DEV_PROXY_URL)"; \
+	echo "contenox serve API/UI proxy: $(CONTENOX_DEV_URL)"; \
+	BEAM_DEV_PROXY_URL="$(BEAM_DEV_PROXY_URL)" ADDR="$(CONTENOX_DEV_ADDR)" PORT="$(CONTENOX_DEV_PORT)" \
+		go run $(PROJECT_ROOT)/cmd/contenox serve
+
+dev-web-proxy: dev-beam
+
 dev-install: build-contenox dev-link
 
 dev-install-vscode: package-vscode-dev

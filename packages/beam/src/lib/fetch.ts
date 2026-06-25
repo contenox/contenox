@@ -4,7 +4,7 @@ import i18n from '../i18n';
  * API base URL for `apiFetch`.
  * - Prefer `VITE_API_BASE_URL` when set (e.g. pointing at a remote API).
  * - In the browser, always use `window.location.origin` so `/api` stays same-origin:
- *   Vite dev (`make dev-web-proxy`) proxies `/api` to the local server and auth cookies apply.
+ *   Vite dev (`make dev-beam`) proxies `/api` to the local server and auth cookies apply.
  * - Falling back to a separate origin while the app runs on :5173 breaks cookies and yields 403
  *   on protected routes (previous bug when env vars failed to load).
  */
@@ -66,6 +66,10 @@ export class ApiError extends Error {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 export type ApiFetchOptions = RequestInit & {
   /**
    * Client-side abort timer in milliseconds.
@@ -85,7 +89,13 @@ export async function apiFetch<T>(url: string, options?: ApiFetchOptions): Promi
   // null → no timer; undefined → global default; number → caller-supplied value.
   const timeout = options?.timeoutMs === null ? null : (options?.timeoutMs ?? API_TIMEOUT);
   let timedOut = false;
-  const timeoutId = timeout !== null ? setTimeout(() => { timedOut = true; controller.abort(); }, timeout) : null;
+  const timeoutId =
+    timeout !== null
+      ? setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeout)
+      : null;
 
   // If the caller's signal aborts, abort ours too.
   if (externalSignal) {
@@ -118,11 +128,12 @@ export async function apiFetch<T>(url: string, options?: ApiFetchOptions): Promi
 
       try {
         if (contentType?.includes('application/json')) {
-          const errorBody = await response.json();
-          const apiError = (errorBody as any).error;
+          const errorBody: unknown = await response.json();
+          const apiError = isRecord(errorBody) ? errorBody.error : undefined;
 
-          if (apiError && typeof apiError === 'object') {
-            errorMessage = apiError.message || i18n.t('errors.unknown');
+          if (isRecord(apiError)) {
+            errorMessage =
+              typeof apiError.message === 'string' ? apiError.message : i18n.t('errors.unknown');
             errorDetails = {
               type: apiError.type,
               code: apiError.code,
@@ -130,13 +141,16 @@ export async function apiFetch<T>(url: string, options?: ApiFetchOptions): Promi
               raw: errorBody,
             };
           } else {
-            errorMessage = (errorBody as any).message || JSON.stringify(errorBody);
+            errorMessage =
+              isRecord(errorBody) && typeof errorBody.message === 'string'
+                ? errorBody.message
+                : JSON.stringify(errorBody) || i18n.t('errors.unknown');
             errorDetails = { raw: errorBody };
           }
         } else {
           errorMessage = await response.text();
         }
-      } catch (error) {
+      } catch {
         errorMessage = response.statusText || errorMessage;
       }
 
@@ -154,10 +168,7 @@ export async function apiFetch<T>(url: string, options?: ApiFetchOptions): Promi
     if (error instanceof ApiError) throw error;
 
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new ApiError(
-        timedOut ? i18n.t('errors.timeout') : i18n.t('errors.cancelled'),
-        0,
-      );
+      throw new ApiError(timedOut ? i18n.t('errors.timeout') : i18n.t('errors.cancelled'), 0);
     }
 
     if (error instanceof Error) {

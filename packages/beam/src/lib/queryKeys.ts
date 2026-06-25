@@ -33,6 +33,8 @@ export const stateKeys = {
 export const modeldKeys = {
   all: ['modeld'] as const,
   status: () => [...modeldKeys.all, 'status'] as const,
+  models: () => [...modeldKeys.all, 'models'] as const,
+  capacity: (model: string) => [...modeldKeys.all, 'capacity', model] as const,
 };
 
 export const jobKeys = {

@@ -18,6 +18,7 @@ sessions, config, telemetry, and runtime state stay on your machine.
 - **It speaks Unix:** Pipe data directly into your workflows. `git diff | contenox run commit-msg` or `git log | contenox run release-notes`.
 - **It respects boundaries:** Human-in-the-loop isn't a UI toggle, it's a strict policy file. The AI pauses and asks for terminal approval before running destructive commands.
 - **It routes inference:** Use edge `modeld`, private-network backends, or hosted providers per workflow. `modeld` is built for one active local model and resident coding context, not model multiplexing.
+- **It idles politely:** `modeld` is a workstation-local daemon. It can stay cheap while idle, load one local model on demand, and release resident RAM/VRAM after the idle window instead of reserving accelerator capacity all day.
 
 You own the workflow. The vendor doesn't decide how it behaves on your machine. You do.
 
@@ -194,6 +195,10 @@ edge inference, private network inference, or a hosted vendor depending on the
 workflow, latency target, cost, and data boundary. Autocomplete has its own
 provider/model defaults, so editor ghost text can stay local even when chat
 uses the cloud.
+
+`modeld` is intentionally closer to a local inference appliance than a
+server-first model host: it favors bounded workstation resource use, one active
+local slot, and idle unload over keeping multiple models permanently warm.
 
 ---
 
