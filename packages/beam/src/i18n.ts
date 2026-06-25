@@ -402,9 +402,11 @@ const resources = {
         },
         step_get_model: {
           title: 'Get a model',
-          desc_local: 'Click Download next to any model to fetch it to your machine. The runtime detects it automatically.',
+          desc_local:
+            'Click Download next to any model to fetch it to your machine. The runtime detects it automatically.',
           desc_ollama: 'Register your Ollama backend below, then pull models with the Ollama CLI.',
-          desc_cloud: 'Enter your API key below to connect. Models are available immediately after saving.',
+          desc_cloud:
+            'Enter your API key below to connect. Models are available immediately after saving.',
           hint_ollama: 'Make sure `ollama serve` is running before registering the backend.',
         },
         step_set_model: {
@@ -426,14 +428,16 @@ const resources = {
           desc: 'Use Refresh to check your configured backends. Once a backend is reachable and models are discovered, you are ready.',
           refresh: 'Refresh',
           waiting: 'Waiting for a successful backend refresh…',
-          all_good: '{{reachable}} of {{total}} backend(s) reachable — {{models}} model(s) available.',
+          all_good:
+            '{{reachable}} of {{total}} backend(s) reachable — {{models}} model(s) available.',
           finish: 'Start using Contenox',
           no_backends: 'No backends registered yet. Go back and complete the previous steps.',
         },
       },
       hitl_policies: {
         title: 'HITL Policies',
-        description: 'Manage human-in-the-loop approval policies. The active policy controls which tool calls require human review.',
+        description:
+          'Manage human-in-the-loop approval policies. The active policy controls which tool calls require human review.',
         loading: 'Loading policies...',
         loading_error: 'Failed to load policies',
         list_empty: 'No policies found',
@@ -726,7 +730,8 @@ const resources = {
         vertex_url: 'Vertex AI Base URL (project + location)',
         service_account_json: 'Service Account Key (JSON)',
         service_account_json_optional: 'Service Account Key JSON (optional)',
-        service_account_json_placeholder: 'Paste the contents of your service account key JSON file here',
+        service_account_json_placeholder:
+          'Paste the contents of your service account key JSON file here',
         aws_credentials_json_optional: 'AWS static credentials JSON (optional)',
         aws_credentials_json_placeholder:
           '{"access_key_id":"...","secret_access_key":"...","session_token":"optional"}',
@@ -735,7 +740,8 @@ const resources = {
         model_name_placeholder: 'Optional model name',
         status_configured: 'Configured',
         status_configured_with_url: 'Configured: {{url}}',
-        status_env_missing: 'Configured via {{env}}, but that environment variable is not present in this server process.',
+        status_env_missing:
+          'Configured via {{env}}, but that environment variable is not present in this server process.',
         status_not_configured: 'Not configured',
       },
       chains: {
@@ -897,7 +903,8 @@ const resources = {
           retry_max_attempts: 'Max Attempts',
           retry_max_attempts_help: 'Total attempts including the first. 0 or 1 disables retry.',
           retry_initial_backoff: 'Initial Backoff',
-          retry_initial_backoff_help: 'Wait before the second attempt (e.g. "500ms", "1s"). Doubles up to Max Backoff.',
+          retry_initial_backoff_help:
+            'Wait before the second attempt (e.g. "500ms", "1s"). Doubles up to Max Backoff.',
           retry_max_backoff: 'Max Backoff',
           retry_max_backoff_help: 'Cap for exponential backoff (e.g. "30s"). Empty means no cap.',
           retry_jitter: 'Jitter',
@@ -905,24 +912,31 @@ const resources = {
           retry_rate_limit_min_wait: 'Rate-Limit Min Wait',
           retry_rate_limit_min_wait_help: 'Floor for 429 / 529 backoff (e.g. "10s").',
           retry_fallback_model_id: 'Fallback Model ID',
-          retry_fallback_model_id_help: 'Alternate model used after N consecutive failures. Empty disables fallback.',
+          retry_fallback_model_id_help:
+            'Alternate model used after N consecutive failures. Empty disables fallback.',
           retry_fallback_after: 'Fallback After',
-          retry_fallback_after_help: 'Consecutive-failure threshold that triggers the fallback swap. 0 disables.',
+          retry_fallback_after_help:
+            'Consecutive-failure threshold that triggers the fallback swap. 0 disables.',
           compact_policy: 'Compaction Policy',
           compact_policy_help:
             'Mid-run conversation compaction: when chat history exceeds trigger_fraction of the token_limit, older messages are summarized into a single synthetic user message. Skipped until the policy is present.',
           compact_trigger_fraction: 'Trigger Fraction',
-          compact_trigger_fraction_help: 'Fraction of token_limit that triggers compaction (e.g. 0.85).',
+          compact_trigger_fraction_help:
+            'Fraction of token_limit that triggers compaction (e.g. 0.85).',
           compact_keep_recent: 'Keep Recent',
           compact_keep_recent_help: 'Number of trailing messages preserved verbatim.',
           compact_model: 'Compaction Model',
-          compact_model_help: 'Model used for the compaction summary call. Defaults to {{var:compact_model}} when the runtime overlay sets it.',
+          compact_model_help:
+            'Model used for the compaction summary call. Defaults to {{var:compact_model}} when the runtime overlay sets it.',
           compact_provider: 'Compaction Provider',
-          compact_provider_help: 'Provider for the compaction call; leave empty to inherit the task provider.',
+          compact_provider_help:
+            'Provider for the compaction call; leave empty to inherit the task provider.',
           compact_max_failures: 'Max Failures',
-          compact_max_failures_help: 'Consecutive compaction failures before the circuit breaker disables compaction for the rest of the step.',
+          compact_max_failures_help:
+            'Consecutive compaction failures before the circuit breaker disables compaction for the rest of the step.',
           compact_min_replaced_messages: 'Min Replaced Messages',
-          compact_min_replaced_messages_help: 'Minimum number of messages that must be replaced for a compaction to run (skips tiny compactions).',
+          compact_min_replaced_messages_help:
+            'Minimum number of messages that must be replaced for a compaction to run (skips tiny compactions).',
         },
         handlers: {
           groups: {
@@ -1128,9 +1142,12 @@ const resources = {
         empty_title: 'No Backends',
         empty_description: 'No backends configured. Create your first backend to get started.',
         loading: 'Loading backends...',
-        hint_ollama: 'Requires Ollama to be running on the host. Start it with: ollama serve — then pull a model: ollama pull qwen2.5:7b',
-        hint_vllm: 'Point to a running vLLM server. The URL must include the full base path (e.g. http://gpu-host:8000).',
-        hint_local: 'Path to a directory containing .gguf model files. Contenox scans this directory at startup and registers discovered models automatically.',
+        hint_ollama:
+          'Requires Ollama to be running on the host. Start it with: ollama serve — then pull a model: ollama pull qwen2.5:7b',
+        hint_vllm:
+          'Point to a running vLLM server. The URL must include the full base path (e.g. http://gpu-host:8000).',
+        hint_local:
+          'Path to a directory containing .gguf model files. Contenox scans this directory at startup and registers discovered models automatically.',
         status: {
           available: 'Available',
           unavailable: 'Unavailable',
@@ -1161,9 +1178,50 @@ const resources = {
       state: {
         title: 'Backend State',
         runtime_tab: 'Runtime state',
+        local_runtime_tab: 'Local runtime',
         runtime_title: 'Runtime sync',
         runtime_intro:
           'Latest snapshot from the runtime backend refresh loop (reachability, observed models, sync errors). This is not a download queue.',
+        local_runtime_title: 'Local runtime',
+        local_runtime_intro:
+          'Read-only modeld daemon state exposed by contenox serve. Beam does not talk to modeld directly.',
+        local_runtime_refresh: 'Refresh',
+        local_runtime_load_error: 'Could not load local runtime state.',
+        local_runtime_availability: 'Availability',
+        local_runtime_available: 'Available',
+        local_runtime_unavailable: 'Unavailable',
+        local_runtime_daemon_title: 'Daemon',
+        local_runtime_slot_title: 'Resident slot',
+        local_runtime_config_title: 'Active runtime config',
+        local_runtime_daemon_state: 'Daemon state',
+        local_runtime_slot_state: 'Slot state',
+        local_runtime_backend: 'Backend',
+        local_runtime_endpoint: 'Endpoint',
+        local_runtime_owner: 'Owner',
+        local_runtime_binary: 'Binary',
+        local_runtime_protocol: 'Protocol',
+        local_runtime_active_model: 'Active model',
+        local_runtime_model_type: 'Model type',
+        local_runtime_digest: 'Digest',
+        local_runtime_generation: 'Generation',
+        local_runtime_busy_operation: 'Busy operation',
+        local_runtime_last_error: 'Last error',
+        local_runtime_no_slot_desc: 'No resident slot details are available.',
+        local_runtime_col_field: 'Field',
+        local_runtime_col_value: 'Value',
+        local_runtime_cfg_num_ctx: 'Context tokens',
+        local_runtime_cfg_hot_context: 'Hot context tokens',
+        local_runtime_cfg_planner_context: 'Planner context tokens',
+        local_runtime_cfg_batch: 'Batch tokens',
+        local_runtime_cfg_threads: 'Threads',
+        local_runtime_cfg_gpu_layers: 'GPU layers',
+        local_runtime_cfg_tensor_split: 'Tensor split',
+        local_runtime_cfg_flash_attn: 'Flash attention',
+        local_runtime_cfg_kv_cache: 'KV cache type',
+        local_runtime_cfg_prompt_format: 'Prompt format',
+        local_runtime_cfg_prompt_digest: 'Prompt template digest',
+        local_runtime_cfg_disable_bos: 'Disable BOS',
+        local_runtime_cfg_reasoning: 'Reasoning format',
         runtime_error: 'Could not load runtime state.',
         runtime_empty_title: 'No runtime rows yet',
         runtime_empty_desc:
@@ -1368,7 +1426,8 @@ const resources = {
         title: 'Chat',
         active: 'Active',
         chain_tooltip: 'Choose how this chat routes model calls, tools, and follow-up steps',
-        token_limit_tooltip: 'Context window limit for this chain. 0 = unlimited (disables compaction).',
+        token_limit_tooltip:
+          'Context window limit for this chain. 0 = unlimited (disables compaction).',
         token_limit_label: 'Token limit (0 = unlimited)',
         mode: 'Mode',
         mode_tooltip:
@@ -1387,8 +1446,10 @@ const resources = {
         build_compiled_graph_title: 'Compiled plan workflow',
         build_compiled_preview_note:
           'Live preview from the current plan (not yet cached on the server). Run Build or a plan step to persist.',
-        build_compiled_no_plan: 'No active plan — activate a plan to preview the compiled workflow.',
-        build_compiled_no_steps: 'No plan steps yet — the compiled workflow appears once steps exist.',
+        build_compiled_no_plan:
+          'No active plan — activate a plan to preview the compiled workflow.',
+        build_compiled_no_steps:
+          'No plan steps yet — the compiled workflow appears once steps exist.',
         build_graph_loading: 'Loading workflow…',
         build_graph_empty: 'No tasks in this chain.',
         build_graph_select_chain: 'Select a task chain to preview the executor workflow.',
@@ -1952,9 +2013,11 @@ const resources = {
           title: 'LLM-Anbieter wählen',
           desc: 'Wählen Sie, wie Sie Sprachmodelle nutzen möchten. Weitere können später hinzugefügt werden.',
           local_title: 'Lokal (GGUF)',
-          local_desc: 'GGUF-Modelle herunterladen und lokal ausführen — kein API-Schlüssel erforderlich.',
+          local_desc:
+            'GGUF-Modelle herunterladen und lokal ausführen — kein API-Schlüssel erforderlich.',
           ollama_title: 'Ollama',
-          ollama_desc: 'Verbindung zu einer laufenden Ollama-Instanz auf localhost oder einem Remote-Host.',
+          ollama_desc:
+            'Verbindung zu einer laufenden Ollama-Instanz auf localhost oder einem Remote-Host.',
           openai_title: 'OpenAI',
           openai_desc: 'GPT-4o und andere OpenAI-Modelle per API-Schlüssel.',
           gemini_title: 'Gemini',
@@ -1964,15 +2027,19 @@ const resources = {
         },
         step_get_model: {
           title: 'Modell bereitstellen',
-          desc_local: 'Klicken Sie auf Herunterladen neben einem Modell, um es auf Ihr Gerät zu laden. Die Runtime erkennt es automatisch.',
+          desc_local:
+            'Klicken Sie auf Herunterladen neben einem Modell, um es auf Ihr Gerät zu laden. Die Runtime erkennt es automatisch.',
           desc_ollama: 'Ollama-Backend unten registrieren, dann Modelle mit der Ollama-CLI laden.',
-          desc_cloud: 'API-Schlüssel eingeben, um die Verbindung herzustellen. Modelle sind nach dem Speichern sofort verfügbar.',
-          hint_ollama: 'Stellen Sie sicher, dass `ollama serve` läuft, bevor Sie das Backend registrieren.',
+          desc_cloud:
+            'API-Schlüssel eingeben, um die Verbindung herzustellen. Modelle sind nach dem Speichern sofort verfügbar.',
+          hint_ollama:
+            'Stellen Sie sicher, dass `ollama serve` läuft, bevor Sie das Backend registrieren.',
         },
         step_set_model: {
           title: 'Standardmodell festlegen',
           desc: 'Wählen Sie, welches Modell und welchen Anbieter Contenox standardmäßig für Chat und Aufgaben verwendet.',
-          no_models: 'Noch keine Modelle erkannt — gehen Sie zurück und schließen Sie den vorherigen Schritt ab.',
+          no_models:
+            'Noch keine Modelle erkannt — gehen Sie zurück und schließen Sie den vorherigen Schritt ab.',
           model_label: 'Standardmodell',
           provider_label: 'Standardanbieter',
           model_placeholder: 'z.B. qwen2.5:7b',
@@ -1988,14 +2055,17 @@ const resources = {
           desc: 'Nutzen Sie Aktualisieren, um Ihre konfigurierten Backends zu prüfen. Sobald ein Backend erreichbar ist und Modelle erkannt wurden, sind Sie bereit.',
           refresh: 'Aktualisieren',
           waiting: 'Warte auf eine erfolgreiche Backend-Aktualisierung…',
-          all_good: '{{reachable}} von {{total}} Backend(s) erreichbar — {{models}} Modell(e) verfügbar.',
+          all_good:
+            '{{reachable}} von {{total}} Backend(s) erreichbar — {{models}} Modell(e) verfügbar.',
           finish: 'Contenox verwenden',
-          no_backends: 'Noch keine Backends registriert. Gehen Sie zurück und schließen Sie die vorherigen Schritte ab.',
+          no_backends:
+            'Noch keine Backends registriert. Gehen Sie zurück und schließen Sie die vorherigen Schritte ab.',
         },
       },
       hitl_policies: {
         title: 'HITL-Richtlinien',
-        description: 'Verwaltung von Human-in-the-Loop-Freigaberichtlinien. Die aktive Richtlinie bestimmt, welche Werkzeugaufrufe menschliche Überprüfung erfordern.',
+        description:
+          'Verwaltung von Human-in-the-Loop-Freigaberichtlinien. Die aktive Richtlinie bestimmt, welche Werkzeugaufrufe menschliche Überprüfung erfordern.',
         loading: 'Richtlinien werden geladen...',
         loading_error: 'Richtlinien konnten nicht geladen werden',
         list_empty: 'Keine Richtlinien gefunden',
@@ -2015,6 +2085,8 @@ const resources = {
       },
       common: {
         none: 'Keine',
+        yes: 'ja',
+        no: 'nein',
         active: 'aktiv',
         seconds: 'Sekunden',
         created_at: 'Erstellt am',
@@ -2228,7 +2300,8 @@ const resources = {
         model_name_placeholder: 'Optionaler Modellname',
         status_configured: 'Konfiguriert',
         status_configured_with_url: 'Konfiguriert: {{url}}',
-        status_env_missing: 'Über {{env}} konfiguriert, aber diese Umgebungsvariable ist im Server-Prozess nicht vorhanden.',
+        status_env_missing:
+          'Über {{env}} konfiguriert, aber diese Umgebungsvariable ist im Server-Prozess nicht vorhanden.',
         status_not_configured: 'Nicht konfiguriert',
       },
       chains: {
@@ -2331,9 +2404,12 @@ const resources = {
         error: 'Backend-Fehler',
         observed_models_title: 'Beobachtete Modelle',
         empty_title: 'Keine Backends',
-        hint_ollama: 'Erfordert einen laufenden Ollama-Prozess auf dem Host. Starten mit: ollama serve — dann ein Modell laden: ollama pull qwen2.5:7b',
-        hint_vllm: 'Zeigt auf einen laufenden vLLM-Server. Die URL muss den vollständigen Basispfad enthalten (z. B. http://gpu-host:8000).',
-        hint_local: 'Pfad zu einem Verzeichnis mit .gguf-Modelldateien. Contenox durchsucht dieses Verzeichnis beim Start und registriert gefundene Modelle automatisch.',
+        hint_ollama:
+          'Erfordert einen laufenden Ollama-Prozess auf dem Host. Starten mit: ollama serve — dann ein Modell laden: ollama pull qwen2.5:7b',
+        hint_vllm:
+          'Zeigt auf einen laufenden vLLM-Server. Die URL muss den vollständigen Basispfad enthalten (z. B. http://gpu-host:8000).',
+        hint_local:
+          'Pfad zu einem Verzeichnis mit .gguf-Modelldateien. Contenox durchsucht dieses Verzeichnis beim Start und registriert gefundene Modelle automatisch.',
         empty_description:
           'Keine Backends konfiguriert. Erstellen Sie Ihr erstes Backend, um zu beginnen.',
         loading: 'Lade Backends...',
@@ -2364,9 +2440,50 @@ const resources = {
       state: {
         title: 'Backend-Status',
         runtime_tab: 'Laufzeitstatus',
+        local_runtime_tab: 'Lokale Laufzeit',
         runtime_title: 'Laufzeit-Sync',
         runtime_intro:
           'Aktueller Stand aus der Backend-Aktualisierung der Laufzeit (Erreichbarkeit, beobachtete Modelle, Sync-Fehler). Keine Download-Warteschlange.',
+        local_runtime_title: 'Lokale Laufzeit',
+        local_runtime_intro:
+          'Schreibgeschützter modeld-Daemonstatus aus contenox serve. Beam spricht nicht direkt mit modeld.',
+        local_runtime_refresh: 'Aktualisieren',
+        local_runtime_load_error: 'Lokaler Laufzeitstatus konnte nicht geladen werden.',
+        local_runtime_availability: 'Verfügbarkeit',
+        local_runtime_available: 'Verfügbar',
+        local_runtime_unavailable: 'Nicht verfügbar',
+        local_runtime_daemon_title: 'Daemon',
+        local_runtime_slot_title: 'Residenter Slot',
+        local_runtime_config_title: 'Aktive Laufzeitkonfiguration',
+        local_runtime_daemon_state: 'Daemonstatus',
+        local_runtime_slot_state: 'Slotstatus',
+        local_runtime_backend: 'Backend',
+        local_runtime_endpoint: 'Endpoint',
+        local_runtime_owner: 'Owner',
+        local_runtime_binary: 'Binary',
+        local_runtime_protocol: 'Protokoll',
+        local_runtime_active_model: 'Aktives Modell',
+        local_runtime_model_type: 'Modelltyp',
+        local_runtime_digest: 'Digest',
+        local_runtime_generation: 'Generation',
+        local_runtime_busy_operation: 'Aktive Operation',
+        local_runtime_last_error: 'Letzter Fehler',
+        local_runtime_no_slot_desc: 'Keine Details zum residenten Slot verfügbar.',
+        local_runtime_col_field: 'Feld',
+        local_runtime_col_value: 'Wert',
+        local_runtime_cfg_num_ctx: 'Kontext-Tokens',
+        local_runtime_cfg_hot_context: 'Hot-Context-Tokens',
+        local_runtime_cfg_planner_context: 'Planner-Context-Tokens',
+        local_runtime_cfg_batch: 'Batch-Tokens',
+        local_runtime_cfg_threads: 'Threads',
+        local_runtime_cfg_gpu_layers: 'GPU-Layer',
+        local_runtime_cfg_tensor_split: 'Tensor-Split',
+        local_runtime_cfg_flash_attn: 'Flash Attention',
+        local_runtime_cfg_kv_cache: 'KV-Cache-Typ',
+        local_runtime_cfg_prompt_format: 'Prompt-Format',
+        local_runtime_cfg_prompt_digest: 'Prompt-Template-Digest',
+        local_runtime_cfg_disable_bos: 'BOS deaktivieren',
+        local_runtime_cfg_reasoning: 'Reasoning-Format',
         runtime_error: 'Laufzeitstatus konnte nicht geladen werden.',
         runtime_empty_title: 'Noch keine Laufzeitzeilen',
         runtime_empty_desc:
@@ -2515,7 +2632,8 @@ const resources = {
         stats_compact: '{{messages}} Nachr. · {{state}} Schritte',
         sse_connecting: 'Verbinde mit Aufgaben-Ereignisstrom…',
         sse_sending_http: 'Nachricht wird gesendet…',
-        sse_degraded: 'Ereignisstrom nicht verfügbar — Anfrage wird gesendet (Streaming ggf. eingeschränkt)',
+        sse_degraded:
+          'Ereignisstrom nicht verfügbar — Anfrage wird gesendet (Streaming ggf. eingeschränkt)',
         sse_queued: 'Bereite Aufgabenereignisse vor…',
         sse_stream_lost: 'Ereignisstrom getrennt; die Antwort kann unvollständig sein.',
         task_failed: 'Aufgabe fehlgeschlagen',
@@ -2563,7 +2681,8 @@ const resources = {
         title: 'Chat',
         active: 'Aktiv',
         chain_tooltip: 'Legt fest, wie dieser Chat Modellaufrufe, Tools und Folgeschritte routet',
-        token_limit_tooltip: 'Kontextfensterlimit für diese Kette. 0 = unbegrenzt (deaktiviert Komprimierung).',
+        token_limit_tooltip:
+          'Kontextfensterlimit für diese Kette. 0 = unbegrenzt (deaktiviert Komprimierung).',
         token_limit_label: 'Token-Limit (0 = unbegrenzt)',
         mode: 'Modus',
         mode_tooltip:
@@ -2638,7 +2757,8 @@ const resources = {
         landing_composer_title: 'Erste Nachricht',
         landing_manage_chains: 'Ketten anpassen',
         landing_no_chains_title: 'Keine Aufgabenketten gefunden',
-        landing_no_chains_desc: 'Erstellen oder stellen Sie eine Kette wieder her, bevor Sie einen Chat-Lauf starten.',
+        landing_no_chains_desc:
+          'Erstellen oder stellen Sie eine Kette wieder her, bevor Sie einen Chat-Lauf starten.',
         landing_select_chain_hint: 'Wählen Sie vor dem Senden eine Aufgabenkette.',
         sidebar_empty_hint: 'Noch keine Chats. Starten Sie einen von hier.',
         workspace_toggle_tooltip: 'Optionalen Terminal-Kontext anzeigen',
@@ -2775,7 +2895,8 @@ const resources = {
         run_compiled_description:
           'Aktiven Plan in eine lineare Task-Kette kompilieren und Ende-zu-Ende ausführen (gleicher Executor wie plan next).',
         compiled_chain_id_label: 'ID der kompilierten Kette',
-        write_path_optional_label: 'Kompiliertes JSON unter lokalem Chain-Pfad speichern (optional)',
+        write_path_optional_label:
+          'Kompiliertes JSON unter lokalem Chain-Pfad speichern (optional)',
         run_compiled_submit: 'Kompilierten Ablauf ausführen',
         run_compiled_output: 'Ergebnis des kompilierten Laufs',
         replan_title: 'Verbleibende Schritte neu planen',

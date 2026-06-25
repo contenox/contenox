@@ -2,28 +2,29 @@ import { apiFetch } from './fetch';
 import {
   AuthenticatedUser,
   Backend,
-  ModelDescriptor,
-  ModelRegistryEntry,
   BackendRuntimeState,
   ChainDefinition,
+  ChatContextPayload,
   ChatMessage,
+  ChatModeId,
   ChatSession,
   CLIConfigUpdateRequest,
   CLIConfigUpdateResponse,
   CloudProviderType,
+  ConfigureProviderInput,
+  HITLPolicy,
   LocalHook,
   MCPServer,
+  ModelDescriptor,
+  ModeldStatusResponse,
+  ModelRegistryEntry,
   RemoteHook,
   SetupStatus,
   StateResponse,
-  ChatContextPayload,
-  ChatModeId,
-  ConfigureProviderInput,
   StatusResponse,
   SupportedProvider,
   TaskExecutionRequest,
   TaskExecutionResponse,
-  HITLPolicy,
 } from './types';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -137,9 +138,15 @@ export const api = {
   getPolicy: (name: string) =>
     apiFetch<HITLPolicy>(`/api/hitl-policies?name=${encodeURIComponent(name)}`),
   createPolicy: (name: string, policy: HITLPolicy) =>
-    apiFetch<HITLPolicy>(`/api/hitl-policies?name=${encodeURIComponent(name)}`, options('POST', policy)),
+    apiFetch<HITLPolicy>(
+      `/api/hitl-policies?name=${encodeURIComponent(name)}`,
+      options('POST', policy),
+    ),
   updatePolicy: (name: string, policy: HITLPolicy) =>
-    apiFetch<HITLPolicy>(`/api/hitl-policies?name=${encodeURIComponent(name)}`, options('PUT', policy)),
+    apiFetch<HITLPolicy>(
+      `/api/hitl-policies?name=${encodeURIComponent(name)}`,
+      options('PUT', policy),
+    ),
   deletePolicy: (name: string) =>
     apiFetch<string>(`/api/hitl-policies?name=${encodeURIComponent(name)}`, options('DELETE')),
 
@@ -192,6 +199,10 @@ export const api = {
 
   /** Runtime sync snapshot per backend (OSS backend refresh loop; not a managed download queue). */
   getRuntimeBackendState: () => apiFetch<BackendRuntimeState[]>('/api/state'),
+
+  /** Local modeld daemon state exposed by contenox serve, not a direct browser daemon client. */
+  getModeldStatus: () => apiFetch<ModeldStatusResponse>('/api/modeld/status'),
+
   taskEvents(requestId: string): EventSource {
     // Must be root-absolute: on routes like /chat/:id, a relative "api/..." resolves to
     // /chat/api/... and hits the SPA shell instead of the API mux.
@@ -212,8 +223,10 @@ export const api = {
 
   // First-run account
   getAuthSetupStatus: async (): Promise<{ initialized: boolean }> => ({ initialized: true }),
-  initAccount: async (_data: { username: string; password: string }): Promise<{ initialized: boolean }> =>
-    ({ initialized: true }),
+  initAccount: async (_data: {
+    username: string;
+    password: string;
+  }): Promise<{ initialized: boolean }> => ({ initialized: true }),
 
   executeTaskChain: (
     data: TaskExecutionRequest,
@@ -249,7 +262,6 @@ export const api = {
   deleteChain: (path: string) =>
     apiFetch<void>(`/api/taskchains?path=${encodeURIComponent(path)}`, options('DELETE')),
 
-
   // ── HITL approvals ───────────────────────────────────────────────
   /** Approve or deny a pending HITL tool call. Returns 204 on success, 404 if already resolved. */
   respondToApproval: (approvalId: string, approved: boolean) =>
@@ -265,5 +277,8 @@ export const api = {
   deleteModelRegistryEntry: (id: string) =>
     apiFetch<void>(`/api/model-registry/${encodeURIComponent(id)}`, options('DELETE')),
   downloadModel: (name: string) =>
-    apiFetch<string>('/api/model-registry/download', { ...options('POST', { name }), timeoutMs: null }),
+    apiFetch<string>('/api/model-registry/download', {
+      ...options('POST', { name }),
+      timeoutMs: null,
+    }),
 };

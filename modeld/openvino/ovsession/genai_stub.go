@@ -26,6 +26,14 @@ type GenAIConfig struct {
 	CacheEvictStartSize         int
 	CacheEvictRecentSize        int
 	CacheEvictMaxSize           int
+	LoRAAdapters                []GenAILoRAAdapter
+}
+
+// GenAILoRAAdapter is one OpenVINO LoRA adapter to apply to a session: a
+// safetensors file plus its effective scale (alpha).
+type GenAILoRAAdapter struct {
+	Path  string
+	Alpha float32
 }
 
 // GenerateOptions controls a single GenAI generation call.

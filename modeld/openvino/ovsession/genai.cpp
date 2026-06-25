@@ -44,6 +44,7 @@
 #undef protected
 
 #include <openvino/genai/generation_config.hpp>
+#include <openvino/genai/lora_adapter.hpp>
 #include <openvino/genai/parsers.hpp>
 #include <openvino/genai/scheduler_config.hpp>
 #include <openvino/genai/sparse_attention.hpp>
@@ -268,6 +269,10 @@ struct cx_genai_session {
     std::unique_ptr<ov::genai::ContinuousBatchingPipeline> pipe;
     std::atomic<bool> cancel_requested{false};
     std::string kv_cache_precision = "f16";
+    // Dynamic LoRA adapters registered on this pipeline, if any. Held so every
+    // generation config built from get_config() activates the same adapter set at
+    // the same alpha. nullopt = base model, no adapters.
+    std::optional<ov::genai::AdapterConfig> adapters;
 
     std::thread worker;
     std::mutex mu;
@@ -1431,14 +1436,51 @@ cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device
             : std::string("f16");
         cfg_copy.kv_cache_precision = kv_precision.c_str();
         s->kv_cache_precision = kv_precision;
-        s->run([s, model_path, dev, cfg_copy, kv_precision] {
+
+        // Copy the adapter specs out of the C struct now: the pointers it carries
+        // are only guaranteed valid for this call, and the adapter files are loaded
+        // on the worker thread below.
+        std::vector<std::pair<std::string, float>> adapter_specs;
+        if (config && config->lora_adapters) {
+            for (size_t i = 0; i < config->lora_adapter_count; ++i) {
+                const cx_genai_lora_adapter &a = config->lora_adapters[i];
+                if (!a.path || !a.path[0]) {
+                    write_buf(err, err_len, "OpenVINO GenAI LoRA adapter path is empty");
+                    delete s;
+                    return nullptr;
+                }
+                adapter_specs.emplace_back(std::string(a.path), a.alpha);
+            }
+        }
+
+        s->run([s, model_path, dev, cfg_copy, kv_precision, adapter_specs] {
             auto cfg = scheduler_config_from(&cfg_copy);
             ov::AnyMap properties{{"KV_CACHE_PRECISION", kv_precision_from(&cfg_copy)}};
+
+            // Dynamic LoRA: register the adapter set on the pipeline (MODE_DYNAMIC
+            // keeps A/B/alpha variable so adapters can be activated/scaled without
+            // recompiling), then activate it in the pipeline's default generation
+            // config so every request built from get_config() inherits it.
+            if (!adapter_specs.empty()) {
+                ov::genai::AdapterConfig adapter_config(ov::genai::AdapterConfig::MODE_DYNAMIC);
+                for (const auto &spec : adapter_specs) {
+                    adapter_config.add(ov::genai::Adapter(std::filesystem::path(spec.first)), spec.second);
+                }
+                s->adapters = adapter_config;
+                properties.insert(ov::genai::adapters(adapter_config));
+            }
+
             s->pipe = std::make_unique<ov::genai::ContinuousBatchingPipeline>(
                 std::filesystem::path(model_path),
                 cfg,
                 dev,
                 properties);
+
+            if (s->adapters) {
+                ov::genai::GenerationConfig base = s->pipe->get_config();
+                base.adapters = s->adapters;
+                s->pipe->set_config(base);
+            }
         });
         return s;
     } catch (const std::exception &e) {

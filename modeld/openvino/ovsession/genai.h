@@ -40,6 +40,15 @@ typedef struct cx_genai_metrics {
     size_t cache_size_in_bytes;
 } cx_genai_metrics;
 
+/* One dynamic LoRA adapter applied to a GenAI session. Path points at an
+   OpenVINO safetensors adapter file (NOT a GGUF adapter — that is the llama
+   backend's format). alpha is the effective LoRA scale; OpenVINO already folds
+   rank normalization (alpha/rank) and any user weight into this single value. */
+typedef struct cx_genai_lora_adapter {
+    const char *path;
+    float alpha;
+} cx_genai_lora_adapter;
+
 typedef struct cx_genai_session_config {
     const char *kv_cache_precision;
     size_t cache_size;
@@ -58,6 +67,13 @@ typedef struct cx_genai_session_config {
     size_t cache_evict_start_size;
     size_t cache_evict_recent_size;
     size_t cache_evict_max_size;
+    /* Dynamic LoRA adapters registered on this session's pipeline (MODE_DYNAMIC)
+       and activated in the default generation config. lora_adapters points at an
+       array of lora_adapter_count entries; a count of 0 means the base model with
+       no adapter overhead. The caller owns the array and its path strings; they
+       only need to outlive cx_genai_session_new (adapters are loaded eagerly). */
+    const cx_genai_lora_adapter *lora_adapters;
+    size_t lora_adapter_count;
 } cx_genai_session_config;
 
 int cx_ov_runtime_info_get(cx_ov_runtime_info *out, char *err, size_t err_len);

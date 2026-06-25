@@ -389,6 +389,131 @@
         },
         "type": "object"
       },
+      "modeldapi_ActiveModel": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/modeldapi_RuntimeConfig"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "modeldapi_RuntimeConfig": {
+        "properties": {
+          "disableBOS": {
+            "type": "boolean"
+          },
+          "flashAttn": {
+            "type": "boolean"
+          },
+          "hotContextTokens": {
+            "type": "integer"
+          },
+          "kvCacheType": {
+            "type": "string"
+          },
+          "numBatch": {
+            "type": "integer"
+          },
+          "numCtx": {
+            "type": "integer"
+          },
+          "numGpuLayers": {
+            "type": "integer"
+          },
+          "numThreads": {
+            "type": "integer"
+          },
+          "plannerEffectiveContext": {
+            "type": "integer"
+          },
+          "promptFormat": {
+            "type": "string"
+          },
+          "promptTemplateDigest": {
+            "type": "string"
+          },
+          "reasoningFormat": {
+            "type": "string"
+          },
+          "tensorSplit": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "modeldapi_SlotStatus": {
+        "properties": {
+          "active": {
+            "$ref": "#/components/schemas/modeldapi_ActiveModel"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "busyOperation": {
+            "type": "string"
+          },
+          "lastError": {
+            "type": "string"
+          },
+          "ownerInstanceId": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "modeldapi_StatusResponse": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "backend": {
+            "type": "string"
+          },
+          "binary": {
+            "type": "string"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "minRuntimeProtocol": {
+            "type": "integer"
+          },
+          "runtimeProtocol": {
+            "type": "integer"
+          },
+          "slot": {
+            "$ref": "#/components/schemas/modeldapi_SlotStatus"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "modelregistryapi_downloadRequest": {
         "properties": {
           "name": {
@@ -2855,6 +2980,37 @@
         "summary": "PUT /model-registry/{id}",
         "tags": [
           "modelregistry"
+        ]
+      }
+    },
+    "/modeld/status": {
+      "get": {
+        "operationId": "modeld_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/modeldapi_StatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /modeld/status",
+        "tags": [
+          "modeld"
         ]
       }
     },

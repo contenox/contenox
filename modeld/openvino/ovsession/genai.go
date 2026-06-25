@@ -48,6 +48,18 @@ type GenAIConfig struct {
 	CacheEvictStartSize  int
 	CacheEvictRecentSize int
 	CacheEvictMaxSize    int
+	// LoRAAdapters are dynamic LoRA adapters registered on the pipeline at
+	// construction (MODE_DYNAMIC) and activated in the default generation config.
+	// Empty = base model. OpenVINO adapters are safetensors files, not GGUF.
+	LoRAAdapters []GenAILoRAAdapter
+}
+
+// GenAILoRAAdapter is one OpenVINO LoRA adapter to apply to a session: a
+// safetensors file plus its effective scale (alpha). OpenVINO folds LoRA rank
+// normalization and any user weight into this single alpha.
+type GenAILoRAAdapter struct {
+	Path  string
+	Alpha float32
 }
 
 // GenerateOptions controls a single GenAI generation call.
@@ -213,6 +225,23 @@ func NewGenAI(modelDir string, cfg GenAIConfig) (*GenAISession, error) {
 	}
 	defer C.free(errbuf)
 
+	// Marshal dynamic LoRA adapters into a C array. The array and its path strings
+	// are allocated in C memory (not a Go slice) so the cConfig we hand to C holds
+	// no Go pointers — cgo forbids passing Go memory that itself contains Go
+	// pointers. The C side copies the specs during cx_genai_session_new, so freeing
+	// after the call is safe.
+	var cAdapters *C.cx_genai_lora_adapter
+	if n := len(cfg.LoRAAdapters); n > 0 {
+		cAdapters = (*C.cx_genai_lora_adapter)(C.malloc(C.size_t(n) * C.size_t(unsafe.Sizeof(C.cx_genai_lora_adapter{}))))
+		defer C.free(unsafe.Pointer(cAdapters))
+		arr := unsafe.Slice(cAdapters, n)
+		for i, a := range cfg.LoRAAdapters {
+			cPath := C.CString(a.Path)
+			defer C.free(unsafe.Pointer(cPath))
+			arr[i] = C.cx_genai_lora_adapter{path: cPath, alpha: C.float(a.Alpha)}
+		}
+	}
+
 	cConfig := C.cx_genai_session_config{
 		kv_cache_precision:               cKVPrecision,
 		cache_size:                       C.size_t(cfg.CacheSize),
@@ -227,6 +256,8 @@ func NewGenAI(modelDir string, cfg GenAIConfig) (*GenAISession, error) {
 		cache_evict_start_size:           C.size_t(max(cfg.CacheEvictStartSize, 0)),
 		cache_evict_recent_size:          C.size_t(max(cfg.CacheEvictRecentSize, 0)),
 		cache_evict_max_size:             C.size_t(max(cfg.CacheEvictMaxSize, 0)),
+		lora_adapters:                    cAdapters,
+		lora_adapter_count:               C.size_t(len(cfg.LoRAAdapters)),
 	}
 
 	ptr := C.cx_genai_session_new(cDir, cDev, &cConfig, (*C.char)(errbuf), C.size_t(genAIErrLen))

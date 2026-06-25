@@ -22,6 +22,7 @@ import (
 	"github.com/contenox/runtime/runtime/internal/internalchatapi"
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
 	"github.com/contenox/runtime/runtime/internal/mcpserverapi"
+	"github.com/contenox/runtime/runtime/internal/modeldapi"
 	"github.com/contenox/runtime/runtime/internal/modelregistryapi"
 	"github.com/contenox/runtime/runtime/internal/openapidocs"
 	"github.com/contenox/runtime/runtime/internal/providerapi"
@@ -116,6 +117,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	backendapi.AddStateRoutes(mux, stateSvc)
 	backendapi.AddModelRoutes(mux, stateSvc, deps.DefaultModel)
 	backendapi.AddBackendRoutes(mux, backendSvc, stateSvc)
+	modeldapi.AddRoutes(mux)
 
 	registrySvc := modelregistryservice.New(deps.DB)
 	registry := modelregistry.New(registrySvc)

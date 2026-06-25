@@ -41,6 +41,52 @@ export type BackendRuntimeState = {
   error?: string;
 };
 
+export type ModeldRuntimeConfig = {
+  numCtx?: number;
+  hotContextTokens?: number;
+  plannerEffectiveContext?: number;
+  numBatch?: number;
+  numThreads?: number;
+  numGpuLayers?: number;
+  tensorSplit?: number[];
+  flashAttn?: boolean;
+  kvCacheType?: string;
+  promptFormat?: string;
+  promptTemplateDigest?: string;
+  disableBOS?: boolean;
+  reasoningFormat?: string;
+};
+
+export type ModeldActiveModel = {
+  modelName?: string;
+  type?: string;
+  digest?: string;
+  config?: ModeldRuntimeConfig;
+  generation: number;
+};
+
+export type ModeldSlotStatus = {
+  ownerInstanceId?: string;
+  backend?: string;
+  state?: string;
+  active?: ModeldActiveModel;
+  busyOperation?: string;
+  lastError?: string;
+};
+
+export type ModeldStatusResponse = {
+  state: string;
+  available: boolean;
+  binary?: string;
+  endpoint?: string;
+  instance?: string;
+  backend?: string;
+  error?: string;
+  runtimeProtocol: number;
+  minRuntimeProtocol: number;
+  slot?: ModeldSlotStatus;
+};
+
 export type ObservedModel = {
   name?: string;
   model: string;
@@ -199,7 +245,6 @@ export type HITLPolicy = {
   rules: HITLRule[];
 };
 
-
 export type StatusResponse = {
   configured: boolean;
   provider: string;
@@ -309,8 +354,6 @@ export type ChatMessage = {
   /** Task events streamed during the generation of this message. */
   events?: TaskEvent[];
 };
-
-
 
 export type QueueItem = {
   url: string;

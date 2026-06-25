@@ -18,6 +18,20 @@ import (
 )
 
 type Config = transport.Config
+
+// AdapterSpec identifies one LoRA adapter to apply to a session: a GGUF adapter
+// file (Path) applied at Scale, plus Name/Digest carried for cache identity and
+// diagnostics. Applying an adapter does not modify the base model weights, but it
+// changes model behavior, so adapter identity must be part of every session and
+// manifest cache key (see docs/blueprints/modeld-lora-adapters.md). It mirrors the
+// transport-level adapter handle without importing the wire shape here.
+type AdapterSpec struct {
+	Name   string
+	Path   string
+	Digest string
+	Scale  float32
+}
+
 type PrefixInput = transport.PrefixInput
 type SuffixInput = transport.SuffixInput
 type PrefixStatus = transport.PrefixStatus

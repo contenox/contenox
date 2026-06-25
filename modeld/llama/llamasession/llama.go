@@ -31,6 +31,7 @@ type session struct {
 	model                        *llamacppshim.Model
 	lctx                         *llamacppshim.Context
 	batch                        *llamacppshim.Batch
+	adapters                     []*llamacppshim.Adapter // applied LoRA adapters, freed before the model on close
 	numCtx                       int
 	plannerCtx                   int
 	coldMaxTokens                int
@@ -159,8 +160,19 @@ func (s *session) AdmitRange(ctx context.Context, r residency.Range) error {
 	return s.admitRangeLocked(r)
 }
 
-// New loads a GGUF model and opens one persistent session.
+// New loads a GGUF model and opens one persistent base-model session. It is the
+// registered SessionFactory; adapter-backed variants go through NewWithAdapters.
 func New(modelPath string, cfg llama.Config) (llama.Session, error) {
+	return NewWithAdapters(modelPath, cfg, nil)
+}
+
+// NewWithAdapters loads a GGUF model, opens one persistent session, and applies
+// any LoRA adapters to that session's context. Adapters are attached after context
+// creation and do not modify the base model weights. Because an adapter changes
+// model behavior, a session built with adapters is a different model variant than
+// its base and must not reuse warm KV across an adapter change — that identity
+// gate lives in the caller (slot/cache key), not here.
+func NewWithAdapters(modelPath string, cfg llama.Config, adapters []llama.AdapterSpec) (llama.Session, error) {
 	model, err := llamacppshim.LoadModel(modelPath, modelConfig(cfg))
 	if err != nil {
 		return nil, fmt.Errorf("llamasession: load model %q: %w", modelPath, err)
@@ -226,10 +238,22 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 		return nil, fmt.Errorf("llamasession: new batch: %w", err)
 	}
 
+	// Load and attach LoRA adapters to the context. On any failure, free what was
+	// already loaded before tearing down the context/model so the model frees no
+	// dangling adapters.
+	loaded, err := applyAdapters(model, lctx, adapters)
+	if err != nil {
+		batch.Free()
+		lctx.Close()
+		model.Close()
+		return nil, err
+	}
+
 	return &session{
 		model:                        model,
 		lctx:                         lctx,
 		batch:                        batch,
+		adapters:                     loaded,
 		numCtx:                       numCtx,
 		plannerCtx:                   plannerCtx,
 		coldMaxTokens:                coldMaxTokens,
@@ -239,6 +263,42 @@ func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 		addBOS:                       addBOS,
 		reasoning:                    cfg.ReasoningFormat,
 	}, nil
+}
+
+// applyAdapters loads each adapter against model and attaches it to lctx at its
+// scale (defaulting an unset scale to 1.0). It returns the loaded adapters so the
+// session can free them on close; on error it frees any it already loaded.
+func applyAdapters(model *llamacppshim.Model, lctx *llamacppshim.Context, adapters []llama.AdapterSpec) ([]*llamacppshim.Adapter, error) {
+	if len(adapters) == 0 {
+		return nil, nil
+	}
+	loaded := make([]*llamacppshim.Adapter, 0, len(adapters))
+	for _, spec := range adapters {
+		ad, err := model.LoadAdapter(spec.Path)
+		if err != nil {
+			freeAdapters(loaded)
+			return nil, llama.NewUnsupportedFeatureError(fmt.Sprintf("lora adapter %q: %v", spec.Name, err))
+		}
+		scale := spec.Scale
+		if scale == 0 {
+			scale = 1.0
+		}
+		if err := lctx.SetAdapter(ad, scale); err != nil {
+			ad.Free()
+			freeAdapters(loaded)
+			return nil, fmt.Errorf("llamasession: apply lora adapter %q: %w", spec.Name, err)
+		}
+		loaded = append(loaded, ad)
+	}
+	return loaded, nil
+}
+
+// freeAdapters releases loaded adapters. Must run before the owning model is
+// closed, otherwise the model frees them and a later Free would double-free.
+func freeAdapters(adapters []*llamacppshim.Adapter) {
+	for _, ad := range adapters {
+		ad.Free()
+	}
 }
 
 func modelConfig(cfg llama.Config) llamacppshim.ModelConfig {
@@ -712,6 +772,10 @@ func (s *session) closeLocked() {
 		s.batch.Free()
 		s.batch = nil
 	}
+	// Free adapters before the model: llama.cpp frees still-attached adapters when
+	// the model is freed, so freeing after model.Close would double-free.
+	freeAdapters(s.adapters)
+	s.adapters = nil
 	if s.model != nil {
 		s.model.Close()
 		s.model = nil

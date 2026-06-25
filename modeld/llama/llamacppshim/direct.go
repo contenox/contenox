@@ -567,6 +567,85 @@ func (c *Context) Close() {
 	runtime.SetFinalizer(c, nil)
 }
 
+// Adapter wraps a loaded LoRA adapter. It is owned by the Model it was loaded
+// against: llama.cpp frees any still-attached adapters when the model is freed,
+// so Free must be called before the owning Model is closed (or not at all).
+// Applying an adapter mutates a context, never the base model weights.
+type Adapter struct {
+	ptr   *C.struct_llama_adapter_lora
+	model *Model
+}
+
+// LoadAdapter loads a GGUF LoRA adapter for this model. The adapter is not applied
+// to any context until Context.SetAdapter is called. Loading reads the adapter's
+// GGUF but does not modify the base model weights.
+func (m *Model) LoadAdapter(path string) (*Adapter, error) {
+	if m == nil || m.ptr == nil {
+		return nil, errors.New("llamacppshim: model is closed")
+	}
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+	ptr := C.llama_adapter_lora_init(m.ptr, cpath)
+	if ptr == nil {
+		return nil, fmt.Errorf("llamacppshim: failed to load LoRA adapter %q", path)
+	}
+	return &Adapter{ptr: ptr, model: m}, nil
+}
+
+// MetaValue returns a string value from the adapter's GGUF metadata, or "" if the
+// key is absent. Used for validation/provenance (e.g. the expected base model).
+func (a *Adapter) MetaValue(key string) string {
+	if a == nil || a.ptr == nil {
+		return ""
+	}
+	ckey := C.CString(key)
+	defer C.free(unsafe.Pointer(ckey))
+	buf := make([]byte, 256)
+	n := C.llama_adapter_meta_val_str(a.ptr, ckey, (*C.char)(unsafe.Pointer(&buf[0])), C.size_t(len(buf)))
+	if n < 0 {
+		return ""
+	}
+	if int(n) >= len(buf) {
+		n = C.int32_t(len(buf) - 1)
+	}
+	return string(buf[:int(n)])
+}
+
+// Free releases the adapter. Safe to call more than once. Must be called before
+// the owning Model is closed; adapters still attached to a freed model are freed
+// by llama.cpp, so a later Free would double-free.
+func (a *Adapter) Free() {
+	if a == nil || a.ptr == nil {
+		return
+	}
+	C.llama_adapter_lora_free(a.ptr)
+	a.ptr = nil
+}
+
+// SetAdapter applies a loaded LoRA adapter to this context at the given scale.
+// This mutates the context only; the base model weights are unchanged.
+func (c *Context) SetAdapter(a *Adapter, scale float32) error {
+	if c == nil || c.ptr == nil {
+		return errors.New("llamacppshim: context is closed")
+	}
+	if a == nil || a.ptr == nil {
+		return errors.New("llamacppshim: adapter is closed")
+	}
+	if rc := C.llama_set_adapter_lora(c.ptr, a.ptr, C.float(scale)); rc != 0 {
+		return fmt.Errorf("llamacppshim: set LoRA adapter failed (rc=%d)", int(rc))
+	}
+	return nil
+}
+
+// ClearAdapters removes all LoRA adapters from this context (the adapters remain
+// loaded and can be re-applied).
+func (c *Context) ClearAdapters() {
+	if c == nil || c.ptr == nil {
+		return
+	}
+	C.llama_clear_adapter_lora(c.ptr)
+}
+
 // ClearMemory clears llama.cpp memory/KV state.
 func (c *Context) ClearMemory(data bool) {
 	if c == nil || c.ptr == nil {
