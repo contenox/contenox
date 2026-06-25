@@ -1,0 +1,4098 @@
+{
+  "components": {
+    "schemas": {
+      "APIError": {
+        "properties": {
+          "error": {
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "apiframework_MessageResponse": {
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "approvalapi_respondBody": {
+        "properties": {
+          "approved": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "backendapi_OpenAICompatibleModelList": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/backendapi_OpenAIModel"
+            },
+            "type": "array"
+          },
+          "object": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "backendapi_OpenAIModel": {
+        "properties": {
+          "created": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "owned_by": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "backendapi_backendDetails": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pulledModels": {
+            "$ref": "#/components/schemas/statetype_ModelPullStatus"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "hitlservice_Condition": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "op": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "hitlservice_Policy": {
+        "properties": {
+          "default_action": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/hitlservice_Rule"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "hitlservice_Rule": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "on_timeout": {
+            "type": "string"
+          },
+          "timeout_s": {
+            "type": "integer"
+          },
+          "tool": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "string"
+          },
+          "when": {
+            "items": {
+              "$ref": "#/components/schemas/hitlservice_Condition"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "internalchatapi_chatMessage": {
+        "properties": {
+          "callTools": {
+            "$ref": "#/components/schemas/taskengine_ToolCall"
+          },
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isLatest": {
+            "type": "boolean"
+          },
+          "isUser": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string"
+          },
+          "sentAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "thinking": {
+            "type": "string"
+          },
+          "toolCallId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "internalchatapi_chatRequest": {
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "internalchatapi_chatResponse": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "inputTokenCount": {
+            "type": "integer"
+          },
+          "outputTokenCount": {
+            "type": "integer"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "response": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
+          },
+          "stopReason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "internalchatapi_chatSession": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "lastMessage": {
+            "$ref": "#/components/schemas/internalchatapi_chatMessage"
+          },
+          "messageCount": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "internalchatapi_newChatInstanceRequest": {
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "llmretry_RetryPolicy": {
+        "properties": {
+          "fallback_after": {
+            "type": "integer"
+          },
+          "fallback_model_id": {
+            "type": "string"
+          },
+          "initial_backoff": {
+            "description": "nanoseconds",
+            "type": "integer"
+          },
+          "jitter": {
+            "type": "number"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "max_backoff": {
+            "description": "nanoseconds",
+            "type": "integer"
+          },
+          "rate_limit_min_wait": {
+            "description": "nanoseconds",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "localfileapi_createFolderRequest": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "localfileapi_fileContentResponse": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "contentBase64": {
+            "type": "string"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/localfileservice_Entry"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "localfileapi_moveRequest": {
+        "properties": {
+          "newPath": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "localfileapi_writeFileRequest": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "contentBase64": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "localfileservice_Entry": {
+        "properties": {
+          "contentType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "isDirectory": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "mcpserverapi_oauthStartRequest": {
+        "properties": {
+          "redirectBase": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "mcpserverapi_oauthStartResponse": {
+        "properties": {
+          "authorizationUrl": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "modelregistryapi_downloadRequest": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "providerapi_ConfigureRequest": {
+        "properties": {
+          "apiKey": {
+            "type": "string"
+          },
+          "apiKeyEnv": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "defaultModel": {
+            "type": "string"
+          },
+          "setDefault": {
+            "type": "boolean"
+          },
+          "upsert": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "providerservice_ProviderStatus": {
+        "properties": {
+          "apiKeyEnv": {
+            "type": "string"
+          },
+          "backendId": {
+            "type": "string"
+          },
+          "backendName": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "defaultModel": {
+            "type": "string"
+          },
+          "defaultProvider": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "recommendedApiKeyEnv": {
+            "type": "string"
+          },
+          "secretConfigured": {
+            "type": "boolean"
+          },
+          "secretPresent": {
+            "type": "boolean"
+          },
+          "secretSource": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "runtimetypes_Backend": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "runtimetypes_MCPServer": {
+        "properties": {
+          "args": {
+            "type": "object"
+          },
+          "authEnvKey": {
+            "type": "string"
+          },
+          "authToken": {
+            "type": "string"
+          },
+          "authType": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "connectTimeoutSeconds": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "injectParams": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "oauthClientId": {
+            "type": "string"
+          },
+          "oauthClientSecretEnv": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "runtimetypes_ModelRegistryEntry": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer"
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "setupapi_putCLIConfigRequest": {
+        "properties": {
+          "default-alt-model": {
+            "type": "string"
+          },
+          "default-alt-provider": {
+            "type": "string"
+          },
+          "default-autocomplete-model": {
+            "type": "string"
+          },
+          "default-autocomplete-provider": {
+            "type": "string"
+          },
+          "default-chain": {
+            "type": "string"
+          },
+          "default-max-tokens": {
+            "type": "string"
+          },
+          "default-model": {
+            "type": "string"
+          },
+          "default-provider": {
+            "type": "string"
+          },
+          "hitl-policy-name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "setupapi_putCLIConfigResponse": {
+        "properties": {
+          "defaultAltModel": {
+            "type": "string"
+          },
+          "defaultAltProvider": {
+            "type": "string"
+          },
+          "defaultAutocompleteModel": {
+            "type": "string"
+          },
+          "defaultAutocompleteProvider": {
+            "type": "string"
+          },
+          "defaultChain": {
+            "type": "string"
+          },
+          "defaultMaxTokens": {
+            "type": "string"
+          },
+          "defaultModel": {
+            "type": "string"
+          },
+          "defaultProvider": {
+            "type": "string"
+          },
+          "hitlPolicyName": {
+            "type": "string"
+          },
+          "resolvedFrom": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "setupcheck_BackendCheck": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "chatModelCount": {
+            "type": "integer"
+          },
+          "chatModels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "defaultProvider": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "hint": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "modelCount": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reachable": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "setupcheck_Issue": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "cliCommand": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "fixPath": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "setupcheck_Result": {
+        "properties": {
+          "backendChecks": {
+            "items": {
+              "$ref": "#/components/schemas/setupcheck_BackendCheck"
+            },
+            "type": "array"
+          },
+          "backendCount": {
+            "type": "integer"
+          },
+          "defaultChain": {
+            "type": "string"
+          },
+          "defaultMaxOutputTokens": {
+            "type": "integer"
+          },
+          "defaultModel": {
+            "type": "string"
+          },
+          "defaultProvider": {
+            "type": "string"
+          },
+          "hitlPolicyName": {
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/setupcheck_Issue"
+            },
+            "type": "array"
+          },
+          "reachableBackendCount": {
+            "type": "integer"
+          },
+          "resolvedFrom": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "statetype_ModelDetails": {
+        "properties": {
+          "families": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "family": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "parameterSize": {
+            "type": "string"
+          },
+          "parentModel": {
+            "type": "string"
+          },
+          "quantizationLevel": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "statetype_ModelPullStatus": {
+        "properties": {
+          "canChat": {
+            "type": "boolean"
+          },
+          "canEmbed": {
+            "type": "boolean"
+          },
+          "canPrompt": {
+            "type": "boolean"
+          },
+          "canStream": {
+            "type": "boolean"
+          },
+          "canThink": {
+            "type": "boolean"
+          },
+          "contextLength": {
+            "type": "integer"
+          },
+          "details": {
+            "$ref": "#/components/schemas/statetype_ModelDetails"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "maxOutputTokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modifiedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_CapturedStateUnit": {
+        "properties": {
+          "cancelled": {
+            "type": "boolean"
+          },
+          "duration": {
+            "description": "nanoseconds",
+            "type": "integer"
+          },
+          "error": {
+            "$ref": "#/components/schemas/taskengine_ErrorResponse"
+          },
+          "input": {},
+          "inputType": {
+            "type": "object"
+          },
+          "inputVar": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "output": {},
+          "outputType": {
+            "type": "object"
+          },
+          "providerType": {
+            "type": "string"
+          },
+          "retryIndex": {
+            "type": "integer"
+          },
+          "taskHandler": {
+            "type": "string"
+          },
+          "taskID": {
+            "type": "string"
+          },
+          "timedOut": {
+            "type": "boolean"
+          },
+          "tokenUsage": {
+            "$ref": "#/components/schemas/taskengine_TokenUsage"
+          },
+          "toolNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "transition": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_ErrorResponse": {
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_FunctionCall": {
+        "properties": {
+          "arguments": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_LLMExecutionConfig": {
+        "properties": {
+          "hide_tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "max_tokens": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pass_clients_tools": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "providers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "retry_policy": {
+            "$ref": "#/components/schemas/llmretry_RetryPolicy"
+          },
+          "shift": {
+            "type": "boolean"
+          },
+          "temperature": {
+            "type": "number"
+          },
+          "think": {
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tools_policies": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_TaskChainDefinition": {
+        "properties": {
+          "debug": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "tasks": {
+            "$ref": "#/components/schemas/taskengine_TaskDefinition"
+          },
+          "token_limit": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_TaskDefinition": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "execute_config": {
+            "$ref": "#/components/schemas/taskengine_LLMExecutionConfig"
+          },
+          "handler": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "input_var": {
+            "type": "string"
+          },
+          "output_template": {
+            "type": "string"
+          },
+          "print": {
+            "type": "string"
+          },
+          "prompt_template": {
+            "type": "string"
+          },
+          "retry_on_failure": {
+            "type": "integer"
+          },
+          "system_instruction": {
+            "type": "string"
+          },
+          "timeout": {
+            "type": "string"
+          },
+          "tools": {
+            "$ref": "#/components/schemas/taskengine_ToolsCall"
+          },
+          "transition": {
+            "$ref": "#/components/schemas/taskengine_TaskTransition"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_TaskTransition": {
+        "properties": {
+          "branches": {
+            "$ref": "#/components/schemas/taskengine_TransitionBranch"
+          },
+          "on_failure": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_TokenUsage": {
+        "properties": {
+          "completion": {
+            "type": "integer"
+          },
+          "prompt": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_ToolCall": {
+        "properties": {
+          "function": {
+            "$ref": "#/components/schemas/taskengine_FunctionCall"
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider_meta": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_ToolsCall": {
+        "properties": {
+          "args": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "name": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskengine_TransitionBranch": {
+        "properties": {
+          "edge": {
+            "type": "string"
+          },
+          "goto": {
+            "type": "string"
+          },
+          "operator": {
+            "type": "object"
+          },
+          "when": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "taskexecapi_executeTaskRequest": {
+        "properties": {
+          "chain": {
+            "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+          },
+          "input": {},
+          "inputType": {
+            "type": "string"
+          },
+          "templateVars": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "taskexecapi_executeTaskResponse": {
+        "properties": {
+          "output": {},
+          "outputType": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
+          },
+          "stopReason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "HTTP API served by `contenox serve` under /api. Generated from route annotations by tools/openapi-gen.",
+    "title": "Contenox Runtime API",
+    "version": "v0.32.7"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "get_",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /",
+        "tags": [
+          "server"
+        ]
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "operationId": "compat_chat",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /api/chat",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/api/generate": {
+      "post": {
+        "operationId": "compat_generate",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /api/generate",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/api/ps": {
+      "get": {
+        "operationId": "compat_ps",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /api/ps",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/api/show": {
+      "post": {
+        "operationId": "compat_show",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /api/show",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "operationId": "compat_tags",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /api/tags",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/approvals/{approvalId}": {
+      "post": {
+        "operationId": "approval_respond",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approvalId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/approvalapi_respondBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /approvals/{approvalId}",
+        "tags": [
+          "approval"
+        ]
+      }
+    },
+    "/backends": {
+      "get": {
+        "operationId": "backend_listBackends",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /backends",
+        "tags": [
+          "backend"
+        ]
+      },
+      "post": {
+        "operationId": "backend_createBackend",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_Backend"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_Backend"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /backends",
+        "tags": [
+          "backend"
+        ]
+      }
+    },
+    "/backends/{id}": {
+      "delete": {
+        "operationId": "backend_deleteBackend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /backends/{id}",
+        "tags": [
+          "backend"
+        ]
+      },
+      "get": {
+        "operationId": "backend_getBackend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backendapi_backendDetails"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /backends/{id}",
+        "tags": [
+          "backend"
+        ]
+      },
+      "put": {
+        "operationId": "backend_updateBackend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_Backend"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_Backend"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /backends/{id}",
+        "tags": [
+          "backend"
+        ]
+      }
+    },
+    "/chats": {
+      "get": {
+        "operationId": "internalchat_listChats",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /chats",
+        "tags": [
+          "internalchat"
+        ]
+      },
+      "post": {
+        "operationId": "internalchat_createChat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/internalchatapi_newChatInstanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/internalchatapi_chatSession"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /chats",
+        "tags": [
+          "internalchat"
+        ]
+      }
+    },
+    "/chats/{id}": {
+      "get": {
+        "operationId": "internalchat_history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /chats/{id}",
+        "tags": [
+          "internalchat"
+        ]
+      }
+    },
+    "/chats/{id}/chat": {
+      "post": {
+        "operationId": "internalchat_chat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chainId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "think",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/internalchatapi_chatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/internalchatapi_chatResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /chats/{id}/chat",
+        "tags": [
+          "internalchat"
+        ]
+      }
+    },
+    "/cli-config": {
+      "put": {
+        "operationId": "setup_putCLIConfig",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/setupapi_putCLIConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/setupapi_putCLIConfigResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /cli-config",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/files": {
+      "delete": {
+        "operationId": "localfile_deletePath",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apiframework_MessageResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /files",
+        "tags": [
+          "localfile"
+        ]
+      },
+      "get": {
+        "operationId": "localfile_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /files",
+        "tags": [
+          "localfile"
+        ]
+      },
+      "post": {
+        "operationId": "localfile_createFile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/localfileapi_writeFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileservice_Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /files",
+        "tags": [
+          "localfile"
+        ]
+      },
+      "put": {
+        "operationId": "localfile_updateFile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/localfileapi_writeFileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileservice_Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /files",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/files/content": {
+      "get": {
+        "operationId": "localfile_content",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileapi_fileContentResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /files/content",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/files/download": {
+      "get": {
+        "operationId": "localfile_download",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /files/download",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/files/move": {
+      "put": {
+        "operationId": "localfile_movePath",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/localfileapi_moveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileservice_Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /files/move",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/files/stat": {
+      "get": {
+        "operationId": "localfile_stat",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileservice_Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /files/stat",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/folders": {
+      "delete": {
+        "operationId": "localfile_deletePath",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/apiframework_MessageResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /folders",
+        "tags": [
+          "localfile"
+        ]
+      },
+      "post": {
+        "operationId": "localfile_createFolder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/localfileapi_createFolderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/localfileservice_Entry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /folders",
+        "tags": [
+          "localfile"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /health",
+        "tags": [
+          "server"
+        ]
+      }
+    },
+    "/hitl-policies": {
+      "delete": {
+        "operationId": "hitlpolicy_deletePolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /hitl-policies",
+        "tags": [
+          "hitlpolicy"
+        ]
+      },
+      "get": {
+        "operationId": "hitlpolicy_getPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hitlservice_Policy"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /hitl-policies",
+        "tags": [
+          "hitlpolicy"
+        ]
+      },
+      "post": {
+        "operationId": "hitlpolicy_createPolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hitlservice_Policy"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /hitl-policies",
+        "tags": [
+          "hitlpolicy"
+        ]
+      },
+      "put": {
+        "operationId": "hitlpolicy_updatePolicy",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/hitlservice_Policy"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /hitl-policies",
+        "tags": [
+          "hitlpolicy"
+        ]
+      }
+    },
+    "/hitl-policies/list": {
+      "get": {
+        "operationId": "hitlpolicy_listPolicies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /hitl-policies/list",
+        "tags": [
+          "hitlpolicy"
+        ]
+      }
+    },
+    "/mcp-servers": {
+      "get": {
+        "operationId": "mcpserver_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /mcp-servers",
+        "tags": [
+          "mcpserver"
+        ]
+      },
+      "post": {
+        "operationId": "mcpserver_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_MCPServer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_MCPServer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /mcp-servers",
+        "tags": [
+          "mcpserver"
+        ]
+      }
+    },
+    "/mcp-servers/by-name/{name}": {
+      "get": {
+        "operationId": "mcpserver_getByName",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_MCPServer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /mcp-servers/by-name/{name}",
+        "tags": [
+          "mcpserver"
+        ]
+      }
+    },
+    "/mcp-servers/{id}": {
+      "delete": {
+        "operationId": "mcpserver_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /mcp-servers/{id}",
+        "tags": [
+          "mcpserver"
+        ]
+      },
+      "get": {
+        "operationId": "mcpserver_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_MCPServer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /mcp-servers/{id}",
+        "tags": [
+          "mcpserver"
+        ]
+      },
+      "put": {
+        "operationId": "mcpserver_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_MCPServer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_MCPServer"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /mcp-servers/{id}",
+        "tags": [
+          "mcpserver"
+        ]
+      }
+    },
+    "/mcp-servers/{id}/oauth/start": {
+      "post": {
+        "operationId": "mcpserver_oauthStart",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mcpserverapi_oauthStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mcpserverapi_oauthStartResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /mcp-servers/{id}/oauth/start",
+        "tags": [
+          "mcpserver"
+        ]
+      }
+    },
+    "/mcp/oauth/callback": {
+      "get": {
+        "operationId": "mcpserver_oauthCallback",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /mcp/oauth/callback",
+        "tags": [
+          "mcpserver"
+        ]
+      }
+    },
+    "/model-registry": {
+      "get": {
+        "operationId": "modelregistry_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /model-registry",
+        "tags": [
+          "modelregistry"
+        ]
+      },
+      "post": {
+        "operationId": "modelregistry_create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_ModelRegistryEntry"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_ModelRegistryEntry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /model-registry",
+        "tags": [
+          "modelregistry"
+        ]
+      }
+    },
+    "/model-registry/download": {
+      "post": {
+        "operationId": "modelregistry_download",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/modelregistryapi_downloadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /model-registry/download",
+        "tags": [
+          "modelregistry"
+        ]
+      }
+    },
+    "/model-registry/{id}": {
+      "delete": {
+        "operationId": "modelregistry_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /model-registry/{id}",
+        "tags": [
+          "modelregistry"
+        ]
+      },
+      "get": {
+        "operationId": "modelregistry_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_ModelRegistryEntry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /model-registry/{id}",
+        "tags": [
+          "modelregistry"
+        ]
+      },
+      "put": {
+        "operationId": "modelregistry_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/runtimetypes_ModelRegistryEntry"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runtimetypes_ModelRegistryEntry"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /model-registry/{id}",
+        "tags": [
+          "modelregistry"
+        ]
+      }
+    },
+    "/models": {
+      "get": {
+        "operationId": "backend_listInternal",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /models",
+        "tags": [
+          "backend"
+        ]
+      }
+    },
+    "/openai/v1/chat/completions": {
+      "post": {
+        "operationId": "compat_handle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /openai/v1/chat/completions",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/openai/v1/completions": {
+      "post": {
+        "operationId": "compat_handle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /openai/v1/completions",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/openai/v1/fim/completions": {
+      "post": {
+        "operationId": "compat_handle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /openai/v1/fim/completions",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/openai/v1/models": {
+      "get": {
+        "operationId": "backend_listModels",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backendapi_OpenAICompatibleModelList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /openai/v1/models",
+        "tags": [
+          "backend"
+        ]
+      }
+    },
+    "/openai/{chainID}/v1/chat/completions": {
+      "post": {
+        "operationId": "compat_handle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /openai/{chainID}/v1/chat/completions",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/openai/{chainID}/v1/fim/completions": {
+      "post": {
+        "operationId": "compat_handle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /openai/{chainID}/v1/fim/completions",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/openai/{chainID}/v1/models": {
+      "get": {
+        "operationId": "backend_listModels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chainID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/backendapi_OpenAICompatibleModelList"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /openai/{chainID}/v1/models",
+        "tags": [
+          "backend"
+        ]
+      }
+    },
+    "/providers/configs": {
+      "get": {
+        "operationId": "provider_listConfigs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /providers/configs",
+        "tags": [
+          "provider"
+        ]
+      }
+    },
+    "/providers/supported": {
+      "get": {
+        "operationId": "provider_supported",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /providers/supported",
+        "tags": [
+          "provider"
+        ]
+      }
+    },
+    "/providers/{providerType}/config": {
+      "delete": {
+        "operationId": "provider_deleteConfig",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "providerType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /providers/{providerType}/config",
+        "tags": [
+          "provider"
+        ]
+      },
+      "get": {
+        "operationId": "provider_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "providerType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/providerservice_ProviderStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /providers/{providerType}/config",
+        "tags": [
+          "provider"
+        ]
+      }
+    },
+    "/providers/{providerType}/configure": {
+      "post": {
+        "operationId": "provider_configure",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "providerType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/providerapi_ConfigureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/providerservice_ProviderStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /providers/{providerType}/configure",
+        "tags": [
+          "provider"
+        ]
+      }
+    },
+    "/providers/{providerType}/status": {
+      "get": {
+        "operationId": "provider_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "providerType",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/providerservice_ProviderStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /providers/{providerType}/status",
+        "tags": [
+          "provider"
+        ]
+      }
+    },
+    "/setup-status": {
+      "get": {
+        "operationId": "setup_getStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/setupcheck_Result"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /setup-status",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/setup/refresh": {
+      "post": {
+        "operationId": "setup_refreshStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/setupcheck_Result"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /setup/refresh",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/state": {
+      "get": {
+        "operationId": "backend_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /state",
+        "tags": [
+          "backend"
+        ]
+      }
+    },
+    "/task-events": {
+      "get": {
+        "operationId": "taskevents_stream",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /task-events",
+        "tags": [
+          "taskevents"
+        ]
+      }
+    },
+    "/taskchains": {
+      "delete": {
+        "operationId": "taskchain_deleteTaskChain",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /taskchains",
+        "tags": [
+          "taskchain"
+        ]
+      },
+      "get": {
+        "operationId": "taskchain_getTaskChain",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /taskchains",
+        "tags": [
+          "taskchain"
+        ]
+      },
+      "post": {
+        "operationId": "taskchain_createTaskChain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /taskchains",
+        "tags": [
+          "taskchain"
+        ]
+      },
+      "put": {
+        "operationId": "taskchain_updateTaskChain",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/taskengine_TaskChainDefinition"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /taskchains",
+        "tags": [
+          "taskchain"
+        ]
+      }
+    },
+    "/taskchains/list": {
+      "get": {
+        "operationId": "taskchain_listTaskChains",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /taskchains/list",
+        "tags": [
+          "taskchain"
+        ]
+      }
+    },
+    "/tasks": {
+      "post": {
+        "operationId": "taskexec_execute",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/taskexecapi_executeTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/taskexecapi_executeTaskResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /tasks",
+        "tags": [
+          "taskexec"
+        ]
+      }
+    },
+    "/tools/local": {
+      "get": {
+        "operationId": "tools_listLocal",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /tools/local",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/remote": {
+      "get": {
+        "operationId": "tools_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /tools/remote",
+        "tags": [
+          "tools"
+        ]
+      },
+      "post": {
+        "operationId": "tools_create",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /tools/remote",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/remote/by-name/{name}": {
+      "get": {
+        "operationId": "tools_getByName",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /tools/remote/by-name/{name}",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/remote/{id}": {
+      "delete": {
+        "operationId": "tools_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /tools/remote/{id}",
+        "tags": [
+          "tools"
+        ]
+      },
+      "get": {
+        "operationId": "tools_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /tools/remote/{id}",
+        "tags": [
+          "tools"
+        ]
+      },
+      "put": {
+        "operationId": "tools_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PUT /tools/remote/{id}",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/schemas": {
+      "get": {
+        "operationId": "tools_getSchemas",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /tools/schemas",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "compat_handle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /v1/chat/completions",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/v1/completions": {
+      "post": {
+        "operationId": "compat_handle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /v1/completions",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/v1/fim/completions": {
+      "post": {
+        "operationId": "compat_handle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /v1/fim/completions",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "operationId": "get_v1_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /v1/models",
+        "tags": [
+          "compat"
+        ]
+      }
+    },
+    "/version": {
+      "get": {
+        "operationId": "get_version",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /version",
+        "tags": [
+          "server"
+        ]
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ]
+}

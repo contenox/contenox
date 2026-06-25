@@ -91,8 +91,38 @@ jobs:
         working-directory: packages/vscode
         run: xvfb-run -a npm test
 
-  build:
+  web:
     needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            packages/ui/package-lock.json
+            packages/beam/package-lock.json
+
+      - name: Build, test, and verify Beam UI
+        run: make build-ui test-ui verify-ui-embed
+
+      - name: Upload Beam dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: beam-dist
+          path: runtime/internal/web/beam/dist
+
+  build:
+    needs: [verify, web]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -123,6 +153,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download Beam dist
+        uses: actions/download-artifact@v4
+        with:
+          name: beam-dist
+          path: runtime/internal/web/beam/dist
 
       - name: Set up Go
         uses: actions/setup-go@v5

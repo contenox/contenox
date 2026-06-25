@@ -131,39 +131,54 @@ VSCODE_DEFAULT_EXTENSIONS_DIR := $(if $(findstring insiders,$(notdir $(VSCODE_CL
 VSCODE_INSTALL_EXTENSIONS_DIR := $(if $(strip $(VSCODE_EXTENSIONS_DIR)),$(VSCODE_EXTENSIONS_DIR),$(VSCODE_DEFAULT_EXTENSIONS_DIR))
 VSCODE_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix
 VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
+UI_DIR := $(PROJECT_ROOT)/packages/ui
+BEAM_DIR := $(PROJECT_ROOT)/packages/beam
 
 .PHONY: help \
-	build-contenox build-contenox-windows build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-prebuilt build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
+	openapi \
+	build-contenox build-contenox-windows build-ui build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-prebuilt build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
 	bundle-modeld-deps bundle-modeld-deps-linux bundle-modeld-deps-darwin bundle-modeld-deps-windows \
 	push-modeld-deps pull-modeld-deps push-modeld-release push-modeld-index modeld-release-metadata modeld-deps-fingerprint modeld-deps-profile modeld-deps-pull-dir check-modeld-deps-store check-modeld-deps-bundle deps-modeld-prebuilt \
 	package-modeld-release package-modeld-release-linux package-modeld-release-darwin package-modeld-release-windows \
 	check-modeld-llama-deps \
 	clean clean-vscode \
-	deps-modeld deps-llamacpp-ref deps-openvino deps-vscode \
+	deps-modeld deps-llamacpp-ref deps-openvino deps-ui deps-vscode \
 	dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
 	run-modeld \
-	test test-unit test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help
+	test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help \
+	verify-ui-embed
 
 help:
-	@echo "build-*    build-contenox build-contenox-windows build-llamacpp-runtime build-modeld build-vscode"
+	@echo "build-*    build-contenox build-contenox-windows build-ui build-llamacpp-runtime build-modeld build-vscode"
 	@echo "package-*  package-modeld package-modeld-prebuilt package-modeld-release package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
 	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] modeld-release-metadata push-modeld-release push-modeld-index"
 	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/modeld-release-runbook.md)"
-	@echo "test-*     test test-unit test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
+	@echo "test-*     test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
 	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
-	@echo "deps-*     deps-modeld deps-modeld-prebuilt deps-llamacpp-ref deps-openvino deps-vscode"
+	@echo "deps-*     deps-modeld deps-modeld-prebuilt deps-llamacpp-ref deps-openvino deps-ui deps-vscode"
 	@echo "           (deps-modeld-prebuilt checks/pulls the expected native dep bundle from the store)"
+	@echo "verify-*   verify-ui-embed"
 	@echo "Version (maintainers): make -f Makefile.version help"
 	@echo "clean"
 
+# Regenerate the OpenAPI spec (runtime/internal/openapidocs/openapi.json) from
+# the route annotations. Run after changing any HTTP route or its @request/
+# @response/@param annotations; the result is embedded into the binary.
+openapi:
+	go run $(PROJECT_ROOT)/tools/openapi-gen
+
 # build
 # Build the pure-Go CLI. Native inference is handled by modeld.
-build-contenox:
+build-contenox: verify-ui-embed
 	CGO_ENABLED=0 go build -o $(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/cmd/contenox
 
-build-contenox-windows:
+build-contenox-windows: verify-ui-embed
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o $(PROJECT_ROOT)/bin/contenox-windows-amd64.exe $(PROJECT_ROOT)/cmd/contenox
+
+build-ui: deps-ui
+	cd $(UI_DIR) && npm run build
+	cd $(BEAM_DIR) && npm run build
 
 build-llamacpp-runtime:
 	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct runtime
@@ -553,28 +568,28 @@ $(MODELD_RELEASE_TARGETS): package-modeld-release-%: check-modeld-deps-bundle
 build-vscode: deps-vscode
 	cd $(VSCODE_DIR) && npm run build
 
-package-vscode: deps-vscode
+package-vscode: build-ui deps-vscode
 	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
 	cd $(VSCODE_DIR) && npm run package
 	@test -f "$(VSCODE_VSIX)" || { echo "expected VSIX was not created: $(VSCODE_VSIX)"; exit 1; }
 	cd $(VSCODE_DIR) && npm run package:check -- "artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix"
 	@echo "Built VS Code extension: $(VSCODE_VSIX)"
 
-package-vscode-dev: deps-vscode
+package-vscode-dev: build-ui deps-vscode
 	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
 	cd $(VSCODE_DIR) && CONTENOX_VSCODE_SKIP_VSCE_SECRET_SCAN=1 npm run package
 	@test -f "$(VSCODE_VSIX)" || { echo "expected VSIX was not created: $(VSCODE_VSIX)"; exit 1; }
 	cd $(VSCODE_DIR) && npm run package:check -- "artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix"
 	@echo "Built dev VS Code extension: $(VSCODE_VSIX)"
 
-package-vscode-proposed: deps-vscode
+package-vscode-proposed: build-ui deps-vscode
 	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
 	cd $(VSCODE_DIR) && npm run package:proposed
 	@test -f "$(VSCODE_PROPOSED_VSIX)" || { echo "expected proposed VSIX was not created: $(VSCODE_PROPOSED_VSIX)"; exit 1; }
 	cd $(VSCODE_DIR) && CONTENOX_ALLOW_PROPOSED=1 npm run package:check -- "artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix"
 	@echo "Built proposed VS Code extension: $(VSCODE_PROPOSED_VSIX)"
 
-package-vscode-proposed-dev: deps-vscode
+package-vscode-proposed-dev: build-ui deps-vscode
 	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
 	cd $(VSCODE_DIR) && CONTENOX_VSCODE_SKIP_VSCE_SECRET_SCAN=1 npm run package:proposed
 	@test -f "$(VSCODE_PROPOSED_VSIX)" || { echo "expected proposed VSIX was not created: $(VSCODE_PROPOSED_VSIX)"; exit 1; }
@@ -596,6 +611,17 @@ test-vllm:
 
 test-system:
 	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -run '^TestSystem_' ./...
+
+test-api: build-ui
+	$(MAKE) --no-print-directory build-contenox
+	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/run_apitests.sh $(PYTEST_ARGS)
+
+test-ui: deps-ui
+	cd $(BEAM_DIR) && npm test
+
+verify-ui-embed:
+	@test -f "$(PROJECT_ROOT)/runtime/internal/web/beam/dist/index.html" || { echo "missing Beam dist; run: make build-ui"; exit 1; }
+	go test -C $(PROJECT_ROOT) ./runtime/internal/web
 
 test-contenox-verbose:
 	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -v ./runtime/contenoxcli/...
@@ -663,6 +689,10 @@ deps-llamacpp-ref:
 
 deps-openvino:
 	$(MAKE) -f $(PROJECT_ROOT)Makefile.openvino deps-genai genai-src
+
+deps-ui:
+	cd $(UI_DIR) && npm ci
+	cd $(BEAM_DIR) && npm ci
 
 deps-vscode:
 	cd $(PROJECT_ROOT)/packages/vscode && npm ci

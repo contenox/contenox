@@ -1,4 +1,4 @@
-# CI: contenox compile smoke, Windows cross-compile smoke, and cheap TestUnit_* Go tests.
+# CI: Beam build/test/embed smoke, contenox compile smoke, Windows cross-compile smoke, and cheap TestUnit_* Go tests.
 # No TestSystem_* / Docker / LLM integration tests.
 name: CI
 
@@ -22,9 +22,17 @@ jobs:
         with:
           go-version: "1.25"
 
-      # contenox is pure Go (CGO_ENABLED=0); the native inference backends live
-      # in the separate modeld binary, which has its own CGo CI. No C toolchain,
-      # llama.cpp headers, or MinGW cross-toolchain is needed here.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            packages/ui/package-lock.json
+            packages/beam/package-lock.json
+
+      - name: Build, test, and verify Beam UI
+        run: make build-ui test-ui verify-ui-embed
+
       - name: Build contenox (compile smoke)
         run: make build-contenox
 

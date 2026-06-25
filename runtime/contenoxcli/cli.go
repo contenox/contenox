@@ -377,6 +377,7 @@ func init() {
 	rootCmd.AddCommand(vscodeAgentCmd)
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(serveCmd)
 
 	rootCmd.InitDefaultHelpCmd() // so "contenox help" is handled by Cobra, not passed as run input
 	initCmd.Flags().BoolP("force", "f", false, "Overwrite existing files")

@@ -5,8 +5,12 @@ on:
     branches: [main, master]
     paths:
       - ".github/workflows/vscode-extension-ci.yml"
+      - "packages/ui/**"
+      - "packages/beam/**"
       - "packages/vscode/**"
       - "runtime/vscodeagent/**"
+      - "runtime/internal/web/**"
+      - "runtime/contenoxcli/serve_cmd.go"
       - "runtime/contenoxcli/vscodeagent_cmd.go"
       - "runtime/contenoxcli/chain-fim.json"
       - "runtime/version/version.txt"
@@ -17,8 +21,12 @@ on:
     branches: [main, master]
     paths:
       - ".github/workflows/vscode-extension-ci.yml"
+      - "packages/ui/**"
+      - "packages/beam/**"
       - "packages/vscode/**"
       - "runtime/vscodeagent/**"
+      - "runtime/internal/web/**"
+      - "runtime/contenoxcli/serve_cmd.go"
       - "runtime/contenoxcli/vscodeagent_cmd.go"
       - "runtime/contenoxcli/chain-fim.json"
       - "runtime/version/version.txt"
@@ -51,7 +59,10 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: packages/vscode/package-lock.json
+          cache-dependency-path: |
+            packages/vscode/package-lock.json
+            packages/ui/package-lock.json
+            packages/beam/package-lock.json
 
       - name: Install package inspection dependencies
         run: |
@@ -69,6 +80,9 @@ jobs:
       - name: Run VS Code integration tests
         working-directory: packages/vscode
         run: xvfb-run -a npm test
+
+      - name: Build, test, and verify Beam UI
+        run: make build-ui test-ui verify-ui-embed
 
       - name: Build stable VSIX
         working-directory: packages/vscode
