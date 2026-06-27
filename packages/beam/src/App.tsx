@@ -14,11 +14,16 @@ export default function App() {
     <Router>
       <AuthProvider>
         <Layout
-          sidebarContent={<ChatSessionSidebar />}
+          sidebarContent={({ setIsOpen }) => <ChatSessionSidebar setIsOpen={setIsOpen} />}
           defaultOpen={true}
           mainContent={
             <ErrorBoundary>
-              <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><Spinner /></div>}>
+              <Suspense
+                fallback={
+                  <div className="flex min-h-screen items-center justify-center">
+                    <Spinner />
+                  </div>
+                }>
                 <Routes>
                   {routes.map((route, index) => {
                     const Element = route.element;

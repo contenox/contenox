@@ -10,18 +10,27 @@ interface Props {
   onDelete: (name: string) => void;
 }
 
-export default function PolicyList({ names, activeName, selectedName, onSelect, onSetActive, onDelete }: Props) {
+export default function PolicyList({
+  names,
+  activeName,
+  selectedName,
+  onSelect,
+  onSetActive,
+  onDelete,
+}: Props) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex min-h-0 w-64 flex-col gap-1 overflow-y-auto border-r border-neutral-200 p-3 dark:border-neutral-700">
+    <div className="border-surface-200 dark:border-dark-surface-700 flex max-h-72 min-h-0 w-full shrink-0 flex-col gap-1 overflow-y-auto border-b p-3 md:max-h-none md:w-64 md:border-r md:border-b-0">
       {names.length === 0 && (
-        <P variant="muted" className="text-sm">{t('hitl_policies.list_empty')}</P>
+        <P variant="muted" className="text-sm">
+          {t('hitl_policies.list_empty')}
+        </P>
       )}
       {names.map(name => (
         <div
           key={name}
-          className={`group flex flex-col gap-1 rounded-md p-2 cursor-pointer hover:bg-surface-100 dark:hover:bg-dark-surface-100 ${
+          className={`group hover:bg-surface-100 dark:hover:bg-dark-surface-100 flex cursor-pointer flex-col gap-1 rounded-md p-2 ${
             selectedName === name ? 'bg-surface-100 dark:bg-dark-surface-100' : ''
           }`}
           onClick={() => onSelect(name)}>
@@ -33,19 +42,25 @@ export default function PolicyList({ names, activeName, selectedName, onSelect, 
               </Badge>
             )}
           </div>
-          <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+          <div className="flex gap-1 opacity-100 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
             {activeName !== name && (
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={e => { e.stopPropagation(); onSetActive(name); }}>
+                onClick={e => {
+                  e.stopPropagation();
+                  onSetActive(name);
+                }}>
                 {t('hitl_policies.set_active')}
               </Button>
             )}
             <Button
-              variant="secondary"
+              variant="danger"
               size="sm"
-              onClick={e => { e.stopPropagation(); void onDelete(name); }}>
+              onClick={e => {
+                e.stopPropagation();
+                void onDelete(name);
+              }}>
               {t('common.delete')}
             </Button>
           </div>

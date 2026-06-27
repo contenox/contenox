@@ -131,7 +131,7 @@ export function ChatComposer({
           variant === "compact"
             ? "resize-vertical min-h-[60px]"
             : variant === "workbench"
-              ? "min-h-[180px] max-h-[50vh] resize-y md:min-h-[200px]"
+              ? "min-h-[140px] max-h-[50vh] resize-y sm:min-h-[180px] md:min-h-[200px]"
               : "resize-vertical min-h-[80px]",
           textareaClassName,
         )}
@@ -157,7 +157,9 @@ export function ChatComposer({
 
   const softNoteBlock =
     overSoftMax && softLimitExceededNote ? (
-      <p className="text-text-muted dark:text-dark-secondary-400 text-xs">{softLimitExceededNote}</p>
+      <p className="text-text-muted dark:text-dark-secondary-400 text-xs">
+        {softLimitExceededNote}
+      </p>
     ) : null;
 
   const submitButton = (compactHeight?: boolean, workbenchTall?: boolean) => (
@@ -212,9 +214,7 @@ export function ChatComposer({
 
       <div className="space-y-4">
         <div className="space-y-3">
-          <div className="flex gap-2">
-            {textareaBlock}
-          </div>
+          <div className="flex gap-2">{textareaBlock}</div>
 
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
@@ -234,7 +234,8 @@ export function ChatComposer({
       <div
         className={cn(
           "border-surface-200 dark:border-dark-surface-600 bg-surface-50/80 dark:bg-dark-surface-100/80 border-t px-3 py-3 transition-all duration-200 sm:px-4",
-          isFocused && "ring-primary-100 dark:ring-dark-primary-500 ring-2 ring-inset",
+          isFocused &&
+            "ring-primary-100 dark:ring-dark-primary-500 ring-2 ring-inset",
           className,
         )}
       >

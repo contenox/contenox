@@ -33,24 +33,26 @@ export default function McpServerCard({
   return (
     <Card variant="surface">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <P className="font-semibold">{server.name}</P>
-          <P className="text-muted text-sm">
+          <P className="text-text-muted dark:text-dark-text-muted text-sm">
             {t('mcp_servers.transport_label')}: {server.transport}
           </P>
-          <P className="text-muted truncate text-xs" title={summaryLine(server)}>
-            {summaryLine(server)}
+          <P className="text-text-muted dark:text-dark-text-muted truncate text-xs">
+            <span title={summaryLine(server)}>{summaryLine(server)}</span>
           </P>
-          <P className="text-muted text-xs">
+          <P className="text-text-muted dark:text-dark-text-muted text-xs">
             {t('mcp_servers.connect_timeout_seconds')}: {server.connectTimeoutSeconds ?? 30}s
           </P>
           {server.headers && Object.keys(server.headers).length > 0 && (
-            <P className="text-muted text-xs">
+            <P className="text-text-muted dark:text-dark-text-muted text-xs">
               {t('remote_hooks.headers_count', { count: Object.keys(server.headers).length })}
             </P>
           )}
           {server.authType === 'oauth' && (
-            <P className="text-muted text-xs">{t('mcp_servers.oauth_badge')}</P>
+            <P className="text-text-muted dark:text-dark-text-muted text-xs">
+              {t('mcp_servers.oauth_badge')}
+            </P>
           )}
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-2">

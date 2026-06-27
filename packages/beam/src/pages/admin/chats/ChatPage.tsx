@@ -1,48 +1,45 @@
-import {
-  Button,
-  InlineNotice,
-  Section,
-  Fill,
-  Page,
-} from '@contenox/ui';
+import { ApprovalCard, Button, Fill, InlineNotice, Page, Section } from '@contenox/ui';
 import { t } from 'i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useListChains } from '../../../hooks/useChains';
+import { useChatHistory, useCreateChat, useSendMessage } from '../../../hooks/useChats';
 import { useListPolicies, useSetActivePolicy } from '../../../hooks/usePolicies';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
-import { api } from '../../../lib/api';
-import { useChatHistory, useCreateChat, useSendMessage } from '../../../hooks/useChats';
 import { useTaskEvents } from '../../../hooks/useTaskEvents';
-import { createTaskEventRequestId } from '../../../lib/taskEvents';
-import {
-  CapturedStateUnit,
-  ChatMessage as ApiChatMessage,
-  type ChatContextArtifact,
-  type ChatContextPayload,
-  type ChatModeId,
-  type InlineAttachment,
-} from '../../../lib/types';
+import { api } from '../../../lib/api';
+import { ArtifactRegistryProvider, useArtifactRegistry } from '../../../lib/artifacts';
 import { artifactsToInlineAttachments } from '../../../lib/inlineAttachments';
-import {
-  ArtifactRegistryProvider,
-  useArtifactRegistry,
-} from '../../../lib/artifacts';
+import { getBlockingSetupIssue, getSetupIssueFixPath } from '../../../lib/setupHealth';
 import {
   SlashCommandRegistryProvider,
   createHelpCommand,
   useSlashCommand,
   useSlashCommandRegistry,
 } from '../../../lib/slashCommands';
+import { createTaskEventRequestId } from '../../../lib/taskEvents';
+import {
+  ChatMessage as ApiChatMessage,
+  CapturedStateUnit,
+  type ChatContextArtifact,
+  type ChatContextPayload,
+  type ChatModeId,
+  type InlineAttachment,
+} from '../../../lib/types';
 import { buildChatThreadItems } from './chatThreadItems';
 import { ChatInterface } from './components/ChatInterface';
-import { ApprovalCard } from '@contenox/ui';
-import { MessageInputForm } from './components/MessageInputForm';
-import { ChatToolbar } from './components/ChatToolbar';
 import { ChatRunLog } from './components/ChatRunLog';
+import { ChatToolbar } from './components/ChatToolbar';
+import { MessageInputForm } from './components/MessageInputForm';
 
 const STATE_PANEL_STORAGE_KEY = 'beam_chat_state_panel_open';
 const DEFAULT_CHAIN_PATH = 'default-chain.json';
+
+function shouldOpenStatePanelByDefault(): boolean {
+  if (typeof window === 'undefined') return true;
+  if (!window.matchMedia('(min-width: 768px)').matches) return false;
+  return window.localStorage.getItem(STATE_PANEL_STORAGE_KEY) !== '0';
+}
 
 function formatChainLabel(path: string): string {
   return path.replace(/\.json$/i, '');
@@ -150,18 +147,14 @@ function ChatPageImpl() {
   const { chatId: paramChatId } = useParams<{ chatId: string }>();
   const artifactRegistry = useArtifactRegistry();
   const slashRegistry = useSlashCommandRegistry();
-  const [optimisticOutgoing, setOptimisticOutgoing] = useState<OptimisticUserOutgoing | null>(
-    null,
-  );
+  const [optimisticOutgoing, setOptimisticOutgoing] = useState<OptimisticUserOutgoing | null>(null);
   /**
    * Agent-emitted inline attachments keyed by persisted assistant message id
    * (Phase 5 of the canvas-vision plan). Captured from the live SSE stream
    * once the persisted echo arrives so attachments survive after the live
    * row collapses. Cleared on chat session change.
    */
-  const [agentAttachments, setAgentAttachments] = useState<Record<string, InlineAttachment[]>>(
-    {},
-  );
+  const [agentAttachments, setAgentAttachments] = useState<Record<string, InlineAttachment[]>>({});
   const location = useLocation();
   const navigate = useNavigate();
   const chatId = paramChatId ?? null;
@@ -177,7 +170,9 @@ function ChatPageImpl() {
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
   const activeRequestIdRef = useRef<string | null>(null);
-  const lastFailedSendRef = useRef<{ text: string; chainId: string; mode: ChatModeId } | null>(null);
+  const lastFailedSendRef = useRef<{ text: string; chainId: string; mode: ChatModeId } | null>(
+    null,
+  );
   const pendingSendRef = useRef<{
     requestId: string;
     message: string;
@@ -188,15 +183,7 @@ function ChatPageImpl() {
   } | null>(null);
   const sendDispatchedRef = useRef(false);
   const landingInitialSendKeyRef = useRef<string | null>(null);
-  const [statePanelOpen, setStatePanelOpen] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem(STATE_PANEL_STORAGE_KEY) !== '0';
-  });
-
-
-
-
-
+  const [statePanelOpen, setStatePanelOpen] = useState(shouldOpenStatePanelByDefault);
 
   const toggleStatePanel = () => {
     setStatePanelOpen(open => {
@@ -209,6 +196,18 @@ function ChatPageImpl() {
       return next;
     });
   };
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)');
+    const handleChange = () => {
+      if (!media.matches) {
+        setStatePanelOpen(false);
+      }
+    };
+    handleChange();
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
 
   const { data: chainPaths = [], isLoading: chainsLoading } = useListChains();
   const sortedChainPaths = useMemo(
@@ -234,6 +233,7 @@ function ChatPageImpl() {
   const { mutate: sendMessage, error: sendError } = useSendMessage(chatId || '');
   const { data: policyNames = [] } = useListPolicies();
   const { data: setupStatus } = useSetupStatus(true);
+  const blockingSetupIssue = getBlockingSetupIssue(setupStatus);
   const activePolicyName = setupStatus?.hitlPolicyName ?? '';
   const setActivePolicy = useSetActivePolicy();
 
@@ -268,7 +268,11 @@ function ChatPageImpl() {
           setLatestState(response.state || []);
           if (response.error) {
             lastFailedSendRef.current = pendingSendRef.current
-              ? { text: pendingSendRef.current.message, chainId: pendingSendRef.current.chainId, mode: pendingSendRef.current.mode }
+              ? {
+                  text: pendingSendRef.current.message,
+                  chainId: pendingSendRef.current.chainId,
+                  mode: pendingSendRef.current.mode,
+                }
               : null;
             setOperationError(response.error);
           } else {
@@ -289,7 +293,11 @@ function ChatPageImpl() {
             setOperationError(t('common.cancel', 'Cancel'));
           } else {
             lastFailedSendRef.current = pendingSendRef.current
-              ? { text: pendingSendRef.current.message, chainId: pendingSendRef.current.chainId, mode: pendingSendRef.current.mode }
+              ? {
+                  text: pendingSendRef.current.message,
+                  chainId: pendingSendRef.current.chainId,
+                  mode: pendingSendRef.current.mode,
+                }
               : null;
           }
           setIsProcessing(false);
@@ -361,15 +369,15 @@ function ChatPageImpl() {
       // Collect the registry exactly once: one-shot slash sources unregister
       // themselves on collect, so a second pass would yield nothing.
       const collected = artifactRegistry.collectWithSources();
-      const allArtifacts = collected.map((p) => p.artifact);
+      const allArtifacts = collected.map(p => p.artifact);
       // Inline-display attachments come ONLY from explicitly-armed sources
       // (`mention:` from @-mentions, `slash:` legacy). Sticky sources
       // (workspace open_file, terminal armed_output) already have indicators
       // in their owning panels; rendering them on every user message would
       // be visual noise.
       const explicitArtifacts = collected
-        .filter((p) => p.source.id.startsWith('mention:') || p.source.id.startsWith('slash:'))
-        .map((p) => p.artifact);
+        .filter(p => p.source.id.startsWith('mention:') || p.source.id.startsWith('slash:'))
+        .map(p => p.artifact);
       const inlineAttachments = artifactsToInlineAttachments(explicitArtifacts);
 
       const context = buildTurnContext(allArtifacts);
@@ -467,7 +475,7 @@ function ChatPageImpl() {
     // attachments, when we captured any during their streaming turn.
     // Augment tool-result messages with typed inline attachments derived
     // from the function name + arguments of their paired call.
-    const merged: ApiChatMessage[] = base.map((m) => {
+    const merged: ApiChatMessage[] = base.map(m => {
       if (m.role === 'assistant' && m.id && agentAttachments[m.id]) {
         return { ...m, attachments: agentAttachments[m.id] };
       }
@@ -488,7 +496,7 @@ function ChatPageImpl() {
     // sentAt window to tolerate clock skew between client and server.
     if (optimisticOutgoing) {
       const optAt = Date.parse(optimisticOutgoing.sentAt);
-      const matched = base.some((m) => {
+      const matched = base.some(m => {
         if (m.role !== 'user') return false;
         if (m.content !== optimisticOutgoing.content) return false;
         const persistedAt = Date.parse(m.sentAt);
@@ -541,7 +549,7 @@ function ChatPageImpl() {
     const persisted = chatHistory ?? [];
     const optAt = Date.parse(optimisticOutgoing.sentAt);
     const matched = persisted.some(
-      (m) =>
+      m =>
         m.role === 'user' &&
         m.content === optimisticOutgoing.content &&
         Math.abs(Date.parse(m.sentAt) - optAt) < 5 * 60_000,
@@ -563,9 +571,7 @@ function ChatPageImpl() {
       if (m.role !== 'assistant' || !m.id) continue;
       if (agentAttachments[m.id]) break; // already claimed; don't double-bind
       const attachments = liveTask.attachments;
-      setAgentAttachments((prev) =>
-        prev[m.id!] ? prev : { ...prev, [m.id!]: attachments },
-      );
+      setAgentAttachments(prev => (prev[m.id!] ? prev : { ...prev, [m.id!]: attachments }));
       break;
     }
   }, [chatHistory, liveTask.attachments, agentAttachments]);
@@ -614,12 +620,20 @@ function ChatPageImpl() {
             activePolicyName={activePolicyName}
             onPolicyChange={name => setActivePolicy.mutate(name)}
             policyChangePending={setActivePolicy.isPending}
-            policyChangeError={setActivePolicy.isError ? (setActivePolicy.error?.message ?? t('chat.hitl_policy_error', 'Failed to set policy')) : null}
-            statsLabel={t('chat.stats_compact', { messages: chatHistory?.length ?? 0, state: latestState.length })}
-            onEditChain={() => navigate(`/chains?path=${encodeURIComponent(selectedChainId.trim())}`)}
+            policyChangeError={
+              setActivePolicy.isError
+                ? (setActivePolicy.error?.message ??
+                  t('chat.hitl_policy_error', 'Failed to set policy'))
+                : null
+            }
+            statsLabel={t('chat.stats_compact', {
+              messages: chatHistory?.length ?? 0,
+              state: latestState.length,
+            })}
+            onEditChain={() =>
+              navigate(`/chains?path=${encodeURIComponent(selectedChainId.trim())}`)
+            }
           />
-
-
 
           <Fill className="flex flex-col">
             {httpDispatched && sseConnection === 'error' && (
@@ -631,8 +645,7 @@ function ChatPageImpl() {
                 onDismiss={() => {
                   setOperationError(null);
                   lastFailedSendRef.current = null;
-                }}
-              >
+                }}>
                 <span>{operationError}</span>
                 {lastFailedSendRef.current && (
                   <Button
@@ -646,11 +659,36 @@ function ChatPageImpl() {
                       setOperationError(null);
                       lastFailedSendRef.current = null;
                       submitOutgoingMessage(failed.text, failed.chainId, failed.mode);
-                    }}
-                  >
+                    }}>
                     {t('plan.retry', 'Retry')}
                   </Button>
                 )}
+              </InlineNotice>
+            )}
+            {blockingSetupIssue && (
+              <InlineNotice variant="error" className="mx-3 mt-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <span className="block font-medium">
+                      {t('chat.setup_blocked_title', 'Chat setup needs attention')}
+                    </span>
+                    <span className="block">{blockingSetupIssue.message}</span>
+                    {blockingSetupIssue.cliCommand ? (
+                      <code className="text-text dark:text-dark-text bg-surface-100 dark:bg-dark-surface-300 block rounded-md px-2 py-1 text-xs">
+                        {blockingSetupIssue.cliCommand}
+                      </code>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    palette="neutral"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => navigate(getSetupIssueFixPath(blockingSetupIssue))}>
+                    {t('chat.setup_blocked_action', 'Open setup')}
+                  </Button>
+                </div>
               </InlineNotice>
             )}
 
@@ -667,19 +705,24 @@ function ChatPageImpl() {
                   canStop={isProcessing}
                   onStop={handleStop}
                   streamScrollSignature={streamScrollSignature}
-                  approvalContent={liveTask.pendingApproval ? (
-                    <ApprovalCard
-                      approval={liveTask.pendingApproval}
-                      onRespond={async (approved) => {
-                        if (!liveTask.pendingApproval) return;
-                        try {
-                          await api.respondToApproval(liveTask.pendingApproval.approvalId, approved);
-                        } catch {
-                          // Backend will surface the outcome via the SSE stream.
-                        }
-                      }}
-                    />
-                  ) : undefined}
+                  approvalContent={
+                    liveTask.pendingApproval ? (
+                      <ApprovalCard
+                        approval={liveTask.pendingApproval}
+                        onRespond={async approved => {
+                          if (!liveTask.pendingApproval) return;
+                          try {
+                            await api.respondToApproval(
+                              liveTask.pendingApproval.approvalId,
+                              approved,
+                            );
+                          } catch {
+                            // Backend will surface the outcome via the SSE stream.
+                          }
+                        }}
+                      />
+                    ) : undefined
+                  }
                 />
               )}
             </div>
@@ -694,7 +737,7 @@ function ChatPageImpl() {
               variant="workbench"
               placeholder={t('chat.workbench_placeholder')}
               buttonLabel={t('chat.run_button')}
-              canSubmit={!isProcessing && !!message.trim()}
+              canSubmit={!isProcessing && !!message.trim() && !blockingSetupIssue}
               allowEmptyMessage={false}
             />
           </div>

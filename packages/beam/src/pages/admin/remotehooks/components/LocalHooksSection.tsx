@@ -1,4 +1,4 @@
-import { EmptyState, GridLayout, LoadingState, Panel, Section } from '@contenox/ui';
+import { EmptyState, GridLayout, InlineNotice, LoadingState, Panel, Section } from '@contenox/ui';
 import { useTranslation } from 'react-i18next';
 import { useLocalHooks } from '../../../../hooks/useRemoteHooks';
 import { LocalHook } from '../../../../lib/types';
@@ -19,6 +19,9 @@ export default function LocalHooksSection() {
   return (
     <GridLayout variant="body">
       <Section title={t('local_hooks.manage_title')} description={t('local_hooks.description')}>
+        <InlineNotice variant="info" className="mb-4">
+          {t('local_hooks.usage_note')}
+        </InlineNotice>
         {localHooks && localHooks.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {localHooks.map((hook: LocalHook) => (
@@ -26,7 +29,13 @@ export default function LocalHooksSection() {
             ))}
           </div>
         ) : (
-          <EmptyState title={t('local_hooks.list_empty')} />
+          <EmptyState
+            title={t('local_hooks.list_empty')}
+            description={t(
+              'local_hooks.list_empty_description',
+              'No local hook registrations were discovered from this runtime.',
+            )}
+          />
         )}
       </Section>
     </GridLayout>

@@ -17,20 +17,22 @@ export default function RemoteHookCard({
 }: RemoteHookCardProps) {
   return (
     <Card variant="surface">
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
           <P className="font-semibold">{hook.name}</P>
-          <P className="text-muted text-sm">{hook.endpointUrl}</P>
-          <P className="text-muted text-xs">
+          <P className="text-text-muted dark:text-dark-text-muted text-sm break-all">
+            {hook.endpointUrl}
+          </P>
+          <P className="text-text-muted dark:text-dark-text-muted text-xs">
             {t('remote_hooks.timeout')}: {hook.timeoutMs}ms
           </P>
           {hook.headers && Object.keys(hook.headers).length > 0 && (
-            <P className="text-muted text-xs">
+            <P className="text-text-muted dark:text-dark-text-muted text-xs">
               {t('remote_hooks.headers_count', { count: Object.keys(hook.headers).length })}
             </P>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <Button variant="ghost" size="sm" onClick={() => onEdit(hook)}>
             {t('common.edit')}
           </Button>

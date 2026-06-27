@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { cn } from "../../utils";
 import { Badge } from "../Badge";
 import { Button } from "../Button";

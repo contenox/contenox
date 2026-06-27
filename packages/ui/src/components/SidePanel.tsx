@@ -29,7 +29,10 @@ export const SidePanelHeader = forwardRef<HTMLDivElement, SidePanelHeaderProps>(
     return (
       <div
         ref={ref}
-        className={cn("flex shrink-0 items-center justify-between gap-2 border-b px-2 py-2", className)}
+        className={cn(
+          "flex shrink-0 items-center justify-between gap-2 border-b px-2 py-2",
+          className,
+        )}
         {...props}
       />
     );
@@ -43,27 +46,8 @@ export const SidePanelBody = forwardRef<HTMLDivElement, SidePanelBodyProps>(
     return (
       <div
         ref={ref}
-        className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2", className)}
-        {...props}
-      />
-    );
-  },
-);
-
-export type SidePanelRailButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  side?: "left" | "right";
-};
-
-/** Narrow strip shown when the side panel is collapsed (icon + optional badge). */
-export const SidePanelRailButton = forwardRef<HTMLButtonElement, SidePanelRailButtonProps>(
-  function SidePanelRailButton({ className, side = "right", type = "button", ...props }, ref) {
-    return (
-      <button
-        ref={ref}
-        type={type}
         className={cn(
-          "bg-surface-50 dark:bg-dark-surface-200 text-secondary-600 hover:bg-surface-100 dark:text-dark-secondary-400 dark:hover:bg-dark-surface-300 flex w-9 shrink-0 flex-col items-center justify-center",
-          side === "right" ? "border-l" : "border-r",
+          "flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2",
           className,
         )}
         {...props}
@@ -71,3 +55,30 @@ export const SidePanelRailButton = forwardRef<HTMLButtonElement, SidePanelRailBu
     );
   },
 );
+
+export type SidePanelRailButtonProps =
+  React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    side?: "left" | "right";
+  };
+
+/** Narrow strip shown when the side panel is collapsed (icon + optional badge). */
+export const SidePanelRailButton = forwardRef<
+  HTMLButtonElement,
+  SidePanelRailButtonProps
+>(function SidePanelRailButton(
+  { className, side = "right", type = "button", ...props },
+  ref,
+) {
+  return (
+    <button
+      ref={ref}
+      type={type}
+      className={cn(
+        "bg-surface-50 dark:bg-dark-surface-200 text-secondary-600 hover:bg-surface-100 dark:text-dark-secondary-400 dark:hover:bg-dark-surface-300 flex h-full min-h-11 w-9 shrink-0 flex-col items-center justify-center",
+        side === "right" ? "border-l" : "border-r",
+        className,
+      )}
+      {...props}
+    />
+  );
+});

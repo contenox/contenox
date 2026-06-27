@@ -38,7 +38,7 @@ export default function LocalHookCard({ hook }: LocalHookCardProps) {
           {hook.unavailableReason ? (
             <Panel variant="warning" className="text-sm">
               <P className="font-medium">{t('local_hooks.unavailable_title')}</P>
-              <P className="text-muted break-words font-mono text-xs">{hook.unavailableReason}</P>
+              <P className="text-muted font-mono text-xs break-words">{hook.unavailableReason}</P>
             </Panel>
           ) : (
             <>
@@ -53,7 +53,9 @@ export default function LocalHookCard({ hook }: LocalHookCardProps) {
                       {tool.function?.description || 'No description available'}
                     </P>
                     {tool.function?.parameters && (
-                      <P className="text-muted mt-1 text-xs">{t('local_hooks.parameters_defined')}</P>
+                      <P className="text-muted mt-1 text-xs">
+                        {t('local_hooks.parameters_defined')}
+                      </P>
                     )}
                   </div>
                 ))}
@@ -63,11 +65,6 @@ export default function LocalHookCard({ hook }: LocalHookCardProps) {
               </div>
             </>
           )}
-        </div>
-
-        {/* Usage Info */}
-        <div className="border-t pt-3">
-          <P className="text-muted text-xs">{t('local_hooks.usage_note')}</P>
         </div>
       </div>
     </Card>

@@ -1,4 +1,4 @@
-import { Button, FormField, H2, Input, P, Panel, Select } from '@contenox/ui';
+import { Button, FormField, H2, InlineNotice, Input, P, Panel, Select } from '@contenox/ui';
 import { FormEvent, useContext, useEffect, useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { usePutCLIConfig } from '../../../hooks/usePutCLIConfig';
@@ -34,7 +34,9 @@ export function GlobalSettingsSection() {
   }, [putConfig.isSuccess, putConfig.reset]);
 
   const modelOptions = useMemo(() => {
-    const values = uniqueSorted((data?.backendChecks ?? []).flatMap(backend => backend.chatModels ?? []));
+    const values = uniqueSorted(
+      (data?.backendChecks ?? []).flatMap(backend => backend.chatModels ?? []),
+    );
     const current = model.trim();
     if (current && !values.includes(current)) values.unshift(current);
     return values.map(value => ({ value, label: value }));
@@ -46,6 +48,17 @@ export function GlobalSettingsSection() {
     if (current && !values.includes(current)) values.unshift(current);
     return values.map(value => ({ value, label: value }));
   }, [data?.backendChecks, provider]);
+
+  const selectedProviderChecks = useMemo(
+    () => (data?.backendChecks ?? []).filter(backend => backend.type === provider),
+    [data?.backendChecks, provider],
+  );
+  const selectedProviderHasModel = useMemo(() => {
+    if (!model.trim() || !provider.trim() || selectedProviderChecks.length === 0) return true;
+    return selectedProviderChecks.some(backend =>
+      (backend.chatModels ?? []).includes(model.trim()),
+    );
+  }, [model, provider, selectedProviderChecks]);
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -67,6 +80,15 @@ export function GlobalSettingsSection() {
           </P>
         </div>
         <form id={formId} onSubmit={onSubmit} className="grid max-w-xl gap-4">
+          {!selectedProviderHasModel && (
+            <InlineNotice variant="warning" className="rounded-lg">
+              {t(
+                'settings.model_provider_mismatch',
+                'The selected provider does not currently report this model as chat-capable. Pick a model from the same provider or pull/register a compatible local model.',
+              )}
+            </InlineNotice>
+          )}
+
           <FormField label={t('settings.default_model_label')}>
             {modelOptions.length > 0 ? (
               <Select
@@ -109,15 +131,16 @@ export function GlobalSettingsSection() {
             )}
           </FormField>
 
-          {putConfig.isError && (
-            <P className="text-error text-sm">{putConfig.error.message}</P>
-          )}
-          {putConfig.isSuccess && (
-            <P className="text-text-muted text-sm">{t('settings.saved')}</P>
-          )}
+          {putConfig.isError && <P className="text-error text-sm">{putConfig.error.message}</P>}
+          {putConfig.isSuccess && <P className="text-text-muted text-sm">{t('settings.saved')}</P>}
 
           <div>
-            <Button type="submit" form={formId} variant="primary" size="sm" disabled={putConfig.isPending}>
+            <Button
+              type="submit"
+              form={formId}
+              variant="primary"
+              size="sm"
+              disabled={putConfig.isPending}>
               {t('settings.save')}
             </Button>
           </div>

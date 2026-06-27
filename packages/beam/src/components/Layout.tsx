@@ -1,8 +1,8 @@
 import { Button, LoadingState, Panel, SidebarToggle } from '@contenox/ui';
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import logoMarkDarkUrl from '../assets/logo-mark.svg?url';
 import logoMarkLightUrl from '../assets/logo-mark-light.svg?url';
+import logoMarkDarkUrl from '../assets/logo-mark.svg?url';
 import { useSetupStatus } from '../hooks/useSetupStatus';
 import { AuthContext } from '../lib/authContext';
 import { useTheme } from '../lib/ThemeProvider';
@@ -21,21 +21,23 @@ function isDismissed(): boolean {
   }
 }
 
+function isDesktopViewport(): boolean {
+  if (typeof window === 'undefined') return true;
+  return window.matchMedia('(min-width: 640px)').matches;
+}
+
 type Props = {
   defaultOpen?: boolean;
   mainContent: React.ReactNode;
   /** Left rail content (e.g. chat sessions). */
-  sidebarContent: React.ReactNode;
+  sidebarContent:
+    | React.ReactNode
+    | ((props: { isOpen: boolean; setIsOpen: (open: boolean) => void }) => React.ReactNode);
   className?: string;
 };
 
-export function Layout({
-  defaultOpen = true,
-  mainContent,
-  sidebarContent,
-  className,
-}: Props) {
-  const [isSidebarOpen, setSidebarIsOpen] = useState(defaultOpen);
+export function Layout({ defaultOpen = true, mainContent, sidebarContent, className }: Props) {
+  const [isSidebarOpen, setSidebarIsOpen] = useState(() => defaultOpen && isDesktopViewport());
   const [isControlPlaneOpen, setControlPlaneOpen] = useState(false);
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -55,13 +57,29 @@ export function Layout({
 
   const showWizard = !!user && !wizardDismissed && !setupLoading && !setupComplete;
   const logoUrl = theme === 'dark' ? logoMarkDarkUrl : logoMarkLightUrl;
+  const renderedSidebarContent =
+    typeof sidebarContent === 'function'
+      ? sidebarContent({ isOpen: isSidebarOpen, setIsOpen: setSidebarIsOpen })
+      : sidebarContent;
 
   const dismissWizard = () => {
     try {
       localStorage.setItem(ONBOARDING_KEY, '1');
-    } catch { }
+    } catch {}
     setWizardDismissed(true);
   };
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 640px)');
+    const handleChange = () => {
+      if (!media.matches) {
+        setSidebarIsOpen(false);
+      }
+    };
+    handleChange();
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
 
   const navbar = (
     <Panel
@@ -69,16 +87,13 @@ export function Layout({
       className="flex h-16 shrink-0 items-center justify-between gap-4 bg-inherit px-4 text-inherit">
       <div className="flex items-center gap-4">
         {!sidebarDisabled ? (
-          <SidebarToggle
-            isOpen={isSidebarOpen}
-            onToggle={() => setSidebarIsOpen(!isSidebarOpen)}
-          />
+          <SidebarToggle isOpen={isSidebarOpen} onToggle={() => setSidebarIsOpen(!isSidebarOpen)} />
         ) : (
           <div className="w-9" />
         )}
         <div className="flex min-w-0 items-center gap-2">
           <img src={logoUrl} alt="" aria-hidden className="h-7 w-7 shrink-0" />
-          <span className="truncate text-sm font-semibold tracking-normal text-text dark:text-dark-text sm:text-base">
+          <span className="text-text dark:text-dark-text truncate text-sm font-semibold tracking-normal sm:text-base">
             Contenox Chat
           </span>
         </div>
@@ -100,7 +115,11 @@ export function Layout({
 
   if (user && setupLoading) {
     return (
-      <div className={cn('bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit', className)}>
+      <div
+        className={cn(
+          'bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
+          className,
+        )}>
         {navbar}
         <LoadingState className="flex-1" />
       </div>
@@ -109,9 +128,13 @@ export function Layout({
 
   if (showWizard) {
     return (
-      <div className={cn('bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit', className)}>
+      <div
+        className={cn(
+          'bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
+          className,
+        )}>
         {navbar}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <OnboardingWizard data={setupData} onDismiss={dismissWizard} />
         </div>
       </div>
@@ -119,7 +142,11 @@ export function Layout({
   }
 
   return (
-    <div className={cn('bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit', className)}>
+    <div
+      className={cn(
+        'bg-surface-50 dark:bg-dark-surface-100 flex h-screen flex-col text-inherit',
+        className,
+      )}>
       {navbar}
       <div className="flex h-full min-h-0 flex-1 overflow-hidden">
         <Sidebar
@@ -127,9 +154,11 @@ export function Layout({
           isOpen={isSidebarOpen}
           setIsOpen={setSidebarIsOpen}
           items={[]}>
-          {sidebarContent}
+          {renderedSidebarContent}
         </Sidebar>
-        <main className="bg-surface-50 dark:bg-dark-surface-100 min-h-0 min-w-0 flex-1 overflow-hidden">{mainContent}</main>
+        <main className="bg-surface-50 dark:bg-dark-surface-100 min-h-0 min-w-0 flex-1 overflow-hidden">
+          {mainContent}
+        </main>
       </div>
     </div>
   );

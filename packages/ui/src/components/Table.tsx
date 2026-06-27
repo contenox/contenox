@@ -3,11 +3,23 @@ import { cn } from "../utils";
 type TableProps = React.HTMLAttributes<HTMLTableElement> & {
   columns: string[];
   children: React.ReactNode;
+  containerClassName?: string;
 };
 
-export function Table({ columns, children, className, ...props }: TableProps) {
+export function Table({
+  columns,
+  children,
+  className,
+  containerClassName,
+  ...props
+}: TableProps) {
   return (
-    <div className="border-secondary-200 dark:border-dark-secondary-300 overflow-x-auto rounded-lg border">
+    <div
+      className={cn(
+        "border-secondary-200 dark:border-dark-secondary-300 overflow-x-auto rounded-lg border",
+        containerClassName,
+      )}
+    >
       <table className={cn("w-full min-w-[600px]", className)} {...props}>
         <thead className="bg-secondary-50 dark:bg-dark-surface-100">
           <tr>

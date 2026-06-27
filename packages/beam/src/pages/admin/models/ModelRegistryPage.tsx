@@ -12,6 +12,7 @@ import {
   Section,
   Span,
 } from '@contenox/ui';
+import { Search } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -49,15 +50,26 @@ function RegistryEntryRow({
       title={entry.name}
       subtitle={
         <>
-          <Span variant="muted" className="block truncate text-xs">{entry.sourceUrl}</Span>
-          {sizeMB > 0 && <Span variant="muted" className="text-xs">{sizeMB} MB</Span>}
+          <Span variant="muted" className="block truncate text-xs">
+            {entry.sourceUrl}
+          </Span>
+          {sizeMB > 0 && (
+            <Span variant="muted" className="text-xs">
+              {sizeMB} MB
+            </Span>
+          )}
         </>
       }
       status="default"
-      badge={entry.curated ? <Badge variant="info" size="sm">{t('model_registry.curated')}</Badge> : undefined}
+      badge={
+        entry.curated ? (
+          <Badge variant="outline" size="sm">
+            {t('model_registry.curated')}
+          </Badge>
+        ) : undefined
+      }
       actions={!entry.curated && entry.id ? { delete: () => onDelete(entry.id!) } : undefined}
-      isLoading={isDownloading}
-    >
+      isLoading={isDownloading}>
       <Button variant="ghost" size="sm" onClick={handleDownload} disabled={isDownloading}>
         {isDownloading ? t('model_registry.downloading') : t('model_registry.download')}
       </Button>
@@ -74,6 +86,7 @@ export default function ModelRegistryPage() {
 
   const [name, setName] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
+  const [search, setSearch] = useState('');
 
   const resetForm = () => {
     setName('');
@@ -89,7 +102,9 @@ export default function ModelRegistryPage() {
     deleteMutation.mutate(id);
   };
 
-  const handleDownload = (modelName: string) => downloadMutation.mutateAsync(modelName);
+  const handleDownload = async (modelName: string) => {
+    await downloadMutation.mutateAsync(modelName);
+  };
 
   if (isLoading) {
     return <LoadingState message={t('model_registry.loading')} />;
@@ -103,19 +118,55 @@ export default function ModelRegistryPage() {
     if (a.curated !== b.curated) return a.curated ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = normalizedSearch
+    ? sorted.filter(entry =>
+        `${entry.name} ${entry.sourceUrl}`.toLowerCase().includes(normalizedSearch),
+      )
+    : sorted;
 
   return (
     <Page bodyScroll="auto" className="h-full">
       <GridLayout variant="body" columns={2} responsive={{ base: 1, lg: 2 }} className="gap-6 p-4">
-        <Section title={t('model_registry.list_title')}>
+        <Section title={t('model_registry.list_title')} className="order-2 lg:order-1">
           <div className="space-y-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative max-w-md flex-1">
+                <Search className="text-text-muted dark:text-dark-text-muted absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+                <Input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder={t(
+                    'model_registry.search_placeholder',
+                    'Search models or source URLs',
+                  )}
+                  className="pl-10"
+                />
+              </div>
+              <Span variant="muted" className="text-xs">
+                {t('model_registry.results_count', {
+                  count: filtered.length,
+                  total: sorted.length,
+                  defaultValue: `${filtered.length}/${sorted.length} models`,
+                })}
+              </Span>
+            </div>
+
             {sorted.length === 0 ? (
               <EmptyState
                 title={t('model_registry.empty_title')}
                 description={t('model_registry.empty_description')}
               />
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                title={t('model_registry.no_search_results', 'No models match this search')}
+                description={t(
+                  'model_registry.no_search_results_description',
+                  'Try a model family, backend format, or source host.',
+                )}
+              />
             ) : (
-              sorted.map(entry => (
+              filtered.map(entry => (
                 <RegistryEntryRow
                   key={entry.name}
                   entry={entry}
@@ -127,7 +178,9 @@ export default function ModelRegistryPage() {
           </div>
         </Section>
 
-        <Section title={t('model_registry.add_title')}>
+        <Section
+          title={t('model_registry.add_title')}
+          className="order-1 lg:sticky lg:top-4 lg:order-2 lg:self-start">
           <form onSubmit={handleSubmit} className="space-y-4">
             <FormField label={t('model_registry.form_name')} required>
               <Input

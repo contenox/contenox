@@ -52,7 +52,10 @@ export function Tabs<T extends string = string>({
     <div
       role="tablist"
       aria-orientation="horizontal"
-      className={cn("flex gap-1", className)}
+      className={cn(
+        "flex max-w-full flex-wrap gap-1 overflow-x-auto overflow-y-hidden",
+        className,
+      )}
       onKeyDown={onKeyDown}
     >
       {tabs.map((tab) => {

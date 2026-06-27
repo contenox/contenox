@@ -81,7 +81,16 @@ export default function HITLPoliciesPage() {
     if (nameParam) {
       await updatePolicy.mutateAsync(parsed);
     }
-  }, [jsonDraft, isNewDraft, pendingName, nameParam, createPolicy, updatePolicy, setSearchParams, t]);
+  }, [
+    jsonDraft,
+    isNewDraft,
+    pendingName,
+    nameParam,
+    createPolicy,
+    updatePolicy,
+    setSearchParams,
+    t,
+  ]);
 
   const handleDelete = async (name: string) => {
     if (!confirm(t('hitl_policies.confirm_delete', { name }))) return;
@@ -120,17 +129,14 @@ export default function HITLPoliciesPage() {
               {t('hitl_policies.create_new')}
             </Button>
             {editorName && (
-              <Button
-                variant="primary"
-                onClick={handleSave}
-                disabled={isSaving || !editorName}>
+              <Button variant="primary" onClick={handleSave} disabled={isSaving || !editorName}>
                 {isSaving ? t('common.saving') : t('common.save')}
               </Button>
             )}
           </div>
         </Section>
       }>
-      <Fill className="flex min-h-0 min-w-0">
+      <Fill className="flex min-h-0 min-w-0 flex-col md:flex-row">
         <PolicyList
           names={policyNames}
           activeName={activePolicyName}

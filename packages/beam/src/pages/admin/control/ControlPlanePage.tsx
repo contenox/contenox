@@ -9,7 +9,7 @@ export default function ControlPlanePage() {
 
   return (
     <Page bodyScroll="auto">
-      <GridLayout variant="body" className="gap-8 pb-8">
+      <GridLayout variant="body" minWidth="minmax(0, 1fr)" className="gap-8 pb-8">
         <Section>
           <H1 variant="page">{t('control_plane.hub_title')}</H1>
           <P variant="muted" className="mt-2">

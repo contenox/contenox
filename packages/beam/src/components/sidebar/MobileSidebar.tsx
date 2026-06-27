@@ -6,9 +6,9 @@ export function MobileSidebar({ isOpen, setIsOpen, items = [], children }: Sideb
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-x-0 top-20 bottom-0 z-50 overflow-x-hidden sm:hidden">
+    <div className="fixed inset-x-0 top-16 bottom-0 z-50 overflow-x-hidden sm:hidden">
       <div
-        className="bg-surface-100 dark:bg-dark-surface-100 fixed inset-x-0 top-20 bottom-0 z-40 min-h-0"
+        className="bg-surface-100 dark:bg-dark-surface-100 fixed inset-x-0 top-16 bottom-0 z-40 min-h-0"
         onClick={() => setIsOpen(false)}
       />
       <div className="border-surface-300 dark:border-dark-surface-700 bg-surface dark:bg-dark-surface-100 relative z-50 flex h-full min-h-0 flex-col border-r shadow-lg">

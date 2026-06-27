@@ -3,12 +3,7 @@ import { Button, ErrorState, Fill, LoadingState, Page, Section, Tabs } from '@co
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import {
-  useChain,
-  useCreateChain,
-  useListChains,
-  useUpdateChain,
-} from '../../../hooks/useChains';
+import { useChain, useCreateChain, useListChains, useUpdateChain } from '../../../hooks/useChains';
 import type { ChainDefinition, ChainTask } from '../../../lib/types';
 import ChainJsonEditor from './components/ChainJsonEditor';
 import ChainsList from './components/ChainsList';
@@ -18,6 +13,10 @@ interface Tab {
   id: 'list' | 'visualize' | 'json';
   label: string;
   disabled?: boolean;
+}
+
+function serializeChain(chain: ChainDefinition): string {
+  return JSON.stringify(chain, null, 2);
 }
 
 export default function ChainsPage() {
@@ -32,13 +31,18 @@ export default function ChainsPage() {
     refetch: refetchChains,
   } = useListChains();
 
-  const { data: loadedChain, isLoading: chainLoading, error: chainError, refetch: refetchChain } =
-    useChain(pathParam);
+  const {
+    data: loadedChain,
+    isLoading: chainLoading,
+    error: chainError,
+    refetch: refetchChain,
+  } = useChain(pathParam);
 
   const [selectedChain, setSelectedChain] = useState<ChainDefinition | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('list');
   const [jsonDraft, setJsonDraft] = useState<string | null>(null);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
   const [pendingVfsPath, setPendingVfsPath] = useState<string | null>(null);
   const [isNewDraft, setIsNewDraft] = useState(false);
 
@@ -49,6 +53,8 @@ export default function ChainsPage() {
   useEffect(() => {
     if (pathParam && loadedChain) {
       setSelectedChain(loadedChain);
+      setJsonDraft(null);
+      setLastSavedSnapshot(serializeChain(loadedChain));
       setPendingVfsPath(null);
       setIsNewDraft(false);
     }
@@ -76,6 +82,8 @@ export default function ChainsPage() {
     };
     setPendingVfsPath(vfsPath);
     setIsNewDraft(true);
+    setJsonDraft(serializeChain(newChain));
+    setLastSavedSnapshot(null);
     setSearchParams({}, { replace: true });
     setSelectedChain(newChain);
     setSelectedTaskId(null);
@@ -86,6 +94,8 @@ export default function ChainsPage() {
     setSearchParams({ path: vfsPath }, { replace: true });
     setPendingVfsPath(null);
     setIsNewDraft(false);
+    setJsonDraft(null);
+    setLastSavedSnapshot(null);
     setSelectedTaskId(null);
     setActiveTab('visualize');
   };
@@ -98,12 +108,17 @@ export default function ChainsPage() {
       if (isNewDraft && pendingVfsPath) {
         await createChain.mutateAsync({ vfsPath: pendingVfsPath, chain });
         setIsNewDraft(false);
+        setSelectedChain(chain);
+        setJsonDraft(serializeChain(chain));
+        setLastSavedSnapshot(serializeChain(chain));
         setSearchParams({ path: pendingVfsPath }, { replace: true });
         return;
       }
 
       await updateChain.mutateAsync(chain);
       setSelectedChain(chain);
+      setJsonDraft(serializeChain(chain));
+      setLastSavedSnapshot(serializeChain(chain));
     },
     [pathParam, pendingVfsPath, isNewDraft, createChain, updateChain, setSearchParams],
   );
@@ -244,6 +259,14 @@ export default function ChainsPage() {
 
   const isLoading = chainsLoading || (!!pathParam && chainLoading);
   const error = chainsError ?? chainError ?? null;
+  const selectedSnapshot = selectedChain ? serializeChain(selectedChain) : null;
+  const activeDraftSnapshot =
+    activeTab === 'json' && jsonDraft != null ? jsonDraft : selectedSnapshot;
+  const hasEditorTarget = !!(pathParam || pendingVfsPath);
+  const isDirty =
+    !!selectedChain &&
+    hasEditorTarget &&
+    (isNewDraft || (activeDraftSnapshot != null && activeDraftSnapshot !== lastSavedSnapshot));
 
   if (isLoading) return <LoadingState message={t('chains.loading')} />;
   if (error)
@@ -254,10 +277,10 @@ export default function ChainsPage() {
       bodyScroll="hidden"
       header={
         <Section title={t('chains.title')} description={t('chains.page_description')}>
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Tabs tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {activeTab === 'list' && (
                 <Button variant="primary" onClick={handleCreateNew}>
                   {t('chains.create_new')}
@@ -265,28 +288,16 @@ export default function ChainsPage() {
               )}
 
               {(activeTab === 'visualize' || activeTab === 'json') && selectedChain && (
-                <>
-                  <Button
-                    variant="secondary"
-                    onClick={() => setActiveTab(activeTab === 'visualize' ? 'json' : 'visualize')}>
-                    {activeTab === 'visualize'
-                      ? t('chains.json_editor')
-                      : t('chains.visual_editor')}
-                  </Button>
-
-                  <Button
-                    variant="primary"
-                    onClick={handleSave}
-                    disabled={
-                      createChain.isPending ||
-                      updateChain.isPending ||
-                      (!pathParam && !pendingVfsPath)
-                    }>
-                    {createChain.isPending || updateChain.isPending
-                      ? t('common.saving')
-                      : t('common.save')}
-                  </Button>
-                </>
+                <Button
+                  variant="primary"
+                  onClick={handleSave}
+                  disabled={createChain.isPending || updateChain.isPending || !isDirty}>
+                  {createChain.isPending || updateChain.isPending
+                    ? t('common.saving')
+                    : isDirty
+                      ? t('common.save')
+                      : t('chains.saved', 'Saved')}
+                </Button>
               )}
             </div>
           </div>
@@ -325,7 +336,10 @@ export default function ChainsPage() {
       )}
 
       {(activeTab === 'visualize' || activeTab === 'json') && !selectedChain && (
-        <Section title={t('chains.no_chain_selected')} description={t('chains.select_or_create_chain')} className="p-6 py-12 text-center">
+        <Section
+          title={t('chains.no_chain_selected')}
+          description={t('chains.select_or_create_chain')}
+          className="p-6 py-12 text-center">
           <Button variant="primary" onClick={handleCreateNew}>
             {t('chains.create_new')}
           </Button>

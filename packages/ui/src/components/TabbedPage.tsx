@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { TabTrigger } from "./TabTrigger";
+import { cn } from "../utils";
 
 export interface TabbedPageTab {
   id: string;
@@ -67,11 +68,11 @@ export function TabbedPage({
   };
 
   return (
-    <div {...props} className={`space-y-4 ${props.className ?? ""}`}>
+    <div {...props} className={cn("space-y-4", props.className)}>
       <div
         role="tablist"
         aria-orientation="horizontal"
-        className="flex gap-1"
+        className="flex max-w-full flex-wrap gap-1 overflow-x-auto overflow-y-hidden"
         onKeyDown={onKeyDown}
       >
         {tabs.map((tab) => {

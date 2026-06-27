@@ -10,10 +10,20 @@ type BackendCardProps = {
   onDelete: (id: string) => Promise<void>;
 };
 
+function uniqueObservedModels(models: Backend['pulledModels']): Backend['pulledModels'] {
+  const seen = new Set<string>();
+  return models.filter(model => {
+    const key = model.model.trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function BackendCard({ backend, onEdit, onDelete }: BackendCardProps) {
   const { t } = useTranslation();
   const [deletingBackendId, setDeletingBackendId] = useState<string | null>(null);
-  const observedModels = backend.pulledModels ?? [];
+  const observedModels = uniqueObservedModels(backend.pulledModels ?? []);
 
   const handleDelete = async (id: string) => {
     setDeletingBackendId(id);
@@ -58,15 +68,11 @@ export function BackendCard({ backend, onEdit, onDelete }: BackendCardProps) {
           </Label>
           <div className="max-h-60 space-y-2 overflow-y-auto">
             {observedModels.map(model => (
-              <ModelStatusDisplay
-                key={model.model}
-                modelName={model.model}
-              />
+              <ModelStatusDisplay key={model.model} modelName={model.model} />
             ))}
           </div>
         </div>
       )}
-
     </ResourceCard>
   );
 }

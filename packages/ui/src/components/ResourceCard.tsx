@@ -1,18 +1,21 @@
+import type { ReactNode } from "react";
+import { cn } from "../utils";
 import { Button } from "./Button";
 import { ButtonGroup } from "./ButtonGroup";
-import { Section } from "./Section";
+import { Panel } from "./Panel";
 import { Spinner } from "./Spinner";
-import { P } from "./Typography";
+import { H2 } from "./Typography";
 
 interface ResourceCardProps {
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
+  badge?: ReactNode;
   status?: "default" | "success" | "error" | "warning";
-  children: React.ReactNode;
+  children: ReactNode;
   actions?: {
     edit?: () => void;
     delete?: () => void;
-    custom?: React.ReactNode;
+    custom?: ReactNode;
   };
   isLoading?: boolean;
   className?: string;
@@ -31,6 +34,7 @@ const statusBorderStyles: Record<
 export function ResourceCard({
   title,
   subtitle,
+  badge,
   status = "default",
   children,
   actions,
@@ -38,15 +42,25 @@ export function ResourceCard({
   className = "",
 }: ResourceCardProps) {
   return (
-    <Section
-      title={title}
-      className={`bg-surface dark:bg-dark-surface-100 relative rounded-lg ${statusBorderStyles[status]} ${className}`}
-    >
-      {subtitle && (
-        <P variant="muted" className="text-sm">
-          {subtitle}
-        </P>
+    <Panel
+      variant="bordered"
+      className={cn(
+        "bg-surface dark:bg-dark-surface-100 relative space-y-4 rounded-lg",
+        statusBorderStyles[status],
+        className,
       )}
+    >
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <H2 className="break-words">{title}</H2>
+          {subtitle && (
+            <div className="text-text-muted dark:text-dark-text-muted text-sm">
+              {subtitle}
+            </div>
+          )}
+        </div>
+        {badge && <div className="shrink-0">{badge}</div>}
+      </div>
 
       <div className="space-y-4">{children}</div>
 
@@ -87,6 +101,6 @@ export function ResourceCard({
           </ButtonGroup>
         </div>
       )}
-    </Section>
+    </Panel>
   );
 }

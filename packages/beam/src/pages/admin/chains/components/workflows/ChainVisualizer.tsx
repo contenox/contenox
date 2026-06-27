@@ -16,15 +16,15 @@ import {
   WorkflowVisualizer,
 } from '@contenox/ui';
 import { Settings, X } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BranchCompose, ChainDefinition, ChainTask } from '../../../../../lib/types';
 import {
   diagnosticCounts,
   diagnosticsByTask,
   lintChain,
   type Diagnostic,
 } from '../../../../../lib/chainLint';
+import { BranchCompose, ChainDefinition, ChainTask } from '../../../../../lib/types';
 import TaskForm from '../TaskForm/TaskForm';
 import ComposeEditorPanel from './ComposeEditorPanel';
 import EnhancedWorkflowEdge from './EnhancedWorkflowEdge';
@@ -85,6 +85,7 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
   const { t } = useTranslation();
   const [editingTask, setEditingTask] = useState<ChainTask | null>(null);
   const [showChainConfig, setShowChainConfig] = useState(false);
+  const [useScrollCanvas, setUseScrollCanvas] = useState(false);
   const [direction] = useState<LayoutDirection>('horizontal');
   const [editingCompose, setEditingCompose] = useState<{
     sourceTaskId: string;
@@ -99,6 +100,14 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
   const diagnosticsByTaskId = useMemo(() => diagnosticsByTask(diagnostics), [diagnostics]);
   const counts = useMemo(() => diagnosticCounts(diagnostics), [diagnostics]);
 
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)');
+    const handleChange = () => setUseScrollCanvas(media.matches);
+    handleChange();
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
   // NODES - including virtual end nodes
   const { nodes, endNodeMappings } = useMemo(() => {
     const taskNodes = chain.tasks.map(task => {
@@ -108,7 +117,7 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
       // "task has on_failure handler". WorkflowNode renders this as the
       // node's stroke color (warning = orange).
       const worstSeverity: 'default' | 'success' | 'error' | 'warning' = taskDiagnostics.find(
-        (d) => d.severity === 'warning',
+        d => d.severity === 'warning',
       )
         ? 'warning'
         : statusFor(task);
@@ -131,7 +140,7 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
       label: string;
       type: string;
       description: string;
-      metadata: { status: "default"; isEndNode: boolean; [key: string]: unknown };
+      metadata: { status: 'default'; isEndNode: boolean; [key: string]: unknown };
     }> = [];
 
     chain.tasks.forEach(task => {
@@ -299,7 +308,7 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full min-h-0">
       {/* MAIN CANVAS */}
       <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
         {/*
@@ -340,7 +349,7 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
                     type="button"
                     className="text-text-muted hover:text-text dark:hover:text-dark-text inline text-left"
                     onClick={() => {
-                      const task = chain.tasks.find((tt) => tt.id === d.taskId);
+                      const task = chain.tasks.find(tt => tt.id === d.taskId);
                       if (task) onTaskSelect(task);
                     }}>
                     <span
@@ -363,7 +372,8 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
             height="100%"
             className="h-full"
             contentBounds={contentBounds}
-            initialZoom={1}>
+            initialZoom={1}
+            scrollOnOverflow={useScrollCanvas}>
             {/* EDGES */}
             {edges.map((e, i) => {
               const src = nodePositions[e.from];
@@ -432,9 +442,7 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
           <Card className="flex flex-1 items-center justify-center">
             <div className="space-y-3 p-8 text-center">
               <H3 className="text-lg font-semibold">{t('workflow.no_tasks_title')}</H3>
-              <P className="text-text-muted text-sm">
-                {t('workflow.no_tasks_description')}
-              </P>
+              <P className="text-text-muted text-sm">{t('workflow.no_tasks_description')}</P>
               {onAddTask && (
                 <Button variant="primary" onClick={() => onAddTask('start')}>
                   {t('workflow.add_first_task')}
@@ -447,7 +455,7 @@ const ChainVisualizer: React.FC<ChainVisualizerProps> = ({
 
       {/* SIDE PANEL */}
       {(showChainConfig || editingTask || selectedTask || editingCompose) && (
-        <div className="bg-surface-50/50 dark:bg-dark-surface-50/50 flex min-h-0 w-[420px] min-w-[420px] flex-col overflow-hidden border-l border-surface-300 dark:border-dark-surface-400">
+        <div className="bg-surface-50/95 dark:bg-dark-surface-50/95 border-surface-300 dark:border-dark-surface-400 md:backdrop-blur-0 absolute inset-0 z-30 flex min-h-0 flex-col overflow-hidden border-l shadow-xl backdrop-blur-sm md:relative md:inset-auto md:z-auto md:w-[420px] md:min-w-[420px] md:shadow-none">
           {showChainConfig && (
             <Panel className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="flex items-center justify-between border-b p-4">

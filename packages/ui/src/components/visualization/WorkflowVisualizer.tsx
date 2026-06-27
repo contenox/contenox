@@ -134,8 +134,8 @@ export const WorkflowVisualizer: React.FC<WorkflowVisualizerProps> = ({
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       {/* Top bar */}
-      <div className="z-10 flex items-center justify-between border-b border-surface-300 dark:border-dark-surface-300 py-2 px-3">
-        <h3 className="flex items-center gap-2 text-lg font-semibold text-text dark:text-dark-text">
+      <div className="z-10 flex flex-wrap items-center justify-between gap-2 border-b border-surface-300 px-3 py-2 dark:border-dark-surface-300">
+        <h3 className="flex min-w-0 items-center gap-2 text-lg font-semibold text-text dark:text-dark-text">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="18"
@@ -154,7 +154,7 @@ export const WorkflowVisualizer: React.FC<WorkflowVisualizerProps> = ({
           </svg>
           Workflow
         </h3>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             onClick={zoomOut}
             className="inline-flex items-center rounded-lg p-2.5 hover:bg-surface-200 dark:hover:bg-dark-surface-200"

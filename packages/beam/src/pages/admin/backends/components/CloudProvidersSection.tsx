@@ -17,10 +17,24 @@ export default function CloudProvidersSection() {
     ? CLOUD_PROVIDER_SETUPS.filter(setup => supportedProviders.has(setup.provider))
     : CLOUD_PROVIDER_SETUPS;
 
+  if (isLoading) {
+    return (
+      <GridLayout variant="body">
+        <Panel variant="body">{t('common.loading')}</Panel>
+      </GridLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <GridLayout variant="body">
+        <Panel variant="error">{error.message}</Panel>
+      </GridLayout>
+    );
+  }
+
   return (
     <GridLayout variant="body">
-      {isLoading && <Panel variant="body">{t('common.loading')}</Panel>}
-      {error && <Panel variant="error">{error.message}</Panel>}
       {setups.map(setup => (
         <Section key={setup.provider} title={t(setup.titleKey as Parameters<typeof t>[0])}>
           <ProviderForm setup={setup} />

@@ -22,7 +22,7 @@ interface GridLayoutProps extends React.HTMLAttributes<HTMLDivElement> {
 export function GridLayout({
   title,
   description,
-  minWidth = "minmax(400px, 1fr)",
+  minWidth = "minmax(min(400px, 100%), 1fr)",
   columns = 0,
   responsive,
   variant = "bordered",

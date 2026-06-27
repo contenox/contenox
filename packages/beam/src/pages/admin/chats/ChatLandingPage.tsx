@@ -18,6 +18,7 @@ import { useListChains } from '../../../hooks/useChains';
 import { useCreateChat } from '../../../hooks/useChats';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { ArtifactRegistryProvider } from '../../../lib/artifacts';
+import { getBlockingSetupIssue, getSetupIssueFixPath } from '../../../lib/setupHealth';
 import { SlashCommandRegistryProvider } from '../../../lib/slashCommands';
 import { ChatSession } from '../../../lib/types';
 import { MessageInputForm } from './components/MessageInputForm';
@@ -56,6 +57,7 @@ function ChatLandingPageImpl() {
 
   const { data: setupStatus } = useSetupStatus(true);
   const { data: chainPaths = [], isLoading: chainsLoading, error: chainsError } = useListChains();
+  const blockingSetupIssue = getBlockingSetupIssue(setupStatus);
 
   const sortedChainPaths = useMemo(
     () =>
@@ -105,7 +107,8 @@ function ChatLandingPageImpl() {
     );
   };
 
-  const canSend = !!selectedChainId && !!message.trim() && !createChat.isPending;
+  const canSend =
+    !!selectedChainId && !!message.trim() && !createChat.isPending && !blockingSetupIssue;
 
   return (
     <Page bodyScroll="auto">
@@ -127,14 +130,39 @@ function ChatLandingPageImpl() {
             ) : null}
           </div>
 
-          {setupStatus && !setupStatus.defaultModel ? (
+          {blockingSetupIssue ? (
+            <InlineNotice variant="error" className="rounded-lg">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-1">
+                  <Span className="block text-sm font-medium">
+                    {t('chat.setup_blocked_title', 'Chat setup needs attention')}
+                  </Span>
+                  <P className="text-sm">{blockingSetupIssue.message}</P>
+                  {blockingSetupIssue.cliCommand ? (
+                    <code className="text-text dark:text-dark-text bg-surface-100 dark:bg-dark-surface-300 block rounded-md px-2 py-1 text-xs">
+                      {blockingSetupIssue.cliCommand}
+                    </code>
+                  ) : null}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  palette="neutral"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => navigate(getSetupIssueFixPath(blockingSetupIssue))}>
+                  {t('chat.setup_blocked_action', 'Open setup')}
+                </Button>
+              </div>
+            </InlineNotice>
+          ) : setupStatus && !setupStatus.defaultModel ? (
             <InlineNotice variant="warning">
               {t('chat.landing_no_model', 'No default model set. Run contenox init to configure.')}
             </InlineNotice>
           ) : null}
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-            <Panel variant="surface" className="space-y-4">
+            <Panel variant="surface" className="order-2 space-y-4 lg:order-1">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <Span className="block text-sm font-semibold">{t('chat.task_chain')}</Span>
@@ -196,7 +224,7 @@ function ChatLandingPageImpl() {
               </Button>
             </Panel>
 
-            <Panel variant="surface" className="space-y-4">
+            <Panel variant="surface" className="order-1 space-y-4 lg:order-2">
               <div className="flex items-center gap-2">
                 <MessageSquarePlus className="h-4 w-4" />
                 <Span className="text-sm font-semibold">{t('chat.landing_composer_title')}</Span>
@@ -215,6 +243,14 @@ function ChatLandingPageImpl() {
               {!selectedChainId && sortedChainPaths.length > 0 ? (
                 <P variant="muted" className="text-xs">
                   {t('chat.landing_select_chain_hint')}
+                </P>
+              ) : null}
+              {blockingSetupIssue ? (
+                <P variant="muted" className="text-xs">
+                  {t(
+                    'chat.setup_blocked_send_hint',
+                    'Send is disabled until the selected default provider has a chat-capable model.',
+                  )}
                 </P>
               ) : null}
               {createChat.isError && (
