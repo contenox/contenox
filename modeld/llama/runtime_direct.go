@@ -86,12 +86,14 @@ func directRuntimeInfo() transport.ModelInfo {
 	out := make([]transport.DeviceInfo, 0, len(devices))
 	for _, d := range devices {
 		out = append(out, transport.DeviceInfo{
-			Index:       d.Index,
-			Name:        d.Name,
-			Description: d.Description,
-			Type:        d.Type,
-			MemoryFree:  int64(d.MemoryFree),
-			MemoryTotal: int64(d.MemoryTotal),
+			Index:            d.Index,
+			Name:             d.Name,
+			Description:      d.Description,
+			Type:             d.Type,
+			MemoryFree:       int64(d.MemoryFree),
+			MemoryTotal:      int64(d.MemoryTotal),
+			MemoryFreeKnown:  d.MemoryTotal > 0,
+			MemoryTotalKnown: d.MemoryTotal > 0,
 		})
 	}
 	return transport.ModelInfo{

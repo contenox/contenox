@@ -62,7 +62,7 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	slog.Info("llama session config",
 		"num_ctx", cfg.NumCtx,
 		"hot_context_tokens", info.HotContextTokens,
-		"planner_effective_context", info.PlannerEffectiveContext,
+		"planner_effective_context", cfg.PlannerEffectiveContext,
 		"host_cold_budget_bytes", info.HostColdBudgetBytes,
 		"num_batch", cfg.NumBatch,
 		"num_gpu_layers", cfg.NumGpuLayers,
@@ -149,7 +149,7 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 	if cfg.NumCtx <= 0 {
 		cfg.NumCtx = info.HotContextTokens
 		cfg.HotContextTokens = info.HotContextTokens
-		cfg.PlannerEffectiveContext = info.PlannerEffectiveContext
+		cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
 		plan.config = cfg
 		return plan, nil
 	}
@@ -158,7 +158,7 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 			transport.ErrContextOverflow, cfg.NumCtx, info.EffectiveContext, info.Reason)
 	}
 	cfg.HotContextTokens = info.HotContextTokens
-	cfg.PlannerEffectiveContext = info.PlannerEffectiveContext
+	cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
 	plan.config = cfg
 	return plan, nil
 }

@@ -12,17 +12,6 @@ import (
 	"github.com/contenox/runtime/modeld/llama"
 )
 
-// TestSystem_LlamaSessionLoRA_AdapterChangesContinuation is the low-level smoke
-// test for the llama.cpp dynamic LoRA plumbing: it opens a base session and an
-// adapter-backed session over the same model and prompt, and checks the adapter
-// changes the greedy continuation. It exercises the full path — the shim bindings
-// (llama_adapter_lora_init / llama_set_adapter_lora / llama_adapter_lora_free) and
-// NewWithAdapters' load/apply/free lifecycle.
-//
-// Requires a base GGUF model and a GGUF LoRA adapter built for it (see
-// testdata/make_lora_gguf.py, which reads the base model's real tensor dims so the
-// adapter shapes satisfy llama.cpp's loader). Set
-// CONTENOX_LLAMA_LORA_EXPECT_DIFF=1 to hard-assert the continuation changed.
 func TestSystem_LlamaSessionLoRA_AdapterChangesContinuation(t *testing.T) {
 	modelPath := os.Getenv("CONTENOX_LLAMA_LORA_GGUF")
 	if modelPath == "" {

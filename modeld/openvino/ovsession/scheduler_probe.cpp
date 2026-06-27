@@ -39,9 +39,9 @@ int cx_genai_scheduler_probe(const char *model_dir, const char *device,
         cfg.validate();
 
         ov::AnyMap properties{{"KV_CACHE_PRECISION", ov::element::f16}};
-        // Probe-only lifecycle: keep the GenAI pipeline alive for the process.
-        // Destroying ContinuousBatchingPipeline inside the CGo call currently
-        // corrupts the Go test process after the report is returned.
+        // This probe is invoked from a short-lived test subprocess. Keep the
+        // pipeline process-owned because destroying ContinuousBatchingPipeline
+        // from the cgo callback path segfaults in the pinned GenAI runtime.
         auto *pipe = new ov::genai::ContinuousBatchingPipeline(
             std::filesystem::path(model_dir),
             cfg,

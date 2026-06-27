@@ -18,6 +18,8 @@ typedef struct cx_ov_device_info {
     char type[32];
     uint64_t memory_free;
     uint64_t memory_total;
+    int memory_free_known;
+    int memory_total_known;
     int shared_with_display;
 } cx_ov_device_info;
 
@@ -93,8 +95,8 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
                                  size_t n,
                                  const char *tools_json,
                                  int add_generation_prompt,
-                                 char *out,
-                                 size_t out_len,
+                                 char **out,
+                                 size_t *out_len,
                                  char *err,
                                  size_t err_len);
 
@@ -134,6 +136,7 @@ int cx_genai_import_cold_kv(cx_genai_session *s,
                             char *err,
                             size_t err_len);
 void cx_genai_kv_data_free(void *p);
+void cx_genai_data_free(void *p);
 
 int cx_genai_generate(cx_genai_session *s,
                       const char *prompt,
@@ -149,10 +152,10 @@ int cx_genai_generate(cx_genai_session *s,
                       const char *structured_protocol,
                       const char *structured_payload,
                       const char *parser_protocols,
-                      char *out,
-                      size_t out_len,
-                      char *parsed,
-                      size_t parsed_len,
+                      char **out,
+                      size_t *out_len,
+                      char **parsed,
+                      size_t *parsed_len,
                       cx_genai_metrics *metrics,
                       char *err,
                       size_t err_len);
@@ -179,10 +182,10 @@ int cx_genai_generate_tokens(cx_genai_session *s,
                              const char *structured_protocol,
                              const char *structured_payload,
                              const char *parser_protocols,
-                             char *out,
-                             size_t out_len,
-                             char *parsed,
-                             size_t parsed_len,
+                             char **out,
+                             size_t *out_len,
+                             char **parsed,
+                             size_t *parsed_len,
                              cx_genai_metrics *metrics,
                              char *err,
                              size_t err_len);
@@ -191,10 +194,10 @@ cx_genai_stream *cx_genai_stream_new(void);
 void cx_genai_stream_free(cx_genai_stream *stream);
 void cx_genai_stream_abort(cx_genai_stream *stream, const char *message);
 int cx_genai_stream_next(cx_genai_stream *stream,
-                         char *out,
-                         size_t out_len,
-                         char *thinking,
-                         size_t thinking_len,
+                         char **out,
+                         size_t *out_len,
+                         char **thinking,
+                         size_t *thinking_len,
                          char *err,
                          size_t err_len);
 

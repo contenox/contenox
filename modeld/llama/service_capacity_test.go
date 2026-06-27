@@ -182,6 +182,34 @@ func TestUnit_ServiceResolveConfigAppliesDaemonEnvOverrides(t *testing.T) {
 	}
 }
 
+func TestUnit_ServiceResolveConfigHonorsRequestedPlannerContext(t *testing.T) {
+	path := writeTestGGUF(t, 32768)
+	svc := NewService(
+		WithMemorySource(staticMemory(16<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	cfg, err := svc.resolveConfig(transport.OpenSessionRequest{
+		Type: "llama",
+		Path: path,
+		Config: transport.Config{
+			NumCtx:                  256,
+			PlannerEffectiveContext: 384,
+			KVCacheType:             "f16",
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveConfig: %v", err)
+	}
+	if cfg.NumCtx != 256 || cfg.HotContextTokens != 256 {
+		t.Fatalf("hot config = num_ctx %d hot %d, want 256/256", cfg.NumCtx, cfg.HotContextTokens)
+	}
+	if cfg.PlannerEffectiveContext != 384 {
+		t.Fatalf("PlannerEffectiveContext = %d, want requested logical planner 384", cfg.PlannerEffectiveContext)
+	}
+}
+
 func TestUnit_ServiceAutoOffloadsToDetectedAccelerator(t *testing.T) {
 	// No CONTENOX_LLAMA_GPU_LAYERS and no profile request (NumGpuLayers: 0): modeld
 	// must still offload because it detected an accelerator with ample memory —

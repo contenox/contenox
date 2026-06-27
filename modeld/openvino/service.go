@@ -259,7 +259,7 @@ func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Con
 	if cfg.NumCtx <= 0 {
 		cfg.NumCtx = info.HotContextTokens
 		cfg.HotContextTokens = info.HotContextTokens
-		cfg.PlannerEffectiveContext = info.PlannerEffectiveContext
+		cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
 		return cfg, nil
 	}
 	if cfg.NumCtx > info.EffectiveContext {
@@ -267,7 +267,7 @@ func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Con
 			transport.ErrContextOverflow, cfg.NumCtx, info.EffectiveContext, info.Reason)
 	}
 	cfg.HotContextTokens = info.HotContextTokens
-	cfg.PlannerEffectiveContext = info.PlannerEffectiveContext
+	cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
 	return cfg, nil
 }
 
@@ -351,12 +351,14 @@ func openvinoRuntimeInfo() transport.ModelInfo {
 	info.Devices = make([]transport.DeviceInfo, 0, len(rt.Devices))
 	for _, d := range rt.Devices {
 		info.Devices = append(info.Devices, transport.DeviceInfo{
-			Index:       d.Index,
-			Name:        d.Name,
-			Description: d.Description,
-			Type:        d.Type,
-			MemoryFree:  int64(d.MemoryFree),
-			MemoryTotal: int64(d.MemoryTotal),
+			Index:            d.Index,
+			Name:             d.Name,
+			Description:      d.Description,
+			Type:             d.Type,
+			MemoryFree:       int64(d.MemoryFree),
+			MemoryTotal:      int64(d.MemoryTotal),
+			MemoryFreeKnown:  d.MemoryFreeKnown,
+			MemoryTotalKnown: d.MemoryTotalKnown,
 		})
 	}
 	return info
@@ -386,7 +388,7 @@ func (s openvinoDeviceMemorySource) Snapshot() (capacity.DeviceSnapshot, error) 
 	if err != nil {
 		return capacity.DeviceSnapshot{}, err
 	}
-	if d.MemoryFree == 0 || d.MemoryTotal == 0 {
+	if !d.MemoryFreeKnown || !d.MemoryTotalKnown || d.MemoryTotal == 0 {
 		return capacity.DeviceSnapshot{}, fmt.Errorf("OpenVINO device %q reported no memory telemetry; set CONTENOX_OPENVINO_DEVICE=CPU or use a plugin exposing device memory", s.device)
 	}
 	kind := d.Type

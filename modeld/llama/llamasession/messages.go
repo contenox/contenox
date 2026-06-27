@@ -9,9 +9,6 @@ type chatTemplateMessage struct {
 	ToolCallID string
 }
 
-// chatMessagesJSON marshals chat turns to the OpenAI-compatible JSON shape that
-// llama.cpp's common chat layer parses. tool_calls is embedded as raw JSON (not
-// re-encoded as a string), and tool_call_id is a plain string.
 func chatMessagesJSON(msgs []chatTemplateMessage) (string, error) {
 	type wireMsg struct {
 		Role       string          `json:"role"`

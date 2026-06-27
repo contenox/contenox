@@ -108,16 +108,12 @@ func (s *session) evictRangeLocked(a, b int) error {
 		return err
 	}
 	if b < n {
-		// Slide the surviving tail down by the removed width so positions stay
-		// contiguous; the shifted cells are RoPE-corrected on the next decode.
 		s.lctx.MemorySeqAdd(0, b, -1, -(b - a))
 	}
 	s.resident = append(s.resident[:a], s.resident[b:]...)
 	oldPrefix := s.prefixLen
 	s.prefixLen = min(a, oldPrefix) + max(0, oldPrefix-b)
 	if a < oldPrefix {
-		// Stable prefix tokens were evicted, so its cached templated text no
-		// longer maps to the resident KV.
 		s.prefixText = ""
 	}
 	if block != nil {
@@ -126,19 +122,12 @@ func (s *session) evictRangeLocked(a, b int) error {
 	return nil
 }
 
-// slideForDecodeLocked frees room for continued generation by evicting the
-// oldest tokens just after the stable prefix, keeping that prefix hot as
-// attention sinks and preserving the recent tail (StreamingLLM). It reports
-// false without error when the prefix fills the window and no slot can be freed.
 func (s *session) slideForDecodeLocked() (bool, error) {
-	// Keep the stable prefix as attention sinks plus the derived recent window;
-	// evict the middle. Same budget derivation OpenVINO feeds its native
-	// CacheEvictionConfig, token-granular (block size 1) for llama's KV.
 	recent := residency.DeriveEvictionBudget(s.numCtx, 1).RecentTokens
 	a := s.prefixLen
 	b := len(s.resident) - recent
 	if b <= a {
-		return false, nil // the prefix + recent window fills num_ctx; cannot slide
+		return false, nil
 	}
 	if err := s.evictRangeLocked(a, b); err != nil {
 		return false, err
@@ -146,9 +135,6 @@ func (s *session) slideForDecodeLocked() (bool, error) {
 	return true, nil
 }
 
-// AdmitRange re-admits a previously evicted range into the hot KV in append mode:
-// the block returns at the current tail as recent context. In-place insertion is
-// intentionally left to a later pass because it needs broader position surgery.
 func (s *session) AdmitRange(ctx context.Context, r residency.Range) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -158,21 +144,13 @@ func (s *session) AdmitRange(ctx context.Context, r residency.Range) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return s.admitRangeLocked(r)
+	return s.admitRangeLocked(ctx, r)
 }
 
-// New loads a GGUF model and opens one persistent base-model session. It is the
-// registered SessionFactory; adapter-backed variants go through NewWithAdapters.
 func New(modelPath string, cfg llama.Config) (llama.Session, error) {
 	return NewWithAdapters(modelPath, cfg, nil)
 }
 
-// NewWithAdapters loads a GGUF model, opens one persistent session, and applies
-// any LoRA adapters to that session's context. Adapters are attached after context
-// creation and do not modify the base model weights. Because an adapter changes
-// model behavior, a session built with adapters is a different model variant than
-// its base and must not reuse warm KV across an adapter change — that identity
-// gate lives in the caller (slot/cache key), not here.
 func NewWithAdapters(modelPath string, cfg llama.Config, adapters []llama.AdapterSpec) (llama.Session, error) {
 	model, err := llamacppshim.LoadModel(modelPath, modelConfig(cfg))
 	if err != nil {
@@ -183,13 +161,6 @@ func NewWithAdapters(modelPath string, cfg llama.Config, adapters []llama.Adapte
 	if numCtx <= 0 {
 		numCtx = 8192
 	}
-	// llama.cpp stores the V cache TRANSPOSED when flash attention is off (the
-	// default here), so its CUDA row stride equals n_ctx. The MMF attention kernel
-	// used for decode and small prefills (src1_ncols<=16) asserts stride_row%2==0,
-	// so an ODD n_ctx aborts the whole daemon via a C-level GGML_ASSERT that Go
-	// cannot recover. The planner emits arbitrary parity (e.g. 7151), so round
-	// n_ctx down to even at this KV-allocation site; rounding down stays within the
-	// planned budget.
 	numCtx -= numCtx % 2
 	plannerCtx := cfg.PlannerEffectiveContext
 	if plannerCtx <= 0 {
@@ -204,8 +175,6 @@ func NewWithAdapters(modelPath string, cfg llama.Config, adapters []llama.Adapte
 	if nBatch <= 0 {
 		nBatch = 512
 	}
-	// BOS policy is model-driven (the GGUF's add_bos_token), not a config guess; an
-	// explicit DisableBOS can still force it off.
 	addBOS := model.AddBOS() && !cfg.DisableBOS
 	nThreads := cfg.NumThreads
 	if nThreads <= 0 {
@@ -219,14 +188,9 @@ func NewWithAdapters(modelPath string, cfg llama.Config, adapters []llama.Adapte
 		NumThreads:  nThreads,
 		FlashAttn:   flashAttnMode(cfg.FlashAttn),
 		KVCacheType: cfg.KVCacheType,
-		// Chat/decode needs per-token LOGITS for sampling, not embeddings. Enabling
-		// embeddings forces every prefill token to be an output and routes the batch
-		// through a CUDA matmul that asserts (mmf.cuh: stride_row%2==0) under partial
-		// GPU offload — a C-level abort() that takes down the whole daemon (Go cannot
-		// recover it). Embeddings have their own dedicated non-causal context in
-		// embed.go, so this session never needs embeddings mode.
-		Embeddings: false,
-		OffloadKQV: cfg.NumGpuLayers != 0,
+		Embeddings:  false,
+		OffloadKQV:  cfg.NumGpuLayers != 0,
+		KVUnified:   coldMaxTokens > 0,
 	})
 	if err != nil {
 		model.Close()
@@ -239,9 +203,6 @@ func NewWithAdapters(modelPath string, cfg llama.Config, adapters []llama.Adapte
 		return nil, fmt.Errorf("llamasession: new batch: %w", err)
 	}
 
-	// Load and attach LoRA adapters to the context. On any failure, free what was
-	// already loaded before tearing down the context/model so the model frees no
-	// dangling adapters.
 	loaded, err := applyAdapters(model, lctx, adapters)
 	if err != nil {
 		batch.Free()
@@ -266,9 +227,6 @@ func NewWithAdapters(modelPath string, cfg llama.Config, adapters []llama.Adapte
 	}, nil
 }
 
-// applyAdapters loads each adapter against model and attaches it to lctx at its
-// scale (defaulting an unset scale to 1.0). It returns the loaded adapters so the
-// session can free them on close; on error it frees any it already loaded.
 func applyAdapters(model *llamacppshim.Model, lctx *llamacppshim.Context, adapters []llama.AdapterSpec) ([]*llamacppshim.Adapter, error) {
 	if len(adapters) == 0 {
 		return nil, nil
@@ -294,8 +252,6 @@ func applyAdapters(model *llamacppshim.Model, lctx *llamacppshim.Context, adapte
 	return loaded, nil
 }
 
-// freeAdapters releases loaded adapters. Must run before the owning model is
-// closed, otherwise the model frees them and a later Free would double-free.
 func freeAdapters(adapters []*llamacppshim.Adapter) {
 	for _, ad := range adapters {
 		ad.Free()
@@ -310,10 +266,6 @@ func modelConfig(cfg llama.Config) llamacppshim.ModelConfig {
 	}
 }
 
-// flashAttnMode maps the optional profile force-on flag to a context mode. An
-// explicit true forces Flash Attention on; otherwise modeld defers to llama.cpp,
-// which enables FA wherever the device supports it (probed per layer) and falls
-// back to off — the dynamic default, no per-model knob required.
 func flashAttnMode(forceOn bool) llamacppshim.FlashAttnMode {
 	if forceOn {
 		return llamacppshim.FlashAttnOn
@@ -331,9 +283,6 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		return llama.PrefixStatus{}, err
 	}
 
-	// Render the stable turns with the model's OWN chat template (read from the
-	// GGUF), not a hardcoded format. The runtime sends raw content + per-segment
-	// roles in the manifest; modeld owns the tokenizer and template.
 	stableMsgs := stableMessages(prefix.Text, prefix.Manifest)
 	text := prefix.Text
 	if len(stableMsgs) > 0 {
@@ -352,8 +301,6 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		return llama.PrefixStatus{}, llama.NewContextOverflowError("prefix", 0, len(toks), s.numCtx)
 	}
 
-	// Longest common token prefix with what is already resident. Everything after
-	// it (divergent prefix tail, old suffix, generated tokens) is dropped.
 	oldResident := len(s.resident)
 	reuse := 0
 	if ok, _ := s.manifest.CompatibleRuntime(prefix.Manifest); !ok {
@@ -436,9 +383,6 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	if !s.manifest.IsZero() && !suffix.Manifest.IsZero() && s.manifest.StableByteHash != suffix.Manifest.StableByteHash {
 		return llama.SuffixStatus{}, llama.NewManifestMismatchError("stable prefix changed between EnsurePrefix and PrefillSuffix")
 	}
-	// Template the FULL conversation with the model's own template and take the
-	// part after the resident templated stable prefix. The stable KV stays warm;
-	// only this suffix is (re)prefilled.
 	volatileMsgs := volatileMessages(suffix.Text, suffix.Manifest)
 	suffixText := suffix.Text
 	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
@@ -455,8 +399,6 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 		s.chatSyntax = rendered.Syntax
 	}
 
-	// When the stable prefix is empty, the BOS (if the model adds one) belongs to
-	// these first tokens; otherwise the suffix is mid-context with no second BOS.
 	addSpecial := s.prefixLen == 0 && s.addBOS
 	stoks, err := s.tokenize(suffixText, addSpecial)
 	if err != nil {
@@ -465,7 +407,6 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	if len(s.resident)+len(stoks) > s.numCtx {
 		return llama.SuffixStatus{}, llama.NewContextOverflowError("suffix", len(s.resident), len(stoks), s.numCtx)
 	}
-	// logitsOnLast=true so the final token's logits are ready for the first sample.
 	beforeLen := len(s.resident)
 	if err := s.prefillAt(ctx, stoks, len(s.resident), true); err != nil {
 		if rollbackErr := s.removeKV(beforeLen, -1); rollbackErr != nil {
@@ -540,10 +481,6 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		if maxTokens <= 0 {
 			maxTokens = 256
 		}
-		// If the window is already full, slide it (keep the stable prefix as
-		// attention sinks + the recent tail) so generation can begin. Only when
-		// even that frees no slot — the prefix fills num_ctx — is it a hard
-		// overflow. Generation past num_ctx is enabled by sliding mid-loop below.
 		if len(s.resident) >= s.numCtx {
 			slid, err := s.slideForDecodeLocked()
 			if err != nil {
@@ -604,8 +541,6 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 				return
 			}
 
-			// Keep a free KV slot for this token, sliding the window when full so
-			// generation continues past num_ctx instead of stopping.
 			if len(s.resident) >= s.numCtx {
 				slid, err := s.slideForDecodeLocked()
 				if err != nil {
@@ -678,6 +613,7 @@ func (s *session) Snapshot(ctx context.Context) (llama.SessionSnapshot, error) {
 		PrefixTokens:     s.prefixLen,
 		NumCtx:           s.numCtx,
 		ResidentTokenIDs: append([]int(nil), s.resident...),
+		ColdKVBlocks:     s.coldBlockSnapshotsLocked(),
 		StableText:       s.stableText,
 		PrefixText:       s.prefixText,
 		Tools:            s.tools,
@@ -727,7 +663,9 @@ func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error
 	}
 	s.resident = append([]int(nil), snap.ResidentTokenIDs...)
 	s.prefixLen = snap.PrefixTokens
-	s.clearColdStoreLocked()
+	if err := s.restoreColdBlocksLocked(snap.ColdKVBlocks); err != nil {
+		return err
+	}
 	s.stableText = snap.StableText
 	s.prefixText = snap.PrefixText
 	s.tools = snap.Tools
@@ -773,8 +711,6 @@ func (s *session) closeLocked() {
 		s.batch.Free()
 		s.batch = nil
 	}
-	// Free adapters before the model: llama.cpp frees still-attached adapters when
-	// the model is freed, so freeing after model.Close would double-free.
 	freeAdapters(s.adapters)
 	s.adapters = nil
 	if s.model != nil {
@@ -793,10 +729,6 @@ func (s *session) closeLocked() {
 	s.residencyErr = ""
 }
 
-// stableMessages reconstructs the stable role/content turns from the manifest
-// segments (the runtime sends raw content keyed by role), for the model's own
-// chat template. Control segments (BOS, the assistant cue) carry no role and are
-// skipped — the template adds them.
 func stableMessages(text string, m llama.ContextManifest) []chatTemplateMessage {
 	var msgs []chatTemplateMessage
 	for _, seg := range m.Segments {
@@ -817,8 +749,6 @@ func stableMessages(text string, m llama.ContextManifest) []chatTemplateMessage 
 	return msgs
 }
 
-// volatileMessages reconstructs the volatile turns; their segment byte ranges are
-// global (after the stable bytes), so they are offset into the suffix text.
 func volatileMessages(text string, m llama.ContextManifest) []chatTemplateMessage {
 	var msgs []chatTemplateMessage
 	base := m.StableBytes
@@ -844,12 +774,6 @@ func volatileMessages(text string, m llama.ContextManifest) []chatTemplateMessag
 	return msgs
 }
 
-// enrichStableSegments fills the stored manifest with backend-resolved stable
-// token ranges/hashes. modeld owns the tokenizer/template, so a segment's token
-// boundary is recovered by tokenizing the model's chat template applied to the
-// leading message prefix it ends. The final role segment's boundary is the full
-// stable tokenization, so the common single-segment case adds no template calls.
-// Control segments (e.g. BOS) carry no message text and get a zero-width range.
 func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []chatTemplateMessage, toks []int) (llama.ContextManifest, error) {
 	m.Segments = append([]llama.ManifestSegment(nil), m.Segments...)
 	m.StableTokenHash = contextasm.HashTokenIDs(toks)
@@ -887,10 +811,6 @@ func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []cha
 	return m, nil
 }
 
-// enrichVolatileSegments fills the stored manifest's volatile segment token
-// ranges/hashes after the stable prefix, using the same incremental-template
-// boundary recovery. Token positions are offset by prefixTokens. A trailing
-// control segment (the assistant cue) absorbs any remaining suffix tokens.
 func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []chatTemplateMessage, stoks []int) error {
 	s.manifest.Segments = append([]llama.ManifestSegment(nil), s.manifest.Segments...)
 	s.manifest.VolatileTokenHash = contextasm.HashTokenIDs(stoks)
@@ -932,9 +852,6 @@ func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []chatTe
 	return nil
 }
 
-// renderTemplate applies llama.cpp's upstream common chat-template path. That
-// path handles model-specific Jinja/template variants, tool definitions,
-// assistant tool_calls, tool result IDs, and BOS/EOS normalization.
 func (s *session) renderTemplate(msgs []chatTemplateMessage, tools string, addAssistant bool) (string, error) {
 	result, err := s.renderTemplateWithOptions(msgs, tools, addAssistant, nil)
 	if err != nil {
@@ -1045,9 +962,6 @@ func (s *session) removeKV(p0, p1 int) error {
 	return nil
 }
 
-// prefillAt feeds tokens into the KV at absolute positions [startPos, startPos+len),
-// chunked by nBatch. logitsOnLast requests logits for the final token (needed
-// before sampling); prefix prefill sets it false.
 func (s *session) prefillAt(ctx context.Context, toks []int, startPos int, logitsOnLast bool) error {
 	n := len(toks)
 	for i := 0; i < n; i += s.nBatch {

@@ -15,6 +15,7 @@
 #include <deque>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <list>
@@ -57,6 +58,44 @@ static void write_buf(char *dst, size_t dst_len, const std::string &value) {
     if (!dst || dst_len == 0) return;
     std::strncpy(dst, value.c_str(), dst_len - 1);
     dst[dst_len - 1] = '\0';
+}
+
+static char *alloc_c_string(const std::string &value, const char *what) {
+    void *buf = std::malloc(value.size() + 1);
+    if (!buf) {
+        throw std::runtime_error(std::string("allocate OpenVINO GenAI ") + what);
+    }
+    auto *out = reinterpret_cast<char *>(buf);
+    if (!value.empty()) {
+        std::memcpy(out, value.data(), value.size());
+    }
+    out[value.size()] = '\0';
+    return out;
+}
+
+static void clear_c_output(char **out, size_t *out_len) {
+    if (out) {
+        *out = nullptr;
+    }
+    if (out_len) {
+        *out_len = 0;
+    }
+}
+
+static void free_c_output(char **out, size_t *out_len) {
+    if (out && *out) {
+        std::free(*out);
+    }
+    clear_c_output(out, out_len);
+}
+
+static void set_c_output(const std::string &value, char **out, size_t *out_len, const char *what) {
+    if (!out || !out_len) {
+        throw std::runtime_error(std::string("OpenVINO GenAI ") + what + " output pointer is nil");
+    }
+    char *buf = alloc_c_string(value, what);
+    *out = buf;
+    *out_len = value.size();
 }
 
 template <size_t N>
@@ -129,36 +168,36 @@ static void fill_device_info(ov::Core &core, const std::string &device, int inde
         type = shared ? "igpu" : "gpu";
         try {
             out->memory_total = core.get_property(device, ov::intel_gpu::device_total_mem_size);
+            out->memory_total_known = 1;
         } catch (...) {
         }
         try {
             auto free = core.get_property(device, ov::intel_gpu::hint::available_device_mem);
-            if (free > 0) {
-                out->memory_free = static_cast<uint64_t>(free);
-            }
+            out->memory_free = static_cast<uint64_t>(free);
+            out->memory_free_known = 1;
         } catch (...) {
         }
     } else if (base == "NPU") {
         type = "accel";
         try {
             out->memory_total = core.get_property(device, ov::intel_npu::device_total_mem_size);
+            out->memory_total_known = 1;
         } catch (...) {
         }
         try {
             auto allocated = core.get_property(device, ov::intel_npu::device_alloc_mem_size);
             if (out->memory_total > allocated) {
                 out->memory_free = out->memory_total - allocated;
+            } else {
+                out->memory_free = 0;
             }
+            out->memory_free_known = 1;
         } catch (...) {
-            out->memory_free = out->memory_total;
         }
     } else if (base == "CPU") {
         type = "cpu";
     }
 
-    if (out->memory_free == 0 && out->memory_total > 0) {
-        out->memory_free = out->memory_total;
-    }
     out->shared_with_display = shared ? 1 : 0;
     write_fixed(out->description, description);
     write_fixed(out->type, type);
@@ -265,10 +304,58 @@ static ov::Any kv_precision_from(const cx_genai_session_config *config) {
     throw std::runtime_error("unsupported KV_CACHE_PRECISION: " + precision);
 }
 
+struct model_rope_config {
+    double theta = 10000.0;
+    std::string scaling_json;
+};
+
+static std::filesystem::path model_config_path_for(const std::string &model_path) {
+    std::filesystem::path base(model_path);
+    std::error_code ec;
+    if (std::filesystem::is_regular_file(base, ec)) {
+        base = base.parent_path();
+    }
+    return base / "config.json";
+}
+
+static model_rope_config load_model_rope_config(const std::string &model_path) {
+    model_rope_config cfg;
+    const auto config_path = model_config_path_for(model_path);
+    std::ifstream in(config_path);
+    if (!in.good()) {
+        return cfg;
+    }
+
+    std::ostringstream raw;
+    raw << in.rdbuf();
+    auto root = ov::genai::JsonContainer::from_json_string(raw.str());
+    if (root.contains("rope_theta") && !root["rope_theta"].is_null()) {
+        std::optional<double> theta = root["rope_theta"].as_double();
+        if (!theta) {
+            if (auto as_int = root["rope_theta"].as_int()) {
+                theta = static_cast<double>(*as_int);
+            }
+        }
+        if (!theta || !std::isfinite(*theta) || *theta <= 0.0) {
+            throw std::runtime_error("OpenVINO model config rope_theta must be a positive number");
+        }
+        cfg.theta = *theta;
+    }
+    if (root.contains("rope_scaling")) {
+        auto scaling = root["rope_scaling"];
+        if (!scaling.is_null()) {
+            cfg.scaling_json = scaling.to_json_string();
+        }
+    }
+    return cfg;
+}
+
 struct cx_genai_session {
     std::unique_ptr<ov::genai::ContinuousBatchingPipeline> pipe;
     std::atomic<bool> cancel_requested{false};
     std::string kv_cache_precision = "f16";
+    double rope_theta = 10000.0;
+    std::string rope_scaling_json;
     // Dynamic LoRA adapters registered on this pipeline, if any. Held so every
     // generation config built from get_config() activates the same adapter set at
     // the same alpha. nullopt = base model, no adapters.
@@ -1115,6 +1202,7 @@ static void rotate_shifted_key_token(std::vector<uint8_t> &bytes,
                                      const ov::element::Type &elem_type,
                                      size_t elem_size,
                                      size_t token_offset,
+                                     double rope_theta,
                                      int64_t position_delta) {
     if (position_delta == 0) {
         return;
@@ -1128,7 +1216,9 @@ static void rotate_shifted_key_token(std::vector<uint8_t> &bytes,
     if (head_size % 2 != 0) {
         throw std::runtime_error("OpenVINO shifted cold KV key head size must be even for RoPE rotation");
     }
-    constexpr double rope_theta = 10000.0;
+    if (!std::isfinite(rope_theta) || rope_theta <= 0.0) {
+        throw std::runtime_error("OpenVINO shifted cold KV import requires a positive RoPE theta");
+    }
     const size_t half = head_size / 2;
     for (size_t head = 0; head < heads; ++head) {
         for (size_t dim = 0; dim < half; ++dim) {
@@ -1325,6 +1415,9 @@ static void genai_import_cold_kv_locked(cx_genai_session *s,
     }
 
     const int64_t position_delta = static_cast<int64_t>(dest_start) - static_cast<int64_t>(start);
+    if (position_delta != 0 && !s->rope_scaling_json.empty()) {
+        throw std::runtime_error("OpenVINO shifted cold KV import does not support rope_scaling in model config");
+    }
     std::set<std::tuple<size_t, size_t>> initialized_dest_blocks;
     for (size_t block = 0; block < payload_blocks; ++block) {
         const size_t content_len = checked_size(reader.pod<uint64_t>(), "cold KV content length");
@@ -1398,6 +1491,7 @@ static void genai_import_cold_kv_locked(cx_genai_session *s,
                                          key_cache.get_element_type(),
                                          key_elem_size,
                                          dest_token_offset,
+                                         s->rope_theta,
                                          position_delta);
             }
             for (const auto &dest_entry : dest_cache_blocks) {
@@ -1415,9 +1509,10 @@ cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device
                                        const cx_genai_session_config *config,
                                        char *err, size_t err_len) {
     try {
-        auto *s = new cx_genai_session();
         std::string model_path(model_dir ? model_dir : "");
         std::string dev = (device && device[0]) ? std::string(device) : std::string("CPU");
+        auto rope_config = load_model_rope_config(model_path);
+        std::unique_ptr<cx_genai_session> s(new cx_genai_session());
         cx_genai_session_config cfg_copy{};
         if (config) {
             cfg_copy = *config;
@@ -1436,6 +1531,8 @@ cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device
             : std::string("f16");
         cfg_copy.kv_cache_precision = kv_precision.c_str();
         s->kv_cache_precision = kv_precision;
+        s->rope_theta = rope_config.theta;
+        s->rope_scaling_json = std::move(rope_config.scaling_json);
 
         // Copy the adapter specs out of the C struct now: the pointers it carries
         // are only guaranteed valid for this call, and the adapter files are loaded
@@ -1446,14 +1543,14 @@ cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device
                 const cx_genai_lora_adapter &a = config->lora_adapters[i];
                 if (!a.path || !a.path[0]) {
                     write_buf(err, err_len, "OpenVINO GenAI LoRA adapter path is empty");
-                    delete s;
                     return nullptr;
                 }
                 adapter_specs.emplace_back(std::string(a.path), a.alpha);
             }
         }
 
-        s->run([s, model_path, dev, cfg_copy, kv_precision, adapter_specs] {
+        cx_genai_session *session = s.get();
+        session->run([session, model_path, dev, cfg_copy, kv_precision, adapter_specs] {
             auto cfg = scheduler_config_from(&cfg_copy);
             ov::AnyMap properties{{"KV_CACHE_PRECISION", kv_precision_from(&cfg_copy)}};
 
@@ -1466,23 +1563,23 @@ cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device
                 for (const auto &spec : adapter_specs) {
                     adapter_config.add(ov::genai::Adapter(std::filesystem::path(spec.first)), spec.second);
                 }
-                s->adapters = adapter_config;
+                session->adapters = adapter_config;
                 properties.insert(ov::genai::adapters(adapter_config));
             }
 
-            s->pipe = std::make_unique<ov::genai::ContinuousBatchingPipeline>(
+            session->pipe = std::make_unique<ov::genai::ContinuousBatchingPipeline>(
                 std::filesystem::path(model_path),
                 cfg,
                 dev,
                 properties);
 
-            if (s->adapters) {
-                ov::genai::GenerationConfig base = s->pipe->get_config();
-                base.adapters = s->adapters;
-                s->pipe->set_config(base);
+            if (session->adapters) {
+                ov::genai::GenerationConfig base = session->pipe->get_config();
+                base.adapters = session->adapters;
+                session->pipe->set_config(base);
             }
         });
-        return s;
+        return s.release();
     } catch (const std::exception &e) {
         write_buf(err, err_len, e.what());
         return nullptr;
@@ -1509,12 +1606,17 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
                                  size_t n,
                                  const char *tools_json,
                                  int add_generation_prompt,
-                                 char *out,
-                                 size_t out_len,
+                                 char **out,
+                                 size_t *out_len,
                                  char *err,
                                  size_t err_len) {
+    clear_c_output(out, out_len);
     if (!s) {
         write_buf(err, err_len, "OpenVINO GenAI session is nil");
+        return 1;
+    }
+    if (!out || !out_len) {
+        write_buf(err, err_len, "OpenVINO GenAI chat template output pointer is nil");
         return 1;
     }
     try {
@@ -1545,13 +1647,10 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
             }
             templated = s->pipe->get_tokenizer().apply_chat_template(history, add_generation_prompt != 0, std::string{}, tools);
         });
-        if (templated.size() + 1 > out_len) {
-            write_buf(err, err_len, "OpenVINO GenAI chat template output buffer too small");
-            return 2;
-        }
-        write_buf(out, out_len, templated);
+        set_c_output(templated, out, out_len, "chat template output");
         return 0;
     } catch (const std::exception &e) {
+        free_c_output(out, out_len);
         write_buf(err, err_len, e.what());
         return 1;
     }
@@ -1751,6 +1850,10 @@ int cx_genai_import_cold_kv(cx_genai_session *s,
 }
 
 void cx_genai_kv_data_free(void *p) {
+    cx_genai_data_free(p);
+}
+
+void cx_genai_data_free(void *p) {
     std::free(p);
 }
 
@@ -1768,19 +1871,25 @@ int cx_genai_generate(cx_genai_session *s,
                       const char *structured_protocol,
                       const char *structured_payload,
                       const char *parser_protocols,
-                      char *out,
-                      size_t out_len,
-                      char *parsed,
-                      size_t parsed_len,
+                      char **out,
+                      size_t *out_len,
+                      char **parsed,
+                      size_t *parsed_len,
                       cx_genai_metrics *metrics,
                       char *err,
                       size_t err_len) {
+    clear_c_output(out, out_len);
+    clear_c_output(parsed, parsed_len);
     if (!s) {
         write_buf(err, err_len, "OpenVINO GenAI session is nil");
         return 1;
     }
     if (!prompt) {
         write_buf(err, err_len, "OpenVINO GenAI prompt is nil");
+        return 1;
+    }
+    if (!out || !out_len || !parsed || !parsed_len) {
+        write_buf(err, err_len, "OpenVINO GenAI output pointer is nil");
         return 1;
     }
 
@@ -1830,21 +1939,13 @@ int cx_genai_generate(cx_genai_session *s,
         if (canceled) {
             return 3;
         }
-        if (generated.size() + 1 > out_len) {
-            write_buf(err, err_len, "OpenVINO GenAI output buffer too small");
-            return 2;
-        }
-        write_buf(out, out_len, generated);
-        if (!parsed_message.empty()) {
-            if (parsed_message.size() + 1 > parsed_len) {
-                write_buf(err, err_len, "OpenVINO GenAI parsed output buffer too small");
-                return 2;
-            }
-            write_buf(parsed, parsed_len, parsed_message);
-        }
+        set_c_output(generated, out, out_len, "generated text");
+        set_c_output(parsed_message, parsed, parsed_len, "parsed output");
         copy_metrics(latest_metrics, metrics);
         return 0;
     } catch (const std::exception &e) {
+        free_c_output(out, out_len);
+        free_c_output(parsed, parsed_len);
         write_buf(err, err_len, e.what());
         return 1;
     }
@@ -1909,19 +2010,25 @@ int cx_genai_generate_tokens(cx_genai_session *s,
                              const char *structured_protocol,
                              const char *structured_payload,
                              const char *parser_protocols,
-                             char *out,
-                             size_t out_len,
-                             char *parsed,
-                             size_t parsed_len,
+                             char **out,
+                             size_t *out_len,
+                             char **parsed,
+                             size_t *parsed_len,
                              cx_genai_metrics *metrics,
                              char *err,
                              size_t err_len) {
+    clear_c_output(out, out_len);
+    clear_c_output(parsed, parsed_len);
     if (!s) {
         write_buf(err, err_len, "OpenVINO GenAI session is nil");
         return 1;
     }
     if (!tokens || tokens_len == 0) {
         write_buf(err, err_len, "OpenVINO GenAI token prompt is empty");
+        return 1;
+    }
+    if (!out || !out_len || !parsed || !parsed_len) {
+        write_buf(err, err_len, "OpenVINO GenAI token output pointer is nil");
         return 1;
     }
 
@@ -1966,24 +2073,18 @@ int cx_genai_generate_tokens(cx_genai_session *s,
         if (canceled) {
             return 3;
         }
-        if (generated.size() + 1 > out_len) {
-            write_buf(err, err_len, "OpenVINO GenAI output buffer too small");
-            return 2;
-        }
-        write_buf(out, out_len, generated);
-        if (!parsed_message.empty()) {
-            if (parsed_message.size() + 1 > parsed_len) {
-                write_buf(err, err_len, "OpenVINO GenAI parsed output buffer too small");
-                return 2;
-            }
-            write_buf(parsed, parsed_len, parsed_message);
-        }
+        set_c_output(generated, out, out_len, "generated token text");
+        set_c_output(parsed_message, parsed, parsed_len, "parsed token output");
         copy_metrics(latest_metrics, metrics);
         return 0;
     } catch (const std::exception &e) {
+        free_c_output(out, out_len);
+        free_c_output(parsed, parsed_len);
         write_buf(err, err_len, e.what());
         return 1;
     } catch (...) {
+        free_c_output(out, out_len);
+        free_c_output(parsed, parsed_len);
         write_buf(err, err_len, "unknown OpenVINO token generation error");
         return 1;
     }
@@ -2007,14 +2108,20 @@ void cx_genai_stream_abort(cx_genai_stream *stream, const char *message) {
 }
 
 int cx_genai_stream_next(cx_genai_stream *stream,
-                         char *out,
-                         size_t out_len,
-                         char *thinking,
-                         size_t thinking_len,
+                         char **out,
+                         size_t *out_len,
+                         char **thinking,
+                         size_t *thinking_len,
                          char *err,
                          size_t err_len) {
+    clear_c_output(out, out_len);
+    clear_c_output(thinking, thinking_len);
     if (!stream) {
         write_buf(err, err_len, "OpenVINO GenAI stream is nil");
+        return 2;
+    }
+    if (!out || !out_len || !thinking || !thinking_len) {
+        write_buf(err, err_len, "OpenVINO GenAI stream output pointer is nil");
         return 2;
     }
 
@@ -2027,16 +2134,15 @@ int cx_genai_stream_next(cx_genai_stream *stream,
         cx_genai_stream_chunk chunk = std::move(stream->chunks.front());
         stream->chunks.pop_front();
         lock.unlock();
-        if (chunk.text.size() + 1 > out_len) {
-            write_buf(err, err_len, "OpenVINO GenAI stream chunk buffer too small");
+        try {
+            set_c_output(chunk.text, out, out_len, "stream text");
+            set_c_output(chunk.thinking, thinking, thinking_len, "stream thinking");
+        } catch (const std::exception &e) {
+            free_c_output(out, out_len);
+            free_c_output(thinking, thinking_len);
+            write_buf(err, err_len, e.what());
             return 2;
         }
-        if (chunk.thinking.size() + 1 > thinking_len) {
-            write_buf(err, err_len, "OpenVINO GenAI stream thinking buffer too small");
-            return 2;
-        }
-        write_buf(out, out_len, chunk.text);
-        write_buf(thinking, thinking_len, chunk.thinking);
         return 0;
     }
 

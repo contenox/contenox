@@ -172,6 +172,33 @@ func TestUnit_ServiceOpenSessionRejectsOversizedContextBeforeBackend(t *testing.
 	}
 }
 
+func TestUnit_ServiceResolveConfigHonorsRequestedPlannerContext(t *testing.T) {
+	dir := writeTestIR(t)
+	svc := NewService(
+		WithMemorySource(staticMemory(16<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	cfg, err := svc.resolveConfig(transport.OpenSessionRequest{
+		Type: "openvino",
+		Path: dir,
+		Config: transport.Config{
+			NumCtx:                  256,
+			PlannerEffectiveContext: 384,
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveConfig: %v", err)
+	}
+	if cfg.NumCtx != 256 || cfg.HotContextTokens != 256 {
+		t.Fatalf("hot config = num_ctx %d hot %d, want 256/256", cfg.NumCtx, cfg.HotContextTokens)
+	}
+	if cfg.PlannerEffectiveContext != 384 {
+		t.Fatalf("PlannerEffectiveContext = %d, want requested logical planner 384", cfg.PlannerEffectiveContext)
+	}
+}
+
 func TestUnit_ServiceEmbedUsesNativeEmbeddingSession(t *testing.T) {
 	old := newEmbedSession
 	t.Cleanup(func() { newEmbedSession = old })

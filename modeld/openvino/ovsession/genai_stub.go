@@ -75,6 +75,8 @@ type DeviceInfo struct {
 	Type              string
 	MemoryFree        uint64
 	MemoryTotal       uint64
+	MemoryFreeKnown   bool
+	MemoryTotalKnown  bool
 	SharedWithDisplay bool
 }
 

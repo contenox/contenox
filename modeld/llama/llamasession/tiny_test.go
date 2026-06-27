@@ -169,11 +169,6 @@ func TestSystem_LlamaSessionTiny_SnapshotRestoreOneToken(t *testing.T) {
 	}
 }
 
-// TestSystem_LlamaSessionTiny_ToolsRenderThroughSession checks that
-// PrefixInput.Tools reaches the model-native renderer in the daemon session: the
-// same stable prefix rendered with tool definitions resolves to more resident
-// tokens than without, because the model's GGUF chat template emits the tool
-// block.
 func TestSystem_LlamaSessionTiny_ToolsRenderThroughSession(t *testing.T) {
 	modelPath := os.Getenv("CONTENOX_LLAMA_TINY_GGUF")
 	requireTinyGGUF(t, modelPath)

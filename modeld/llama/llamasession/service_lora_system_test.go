@@ -13,15 +13,6 @@ import (
 	"github.com/contenox/runtime/runtime/transport"
 )
 
-// TestSystem_LlamaService_AdapterRequestChangesGeneration drives the modeld llama
-// Service end to end with adapters set on the OpenSessionRequest, proving the
-// request path req.Adapters -> toAdapterSpecs -> newSession -> the registered
-// NewWithAdapters factory reaches the native attach and changes generation. The
-// pure-Go TestOpenSessionRoutesAdaptersToBackend proves the mapping with a fake
-// factory; this proves the same threading against the real llama.cpp backend.
-//
-// Reuses the GGUF base + adapter fixtures from
-// TestSystem_LlamaSessionLoRA_AdapterChangesContinuation.
 func TestSystem_LlamaService_AdapterRequestChangesGeneration(t *testing.T) {
 	model := os.Getenv("CONTENOX_LLAMA_LORA_GGUF")
 	adapter := os.Getenv("CONTENOX_LLAMA_LORA_ADAPTER")

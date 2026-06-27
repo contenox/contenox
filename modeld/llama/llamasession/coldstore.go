@@ -3,6 +3,7 @@
 package llamasession
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -11,16 +12,16 @@ import (
 	"github.com/contenox/runtime/runtime/contextasm"
 )
 
-const llamaColdScratchSeqID = 1
-
 type coldBlock struct {
 	Range      residency.Range
 	Tokens     []int
-	TokenHash  string
 	KV         []byte
+	TokenHash  string
 	CacheClass contextasm.CacheClass
 	LastUsed   int64
 }
+
+const coldScratchSeqID = 1
 
 func (s *session) coldEnabledLocked() bool {
 	return s.coldMaxTokens > 0
@@ -44,21 +45,27 @@ func (s *session) exportColdBlockLocked(a, b int) (*coldBlock, error) {
 	if len(tokens) > s.coldMaxTokens {
 		return nil, nil
 	}
-	if err := s.clearScratchSeqLocked(); err != nil {
+	if err := s.clearColdScratchLocked(); err != nil {
 		return nil, err
 	}
-	s.lctx.MemorySeqCopy(0, llamaColdScratchSeqID, a, b)
-	defer s.clearScratchSeqLocked()
-
-	kv, err := s.lctx.StateSeqGetData(llamaColdScratchSeqID)
+	s.lctx.MemorySeqCopy(0, coldScratchSeqID, a, b)
+	kv, err := s.lctx.StateSeqGetData(coldScratchSeqID)
+	cleanupErr := s.clearColdScratchLocked()
 	if err != nil {
+		if cleanupErr != nil {
+			return nil, cleanupErr
+		}
 		return nil, fmt.Errorf("%w: llamasession export cold kv [%d,%d): %v", llama.ErrSessionFatal, a, b, err)
 	}
+	if cleanupErr != nil {
+		return nil, cleanupErr
+	}
+
 	return &coldBlock{
 		Range:      residency.Range{Start: a, End: b},
 		Tokens:     tokens,
-		TokenHash:  contextasm.HashTokenIDs(tokens),
 		KV:         kv,
+		TokenHash:  contextasm.HashTokenIDs(tokens),
 		CacheClass: s.cacheClassForRangeLocked(residency.Range{Start: a, End: b}),
 	}, nil
 }
@@ -124,9 +131,110 @@ func (s *session) coldVictimLocked(protectedKey string) string {
 	return candidates[0].key
 }
 
-func (s *session) admitRangeLocked(r residency.Range) error {
+func (s *session) coldBlockSnapshotsLocked() []llama.ColdKVBlock {
+	if len(s.coldBlocks) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(s.coldBlocks))
+	for key := range s.coldBlocks {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]llama.ColdKVBlock, 0, len(keys))
+	for _, key := range keys {
+		block := s.coldBlocks[key]
+		if block == nil {
+			continue
+		}
+		out = append(out, llama.ColdKVBlock{
+			Start:      block.Range.Start,
+			End:        block.Range.End,
+			Tokens:     append([]int(nil), block.Tokens...),
+			TokenHash:  block.TokenHash,
+			KV:         append([]byte(nil), block.KV...),
+			CacheClass: block.CacheClass.Tag(),
+			LastUsed:   block.LastUsed,
+		})
+	}
+	return out
+}
+
+func (s *session) restoreColdBlocksLocked(snaps []llama.ColdKVBlock) error {
+	s.clearColdStoreLocked()
+	if len(snaps) == 0 {
+		return nil
+	}
+	if !s.coldEnabledLocked() {
+		return fmt.Errorf("%w: llamasession restore snapshot contains cold KV blocks but cold store is unavailable", llama.ErrUnsupportedFeature)
+	}
+	for _, snap := range snaps {
+		block, err := coldBlockFromSnapshot(snap)
+		if err != nil {
+			return err
+		}
+		if len(block.Tokens) > s.coldMaxTokens || s.coldTokens+len(block.Tokens) > s.coldMaxTokens {
+			return llama.NewContextOverflowError("restore cold kv", s.coldTokens, len(block.Tokens), s.coldMaxTokens)
+		}
+		s.restoreColdBlockLocked(block)
+	}
+	return nil
+}
+
+func (s *session) restoreColdBlockLocked(block *coldBlock) {
+	if s.coldBlocks == nil {
+		s.coldBlocks = map[string]*coldBlock{}
+		s.coldRangeKey = map[string]string{}
+	}
+	key := coldBlockKey(block.Range, block.TokenHash)
+	if old := s.coldBlocks[key]; old != nil {
+		s.coldTokens -= len(old.Tokens)
+	}
+	s.coldBlocks[key] = block
+	s.coldRangeKey[coldRangeKey(block.Range)] = key
+	s.coldTokens += len(block.Tokens)
+	if block.LastUsed > s.coldClock {
+		s.coldClock = block.LastUsed
+	}
+}
+
+func coldBlockFromSnapshot(snap llama.ColdKVBlock) (*coldBlock, error) {
+	if snap.End <= snap.Start {
+		return nil, fmt.Errorf("llamasession restore invalid cold KV range [%d,%d)", snap.Start, snap.End)
+	}
+	if len(snap.Tokens) != snap.End-snap.Start {
+		return nil, fmt.Errorf("llamasession restore invalid cold KV token count: range=[%d,%d) tokens=%d", snap.Start, snap.End, len(snap.Tokens))
+	}
+	if len(snap.KV) == 0 {
+		return nil, fmt.Errorf("llamasession restore invalid cold KV block [%d,%d): empty state", snap.Start, snap.End)
+	}
+	hash := contextasm.HashTokenIDs(snap.Tokens)
+	if snap.TokenHash != "" && snap.TokenHash != hash {
+		return nil, fmt.Errorf("llamasession restore invalid cold KV block [%d,%d): token hash mismatch", snap.Start, snap.End)
+	}
+	class := contextasm.ClassVolatile
+	if snap.CacheClass != "" {
+		parsed, ok := residency.ParseCacheClass(snap.CacheClass)
+		if !ok {
+			return nil, fmt.Errorf("llamasession restore invalid cold KV cache class %q", snap.CacheClass)
+		}
+		class = parsed
+	}
+	return &coldBlock{
+		Range:      residency.Range{Start: snap.Start, End: snap.End},
+		Tokens:     append([]int(nil), snap.Tokens...),
+		KV:         append([]byte(nil), snap.KV...),
+		TokenHash:  hash,
+		CacheClass: class,
+		LastUsed:   snap.LastUsed,
+	}, nil
+}
+
+func (s *session) admitRangeLocked(ctx context.Context, r residency.Range) error {
 	if !s.coldEnabledLocked() {
 		return fmt.Errorf("%w: llamasession admit range [%d,%d) requires a cold KV store", llama.ErrUnsupportedFeature, r.Start, r.End)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	key := s.coldRangeKey[coldRangeKey(r)]
 	block := s.coldBlocks[key]
@@ -136,21 +244,21 @@ func (s *session) admitRangeLocked(r residency.Range) error {
 	if len(s.resident)+len(block.Tokens) > s.numCtx {
 		return llama.NewContextOverflowError("admit", len(s.resident), len(block.Tokens), s.numCtx)
 	}
-	if err := s.clearScratchSeqLocked(); err != nil {
+	if err := s.clearColdScratchLocked(); err != nil {
 		return err
 	}
-	if err := s.lctx.StateSeqSetData(llamaColdScratchSeqID, block.KV); err != nil {
-		_ = s.clearScratchSeqLocked()
-		return fmt.Errorf("%w: llamasession import cold kv [%d,%d): %v", llama.ErrSessionFatal, r.Start, r.End, err)
+	if err := s.lctx.StateSeqSetData(coldScratchSeqID, block.KV); err != nil {
+		_ = s.clearColdScratchLocked()
+		s.closeLocked()
+		return fmt.Errorf("%w: llamasession restore cold kv [%d,%d): %v", llama.ErrSessionFatal, r.Start, r.End, err)
 	}
-
-	newStart := len(s.resident)
-	newEnd := newStart + len(block.Tokens)
-	if delta := newStart - block.Range.Start; delta != 0 {
-		s.lctx.MemorySeqAdd(llamaColdScratchSeqID, block.Range.Start, block.Range.End, delta)
+	destStart := len(s.resident)
+	destEnd := destStart + len(block.Tokens)
+	if delta := destStart - block.Range.Start; delta != 0 {
+		s.lctx.MemorySeqAdd(coldScratchSeqID, block.Range.Start, block.Range.End, delta)
 	}
-	s.lctx.MemorySeqCopy(llamaColdScratchSeqID, 0, newStart, newEnd)
-	if err := s.clearScratchSeqLocked(); err != nil {
+	s.lctx.MemorySeqCopy(coldScratchSeqID, 0, destStart, destEnd)
+	if err := s.clearColdScratchLocked(); err != nil {
 		return err
 	}
 	s.resident = append(s.resident, block.Tokens...)
@@ -158,14 +266,14 @@ func (s *session) admitRangeLocked(r residency.Range) error {
 	return nil
 }
 
-func (s *session) clearScratchSeqLocked() error {
+func (s *session) clearColdScratchLocked() error {
 	if s.lctx == nil {
 		s.closeLocked()
-		return fmt.Errorf("%w: llamasession context is nil during scratch kv clear", llama.ErrSessionFatal)
+		return fmt.Errorf("%w: llamasession context is nil during cold kv scratch cleanup", llama.ErrSessionFatal)
 	}
-	if !s.lctx.MemorySeqRemove(llamaColdScratchSeqID, -1, -1) {
+	if !s.lctx.MemorySeqRemove(coldScratchSeqID, -1, -1) {
 		s.closeLocked()
-		return fmt.Errorf("%w: llamasession scratch kv clear failed seq=%d", llama.ErrSessionFatal, llamaColdScratchSeqID)
+		return fmt.Errorf("%w: llamasession cold kv scratch cleanup failed seq=%d", llama.ErrSessionFatal, coldScratchSeqID)
 	}
 	return nil
 }

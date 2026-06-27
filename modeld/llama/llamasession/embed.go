@@ -1,10 +1,5 @@
 //go:build llamanode && llamacpp_direct
 
-// Native embedding path for the llama backend. One-shot, non-causal: the whole
-// input is tokenized and processed in a single batch, then the sequence
-// embedding is pooled (model pooling when present, else mean-pool) and
-// L2-normalized — matching the normalization Ollama applies so the same model
-// yields the same unit vectors regardless of backend.
 package llamasession
 
 import (
@@ -118,9 +113,6 @@ func embed(ctx context.Context, modelPath string, cfg llama.Config, input string
 	return l2Normalize(emb)
 }
 
-// extractEmbedding returns the pooled sequence embedding. When the model declares
-// a pooling type, GetEmbeddingsSeq(0) returns the pooled vector; otherwise we
-// mean-pool the per-token hidden states (the sentence-transformers recipe).
 func extractEmbedding(lctx *llamacppshim.Context, numTokens int) ([]float64, error) {
 	if pooled := lctx.GetEmbeddingsSeq(0); pooled != nil {
 		out := make([]float64, len(pooled))

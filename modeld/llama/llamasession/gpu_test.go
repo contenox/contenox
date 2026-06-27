@@ -12,10 +12,6 @@ import (
 	"github.com/contenox/runtime/modeld/llama"
 )
 
-// TestSystem_LlamaGPU_Throughput offloads to the accelerator (NumGpuLayers) and
-// measures cold-prefill and decode throughput plus a sliding-window generation,
-// so the lab has real on-GPU numbers. It also confirms the eviction path runs on
-// the GPU backend, not only CPU. Run with the CUDA runtime libs on the PATH.
 func TestSystem_LlamaGPU_Throughput(t *testing.T) {
 	modelPath := os.Getenv("CONTENOX_LLAMA_TINY_GGUF")
 	requireTinyGGUF(t, modelPath)

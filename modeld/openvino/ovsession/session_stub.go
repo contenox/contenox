@@ -1,4 +1,4 @@
-//go:build !openvino
+//go:build !openvino || !openvino_legacy_shim
 
 package ovsession
 
@@ -7,11 +7,11 @@ import (
 	"fmt"
 )
 
-// Available reports whether the native OpenVINO backend was compiled in.
+// Available reports whether the legacy InferRequest OpenVINO shim was compiled in.
 const Available = false
 
 // ErrUnavailable is returned by the stub implementation.
-var ErrUnavailable = errors.New("openvino native backend is not built; rebuild with -tags openvino")
+var ErrUnavailable = errors.New("openvino legacy native backend is not built; rebuild with -tags 'openvino openvino_legacy_shim'")
 
 // Session is a placeholder in default builds.
 type Session struct{}

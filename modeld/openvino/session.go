@@ -121,6 +121,9 @@ func (s *genaiSession) Capabilities() residency.Capabilities {
 	// and imports them back into destination prefix-cache blocks; shifted admits
 	// rotate RoPE-positioned keys in the native GenAI bridge.
 	return residency.Capabilities{
+		RemoveTail:      cold,
+		RemoveMiddle:    cold,
+		PositionShift:   cold,
 		SparseAttention: true,
 		ColdStore:       cold,
 	}
@@ -793,6 +796,7 @@ func (s *genaiSession) Snapshot(ctx context.Context) (transport.SessionSnapshot,
 		PrefixTokens:     s.prefixLen,
 		NumCtx:           s.numCtx,
 		ResidentTokenIDs: append([]int(nil), s.resident...),
+		ColdKVBlocks:     s.coldBlockSnapshotsLocked(),
 		StableText:       s.stable,
 		PrefixText:       s.prefixText,
 		Tools:            s.tools,
@@ -866,7 +870,9 @@ func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapsh
 	s.stableMsgs = stableMsgs
 	s.prefixLen = snap.PrefixTokens
 	s.resident = resident
-	s.clearColdStoreLocked()
+	if err := s.restoreColdBlocksLocked(snap.ColdKVBlocks); err != nil {
+		return err
+	}
 	s.tools = snap.Tools
 	s.manifest = snap.Manifest
 	if s.manifest.StableTokenHash == "" && s.prefixLen <= len(s.resident) {

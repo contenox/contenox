@@ -112,6 +112,28 @@ type ModelInfo struct {
 	Devices            []DeviceInfo `json:"devices,omitempty"`
 }
 
+// ResolvePlannerEffectiveContext normalizes the logical, cold-inclusive planner
+// context after a backend has validated the dense hot window. A positive request
+// is the caller's desired logical window and may exceed NumCtx; zero accepts the
+// daemon-derived planner value. The result is never below NumCtx and is clamped
+// to the trained model ceiling when the backend reported one.
+func ResolvePlannerEffectiveContext(requested, numCtx int, info ModelInfo) int {
+	planner := requested
+	if planner <= 0 {
+		planner = info.PlannerEffectiveContext
+	}
+	if planner <= 0 {
+		planner = numCtx
+	}
+	if info.ModelMaxContext > 0 && planner > info.ModelMaxContext {
+		planner = info.ModelMaxContext
+	}
+	if planner < numCtx {
+		planner = numCtx
+	}
+	return planner
+}
+
 type DeviceInfo struct {
 	Index       int    `json:"index"`
 	Name        string `json:"name,omitempty"`
@@ -119,6 +141,10 @@ type DeviceInfo struct {
 	Type        string `json:"type,omitempty"`
 	MemoryFree  int64  `json:"memory_free,omitempty"`
 	MemoryTotal int64  `json:"memory_total,omitempty"`
+	// MemoryFreeKnown/MemoryTotalKnown distinguish absent plugin telemetry from
+	// a real zero value.
+	MemoryFreeKnown  bool `json:"memory_free_known,omitempty"`
+	MemoryTotalKnown bool `json:"memory_total_known,omitempty"`
 }
 
 // Service is the entry point modeld serves: it opens persistent sessions on the
@@ -300,10 +326,26 @@ type SessionSnapshot struct {
 	PrefixTokens     int             `json:"prefix_tokens,omitempty"`
 	NumCtx           int             `json:"num_ctx,omitempty"`
 	ResidentTokenIDs []int           `json:"resident_token_ids,omitempty"`
+	ColdKVBlocks     []ColdKVBlock   `json:"cold_kv_blocks,omitempty"`
 	StableText       string          `json:"stable_text,omitempty"`
 	PrefixText       string          `json:"prefix_text,omitempty"`
 	Tools            string          `json:"tools,omitempty"`
 	Manifest         ContextManifest `json:"manifest"`
+}
+
+// ColdKVBlock is an opaque host-resident KV block captured alongside a session
+// snapshot. Start/End are logical token positions from the context at eviction
+// time; a backend may restore the block at a different hot position if it can
+// perform the required position fixups.
+type ColdKVBlock struct {
+	Start        int    `json:"start,omitempty"`
+	End          int    `json:"end,omitempty"`
+	Tokens       []int  `json:"tokens,omitempty"`
+	PrefixTokens []int  `json:"prefix_tokens,omitempty"`
+	TokenHash    string `json:"token_hash,omitempty"`
+	KV           []byte `json:"kv,omitempty"`
+	CacheClass   string `json:"cache_class,omitempty"`
+	LastUsed     int64  `json:"last_used,omitempty"`
 }
 
 // PrefixInput is the stable prefix text plus the manifest that makes reuse

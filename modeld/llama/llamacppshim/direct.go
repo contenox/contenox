@@ -484,6 +484,7 @@ type ContextConfig struct {
 	KVCacheType  string
 	Embeddings   bool
 	OffloadKQV   bool
+	KVUnified    bool
 	NoPerf       bool
 	PoolingLast  bool
 	NonCausalAtt bool
@@ -529,6 +530,7 @@ func NewContext(model *Model, cfg ContextConfig) (*Context, error) {
 	params.type_v = kvCacheType(cfg.KVCacheType)
 	params.embeddings = C.bool(cfg.Embeddings)
 	params.offload_kqv = C.bool(cfg.OffloadKQV)
+	params.kv_unified = C.bool(cfg.KVUnified)
 	params.no_perf = C.bool(cfg.NoPerf)
 	if cfg.PoolingLast {
 		params.pooling_type = C.LLAMA_POOLING_TYPE_LAST

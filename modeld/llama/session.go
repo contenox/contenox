@@ -41,6 +41,7 @@ type ToolCall = transport.ToolCall
 type StreamChunk = transport.StreamChunk
 type ContextReport = transport.ContextReport
 type SessionSnapshot = transport.SessionSnapshot
+type ColdKVBlock = transport.ColdKVBlock
 type Session = transport.Session
 
 // SessionFactory creates a backend session for a model with explicit config and

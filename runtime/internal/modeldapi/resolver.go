@@ -89,12 +89,14 @@ type CapacityInfo struct {
 }
 
 type CapacityDevice struct {
-	Index       int    `json:"index"`
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-	Type        string `json:"type,omitempty"`
-	MemoryFree  int64  `json:"memoryFree,omitempty"`
-	MemoryTotal int64  `json:"memoryTotal,omitempty"`
+	Index            int    `json:"index"`
+	Name             string `json:"name,omitempty"`
+	Description      string `json:"description,omitempty"`
+	Type             string `json:"type,omitempty"`
+	MemoryFree       int64  `json:"memoryFree,omitempty"`
+	MemoryTotal      int64  `json:"memoryTotal,omitempty"`
+	MemoryFreeKnown  bool   `json:"memoryFreeKnown,omitempty"`
+	MemoryTotalKnown bool   `json:"memoryTotalKnown,omitempty"`
 }
 
 type resolvedLocalModel struct {
@@ -417,12 +419,14 @@ func capacityInfoFromTransport(info transport.ModelInfo) CapacityInfo {
 	devices := make([]CapacityDevice, 0, len(info.Devices))
 	for _, device := range info.Devices {
 		devices = append(devices, CapacityDevice{
-			Index:       device.Index,
-			Name:        device.Name,
-			Description: device.Description,
-			Type:        device.Type,
-			MemoryFree:  device.MemoryFree,
-			MemoryTotal: device.MemoryTotal,
+			Index:            device.Index,
+			Name:             device.Name,
+			Description:      device.Description,
+			Type:             device.Type,
+			MemoryFree:       device.MemoryFree,
+			MemoryTotal:      device.MemoryTotal,
+			MemoryFreeKnown:  device.MemoryFreeKnown,
+			MemoryTotalKnown: device.MemoryTotalKnown,
 		})
 	}
 	return CapacityInfo{

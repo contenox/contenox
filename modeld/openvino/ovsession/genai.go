@@ -24,10 +24,7 @@ import (
 // GenAIAvailable reports whether the OpenVINO GenAI session backend was built.
 const GenAIAvailable = true
 
-const (
-	genAIOutLen = 256 * 1024
-	genAIErrLen = 4 * 1024
-)
+const genAIErrLen = 4 * 1024
 
 // GenAIConfig controls construction of an OpenVINO GenAI session.
 type GenAIConfig struct {
@@ -102,6 +99,8 @@ type DeviceInfo struct {
 	Type              string
 	MemoryFree        uint64
 	MemoryTotal       uint64
+	MemoryFreeKnown   bool
+	MemoryTotalKnown  bool
 	SharedWithDisplay bool
 }
 
@@ -190,6 +189,8 @@ func deviceInfoFromC(d C.cx_ov_device_info) DeviceInfo {
 		Type:              cString(d._type[:]),
 		MemoryFree:        uint64(d.memory_free),
 		MemoryTotal:       uint64(d.memory_total),
+		MemoryFreeKnown:   d.memory_free_known != 0,
+		MemoryTotalKnown:  d.memory_total_known != 0,
 		SharedWithDisplay: d.shared_with_display != 0,
 	}
 }
@@ -199,6 +200,19 @@ func cString(buf []C.char) string {
 		return ""
 	}
 	return C.GoString((*C.char)(unsafe.Pointer(&buf[0])))
+}
+
+func cAllocatedText(p *C.char, n C.size_t) string {
+	if p == nil || n == 0 {
+		return ""
+	}
+	return strings.Clone(unsafe.String((*byte)(unsafe.Pointer(p)), int(n)))
+}
+
+func freeCData(p unsafe.Pointer) {
+	if p != nil {
+		C.cx_genai_data_free(p)
+	}
 }
 
 // NewGenAI creates an OpenVINO GenAI ContinuousBatchingPipeline session.
@@ -294,17 +308,6 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 	defer C.free(unsafe.Pointer(cStructuredPayload))
 	defer C.free(unsafe.Pointer(cParserProtocols))
 
-	out := C.calloc(1, C.size_t(genAIOutLen))
-	if out == nil {
-		return GenAIResult{}, errors.New("allocate OpenVINO GenAI output buffer")
-	}
-	defer C.free(out)
-	parsed := C.calloc(1, C.size_t(genAIOutLen))
-	if parsed == nil {
-		return GenAIResult{}, errors.New("allocate OpenVINO GenAI parsed output buffer")
-	}
-	defer C.free(parsed)
-
 	errbuf := C.calloc(1, C.size_t(genAIErrLen))
 	if errbuf == nil {
 		return GenAIResult{}, errors.New("allocate OpenVINO GenAI error buffer")
@@ -337,6 +340,10 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 		useSeed = 1
 	}
 
+	var out *C.char
+	var outLen C.size_t
+	var parsed *C.char
+	var parsedLen C.size_t
 	done := make(chan struct{})
 	if ctx.Done() != nil {
 		ptr := s.ptr
@@ -363,14 +370,16 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 		cStructuredProtocol,
 		cStructuredPayload,
 		cParserProtocols,
-		(*C.char)(out),
-		C.size_t(genAIOutLen),
-		(*C.char)(parsed),
-		C.size_t(genAIOutLen),
+		&out,
+		&outLen,
+		&parsed,
+		&parsedLen,
 		&cmetrics,
 		(*C.char)(errbuf),
 		C.size_t(genAIErrLen),
 	)
+	defer freeCData(unsafe.Pointer(out))
+	defer freeCData(unsafe.Pointer(parsed))
 	close(done)
 	if rc != 0 {
 		if rc == 3 {
@@ -386,8 +395,8 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 	}
 
 	return GenAIResult{
-		Text:       C.GoString((*C.char)(out)),
-		ParsedJSON: C.GoString((*C.char)(parsed)),
+		Text:       cAllocatedText(out, outLen),
+		ParsedJSON: cAllocatedText(parsed, parsedLen),
 		Metrics:    pipelineMetricsFromC(cmetrics),
 	}, nil
 }
@@ -474,17 +483,6 @@ func (s *GenAISession) GenerateTokens(ctx context.Context, tokens []int, opts Ge
 	defer C.free(unsafe.Pointer(cStructuredPayload))
 	defer C.free(unsafe.Pointer(cParserProtocols))
 
-	out := C.calloc(1, C.size_t(genAIOutLen))
-	if out == nil {
-		return GenAIResult{}, errors.New("allocate OpenVINO GenAI output buffer")
-	}
-	defer C.free(out)
-	parsed := C.calloc(1, C.size_t(genAIOutLen))
-	if parsed == nil {
-		return GenAIResult{}, errors.New("allocate OpenVINO GenAI parsed output buffer")
-	}
-	defer C.free(parsed)
-
 	errbuf := C.calloc(1, C.size_t(genAIErrLen))
 	if errbuf == nil {
 		return GenAIResult{}, errors.New("allocate OpenVINO GenAI error buffer")
@@ -517,6 +515,10 @@ func (s *GenAISession) GenerateTokens(ctx context.Context, tokens []int, opts Ge
 		useSeed = 1
 	}
 
+	var out *C.char
+	var outLen C.size_t
+	var parsed *C.char
+	var parsedLen C.size_t
 	done := make(chan struct{})
 	if ctx.Done() != nil {
 		ptr := s.ptr
@@ -544,14 +546,16 @@ func (s *GenAISession) GenerateTokens(ctx context.Context, tokens []int, opts Ge
 		cStructuredProtocol,
 		cStructuredPayload,
 		cParserProtocols,
-		(*C.char)(out),
-		C.size_t(genAIOutLen),
-		(*C.char)(parsed),
-		C.size_t(genAIOutLen),
+		&out,
+		&outLen,
+		&parsed,
+		&parsedLen,
 		&cmetrics,
 		(*C.char)(errbuf),
 		C.size_t(genAIErrLen),
 	)
+	defer freeCData(unsafe.Pointer(out))
+	defer freeCData(unsafe.Pointer(parsed))
 	close(done)
 	if rc != 0 {
 		if rc == 3 {
@@ -567,8 +571,8 @@ func (s *GenAISession) GenerateTokens(ctx context.Context, tokens []int, opts Ge
 	}
 
 	return GenAIResult{
-		Text:       C.GoString((*C.char)(out)),
-		ParsedJSON: C.GoString((*C.char)(parsed)),
+		Text:       cAllocatedText(out, outLen),
+		ParsedJSON: cAllocatedText(parsed, parsedLen),
 		Metrics:    pipelineMetricsFromC(cmetrics),
 	}, nil
 }
@@ -694,22 +698,6 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 			C.cx_genai_stream_free(stream)
 		}()
 
-		out := C.calloc(1, C.size_t(genAIOutLen))
-		if out == nil {
-			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream output buffer")})
-			C.cx_genai_session_cancel(ptr)
-			return
-		}
-		defer C.free(out)
-
-		thinking := C.calloc(1, C.size_t(genAIOutLen))
-		if thinking == nil {
-			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream thinking buffer")})
-			C.cx_genai_session_cancel(ptr)
-			return
-		}
-		defer C.free(thinking)
-
 		errbuf := C.calloc(1, C.size_t(genAIErrLen))
 		if errbuf == nil {
 			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream error buffer")})
@@ -719,19 +707,25 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 		defer C.free(errbuf)
 
 		for {
+			var out *C.char
+			var outLen C.size_t
+			var thinking *C.char
+			var thinkingLen C.size_t
 			rc := C.cx_genai_stream_next(
 				stream,
-				(*C.char)(out),
-				C.size_t(genAIOutLen),
-				(*C.char)(thinking),
-				C.size_t(genAIOutLen),
+				&out,
+				&outLen,
+				&thinking,
+				&thinkingLen,
 				(*C.char)(errbuf),
 				C.size_t(genAIErrLen),
 			)
+			text := cAllocatedText(out, outLen)
+			thinkingText := cAllocatedText(thinking, thinkingLen)
+			freeCData(unsafe.Pointer(out))
+			freeCData(unsafe.Pointer(thinking))
 			switch rc {
 			case 0:
-				text := C.GoString((*C.char)(out))
-				thinkingText := C.GoString((*C.char)(thinking))
 				if text == "" && thinkingText == "" {
 					continue
 				}
@@ -873,22 +867,6 @@ func (s *GenAISession) StreamTokens(ctx context.Context, tokens []int, opts Gene
 			C.cx_genai_stream_free(stream)
 		}()
 
-		out := C.calloc(1, C.size_t(genAIOutLen))
-		if out == nil {
-			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream output buffer")})
-			C.cx_genai_session_cancel(ptr)
-			return
-		}
-		defer C.free(out)
-
-		thinking := C.calloc(1, C.size_t(genAIOutLen))
-		if thinking == nil {
-			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream thinking buffer")})
-			C.cx_genai_session_cancel(ptr)
-			return
-		}
-		defer C.free(thinking)
-
 		errbuf := C.calloc(1, C.size_t(genAIErrLen))
 		if errbuf == nil {
 			_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("allocate OpenVINO GenAI stream error buffer")})
@@ -898,19 +876,25 @@ func (s *GenAISession) StreamTokens(ctx context.Context, tokens []int, opts Gene
 		defer C.free(errbuf)
 
 		for {
+			var out *C.char
+			var outLen C.size_t
+			var thinking *C.char
+			var thinkingLen C.size_t
 			rc := C.cx_genai_stream_next(
 				stream,
-				(*C.char)(out),
-				C.size_t(genAIOutLen),
-				(*C.char)(thinking),
-				C.size_t(genAIOutLen),
+				&out,
+				&outLen,
+				&thinking,
+				&thinkingLen,
 				(*C.char)(errbuf),
 				C.size_t(genAIErrLen),
 			)
+			text := cAllocatedText(out, outLen)
+			thinkingText := cAllocatedText(thinking, thinkingLen)
+			freeCData(unsafe.Pointer(out))
+			freeCData(unsafe.Pointer(thinking))
 			switch rc {
 			case 0:
-				text := C.GoString((*C.char)(out))
-				thinkingText := C.GoString((*C.char)(thinking))
 				if text == "" && thinkingText == "" {
 					continue
 				}
@@ -1022,18 +1006,14 @@ func (s *GenAISession) ApplyChatTemplateWithPrompt(messages []ChatMessage, tools
 		defer C.free(unsafe.Pointer(cTools))
 	}
 
-	out := C.calloc(1, C.size_t(genAIOutLen))
-	if out == nil {
-		return "", errors.New("allocate OpenVINO GenAI chat template buffer")
-	}
-	defer C.free(out)
-
 	errbuf := C.calloc(1, C.size_t(genAIErrLen))
 	if errbuf == nil {
 		return "", errors.New("allocate OpenVINO GenAI error buffer")
 	}
 	defer C.free(errbuf)
 
+	var out *C.char
+	var outLen C.size_t
 	rc := C.cx_genai_apply_chat_template(
 		s.ptr,
 		(**C.char)(unsafe.Pointer(&roles[0])),
@@ -1043,15 +1023,16 @@ func (s *GenAISession) ApplyChatTemplateWithPrompt(messages []ChatMessage, tools
 		C.size_t(len(messages)),
 		cTools,
 		cbool(addGenerationPrompt),
-		(*C.char)(out),
-		C.size_t(genAIOutLen),
+		&out,
+		&outLen,
 		(*C.char)(errbuf),
 		C.size_t(genAIErrLen),
 	)
+	defer freeCData(unsafe.Pointer(out))
 	if rc != 0 {
 		return "", fmt.Errorf("openvino GenAI apply chat template: %s", C.GoString((*C.char)(errbuf)))
 	}
-	return C.GoString((*C.char)(out)), nil
+	return cAllocatedText(out, outLen), nil
 }
 
 // Tokenize encodes prompt text with the model tokenizer owned by the GenAI

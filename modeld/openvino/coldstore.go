@@ -201,6 +201,106 @@ func (s *genaiSession) coldVictimLocked(protectedKey string) string {
 	return candidates[0].key
 }
 
+func (s *genaiSession) coldBlockSnapshotsLocked() []transport.ColdKVBlock {
+	if len(s.coldBlocks) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(s.coldBlocks))
+	for key := range s.coldBlocks {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	out := make([]transport.ColdKVBlock, 0, len(keys))
+	for _, key := range keys {
+		block := s.coldBlocks[key]
+		if block == nil {
+			continue
+		}
+		out = append(out, transport.ColdKVBlock{
+			Start:        block.Range.Start,
+			End:          block.Range.End,
+			Tokens:       append([]int(nil), block.Tokens...),
+			PrefixTokens: append([]int(nil), block.PrefixTokens...),
+			TokenHash:    block.TokenHash,
+			KV:           append([]byte(nil), block.KV...),
+			CacheClass:   block.CacheClass.Tag(),
+			LastUsed:     block.LastUsed,
+		})
+	}
+	return out
+}
+
+func (s *genaiSession) restoreColdBlocksLocked(snaps []transport.ColdKVBlock) error {
+	s.clearColdStoreLocked()
+	if len(snaps) == 0 {
+		return nil
+	}
+	if !s.coldEnabledLocked() {
+		return fmt.Errorf("%w: openvino restore snapshot contains cold KV blocks but cold store is unavailable", transport.ErrUnsupportedFeature)
+	}
+	for _, snap := range snaps {
+		block, err := openvinoColdBlockFromSnapshot(snap)
+		if err != nil {
+			return err
+		}
+		if len(block.Tokens) > s.coldMaxTokens || s.coldTokens+len(block.Tokens) > s.coldMaxTokens {
+			return transport.ErrContextOverflow
+		}
+		s.restoreColdBlockLocked(block)
+	}
+	return nil
+}
+
+func (s *genaiSession) restoreColdBlockLocked(block *openvinoColdBlock) {
+	if s.coldBlocks == nil {
+		s.coldBlocks = map[string]*openvinoColdBlock{}
+		s.coldRangeKey = map[string]string{}
+	}
+	key := openvinoColdBlockKey(block.Range, block.TokenHash)
+	if old := s.coldBlocks[key]; old != nil {
+		s.coldTokens -= len(old.Tokens)
+	}
+	s.coldBlocks[key] = block
+	s.coldRangeKey[openvinoColdRangeKey(block.Range)] = key
+	s.coldTokens += len(block.Tokens)
+	if block.LastUsed > s.coldClock {
+		s.coldClock = block.LastUsed
+	}
+}
+
+func openvinoColdBlockFromSnapshot(snap transport.ColdKVBlock) (*openvinoColdBlock, error) {
+	if snap.End <= snap.Start {
+		return nil, fmt.Errorf("openvino restore invalid cold KV range [%d,%d)", snap.Start, snap.End)
+	}
+	if len(snap.Tokens) != snap.End-snap.Start {
+		return nil, fmt.Errorf("openvino restore invalid cold KV token count: range=[%d,%d) tokens=%d", snap.Start, snap.End, len(snap.Tokens))
+	}
+	if len(snap.KV) == 0 {
+		return nil, fmt.Errorf("openvino restore invalid cold KV block [%d,%d): empty state", snap.Start, snap.End)
+	}
+	hash := contextasm.HashTokenIDs(snap.Tokens)
+	if snap.TokenHash != "" && snap.TokenHash != hash {
+		return nil, fmt.Errorf("openvino restore invalid cold KV block [%d,%d): token hash mismatch", snap.Start, snap.End)
+	}
+	class := contextasm.ClassVolatile
+	if snap.CacheClass != "" {
+		parsed, ok := residency.ParseCacheClass(snap.CacheClass)
+		if !ok {
+			return nil, fmt.Errorf("openvino restore invalid cold KV cache class %q", snap.CacheClass)
+		}
+		class = parsed
+	}
+	return &openvinoColdBlock{
+		Range:        residency.Range{Start: snap.Start, End: snap.End},
+		Tokens:       append([]int(nil), snap.Tokens...),
+		PrefixTokens: append([]int(nil), snap.PrefixTokens...),
+		TokenHash:    hash,
+		KV:           append([]byte(nil), snap.KV...),
+		CacheClass:   class,
+		LastUsed:     snap.LastUsed,
+	}, nil
+}
+
 func (s *genaiSession) admitRangeLocked(ctx context.Context, r residency.Range) error {
 	if !s.coldEnabledLocked() {
 		return fmt.Errorf("%w: openvino admit range [%d,%d) requires a cold KV backend", transport.ErrUnsupportedFeature, r.Start, r.End)

@@ -1,4 +1,4 @@
-//go:build openvino
+//go:build openvino && openvino_legacy_shim
 
 #include "shim.h"
 

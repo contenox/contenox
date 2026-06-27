@@ -1,18 +1,19 @@
 # Contenox
-**AI workflows you can run, review, and own.**
+**Own local AI for developer work. Run it, review it, and decide where it executes.**
 
-Contenox is an open-source AI workflow runtime for developers. It turns
-repeatable coding and tool workflows into versioned Chains: files that declare
-prompts, model/provider routing, tool allowlists, retries, branches, budgets,
-and human approval gates.
+Contenox is an open-source runtime for using local and edge AI as a practical
+developer worker, not just a chat box. The goal is to get useful coding, repo,
+and tool work done on hardware you control, without assuming every task needs a
+frontier model or a high-end workstation.
 
-Many coding workflows do not need a frontier model. Contenox gives you a way to
-run that work where the code is, with a proper agent loop instead of hidden
-prompt habits or one-off glue, and route to network or cloud models when the job
-needs them.
+The workflow layer is how that local AI becomes usable and safe. Contenox turns
+repeatable developer tasks into versioned Chains: files that declare prompts,
+model/provider routing, tool allowlists, retries, branches, budgets, and human
+approval gates.
 
-Run the same workflow from the CLI, VS Code, or any ACP client. Use `modeld` for
-the edge path, Ollama or vLLM on your network, or hosted providers, while
+Use `modeld` for owned GGUF/OpenVINO inference on the edge path, Ollama or vLLM
+on your network, or hosted providers only where they make sense. Run the same
+controlled task from the CLI, VS Code, Zed/ACP, or compatibility endpoints, while
 sessions, config, telemetry, and runtime state stay on your machine.
 
 - **It speaks Unix:** Pipe data directly into your workflows. `git diff | contenox run commit-msg` or `git log | contenox run release-notes`.
