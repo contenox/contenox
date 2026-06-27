@@ -113,6 +113,7 @@ func (s *Service) LoadModel(ctx context.Context, req transport.LoadModelRequest)
 		Digest:    req.Digest,
 		Path:      req.Path,
 		Config:    req.Config,
+		Adapters:  req.Adapters,
 	}
 
 	unlock, err := s.lockOperation(ctx)
@@ -603,7 +604,8 @@ func sameIdentity(a, b transport.OpenSessionRequest) bool {
 		a.Type == b.Type &&
 		a.Digest == b.Digest &&
 		a.Path == b.Path &&
-		reflect.DeepEqual(a.Config, b.Config)
+		reflect.DeepEqual(a.Config, b.Config) &&
+		reflect.DeepEqual(a.Adapters, b.Adapters)
 }
 
 func activeModel(req transport.OpenSessionRequest, gen uint64) transport.ActiveModel {
@@ -613,6 +615,7 @@ func activeModel(req transport.OpenSessionRequest, gen uint64) transport.ActiveM
 		Digest:     req.Digest,
 		Path:       req.Path,
 		Config:     req.Config,
+		Adapters:   req.Adapters,
 		Generation: gen,
 	}
 }

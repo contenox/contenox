@@ -32,6 +32,10 @@ type (
 	// Config is the explicit runtime configuration for a local session — every
 	// knob is a tested setting, not a magic default.
 	Config = transport.Config
+	// AdapterSpec is one LoRA adapter applied to a session. Its digest and scale
+	// are part of the session/manifest cache identity: base+A and base+B must not
+	// share warm KV (see docs/blueprints/modeld-lora-adapters.md).
+	AdapterSpec = transport.AdapterSpec
 	// PrefixInput is the stable prefix text plus the manifest that makes reuse
 	// valid (tokenizer, template, runtime config, BOS policy, and model identity
 	// are part of the cache key — byte equality alone is not enough).
@@ -124,7 +128,9 @@ func SetSessionFactory(f SessionFactory) { sessionFactory = f }
 // during a daemon restart does not momentarily drop llama models from capability
 // advertisement / the model picker. A daemon running in a different mode (e.g.
 // openvino) advertises no llama capability. The actual open confirms reachability.
-func SessionAvailable() bool { return sessionFactory != nil || modeldconn.ServeableBackend() == "llama" }
+func SessionAvailable() bool {
+	return sessionFactory != nil || modeldconn.ServeableBackend() == "llama"
+}
 
 // newSession opens a session. A registered factory (tests) wins; otherwise the
 // session is opened on the modeld daemon over runtime/transport and adapted to

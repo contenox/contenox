@@ -137,6 +137,22 @@ type Service interface {
 	Embed(ctx context.Context, req EmbedRequest) (EmbedResult, error)
 }
 
+// AdapterSpec identifies one LoRA adapter applied to a session: an adapter file
+// (Path) applied at Scale, plus Name/Digest carried for cache identity and
+// diagnostics. Applying an adapter does not modify the base model weights, but it
+// changes model behavior, so a session built with adapters is a different model
+// variant than its base. Adapter identity (digest + scale, in order) is therefore
+// part of every session, manifest, and slot cache key — warm KV for base+A must
+// never be reused for base+B (see docs/blueprints/modeld-lora-adapters.md). The
+// backend adapters (modeld/llama.AdapterSpec, ovsession.GenAILoRAAdapter) mirror
+// this shape; Scale maps to the llama scale and to OpenVINO's folded alpha.
+type AdapterSpec struct {
+	Name   string  `json:"name,omitempty"`
+	Path   string  `json:"path,omitempty"`
+	Digest string  `json:"digest,omitempty"`
+	Scale  float32 `json:"scale,omitempty"`
+}
+
 // OpenSessionRequest asks the owner to open a session for a model. The model is
 // identified by a typed handle, not an opaque path: ModelName + Type + Digest is
 // the cache identity, and Type lets the daemon reject a model it does not serve
@@ -149,6 +165,9 @@ type OpenSessionRequest struct {
 	Digest    string // content digest; part of the cache identity
 	Path      string // runtime-resolved filesystem location (GGUF file or IR dir)
 	Config    Config
+	// Adapters are LoRA adapters applied to this session, in order. Empty = the
+	// base model. They are part of the cache identity, not a Config knob.
+	Adapters []AdapterSpec `json:"adapters,omitempty"`
 }
 
 // EmbedRequest asks the owner to compute a one-shot embedding for Text.
@@ -190,12 +209,13 @@ const (
 // ActiveModel describes the model identity and runtime config currently loaded
 // in modeld's single active slot.
 type ActiveModel struct {
-	ModelName  string `json:"model_name,omitempty"`
-	Type       string `json:"type,omitempty"`
-	Digest     string `json:"digest,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Config     Config `json:"config"`
-	Generation uint64 `json:"generation"`
+	ModelName  string        `json:"model_name,omitempty"`
+	Type       string        `json:"type,omitempty"`
+	Digest     string        `json:"digest,omitempty"`
+	Path       string        `json:"path,omitempty"`
+	Config     Config        `json:"config"`
+	Adapters   []AdapterSpec `json:"adapters,omitempty"`
+	Generation uint64        `json:"generation"`
 }
 
 // DaemonStatus reports the owner-local modeld slot state. It is intentionally
@@ -219,6 +239,9 @@ type LoadModelRequest struct {
 	Digest    string
 	Path      string
 	Config    Config
+	// Adapters are LoRA adapters applied to this model variant, in order. Empty =
+	// the base model. Part of the slot's model identity.
+	Adapters []AdapterSpec `json:"adapters,omitempty"`
 	// ExpectedGeneration, when non-zero, makes load/switch conditional on the
 	// caller's view of the active slot.
 	ExpectedGeneration uint64

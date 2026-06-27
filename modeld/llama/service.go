@@ -80,7 +80,21 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 		"sparse_attention", info.SparseAttention,
 		"sliding_window_attention_tokens", info.SlidingWindowAttentionTokens,
 	)
-	return newSession(req.Path, cfg)
+	return newSession(req.Path, cfg, toAdapterSpecs(req.Adapters))
+}
+
+// toAdapterSpecs maps the transport adapter handles onto the backend-local
+// AdapterSpec the session factory applies. The two types are kept distinct so the
+// CGo session package never imports the wire shape; they carry the same fields.
+func toAdapterSpecs(in []transport.AdapterSpec) []AdapterSpec {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]AdapterSpec, len(in))
+	for i, a := range in {
+		out[i] = AdapterSpec{Name: a.Name, Path: a.Path, Digest: a.Digest, Scale: a.Scale}
+	}
+	return out
 }
 
 // Describe reports the model's trained context window read from the GGUF header

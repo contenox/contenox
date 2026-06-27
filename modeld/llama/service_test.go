@@ -54,7 +54,7 @@ func TestOpenSessionWithoutBackendIsUnavailable(t *testing.T) {
 }
 
 func TestOpenSessionRejectsForeignBackend(t *testing.T) {
-	llama.SetSessionFactory(func(string, transport.Config) (transport.Session, error) {
+	llama.SetSessionFactory(func(string, transport.Config, []llama.AdapterSpec) (transport.Session, error) {
 		t.Fatal("backend must not be reached for a foreign model type")
 		return nil, nil
 	})
@@ -71,7 +71,7 @@ func TestOpenSessionRoutesModelAndConfigToBackend(t *testing.T) {
 	var gotModel string
 	var gotCfg transport.Config
 	fake := &fakeSession{}
-	llama.SetSessionFactory(func(modelPath string, cfg transport.Config) (transport.Session, error) {
+	llama.SetSessionFactory(func(modelPath string, cfg transport.Config, _ []llama.AdapterSpec) (transport.Session, error) {
 		gotModel, gotCfg = modelPath, cfg
 		return fake, nil
 	})
@@ -105,5 +105,41 @@ func TestOpenSessionRoutesModelAndConfigToBackend(t *testing.T) {
 	}
 	if !fake.closed {
 		t.Error("Close did not reach the backend session")
+	}
+}
+
+// LoRA adapters on the request must reach the session backend so the variant is
+// actually served (not silently dropped, which would serve the base under a
+// variant identity). This proves Service.OpenSession → toAdapterSpecs → the
+// registered factory, without the CGo backend.
+func TestOpenSessionRoutesAdaptersToBackend(t *testing.T) {
+	var gotAdapters []llama.AdapterSpec
+	fake := &fakeSession{}
+	llama.SetSessionFactory(func(_ string, _ transport.Config, adapters []llama.AdapterSpec) (transport.Session, error) {
+		gotAdapters = adapters
+		return fake, nil
+	})
+	t.Cleanup(func() { llama.SetSessionFactory(nil) })
+
+	sess, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
+		ModelName: "foo",
+		Type:      "llama",
+		Path:      "/models/foo/model.gguf",
+		Config:    transport.Config{NumCtx: 4096, PromptFormat: "chatml"},
+		Adapters: []transport.AdapterSpec{
+			{Name: "style", Path: "/adapters/style.gguf", Digest: "adapter-1", Scale: 1.5},
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	if len(gotAdapters) != 1 {
+		t.Fatalf("adapters not routed to backend: got %+v", gotAdapters)
+	}
+	if a := gotAdapters[0]; a.Path != "/adapters/style.gguf" || a.Digest != "adapter-1" || a.Scale != 1.5 {
+		t.Fatalf("adapter fields not routed faithfully: got %+v", a)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 }

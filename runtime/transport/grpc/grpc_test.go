@@ -485,6 +485,48 @@ func TestSlotControlRoundTripOverWire(t *testing.T) {
 	}
 }
 
+// LoRA adapter identity must survive the gRPC wire: a field silently dropped on
+// the wire is an invisible cache-safety bug (a variant served as its base). This
+// drives LoadModel with adapters through a real slot and asserts they come back on
+// both the LoadModel reply and the Status snapshot.
+func TestLoRAAdapterIdentityRoundTripOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := slot.New(
+		transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		slot.WithOwner("owner-1"),
+		slot.WithBackend("llama"),
+	)
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+	ctx := context.Background()
+
+	active, err := client.LoadModel(ctx, transport.LoadModelRequest{
+		Fence:     transport.Fence{OwnerInstanceID: "owner-1"},
+		ModelName: "a",
+		Type:      "llama",
+		Digest:    "digest-a",
+		Path:      "/models/a.gguf",
+		Config:    transport.Config{NumCtx: 100},
+		Adapters:  []transport.AdapterSpec{{Name: "style", Path: "/adapters/style.gguf", Digest: "adapter-1", Scale: 1.5}},
+	})
+	if err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	if len(active.Adapters) != 1 || active.Adapters[0].Digest != "adapter-1" || active.Adapters[0].Scale != 1.5 {
+		t.Fatalf("adapters did not survive the wire into ActiveModel: %+v", active.Adapters)
+	}
+
+	st, err := client.Status(ctx)
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.Active == nil || len(st.Active.Adapters) != 1 || st.Active.Adapters[0].Digest != "adapter-1" {
+		t.Fatalf("adapters missing from Status.Active: %+v", st.Active)
+	}
+}
+
 func TestServerClosesSlotSessionWhenClientConnectionEnds(t *testing.T) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

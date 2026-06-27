@@ -41,12 +41,13 @@ type computeServer interface {
 // because StreamChunk carries an error value.
 
 type openSessionReq struct {
-	OwnerInstanceID string           `json:"owner_instance_id,omitempty"`
-	ModelName       string           `json:"model_name,omitempty"`
-	Type            string           `json:"type,omitempty"`
-	Digest          string           `json:"digest,omitempty"`
-	Path            string           `json:"path,omitempty"`
-	Config          transport.Config `json:"config"`
+	OwnerInstanceID string                  `json:"owner_instance_id,omitempty"`
+	ModelName       string                  `json:"model_name,omitempty"`
+	Type            string                  `json:"type,omitempty"`
+	Digest          string                  `json:"digest,omitempty"`
+	Path            string                  `json:"path,omitempty"`
+	Config          transport.Config        `json:"config"`
+	Adapters        []transport.AdapterSpec `json:"adapters,omitempty"`
 }
 
 type openSessionResp struct {
@@ -58,13 +59,14 @@ type statusReq struct {
 }
 
 type loadModelReq struct {
-	OwnerInstanceID    string           `json:"owner_instance_id,omitempty"`
-	ModelName          string           `json:"model_name,omitempty"`
-	Type               string           `json:"type,omitempty"`
-	Digest             string           `json:"digest,omitempty"`
-	Path               string           `json:"path,omitempty"`
-	Config             transport.Config `json:"config"`
-	ExpectedGeneration uint64           `json:"expected_generation,omitempty"`
+	OwnerInstanceID    string                  `json:"owner_instance_id,omitempty"`
+	ModelName          string                  `json:"model_name,omitempty"`
+	Type               string                  `json:"type,omitempty"`
+	Digest             string                  `json:"digest,omitempty"`
+	Path               string                  `json:"path,omitempty"`
+	Config             transport.Config        `json:"config"`
+	Adapters           []transport.AdapterSpec `json:"adapters,omitempty"`
+	ExpectedGeneration uint64                  `json:"expected_generation,omitempty"`
 }
 
 type unloadModelReq struct {

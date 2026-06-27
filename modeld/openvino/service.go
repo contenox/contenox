@@ -150,11 +150,28 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 		genaiCfg.CacheEvictRecentSize = budget.RecentTokens
 		genaiCfg.CacheEvictMaxSize = budget.MaxTokens
 	}
+	// LoRA adapters make this a distinct model variant (registered MODE_DYNAMIC at
+	// pipeline construction). Empty = the base model.
+	genaiCfg.LoRAAdapters = toGenAILoRA(req.Adapters)
 	backend, err := ovsession.NewGenAI(req.Path, genaiCfg)
 	if err != nil {
 		return nil, err
 	}
 	return newGenaiSessionWithPlanner(backend, cfg.NumCtx, cfg.PlannerEffectiveContext, eviction), nil
+}
+
+// toGenAILoRA maps the transport adapter handles onto OpenVINO's safetensors
+// adapter config. The transport Scale becomes OpenVINO's folded alpha; the backend
+// decides rank normalization. Empty in → nil (base model).
+func toGenAILoRA(in []transport.AdapterSpec) []ovsession.GenAILoRAAdapter {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]ovsession.GenAILoRAAdapter, len(in))
+	for i, a := range in {
+		out[i] = ovsession.GenAILoRAAdapter{Path: a.Path, Alpha: a.Scale}
+	}
+	return out
 }
 
 // Describe reports the model's trained context window read from the IR's

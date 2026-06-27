@@ -19,17 +19,28 @@ func NewManifestMismatchError(reason string) error {
 	return contextasm.NewManifestMismatchError(reason)
 }
 
-func runtimeDigest(cfg Config) string {
+func runtimeDigest(cfg Config, adapters []AdapterSpec) string {
 	cfg = normalizeConfig(cfg)
+	type adapterIdentity struct {
+		Digest string  `json:"digest,omitempty"`
+		Scale  float32 `json:"scale,omitempty"`
+	}
 	type runtimeIdentity struct {
-		NumCtx       int       `json:"num_ctx"`
-		NumBatch     int       `json:"num_batch"`
-		NumThreads   int       `json:"num_threads"`
-		NumGpuLayers int       `json:"num_gpu_layers"`
-		TensorSplit  []float32 `json:"tensor_split,omitempty"`
-		FlashAttn    bool      `json:"flash_attention"`
-		KVCacheType  string    `json:"kv_cache_type,omitempty"`
-		Reasoning    string    `json:"reasoning,omitempty"`
+		NumCtx       int               `json:"num_ctx"`
+		NumBatch     int               `json:"num_batch"`
+		NumThreads   int               `json:"num_threads"`
+		NumGpuLayers int               `json:"num_gpu_layers"`
+		TensorSplit  []float32         `json:"tensor_split,omitempty"`
+		FlashAttn    bool              `json:"flash_attention"`
+		KVCacheType  string            `json:"kv_cache_type,omitempty"`
+		Reasoning    string            `json:"reasoning,omitempty"`
+		Adapters     []adapterIdentity `json:"adapters,omitempty"`
+	}
+	// Adapter digests and scales in list order make a variant a distinct manifest
+	// from its base — warm KV for base+A must not satisfy base+B's manifest gate.
+	var ids []adapterIdentity
+	for _, a := range adapters {
+		ids = append(ids, adapterIdentity{Digest: a.Digest, Scale: a.Scale})
 	}
 	b, _ := json.Marshal(runtimeIdentity{
 		NumCtx:       cfg.NumCtx,
@@ -40,6 +51,7 @@ func runtimeDigest(cfg Config) string {
 		FlashAttn:    cfg.FlashAttn,
 		KVCacheType:  cfg.KVCacheType,
 		Reasoning:    cfg.ReasoningFormat,
+		Adapters:     ids,
 	})
 	return hashBytes(b)
 }

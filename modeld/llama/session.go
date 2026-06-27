@@ -43,8 +43,9 @@ type ContextReport = transport.ContextReport
 type SessionSnapshot = transport.SessionSnapshot
 type Session = transport.Session
 
-// SessionFactory creates a backend session for a model with explicit config.
-type SessionFactory func(modelPath string, cfg Config) (Session, error)
+// SessionFactory creates a backend session for a model with explicit config and
+// any LoRA adapters to apply to the session. Empty adapters = the base model.
+type SessionFactory func(modelPath string, cfg Config, adapters []AdapterSpec) (Session, error)
 
 var sessionFactory SessionFactory
 
@@ -57,12 +58,13 @@ func SetSessionFactory(f SessionFactory) { sessionFactory = f }
 // SessionAvailable reports whether a session backend is compiled into this build.
 func SessionAvailable() bool { return sessionFactory != nil }
 
-// newSession creates a session through the registered backend.
-func newSession(modelPath string, cfg Config) (Session, error) {
+// newSession creates a session through the registered backend, applying any LoRA
+// adapters to the session context.
+func newSession(modelPath string, cfg Config, adapters []AdapterSpec) (Session, error) {
 	if sessionFactory == nil {
 		return nil, fmt.Errorf("%w: build modeld with -tags 'llamanode llamacpp_direct'", ErrSessionUnavailable)
 	}
-	return sessionFactory(modelPath, cfg)
+	return sessionFactory(modelPath, cfg, adapters)
 }
 
 // EmbedFunc computes a single embedding via the native backend. The llama.cpp

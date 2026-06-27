@@ -190,6 +190,47 @@ func TestUnit_Slot_ExplicitSwitchRequiresReleasedSessionAndInvalidatesOldHandle(
 	}
 }
 
+// A base model and the same base + a LoRA adapter are different variants: the
+// slot must treat an adapter change as a model switch, never silently reuse the
+// base's resident slot for a variant. This is the load-bearing cache-safety rule.
+func TestUnit_Slot_AdapterChangeIsAModelSwitch(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"))
+
+	// Base model resident (explicit load keeps it with no open handle).
+	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
+		t.Fatalf("LoadModel base: %v", err)
+	}
+	// Reopening the SAME base identity reuses the resident slot.
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession base reuse: %v", err)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatalf("Close base: %v", err)
+	}
+
+	// Same base + an adapter is a distinct variant: opening it against the resident
+	// base must require a switch, not reuse the base session.
+	variant := req("a")
+	variant.Adapters = []transport.AdapterSpec{{Name: "style", Path: "/adapters/style.gguf", Digest: "adapter-1", Scale: 1}}
+	if _, err := svc.OpenSession(ctx, variant); !errors.Is(err, transport.ErrModelSwitchRequired) {
+		t.Fatalf("OpenSession base+adapter = %v, want ErrModelSwitchRequired", err)
+	}
+
+	// Once loaded, the active model reports the adapter identity.
+	lr := loadReq("a")
+	lr.Adapters = variant.Adapters
+	active, err := svc.LoadModel(ctx, lr)
+	if err != nil {
+		t.Fatalf("LoadModel variant: %v", err)
+	}
+	if len(active.Adapters) != 1 || active.Adapters[0].Digest != "adapter-1" {
+		t.Fatalf("ActiveModel adapters = %+v, want adapter-1", active.Adapters)
+	}
+}
+
 func TestUnit_Slot_UnloadExplicitModel(t *testing.T) {
 	ctx := context.Background()
 	svc := New(&fakeBackend{}, WithBackend("llama"))

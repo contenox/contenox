@@ -23,8 +23,9 @@ import (
 const Available = true
 
 // init registers this backend so the llama provider can create sessions
-// without importing this CGo package (no import cycle).
-func init() { llama.SetSessionFactory(New) }
+// without importing this CGo package (no import cycle). NewWithAdapters is the
+// registered factory; New stays a no-adapter convenience that delegates to it.
+func init() { llama.SetSessionFactory(NewWithAdapters) }
 
 type session struct {
 	mu                           sync.Mutex

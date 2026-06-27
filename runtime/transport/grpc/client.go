@@ -79,6 +79,7 @@ func (c *Client) LoadModel(ctx context.Context, req transport.LoadModelRequest) 
 		Digest:             req.Digest,
 		Path:               req.Path,
 		Config:             req.Config,
+		Adapters:           req.Adapters,
 		ExpectedGeneration: req.ExpectedGeneration,
 	}
 	if err := c.invoke(ctx, "LoadModel", in, out); err != nil {
@@ -111,6 +112,7 @@ func (c *Client) OpenSession(ctx context.Context, req transport.OpenSessionReque
 		Digest:          req.Digest,
 		Path:            req.Path,
 		Config:          req.Config,
+		Adapters:        req.Adapters,
 	}
 	if err := c.invoke(ctx, "OpenSession", in, out); err != nil {
 		return nil, err
@@ -135,6 +137,7 @@ func (c *Client) Describe(ctx context.Context, req transport.OpenSessionRequest)
 		Digest:          req.Digest,
 		Path:            req.Path,
 		Config:          req.Config,
+		Adapters:        req.Adapters,
 	}
 	if err := c.invoke(ctx, "Describe", in, out); err != nil {
 		return transport.ModelInfo{}, err

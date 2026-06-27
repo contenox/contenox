@@ -46,6 +46,15 @@ func sessionCacheKey(ref modeldconn.ModelRef, cfg Config) string {
 	}
 	fmt.Fprintf(&b, "\x00prompt=%s\x00template=%s\x00bos=%t\x00reasoning=%s",
 		cfg.PromptFormat, cfg.PromptTemplateDigest, !cfg.DisableBOS, cfg.ReasoningFormat)
+	// Adapter identity in list order (order is part of identity): this is what stops
+	// base+A reusing base+B's warm KV. Empty adapters → the base model.
+	b.WriteString("\x00adapters=")
+	for i, a := range ref.Adapters {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, "%s@%s", a.Digest, strconv.FormatFloat(float64(a.Scale), 'g', -1, 32))
+	}
 	return b.String()
 }
 
@@ -59,15 +68,17 @@ type client struct {
 	modelDigest       string
 	backendVersion    string
 	cfg               Config
+	adapters          []AdapterSpec // LoRA adapters for this variant ("" = base model)
 	maxOutputTokens   int
 	toolProtocol      string // profile-declared tool-call protocol ("" = tools unsupported)
 	reasoningProtocol string // profile-declared reasoning parser ("" = no reasoning parser)
 }
 
 // ref is the typed model handle this client opens sessions with: logical name +
-// backend type + content digest for identity, plus the resolved on-disk path.
+// backend type + content digest for identity, plus the resolved on-disk path and
+// any LoRA adapters that make this a distinct model variant.
 func (c *client) ref() modeldconn.ModelRef {
-	return modeldconn.ModelRef{Name: c.modelName, Type: "llama", Digest: c.modelDigest, Path: c.modelPath}
+	return modeldconn.ModelRef{Name: c.modelName, Type: "llama", Digest: c.modelDigest, Path: c.modelPath, Adapters: c.adapters}
 }
 
 func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
@@ -237,6 +248,7 @@ func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], me
 		ProfileID:      c.profileID,
 		ModelDigest:    c.modelDigest,
 		BackendVersion: c.backendVersion,
+		Adapters:       c.adapters,
 	}, toolsJSON)
 	if err != nil {
 		return err

@@ -56,6 +56,71 @@ func TestUnit_LocalNodeNewSession_ReportsUnavailableWhenNoBackendRegistered(t *t
 	}
 }
 
+func TestUnit_LocalNodeSessionCacheKey_IncludesAdapters(t *testing.T) {
+	base := Config{NumCtx: 8192, NumBatch: 512}
+	ref := modeldconn.ModelRef{Name: "a", Type: "llama", Digest: "digest-a", Path: "/models/a.gguf"}
+
+	withA := ref
+	withA.Adapters = []AdapterSpec{{Name: "A", Digest: "adapter-a", Scale: 1}}
+	withB := ref
+	withB.Adapters = []AdapterSpec{{Name: "B", Digest: "adapter-b", Scale: 1}}
+	withAScale2 := ref
+	withAScale2.Adapters = []AdapterSpec{{Name: "A", Digest: "adapter-a", Scale: 2}}
+	withAB := ref
+	withAB.Adapters = []AdapterSpec{{Digest: "adapter-a", Scale: 1}, {Digest: "adapter-b", Scale: 1}}
+	withBA := ref
+	withBA.Adapters = []AdapterSpec{{Digest: "adapter-b", Scale: 1}, {Digest: "adapter-a", Scale: 1}}
+
+	// base, base+A, base+B, base+A@2.0, [A,B] and [B,A] must all be distinct: a
+	// variant must never reuse another variant's (or the base's) warm KV, and
+	// adapter order is part of identity.
+	labelled := map[string]string{
+		"base": sessionCacheKey(ref, base),
+		"A":    sessionCacheKey(withA, base),
+		"B":    sessionCacheKey(withB, base),
+		"A@2":  sessionCacheKey(withAScale2, base),
+		"AB":   sessionCacheKey(withAB, base),
+		"BA":   sessionCacheKey(withBA, base),
+	}
+	seen := map[string]string{}
+	for label, key := range labelled {
+		if other, dup := seen[key]; dup {
+			t.Fatalf("cache key collision: %q and %q share a key", label, other)
+		}
+		seen[key] = label
+	}
+	// Determinism: an independently-built identical adapter set yields the same key.
+	dup := ref
+	dup.Adapters = []AdapterSpec{{Name: "A", Digest: "adapter-a", Scale: 1}}
+	if sessionCacheKey(withA, base) != sessionCacheKey(dup, base) {
+		t.Fatal("same adapter set should produce the same cache key")
+	}
+}
+
+func TestUnit_RuntimeDigest_IncludesAdapters(t *testing.T) {
+	cfg := Config{NumCtx: 8192, NumBatch: 512}
+	base := runtimeDigest(cfg, nil)
+	a := runtimeDigest(cfg, []AdapterSpec{{Digest: "adapter-a", Scale: 1}})
+	b := runtimeDigest(cfg, []AdapterSpec{{Digest: "adapter-b", Scale: 1}})
+	aScale2 := runtimeDigest(cfg, []AdapterSpec{{Digest: "adapter-a", Scale: 2}})
+
+	for _, c := range []struct {
+		name string
+		x, y string
+	}{
+		{"base vs +A", base, a},
+		{"+A vs +B", a, b},
+		{"+A scale", a, aScale2},
+	} {
+		if c.x == c.y {
+			t.Fatalf("runtimeDigest must differ across adapter identity: %s", c.name)
+		}
+	}
+	if a != runtimeDigest(cfg, []AdapterSpec{{Digest: "adapter-a", Scale: 1}}) {
+		t.Fatal("runtimeDigest must be deterministic for the same adapter set")
+	}
+}
+
 func TestUnit_LocalNodeSessionCacheKey_IncludesRuntimeIdentity(t *testing.T) {
 	base := Config{
 		NumCtx:       8192,

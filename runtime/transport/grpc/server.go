@@ -209,6 +209,7 @@ func (s *Server) loadModel(ctx context.Context, in *loadModelReq) (*transport.Ac
 		Digest:             in.Digest,
 		Path:               in.Path,
 		Config:             in.Config,
+		Adapters:           in.Adapters,
 		ExpectedGeneration: in.ExpectedGeneration,
 	})
 	if err != nil {
@@ -249,6 +250,7 @@ func (s *Server) openSession(ctx context.Context, in *openSessionReq) (*openSess
 		Digest:    in.Digest,
 		Path:      in.Path,
 		Config:    in.Config,
+		Adapters:  in.Adapters,
 	})
 	if err != nil {
 		return nil, encodeError(err)
@@ -267,6 +269,7 @@ func (s *Server) describe(ctx context.Context, in *openSessionReq) (*describeRes
 		Digest:    in.Digest,
 		Path:      in.Path,
 		Config:    in.Config,
+		Adapters:  in.Adapters,
 	})
 	if err != nil {
 		return nil, encodeError(err)

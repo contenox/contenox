@@ -23,6 +23,7 @@ type promptIdentity struct {
 	ProfileID      string
 	ModelDigest    string
 	BackendVersion string
+	Adapters       []AdapterSpec
 }
 
 type promptPlan struct {
@@ -101,7 +102,7 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 		ModelDigest:          id.ModelDigest,
 		PromptFormat:         renderer.format,
 		PromptTemplateDigest: renderer.templateDigest,
-		RuntimeDigest:        runtimeDigest(cfg),
+		RuntimeDigest:        runtimeDigest(cfg, id.Adapters),
 		AddBOS:               !cfg.DisableBOS,
 		StableBytes:          len(stableText),
 		TotalBytes:           len(stableText) + len(volatileText),

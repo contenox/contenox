@@ -126,6 +126,10 @@ type ModelRef struct {
 	Type   string
 	Digest string
 	Path   string
+	// Adapters are LoRA adapters applied to this model variant, in order. Empty =
+	// the base model. They are part of the cache identity: base+A and base+B must
+	// not share a resident session.
+	Adapters []transport.AdapterSpec
 }
 
 // OpenSession resolves the modeld leader, confirms it actually answers a health
@@ -205,6 +209,7 @@ func openRequest(owner string, ref ModelRef, cfg transport.Config) transport.Ope
 		Digest:    ref.Digest,
 		Path:      ref.Path,
 		Config:    cfg,
+		Adapters:  ref.Adapters,
 	}
 }
 
@@ -216,6 +221,7 @@ func loadRequest(owner string, ref ModelRef, cfg transport.Config) transport.Loa
 		Digest:    ref.Digest,
 		Path:      ref.Path,
 		Config:    cfg,
+		Adapters:  ref.Adapters,
 	}
 }
 
@@ -240,6 +246,7 @@ func Describe(ctx context.Context, ref ModelRef, cfg transport.Config) (transpor
 		Digest:    ref.Digest,
 		Path:      ref.Path,
 		Config:    cfg,
+		Adapters:  ref.Adapters,
 	})
 }
 
