@@ -1,4 +1,15 @@
-import { Badge, Button, InlineNotice, P, Page, Panel, Select, Span, Spinner } from '@contenox/ui';
+import {
+  Badge,
+  Button,
+  ButtonGroup,
+  InlineNotice,
+  P,
+  Page,
+  Panel,
+  Select,
+  Span,
+  Spinner,
+} from '@contenox/ui';
 import { GitBranch, MessageSquarePlus, Settings } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +23,11 @@ import { ChatSession } from '../../../lib/types';
 import { MessageInputForm } from './components/MessageInputForm';
 
 const DEFAULT_CHAIN_PATH = 'default-chain.json';
+
+// At or below this many chains we render selectable chips (every chain visible at
+// a glance, one click to pick); above it we fall back to a dropdown so a long list
+// does not flood the panel. Exactly one control shows at a time — no redundancy.
+const MAX_CHAIN_CHIPS = 12;
 
 function formatChainLabel(path: string): string {
   return path.replace(/\.json$/i, '');
@@ -64,7 +80,7 @@ function ChatLandingPageImpl() {
     ],
     [sortedChainPaths, t],
   );
-  const preferredChains = useMemo(() => sortedChainPaths.slice(0, 6), [sortedChainPaths]);
+  const showChainChips = sortedChainPaths.length > 0 && sortedChainPaths.length <= MAX_CHAIN_CHIPS;
   const selectedChainLabel = selectedChainId ? formatChainLabel(selectedChainId) : '';
 
   const handleSubmit = (e: FormEvent) => {
@@ -140,35 +156,33 @@ function ChatLandingPageImpl() {
                     {t('chat.landing_no_chains_desc')}
                   </P>
                 </div>
+              ) : showChainChips ? (
+                <ButtonGroup className="flex-wrap">
+                  {sortedChainPaths.map(path => {
+                    const selected = selectedChainId === path;
+                    return (
+                      <Button
+                        key={path}
+                        type="button"
+                        size="xs"
+                        variant={selected ? 'primary' : 'outline'}
+                        palette={selected ? 'primary' : 'neutral'}
+                        aria-pressed={selected}
+                        title={path}
+                        onClick={() => setSelectedChainId(path)}>
+                        {formatChainLabel(path)}
+                      </Button>
+                    );
+                  })}
+                </ButtonGroup>
               ) : (
-                <>
-                  <Select
-                    options={chainOptions}
-                    value={selectedChainId}
-                    onChange={e => setSelectedChainId(e.target.value)}
-                    className="w-full"
-                    disabled={chainsLoading}
-                  />
-                  {preferredChains.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                      {preferredChains.map(path => (
-                        <button
-                          key={path}
-                          type="button"
-                          onClick={() => setSelectedChainId(path)}
-                          title={path}
-                          className={[
-                            'rounded-md border px-2.5 py-1.5 text-xs transition-colors',
-                            selectedChainId === path
-                              ? 'border-primary-500 bg-surface-100 text-text ring-primary-500/30 dark:border-dark-primary-500 dark:bg-dark-surface-300 dark:text-dark-text dark:ring-dark-primary-500/30 ring-1'
-                              : 'border-surface-300 text-text-muted hover:border-surface-500 hover:bg-surface-100 hover:text-text dark:border-dark-surface-600 dark:text-dark-text-muted dark:hover:border-dark-surface-500 dark:hover:bg-dark-surface-300 dark:hover:text-dark-text',
-                          ].join(' ')}>
-                          {formatChainLabel(path)}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
+                <Select
+                  options={chainOptions}
+                  value={selectedChainId}
+                  onChange={e => setSelectedChainId(e.target.value)}
+                  className="w-full"
+                  disabled={chainsLoading}
+                />
               )}
 
               <Button
