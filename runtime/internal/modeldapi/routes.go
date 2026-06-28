@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	apiframework "github.com/contenox/runtime/apiframework"
@@ -47,6 +48,7 @@ func WithStateReader(reader stateReader) Option {
 type modeldProvider interface {
 	Detect(context.Context) modeldprobe.Status
 	Status(context.Context) (transport.DaemonStatus, error)
+	LoadModel(context.Context, modeldconn.ModelRef, transport.Config, uint64) (transport.ActiveModel, error)
 	UnloadModel(context.Context, uint64) error
 	Describe(context.Context, modeldconn.ModelRef, transport.Config) (transport.ModelInfo, error)
 }
@@ -59,6 +61,10 @@ func (liveModeldProvider) Detect(ctx context.Context) modeldprobe.Status {
 
 func (liveModeldProvider) Status(ctx context.Context) (transport.DaemonStatus, error) {
 	return modeldconn.Status(ctx)
+}
+
+func (liveModeldProvider) LoadModel(ctx context.Context, ref modeldconn.ModelRef, cfg transport.Config, expectedGeneration uint64) (transport.ActiveModel, error) {
+	return modeldconn.LoadModel(ctx, ref, cfg, expectedGeneration)
 }
 
 func (liveModeldProvider) UnloadModel(ctx context.Context, expectedGeneration uint64) error {
@@ -81,6 +87,7 @@ func addRoutesForTest(mux *http.ServeMux, provider modeldProvider, state stateRe
 
 func (h *handler) register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /modeld/status", h.status)
+	mux.HandleFunc("POST /modeld/load", h.load)
 	mux.HandleFunc("POST /modeld/unload", h.unload)
 	mux.HandleFunc("GET /modeld/models", h.models)
 	mux.HandleFunc("GET /modeld/capacity", h.capacity)
@@ -120,8 +127,15 @@ type ActiveModel struct {
 	ModelName  string        `json:"modelName,omitempty" example:"qwen3-8b"`
 	Type       string        `json:"type,omitempty" example:"llama"`
 	Digest     string        `json:"digest,omitempty" example:"sha256:abcdef"`
+	Adapters   []AdapterInfo `json:"adapters,omitempty" openapi_include_type:"modeldapi.AdapterInfo"`
 	Config     RuntimeConfig `json:"config"`
 	Generation uint64        `json:"generation" example:"3"`
+}
+
+type AdapterInfo struct {
+	Name   string  `json:"name,omitempty" example:"style"`
+	Digest string  `json:"digest,omitempty" example:"sha256:abcdef"`
+	Scale  float32 `json:"scale,omitempty" example:"1"`
 }
 
 type RuntimeConfig struct {
@@ -142,6 +156,17 @@ type RuntimeConfig struct {
 
 type UnloadRequest struct {
 	ExpectedGeneration *uint64 `json:"expectedGeneration" example:"3"`
+}
+
+type LoadRequest struct {
+	Model              string  `json:"model" example:"llama:qwen3-8b"`
+	ExpectedGeneration *uint64 `json:"expectedGeneration,omitempty" example:"3"`
+}
+
+type LoadResponse struct {
+	Loaded             bool        `json:"loaded" example:"true"`
+	ExpectedGeneration uint64      `json:"expectedGeneration,omitempty" example:"3"`
+	Active             ActiveModel `json:"active" openapi_include_type:"modeldapi.ActiveModel"`
 }
 
 type UnloadResponse struct {
@@ -183,6 +208,44 @@ func (h *handler) status(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.Slot = sanitizeSlot(slot)
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response modeldapi.StatusResponse
+}
+
+func (h *handler) load(w http.ResponseWriter, r *http.Request) {
+	req, err := apiframework.Decode[LoadRequest](r) // @request modeldapi.LoadRequest
+	if err != nil {
+		_ = apiframework.Error(w, r, fmt.Errorf("%w: %v", apiframework.ErrBadRequest, err), apiframework.ExecuteOperation)
+		return
+	}
+	if strings.TrimSpace(req.Model) == "" {
+		_ = apiframework.Error(w, r, apiframework.MissingParameter("model"), apiframework.ExecuteOperation)
+		return
+	}
+	if h.state == nil {
+		_ = apiframework.Error(w, r, apiframework.NotFound("local model registry is not available"), apiframework.ExecuteOperation)
+		return
+	}
+	resolved, err := h.resolveLocalModel(r.Context(), req.Model)
+	if err != nil {
+		_ = apiframework.Error(w, r, err, apiframework.ExecuteOperation)
+		return
+	}
+
+	var expected uint64
+	if req.ExpectedGeneration != nil {
+		expected = *req.ExpectedGeneration
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), controlTimeout)
+	defer cancel()
+	active, err := h.provider.LoadModel(ctx, resolved.Ref, resolved.Config, expected)
+	if err != nil {
+		_ = apiframework.Error(w, r, modeldAPIError(err), apiframework.ExecuteOperation)
+		return
+	}
+	_ = apiframework.Encode(w, r, http.StatusOK, LoadResponse{
+		Loaded:             true,
+		ExpectedGeneration: expected,
+		Active:             sanitizeActiveModel(active),
+	}) // @response modeldapi.LoadResponse
 }
 
 func (h *handler) unload(w http.ResponseWriter, r *http.Request) {
@@ -245,8 +308,15 @@ func (h *handler) capacity(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, modeldAPIError(err), apiframework.GetOperation)
 		return
 	}
+	model := resolved.Model
+	switch {
+	case info.PlannerEffectiveContext > 0:
+		model.ContextLength = info.PlannerEffectiveContext
+	case info.EffectiveContext > 0:
+		model.ContextLength = info.EffectiveContext
+	}
 	_ = apiframework.Encode(w, r, http.StatusOK, CapacityResponse{
-		Model: resolved.Model,
+		Model: model,
 		Info:  capacityInfoFromTransport(info),
 	}) // @response modeldapi.CapacityResponse
 }
@@ -273,13 +343,34 @@ func sanitizeSlot(status transport.DaemonStatus) *SlotStatus {
 		LastError:       status.LastError,
 	}
 	if status.Active != nil {
-		out.Active = &ActiveModel{
-			ModelName:  status.Active.ModelName,
-			Type:       status.Active.Type,
-			Digest:     status.Active.Digest,
-			Config:     sanitizeConfig(status.Active.Config),
-			Generation: status.Active.Generation,
-		}
+		active := sanitizeActiveModel(*status.Active)
+		out.Active = &active
+	}
+	return out
+}
+
+func sanitizeActiveModel(active transport.ActiveModel) ActiveModel {
+	return ActiveModel{
+		ModelName:  active.ModelName,
+		Type:       active.Type,
+		Digest:     active.Digest,
+		Adapters:   sanitizeAdapters(active.Adapters),
+		Config:     sanitizeConfig(active.Config),
+		Generation: active.Generation,
+	}
+}
+
+func sanitizeAdapters(adapters []transport.AdapterSpec) []AdapterInfo {
+	if len(adapters) == 0 {
+		return nil
+	}
+	out := make([]AdapterInfo, 0, len(adapters))
+	for _, adapter := range adapters {
+		out = append(out, AdapterInfo{
+			Name:   adapter.Name,
+			Digest: adapter.Digest,
+			Scale:  adapter.Scale,
+		})
 	}
 	return out
 }

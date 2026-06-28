@@ -28,6 +28,12 @@ type fakeStatusProvider struct {
 	unloadGen    uint64
 	unloadCalled bool
 	unloadErr    error
+	loadRef      modeldconn.ModelRef
+	loadCfg      transport.Config
+	loadGen      uint64
+	loadCalled   bool
+	loadActive   transport.ActiveModel
+	loadErr      error
 	describeRef  modeldconn.ModelRef
 	describeCfg  transport.Config
 	describeInfo transport.ModelInfo
@@ -47,6 +53,14 @@ func (f *fakeStatusProvider) UnloadModel(_ context.Context, expectedGeneration u
 	f.unloadCalled = true
 	f.unloadGen = expectedGeneration
 	return f.unloadErr
+}
+
+func (f *fakeStatusProvider) LoadModel(_ context.Context, ref modeldconn.ModelRef, cfg transport.Config, expectedGeneration uint64) (transport.ActiveModel, error) {
+	f.loadCalled = true
+	f.loadRef = ref
+	f.loadCfg = cfg
+	f.loadGen = expectedGeneration
+	return f.loadActive, f.loadErr
 }
 
 func (f *fakeStatusProvider) Describe(_ context.Context, ref modeldconn.ModelRef, cfg transport.Config) (transport.ModelInfo, error) {
@@ -154,6 +168,85 @@ func TestUnloadCallsModeldWithExpectedGeneration(t *testing.T) {
 	}
 }
 
+func TestLoadResolvesLocalModelWithAdaptersAndSanitizesResponse(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	modelPath := filepath.Join(modelDir, "model.gguf")
+	if err := os.WriteFile(modelPath, []byte("fake gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapterBytes := []byte("fake adapter")
+	adapterPath := filepath.Join(modelDir, "style.gguf")
+	if err := os.WriteFile(adapterPath, adapterBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "contenox-llama.json"), []byte(`{
+		"runtime":{"num_ctx":4096},
+		"adapters":[{"name":"style","path":"style.gguf","scale":2}]
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapterSum := sha256.Sum256(adapterBytes)
+	adapterDigest := hex.EncodeToString(adapterSum[:])
+	provider := &fakeStatusProvider{
+		loadActive: transport.ActiveModel{
+			ModelName: "coder",
+			Type:      "llama",
+			Digest:    "model-digest",
+			Path:      modelPath,
+			Adapters: []transport.AdapterSpec{{
+				Name:   "style",
+				Path:   adapterPath,
+				Digest: adapterDigest,
+				Scale:  2,
+			}},
+			Config:     transport.Config{NumCtx: 4096},
+			Generation: 8,
+		},
+	}
+	state := fakeStateReader{states: []statetype.BackendRuntimeState{localRuntimeState(root, "coder", "llama")}}
+	mux := http.NewServeMux()
+	addRoutesForTest(mux, provider, state)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/modeld/load", strings.NewReader(`{"model":"llama:coder","expectedGeneration":7}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !provider.loadCalled || provider.loadGen != 7 {
+		t.Fatalf("unexpected load call: called=%v gen=%d", provider.loadCalled, provider.loadGen)
+	}
+	if provider.loadRef.Name != "coder" || provider.loadRef.Type != "llama" || provider.loadRef.Path != modelPath {
+		t.Fatalf("unexpected load ref: %#v", provider.loadRef)
+	}
+	if len(provider.loadRef.Adapters) != 1 {
+		t.Fatalf("expected one adapter in load ref, got %#v", provider.loadRef.Adapters)
+	}
+	adapter := provider.loadRef.Adapters[0]
+	if adapter.Name != "style" || adapter.Path != adapterPath || adapter.Digest != adapterDigest || adapter.Scale != 2 {
+		t.Fatalf("unexpected adapter ref: %#v", adapter)
+	}
+	if provider.loadCfg.NumCtx != 4096 {
+		t.Fatalf("unexpected load config: %#v", provider.loadCfg)
+	}
+	if strings.Contains(rr.Body.String(), root) || strings.Contains(rr.Body.String(), adapterPath) {
+		t.Fatalf("load response leaked local paths: %s", rr.Body.String())
+	}
+	var got LoadResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.Loaded || got.Active.Generation != 8 || len(got.Active.Adapters) != 1 || got.Active.Adapters[0].Digest != adapterDigest {
+		t.Fatalf("unexpected load response: %#v", got)
+	}
+}
+
 func TestModelsReturnsLocalModelsWithoutBackendPaths(t *testing.T) {
 	root := t.TempDir()
 	provider := &fakeStatusProvider{}
@@ -197,15 +290,16 @@ func TestCapacityResolvesLlamaModelServerSide(t *testing.T) {
 	wantDigest := hex.EncodeToString(sum[:])
 	provider := &fakeStatusProvider{
 		describeInfo: transport.ModelInfo{
-			ModelMaxContext:     32768,
-			EffectiveContext:    4096,
-			Reason:              "limited by test device",
-			ResolvedGpuLayers:   35,
-			RuntimeName:         "llamacpp",
-			SupportsGPUOffload:  true,
-			DeviceKind:          "gpu",
-			DeviceTotalBytes:    16 << 30,
-			MemoryContextTokens: 4096,
+			ModelMaxContext:         32768,
+			EffectiveContext:        4096,
+			PlannerEffectiveContext: 12000,
+			Reason:                  "limited by test device",
+			ResolvedGpuLayers:       35,
+			RuntimeName:             "llamacpp",
+			SupportsGPUOffload:      true,
+			DeviceKind:              "gpu",
+			DeviceTotalBytes:        16 << 30,
+			MemoryContextTokens:     4096,
 		},
 	}
 	state := fakeStateReader{states: []statetype.BackendRuntimeState{localRuntimeState(root, "qwen3-8b", "llama")}}
@@ -234,7 +328,7 @@ func TestCapacityResolvesLlamaModelServerSide(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got.Model.Digest != wantDigest || got.Info.EffectiveContext != 4096 || got.Info.Reason == "" {
+	if got.Model.Digest != wantDigest || got.Model.ContextLength != 12000 || got.Info.EffectiveContext != 4096 || got.Info.PlannerEffectiveContext != 12000 || got.Info.Reason == "" {
 		t.Fatalf("unexpected capacity response: %#v", got)
 	}
 }

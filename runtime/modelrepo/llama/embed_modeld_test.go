@@ -24,8 +24,10 @@ type recordingEmbedService struct {
 	base   *transport.MemoryService
 	vector []float32
 
-	mu    sync.Mutex
-	embed transport.EmbedRequest
+	mu       sync.Mutex
+	embed    transport.EmbedRequest
+	describe transport.OpenSessionRequest
+	info     transport.ModelInfo
 }
 
 func (s *recordingEmbedService) OpenSession(ctx context.Context, req transport.OpenSessionRequest) (transport.Session, error) {
@@ -33,6 +35,13 @@ func (s *recordingEmbedService) OpenSession(ctx context.Context, req transport.O
 }
 
 func (s *recordingEmbedService) Describe(ctx context.Context, req transport.OpenSessionRequest) (transport.ModelInfo, error) {
+	s.mu.Lock()
+	s.describe = req
+	info := s.info
+	s.mu.Unlock()
+	if info.EffectiveContext > 0 || info.PlannerEffectiveContext > 0 || info.ModelMaxContext > 0 || info.RuntimeName != "" || info.RuntimeDigest != "" {
+		return info, nil
+	}
 	return s.base.Describe(ctx, req)
 }
 
@@ -47,6 +56,12 @@ func (s *recordingEmbedService) lastEmbedRequest() transport.EmbedRequest {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.embed
+}
+
+func (s *recordingEmbedService) lastDescribeRequest() transport.OpenSessionRequest {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.describe
 }
 
 func serveLlamaModeldForTest(t *testing.T, svc transport.Service) {

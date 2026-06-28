@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
 )
@@ -32,6 +33,15 @@ func genAIConfigFromProfile(modelDir, device string) ovsession.GenAIConfig {
 		_ = json.Unmarshal(b, &p)
 	}
 	g := p.GenAI
+	fallbackDevice := strings.TrimSpace(device)
+	switch profileDevice := strings.TrimSpace(p.Device); {
+	case profileDevice != "":
+		device = profileDevice
+	case fallbackDevice != "":
+		device = fallbackDevice
+	default:
+		device = "AUTO"
+	}
 	cfg := ovsession.GenAIConfig{
 		Device:                      device,
 		KVCachePrecision:            g.KVCachePrecision,

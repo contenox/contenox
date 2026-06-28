@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 )
 
 func TestUnit_LocalNodePromptPlan_RejectsUnsupportedPrompt(t *testing.T) {
@@ -60,5 +61,20 @@ func TestUnit_LocalNodePromptPlan_IncludesBackendVersion(t *testing.T) {
 	}
 	if plan.Stable.Manifest.Backend != "openvino" || plan.Stable.Manifest.RuntimeDigest == "" {
 		t.Fatalf("manifest identity incomplete: %+v", plan.Stable.Manifest)
+	}
+}
+
+func TestUnit_OpenVINORuntimeDigest_IncludesPlannerContext(t *testing.T) {
+	base := runtimeDigest(Config{NumCtx: 4096}, nil)
+	planner := runtimeDigest(Config{NumCtx: 4096, PlannerEffectiveContext: 16384}, nil)
+	if base == planner {
+		t.Fatal("planner context must be part of runtime digest identity")
+	}
+
+	ref := modeldconn.ModelRef{Name: "m", Type: "openvino", Digest: "digest"}
+	baseKey := sessionCacheKey(ref, Config{NumCtx: 4096})
+	plannerKey := sessionCacheKey(ref, Config{NumCtx: 4096, PlannerEffectiveContext: 16384})
+	if baseKey == plannerKey {
+		t.Fatal("planner context must be part of session cache identity")
 	}
 }

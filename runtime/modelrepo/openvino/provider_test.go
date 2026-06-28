@@ -2,6 +2,8 @@ package openvino
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net"
 	"os"
 	"path/filepath"
@@ -71,10 +73,11 @@ func TestUnit_OpenVINOProvider_UsesDescribeResolvedContextAndRuntime(t *testing.
 	svc := &recordingService{
 		base: transport.NewMemoryService(),
 		info: transport.ModelInfo{
-			ModelMaxContext:  32768,
-			EffectiveContext: 24576,
-			RuntimeName:      "OpenVINO GenAI",
-			RuntimeDigest:    "2026.2-test",
+			ModelMaxContext:         32768,
+			EffectiveContext:        24576,
+			PlannerEffectiveContext: 32768,
+			RuntimeName:             "OpenVINO GenAI",
+			RuntimeDigest:           "2026.2-test",
 		},
 	}
 	serveModeldForProviderTest(t, svc)
@@ -91,6 +94,9 @@ func TestUnit_OpenVINOProvider_UsesDescribeResolvedContextAndRuntime(t *testing.
 	c := got.(*client)
 	if c.cfg.NumCtx != 24576-modeldCapacitySafetyTokens {
 		t.Fatalf("NumCtx = %d, want Describe effective context minus modeld safety margin", c.cfg.NumCtx)
+	}
+	if c.cfg.PlannerEffectiveContext != 32768 {
+		t.Fatalf("PlannerEffectiveContext = %d, want Describe planner context", c.cfg.PlannerEffectiveContext)
 	}
 	if c.backendVersion != "OpenVINO GenAI@2026.2-test" {
 		t.Fatalf("backendVersion = %q", c.backendVersion)
@@ -159,6 +165,54 @@ func TestUnit_OpenVINOProvider_EmbeddingUsesModeldTransport(t *testing.T) {
 	}
 	if req.Text != "hello embeddings" {
 		t.Fatalf("Embed text = %q", req.Text)
+	}
+}
+
+func TestUnit_OpenVINOProvider_ProfileAdaptersReachModelRef(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "tokenizer_config.json"), []byte(`{"chat_template":"{{ messages }}"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapterBytes := []byte("fake adapter")
+	adapterPath := filepath.Join(modelDir, "style.safetensors")
+	if err := os.WriteFile(adapterPath, adapterBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, profileFileName), []byte(`{
+		"adapters":[{"name":"style","path":"style.safetensors","scale":3}]
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(adapterBytes)
+	wantDigest := hex.EncodeToString(sum[:])
+
+	oldFactory := sessionFactory
+	sessionFactory = func(modeldconn.ModelRef, Config) (Session, error) { return nil, nil }
+	t.Cleanup(func() { sessionFactory = oldFactory })
+
+	profile, err := loadModelProfile(modelDir)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	got, err := (&openvinoProvider{name: "coder", modelDir: root, caps: profile.capabilityConfig()}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	ref := c.ref()
+	if len(ref.Adapters) != 1 {
+		t.Fatalf("adapters = %#v, want one", ref.Adapters)
+	}
+	adapter := ref.Adapters[0]
+	if adapter.Name != "style" || adapter.Path != adapterPath || adapter.Digest != wantDigest || adapter.Scale != 3 {
+		t.Fatalf("unexpected adapter: %#v", adapter)
 	}
 }
 

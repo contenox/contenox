@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import {
   useModeldCapacity,
+  useLoadModeld,
   useModeldModels,
   useModeldStatus,
   useUnloadModeld,
@@ -27,6 +28,7 @@ export default function BackendsPage() {
   const modeldModels = useModeldModels();
   const [selectedLocalModel, setSelectedLocalModel] = useState('');
   const modeldCapacity = useModeldCapacity(selectedLocalModel);
+  const loadModeld = useLoadModeld();
   const unloadModeld = useUnloadModeld();
 
   useEffect(() => {
@@ -75,6 +77,9 @@ export default function BackendsPage() {
           capacityLoading={modeldCapacity.isLoading}
           capacityFetching={modeldCapacity.isFetching}
           capacityErrorMessage={modeldCapacity.error?.message}
+          onLoad={(model, generation) => loadModeld.mutate({ model, expectedGeneration: generation })}
+          isLoadingModel={loadModeld.isPending}
+          loadErrorMessage={loadModeld.error?.message}
           onUnload={generation => unloadModeld.mutate(generation)}
           isUnloading={unloadModeld.isPending}
           unloadErrorMessage={unloadModeld.error?.message}

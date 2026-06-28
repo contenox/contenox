@@ -3,14 +3,15 @@ package transport
 import (
 	"context"
 	"sync"
+
+	"github.com/contenox/runtime/runtime/contextasm"
 )
 
 // MemoryService is an in-process, in-memory Service. It does no real inference:
 // it models the warm-reuse contract so the runtime wrapper can be built and
 // tested against the boundary before any CGO backend exists. Reuse is keyed on
-// the manifest (a changed stable segment OR a changed profile/template/runtime
-// digest invalidates the resident prefix), and token counts are byte-length
-// proxies. See docs/blueprints/modeld-interface-boundary.md.
+// the stable byte hash plus compatible profile/template/runtime identity; token
+// counts are byte-length proxies. See docs/blueprints/modeld-interface-boundary.md.
 //
 // It is safe for concurrent use.
 type MemoryService struct {
@@ -109,20 +110,24 @@ func (s *memSession) EnsurePrefix(_ context.Context, prefix PrefixInput) (Prefix
 	want := tokenProxy(prefix.Text)
 	digest := prefix.Manifest.Digest()
 	stableHash := prefix.Manifest.StableByteHash
+	oldResident := s.resident()
 
 	if s.numCtx > 0 && want > s.numCtx {
 		return PrefixStatus{}, ErrContextOverflow
 	}
 
-	// Warm only when the resident prefix came from a manifest with the same
-	// stable hash AND the same identity digest (profile/template/runtime).
-	warm := s.residentStableHash == stableHash && s.residentDigest == digest && want > 0
+	// Warm only when the resident prefix came from a compatible runtime identity
+	// with the same stable hash. Volatile manifest changes must not invalidate the
+	// stable prefix.
+	compatible, _ := s.manifest.CompatibleRuntime(prefix.Manifest)
+	warm := s.prefixTokens > 0 && compatible && s.residentStableHash == stableHash && want > 0
 
 	var reused, prefilled, dropped int
 	if warm {
 		reused = want
+		dropped = oldResident - reused
 	} else {
-		dropped = s.prefixTokens
+		dropped = oldResident
 		prefilled = want
 	}
 
@@ -191,6 +196,12 @@ func (s *memSession) PrefillSuffix(_ context.Context, suffix SuffixInput) (Suffi
 	defer s.mu.Unlock()
 	if s.closed {
 		return SuffixStatus{}, ErrSessionClosed
+	}
+	if ok, reason := s.manifest.CompatibleRuntime(suffix.Manifest); !ok {
+		return SuffixStatus{}, contextasm.NewManifestMismatchError(reason)
+	}
+	if !s.manifest.IsZero() && !suffix.Manifest.IsZero() && s.manifest.StableByteHash != suffix.Manifest.StableByteHash {
+		return SuffixStatus{}, contextasm.NewManifestMismatchError("stable prefix changed between EnsurePrefix and PrefillSuffix")
 	}
 	add := tokenProxy(suffix.Text)
 	if s.numCtx > 0 && s.resident()+add > s.numCtx {

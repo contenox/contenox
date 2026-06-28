@@ -26,15 +26,16 @@ func runtimeDigest(cfg Config, adapters []AdapterSpec) string {
 		Scale  float32 `json:"scale,omitempty"`
 	}
 	type runtimeIdentity struct {
-		NumCtx       int               `json:"num_ctx"`
-		NumBatch     int               `json:"num_batch"`
-		NumThreads   int               `json:"num_threads"`
-		NumGpuLayers int               `json:"num_gpu_layers"`
-		TensorSplit  []float32         `json:"tensor_split,omitempty"`
-		FlashAttn    bool              `json:"flash_attention"`
-		KVCacheType  string            `json:"kv_cache_type,omitempty"`
-		Reasoning    string            `json:"reasoning,omitempty"`
-		Adapters     []adapterIdentity `json:"adapters,omitempty"`
+		NumCtx                  int               `json:"num_ctx"`
+		PlannerEffectiveContext int               `json:"planner_effective_context,omitempty"`
+		NumBatch                int               `json:"num_batch"`
+		NumThreads              int               `json:"num_threads"`
+		NumGpuLayers            int               `json:"num_gpu_layers"`
+		TensorSplit             []float32         `json:"tensor_split,omitempty"`
+		FlashAttn               bool              `json:"flash_attention"`
+		KVCacheType             string            `json:"kv_cache_type,omitempty"`
+		Reasoning               string            `json:"reasoning,omitempty"`
+		Adapters                []adapterIdentity `json:"adapters,omitempty"`
 	}
 	// Adapter digests and scales in list order make a variant a distinct manifest
 	// from its base — warm KV for base+A must not satisfy base+B's manifest gate.
@@ -43,15 +44,16 @@ func runtimeDigest(cfg Config, adapters []AdapterSpec) string {
 		ids = append(ids, adapterIdentity{Digest: a.Digest, Scale: a.Scale})
 	}
 	b, _ := json.Marshal(runtimeIdentity{
-		NumCtx:       cfg.NumCtx,
-		NumBatch:     cfg.NumBatch,
-		NumThreads:   cfg.NumThreads,
-		NumGpuLayers: cfg.NumGpuLayers,
-		TensorSplit:  cfg.TensorSplit,
-		FlashAttn:    cfg.FlashAttn,
-		KVCacheType:  cfg.KVCacheType,
-		Reasoning:    cfg.ReasoningFormat,
-		Adapters:     ids,
+		NumCtx:                  cfg.NumCtx,
+		PlannerEffectiveContext: cfg.PlannerEffectiveContext,
+		NumBatch:                cfg.NumBatch,
+		NumThreads:              cfg.NumThreads,
+		NumGpuLayers:            cfg.NumGpuLayers,
+		TensorSplit:             cfg.TensorSplit,
+		FlashAttn:               cfg.FlashAttn,
+		KVCacheType:             cfg.KVCacheType,
+		Reasoning:               cfg.ReasoningFormat,
+		Adapters:                ids,
 	})
 	return hashBytes(b)
 }

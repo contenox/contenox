@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/modelrepo"
 )
 
@@ -87,7 +88,6 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 			Stable:        isStable,
 			ByteStart:     start,
 			ByteEnd:       end,
-			ByteHash:      hashString(text),
 			ToolCallsJSON: tcJSON,
 			ToolCallID:    m.ToolCallID,
 		})
@@ -95,7 +95,7 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 
 	stableText := stable.String()
 	volatileText := volatile.String()
-	manifest := ContextManifest{
+	manifest, err := contextasm.BuildSplitManifest(stableText, volatileText, segments, contextasm.ManifestIdentity{
 		ProfileID:            id.ProfileID,
 		Backend:              backendName,
 		BackendVersion:       id.BackendVersion,
@@ -104,10 +104,9 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 		PromptTemplateDigest: renderer.templateDigest,
 		RuntimeDigest:        runtimeDigest(cfg, id.Adapters),
 		AddBOS:               !cfg.DisableBOS,
-		StableBytes:          len(stableText),
-		TotalBytes:           len(stableText) + len(volatileText),
-		StableByteHash:       hashString(stableText),
-		Segments:             segments,
+	})
+	if err != nil {
+		return promptPlan{}, err
 	}
 	return promptPlan{
 		Stable:   PrefixInput{Text: stableText, Manifest: manifest, Tools: toolsJSON},

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/contenox/runtime/runtime/contextasm"
 )
 
 // manifest builds a ContextManifest with the fields the warm-reuse contract keys
@@ -50,6 +52,35 @@ func TestWarmReuse(t *testing.T) {
 	}
 	if warm.ReusedTokens != warm.PrefixTokens || warm.PrefilledTokens != 0 {
 		t.Fatalf("second call should be fully warm: reused=%d prefilled=%d prefix=%d", warm.ReusedTokens, warm.PrefilledTokens, warm.PrefixTokens)
+	}
+}
+
+func TestWarmReuseIgnoresVolatileManifestChange(t *testing.T) {
+	ctx := context.Background()
+	s := openSession(t, NewMemoryService(), 0)
+	firstManifest := manifest("h1", "tmpl-1")
+	firstManifest.StableBytes = len("stable")
+	firstManifest.TotalBytes = len("stable") + len("turn one")
+	firstManifest.Segments = []contextasm.ManifestSegment{
+		{Kind: "system", Stable: true, ByteStart: 0, ByteEnd: len("stable"), ByteHash: "stable-one"},
+		{Kind: "user", Stable: false, ByteStart: len("stable"), ByteEnd: len("stable") + len("turn one"), ByteHash: "volatile-one"},
+	}
+	secondManifest := firstManifest
+	secondManifest.TotalBytes = len("stable") + len("turn two is longer")
+	secondManifest.Segments = []contextasm.ManifestSegment{
+		{Kind: "system", Stable: true, ByteStart: 0, ByteEnd: len("stable"), ByteHash: "stable-one"},
+		{Kind: "user", Stable: false, ByteStart: len("stable"), ByteEnd: len("stable") + len("turn two is longer"), ByteHash: "volatile-two"},
+	}
+
+	if _, err := s.EnsurePrefix(ctx, PrefixInput{Text: "stable", Manifest: firstManifest}); err != nil {
+		t.Fatalf("EnsurePrefix first: %v", err)
+	}
+	warm, err := s.EnsurePrefix(ctx, PrefixInput{Text: "stable", Manifest: secondManifest})
+	if err != nil {
+		t.Fatalf("EnsurePrefix second: %v", err)
+	}
+	if warm.ReusedTokens != warm.PrefixTokens || warm.PrefilledTokens != 0 {
+		t.Fatalf("volatile-only manifest change should keep prefix warm: %+v", warm)
 	}
 }
 

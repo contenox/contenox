@@ -35,3 +35,14 @@ export function useUnloadModeld() {
     },
   });
 }
+
+export function useLoadModeld() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ model, expectedGeneration }: { model: string; expectedGeneration?: number }) =>
+      api.loadModeld(model, expectedGeneration),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: modeldKeys.all });
+    },
+  });
+}

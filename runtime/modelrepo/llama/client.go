@@ -35,8 +35,8 @@ func sessionCacheKey(ref modeldconn.ModelRef, cfg Config) string {
 	cfg = normalizeConfig(cfg)
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s/%s", ref.Type, ref.Name)
-	fmt.Fprintf(&b, "\x00model=%s\x00ctx=%d\x00batch=%d\x00threads=%d\x00gpu=%d\x00flash=%t\x00kv=%s",
-		ref.Digest, cfg.NumCtx, cfg.NumBatch, cfg.NumThreads, cfg.NumGpuLayers, cfg.FlashAttn, cfg.KVCacheType)
+	fmt.Fprintf(&b, "\x00model=%s\x00ctx=%d\x00planner=%d\x00batch=%d\x00threads=%d\x00gpu=%d\x00flash=%t\x00kv=%s",
+		ref.Digest, cfg.NumCtx, cfg.PlannerEffectiveContext, cfg.NumBatch, cfg.NumThreads, cfg.NumGpuLayers, cfg.FlashAttn, cfg.KVCacheType)
 	b.WriteString("\x00split=")
 	for i, v := range cfg.TensorSplit {
 		if i > 0 {

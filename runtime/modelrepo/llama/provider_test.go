@@ -2,7 +2,11 @@ package llama
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,11 +82,98 @@ func TestUnit_LlamaProvider_ModeldClampLeavesCapacitySafetyMargin(t *testing.T) 
 
 func TestUnit_LlamaProvider_UsesResolvedAutoGpuLayersFromModeld(t *testing.T) {
 	cfg := applyModeldInfoToConfig(Config{NumCtx: 8192}, transport.ModelInfo{
-		EffectiveContext:   8192,
-		RequestedGpuLayers: 0,
-		ResolvedGpuLayers:  27,
+		ModelMaxContext:         32768,
+		EffectiveContext:        8192,
+		PlannerEffectiveContext: 16384,
+		RequestedGpuLayers:      0,
+		ResolvedGpuLayers:       27,
 	})
 	if cfg.NumGpuLayers != 27 {
 		t.Fatalf("NumGpuLayers = %d, want resolved auto offload count", cfg.NumGpuLayers)
+	}
+	if cfg.PlannerEffectiveContext != 16384 {
+		t.Fatalf("PlannerEffectiveContext = %d, want modeld planner context", cfg.PlannerEffectiveContext)
+	}
+}
+
+func TestUnit_LlamaProvider_DescribeLeavesOmittedContextUnset(t *testing.T) {
+	old := sessionFactory
+	sessionFactory = nil
+	t.Cleanup(func() { sessionFactory = old })
+
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &recordingEmbedService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:         32768,
+			EffectiveContext:        24576,
+			PlannerEffectiveContext: 32768,
+			RuntimeName:             "llamacpp",
+			RuntimeDigest:           "test",
+		},
+	}
+	serveLlamaModeldForTest(t, svc)
+
+	got, err := newProvider("coder", root, modelrepo.CapabilityConfig{}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	if c.cfg.NumCtx != 8192 {
+		t.Fatalf("NumCtx = %d, want runtime default hot context", c.cfg.NumCtx)
+	}
+	if c.cfg.PlannerEffectiveContext != 32768 {
+		t.Fatalf("PlannerEffectiveContext = %d, want modeld planner context", c.cfg.PlannerEffectiveContext)
+	}
+	req := svc.lastDescribeRequest()
+	if req.Config.NumCtx != 0 {
+		t.Fatalf("Describe request NumCtx = %d, want unset so modeld can discover max", req.Config.NumCtx)
+	}
+}
+
+func TestUnit_LlamaProvider_ProfileAdaptersReachModelRef(t *testing.T) {
+	withSessionFactory(t, func(string, Config) (Session, error) { return nil, nil })
+
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapterBytes := []byte("fake adapter")
+	adapterPath := filepath.Join(modelDir, "style.gguf")
+	if err := os.WriteFile(adapterPath, adapterBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, profileFileName), []byte(`{
+		"adapters":[{"name":"style","path":"style.gguf"}],
+		"runtime":{"num_ctx":4096}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(adapterBytes)
+	wantDigest := hex.EncodeToString(sum[:])
+
+	got, err := newProvider("coder", root, modelrepo.CapabilityConfig{ContextLength: 4096}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	ref := c.ref()
+	if len(ref.Adapters) != 1 {
+		t.Fatalf("adapters = %#v, want one", ref.Adapters)
+	}
+	adapter := ref.Adapters[0]
+	if adapter.Name != "style" || adapter.Path != adapterPath || adapter.Digest != wantDigest || adapter.Scale != 1 {
+		t.Fatalf("unexpected adapter: %#v", adapter)
 	}
 }

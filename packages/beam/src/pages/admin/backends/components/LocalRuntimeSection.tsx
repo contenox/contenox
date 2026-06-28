@@ -11,10 +11,12 @@ import {
   TableCell,
   TableRow,
 } from '@contenox/ui';
-import { Power, RefreshCw } from 'lucide-react';
+import { Play, Power, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
+  ModeldAdapterInfo,
   ModeldCapacityResponse,
+  ModeldCapacityDevice,
   ModeldLocalModel,
   ModeldRuntimeConfig,
   ModeldSlotStatus,
@@ -36,6 +38,9 @@ type LocalRuntimeSectionProps = {
   capacityLoading: boolean;
   capacityFetching: boolean;
   capacityErrorMessage?: string;
+  onLoad: (model: string, generation?: number) => void;
+  isLoadingModel: boolean;
+  loadErrorMessage?: string;
   onUnload: (generation: number) => void;
   isUnloading: boolean;
   unloadErrorMessage?: string;
@@ -82,6 +87,30 @@ const formatBytes = (value: number | undefined): string | undefined => {
     unit += 1;
   }
   return `${next >= 10 || unit === 0 ? next.toFixed(0) : next.toFixed(1)} ${units[unit]}`;
+};
+
+const formatAdapters = (adapters: ModeldAdapterInfo[] | undefined): string | undefined => {
+  if (!adapters || adapters.length === 0) return undefined;
+  return adapters
+    .map(adapter => {
+      const id = adapter.name || adapter.digest || missingValue;
+      return adapter.scale ? `${id}@${adapter.scale}` : id;
+    })
+    .join(', ');
+};
+
+const formatDevices = (devices: ModeldCapacityDevice[] | undefined): string | undefined => {
+  if (!devices || devices.length === 0) return undefined;
+  return devices
+    .map(device => {
+      const name = device.name || device.description || device.type || missingValue;
+      const memory =
+        device.memoryFree || device.memoryTotal
+          ? ` ${formatBytes(device.memoryFree) || missingValue}/${formatBytes(device.memoryTotal) || missingValue}`
+          : '';
+      return `#${device.index} ${name}${memory}`;
+    })
+    .join('; ');
 };
 
 function DetailTable({ rows }: { rows: DetailRow[] }) {
@@ -163,6 +192,22 @@ function CapacityDetails({
           value: formatBytes(info.weightsBytes),
         },
         {
+          label: t('state.local_runtime_capacity_overhead'),
+          value: formatBytes(info.overheadBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_reserved'),
+          value: formatBytes(info.reservedBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_user_limit'),
+          value: formatBytes(info.userLimitBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_min_free'),
+          value: formatBytes(info.minFreeBytes),
+        },
+        {
           label: t('state.local_runtime_capacity_host_cold'),
           value: formatBytes(info.hostColdBudgetBytes),
         },
@@ -173,6 +218,10 @@ function CapacityDetails({
         {
           label: t('state.local_runtime_capacity_device_total'),
           value: formatBytes(info.deviceTotalBytes),
+        },
+        {
+          label: t('state.local_runtime_capacity_shared_display'),
+          value: info.sharedWithDisplay,
         },
         {
           label: t('state.local_runtime_capacity_gpu_offload'),
@@ -186,8 +235,15 @@ function CapacityDetails({
           label: t('state.local_runtime_capacity_resolved_layers'),
           value: info.resolvedGpuLayers,
         },
+        { label: t('state.local_runtime_capacity_sparse'), value: info.sparseAttention },
+        {
+          label: t('state.local_runtime_capacity_sliding_window'),
+          value: info.slidingWindowAttentionTokens,
+        },
         { label: t('state.local_runtime_capacity_runtime'), value: info.runtimeName },
         { label: t('state.local_runtime_capacity_runtime_digest'), value: info.runtimeDigest },
+        { label: t('state.local_runtime_capacity_runtime_system'), value: info.runtimeSystemInfo },
+        { label: t('state.local_runtime_capacity_devices'), value: formatDevices(info.devices) },
       ])
     : [];
 
@@ -233,6 +289,7 @@ function SlotDetails({ slot }: { slot: ModeldSlotStatus }) {
     { label: t('state.local_runtime_active_model'), value: active?.modelName },
     { label: t('state.local_runtime_model_type'), value: active?.type },
     { label: t('state.local_runtime_digest'), value: active?.digest },
+    { label: t('state.local_runtime_adapters'), value: formatAdapters(active?.adapters) },
     { label: t('state.local_runtime_generation'), value: active?.generation },
   ]);
 
@@ -300,6 +357,9 @@ export default function LocalRuntimeSection({
   capacityLoading,
   capacityFetching,
   capacityErrorMessage,
+  onLoad,
+  isLoadingModel,
+  loadErrorMessage,
   onUnload,
   isUnloading,
   unloadErrorMessage,
@@ -307,6 +367,7 @@ export default function LocalRuntimeSection({
 }: LocalRuntimeSectionProps) {
   const { t } = useTranslation();
   const activeGeneration = data?.slot?.active?.generation;
+  const canLoad = data?.available && selectedModelId.trim().length > 0 && !isLoadingModel;
   const statusRows = data
     ? presentRows([
         { label: t('state.local_runtime_daemon_state'), value: data.state },
@@ -325,6 +386,17 @@ export default function LocalRuntimeSection({
     <div className="space-y-6">
       <Section title={t('state.local_runtime_title')} description={t('state.local_runtime_intro')}>
         <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={() => onLoad(selectedModelId, activeGeneration)}
+            isLoading={isLoadingModel}
+            disabled={!canLoad}
+            className="gap-2">
+            <Play className="h-4 w-4" aria-hidden="true" />
+            {t('state.local_runtime_load')}
+          </Button>
           <Button
             type="button"
             variant="danger"
@@ -354,6 +426,7 @@ export default function LocalRuntimeSection({
         {isError && (
           <Panel variant="error">{errorMessage || t('state.local_runtime_load_error')}</Panel>
         )}
+        {loadErrorMessage && <Panel variant="error">{loadErrorMessage}</Panel>}
         {unloadErrorMessage && <Panel variant="error">{unloadErrorMessage}</Panel>}
       </Section>
 

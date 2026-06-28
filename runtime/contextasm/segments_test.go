@@ -1,6 +1,9 @@
 package contextasm
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestUnit_ContextasmAssembleManifest_StableHashIgnoresVolatileChange(t *testing.T) {
 	id := ManifestIdentity{
@@ -98,5 +101,60 @@ func TestUnit_ContextasmAssembleManifest_PopulatesCacheClass(t *testing.T) {
 	}
 	if byKind["user"] != "volatile" {
 		t.Errorf("user cache_class = %q, want volatile", byKind["user"])
+	}
+}
+
+func TestUnit_ContextasmBuildSplitManifest_NormalizesIdentityHashesAndClasses(t *testing.T) {
+	stable := "rules"
+	volatile := "question"
+	manifest, err := BuildSplitManifest(stable, volatile, []ManifestSegment{
+		{Kind: "system", Stable: true, ByteStart: 0, ByteEnd: len(stable)},
+		{Kind: "user", Stable: false, ByteStart: len(stable), ByteEnd: len(stable) + len(volatile)},
+	}, ManifestIdentity{
+		ProfileID:            "coder",
+		Backend:              "llama",
+		BackendVersion:       "v1",
+		ModelDigest:          "model",
+		PromptFormat:         "chatml",
+		PromptTemplateDigest: "template",
+		RuntimeDigest:        "runtime",
+		AddBOS:               true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.ProfileID != "coder" || manifest.Backend != "llama" || manifest.RuntimeDigest != "runtime" || !manifest.AddBOS {
+		t.Fatalf("identity not copied into manifest: %+v", manifest)
+	}
+	if manifest.StableBytes != len(stable) || manifest.TotalBytes != len(stable)+len(volatile) {
+		t.Fatalf("byte counts = stable %d total %d", manifest.StableBytes, manifest.TotalBytes)
+	}
+	if manifest.StableByteHash != HashString(stable) {
+		t.Fatalf("StableByteHash = %q, want hash of stable text", manifest.StableByteHash)
+	}
+	if len(manifest.Segments) != 2 {
+		t.Fatalf("segments = %d, want 2", len(manifest.Segments))
+	}
+	if manifest.Segments[0].ByteHash != HashString(stable) || manifest.Segments[0].CacheClass != ClassTaskPinned.Tag() {
+		t.Fatalf("stable segment not normalized: %+v", manifest.Segments[0])
+	}
+	if manifest.Segments[1].ByteHash != HashString(volatile) || manifest.Segments[1].CacheClass != ClassVolatile.Tag() {
+		t.Fatalf("volatile segment not normalized: %+v", manifest.Segments[1])
+	}
+}
+
+func TestUnit_ContextasmBuildSplitManifest_RejectsInvalidRangesAndHashes(t *testing.T) {
+	_, err := BuildSplitManifest("rules", "ask", []ManifestSegment{
+		{Kind: "user", Stable: false, ByteStart: 0, ByteEnd: 3},
+	}, ManifestIdentity{})
+	if !errors.Is(err, ErrManifestMismatch) {
+		t.Fatalf("volatile segment before stable split err = %v, want ErrManifestMismatch", err)
+	}
+
+	_, err = BuildSplitManifest("rules", "", []ManifestSegment{
+		{Kind: "system", Stable: true, ByteStart: 0, ByteEnd: 5, ByteHash: "wrong"},
+	}, ManifestIdentity{})
+	if !errors.Is(err, ErrManifestMismatch) {
+		t.Fatalf("bad byte hash err = %v, want ErrManifestMismatch", err)
 	}
 }

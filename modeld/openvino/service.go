@@ -130,10 +130,10 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	if err != nil {
 		return nil, err
 	}
-	// The OpenVINO-specific tuning (KV precision, sparse attention, cache size) is
-	// model-driven: read from the model's own contenox-openvino.json profile, not
-	// hardcoded. transport.Config carries only the neutral context window; the
-	// device (incl. NPU) is resolved from the environment.
+	// The OpenVINO-specific tuning (device, KV precision, sparse attention, cache
+	// size) is model-driven: read from the model's own contenox-openvino.json
+	// profile, with the environment as the device fallback. transport.Config
+	// carries only the neutral context window.
 	genaiCfg := genAIConfigFromProfile(req.Path, resolveDevice())
 	// Enforce the residency policy with OpenVINO's native sink+recent+evictable
 	// cache eviction (the declarative parallel to the llama slide). The budget is
@@ -211,7 +211,8 @@ func (s *Service) Embed(ctx context.Context, req transport.EmbedRequest) (transp
 	if req.Type != "" && req.Type != "openvino" {
 		return transport.EmbedResult{}, fmt.Errorf("%w: requested %q, this daemon serves openvino", transport.ErrBackendMismatch, req.Type)
 	}
-	backend, err := newEmbedSession(req.Path, resolveDevice())
+	genaiCfg := genAIConfigFromProfile(req.Path, resolveDevice())
+	backend, err := newEmbedSession(req.Path, genaiCfg.Device)
 	if err != nil {
 		return transport.EmbedResult{}, err
 	}
@@ -289,7 +290,8 @@ func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Con
 
 func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInfo, error) {
 	params := openvinoModelParams(req.Path)
-	device := resolveDevice()
+	genai := genAIConfigFromProfile(req.Path, resolveDevice())
+	device := genai.Device
 	st, err := capacity.Snapshot(s.memorySource(device))
 	if err != nil {
 		return transport.ModelInfo{}, fmt.Errorf("openvino capacity memory probe: %w", err)
@@ -298,7 +300,6 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if err != nil {
 		return transport.ModelInfo{}, err
 	}
-	genai := genAIConfigFromProfile(req.Path, device)
 	kvBytes := capacity.KVBytesPerToken(params.NumHiddenLayers, params.kvHeads(), params.headDim(), genai.KVCachePrecision)
 	resolved := capacity.Resolve(capacity.Params{
 		ModelMaxCtx:         params.MaxPositionEmbeddings,

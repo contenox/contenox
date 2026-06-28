@@ -12,9 +12,9 @@ import (
 const profileFileName = "contenox-openvino.json"
 
 // modelProfile is the declared, tested profile beside an OpenVINO IR model. The
-// runtime only needs the capability limits and (optionally) a device hint;
-// device selection and GenAI pipeline knobs are owned by modeld, so those fields
-// are accepted for forward/backward compatibility but not consumed here.
+// runtime consumes capability limits and adapter identity. Device selection and
+// GenAI pipeline knobs are consumed by modeld, so the runtime accepts those fields
+// for profile compatibility without interpreting them here.
 type modelProfile struct {
 	ContextLength   int              `json:"context_length,omitempty"`
 	MaxOutputTokens int              `json:"max_output_tokens,omitempty"`
@@ -25,8 +25,16 @@ type modelProfile struct {
 	CanThink        bool             `json:"can_think,omitempty"`
 	Device          string           `json:"device,omitempty"`
 	GenAI           json.RawMessage  `json:"genai,omitempty"`
+	Adapters        []adapterProfile `json:"adapters,omitempty"`
 	ToolCalls       toolCallsProfile `json:"tool_calls,omitempty"`
 	Reasoning       reasoningProfile `json:"reasoning,omitempty"`
+}
+
+type adapterProfile struct {
+	Name   string   `json:"name,omitempty"`
+	Path   string   `json:"path,omitempty"`
+	Digest string   `json:"digest,omitempty"`
+	Scale  *float32 `json:"scale,omitempty"`
 }
 
 // toolCallsProfile declares the OpenVINO GenAI parser or structured-output

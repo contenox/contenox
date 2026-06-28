@@ -34,8 +34,10 @@ func sessionCacheKey(ref modeldconn.ModelRef, cfg Config) string {
 	cfg = normalizeConfig(cfg)
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s/%s", ref.Type, ref.Name)
-	fmt.Fprintf(&b, "\x00model=%s\x00ctx=%d\x00prompt=%s\x00template=%s",
-		ref.Digest, cfg.NumCtx, cfg.PromptFormat, cfg.PromptTemplateDigest)
+	fmt.Fprintf(&b, "\x00model=%s\x00ctx=%d\x00planner=%d\x00prompt=%s\x00template=%s",
+		ref.Digest, cfg.NumCtx, cfg.PlannerEffectiveContext, cfg.PromptFormat, cfg.PromptTemplateDigest)
+	b.WriteString("\x00adapters=")
+	appendAdapterIdentity(&b, ref.Adapters)
 	return b.String()
 }
 
@@ -46,6 +48,7 @@ type client struct {
 	modelDigest     string
 	backendVersion  string
 	cfg             Config
+	adapters        []transport.AdapterSpec
 	maxOutputTokens int
 	toolProtocol    string // profile-declared OpenVINO tool protocol ("" = tools unsupported)
 	reasoningParser string // profile-declared complete reasoning parser ("" = no complete parser)
@@ -55,7 +58,7 @@ type client struct {
 // ref is the typed model handle this client opens sessions with: logical name +
 // backend type + content digest for identity, plus the resolved IR directory.
 func (c *client) ref() modeldconn.ModelRef {
-	return modeldconn.ModelRef{Name: c.modelName, Type: "openvino", Digest: c.modelDigest, Path: c.modelPath}
+	return modeldconn.ModelRef{Name: c.modelName, Type: "openvino", Digest: c.modelDigest, Path: c.modelPath, Adapters: c.adapters}
 }
 
 func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (modelrepo.ChatResult, error) {
@@ -301,6 +304,7 @@ func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], me
 		ProfileID:      c.profileID,
 		ModelDigest:    c.modelDigest,
 		BackendVersion: c.backendVersion,
+		Adapters:       c.adapters,
 	}, toolsJSON)
 	if err != nil {
 		return err

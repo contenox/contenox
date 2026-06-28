@@ -251,8 +251,9 @@ func safeModelDir(root, model string) (string, error) {
 }
 
 type llamaProfile struct {
-	ModelDigest   string `json:"model_digest,omitempty"`
-	ContextLength int    `json:"context_length,omitempty"`
+	ModelDigest   string           `json:"model_digest,omitempty"`
+	ContextLength int              `json:"context_length,omitempty"`
+	Adapters      []adapterProfile `json:"adapters,omitempty"`
 	Prompt        struct {
 		Format         string `json:"format,omitempty"`
 		TemplateDigest string `json:"template_digest,omitempty"`
@@ -270,6 +271,13 @@ type llamaProfile struct {
 	Reasoning struct {
 		Format string `json:"format,omitempty"`
 	} `json:"reasoning,omitempty"`
+}
+
+type adapterProfile struct {
+	Name   string   `json:"name,omitempty"`
+	Path   string   `json:"path,omitempty"`
+	Digest string   `json:"digest,omitempty"`
+	Scale  *float32 `json:"scale,omitempty"`
 }
 
 func resolveLlamaModel(root, name string, pulled statetype.ModelPullStatus) (modeldconn.ModelRef, transport.Config, string, error) {
@@ -294,7 +302,11 @@ func resolveLlamaModel(root, name string, pulled statetype.ModelPullStatus) (mod
 			return modeldconn.ModelRef{}, transport.Config{}, "", err
 		}
 	}
-	return modeldconn.ModelRef{Name: name, Type: "llama", Digest: digest, Path: modelPath}, cfg, digest, nil
+	adapters, err := resolveAdapterProfiles(dir, profile.Adapters)
+	if err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
+	return modeldconn.ModelRef{Name: name, Type: "llama", Digest: digest, Path: modelPath, Adapters: adapters}, cfg, digest, nil
 }
 
 func llamaTransportConfig(profile llamaProfile, pulled statetype.ModelPullStatus) transport.Config {
@@ -333,7 +345,8 @@ func llamaTransportConfig(profile llamaProfile, pulled statetype.ModelPullStatus
 }
 
 type openvinoProfile struct {
-	ContextLength int `json:"context_length,omitempty"`
+	ContextLength int              `json:"context_length,omitempty"`
+	Adapters      []adapterProfile `json:"adapters,omitempty"`
 }
 
 func resolveOpenVINOModel(root, name string, pulled statetype.ModelPullStatus) (modeldconn.ModelRef, transport.Config, string, error) {
@@ -350,12 +363,51 @@ func resolveOpenVINOModel(root, name string, pulled statetype.ModelPullStatus) (
 		return modeldconn.ModelRef{}, transport.Config{}, "", err
 	}
 	digest, templateDigest := openvinoIdentity(dir)
+	adapters, err := resolveAdapterProfiles(dir, profile.Adapters)
+	if err != nil {
+		return modeldconn.ModelRef{}, transport.Config{}, "", err
+	}
 	cfg := transport.Config{
 		NumCtx:               firstPositive(profile.ContextLength, pulled.ContextLength, 8192),
 		PromptFormat:         "openvino-chat-template",
 		PromptTemplateDigest: templateDigest,
 	}
-	return modeldconn.ModelRef{Name: name, Type: "openvino", Digest: digest, Path: dir}, cfg, digest, nil
+	return modeldconn.ModelRef{Name: name, Type: "openvino", Digest: digest, Path: dir, Adapters: adapters}, cfg, digest, nil
+}
+
+func resolveAdapterProfiles(profileDir string, adapters []adapterProfile) ([]transport.AdapterSpec, error) {
+	if len(adapters) == 0 {
+		return nil, nil
+	}
+	out := make([]transport.AdapterSpec, 0, len(adapters))
+	for i, adapter := range adapters {
+		path := strings.TrimSpace(adapter.Path)
+		if path == "" {
+			return nil, apiframework.BadRequest(fmt.Sprintf("local model profile adapter[%d] is missing path", i))
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(profileDir, path)
+		}
+		digest := strings.TrimSpace(adapter.Digest)
+		if digest == "" {
+			var err error
+			digest, err = fileSHA256(path)
+			if err != nil {
+				return nil, err
+			}
+		}
+		scale := float32(1)
+		if adapter.Scale != nil {
+			scale = *adapter.Scale
+		}
+		out = append(out, transport.AdapterSpec{
+			Name:   strings.TrimSpace(adapter.Name),
+			Path:   path,
+			Digest: digest,
+			Scale:  scale,
+		})
+	}
+	return out, nil
 }
 
 func hasOpenVINOEntrypoint(dir string) bool {

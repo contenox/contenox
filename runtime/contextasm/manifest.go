@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 var ErrManifestMismatch = errors.New("contextasm: context manifest mismatch")
@@ -74,6 +75,95 @@ type ContextManifest struct {
 	StableTokenHash      string            `json:"stable_token_hash,omitempty"`
 	VolatileTokenHash    string            `json:"volatile_token_hash,omitempty"`
 	Segments             []ManifestSegment `json:"segments,omitempty"`
+}
+
+// BuildSplitManifest constructs a manifest for text that has already been split
+// into stable and volatile parts by a backend-specific prompt planner. It owns
+// the shared manifest invariants only: byte ranges, byte hashes, cache classes,
+// stable/total byte counts, and opaque runtime identity. It deliberately does
+// not render prompts, tokenize text, or know anything about a backend.
+func BuildSplitManifest(stableText, volatileText string, segments []ManifestSegment, id ManifestIdentity) (ContextManifest, error) {
+	stableBytes := len(stableText)
+	totalBytes := stableBytes + len(volatileText)
+	outSegments := append([]ManifestSegment(nil), segments...)
+	if len(outSegments) > 0 {
+		if err := normalizeSplitSegments(stableText+volatileText, stableBytes, totalBytes, outSegments); err != nil {
+			return ContextManifest{}, err
+		}
+	}
+	return ContextManifest{
+		ProfileID:            id.ProfileID,
+		Backend:              id.Backend,
+		BackendVersion:       id.BackendVersion,
+		ModelDigest:          id.ModelDigest,
+		PromptFormat:         id.PromptFormat,
+		PromptTemplateDigest: id.PromptTemplateDigest,
+		RuntimeDigest:        id.RuntimeDigest,
+		AddBOS:               id.AddBOS,
+		StableBytes:          stableBytes,
+		TotalBytes:           totalBytes,
+		StableByteHash:       HashString(stableText),
+		Segments:             outSegments,
+	}, nil
+}
+
+func normalizeSplitSegments(fullText string, stableBytes, totalBytes int, segments []ManifestSegment) error {
+	stableCursor := 0
+	volatileCursor := stableBytes
+	seenVolatile := false
+	for i := range segments {
+		seg := &segments[i]
+		if seg.ByteStart < 0 || seg.ByteEnd < seg.ByteStart || seg.ByteEnd > totalBytes {
+			return NewManifestMismatchError(fmt.Sprintf("segment %q byte range is outside manifest text", seg.Kind))
+		}
+		if seg.Stable {
+			if seenVolatile {
+				return NewManifestMismatchError("stable segment appears after volatile segment")
+			}
+			if seg.ByteStart != stableCursor || seg.ByteEnd > stableBytes {
+				return NewManifestMismatchError("stable segment byte ranges are not contiguous")
+			}
+			stableCursor = seg.ByteEnd
+		} else {
+			seenVolatile = true
+			if seg.ByteStart != volatileCursor || seg.ByteEnd < stableBytes {
+				return NewManifestMismatchError("volatile segment byte ranges are not contiguous")
+			}
+			volatileCursor = seg.ByteEnd
+		}
+		text := fullText[seg.ByteStart:seg.ByteEnd]
+		wantHash := HashString(text)
+		if seg.ByteHash != "" && seg.ByteHash != wantHash {
+			return NewManifestMismatchError(fmt.Sprintf("segment %q byte hash does not match text", seg.Kind))
+		}
+		seg.ByteHash = wantHash
+		if seg.CacheClass == "" {
+			seg.CacheClass = defaultCacheClass(seg.Kind, seg.Stable)
+		}
+	}
+	if stableCursor != stableBytes {
+		return NewManifestMismatchError("stable segments do not cover stable text")
+	}
+	if volatileCursor != totalBytes {
+		return NewManifestMismatchError("volatile segments do not cover volatile text")
+	}
+	return nil
+}
+
+func defaultCacheClass(kind string, stable bool) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "system", "tools", "repo_rules":
+		return ClassTaskPinned.Tag()
+	case "repo_map", "pinned":
+		return ClassRepoMap.Tag()
+	case "diff", "terminal", "user", "assistant", "tool", "assistant_prompt":
+		return ClassVolatile.Tag()
+	default:
+		if stable {
+			return ClassTaskPinned.Tag()
+		}
+		return ClassVolatile.Tag()
+	}
 }
 
 // TokenizeFunc tokenizes text under the exact backend model/profile. addSpecial

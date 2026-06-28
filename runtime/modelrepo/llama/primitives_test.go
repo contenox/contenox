@@ -103,6 +103,9 @@ func TestUnit_RuntimeDigest_IncludesAdapters(t *testing.T) {
 	a := runtimeDigest(cfg, []AdapterSpec{{Digest: "adapter-a", Scale: 1}})
 	b := runtimeDigest(cfg, []AdapterSpec{{Digest: "adapter-b", Scale: 1}})
 	aScale2 := runtimeDigest(cfg, []AdapterSpec{{Digest: "adapter-a", Scale: 2}})
+	plannerCfg := cfg
+	plannerCfg.PlannerEffectiveContext = 16384
+	planner := runtimeDigest(plannerCfg, nil)
 
 	for _, c := range []struct {
 		name string
@@ -111,6 +114,7 @@ func TestUnit_RuntimeDigest_IncludesAdapters(t *testing.T) {
 		{"base vs +A", base, a},
 		{"+A vs +B", a, b},
 		{"+A scale", a, aScale2},
+		{"planner context", base, planner},
 	} {
 		if c.x == c.y {
 			t.Fatalf("runtimeDigest must differ across adapter identity: %s", c.name)
@@ -139,6 +143,7 @@ func TestUnit_LocalNodeSessionCacheKey_IncludesRuntimeIdentity(t *testing.T) {
 
 	cases := []Config{
 		func() Config { c := base; c.NumCtx = 16384; return c }(),
+		func() Config { c := base; c.PlannerEffectiveContext = 32768; return c }(),
 		func() Config { c := base; c.NumBatch = 1024; return c }(),
 		func() Config { c := base; c.NumThreads = 16; return c }(),
 		func() Config { c := base; c.NumGpuLayers = 0; return c }(),

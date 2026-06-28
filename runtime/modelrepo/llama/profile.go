@@ -21,10 +21,18 @@ type modelProfile struct {
 	ContextLength   int              `json:"context_length,omitempty"`
 	MaxOutputTokens int              `json:"max_output_tokens,omitempty"`
 	CanThink        bool             `json:"can_think,omitempty"`
+	Adapters        []adapterProfile `json:"adapters,omitempty"`
 	Prompt          promptProfile    `json:"prompt,omitempty"`
 	Runtime         runtimeProfile   `json:"runtime,omitempty"`
 	ToolCalls       toolCallsProfile `json:"tool_calls,omitempty"`
 	Reasoning       reasoningProfile `json:"reasoning,omitempty"`
+}
+
+type adapterProfile struct {
+	Name   string   `json:"name,omitempty"`
+	Path   string   `json:"path,omitempty"`
+	Digest string   `json:"digest,omitempty"`
+	Scale  *float32 `json:"scale,omitempty"`
 }
 
 // toolCallsProfile certifies that this model supports a known native tool-call
@@ -123,6 +131,16 @@ func (p modelProfile) config() Config {
 		}
 	}
 	return normalizeConfig(c)
+}
+
+// describeConfig preserves an omitted num_ctx as "let modeld discover the
+// model/device maximum" while still honoring explicit profile or env requests.
+func (p modelProfile) describeConfig() Config {
+	cfg := p.config()
+	if p.Runtime.NumCtx <= 0 && os.Getenv("CONTENOX_LLAMA_CTX") == "" {
+		cfg.NumCtx = 0
+	}
+	return cfg
 }
 
 func (p modelProfile) capabilityConfig() modelrepo.CapabilityConfig {

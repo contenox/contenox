@@ -104,15 +104,23 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 			return nil, err
 		}
 	}
+	adapters, err := resolveProfileAdapters(dir, profile.Adapters)
+	if err != nil {
+		return nil, err
+	}
 	profileID := profile.ProfileID
 	if profileID == "" {
 		profileID = p.name
 	}
 	cfg := clampContext(profile.config(), p.caps.ContextLength)
-	ref := modeldconn.ModelRef{Name: p.name, Type: "llama", Digest: modelDigest, Path: modelPath}
+	ref := modeldconn.ModelRef{Name: p.name, Type: "llama", Digest: modelDigest, Path: modelPath, Adapters: adapters}
 	backendID := backendVersion()
 	if sessionFactory == nil {
-		if info, derr := modeldconn.Describe(ctx, ref, transport.Config(cfg)); derr == nil {
+		describeCfg := profile.describeConfig()
+		if p.caps.ContextLength > 0 && describeCfg.NumCtx > p.caps.ContextLength {
+			describeCfg.NumCtx = p.caps.ContextLength
+		}
+		if info, derr := modeldconn.Describe(ctx, ref, transport.Config(describeCfg)); derr == nil {
 			cfg = applyModeldInfoToConfig(cfg, info)
 			if v := backendVersionFromModelInfo(info); v != "" {
 				backendID = v
@@ -126,6 +134,7 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		modelDigest:       modelDigest,
 		backendVersion:    backendID,
 		cfg:               cfg,
+		adapters:          adapters,
 		maxOutputTokens:   p.caps.MaxOutputTokens,
 		toolProtocol:      profile.ToolCalls.Protocol,
 		reasoningProtocol: profile.Reasoning.Protocol,
@@ -185,6 +194,7 @@ func applyModeldInfoToConfig(cfg Config, info transport.ModelInfo) Config {
 	if info.EffectiveContext > 0 {
 		cfg = clampContextForModeld(cfg, info.EffectiveContext)
 	}
+	cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
 	if info.RequestedGpuLayers > 0 || info.ResolvedGpuLayers > 0 {
 		cfg.NumGpuLayers = info.ResolvedGpuLayers
 	}

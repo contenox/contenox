@@ -46,12 +46,26 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			return nil, err
 		}
 		caps := profile.capabilityConfig()
-		// Context window is modeld's physical hot-context decision. Profile config
-		// is only the request/cap; the daemon may reduce it for device memory or a
-		// user memory ceiling.
+		modelDigest := profile.ModelDigest
+		if modelDigest == "" {
+			modelDigest, err = modelFileDigest(modelPath)
+			if err != nil {
+				return nil, err
+			}
+		}
+		adapters, err := resolveProfileAdapters(dir, profile.Adapters)
+		if err != nil {
+			return nil, err
+		}
+		// Context window is modeld's logical planner decision when available. The
+		// dense effective context remains the hot KV budget, but a configured
+		// host-cold budget lets the runtime assemble longer contexts that modeld
+		// parks cold behind the session boundary.
 		if sessionFactory == nil {
-			info, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "llama", Path: modelPath}, transport.Config(profile.config()))
+			info, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "llama", Digest: modelDigest, Path: modelPath, Adapters: adapters}, transport.Config(profile.describeConfig()))
 			switch {
+			case derr == nil && info.PlannerEffectiveContext > 0:
+				caps.ContextLength = info.PlannerEffectiveContext
 			case derr == nil && info.EffectiveContext > 0:
 				caps.ContextLength = info.EffectiveContext
 			case modeldconn.Available():

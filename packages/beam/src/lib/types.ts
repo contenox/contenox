@@ -57,10 +57,17 @@ export type ModeldRuntimeConfig = {
   reasoningFormat?: string;
 };
 
+export type ModeldAdapterInfo = {
+  name?: string;
+  digest?: string;
+  scale?: number;
+};
+
 export type ModeldActiveModel = {
   modelName?: string;
   type?: string;
   digest?: string;
+  adapters?: ModeldAdapterInfo[];
   config?: ModeldRuntimeConfig;
   generation: number;
 };
@@ -154,6 +161,12 @@ export type ModeldCapacityResponse = {
 export type ModeldUnloadResponse = {
   unloaded: boolean;
   expectedGeneration: number;
+};
+
+export type ModeldLoadResponse = {
+  loaded: boolean;
+  expectedGeneration?: number;
+  active: ModeldActiveModel;
 };
 
 export type ObservedModel = {

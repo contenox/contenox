@@ -16,6 +16,7 @@ import {
   LocalHook,
   MCPServer,
   ModeldCapacityResponse,
+  ModeldLoadResponse,
   ModelDescriptor,
   ModeldLocalModel,
   ModeldStatusResponse,
@@ -208,6 +209,14 @@ export const api = {
   getModeldModels: () => apiFetch<ModeldLocalModel[]>('/api/modeld/models'),
   getModeldCapacity: (model: string) =>
     apiFetch<ModeldCapacityResponse>(`/api/modeld/capacity?model=${encodeURIComponent(model)}`),
+  loadModeld: (model: string, expectedGeneration?: number) =>
+    apiFetch<ModeldLoadResponse>(
+      '/api/modeld/load',
+      options('POST', {
+        model,
+        ...(expectedGeneration === undefined ? {} : { expectedGeneration }),
+      }),
+    ),
   unloadModeld: (expectedGeneration: number) =>
     apiFetch<ModeldUnloadResponse>('/api/modeld/unload', options('POST', { expectedGeneration })),
 

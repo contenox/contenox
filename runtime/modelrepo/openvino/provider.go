@@ -103,13 +103,17 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	// content-addresses the model, and the template digest tracks its Jinja chat
 	// template, which modeld applies via the IR tokenizer.
 	modelDigest, templateDigest := modelIdentity(dir)
+	adapters, err := resolveProfileAdapters(dir, profile.Adapters)
+	if err != nil {
+		return nil, err
+	}
 	profileID := p.name
 	cfg := Config{
 		NumCtx:               numCtx,
 		PromptFormat:         "openvino-chat-template",
 		PromptTemplateDigest: templateDigest,
 	}
-	ref := modeldconn.ModelRef{Name: p.name, Type: "openvino", Digest: modelDigest, Path: dir}
+	ref := modeldconn.ModelRef{Name: p.name, Type: "openvino", Digest: modelDigest, Path: dir, Adapters: adapters}
 	backendID := backendVersion()
 	if info, derr := modeldconn.Describe(ctx, ref, transport.Config(cfg)); derr == nil {
 		if info.EffectiveContext > 0 {
@@ -117,6 +121,7 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		} else {
 			cfg = normalizeConfig(cfg)
 		}
+		cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
 		if v := backendVersionFromModelInfo(info); v != "" {
 			backendID = v
 		}
@@ -133,6 +138,7 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		reasoningParser: reasoningParser,
 		reasoningStream: reasoningStream,
 		cfg:             cfg,
+		adapters:        adapters,
 		maxOutputTokens: maxOut,
 	}, nil
 }

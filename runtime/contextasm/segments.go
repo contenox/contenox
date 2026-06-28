@@ -121,30 +121,19 @@ func AssembleManifest(segs []Segment, id ManifestIdentity) (prompt string, manif
 			stableLen = end
 		}
 		manifestSegments = append(manifestSegments, ManifestSegment{
-			Kind:       s.Kind.Tag(),
-			Stable:     stable,
-			CacheClass: s.Kind.CacheClass().Tag(),
-			ByteStart:  start,
-			ByteEnd:    end,
-			ByteHash:   HashString(text),
+			Kind:      s.Kind.Tag(),
+			Stable:    stable,
+			ByteStart: start,
+			ByteEnd:   end,
 		})
 	}
 
 	full := b.String()
-	return full, ContextManifest{
-		ProfileID:            id.ProfileID,
-		Backend:              id.Backend,
-		BackendVersion:       id.BackendVersion,
-		ModelDigest:          id.ModelDigest,
-		PromptFormat:         id.PromptFormat,
-		PromptTemplateDigest: id.PromptTemplateDigest,
-		RuntimeDigest:        id.RuntimeDigest,
-		AddBOS:               id.AddBOS,
-		StableBytes:          stableLen,
-		TotalBytes:           len(full),
-		StableByteHash:       HashString(full[:stableLen]),
-		Segments:             manifestSegments,
+	manifest, err := BuildSplitManifest(full[:stableLen], full[stableLen:], manifestSegments, id)
+	if err != nil {
+		return full, ContextManifest{}
 	}
+	return full, manifest
 }
 
 func renderSegment(s Segment) string {

@@ -3,10 +3,12 @@ package openvino
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 const backendName = "openvino"
@@ -33,12 +35,22 @@ func normalizeConfig(cfg Config) Config {
 	return cfg
 }
 
-func runtimeDigest(cfg Config) string {
+func runtimeDigest(cfg Config, adapters []transport.AdapterSpec) string {
 	cfg = normalizeConfig(cfg)
+	type adapterIdentity struct {
+		Digest string  `json:"digest,omitempty"`
+		Scale  float32 `json:"scale,omitempty"`
+	}
+	var ids []adapterIdentity
+	for _, adapter := range adapters {
+		ids = append(ids, adapterIdentity{Digest: adapter.Digest, Scale: adapter.Scale})
+	}
 	b, _ := json.Marshal(struct {
-		NumCtx int    `json:"num_ctx"`
-		Format string `json:"prompt_format"`
-	}{cfg.NumCtx, cfg.PromptFormat})
+		NumCtx                  int               `json:"num_ctx"`
+		PlannerEffectiveContext int               `json:"planner_effective_context,omitempty"`
+		Format                  string            `json:"prompt_format"`
+		Adapters                []adapterIdentity `json:"adapters,omitempty"`
+	}{cfg.NumCtx, cfg.PlannerEffectiveContext, cfg.PromptFormat, ids})
 	return hashString(string(b))
 }
 
@@ -46,6 +58,16 @@ type promptIdentity struct {
 	ProfileID      string
 	ModelDigest    string
 	BackendVersion string
+	Adapters       []transport.AdapterSpec
+}
+
+func appendAdapterIdentity(b *strings.Builder, adapters []transport.AdapterSpec) {
+	for i, adapter := range adapters {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(b, "%s@%s", adapter.Digest, strconv.FormatFloat(float64(adapter.Scale), 'g', -1, 32))
+	}
 }
 
 type promptPlan struct {
@@ -98,7 +120,6 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 			Stable:        isStable,
 			ByteStart:     start,
 			ByteEnd:       end,
-			ByteHash:      hashString(text),
 			ToolCallsJSON: tcJSON,
 			ToolCallID:    m.ToolCallID,
 		})
@@ -106,19 +127,18 @@ func buildPromptPlan(messages []modelrepo.Message, cfg Config, id promptIdentity
 
 	stableText := stable.String()
 	volatileText := volatile.String()
-	manifest := ContextManifest{
+	manifest, err := contextasm.BuildSplitManifest(stableText, volatileText, segments, contextasm.ManifestIdentity{
 		ProfileID:            id.ProfileID,
 		Backend:              backendName,
 		BackendVersion:       id.BackendVersion,
 		ModelDigest:          id.ModelDigest,
 		PromptFormat:         cfg.PromptFormat,
 		PromptTemplateDigest: cfg.PromptTemplateDigest,
-		RuntimeDigest:        runtimeDigest(cfg),
+		RuntimeDigest:        runtimeDigest(cfg, id.Adapters),
 		AddBOS:               false,
-		StableBytes:          len(stableText),
-		TotalBytes:           len(stableText) + len(volatileText),
-		StableByteHash:       hashString(stableText),
-		Segments:             segments,
+	})
+	if err != nil {
+		return promptPlan{}, err
 	}
 	return promptPlan{
 		Stable:   PrefixInput{Text: stableText, Manifest: manifest, Tools: toolsJSON},

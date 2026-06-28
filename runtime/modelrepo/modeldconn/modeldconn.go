@@ -172,8 +172,9 @@ func Status(ctx context.Context) (transport.DaemonStatus, error) {
 }
 
 // LoadModel explicitly activates the single modeld slot, switching away from an
-// idle active model when needed.
-func LoadModel(ctx context.Context, ref ModelRef, cfg transport.Config) (transport.ActiveModel, error) {
+// idle active model when needed. expectedGeneration, when provided, makes the
+// switch conditional on the caller's current slot view.
+func LoadModel(ctx context.Context, ref ModelRef, cfg transport.Config, expectedGeneration ...uint64) (transport.ActiveModel, error) {
 	st := detector().Probe(ctx)
 	if st.State != modeldprobe.StateRunning {
 		return transport.ActiveModel{}, st.Err()
@@ -182,7 +183,11 @@ func LoadModel(ctx context.Context, ref ModelRef, cfg transport.Config) (transpo
 	if err != nil {
 		return transport.ActiveModel{}, err
 	}
-	return c.LoadModel(ctx, loadRequest(st.Instance, ref, cfg))
+	req := loadRequest(st.Instance, ref, cfg)
+	if len(expectedGeneration) > 0 {
+		req.ExpectedGeneration = expectedGeneration[0]
+	}
+	return c.LoadModel(ctx, req)
 }
 
 // UnloadModel releases the active modeld slot.
