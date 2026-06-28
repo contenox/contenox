@@ -66,7 +66,20 @@ func (p *provider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LL
 	if err != nil {
 		return nil, err
 	}
-	return &embedClient{modelPath: filepath.Join(dir, "model.gguf"), cfg: profile.config()}, nil
+	modelPath := filepath.Join(dir, "model.gguf")
+	modelDigest := profile.ModelDigest
+	if modelDigest == "" {
+		modelDigest, err = modelFileDigest(modelPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &embedClient{
+		modelName:   p.name,
+		modelPath:   modelPath,
+		modelDigest: modelDigest,
+		cfg:         profile.config(),
+	}, nil
 }
 
 func (p *provider) newClient(ctx context.Context) (*client, error) {

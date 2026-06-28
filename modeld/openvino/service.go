@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,7 +158,22 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	if err != nil {
 		return nil, err
 	}
-	return newGenaiSessionWithPlanner(backend, cfg.NumCtx, cfg.PlannerEffectiveContext, eviction), nil
+	sess := newGenaiSessionWithPlanner(backend, cfg.NumCtx, cfg.PlannerEffectiveContext, eviction)
+	// Cold-KV evict/admit/snapshot copies physical KV blocks, which only survive a
+	// round-trip at float precision. A quantized KV precision would silently
+	// degrade an evicted-then-readmitted block, so the cold path is disabled (the
+	// session falls back to recompute eviction). Warn when a configured cold budget
+	// is thereby lost, so the loss of effective-context offload is visible.
+	sess.coldKVLossless = kvPrecisionLossless(genaiCfg.KVCachePrecision)
+	if !sess.coldKVLossless && sess.coldMaxTokens > 0 {
+		slog.Warn("openvino cold KV disabled: lossy KV precision cannot round-trip cold blocks",
+			"model", req.ModelName,
+			"kv_cache_precision", genaiCfg.KVCachePrecision,
+			"cold_max_tokens", sess.coldMaxTokens,
+			"hint", "set kv_cache_precision to f16 or f32 to enable cold KV / effective-context offload",
+		)
+	}
+	return sess, nil
 }
 
 // toGenAILoRA maps the transport adapter handles onto OpenVINO's safetensors

@@ -234,8 +234,14 @@ var embedFunc EmbedFunc
 // SetEmbedFunc registers the native embedding backend.
 func SetEmbedFunc(f EmbedFunc) { embedFunc = f }
 
-// EmbedAvailable reports whether an embedding backend is compiled into this build.
-func EmbedAvailable() bool { return embedFunc != nil }
+// EmbedAvailable reports whether llama embeddings can be served: either a native
+// embedding backend is registered (tests / CGO builds), or the modeld daemon
+// serves the llama backend. It mirrors SessionAvailable so embeddings advertise
+// the same way chat does — using modeldconn.ServeableBackend so a brief lease gap
+// during a daemon restart does not momentarily drop the capability.
+func EmbedAvailable() bool {
+	return embedFunc != nil || modeldconn.ServeableBackend() == "llama"
+}
 
 // newEmbed computes an embedding through the registered backend.
 func newEmbed(ctx context.Context, modelPath string, cfg Config, input string) ([]float64, error) {

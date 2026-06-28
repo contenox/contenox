@@ -60,6 +60,13 @@ type genaiSession struct {
 	coldClock     int64
 	coldBlocks    map[string]*openvinoColdBlock
 	coldRangeKey  map[string]string
+	// coldKVLossless is true when the session's KV precision round-trips raw KV
+	// bytes exactly. The cold-KV evict/admit/snapshot path copies physical KV
+	// blocks, which only survive at float precision (f16/f32); quantized
+	// precisions (q8_0/q4_*) dequantize-then-requantize and silently degrade an
+	// evicted-then-readmitted block. When false, the cold path is disabled so a
+	// lossy round-trip can never happen quietly.
+	coldKVLossless bool
 
 	mu         sync.Mutex
 	closed     bool
@@ -104,6 +111,23 @@ func newGenaiSessionWithPlanner(backend genaiBackend, numCtx, plannerCtx int, ev
 		plannerCtx:      plannerCtx,
 		coldMaxTokens:   max(plannerCtx-numCtx, 0),
 		evictionEnabled: eviction,
+		// Default to the lossless (f16) assumption; OpenSession lowers this to the
+		// model's actual configured precision. Constructed test sessions keep the
+		// cold path enabled, matching prior behavior.
+		coldKVLossless: true,
+	}
+}
+
+// kvPrecisionLossless reports whether a KV-cache precision round-trips raw KV
+// bytes without loss. Float precisions copy exactly; quantized precisions
+// dequantize-then-requantize, so an evicted-and-readmitted cold block silently
+// degrades. Empty defaults to f16 (the config default), which is lossless.
+func kvPrecisionLossless(precision string) bool {
+	switch strings.ToLower(strings.TrimSpace(precision)) {
+	case "", "f16", "fp16", "f32", "fp32":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -116,7 +140,7 @@ var _ residency.Controller = (*genaiSession)(nil)
 var _ residency.Executor = (*genaiSession)(nil)
 
 func (s *genaiSession) Capabilities() residency.Capabilities {
-	cold := s.coldMaxTokens > 0 && s.coldKVBackend() != nil
+	cold := s.coldMaxTokens > 0 && s.coldKVLossless && s.coldKVBackend() != nil
 	// OpenVINO GenAI owns physical KV blocks. The adapter exports cold blocks
 	// and imports them back into destination prefix-cache blocks; shifted admits
 	// rotate RoPE-positioned keys in the native GenAI bridge.
@@ -261,6 +285,15 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 	tokens, err := s.tokenize(ctx, suffixText, addSpecial)
 	if err != nil {
 		return transport.SuffixStatus{}, fmt.Errorf("openvino: tokenize suffix: %w", err)
+	}
+	// Residency driver: when the suffix would overflow the hot window and a cold
+	// store is available, park evictable ranges to host KV to make room instead
+	// of overflowing or letting native eviction drop them. Effective context is
+	// then numCtx hot plus the recoverable cold budget.
+	if s.numCtx > 0 && s.coldEnabledLocked() && s.residentTokens()+len(tokens) > s.numCtx {
+		if err := s.driveEvictToFitLocked(ctx, len(tokens)); err != nil {
+			return transport.SuffixStatus{}, err
+		}
 	}
 	if s.numCtx > 0 && !s.evictionEnabled && s.residentTokens()+len(tokens) > s.numCtx {
 		return transport.SuffixStatus{}, transport.ErrContextOverflow
@@ -526,6 +559,49 @@ func (s *genaiSession) updateResidencyPlanLocked(requireComplete bool) {
 		plan.Diagnostics = append(plan.Diagnostics, err.Error())
 	}
 	s.residencyPlan = plan
+}
+
+// planForBudgetLocked computes a residency plan for the current resident tape
+// under an explicit hot-token budget, without mutating s.residencyPlan. The
+// overflow driver uses it to decide which ranges to park so an incoming prefill
+// fits the hot window.
+func (s *genaiSession) planForBudgetLocked(budget int) (residency.Plan, error) {
+	if budget < 0 {
+		budget = 0
+	}
+	blocks, err := residency.BlocksFromManifest(s.manifest, residency.ManifestOptions{
+		ResidentTokens:  len(s.resident),
+		RequireComplete: false,
+	})
+	if err != nil && len(blocks) == 0 {
+		return residency.Plan{}, err
+	}
+	return residency.PlanHotSet(residency.PlanInput{
+		Blocks:       blocks,
+		BudgetTokens: budget,
+	})
+}
+
+// driveEvictToFitLocked parks evictable ranges to the cold store so that the
+// current resident plus `incoming` tokens fits numCtx. It executes the residency
+// plan computed for the tightened budget (numCtx-incoming), evicting tail-first
+// so earlier ranges keep stable indices. This is the inline residency driver:
+// hot overflow parks recoverable context to host KV instead of erroring or
+// letting native eviction drop it. Caller holds s.mu.
+func (s *genaiSession) driveEvictToFitLocked(ctx context.Context, incoming int) error {
+	plan, err := s.planForBudgetLocked(s.numCtx - incoming)
+	if err != nil {
+		return err
+	}
+	for _, r := range residency.EvictColdRanges(plan) {
+		if s.residentTokens()+incoming <= s.numCtx {
+			break
+		}
+		if err := s.evictRangeLocked(ctx, r); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *genaiSession) decodePrompt(ctx context.Context, backend genaiBackend, prompt string, opts ovsession.GenerateOptions, cfg transport.DecodeConfig, out chan transport.StreamChunk) (<-chan transport.StreamChunk, error) {

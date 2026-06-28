@@ -404,6 +404,15 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	if err != nil {
 		return llama.SuffixStatus{}, fmt.Errorf("llamasession: tokenize suffix: %w", err)
 	}
+	// Residency driver: when the suffix would overflow the hot window and a cold
+	// store is available, park evictable ranges to host KV to make room instead
+	// of overflowing. Effective context is then numCtx hot plus the recoverable
+	// cold budget. Mirrors the OpenVINO adapter.
+	if s.coldEnabledLocked() && len(s.resident)+len(stoks) > s.numCtx {
+		if err := s.driveEvictToFitLocked(len(stoks)); err != nil {
+			return llama.SuffixStatus{}, err
+		}
+	}
 	if len(s.resident)+len(stoks) > s.numCtx {
 		return llama.SuffixStatus{}, llama.NewContextOverflowError("suffix", len(s.resident), len(stoks), s.numCtx)
 	}
@@ -1015,6 +1024,48 @@ func (s *session) updateResidencyPlanLocked(requireComplete bool) {
 		plan.Diagnostics = append(plan.Diagnostics, err.Error())
 	}
 	s.residencyPlan = plan
+}
+
+// planForBudgetLocked computes a residency plan for the current resident tape
+// under an explicit hot-token budget, without mutating s.residencyPlan. The
+// overflow driver uses it to decide which ranges to park so an incoming prefill
+// fits the hot window. Mirrors the OpenVINO adapter.
+func (s *session) planForBudgetLocked(budget int) (residency.Plan, error) {
+	if budget < 0 {
+		budget = 0
+	}
+	blocks, err := residency.BlocksFromManifest(s.manifest, residency.ManifestOptions{
+		ResidentTokens:  len(s.resident),
+		RequireComplete: false,
+	})
+	if err != nil && len(blocks) == 0 {
+		return residency.Plan{}, err
+	}
+	return residency.PlanHotSet(residency.PlanInput{
+		Blocks:       blocks,
+		BudgetTokens: budget,
+	})
+}
+
+// driveEvictToFitLocked parks evictable ranges to the cold store so the current
+// resident plus `incoming` tokens fits numCtx, executing the residency plan
+// computed for the tightened budget. Ranges are evicted tail-first so earlier
+// ranges keep stable indices. The inline residency driver: hot overflow parks
+// recoverable context to host KV instead of overflowing. Caller holds s.mu.
+func (s *session) driveEvictToFitLocked(incoming int) error {
+	plan, err := s.planForBudgetLocked(s.numCtx - incoming)
+	if err != nil {
+		return err
+	}
+	for _, r := range residency.EvictColdRanges(plan) {
+		if len(s.resident)+incoming <= s.numCtx {
+			break
+		}
+		if err := s.evictRangeLocked(r.Start, r.End); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func isContextErr(err error) bool {

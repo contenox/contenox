@@ -111,13 +111,28 @@ func (s *Service) Describe(_ context.Context, req transport.OpenSessionRequest) 
 	return info, nil
 }
 
-// Embed is not served through the modeld transport for llama yet. The runtime's
-// llama provider still owns its native one-shot embedding path separately.
-func (s *Service) Embed(_ context.Context, req transport.EmbedRequest) (transport.EmbedResult, error) {
+// Embed runs a one-shot native llama.cpp embedding for req.Text through the
+// embedding backend registered by the CGo session package (see
+// llamasession.embed). Like OpenVINO's Embed it is separate from OpenSession:
+// embedding models do not use the chat session's prefix/suffix/Decode lifecycle.
+// In a build without the native backend (no 'llamanode' tag) the embed func is
+// unregistered and this reports ErrUnsupportedFeature.
+func (s *Service) Embed(ctx context.Context, req transport.EmbedRequest) (transport.EmbedResult, error) {
 	if req.Type != "" && req.Type != "llama" {
 		return transport.EmbedResult{}, fmt.Errorf("%w: requested %q, this daemon serves llama", transport.ErrBackendMismatch, req.Type)
 	}
-	return transport.EmbedResult{}, fmt.Errorf("%w: llama embeddings are not served over modeld transport", transport.ErrUnsupportedFeature)
+	if !EmbedAvailable() {
+		return transport.EmbedResult{}, fmt.Errorf("%w: llama embeddings require a native build (-tags 'llamanode llamacpp_direct')", transport.ErrUnsupportedFeature)
+	}
+	vec, err := newEmbed(ctx, req.Path, applyDaemonEnvOverrides(req.Config), req.Text)
+	if err != nil {
+		return transport.EmbedResult{}, err
+	}
+	out := make([]float32, len(vec))
+	for i, v := range vec {
+		out[i] = float32(v)
+	}
+	return transport.EmbedResult{Vector: out}, nil
 }
 
 func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Config, error) {

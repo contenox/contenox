@@ -38,6 +38,13 @@ func (s *genaiSession) EvictRange(ctx context.Context, r residency.Range) error 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	return s.evictRangeLocked(ctx, r)
+}
+
+// evictRangeLocked is EvictRange's body without the lock, so the overflow driver
+// can park ranges from inside an already-locked prefill path (sync.Mutex is not
+// reentrant).
+func (s *genaiSession) evictRangeLocked(ctx context.Context, r residency.Range) error {
 	if !s.coldEnabledLocked() {
 		return fmt.Errorf("%w: openvino evict range [%d,%d) requires a cold KV backend", transport.ErrUnsupportedFeature, r.Start, r.End)
 	}
@@ -93,7 +100,7 @@ func (s *genaiSession) coldKVBackend() genaiColdKVBackend {
 }
 
 func (s *genaiSession) coldEnabledLocked() bool {
-	return s.coldMaxTokens > 0 && s.coldKVBackend() != nil
+	return s.coldMaxTokens > 0 && s.coldKVLossless && s.coldKVBackend() != nil
 }
 
 func (s *genaiSession) clearColdStoreLocked() {
