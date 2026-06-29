@@ -32,6 +32,13 @@ import (
 // provider (like OpenAI or Gemini) is cached to avoid frequent API calls.
 const ProviderCacheDuration = 1 * time.Hour
 
+// ReconcileDebounceInterval bounds how often a read-triggered reconcile
+// (ReconcileIfStale) actually re-scans backends. The runtime reconciles at
+// startup and on explicit refresh only (no periodic loop), so a read view that
+// self-heals must debounce or a burst of UI polls would stampede a full cycle
+// each time. It is a package var so tests can shorten it.
+var ReconcileDebounceInterval = 15 * time.Second
+
 // providerCacheEntry holds the data and metadata for a cached provider state.
 // APIKey is stored so we can detect key rotation and invalidate the cache.
 type providerCacheEntry struct {
@@ -51,6 +58,10 @@ type State struct {
 	// kvStore is used for persistent provider-model caching (nil = fall back to in-memory sync.Map)
 	kvStore       libkvstore.KVManager
 	providerCache sync.Map // fallback when kvStore is nil
+	// reconcileMu guards lastReconcileAt, the debounce clock shared by every
+	// reconcile (RunBackendCycle and the read-triggered ReconcileIfStale).
+	reconcileMu     sync.Mutex
+	lastReconcileAt time.Time
 }
 
 type Option func(*State)
@@ -122,10 +133,52 @@ func New(ctx context.Context, dbInstance libdb.DBManager, psInstance libbus.Mess
 // responsible for its scheduling and lifecycle.
 // When the group feature is enabled via Withgroups option, it uses group-aware reconciliation.
 func (s *State) RunBackendCycle(ctx context.Context) error {
+	var err error
 	if s.withgroups {
-		return s.syncBackendsWithgroups(ctx)
+		err = s.syncBackendsWithgroups(ctx)
+	} else {
+		err = s.syncBackends(ctx)
 	}
-	return s.syncBackends(ctx)
+	// Feed the debounce clock so an explicit refresh (or the chat-path reconcile)
+	// suppresses a redundant read-triggered cycle right after. Recorded even on
+	// error so a persistently-failing backend cannot be polled into a hot loop.
+	s.markReconciled(time.Now())
+	return err
+}
+
+// ReconcileIfStale runs one RunBackendCycle when the last reconcile is older than
+// ReconcileDebounceInterval, otherwise it is a no-op. The runtime reconciles at
+// startup and on explicit refresh only (no periodic loop), so a backend that
+// comes up afterwards — most commonly modeld being (re)started after the runtime
+// — would otherwise stay invisible to read-only views (GET /state,
+// GET /setup-status) until a restart. Calling this from those read paths lets
+// them self-heal, debounced so a burst of UI polls coalesces into one re-scan.
+func (s *State) ReconcileIfStale(ctx context.Context) error {
+	if !s.claimReconcile(time.Now()) {
+		return nil
+	}
+	return s.RunBackendCycle(ctx)
+}
+
+// claimReconcile reports whether a reconcile is due (last one older than
+// ReconcileDebounceInterval) and, when it is, claims the window by advancing the
+// clock before returning. Claiming under the lock means concurrent callers skip
+// instead of stampeding a second cycle. Pure decision + injected clock so the
+// debounce is unit-testable without running a real cycle.
+func (s *State) claimReconcile(now time.Time) bool {
+	s.reconcileMu.Lock()
+	defer s.reconcileMu.Unlock()
+	if !s.lastReconcileAt.IsZero() && now.Sub(s.lastReconcileAt) < ReconcileDebounceInterval {
+		return false
+	}
+	s.lastReconcileAt = now
+	return true
+}
+
+func (s *State) markReconciled(now time.Time) {
+	s.reconcileMu.Lock()
+	s.lastReconcileAt = now
+	s.reconcileMu.Unlock()
 }
 
 // Get returns a copy of the current observed state for all backends.

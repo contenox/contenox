@@ -115,6 +115,10 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 	cfg := clampContext(profile.config(), p.caps.ContextLength)
 	ref := modeldconn.ModelRef{Name: p.name, Type: "llama", Digest: modelDigest, Path: modelPath, Adapters: adapters}
 	backendID := backendVersion()
+	// Capacity facts from modeld's Describe, kept so a context overflow can be
+	// explained with the device's real limits instead of raw token counts.
+	var deviceKind string
+	var freeBytes int64
 	if sessionFactory == nil {
 		describeCfg := profile.describeConfig()
 		if p.caps.ContextLength > 0 && describeCfg.NumCtx > p.caps.ContextLength {
@@ -122,6 +126,8 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		}
 		if info, derr := modeldconn.Describe(ctx, ref, transport.Config(describeCfg)); derr == nil {
 			cfg = applyModeldInfoToConfig(cfg, info)
+			deviceKind = info.DeviceKind
+			freeBytes = info.FreeBytes
 			if v := backendVersionFromModelInfo(info); v != "" {
 				backendID = v
 			}
@@ -138,6 +144,8 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		maxOutputTokens:   p.caps.MaxOutputTokens,
 		toolProtocol:      profile.ToolCalls.Protocol,
 		reasoningProtocol: profile.Reasoning.Protocol,
+		deviceKind:        deviceKind,
+		freeBytes:         freeBytes,
 	}, nil
 }
 

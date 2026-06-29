@@ -12,6 +12,11 @@ const getPreviewText = (content: string): string => {
   return trimmed.slice(0, 57) + '…';
 };
 
+// Sessions created without an explicit name get an auto-generated "session-<8hex>"
+// placeholder (see sessionservice.go). That carries no more meaning than the raw id,
+// so we treat it as unnamed and fall back to the conversation content for a title.
+const isPlaceholderName = (name: string): boolean => /^session-[0-9a-f]{8}$/i.test(name.trim());
+
 export function ChatSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) => void }) {
   const navigate = useNavigate();
   const chatMatch = useMatch('/chat/:chatId');
@@ -65,11 +70,21 @@ export function ChatSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =
         ) : (
           chats.map(chat => {
             const isActive = activeChatId === chat.id;
-            const preview = chat.lastMessage?.content
+            // Title precedence: a user-assigned name (most intentional) → the user's
+            // first message (what the chat is about) → the last message → "Untitled chat".
+            // Auto-generated "session-<hex>" placeholders and the raw id carry no meaning.
+            const name =
+              chat.name && !isPlaceholderName(chat.name) ? chat.name.trim() : null;
+            const subject = chat.subject ? getPreviewText(chat.subject) : null;
+            const lastPreview = chat.lastMessage?.content
               ? getPreviewText(chat.lastMessage.content)
               : null;
-            const displayText = preview || chat.model || chat.id.slice(0, 8);
-            const showModel = preview && (chat.model || chat.id.slice(0, 8));
+            const shortId = chat.id.slice(0, 8);
+            const displayText =
+              name || subject || lastPreview || chat.model || t('chat.untitled_session', 'Untitled chat');
+            // Always carry the short id as a disambiguator, except when it is already
+            // the title itself.
+            const subtitle = displayText === shortId ? null : shortId;
             return (
               <Link
                 key={chat.id}
@@ -83,9 +98,9 @@ export function ChatSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) =
                 <Span className="text-text dark:text-dark-text line-clamp-2 text-xs">
                   {displayText}
                 </Span>
-                {showModel && (
+                {subtitle && (
                   <Span className="text-text-muted dark:text-dark-text-muted mt-1 block text-xs">
-                    {chat.model || chat.id.slice(0, 8)}
+                    {subtitle}
                   </Span>
                 )}
               </Link>

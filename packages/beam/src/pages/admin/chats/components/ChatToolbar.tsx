@@ -30,7 +30,9 @@ interface ChatToolbarProps {
   policyChangePending: boolean;
   policyChangeError: string | null;
   statsLabel: string;
-  onEditChain: () => void;
+  /** When provided, shows a button to open the selected chain in the editor.
+   * Omitted while the chain editor route is unwired. */
+  onEditChain?: () => void;
 }
 
 export function ChatToolbar({
@@ -66,24 +68,26 @@ export function ChatToolbar({
           />
           {chainsLoading && <Spinner size="sm" />}
 
-          <Tooltip
-            content={
-              selectedChainId
-                ? t('chat.edit_chain', 'Open this chain in the editor')
-                : t('chat.edit_chain_disabled', 'Select a chain to edit')
-            }
-            position="top"
-          >
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              disabled={!selectedChainId.trim()}
-              onClick={onEditChain}
+          {onEditChain && (
+            <Tooltip
+              content={
+                selectedChainId
+                  ? t('chat.edit_chain', 'Open this chain in the editor')
+                  : t('chat.edit_chain_disabled', 'Select a chain to edit')
+              }
+              position="top"
             >
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-          </Tooltip>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={!selectedChainId.trim()}
+                onClick={onEditChain}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+          )}
         </ToolbarItem>
         <ToolbarItem label={t('chat.mode')} tooltip={t('chat.mode_tooltip')}>
           <Select

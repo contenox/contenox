@@ -51,13 +51,17 @@ type newChatInstanceRequest struct {
 }
 
 type chatSession struct {
-	ID           string       `json:"id"`
-	Name         string       `json:"name,omitempty"`
-	StartedAt    time.Time    `json:"startedAt,omitempty"`
-	Model        string       `json:"model,omitempty"`
-	MessageCount int          `json:"messageCount,omitempty"`
-	IsActive     bool         `json:"isActive,omitempty"`
-	LastMessage  *chatMessage `json:"lastMessage,omitempty"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name,omitempty"`
+	StartedAt    time.Time `json:"startedAt,omitempty"`
+	Model        string    `json:"model,omitempty"`
+	MessageCount int       `json:"messageCount,omitempty"`
+	IsActive     bool      `json:"isActive,omitempty"`
+	// Subject is the first user message in the session, used as a human-readable
+	// title. It describes what the chat is about, unlike LastMessage which can be
+	// an assistant error or raw tool JSON.
+	Subject     string       `json:"subject,omitempty"`
+	LastMessage *chatMessage `json:"lastMessage,omitempty"`
 }
 
 type chatMessage struct {
@@ -149,12 +153,14 @@ func (h *chatHandler) listChats(w http.ResponseWriter, r *http.Request) {
 	type sessionWithTimestamp struct {
 		session   *agentservice.SessionInfo
 		lastMsg   *chatMessage
+		subject   string
 		lastMsgAt time.Time
 	}
 
 	var withTs []sessionWithTimestamp
 	for _, s := range sessions {
 		var lastMsg *chatMessage
+		var subject string
 		var lastMsgAt time.Time
 		if h.deps.ChatMgr != nil && h.deps.DB != nil {
 			msgs, err := h.deps.ChatMgr.ListMessages(ctx, h.deps.DB.WithoutTransaction(), s.ID)
@@ -171,11 +177,20 @@ func (h *chatHandler) listChats(w http.ResponseWriter, r *http.Request) {
 					CallTools:  msgs[len(msgs)-1].CallTools,
 					ToolCallID: msgs[len(msgs)-1].ToolCallID,
 				}
+				// Title the chat by its first user message — it describes intent,
+				// unlike the last message which may be an assistant error or tool JSON.
+				for _, m := range msgs {
+					if m.Role == "user" && strings.TrimSpace(m.Content) != "" {
+						subject = strings.TrimSpace(m.Content)
+						break
+					}
+				}
 			}
 		}
 		withTs = append(withTs, sessionWithTimestamp{
 			session:   s,
 			lastMsg:   lastMsg,
+			subject:   subject,
 			lastMsgAt: lastMsgAt,
 		})
 	}
@@ -192,6 +207,7 @@ func (h *chatHandler) listChats(w http.ResponseWriter, r *http.Request) {
 			Name:         w.session.Name,
 			MessageCount: w.session.MessageCount,
 			IsActive:     w.session.IsActive,
+			Subject:      w.subject,
 			LastMessage:  w.lastMsg,
 		})
 	}

@@ -386,8 +386,12 @@ export type Job = {
 
 export type ChatSession = {
   id: string;
+  /** User-assigned session name (e.g. set at creation) — the most intentional title. */
+  name?: string;
   startedAt: string;
   model: string;
+  /** First user message in the session — the human-readable title. */
+  subject?: string;
   lastMessage?: ChatMessage;
 };
 

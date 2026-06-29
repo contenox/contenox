@@ -74,7 +74,7 @@ export function ChatComposer({
   softMax: softMaxProp,
   maxLength: maxLengthLegacy,
   showCharCount = true,
-  charCountFormatter = (len, soft) => `${len}/${soft}`,
+  charCountFormatter,
   canSubmit = true,
   allowEmptyMessage = false,
   footerStart,
@@ -111,9 +111,19 @@ export function ChatComposer({
     }
   };
 
-  const countStr = charCountFormatter(value.length, softMax);
   const countWarning = isComposerCharCountWarning(value.length, softMax);
   const overSoftMax = isOverComposerSoftMax(value.length, softMax);
+  // The soft max is a large safety ceiling; spelling it out on every keystroke
+  // (e.g. "51/131072") is noise. By default show a bare count while composing and
+  // only reveal the ceiling once you approach it. A custom formatter, if provided,
+  // is always honored.
+  const countStr = charCountFormatter
+    ? charCountFormatter(value.length, softMax)
+    : countWarning
+      ? `${value.length}/${softMax}`
+      : `${value.length}`;
+  // Hide the badge entirely on an empty composer — "0/131072" signals nothing.
+  const showCount = showCharCount && value.length > 0;
 
   const textareaBlock = (
     <div className="relative flex-1">
@@ -137,7 +147,7 @@ export function ChatComposer({
         )}
         onKeyDown={handleKeyDown}
       />
-      {showCharCount && (
+      {showCount && (
         <div className="absolute right-2 bottom-2 flex items-center gap-2">
           {charCountTooltip != null ? (
             <Tooltip content={charCountTooltip}>

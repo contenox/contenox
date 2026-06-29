@@ -454,7 +454,7 @@ const resources = {
       control_plane: {
         hub_title: 'Control plane',
         hub_description:
-          'Configure backends, modeld, hooks, chains, policies, and runtime defaults for local chat.',
+          'Configure backends, the local modeld runtime, and runtime defaults for local chat.',
         menu_aria: 'Open control plane menu',
         all_tools: 'All tools',
       },
@@ -1541,6 +1541,7 @@ const resources = {
         landing_no_chains_desc: 'Create or restore a chain before starting a chat run.',
         landing_select_chain_hint: 'Choose a task chain before sending.',
         sidebar_empty_hint: 'No chats yet. Start one from here.',
+        untitled_session: 'Untitled chat',
         workspace_toggle_tooltip: 'Show optional terminal context',
         workspace_toggle_aria: 'Toggle optional terminal context',
         workspace_open_mobile: 'Context',
@@ -2121,7 +2122,7 @@ const resources = {
       control_plane: {
         hub_title: 'Control Plane',
         hub_description:
-          'Backends, modeld, Hooks, Ketten, Richtlinien und Laufzeit-Standards für lokalen Chat konfigurieren.',
+          'Backends, die lokale modeld-Laufzeit und Laufzeit-Standards für lokalen Chat konfigurieren.',
         menu_aria: 'Control-Plane-Menü öffnen',
         all_tools: 'Alle Werkzeuge',
       },
@@ -2836,6 +2837,7 @@ const resources = {
           'Erstellen oder stellen Sie eine Kette wieder her, bevor Sie einen Chat-Lauf starten.',
         landing_select_chain_hint: 'Wählen Sie vor dem Senden eine Aufgabenkette.',
         sidebar_empty_hint: 'Noch keine Chats. Starten Sie einen von hier.',
+        untitled_session: 'Unbenannter Chat',
         workspace_toggle_tooltip: 'Optionalen Terminal-Kontext anzeigen',
         workspace_toggle_aria: 'Optionalen Terminal-Kontext umschalten',
         workspace_open_mobile: 'Kontext',

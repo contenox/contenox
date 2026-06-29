@@ -17,7 +17,7 @@ const sampleState: CapturedStateUnit[] = [
     inputType: "string",
     outputType: "messages",
     transition: "next",
-    duration: 42,
+    duration: 42_000, // 42 µs (durations are nanoseconds, as sent by the backend)
     error: { error: null },
   },
   {
@@ -26,7 +26,7 @@ const sampleState: CapturedStateUnit[] = [
     inputType: "messages",
     outputType: "vector",
     transition: "next",
-    duration: 1380,
+    duration: 1_380_000_000, // 1.38 s
     error: { error: null },
   },
   {
@@ -35,7 +35,7 @@ const sampleState: CapturedStateUnit[] = [
     inputType: "vector",
     outputType: "documents",
     transition: "next",
-    duration: 257,
+    duration: 257_000_000, // 257 ms
     error: { error: null },
   },
   {
@@ -44,7 +44,7 @@ const sampleState: CapturedStateUnit[] = [
     inputType: "documents",
     outputType: "string",
     transition: "done",
-    duration: 3420,
+    duration: 3_420_000_000, // 3.42 s
     error: { error: "context window exceeded" },
   },
 ];

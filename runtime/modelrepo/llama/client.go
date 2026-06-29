@@ -72,6 +72,47 @@ type client struct {
 	maxOutputTokens   int
 	toolProtocol      string // profile-declared tool-call protocol ("" = tools unsupported)
 	reasoningProtocol string // profile-declared reasoning parser ("" = no reasoning parser)
+	// deviceKind/freeBytes are the capacity facts modeld reported at construction
+	// (empty/zero when modeld did not answer Describe). They turn a context
+	// overflow into an actionable message — see explainOverflow.
+	deviceKind string
+	freeBytes  int64
+}
+
+// explainOverflow enriches a context-overflow error with the capacity facts this
+// client captured from modeld's Describe, so a chat surfaces an actionable
+// message ("model X serves only N tokens on this GPU after weights …") instead of
+// raw resident/additional token counts. It is a no-op for any other error and
+// preserves errors.Is(err, ErrContextOverflow) plus the "context overflow"
+// substring, so existing transport/error handling keeps recognizing it.
+func (c *client) explainOverflow(err error) error {
+	if err == nil || !errors.Is(err, ErrContextOverflow) {
+		return err
+	}
+	where := "this device"
+	if c.deviceKind != "" {
+		where = "the " + c.deviceKind + " device"
+	}
+	free := ""
+	if c.freeBytes > 0 {
+		free = fmt.Sprintf(" with %s free", humanBytes(c.freeBytes))
+	}
+	return fmt.Errorf("%w: model %q serves only %d context tokens on %s%s after model weights — free VRAM, use a smaller model, or enable q8_0 KV cache",
+		err, c.modelName, normalizeConfig(c.cfg).NumCtx, where, free)
+}
+
+// humanBytes formats a byte count with binary (KiB/MiB/…) units for diagnostics.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // ref is the typed model handle this client opens sessions with: logical name +
@@ -166,7 +207,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 		if fatalSessionError(err) {
 			warm.Drop(cs)
 		}
-		return nil, err
+		return nil, c.explainOverflow(err)
 	}
 
 	out := make(chan *modelrepo.StreamParcel, 16)
@@ -175,7 +216,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 		defer cs.Turn.Unlock()
 		for chunk := range chunks {
 			if chunk.Error != nil {
-				out <- &modelrepo.StreamParcel{Error: chunk.Error}
+				out <- &modelrepo.StreamParcel{Error: c.explainOverflow(chunk.Error)}
 				if fatalSessionError(chunk.Error) {
 					warm.Drop(cs)
 				}
@@ -208,7 +249,7 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 	}
 	chunks, err := cs.Sess.Decode(ctx, dc)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, c.explainOverflow(err)
 	}
 	var b strings.Builder
 	var thinking strings.Builder
@@ -218,7 +259,7 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 			if fatalSessionError(chunk.Error) {
 				warm.Drop(cs)
 			}
-			return "", "", nil, chunk.Error
+			return "", "", nil, c.explainOverflow(chunk.Error)
 		}
 		b.WriteString(chunk.Text)
 		if showThinking {
@@ -254,11 +295,11 @@ func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], me
 		return err
 	}
 	if _, err := cs.Sess.EnsurePrefix(ctx, plan.Stable); err != nil {
-		return err
+		return c.explainOverflow(err)
 	}
 	plan.Volatile.EnableThinking = enableThinking
 	_, err = cs.Sess.PrefillSuffix(ctx, plan.Volatile)
-	return err
+	return c.explainOverflow(err)
 }
 
 func applyChatArgs(args []modelrepo.ChatArgument) *modelrepo.ChatConfig {

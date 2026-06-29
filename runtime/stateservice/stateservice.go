@@ -61,6 +61,12 @@ type service struct {
 
 // Get implements Service.
 func (s *service) Get(ctx context.Context) ([]statetype.BackendRuntimeState, error) {
+	// The runtime reconciles backends at startup and on explicit refresh only;
+	// without this a backend that comes up after startup (most commonly a
+	// (re)started modeld) stays invisible to /state and /setup-status until the
+	// server is restarted. A debounced reconcile lets these read views self-heal.
+	// Best-effort: serve the existing snapshot even if the reconcile fails.
+	_ = s.state.ReconcileIfStale(ctx)
 	m := s.state.Get(ctx)
 	l := make([]statetype.BackendRuntimeState, 0, len(m))
 	for _, e := range m {

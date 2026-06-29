@@ -1,4 +1,4 @@
-import { Cpu, Database, Link as LinkIcon, Package, Settings, type LucideIcon } from 'lucide-react';
+import { Cpu, Database, Settings, type LucideIcon } from 'lucide-react';
 import { lazy } from 'react';
 import { Navigate } from 'react-router-dom';
 import i18n from '../i18n';
@@ -6,13 +6,9 @@ import HomeRedirect from '../pages/HomeRedirect.tsx';
 import { LOGIN_ROUTE } from './routeConstants.ts';
 
 const BackendsPage = lazy(() => import('../pages/admin/backends/BackendPage.tsx'));
-const ModelRegistryPage = lazy(() => import('../pages/admin/models/ModelRegistryPage.tsx'));
-const ChainsPage = lazy(() => import('../pages/admin/chains/ChainsPage.tsx'));
-const HITLPoliciesPage = lazy(() => import('../pages/admin/hitl-policies/HITLPoliciesPage.tsx'));
 const ChatPage = lazy(() => import('../pages/admin/chats/ChatPage.tsx'));
 const ChatLandingPage = lazy(() => import('../pages/admin/chats/ChatLandingPage.tsx'));
 const ControlPlanePage = lazy(() => import('../pages/admin/control/ControlPlanePage.tsx'));
-const RemoteHooksPage = lazy(() => import('../pages/admin/remotehooks/RemoteHooksPage.tsx'));
 const SettingsPage = lazy(() => import('../pages/admin/settings/SettingsPage.tsx'));
 const ByePage = lazy(() => import('../pages/public/bye/Bye.tsx'));
 const AuthPage = lazy(() => import('../pages/public/login/AuthPage.tsx'));
@@ -45,20 +41,6 @@ type AdminRouteDefinition = {
 
 const adminRouteDefinitions: AdminRouteDefinition[] = [
   { path: '/backends', element: BackendsPage, labelKey: 'navbar.backends', Icon: Database },
-  {
-    path: '/model-registry',
-    element: ModelRegistryPage,
-    labelKey: 'navbar.model_registry',
-    Icon: Package,
-  },
-  { path: '/hooks/remote', element: RemoteHooksPage, labelKey: 'navbar.hooks', Icon: LinkIcon },
-  { path: '/chains', element: ChainsPage, labelKey: 'navbar.chains', Icon: LinkIcon },
-  {
-    path: '/hitl-policies',
-    element: HITLPoliciesPage,
-    labelKey: 'navbar.hitl_policies',
-    Icon: Settings,
-  },
   { path: '/settings', element: SettingsPage, labelKey: 'navbar.settings', Icon: Settings },
 ];
 

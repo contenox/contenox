@@ -10,7 +10,7 @@ import {
   Span,
   Spinner,
 } from '@contenox/ui';
-import { GitBranch, MessageSquarePlus, Settings } from 'lucide-react';
+import { GitBranch, MessageSquarePlus } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -213,15 +213,6 @@ function ChatLandingPageImpl() {
                 />
               )}
 
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="w-full gap-2"
-                onClick={() => navigate('/chains')}>
-                <Settings className="h-4 w-4" />
-                {t('chat.landing_manage_chains')}
-              </Button>
             </Panel>
 
             <Panel variant="surface" className="order-1 space-y-4 lg:order-2">

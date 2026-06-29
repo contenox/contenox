@@ -115,6 +115,10 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	}
 	ref := modeldconn.ModelRef{Name: p.name, Type: "openvino", Digest: modelDigest, Path: dir, Adapters: adapters}
 	backendID := backendVersion()
+	// Capacity facts from modeld's Describe, kept so a context overflow can be
+	// explained with the device's real limits instead of raw token counts.
+	var deviceKind string
+	var freeBytes int64
 	if info, derr := modeldconn.Describe(ctx, ref, transport.Config(cfg)); derr == nil {
 		if info.EffectiveContext > 0 {
 			cfg = clampContextForModeld(cfg, info.EffectiveContext)
@@ -122,6 +126,8 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 			cfg = normalizeConfig(cfg)
 		}
 		cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
+		deviceKind = info.DeviceKind
+		freeBytes = info.FreeBytes
 		if v := backendVersionFromModelInfo(info); v != "" {
 			backendID = v
 		}
@@ -140,6 +146,8 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		cfg:             cfg,
 		adapters:        adapters,
 		maxOutputTokens: maxOut,
+		deviceKind:      deviceKind,
+		freeBytes:       freeBytes,
 	}, nil
 }
 

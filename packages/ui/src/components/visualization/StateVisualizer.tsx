@@ -34,7 +34,12 @@ export const StateVisualizer = ({ state, labels }: StateVisualizerProps) => {
 
   const l = { ...DEFAULT_LABELS, ...labels };
 
-  const formatDuration = (ms: number): string => {
+  // duration is a Go time.Duration serialized as nanoseconds; pick a readable unit.
+  const formatDuration = (ns: number): string => {
+    if (ns < 1000) return `${Math.round(ns)} ns`;
+    const us = ns / 1000;
+    if (us < 1000) return `${Math.round(us)} µs`;
+    const ms = us / 1000;
     if (ms < 1000) return `${Math.round(ms)} ms`;
     return `${(ms / 1000).toFixed(2)} s`;
   };

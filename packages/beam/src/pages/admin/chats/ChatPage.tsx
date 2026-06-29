@@ -28,18 +28,10 @@ import {
 } from '../../../lib/types';
 import { buildChatThreadItems } from './chatThreadItems';
 import { ChatInterface } from './components/ChatInterface';
-import { ChatRunLog } from './components/ChatRunLog';
 import { ChatToolbar } from './components/ChatToolbar';
 import { MessageInputForm } from './components/MessageInputForm';
 
-const STATE_PANEL_STORAGE_KEY = 'beam_chat_state_panel_open';
 const DEFAULT_CHAIN_PATH = 'default-chain.json';
-
-function shouldOpenStatePanelByDefault(): boolean {
-  if (typeof window === 'undefined') return true;
-  if (!window.matchMedia('(min-width: 768px)').matches) return false;
-  return window.localStorage.getItem(STATE_PANEL_STORAGE_KEY) !== '0';
-}
 
 function formatChainLabel(path: string): string {
   return path.replace(/\.json$/i, '');
@@ -183,19 +175,6 @@ function ChatPageImpl() {
   } | null>(null);
   const sendDispatchedRef = useRef(false);
   const landingInitialSendKeyRef = useRef<string | null>(null);
-  const [statePanelOpen, setStatePanelOpen] = useState(shouldOpenStatePanelByDefault);
-
-  const toggleStatePanel = () => {
-    setStatePanelOpen(open => {
-      const next = !open;
-      try {
-        window.localStorage.setItem(STATE_PANEL_STORAGE_KEY, next ? '1' : '0');
-      } catch {
-        /* ignore quota / private mode */
-      }
-      return next;
-    });
-  };
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 768px)');
@@ -630,9 +609,6 @@ function ChatPageImpl() {
               messages: chatHistory?.length ?? 0,
               state: latestState.length,
             })}
-            onEditChain={() =>
-              navigate(`/chains?path=${encodeURIComponent(selectedChainId.trim())}`)
-            }
           />
 
           <Fill className="flex flex-col">
@@ -772,13 +748,6 @@ function ChatPageImpl() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatMainFill}</div>
         </div>
 
-        <ChatRunLog
-          open={statePanelOpen}
-          onToggle={toggleStatePanel}
-          isProcessing={isProcessing}
-          events={liveTask.events}
-          state={latestState}
-        />
       </Fill>
     </Page>
   );
