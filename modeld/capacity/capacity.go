@@ -58,12 +58,90 @@ func KVBytesPerToken(nLayers, nKVHeads, headDim int, kvType string) int64 {
 	return 2 * int64(nLayers) * int64(nKVHeads) * int64(headDim) * kvTypeBytes(kvType)
 }
 
+// LayerKVProfile describes how KV grows with context for one model.
+// GlobalLayers grow linearly with context; WindowedLayers are capped at Window
+// tokens. PerLayerKVBytes is the K+V cost for one token in one layer.
+type LayerKVProfile struct {
+	GlobalLayers    int
+	WindowedLayers  int
+	Window          int
+	PerLayerKVBytes int64
+}
+
+// Valid reports whether the profile contains enough data to budget KV cache.
+func (p LayerKVProfile) Valid() bool {
+	return p.PerLayerKVBytes > 0 && p.totalLayers() > 0
+}
+
+// KVBytesForContext returns the total KV bytes needed to hold ctx tokens.
+func (p LayerKVProfile) KVBytesForContext(ctx int) int64 {
+	if !p.Valid() || ctx <= 0 {
+		return 0
+	}
+	global, windowed := max(p.GlobalLayers, 0), max(p.WindowedLayers, 0)
+	tokens := int64(ctx)
+	if p.Window <= 0 {
+		return int64(global+windowed) * p.PerLayerKVBytes * tokens
+	}
+	windowTokens := min(ctx, p.Window)
+	return int64(global)*p.PerLayerKVBytes*tokens + int64(windowed)*p.PerLayerKVBytes*int64(windowTokens)
+}
+
+// MarginalKVBytesPerToken is the post-window growth cost of one more token.
+func (p LayerKVProfile) MarginalKVBytesPerToken() int64 {
+	if !p.Valid() {
+		return 0
+	}
+	if p.Window <= 0 {
+		return p.DenseKVBytesPerToken()
+	}
+	return int64(max(p.GlobalLayers, 0)) * p.PerLayerKVBytes
+}
+
+// DenseKVBytesPerToken is the legacy all-layers cost of one token.
+func (p LayerKVProfile) DenseKVBytesPerToken() int64 {
+	if !p.Valid() {
+		return 0
+	}
+	return int64(p.totalLayers()) * p.PerLayerKVBytes
+}
+
+func (p LayerKVProfile) totalLayers() int {
+	return max(p.GlobalLayers, 0) + max(p.WindowedLayers, 0)
+}
+
+func (p LayerKVProfile) tokensForBudget(budget int64, limit int) int {
+	if !p.Valid() || budget <= 0 {
+		return 0
+	}
+	if p.Window <= 0 || p.WindowedLayers <= 0 {
+		if dense := p.DenseKVBytesPerToken(); dense > 0 {
+			return int(budget / dense)
+		}
+		return 0
+	}
+	dense := p.DenseKVBytesPerToken()
+	windowCost := dense * int64(p.Window)
+	if budget <= windowCost {
+		return int(budget / dense)
+	}
+	marginal := p.MarginalKVBytesPerToken()
+	if marginal <= 0 {
+		if limit > 0 {
+			return limit
+		}
+		return p.Window
+	}
+	return int((budget - int64(max(p.WindowedLayers, 0))*p.PerLayerKVBytes*int64(p.Window)) / marginal)
+}
+
 // Params are the inputs to a capacity resolution. Zero values mean "unknown":
 // an unknown ModelMaxCtx or KVBytesPerToken disables that side of the clamp
 // rather than producing a bogus window.
 type Params struct {
-	ModelMaxCtx         int     // model's trained context ceiling (0 = unknown)
-	KVBytesPerToken     int64   // 0 = unknown (cannot budget by memory)
+	ModelMaxCtx         int   // model's trained context ceiling (0 = unknown)
+	KVBytesPerToken     int64 // 0 = unknown (cannot budget by memory)
+	LayerKV             LayerKVProfile
 	WeightsBytes        int64   // resident model weight footprint
 	OverheadBytes       int64   // fixed runtime buffers (compute graph, staging)
 	FreeBytes           int64   // device free memory
@@ -123,10 +201,19 @@ func Resolve(p Params) ModelCapacity {
 	}
 	usable = max(int64(float64(usable)*(1-headroom)), 0)
 
+	kvBudget := p.KVBytesPerToken
+	if kvBudget <= 0 && p.LayerKV.Valid() {
+		kvBudget = p.LayerKV.DenseKVBytesPerToken()
+	}
+
 	memoryTokens := 0
-	if p.KVBytesPerToken > 0 {
+	if kvBudget > 0 {
 		budget := max(usable-p.WeightsBytes-p.OverheadBytes, 0)
-		memoryTokens = int(budget / p.KVBytesPerToken)
+		if p.LayerKV.Valid() {
+			memoryTokens = p.LayerKV.tokensForBudget(budget, max(p.ModelMaxCtx, p.Request))
+		} else {
+			memoryTokens = int(budget / kvBudget)
+		}
 		if eff <= 0 || memoryTokens < eff {
 			eff = memoryTokens
 		}
@@ -136,7 +223,7 @@ func Resolve(p Params) ModelCapacity {
 		switch {
 		case eff > 0 && p.Request < eff:
 			eff = p.Request
-		case eff <= 0 && p.KVBytesPerToken <= 0 && p.ModelMaxCtx <= 0:
+		case eff <= 0 && kvBudget <= 0 && p.ModelMaxCtx <= 0:
 			eff = p.Request
 		}
 	}
@@ -149,8 +236,12 @@ func Resolve(p Params) ModelCapacity {
 		requestForRequired = eff
 	}
 	required := p.WeightsBytes + p.OverheadBytes
-	if p.KVBytesPerToken > 0 && requestForRequired > 0 {
-		required += int64(requestForRequired) * p.KVBytesPerToken
+	if kvBudget > 0 && requestForRequired > 0 {
+		if p.LayerKV.Valid() {
+			required += p.LayerKV.KVBytesForContext(requestForRequired)
+		} else {
+			required += int64(requestForRequired) * kvBudget
+		}
 	}
 	clamped, reason := false, ""
 	switch {
@@ -165,7 +256,7 @@ func Resolve(p Params) ModelCapacity {
 	}
 
 	hotTokens := eff
-	if p.KVBytesPerToken > 0 && memoryTokens > 0 {
+	if kvBudget > 0 && memoryTokens > 0 {
 		hotTokens = memoryTokens
 		if p.ModelMaxCtx > 0 && hotTokens > p.ModelMaxCtx {
 			hotTokens = p.ModelMaxCtx
@@ -175,8 +266,8 @@ func Resolve(p Params) ModelCapacity {
 		}
 	}
 	coldTokens := 0
-	if p.KVBytesPerToken > 0 && p.HostColdBudgetBytes > 0 {
-		coldTokens = int(p.HostColdBudgetBytes / p.KVBytesPerToken)
+	if kvBudget > 0 && p.HostColdBudgetBytes > 0 {
+		coldTokens = int(p.HostColdBudgetBytes / kvBudget)
 	}
 	planner := hotTokens + coldTokens
 	if p.ModelMaxCtx > 0 && planner > p.ModelMaxCtx {
@@ -195,7 +286,7 @@ func Resolve(p Params) ModelCapacity {
 		MemoryContextTokens:     memoryTokens,
 		HotContextTokens:        hotTokens,
 		PlannerEffectiveContext: planner,
-		KVBytesPerToken:         p.KVBytesPerToken,
+		KVBytesPerToken:         kvBudget,
 		FreeBytes:               p.FreeBytes,
 		WeightsBytes:            p.WeightsBytes,
 		OverheadBytes:           p.OverheadBytes,

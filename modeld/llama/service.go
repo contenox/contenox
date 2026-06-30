@@ -251,7 +251,8 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		return transport.ModelInfo{}, err
 	}
 	weights := fileSize(req.Path)
-	kvBytes := capacity.KVBytesPerToken(params.BlockCount, params.kvHeads(), params.headDim(), cfg.KVCacheType)
+	layerKV := llamaLayerKVProfile(params, cfg.KVCacheType)
+	kvBytes := layerKV.DenseKVBytesPerToken()
 	overhead := int64(0)
 	// modeld derives GPU offload from what it detected at runtime, not from a
 	// per-model knob: with an accelerator present it offloads as many layers as
@@ -263,7 +264,7 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if isAcceleratorSnapshot(st) {
 		cfg.NumGpuLayers = autoGpuLayerCeiling(explicitGpuLayers)
 		overhead = llamaGPUComputeReserveBytes(cfg)
-		resolvedGpuLayers = resolveGPULayersForBudget(cfg, params, weights, kvBytes, overhead, st, policy)
+		resolvedGpuLayers = resolveGPULayersForBudget(cfg, params, layerKV, weights, kvBytes, overhead, st, policy)
 		cfg.NumGpuLayers = resolvedGpuLayers
 		weights = estimateLlamaGPUWeights(weights, params.BlockCount, cfg.NumGpuLayers)
 	} else {
@@ -272,6 +273,7 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	resolved := capacity.Resolve(capacity.Params{
 		ModelMaxCtx:         params.ContextLength,
 		KVBytesPerToken:     kvBytes,
+		LayerKV:             layerKV,
 		WeightsBytes:        weights,
 		OverheadBytes:       overhead,
 		FreeBytes:           st.FreeBytes,
@@ -299,6 +301,16 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		}
 	}
 	return info, nil
+}
+
+func llamaLayerKVProfile(params ggufParams, kvType string) capacity.LayerKVProfile {
+	global, windowed := params.layerSplit()
+	return capacity.LayerKVProfile{
+		GlobalLayers:    global,
+		WindowedLayers:  windowed,
+		Window:          params.SlidingWindow,
+		PerLayerKVBytes: capacity.KVBytesPerToken(1, params.kvHeads(), params.headDim(), kvType),
+	}
 }
 
 func fileSize(path string) int64 {
@@ -395,7 +407,7 @@ func autoGpuLayerCeiling(explicit int) int {
 	return allGpuLayers
 }
 
-func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, weights, kvBytes, overhead int64, st capacity.DeviceSnapshot, policy capacity.Policy) int {
+func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, layerKV capacity.LayerKVProfile, weights, kvBytes, overhead int64, st capacity.DeviceSnapshot, policy capacity.Policy) int {
 	if cfg.NumGpuLayers <= 0 {
 		return 0
 	}
@@ -412,6 +424,7 @@ func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, weights,
 		resolved := capacity.Resolve(capacity.Params{
 			ModelMaxCtx:         params.ContextLength,
 			KVBytesPerToken:     kvBytes,
+			LayerKV:             layerKV,
 			WeightsBytes:        modelBytes,
 			OverheadBytes:       overhead,
 			FreeBytes:           st.FreeBytes,

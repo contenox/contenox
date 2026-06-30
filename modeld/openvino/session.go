@@ -550,6 +550,8 @@ func (s *genaiSession) updateResidencyPlanLocked(requireComplete bool) {
 	plan, planErr := residency.PlanHotSet(residency.PlanInput{
 		Blocks:       blocks,
 		BudgetTokens: s.numCtx,
+		StreamPolicy: s.streamPolicyLocked(),
+		Capabilities: s.Capabilities(),
 	})
 	if planErr != nil {
 		s.residencyErr = planErr.Error()
@@ -579,7 +581,22 @@ func (s *genaiSession) planForBudgetLocked(budget int) (residency.Plan, error) {
 	return residency.PlanHotSet(residency.PlanInput{
 		Blocks:       blocks,
 		BudgetTokens: budget,
+		StreamPolicy: s.streamPolicyLocked(),
+		Capabilities: s.Capabilities(),
 	})
+}
+
+func (s *genaiSession) streamPolicyLocked() residency.StreamPolicy {
+	caps := s.Capabilities()
+	if !caps.RemoveMiddle || !caps.PositionShift {
+		return residency.StreamPolicy{}
+	}
+	budget := residency.DeriveEvictionBudget(s.numCtx, openvinoEvictionBlock)
+	return residency.StreamPolicy{
+		Enabled:      budget.Valid(),
+		SinkTokens:   budget.SinkTokens,
+		RecentTokens: budget.RecentTokens,
+	}
 }
 
 // driveEvictToFitLocked parks evictable ranges to the cold store so that the

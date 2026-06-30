@@ -404,11 +404,10 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	if err != nil {
 		return llama.SuffixStatus{}, fmt.Errorf("llamasession: tokenize suffix: %w", err)
 	}
-	// Residency driver: when the suffix would overflow the hot window and a cold
-	// store is available, park evictable ranges to host KV to make room instead
-	// of overflowing. Effective context is then numCtx hot plus the recoverable
-	// cold budget. Mirrors the OpenVINO adapter.
-	if s.coldEnabledLocked() && len(s.resident)+len(stoks) > s.numCtx {
+	// Residency driver: when the suffix would overflow the hot window, evict
+	// ranges selected by the shared policy. With cold storage this parks KV for
+	// later admit; without it, StreamingLLM makes the drop intentionally lossy.
+	if (s.coldEnabledLocked() || s.streamPolicyLocked().Enabled) && len(s.resident)+len(stoks) > s.numCtx {
 		if err := s.driveEvictToFitLocked(len(stoks)); err != nil {
 			return llama.SuffixStatus{}, err
 		}
@@ -1015,6 +1014,8 @@ func (s *session) updateResidencyPlanLocked(requireComplete bool) {
 	plan, planErr := residency.PlanHotSet(residency.PlanInput{
 		Blocks:       blocks,
 		BudgetTokens: s.numCtx,
+		StreamPolicy: s.streamPolicyLocked(),
+		Capabilities: s.Capabilities(),
 	})
 	if planErr != nil {
 		s.residencyErr = planErr.Error()
@@ -1044,7 +1045,18 @@ func (s *session) planForBudgetLocked(budget int) (residency.Plan, error) {
 	return residency.PlanHotSet(residency.PlanInput{
 		Blocks:       blocks,
 		BudgetTokens: budget,
+		StreamPolicy: s.streamPolicyLocked(),
+		Capabilities: s.Capabilities(),
 	})
+}
+
+func (s *session) streamPolicyLocked() residency.StreamPolicy {
+	budget := residency.DeriveEvictionBudget(s.numCtx, 1)
+	return residency.StreamPolicy{
+		Enabled:      budget.Valid(),
+		SinkTokens:   budget.SinkTokens,
+		RecentTokens: budget.RecentTokens,
+	}
 }
 
 // driveEvictToFitLocked parks evictable ranges to the cold store so the current

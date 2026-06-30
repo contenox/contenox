@@ -89,6 +89,19 @@ type RuntimeInfo struct {
 	Devices            []DeviceInfo
 }
 
+// ModelKVProfile is unavailable without the native OpenVINO GenAI shim.
+type ModelKVProfile struct {
+	MaxPositionEmbeddings int
+	NumHiddenLayers       int
+	NumKeyValueHeads      int
+	NumAttentionHeads     int
+	HiddenSize            int
+	HeadDim               int
+	SlidingWindow         int
+	GlobalLayers          int
+	WindowedLayers        int
+}
+
 // GenAIResult is the generated text plus the pipeline metrics observed for the
 // request.
 type GenAIResult struct {
@@ -105,6 +118,11 @@ func Runtime() (RuntimeInfo, error) {
 // Device reports that the native GenAI backend is not compiled in.
 func Device(_ string) (DeviceInfo, error) {
 	return DeviceInfo{}, errors.New("openvino GenAI backend is not compiled in")
+}
+
+// InspectModelKVProfile reports that the native GenAI backend is not compiled in.
+func InspectModelKVProfile(_ string) (ModelKVProfile, error) {
+	return ModelKVProfile{}, errors.New("openvino GenAI backend is not compiled in")
 }
 
 // StreamChunk carries a decoded text delta or a terminal stream error.

@@ -113,6 +113,21 @@ type RuntimeInfo struct {
 	Devices            []DeviceInfo
 }
 
+// ModelKVProfile is the model architecture data needed to size KV cache. It is
+// read through the native OpenVINO shim so service capacity planning uses the
+// same model metadata boundary as the backend.
+type ModelKVProfile struct {
+	MaxPositionEmbeddings int
+	NumHiddenLayers       int
+	NumKeyValueHeads      int
+	NumAttentionHeads     int
+	HiddenSize            int
+	HeadDim               int
+	SlidingWindow         int
+	GlobalLayers          int
+	WindowedLayers        int
+}
+
 // GenAIResult is the generated text plus the pipeline metrics observed for the
 // request.
 type GenAIResult struct {
@@ -179,6 +194,34 @@ func Device(device string) (DeviceInfo, error) {
 		return DeviceInfo{}, fmt.Errorf("openvino device info: %s", C.GoString((*C.char)(errbuf)))
 	}
 	return deviceInfoFromC(out), nil
+}
+
+// InspectModelKVProfile returns model KV sizing metadata from the native
+// OpenVINO shim without opening a GenAI pipeline.
+func InspectModelKVProfile(modelDir string) (ModelKVProfile, error) {
+	cDir := C.CString(modelDir)
+	defer C.free(unsafe.Pointer(cDir))
+	errbuf := C.calloc(1, C.size_t(genAIErrLen))
+	if errbuf == nil {
+		return ModelKVProfile{}, errors.New("allocate OpenVINO model KV profile error buffer")
+	}
+	defer C.free(errbuf)
+
+	var out C.cx_ov_model_kv_profile
+	if rc := C.cx_ov_model_kv_profile_get(cDir, &out, (*C.char)(errbuf), C.size_t(genAIErrLen)); rc != 0 {
+		return ModelKVProfile{}, fmt.Errorf("openvino model KV profile: %s", C.GoString((*C.char)(errbuf)))
+	}
+	return ModelKVProfile{
+		MaxPositionEmbeddings: int(out.max_position_embeddings),
+		NumHiddenLayers:       int(out.num_hidden_layers),
+		NumKeyValueHeads:      int(out.num_key_value_heads),
+		NumAttentionHeads:     int(out.num_attention_heads),
+		HiddenSize:            int(out.hidden_size),
+		HeadDim:               int(out.head_dim),
+		SlidingWindow:         int(out.sliding_window),
+		GlobalLayers:          int(out.global_layers),
+		WindowedLayers:        int(out.windowed_layers),
+	}, nil
 }
 
 func deviceInfoFromC(d C.cx_ov_device_info) DeviceInfo {

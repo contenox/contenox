@@ -20,6 +20,89 @@ func TestUnit_KVBytesPerToken(t *testing.T) {
 	}
 }
 
+func TestUnit_LayerKVProfile_SWABytesForContext(t *testing.T) {
+	densePerToken := int64(168 << 10)
+	p := LayerKVProfile{
+		GlobalLayers:    7,
+		WindowedLayers:  35,
+		Window:          512,
+		PerLayerKVBytes: densePerToken / 42,
+	}
+	got := p.KVBytesForContext(131072)
+	want := int64(7)*p.PerLayerKVBytes*131072 + int64(35)*p.PerLayerKVBytes*512
+	if got != want {
+		t.Fatalf("KVBytesForContext = %d, want %d", got, want)
+	}
+	const gib = int64(1 << 30)
+	if got < 3*gib || got > 4*gib {
+		t.Fatalf("SWA context cost = %.2f GiB, want about 3.6 GiB", float64(got)/float64(gib))
+	}
+	dense := densePerToken * 131072
+	if dense/got < 5 {
+		t.Fatalf("SWA cost %d should be far below dense %d", got, dense)
+	}
+}
+
+func TestUnit_Resolve_SWAProfileInvertsBudget(t *testing.T) {
+	densePerToken := int64(168 << 10)
+	profile := LayerKVProfile{
+		GlobalLayers:    7,
+		WindowedLayers:  35,
+		Window:          512,
+		PerLayerKVBytes: densePerToken / 42,
+	}
+	need := profile.KVBytesForContext(131072)
+	c := Resolve(Params{
+		ModelMaxCtx:     131072,
+		KVBytesPerToken: densePerToken,
+		LayerKV:         profile,
+		FreeBytes:       need,
+		HeadroomFrac:    0.000001,
+	})
+	if c.EffectiveContext < 131000 {
+		t.Fatalf("EffectiveContext = %d, want near full 131072 SWA window", c.EffectiveContext)
+	}
+	denseOnly := Resolve(Params{
+		ModelMaxCtx:     131072,
+		KVBytesPerToken: densePerToken,
+		FreeBytes:       need,
+		HeadroomFrac:    0.000001,
+	})
+	if denseOnly.EffectiveContext >= c.EffectiveContext/2 {
+		t.Fatalf("dense-only context = %d, SWA context = %d; dense path should remain much smaller", denseOnly.EffectiveContext, c.EffectiveContext)
+	}
+}
+
+func TestUnit_Resolve_DenseLayerKVProfileMatchesFlatPath(t *testing.T) {
+	flat := Resolve(Params{
+		ModelMaxCtx:     32768,
+		KVBytesPerToken: 28672,
+		WeightsBytes:    4 << 20,
+		OverheadBytes:   2 << 20,
+		FreeBytes:       10 << 20,
+		HeadroomFrac:    0.1,
+	})
+	profiled := Resolve(Params{
+		ModelMaxCtx:     32768,
+		KVBytesPerToken: 28672,
+		LayerKV: LayerKVProfile{
+			GlobalLayers:    28,
+			PerLayerKVBytes: 28672 / 28,
+		},
+		WeightsBytes:  4 << 20,
+		OverheadBytes: 2 << 20,
+		FreeBytes:     10 << 20,
+		HeadroomFrac:  0.1,
+	})
+	if profiled.EffectiveContext != flat.EffectiveContext ||
+		profiled.MemoryContextTokens != flat.MemoryContextTokens ||
+		profiled.HotContextTokens != flat.HotContextTokens ||
+		profiled.PlannerEffectiveContext != flat.PlannerEffectiveContext ||
+		profiled.RequiredBytes != flat.RequiredBytes {
+		t.Fatalf("profiled dense resolve = %+v, want flat %+v", profiled, flat)
+	}
+}
+
 func TestUnit_Resolve_AmpleMemoryUsesModelMax(t *testing.T) {
 	c := Resolve(Params{
 		ModelMaxCtx:     32768,

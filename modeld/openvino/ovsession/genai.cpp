@@ -304,6 +304,178 @@ static ov::Any kv_precision_from(const cx_genai_session_config *config) {
     throw std::runtime_error("unsupported KV_CACHE_PRECISION: " + precision);
 }
 
+static std::optional<int> json_int_field(const ov::genai::JsonContainer &root, const std::string &key) {
+    if (!root.contains(key)) {
+        return std::nullopt;
+    }
+    if (auto v = root[key].as_int()) {
+        return static_cast<int>(*v);
+    }
+    return std::nullopt;
+}
+
+static std::string lower_ascii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+static bool layer_type_is_windowed(const std::string &raw) {
+    const auto v = lower_ascii(raw);
+    return v == "sliding_attention" || v == "sliding" || v == "local_attention" ||
+           v == "local" || v == "windowed_attention" || v == "windowed";
+}
+
+static bool layer_type_is_global(const std::string &raw) {
+    const auto v = lower_ascii(raw);
+    return v == "full_attention" || v == "full" || v == "global_attention" ||
+           v == "global";
+}
+
+static bool pattern_char_is_windowed(char c) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return c == 'l' || c == 's' || c == 'w';
+}
+
+static bool pattern_char_is_global(char c) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return c == 'g' || c == 'f';
+}
+
+static void count_layer_types(const ov::genai::JsonContainer &layers, int num_layers, int &global, int &windowed) {
+    const size_t n = std::min(static_cast<size_t>(std::max(num_layers, 0)), layers.size());
+    for (size_t i = 0; i < n; ++i) {
+        auto layer = layers[i].as_string();
+        if (layer && layer_type_is_windowed(*layer)) {
+            ++windowed;
+        } else {
+            ++global;
+        }
+    }
+    global += std::max(num_layers - static_cast<int>(n), 0);
+}
+
+static void count_pattern_array(const ov::genai::JsonContainer &pattern, int num_layers, int &global, int &windowed) {
+    const size_t n = std::min(static_cast<size_t>(std::max(num_layers, 0)), pattern.size());
+    for (size_t i = 0; i < n; ++i) {
+        const auto item = pattern[i];
+        if (auto b = item.as_bool()) {
+            *b ? ++windowed : ++global;
+        } else if (auto s = item.as_string()) {
+            if (layer_type_is_windowed(*s)) {
+                ++windowed;
+            } else if (layer_type_is_global(*s)) {
+                ++global;
+            } else {
+                ++global;
+            }
+        } else if (auto v = item.as_int()) {
+            *v != 0 ? ++windowed : ++global;
+        } else {
+            ++global;
+        }
+    }
+    global += std::max(num_layers - static_cast<int>(n), 0);
+}
+
+static void count_pattern_string(const std::string &pattern, int num_layers, int &global, int &windowed) {
+    if (pattern.empty()) {
+        global = num_layers;
+        return;
+    }
+    for (int i = 0; i < num_layers; ++i) {
+        const char c = pattern[static_cast<size_t>(i) % pattern.size()];
+        if (pattern_char_is_windowed(c)) {
+            ++windowed;
+        } else if (pattern_char_is_global(c)) {
+            ++global;
+        } else {
+            ++global;
+        }
+    }
+}
+
+static void derive_attention_layer_split(const ov::genai::JsonContainer &cfg, cx_ov_model_kv_profile *out) {
+    out->global_layers = out->num_hidden_layers;
+    out->windowed_layers = 0;
+    if (out->num_hidden_layers <= 0 || out->sliding_window <= 0) {
+        return;
+    }
+    int global = 0;
+    int windowed = 0;
+    if (cfg.contains("layer_types") && cfg["layer_types"].is_array()) {
+        count_layer_types(cfg["layer_types"], out->num_hidden_layers, global, windowed);
+    } else if (cfg.contains("sliding_window_pattern")) {
+        const auto pattern = cfg["sliding_window_pattern"];
+        if (auto stride = pattern.as_int()) {
+            if (*stride > 0) {
+                global = (out->num_hidden_layers + static_cast<int>(*stride) - 1) / static_cast<int>(*stride);
+                windowed = out->num_hidden_layers - global;
+            }
+        } else if (pattern.is_array()) {
+            count_pattern_array(pattern, out->num_hidden_layers, global, windowed);
+        } else if (auto s = pattern.as_string()) {
+            count_pattern_string(*s, out->num_hidden_layers, global, windowed);
+        }
+    } else {
+        windowed = out->num_hidden_layers;
+    }
+    out->global_layers = std::max(global, 0);
+    out->windowed_layers = std::max(windowed, 0);
+    if (out->global_layers + out->windowed_layers > out->num_hidden_layers) {
+        out->windowed_layers = std::max(out->num_hidden_layers - out->global_layers, 0);
+    }
+}
+
+static std::filesystem::path model_config_path_for(const std::string &model_path);
+
+static cx_ov_model_kv_profile load_model_kv_profile(const std::string &model_path) {
+    cx_ov_model_kv_profile out{};
+    const auto config_path = model_config_path_for(model_path);
+    std::ifstream in(config_path);
+    if (!in.good()) {
+        return out;
+    }
+
+    std::ostringstream raw;
+    raw << in.rdbuf();
+    auto root = ov::genai::JsonContainer::from_json_string(raw.str());
+    auto cfg = root;
+    if (root.contains("text_config") && root["text_config"].is_object()) {
+        cfg = root["text_config"];
+    }
+    out.max_position_embeddings = json_int_field(cfg, "max_position_embeddings").value_or(0);
+    out.num_hidden_layers = json_int_field(cfg, "num_hidden_layers").value_or(0);
+    out.num_key_value_heads = json_int_field(cfg, "num_key_value_heads").value_or(0);
+    out.num_attention_heads = json_int_field(cfg, "num_attention_heads").value_or(0);
+    out.hidden_size = json_int_field(cfg, "hidden_size").value_or(0);
+    out.head_dim = json_int_field(cfg, "head_dim").value_or(0);
+    out.sliding_window = json_int_field(cfg, "sliding_window").value_or(0);
+    derive_attention_layer_split(cfg, &out);
+    return out;
+}
+
+extern "C" int cx_ov_model_kv_profile_get(const char *model_dir, cx_ov_model_kv_profile *out, char *err, size_t err_len) {
+    try {
+        if (!out) {
+            throw std::runtime_error("model KV profile output pointer is null");
+        }
+        std::memset(out, 0, sizeof(*out));
+        if (!model_dir || !model_dir[0]) {
+            return 0;
+        }
+        *out = load_model_kv_profile(model_dir);
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO model KV profile error");
+        return 1;
+    }
+}
+
 struct model_rope_config {
     double theta = 10000.0;
     std::string scaling_json;

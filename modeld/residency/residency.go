@@ -216,6 +216,18 @@ type PlanInput struct {
 	// precision.
 	SinkTokens   int
 	RecentTokens int
+	StreamPolicy StreamPolicy
+	Capabilities Capabilities
+	// AttentionScores optionally supplies one score per input block. Higher
+	// means more important. When present, eviction within each CacheClass drops
+	// lower-score blocks first; when absent, ordering remains recency-based.
+	AttentionScores []float32
+}
+
+type StreamPolicy struct {
+	Enabled      bool
+	SinkTokens   int
+	RecentTokens int
 }
 
 // Plan is the planner output: KeepHot plus EvictCold partitions the input
@@ -240,7 +252,15 @@ func PlanHotSet(in PlanInput) (Plan, error) {
 	if err := validateBlocks(blocks); err != nil {
 		return Plan{}, err
 	}
-	markPolicyFlags(blocks, in.SinkTokens, in.RecentTokens)
+	if len(in.AttentionScores) > 0 && len(in.AttentionScores) != len(blocks) {
+		return Plan{}, fmt.Errorf("residency: attention score count %d does not match block count %d", len(in.AttentionScores), len(blocks))
+	}
+	sinkTokens, recentTokens := in.SinkTokens, in.RecentTokens
+	if in.StreamPolicy.Enabled {
+		sinkTokens = in.StreamPolicy.SinkTokens
+		recentTokens = in.StreamPolicy.RecentTokens
+	}
+	markPolicyFlags(blocks, sinkTokens, recentTokens)
 
 	plan := Plan{BudgetTokens: in.BudgetTokens}
 	hot := append([]Block(nil), blocks...)
@@ -252,25 +272,17 @@ func PlanHotSet(in PlanInput) (Plan, error) {
 		}
 	}
 
+	if in.StreamPolicy.Enabled {
+		return planStreamingHotSet(plan, hot, in), nil
+	}
+
 	candidates := make([]Block, 0, len(hot))
 	for _, b := range hot {
 		if !b.protected() {
 			candidates = append(candidates, b)
 		}
 	}
-	sort.SliceStable(candidates, func(i, j int) bool {
-		a, b := candidates[i], candidates[j]
-		if a.CacheClass != b.CacheClass {
-			return a.CacheClass.MoreEvictableThan(b.CacheClass)
-		}
-		if a.LastUsed != b.LastUsed {
-			return a.LastUsed < b.LastUsed
-		}
-		if a.Range.Start != b.Range.Start {
-			return a.Range.Start < b.Range.Start
-		}
-		return a.Range.End < b.Range.End
-	})
+	sortEvictionCandidates(candidates, scoreByRange(blocks, in.AttentionScores))
 
 	hotTokens := plan.TotalTokens
 	evicted := map[Range]bool{}
@@ -299,6 +311,79 @@ func PlanHotSet(in PlanInput) (Plan, error) {
 		))
 	}
 	return plan, nil
+}
+
+func planStreamingHotSet(plan Plan, hot []Block, in PlanInput) Plan {
+	if !in.Capabilities.RemoveMiddle || !in.Capabilities.PositionShift {
+		plan.KeepHot = hot
+		sortBlocksByRange(plan.KeepHot)
+		plan.HotTokens = plan.TotalTokens
+		if plan.HotTokens > plan.BudgetTokens {
+			plan.OverBudget = true
+		}
+		plan.Diagnostics = append(plan.Diagnostics, "stream policy unsupported by backend capabilities")
+		return plan
+	}
+	evicted := map[Range]bool{}
+	hotTokens := plan.TotalTokens
+	for _, b := range hot {
+		if b.protected() {
+			continue
+		}
+		evicted[b.Range] = true
+		hotTokens -= b.Range.Len()
+		plan.EvictCold = append(plan.EvictCold, b)
+	}
+	for _, b := range hot {
+		if !evicted[b.Range] {
+			plan.KeepHot = append(plan.KeepHot, b)
+		}
+	}
+	sortBlocksByRange(plan.KeepHot)
+	sortBlocksByRange(plan.EvictCold)
+	plan.HotTokens = hotTokens
+	if plan.HotTokens > plan.BudgetTokens {
+		plan.OverBudget = true
+		plan.Diagnostics = append(plan.Diagnostics, fmt.Sprintf(
+			"stream hot set requires %d tokens but budget is %d",
+			plan.HotTokens,
+			plan.BudgetTokens,
+		))
+	}
+	return plan
+}
+
+func scoreByRange(blocks []Block, scores []float32) map[Range]float32 {
+	if len(scores) == 0 {
+		return nil
+	}
+	out := make(map[Range]float32, len(blocks))
+	for i, b := range blocks {
+		out[b.Range] = scores[i]
+	}
+	return out
+}
+
+func sortEvictionCandidates(candidates []Block, scores map[Range]float32) {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		a, b := candidates[i], candidates[j]
+		if a.CacheClass != b.CacheClass {
+			return a.CacheClass.MoreEvictableThan(b.CacheClass)
+		}
+		if scores != nil {
+			as, bs := scores[a.Range], scores[b.Range]
+			if as != bs {
+				return as < bs
+			}
+		}
+		if a.LastUsed != b.LastUsed {
+			return a.LastUsed < b.LastUsed
+		}
+		if a.Range.Start != b.Range.Start {
+			return a.Range.Start < b.Range.Start
+		}
+		return a.Range.End < b.Range.End
+	})
 }
 
 func markPolicyFlags(blocks []Block, sinkTokens, recentTokens int) {
@@ -402,6 +487,7 @@ type Capabilities struct {
 	SlidingWindowAttentionTokens int
 	ColdStore                    bool
 	RecomputeRange               bool
+	AttentionScores              bool
 }
 
 // Controller is the optional engine-facing seam. It is intentionally not part
@@ -415,4 +501,11 @@ type Executor interface {
 	Controller
 	EvictRange(ctx context.Context, r Range) error
 	AdmitRange(ctx context.Context, r Range) error
+}
+
+// AttentionScorer is an optional backend seam for attention-aware eviction.
+// Backends that cannot expose scores leave Capabilities.AttentionScores false
+// and the planner falls back to recency/class ordering.
+type AttentionScorer interface {
+	BlockAttentionScores(ctx context.Context, ranges []Range) ([]float32, error)
 }

@@ -137,6 +137,101 @@ func TestUnit_PlanHotSet_ProtectsSinksAndRecentWindow(t *testing.T) {
 	}
 }
 
+func TestUnit_PlanHotSet_StreamPolicyEvictsMiddle(t *testing.T) {
+	blocks := []Block{
+		{Range: Range{0, 10}, Kind: "terminal", CacheClass: contextasm.ClassVolatile},
+		{Range: Range{10, 20}, Kind: "terminal", CacheClass: contextasm.ClassVolatile},
+		{Range: Range{20, 30}, Kind: "terminal", CacheClass: contextasm.ClassVolatile},
+		{Range: Range{30, 40}, Kind: "terminal", CacheClass: contextasm.ClassVolatile},
+	}
+
+	plan, err := PlanHotSet(PlanInput{
+		Blocks:       blocks,
+		BudgetTokens: 20,
+		StreamPolicy: StreamPolicy{
+			Enabled:      true,
+			SinkTokens:   10,
+			RecentTokens: 10,
+		},
+		Capabilities: Capabilities{RemoveMiddle: true, PositionShift: true},
+	})
+	if err != nil {
+		t.Fatalf("PlanHotSet: %v", err)
+	}
+	if plan.OverBudget {
+		t.Fatalf("streaming plan unexpectedly over budget: %+v", plan)
+	}
+	if ranges := blockRanges(plan.KeepHot); !reflect.DeepEqual(ranges, []Range{{0, 10}, {30, 40}}) {
+		t.Fatalf("keep ranges = %+v, want sink and recent", ranges)
+	}
+	if ranges := blockRanges(plan.EvictCold); !reflect.DeepEqual(ranges, []Range{{10, 20}, {20, 30}}) {
+		t.Fatalf("evict ranges = %+v, want middle", ranges)
+	}
+}
+
+func TestUnit_PlanHotSet_StreamPolicyUnsupportedDegradesToNoop(t *testing.T) {
+	blocks := []Block{
+		{Range: Range{0, 10}, Kind: "terminal", CacheClass: contextasm.ClassVolatile},
+		{Range: Range{10, 20}, Kind: "terminal", CacheClass: contextasm.ClassVolatile},
+		{Range: Range{20, 30}, Kind: "terminal", CacheClass: contextasm.ClassVolatile},
+	}
+
+	plan, err := PlanHotSet(PlanInput{
+		Blocks:       blocks,
+		BudgetTokens: 20,
+		StreamPolicy: StreamPolicy{
+			Enabled:      true,
+			SinkTokens:   10,
+			RecentTokens: 10,
+		},
+		Capabilities: Capabilities{RemoveTail: true},
+	})
+	if err != nil {
+		t.Fatalf("PlanHotSet: %v", err)
+	}
+	if ranges := blockRanges(plan.KeepHot); !reflect.DeepEqual(ranges, []Range{{0, 10}, {10, 20}, {20, 30}}) {
+		t.Fatalf("keep ranges = %+v, want no-op retained set", ranges)
+	}
+	if len(plan.EvictCold) != 0 || !plan.OverBudget || len(plan.Diagnostics) == 0 {
+		t.Fatalf("plan = %+v, want unsupported no-op diagnostic", plan)
+	}
+}
+
+func TestUnit_PlanHotSet_EvictsLowestAttentionScoreWithinClass(t *testing.T) {
+	blocks := []Block{
+		{Range: Range{0, 10}, Kind: "terminal", CacheClass: contextasm.ClassVolatile, LastUsed: 1},
+		{Range: Range{10, 20}, Kind: "terminal", CacheClass: contextasm.ClassVolatile, LastUsed: 9},
+		{Range: Range{20, 30}, Kind: "terminal", CacheClass: contextasm.ClassVolatile, LastUsed: 1},
+	}
+
+	plan, err := PlanHotSet(PlanInput{
+		Blocks:          blocks,
+		BudgetTokens:    20,
+		AttentionScores: []float32{0.9, 0.1, 0.5},
+		Capabilities:    Capabilities{AttentionScores: true},
+	})
+	if err != nil {
+		t.Fatalf("PlanHotSet: %v", err)
+	}
+	if ranges := blockRanges(plan.EvictCold); !reflect.DeepEqual(ranges, []Range{{10, 20}}) {
+		t.Fatalf("evict ranges = %+v, want lowest-score block", ranges)
+	}
+	if ranges := blockRanges(plan.KeepHot); !reflect.DeepEqual(ranges, []Range{{0, 10}, {20, 30}}) {
+		t.Fatalf("keep ranges = %+v, want higher-score blocks", ranges)
+	}
+}
+
+func TestUnit_PlanHotSet_RejectsMismatchedAttentionScores(t *testing.T) {
+	_, err := PlanHotSet(PlanInput{
+		BudgetTokens:    10,
+		Blocks:          []Block{{Range: Range{0, 10}, CacheClass: contextasm.ClassVolatile}},
+		AttentionScores: []float32{0.1, 0.2},
+	})
+	if err == nil {
+		t.Fatal("PlanHotSet accepted mismatched attention scores")
+	}
+}
+
 func TestUnit_PlanHotSet_RejectsOverlappingRanges(t *testing.T) {
 	_, err := PlanHotSet(PlanInput{
 		BudgetTokens: 10,

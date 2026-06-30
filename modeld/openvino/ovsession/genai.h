@@ -42,6 +42,18 @@ typedef struct cx_genai_metrics {
     size_t cache_size_in_bytes;
 } cx_genai_metrics;
 
+typedef struct cx_ov_model_kv_profile {
+    int max_position_embeddings;
+    int num_hidden_layers;
+    int num_key_value_heads;
+    int num_attention_heads;
+    int hidden_size;
+    int head_dim;
+    int sliding_window;
+    int global_layers;
+    int windowed_layers;
+} cx_ov_model_kv_profile;
+
 /* One dynamic LoRA adapter applied to a GenAI session. Path points at an
    OpenVINO safetensors adapter file (NOT a GGUF adapter — that is the llama
    backend's format). alpha is the effective LoRA scale; OpenVINO already folds
@@ -80,6 +92,7 @@ typedef struct cx_genai_session_config {
 
 int cx_ov_runtime_info_get(cx_ov_runtime_info *out, char *err, size_t err_len);
 int cx_ov_device_info_get(const char *device, cx_ov_device_info *out, char *err, size_t err_len);
+int cx_ov_model_kv_profile_get(const char *model_dir, cx_ov_model_kv_profile *out, char *err, size_t err_len);
 
 cx_genai_session *cx_genai_session_new(const char *model_dir, const char *device,
                                        const cx_genai_session_config *config,

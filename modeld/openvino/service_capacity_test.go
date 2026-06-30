@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/contenox/runtime/modeld/capacity"
+	"github.com/contenox/runtime/modeld/openvino/ovsession"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
@@ -120,6 +121,50 @@ func TestUnit_ServiceDescribeReportsPlannerAboveHotWithHostColdBudget(t *testing
 	}
 	if info.HostColdBudgetBytes != 4<<20 {
 		t.Fatalf("HostColdBudgetBytes = %d, want default 4MiB", info.HostColdBudgetBytes)
+	}
+}
+
+func TestUnit_ServiceDescribeUsesShimSWAProfile(t *testing.T) {
+	profile := ovsession.ModelKVProfile{
+		MaxPositionEmbeddings: 131072,
+		NumHiddenLayers:       42,
+		NumKeyValueHeads:      4,
+		NumAttentionHeads:     8,
+		HeadDim:               512,
+		SlidingWindow:         512,
+		GlobalLayers:          7,
+		WindowedLayers:        35,
+	}
+	dir := writeTestIRWithProfile(t, profile)
+	layerKV := capacity.LayerKVProfile{
+		GlobalLayers:    profile.GlobalLayers,
+		WindowedLayers:  profile.WindowedLayers,
+		Window:          profile.SlidingWindow,
+		PerLayerKVBytes: capacity.KVBytesPerToken(1, profile.NumKeyValueHeads, profile.HeadDim, "f16"),
+	}
+	svc := NewService(
+		WithMemorySource(staticMemory(layerKV.KVBytesForContext(profile.MaxPositionEmbeddings)+(1<<20))),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{
+			MaxResidentBytes: layerKV.KVBytesForContext(profile.MaxPositionEmbeddings) + (1 << 20),
+			HeadroomFrac:     0.000001,
+		}),
+	)
+
+	info, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:   "openvino",
+		Path:   dir,
+		Config: transport.Config{NumCtx: profile.MaxPositionEmbeddings},
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.EffectiveContext < 130000 {
+		t.Fatalf("EffectiveContext = %d, want near full SWA context", info.EffectiveContext)
+	}
+	if !info.SparseAttention || info.SlidingWindowAttentionTokens != profile.SlidingWindow {
+		t.Fatalf("SWA metadata = enabled %v window %d, want true/%d",
+			info.SparseAttention, info.SlidingWindowAttentionTokens, profile.SlidingWindow)
 	}
 }
 
@@ -245,6 +290,17 @@ func TestUnit_ServiceEmbedRejectsBackendMismatch(t *testing.T) {
 }
 
 func writeTestIR(t *testing.T) string {
+	return writeTestIRWithProfile(t, ovsession.ModelKVProfile{
+		MaxPositionEmbeddings: 32768,
+		NumHiddenLayers:       2,
+		NumKeyValueHeads:      1,
+		NumAttentionHeads:     2,
+		HiddenSize:            256,
+		GlobalLayers:          2,
+	})
+}
+
+func writeTestIRWithProfile(t *testing.T, profile ovsession.ModelKVProfile) string {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := []byte(`{
@@ -260,5 +316,13 @@ func writeTestIR(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, "openvino_model.bin"), make([]byte, 1024), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	old := inspectOpenVINOModel
+	inspectOpenVINOModel = func(modelDir string) (ovsession.ModelKVProfile, error) {
+		if modelDir == dir {
+			return profile, nil
+		}
+		return old(modelDir)
+	}
+	t.Cleanup(func() { inspectOpenVINOModel = old })
 	return dir
 }

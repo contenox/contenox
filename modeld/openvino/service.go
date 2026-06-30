@@ -2,7 +2,6 @@ package openvino
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -116,6 +115,8 @@ func (s *Service) resolvePolicy(st capacity.DeviceSnapshot) (capacity.Policy, er
 
 var _ transport.Service = (*Service)(nil)
 
+var inspectOpenVINOModel = ovsession.InspectModelKVProfile
+
 // OpenSession makes the model at req.Path (an OpenVINO IR directory, resolved by
 // the runtime) resident and returns a session bound to it. It rejects a model
 // typed for a different backend (ErrBackendMismatch) before loading, so a request
@@ -225,12 +226,15 @@ func (s *Service) Embed(ctx context.Context, req transport.EmbedRequest) (transp
 }
 
 type openvinoParams struct {
-	MaxPositionEmbeddings int `json:"max_position_embeddings"`
-	NumHiddenLayers       int `json:"num_hidden_layers"`
-	NumKeyValueHeads      int `json:"num_key_value_heads"`
-	NumAttentionHeads     int `json:"num_attention_heads"`
-	HiddenSize            int `json:"hidden_size"`
-	HeadDim               int `json:"head_dim"`
+	MaxPositionEmbeddings int
+	NumHiddenLayers       int
+	NumKeyValueHeads      int
+	NumAttentionHeads     int
+	HiddenSize            int
+	HeadDim               int
+	SlidingWindow         int
+	GlobalLayers          int
+	WindowedLayers        int
 }
 
 func (p openvinoParams) kvHeads() int {
@@ -250,18 +254,31 @@ func (p openvinoParams) headDim() int {
 	return 0
 }
 
-// openvinoModelParams reads model architecture facts from config.json. Returns
-// zero values when absent/unreadable.
-func openvinoModelParams(modelDir string) openvinoParams {
-	b, err := os.ReadFile(filepath.Join(modelDir, "config.json"))
+func (p openvinoParams) layerKVProfile(kvPrecision string) capacity.LayerKVProfile {
+	return capacity.LayerKVProfile{
+		GlobalLayers:    p.GlobalLayers,
+		WindowedLayers:  p.WindowedLayers,
+		Window:          p.SlidingWindow,
+		PerLayerKVBytes: capacity.KVBytesPerToken(1, p.kvHeads(), p.headDim(), kvPrecision),
+	}
+}
+
+func openvinoModelParams(modelDir string) (openvinoParams, error) {
+	profile, err := inspectOpenVINOModel(modelDir)
 	if err != nil {
-		return openvinoParams{}
+		return openvinoParams{}, fmt.Errorf("openvino model KV profile: %w", err)
 	}
-	var cfg openvinoParams
-	if json.Unmarshal(b, &cfg) != nil {
-		return openvinoParams{}
-	}
-	return cfg
+	return openvinoParams{
+		MaxPositionEmbeddings: profile.MaxPositionEmbeddings,
+		NumHiddenLayers:       profile.NumHiddenLayers,
+		NumKeyValueHeads:      profile.NumKeyValueHeads,
+		NumAttentionHeads:     profile.NumAttentionHeads,
+		HiddenSize:            profile.HiddenSize,
+		HeadDim:               profile.HeadDim,
+		SlidingWindow:         profile.SlidingWindow,
+		GlobalLayers:          profile.GlobalLayers,
+		WindowedLayers:        profile.WindowedLayers,
+	}, nil
 }
 
 func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Config, error) {
@@ -289,7 +306,10 @@ func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Con
 }
 
 func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInfo, error) {
-	params := openvinoModelParams(req.Path)
+	params, err := openvinoModelParams(req.Path)
+	if err != nil {
+		return transport.ModelInfo{}, err
+	}
 	genai := genAIConfigFromProfile(req.Path, resolveDevice())
 	device := genai.Device
 	st, err := capacity.Snapshot(s.memorySource(device))
@@ -300,10 +320,12 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if err != nil {
 		return transport.ModelInfo{}, err
 	}
-	kvBytes := capacity.KVBytesPerToken(params.NumHiddenLayers, params.kvHeads(), params.headDim(), genai.KVCachePrecision)
+	layerKV := params.layerKVProfile(genai.KVCachePrecision)
+	kvBytes := layerKV.DenseKVBytesPerToken()
 	resolved := capacity.Resolve(capacity.Params{
 		ModelMaxCtx:         params.MaxPositionEmbeddings,
 		KVBytesPerToken:     kvBytes,
+		LayerKV:             layerKV,
 		WeightsBytes:        dirSize(req.Path),
 		FreeBytes:           st.FreeBytes,
 		UserLimitBytes:      policy.MaxResidentBytes,
@@ -312,7 +334,12 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		Request:             req.Config.NumCtx,
 		HeadroomFrac:        policy.HeadroomFrac,
 	})
-	return modelInfo(resolved, st), nil
+	info := modelInfo(resolved, st)
+	if params.SlidingWindow > 0 {
+		info.SparseAttention = true
+		info.SlidingWindowAttentionTokens = params.SlidingWindow
+	}
+	return info, nil
 }
 
 func dirSize(root string) int64 {

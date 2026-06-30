@@ -93,6 +93,68 @@ func TestUnit_GGUFModelParams_ParsesSlidingWindowAttention(t *testing.T) {
 	}
 }
 
+func TestUnit_GGUFModelParams_ParsesSlidingWindowPatternArray(t *testing.T) {
+	data := buildGGUF(t, []func(*bytes.Buffer){
+		func(b *bytes.Buffer) {
+			writeGGUFString(b, "gemma2.block_count")
+			_ = binary.Write(b, binary.LittleEndian, ggufUint32)
+			_ = binary.Write(b, binary.LittleEndian, uint32(4))
+		},
+		func(b *bytes.Buffer) {
+			writeGGUFString(b, "gemma2.attention.sliding_window")
+			_ = binary.Write(b, binary.LittleEndian, ggufUint32)
+			_ = binary.Write(b, binary.LittleEndian, uint32(512))
+		},
+		func(b *bytes.Buffer) {
+			writeGGUFString(b, "gemma2.attention.sliding_window_pattern")
+			_ = binary.Write(b, binary.LittleEndian, ggufArray)
+			_ = binary.Write(b, binary.LittleEndian, ggufBool)
+			_ = binary.Write(b, binary.LittleEndian, uint64(4))
+			for _, v := range []uint8{1, 0, 1, 0} {
+				_ = binary.Write(b, binary.LittleEndian, v)
+			}
+		},
+	})
+	path := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ggufModelParams(path)
+	global, windowed := got.layerSplit()
+	if global != 2 || windowed != 2 {
+		t.Fatalf("layer split = global %d windowed %d, want 2/2; params=%+v", global, windowed, got)
+	}
+}
+
+func TestUnit_GGUFModelParams_ParsesSlidingWindowPatternStride(t *testing.T) {
+	data := buildGGUF(t, []func(*bytes.Buffer){
+		func(b *bytes.Buffer) {
+			writeGGUFString(b, "gemma2.block_count")
+			_ = binary.Write(b, binary.LittleEndian, ggufUint32)
+			_ = binary.Write(b, binary.LittleEndian, uint32(42))
+		},
+		func(b *bytes.Buffer) {
+			writeGGUFString(b, "gemma2.attention.sliding_window")
+			_ = binary.Write(b, binary.LittleEndian, ggufUint32)
+			_ = binary.Write(b, binary.LittleEndian, uint32(512))
+		},
+		func(b *bytes.Buffer) {
+			writeGGUFString(b, "gemma2.attention.sliding_window_pattern")
+			_ = binary.Write(b, binary.LittleEndian, ggufUint32)
+			_ = binary.Write(b, binary.LittleEndian, uint32(6))
+		},
+	})
+	path := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := ggufModelParams(path)
+	global, windowed := got.layerSplit()
+	if global != 7 || windowed != 35 {
+		t.Fatalf("layer split = global %d windowed %d, want 7/35; params=%+v", global, windowed, got)
+	}
+}
+
 // TestUnit_GGUFModelParams_RejectsHugeStringLengthWithoutCrashing feeds a header
 // whose metadata string declares a near-2^63 length. Before the bound this made
 // ggufReadString call make([]byte, n) and panic/OOM, crashing the daemon. Now
@@ -111,7 +173,9 @@ func TestUnit_GGUFModelParams_RejectsHugeStringLengthWithoutCrashing(t *testing.
 	if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := ggufModelParams(path); got != (ggufParams{}) {
+	if got := ggufModelParams(path); got.ContextLength != 0 || got.BlockCount != 0 || got.HeadCountKV != 0 ||
+		got.HeadCount != 0 || got.KeyLength != 0 || got.EmbeddingLength != 0 || got.SlidingWindow != 0 ||
+		len(got.SlidingWindowPattern) != 0 || got.SlidingWindowPatternStride != 0 {
 		t.Fatalf("ggufModelParams = %+v, want zero value for a header with a bogus string length", got)
 	}
 }
