@@ -14,8 +14,11 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/chatservice"
+	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/contenox/runtime/runtime/messagestore"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/stateservice"
+	"github.com/contenox/runtime/runtime/statetype"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/stretchr/testify/require"
 )
@@ -89,6 +92,30 @@ func (f fakeChains) DeleteByPath(context.Context, string) error {
 	return nil
 }
 
+type fakeStateService struct {
+	config stateservice.CLIConfigSnapshot
+}
+
+func (f fakeStateService) Get(context.Context) ([]statetype.BackendRuntimeState, error) {
+	return nil, nil
+}
+
+func (f fakeStateService) SetupStatus(context.Context) (setupcheck.Result, error) {
+	return setupcheck.Result{}, nil
+}
+
+func (f fakeStateService) Refresh(context.Context) (setupcheck.Result, error) {
+	return setupcheck.Result{}, nil
+}
+
+func (f fakeStateService) CLIConfig(context.Context) (stateservice.CLIConfigSnapshot, error) {
+	return f.config, nil
+}
+
+func (f fakeStateService) SetCLIConfig(context.Context, stateservice.CLIConfigPatch) (stateservice.CLIConfigSnapshot, error) {
+	return f.config, nil
+}
+
 func TestCreateListAndPromptChat(t *testing.T) {
 	agent := &fakeAgent{
 		newID: "chat-new",
@@ -102,15 +129,17 @@ func TestCreateListAndPromptChat(t *testing.T) {
 	}
 	mux := http.NewServeMux()
 	AddChatRoutes(mux, ChatDeps{
-		Agent:              agent,
-		Chains:             fakeChains{chain: chain},
-		DefaultChainRef:    "default-chain.json",
-		DefaultModel:       "model-a",
-		DefaultProvider:    "provider-a",
-		AltDefaultModel:    "model-b",
-		AltDefaultProvider: "provider-b",
-		DefaultMaxTokens:   "8192",
-		DefaultThink:       "medium",
+		Agent:  agent,
+		Chains: fakeChains{chain: chain},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef:    "default-chain.json",
+			Model:       "model-a",
+			Provider:    "provider-a",
+			AltModel:    "model-b",
+			AltProvider: "provider-b",
+			MaxTokens:   "8192",
+			Think:       "medium",
+		},
 	}, nil)
 	handler := apiframework.RequestIDMiddleware(mux)
 
@@ -142,6 +171,44 @@ func TestCreateListAndPromptChat(t *testing.T) {
 	require.Equal(t, "provider-b", agent.lastPrompt.TemplateVars["alt_provider"])
 	require.Equal(t, "8192", agent.lastPrompt.TemplateVars["max_tokens"])
 	require.Equal(t, "medium", agent.lastPrompt.TemplateVars["think"])
+}
+
+func TestChatUsesCurrentCLIConfigDefaults(t *testing.T) {
+	agent := &fakeAgent{newID: "chat-current"}
+	chain := &taskengine.TaskChainDefinition{
+		ID:    "default",
+		Tasks: []taskengine.TaskDefinition{{ID: "one", Handler: taskengine.HandleNoop}},
+	}
+	mux := http.NewServeMux()
+	AddChatRoutes(mux, ChatDeps{
+		Agent:  agent,
+		Chains: fakeChains{chain: chain},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef:  "default-chain.json",
+			Model:     "stale-model",
+			Provider:  "stale-provider",
+			MaxTokens: "1024",
+		},
+		StateService: fakeStateService{config: stateservice.CLIConfigSnapshot{
+			DefaultModel:       "current-model",
+			DefaultProvider:    "current-provider",
+			DefaultAltModel:    "current-alt-model",
+			DefaultAltProvider: "current-alt-provider",
+			DefaultMaxTokens:   "8192",
+		}},
+	}, nil)
+
+	body := bytes.NewBufferString(`{"message":"hi"}`)
+	req := httptest.NewRequest(http.MethodPost, "/chats/chat-current/chat", body)
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	require.Equal(t, "current-model", agent.lastPrompt.TemplateVars["model"])
+	require.Equal(t, "current-provider", agent.lastPrompt.TemplateVars["provider"])
+	require.Equal(t, "current-alt-model", agent.lastPrompt.TemplateVars["alt_model"])
+	require.Equal(t, "current-alt-provider", agent.lastPrompt.TemplateVars["alt_provider"])
+	require.Equal(t, "8192", agent.lastPrompt.TemplateVars["max_tokens"])
 }
 
 func TestHistoryReadsPersistedMessages(t *testing.T) {

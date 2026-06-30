@@ -78,7 +78,7 @@ runtime: deps-ref
 		grep -qx 'runtime_abi=$(LLAMA_RUNTIME_ABI)' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
 		grep -qx 'cuda=$(LLAMA_CUDA)' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
 		grep -qx 'hip=$(LLAMA_HIP)' "$(LLAMA_RUNTIME_DIR)/.contenox-runtime-stamp" && \
-		[ -f "$(LLAMA_RUNTIME_DIR)/lib/libcommon.a" ] && \
+		[ -f "$(LLAMA_RUNTIME_DIR)/lib/libllama-common.so" ] && \
 		[ -f "$(LLAMA_RUNTIME_DIR)/lib/libllama.so" ] && \
 		ls "$(LLAMA_RUNTIME_DIR)"/lib/libggml-cpu*.so >/dev/null 2>&1 && \
 		{ [ "$(LLAMA_CUDA)" != "ON" ] || [ -f "$(LLAMA_RUNTIME_DIR)/lib/libggml-cuda.so" ]; }; then \
@@ -89,8 +89,7 @@ runtime: deps-ref
 		$(LLAMA_CPP_CMAKE) $(LLAMA_CPP_COMMON_CMAKE_FLAGS) -DGGML_CUDA=$(LLAMA_CUDA) -DGGML_HIP=$(LLAMA_HIP); \
 		$(LLAMA_CPP_CMAKE) --build "$(LLAMA_CPP_BUILD_DIR)" --target install -j $(LLAMA_CPP_BUILD_JOBS); \
 		libdir="$(LLAMA_RUNTIME_DIR)/lib"; \
-		test -f "$(LLAMA_CPP_BUILD_DIR)/common/libcommon.a" || { echo "direct llama.cpp runtime missing common/libcommon.a in $(LLAMA_CPP_BUILD_DIR)"; exit 1; }; \
-		cp "$(LLAMA_CPP_BUILD_DIR)/common/libcommon.a" "$$libdir/libcommon.a"; \
+		test -f "$$libdir/libllama-common.so" || { echo "direct llama.cpp runtime missing libllama-common.so in $$libdir (install layout changed?)"; exit 1; }; \
 		test -f "$$libdir/libllama.so" || { echo "direct llama.cpp runtime missing libllama.so in $$libdir"; exit 1; }; \
 		for plugin in "$(LLAMA_RUNTIME_DIR)"/bin/libggml-*.so; do [ -e "$$plugin" ] && cp "$$plugin" "$$libdir/"; done; \
 		ls "$$libdir"/libggml-cpu*.so >/dev/null 2>&1 || { echo "direct llama.cpp runtime missing libggml-cpu*.so backend plugins (GGML_BACKEND_DL install layout changed?)"; exit 1; }; \
@@ -110,10 +109,10 @@ runtime: deps-ref
 test-shim: runtime
 	@libdir="$(LLAMA_RUNTIME_LIB_DIR)"; \
 		test -f "$$libdir/libllama.so" || { echo "missing direct llama.cpp runtime; run: make build-llamacpp-runtime"; exit 1; }; \
-		test -f "$$libdir/libcommon.a" || { echo "missing direct llama.cpp common library; run: make build-llamacpp-runtime"; exit 1; }; \
+		test -f "$$libdir/libllama-common.so" || { echo "missing direct llama.cpp common library; run: make build-llamacpp-runtime"; exit 1; }; \
 		CGO_ENABLED=1 \
 		CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
-		CGO_LDFLAGS="-L$$libdir -Wl,--disable-new-dtags -Wl,-rpath,$$libdir -Wl,-rpath-link,$$libdir -l:libcommon.a -l:libllama.so -l:libggml.so -l:libggml-base.so -lstdc++ -lm -ldl -lpthread" \
+		CGO_LDFLAGS="-L$$libdir -Wl,--disable-new-dtags -Wl,-rpath,$$libdir -Wl,-rpath-link,$$libdir -l:libllama-common.so -l:libllama.so -l:libggml.so -l:libggml-base.so -lstdc++ -lm -ldl -lpthread" \
 		LD_LIBRARY_PATH="$$libdir$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
 		CONTENOX_LLAMA_BACKEND_DIR="$$libdir" \
 		go test -tags 'llamacpp_direct' ./modeld/llama/llamacppshim

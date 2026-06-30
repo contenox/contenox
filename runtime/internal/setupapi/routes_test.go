@@ -35,6 +35,10 @@ func (f *fakeStateService) Refresh(context.Context) (setupcheck.Result, error) {
 	return f.refreshResult, nil
 }
 
+func (f *fakeStateService) CLIConfig(context.Context) (stateservice.CLIConfigSnapshot, error) {
+	return f.setSnapshot, nil
+}
+
 func (f *fakeStateService) SetCLIConfig(_ context.Context, patch stateservice.CLIConfigPatch) (stateservice.CLIConfigSnapshot, error) {
 	f.setCalled = true
 	f.setPatch = patch

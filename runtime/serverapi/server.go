@@ -71,13 +71,7 @@ type Dependencies struct {
 	WorkspaceID          string
 	ProjectRoot          string
 	ContenoxDir          string
-	DefaultChainRef      string
-	DefaultModel         string
-	DefaultProvider      string
-	AltDefaultModel      string
-	AltDefaultProvider   string
-	DefaultMaxTokens     string
-	DefaultThink         string
+	Defaults             stateservice.RuntimeDefaults
 }
 
 // New registers the spine routes (not-found shape, health, version) on mux and,
@@ -116,7 +110,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	stateSvc := stateservice.New(deps.State, deps.DB, deps.WorkspaceID)
 
 	backendapi.AddStateRoutes(mux, stateSvc)
-	backendapi.AddModelRoutes(mux, stateSvc, deps.DefaultModel)
+	backendapi.AddModelRoutes(mux, stateSvc, deps.Defaults)
 	backendapi.AddBackendRoutes(mux, backendSvc, stateSvc)
 	modeldapi.AddRoutes(mux, modeldapi.WithStateReader(stateSvc))
 
@@ -150,28 +144,16 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 
 	if deps.Agent != nil && deps.ChatManager != nil && chains != nil {
 		internalchatapi.AddChatRoutes(mux, internalchatapi.ChatDeps{
-			Agent:              deps.Agent,
-			ChatMgr:            deps.ChatManager,
-			Chains:             chains,
-			DB:                 deps.DB,
-			DefaultChainRef:    deps.DefaultChainRef,
-			DefaultModel:       deps.DefaultModel,
-			DefaultProvider:    deps.DefaultProvider,
-			AltDefaultModel:    deps.AltDefaultModel,
-			AltDefaultProvider: deps.AltDefaultProvider,
-			DefaultMaxTokens:   deps.DefaultMaxTokens,
-			DefaultThink:       deps.DefaultThink,
+			Agent:        deps.Agent,
+			ChatMgr:      deps.ChatManager,
+			Chains:       chains,
+			DB:           deps.DB,
+			StateService: stateSvc,
+			Defaults:     deps.Defaults,
 		}, deps.Auth)
 	}
 	if deps.Agent != nil {
-		taskexecapi.AddRoutes(mux, deps.Agent, deps.Auth, taskexecapi.Defaults{
-			Model:       deps.DefaultModel,
-			Provider:    deps.DefaultProvider,
-			AltModel:    deps.AltDefaultModel,
-			AltProvider: deps.AltDefaultProvider,
-			MaxTokens:   deps.DefaultMaxTokens,
-			Think:       deps.DefaultThink,
-		})
+		taskexecapi.AddRoutes(mux, deps.Agent, deps.Auth, stateSvc, deps.Defaults)
 	}
 	if deps.HITLService != nil {
 		approvalapi.AddRoutes(mux, deps.HITLService, deps.Auth)

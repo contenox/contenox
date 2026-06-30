@@ -135,6 +135,7 @@ function CapacityDetails({
   models,
   modelsLoading,
   modelsErrorMessage,
+  activeModelId,
   selectedModelId,
   onSelectModel,
   capacity,
@@ -145,6 +146,7 @@ function CapacityDetails({
   models: ModeldLocalModel[];
   modelsLoading: boolean;
   modelsErrorMessage?: string;
+  activeModelId: string;
   selectedModelId: string;
   onSelectModel: (model: string) => void;
   capacity: ModeldCapacityResponse | undefined;
@@ -153,10 +155,20 @@ function CapacityDetails({
   capacityErrorMessage?: string;
 }) {
   const { t } = useTranslation();
+  const labelForModel = (model: ModeldLocalModel): string => `${model.model} (${model.backendType})`;
+  const activeModel = models.find(model => model.id === activeModelId);
+  const selectedModel = models.find(model => model.id === selectedModelId);
   const options = models.map(model => ({
     value: model.id,
-    label: `${model.model} (${model.backendType})`,
+    label:
+      model.id === activeModelId
+        ? `${labelForModel(model)} - ${t('state.local_runtime_active_candidate')}`
+        : labelForModel(model),
   }));
+  const activeLabel = activeModel ? labelForModel(activeModel) : activeModelId || missingValue;
+  const selectedLabel = selectedModel
+    ? labelForModel(selectedModel)
+    : selectedModelId || missingValue;
   const info = capacity?.info;
   const rows = info
     ? presentRows([
@@ -252,14 +264,29 @@ function CapacityDetails({
       <div className="space-y-4">
         {modelsErrorMessage && <Panel variant="error">{modelsErrorMessage}</Panel>}
         {models.length > 0 ? (
-          <div className="max-w-md">
+          <div className="max-w-md space-y-2">
             <Select
               value={selectedModelId}
               onChange={event => onSelectModel(event.target.value)}
               options={options}
-              disabled={modelsLoading || capacityFetching}
+              disabled={modelsLoading && models.length === 0}
               className="w-full"
             />
+            <div className="space-y-1 text-xs">
+              <Span variant="muted" className="block">
+                {t('state.local_runtime_running_now')}:{' '}
+                <span className="font-mono">{activeLabel}</span>
+              </Span>
+              <Span variant="muted" className="block">
+                {t('state.local_runtime_diagnostics_target')}:{' '}
+                <span className="font-mono">{selectedLabel}</span>
+              </Span>
+              {capacityFetching && !capacityLoading && (
+                <Span variant="muted" className="block">
+                  {t('state.local_runtime_capacity_refreshing')}
+                </Span>
+              )}
+            </div>
           </div>
         ) : modelsLoading ? (
           <LoadingState />
@@ -367,6 +394,10 @@ export default function LocalRuntimeSection({
 }: LocalRuntimeSectionProps) {
   const { t } = useTranslation();
   const activeGeneration = data?.slot?.active?.generation;
+  const activeModelId =
+    data?.slot?.active?.type && data.slot.active.modelName
+      ? `${data.slot.active.type}:${data.slot.active.modelName}`
+      : '';
   const canLoad = data?.available && selectedModelId.trim().length > 0 && !isLoadingModel;
   const statusRows = data
     ? presentRows([
@@ -483,6 +514,7 @@ export default function LocalRuntimeSection({
             models={models}
             modelsLoading={modelsLoading}
             modelsErrorMessage={modelsErrorMessage}
+            activeModelId={activeModelId}
             selectedModelId={selectedModelId}
             onSelectModel={onSelectModel}
             capacity={capacity}

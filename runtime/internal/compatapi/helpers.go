@@ -13,6 +13,7 @@ import (
 
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
+	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/statetype"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
@@ -48,25 +49,39 @@ func containsVarMacro(s, varName string) bool {
 		strings.Contains(s, "|var:"+varName+"}}")
 }
 
+func runtimeDefaults(ctx context.Context, deps CompatDeps) stateservice.RuntimeDefaults {
+	return stateservice.ResolveRuntimeDefaults(ctx, deps.StateService, deps.Defaults)
+}
+
 // buildTemplateVars constructs the template-var map for a compat request.
 // Values are only injected when the chain actually uses the corresponding
 // {{var:*}} macro, so hardcoded chain configs remain authoritative.
-func buildTemplateVars(chain *taskengine.TaskChainDefinition, model, defaultProvider, defaultMaxTokens string, maxTokens *int) map[string]string {
+func buildTemplateVars(chain *taskengine.TaskChainDefinition, defaults stateservice.RuntimeDefaults, model string, maxTokens *int) map[string]string {
+	defaults = defaults.Trimmed()
 	vars := map[string]string{}
 	if chainUsesVar(chain, "model") {
 		if strings.TrimSpace(model) != "" {
 			vars["model"] = strings.TrimSpace(model)
 		}
 	}
-	if chainUsesVar(chain, "provider") && defaultProvider != "" {
-		vars["provider"] = defaultProvider
+	if chainUsesVar(chain, "provider") && defaults.Provider != "" {
+		vars["provider"] = defaults.Provider
+	}
+	if chainUsesVar(chain, "alt_model") && defaults.AltModel != "" {
+		vars["alt_model"] = defaults.AltModel
+	}
+	if chainUsesVar(chain, "alt_provider") && defaults.AltProvider != "" {
+		vars["alt_provider"] = defaults.AltProvider
 	}
 	if chainUsesVar(chain, "max_tokens") {
 		if maxTokens != nil {
 			vars["max_tokens"] = strconv.Itoa(*maxTokens)
-		} else if strings.TrimSpace(defaultMaxTokens) != "" {
-			vars["max_tokens"] = strings.TrimSpace(defaultMaxTokens)
+		} else if defaults.MaxTokens != "" {
+			vars["max_tokens"] = defaults.MaxTokens
 		}
+	}
+	if chainUsesVar(chain, "think") && defaults.Think != "" {
+		vars["think"] = defaults.Think
 	}
 	return vars
 }
@@ -85,9 +100,9 @@ func unixNow() int64 {
 // can route through the configured provider. Empty, "default", unknown IDE model
 // IDs, and cross-provider model IDs resolve to the configured default model
 // when one exists. Known models for the configured provider pass through.
-func resolveRequestedModel(ctx context.Context, deps CompatDeps, requested string) string {
+func resolveRequestedModel(ctx context.Context, deps CompatDeps, defaults stateservice.RuntimeDefaults, requested string) string {
 	r := strings.TrimSpace(requested)
-	defaultModel := strings.TrimSpace(deps.DefaultModel)
+	defaultModel := strings.TrimSpace(defaults.Model)
 	if r == "" || r == "default" {
 		return defaultModel
 	}
@@ -96,7 +111,7 @@ func resolveRequestedModel(ctx context.Context, deps CompatDeps, requested strin
 	}
 
 	if deps.StateService != nil {
-		ok, err := modelObservedForDefaultProvider(ctx, deps, r)
+		ok, err := modelObservedForDefaultProvider(ctx, deps, defaults, r)
 		if err == nil && ok {
 			return r
 		}
@@ -110,12 +125,12 @@ func resolveRequestedModel(ctx context.Context, deps CompatDeps, requested strin
 	return r
 }
 
-func modelObservedForDefaultProvider(ctx context.Context, deps CompatDeps, requested string) (bool, error) {
+func modelObservedForDefaultProvider(ctx context.Context, deps CompatDeps, defaults stateservice.RuntimeDefaults, requested string) (bool, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
 		return false, nil
 	}
-	defaultProvider := strings.TrimSpace(deps.DefaultProvider)
+	defaultProvider := strings.TrimSpace(defaults.Provider)
 	if defaultProvider == "" || deps.StateService == nil {
 		observed, err := observedModels(ctx, deps)
 		if err != nil {
@@ -286,7 +301,8 @@ func listModels(w http.ResponseWriter, r *http.Request, deps CompatDeps) {
 		http.Error(w, `{"error":{"message":"internal error","type":"server_error"}}`, http.StatusInternalServerError)
 		return
 	}
-	data := backendapi.OpenAIModelsFromObserved(observed, deps.DefaultModel, unixNow())
+	defaults := runtimeDefaults(r.Context(), deps)
+	data := backendapi.OpenAIModelsFromObserved(observed, defaults.Model, unixNow())
 	if limit < len(data) {
 		data = data[:limit]
 	}

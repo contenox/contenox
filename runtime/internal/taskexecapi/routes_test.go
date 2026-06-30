@@ -10,6 +10,9 @@ import (
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/stateservice"
+	"github.com/contenox/runtime/runtime/statetype"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
@@ -49,10 +52,34 @@ func (m *mockAgent) Prompt(_ context.Context, req agentservice.PromptRequest) (*
 	}, nil
 }
 
+type stubStateService struct {
+	config stateservice.CLIConfigSnapshot
+}
+
+func (s stubStateService) Get(context.Context) ([]statetype.BackendRuntimeState, error) {
+	return nil, nil
+}
+
+func (s stubStateService) SetupStatus(context.Context) (setupcheck.Result, error) {
+	return setupcheck.Result{}, nil
+}
+
+func (s stubStateService) Refresh(context.Context) (setupcheck.Result, error) {
+	return setupcheck.Result{}, nil
+}
+
+func (s stubStateService) CLIConfig(context.Context) (stateservice.CLIConfigSnapshot, error) {
+	return s.config, nil
+}
+
+func (s stubStateService) SetCLIConfig(context.Context, stateservice.CLIConfigPatch) (stateservice.CLIConfigSnapshot, error) {
+	return s.config, nil
+}
+
 func TestUnit_ExecuteTask_PostsChainToAgent(t *testing.T) {
 	agent := &mockAgent{}
 	mux := http.NewServeMux()
-	AddRoutes(mux, agent, nil, Defaults{Model: "llama3", Provider: "ollama", MaxTokens: "8192", Think: "off"})
+	AddRoutes(mux, agent, nil, nil, Defaults{Model: "llama3", Provider: "ollama", MaxTokens: "8192", Think: "off"})
 	handler := apiframework.RequestIDMiddleware(mux)
 
 	body := `{
@@ -104,10 +131,55 @@ func TestUnit_ExecuteTask_PostsChainToAgent(t *testing.T) {
 	}
 }
 
+func TestUnit_ExecuteTask_UsesCurrentCLIConfigDefaults(t *testing.T) {
+	agent := &mockAgent{}
+	mux := http.NewServeMux()
+	AddRoutes(mux, agent, nil, stubStateService{config: stateservice.CLIConfigSnapshot{
+		DefaultModel:       "current-model",
+		DefaultProvider:    "current-provider",
+		DefaultAltModel:    "current-alt-model",
+		DefaultAltProvider: "current-alt-provider",
+		DefaultMaxTokens:   "4096",
+	}}, Defaults{
+		Model:     "stale-model",
+		Provider:  "stale-provider",
+		MaxTokens: "1024",
+	})
+
+	body := `{
+		"input": "hello",
+		"inputType": "string",
+		"chain": {
+			"id": "test-chain",
+			"tasks": [{
+				"id": "one",
+				"handler": "noop",
+				"transition": {"branches": [{"operator": "default", "goto": "end"}]}
+			}]
+		}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	if agent.req.TemplateVars["model"] != "current-model" ||
+		agent.req.TemplateVars["provider"] != "current-provider" ||
+		agent.req.TemplateVars["alt_model"] != "current-alt-model" ||
+		agent.req.TemplateVars["alt_provider"] != "current-alt-provider" ||
+		agent.req.TemplateVars["max_tokens"] != "4096" {
+		t.Fatalf("template vars = %#v", agent.req.TemplateVars)
+	}
+}
+
 func TestUnit_ExecuteTask_RejectsEmptyChain(t *testing.T) {
 	agent := &mockAgent{}
 	mux := http.NewServeMux()
-	AddRoutes(mux, agent, nil, Defaults{})
+	AddRoutes(mux, agent, nil, nil, Defaults{})
 
 	req := httptest.NewRequest(http.MethodPost, "/tasks", strings.NewReader(`{"chain":{"id":"empty"}}`))
 	req.Header.Set("Content-Type", "application/json")

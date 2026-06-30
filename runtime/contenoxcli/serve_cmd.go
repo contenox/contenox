@@ -30,6 +30,7 @@ import (
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/serverapi"
+	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
 	"github.com/contenox/runtime/runtime/taskengine"
 	"github.com/contenox/runtime/runtime/toolsproviderservice"
@@ -212,13 +213,15 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		WorkspaceID:          workspaceID,
 		ProjectRoot:          workspaceRoot,
 		ContenoxDir:          contenoxDir,
-		DefaultChainRef:      firstNonEmptyStr(opts.EffectiveChain, "default-chain.json"),
-		DefaultModel:         opts.EffectiveDefaultModel,
-		DefaultProvider:      opts.EffectiveDefaultProvider,
-		AltDefaultModel:      opts.EffectiveAltDefaultModel,
-		AltDefaultProvider:   opts.EffectiveAltDefaultProvider,
-		DefaultMaxTokens:     opts.EffectiveMaxTokens,
-		DefaultThink:         opts.EffectiveThink,
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef:    firstNonEmptyStr(opts.EffectiveChain, "default-chain.json"),
+			Model:       opts.EffectiveDefaultModel,
+			Provider:    opts.EffectiveDefaultProvider,
+			AltModel:    opts.EffectiveAltDefaultModel,
+			AltProvider: opts.EffectiveAltDefaultProvider,
+			MaxTokens:   opts.EffectiveMaxTokens,
+			Think:       opts.EffectiveThink,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)

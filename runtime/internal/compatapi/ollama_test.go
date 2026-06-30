@@ -12,6 +12,7 @@ import (
 
 	"github.com/contenox/runtime/runtime/internal/compatapi"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/statetype"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
@@ -28,7 +29,7 @@ func TestOllamaTagsListsContenoxModels(t *testing.T) {
 				CanPrompt:  true,
 			}},
 		}}},
-		DefaultModel: "contenox-default",
+		Defaults: stateservice.RuntimeDefaults{Model: "contenox-default"},
 	}
 
 	mux := http.NewServeMux()
@@ -76,7 +77,7 @@ func TestOllamaTagsFiltersEmbeddingOnlyModels(t *testing.T) {
 				{Model: "embedding-model", CanEmbed: true},
 			},
 		}}},
-		DefaultModel: "chat-model",
+		Defaults: stateservice.RuntimeDefaults{Model: "chat-model"},
 	}
 
 	mux := http.NewServeMux()
@@ -125,8 +126,10 @@ func TestOllamaTagsFiltersToDefaultProvider(t *testing.T) {
 				},
 			},
 		}},
-		DefaultProvider: "vertex-google",
-		DefaultModel:    "gemini-3.1-pro-preview",
+		Defaults: stateservice.RuntimeDefaults{
+			Provider: "vertex-google",
+			Model:    "gemini-3.1-pro-preview",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -181,7 +184,7 @@ func TestOllamaShowReportsCapabilitiesForZed(t *testing.T) {
 				CanThink:  true,
 			}},
 		}}},
-		DefaultModel: "zed-model",
+		Defaults: stateservice.RuntimeDefaults{Model: "zed-model"},
 	}
 
 	mux := http.NewServeMux()
@@ -231,11 +234,13 @@ func TestOllamaShowReportsCapabilitiesForZed(t *testing.T) {
 func TestOllamaChatStreamsNDJSONAndUsesKnownModel(t *testing.T) {
 	agent := &stubAgent{reply: "hello STOP tail"}
 	deps := compatapi.CompatDeps{
-		Agent:           agent,
-		Chains:          &stubChains{chain: modelAndMaxTokensTemplateChain("chat-chain")},
-		StateService:    &stubStateService{states: observedState("known-model")},
-		DefaultChainRef: "chat-chain",
-		DefaultModel:    "contenox-default",
+		Agent:        agent,
+		Chains:       &stubChains{chain: modelAndMaxTokensTemplateChain("chat-chain")},
+		StateService: &stubStateService{states: observedState("known-model")},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "chat-chain",
+			Model:    "contenox-default",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -324,9 +329,11 @@ func TestOllamaChatFallsBackWhenModelBelongsToDifferentProvider(t *testing.T) {
 				},
 			},
 		}},
-		DefaultChainRef: "chat-chain",
-		DefaultProvider: "vertex-google",
-		DefaultModel:    "gemini-3.1-pro-preview",
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "chat-chain",
+			Provider: "vertex-google",
+			Model:    "gemini-3.1-pro-preview",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -357,10 +364,12 @@ func stringSliceContains(values []string, needle string) bool {
 func TestOllamaGenerateNonStreamingUsesFIMInput(t *testing.T) {
 	agent := &stubAgent{reply: "completion"}
 	deps := compatapi.CompatDeps{
-		Agent:              agent,
-		Chains:             &stubChains{chain: modelTemplateChain("fim-chain")},
-		DefaultFIMChainRef: "fim-chain",
-		DefaultModel:       "test-model",
+		Agent:  agent,
+		Chains: &stubChains{chain: modelTemplateChain("fim-chain")},
+		Defaults: stateservice.RuntimeDefaults{
+			FIMChainRef: "fim-chain",
+			Model:       "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()

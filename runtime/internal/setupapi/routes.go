@@ -64,6 +64,7 @@ type putCLIConfigRequest struct {
 	DefaultAutocompleteModel    *string `json:"default-autocomplete-model"`
 	DefaultAutocompleteProvider *string `json:"default-autocomplete-provider"`
 	DefaultMaxTokens            *string `json:"default-max-tokens"`
+	DefaultThink                *string `json:"default-think"`
 	DefaultChain                *string `json:"default-chain"`
 	HITLPolicyName              *string `json:"hitl-policy-name"`
 }
@@ -76,6 +77,7 @@ type putCLIConfigResponse struct {
 	DefaultAutocompleteModel    string            `json:"defaultAutocompleteModel"`
 	DefaultAutocompleteProvider string            `json:"defaultAutocompleteProvider"`
 	DefaultMaxTokens            string            `json:"defaultMaxTokens"`
+	DefaultThink                string            `json:"defaultThink"`
 	DefaultChain                string            `json:"defaultChain"`
 	HITLPolicyName              string            `json:"hitlPolicyName"`
 	ResolvedFrom                map[string]string `json:"resolvedFrom,omitempty"`
@@ -99,6 +101,7 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		body.DefaultAutocompleteModel == nil &&
 		body.DefaultAutocompleteProvider == nil &&
 		body.DefaultMaxTokens == nil &&
+		body.DefaultThink == nil &&
 		body.DefaultChain == nil &&
 		body.HITLPolicyName == nil {
 		_ = apiframework.Error(w, r, apiframework.BadRequest("Provide at least one CLI config key."), apiframework.UpdateOperation)
@@ -112,6 +115,7 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		DefaultAutocompleteModel:    body.DefaultAutocompleteModel,
 		DefaultAutocompleteProvider: body.DefaultAutocompleteProvider,
 		DefaultMaxTokens:            body.DefaultMaxTokens,
+		DefaultThink:                body.DefaultThink,
 		DefaultChain:                body.DefaultChain,
 		HITLPolicyName:              body.HITLPolicyName,
 	})
@@ -127,6 +131,7 @@ func (h *setupHandler) putCLIConfig(w http.ResponseWriter, r *http.Request) {
 		DefaultAutocompleteModel:    snap.DefaultAutocompleteModel,
 		DefaultAutocompleteProvider: snap.DefaultAutocompleteProvider,
 		DefaultMaxTokens:            snap.DefaultMaxTokens,
+		DefaultThink:                snap.DefaultThink,
 		DefaultChain:                snap.DefaultChain,
 		HITLPolicyName:              snap.HITLPolicyName,
 		ResolvedFrom:                snap.ResolvedFrom,

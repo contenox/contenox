@@ -191,7 +191,7 @@ build-llamacpp-runtime:
 
 check-modeld-llama-deps:
 	@test -f "$(LLAMA_CPP_REF_DIR)/common/chat.h" || { echo "missing pinned llama.cpp common headers ($(LLAMA_CPP_REF_DIR)) — run: make deps-llamacpp-ref"; exit 1; }
-	@test -f "$(LLAMA_RUNTIME_LIB_DIR)/libcommon.a" || { echo "missing direct llama.cpp common library ($(LLAMA_RUNTIME_LIB_DIR)/libcommon.a) — run: make build-llamacpp-runtime"; exit 1; }
+	@ls "$(LLAMA_RUNTIME_LIB_DIR)"/libllama-common.* >/dev/null 2>&1 || ls "$(LLAMA_RUNTIME_LIB_DIR)"/llama-common.dll >/dev/null 2>&1 || { echo "missing direct llama.cpp common library ($(LLAMA_RUNTIME_LIB_DIR)/libllama-common.*) — run: make build-llamacpp-runtime"; exit 1; }
 
 # Build modeld with llama.cpp and, when available, OpenVINO GenAI.
 # Run `make deps-modeld` before building with OpenVINO support.
@@ -469,7 +469,7 @@ check-modeld-deps-bundle:
 	@test -f "$(MODELD_DEPS_ROOT)/manifest.json" || { echo "bundle missing manifest.json: $(MODELD_DEPS_ROOT)"; exit 1; }
 	@test -f "$(MODELD_DEPS_ROOT)/llama/ref/common/chat.h" || { echo "bundle missing llama.cpp ref headers"; exit 1; }
 	@ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/libllama.* >/dev/null 2>&1 || ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/llama.dll >/dev/null 2>&1 || { echo "bundle missing llama runtime lib (libllama.{so,dylib,dll})"; exit 1; }
-	@test -f "$(MODELD_DEPS_ROOT)/llama/runtime/lib/libcommon.a" || { echo "bundle missing llama libcommon.a"; exit 1; }
+	@ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/libllama-common.* >/dev/null 2>&1 || ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/llama-common.dll >/dev/null 2>&1 || { echo "bundle missing llama common runtime lib (libllama-common.{so,dylib} / llama-common.dll)"; exit 1; }
 	@if [ "$(MODELD_RELEASE_OPENVINO)" = "1" ]; then \
 		grep -q '"openvino": *true' "$(MODELD_DEPS_ROOT)/manifest.json" || { echo "MODELD_RELEASE_OPENVINO=1 but bundle manifest does not declare openvino:true (refusing to silently drop OpenVINO)"; exit 1; }; \
 		test -d "$(MODELD_DEPS_ROOT)/openvino/genai/src/cpp/include" || { echo "bundle missing OpenVINO GenAI headers"; exit 1; }; \

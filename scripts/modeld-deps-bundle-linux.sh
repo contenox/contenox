@@ -47,7 +47,7 @@ need_file "$LLAMA_REF/common/chat.h"
 need_dir  "$LLAMA_REF/vendor"
 need_dir  "$LLAMA_RUNTIME/include"
 need_file "$LLAMA_RUNTIME/lib/libllama.so"
-need_file "$LLAMA_RUNTIME/lib/libcommon.a"
+need_file "$LLAMA_RUNTIME/lib/libllama-common.so"
 
 # Accelerator profile comes from what the llama runtime was actually built with,
 # recorded in its build stamp. This is the bundle's variant axis: a device that can

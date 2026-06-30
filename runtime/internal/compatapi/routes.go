@@ -11,16 +11,12 @@ import (
 
 // CompatDeps holds the dependencies required by the OpenAI/Ollama compat handlers.
 type CompatDeps struct {
-	Agent              agentservice.Agent
-	Chains             taskchainservice.Service
-	StateService       stateservice.Service
-	DefaultChainRef    string
-	DefaultFIMChainRef string
-	DefaultModel       string
-	DefaultProvider    string
-	DefaultMaxTokens   string
-	Auth               middleware.AuthZReader // nil = no auth required on compat routes
-	Token              string                 // protects root-level mutating compat routes when set
+	Agent        agentservice.Agent
+	Chains       taskchainservice.Service
+	StateService stateservice.Service
+	Defaults     stateservice.RuntimeDefaults
+	Auth         middleware.AuthZReader // nil = no auth required on compat routes
+	Token        string                 // protects root-level mutating compat routes when set
 }
 
 // AddOpenAIRoutes registers the OpenAI-compatible routes on mux (apiMux, paths without /api prefix).

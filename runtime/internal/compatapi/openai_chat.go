@@ -30,13 +30,14 @@ func (h *chatHandler) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"message":"messages is required","type":"invalid_request_error"}}`, http.StatusBadRequest)
 		return
 	}
+	defaults := runtimeDefaults(ctx, h.deps)
 	if h.deps.Agent == nil || h.deps.Chains == nil {
 		http.Error(w, `{"error":{"message":"compat dependencies are not configured","type":"server_error"}}`, http.StatusInternalServerError)
 		return
 	}
 
 	chainID := strings.TrimSpace(r.PathValue("chainID"))
-	chainRef := h.deps.DefaultChainRef
+	chainRef := defaults.ChainRef
 	if chainID != "" {
 		chainRef = chainID
 	}
@@ -51,12 +52,12 @@ func (h *chatHandler) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model := resolveRequestedModel(ctx, h.deps, req.Model)
+	model := resolveRequestedModel(ctx, h.deps, defaults, req.Model)
 	maxTokens := req.MaxTokens
 	if req.MaxCompletionTokens != nil {
 		maxTokens = req.MaxCompletionTokens
 	}
-	templateVars := buildTemplateVars(chain, model, h.deps.DefaultProvider, h.deps.DefaultMaxTokens, maxTokens)
+	templateVars := buildTemplateVars(chain, defaults, model, maxTokens)
 	chain = patchExecOverrides(chain, req.Temperature)
 	sessionID, err := compatSessionID(ctx, w, r, h.deps)
 	if err != nil {

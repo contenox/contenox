@@ -12,15 +12,18 @@ import (
 
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/internal/compatapi"
+	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 func TestFIMCompletions_Streaming(t *testing.T) {
 	deps := compatapi.CompatDeps{
-		Agent:              &stubAgent{reply: "name string"},
-		Chains:             &stubChains{},
-		DefaultFIMChainRef: "fim-chain",
-		DefaultModel:       "test-model",
+		Agent:  &stubAgent{reply: "name string"},
+		Chains: &stubChains{},
+		Defaults: stateservice.RuntimeDefaults{
+			FIMChainRef: "fim-chain",
+			Model:       "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -73,10 +76,12 @@ func TestFIMCompletions_Streaming(t *testing.T) {
 
 func TestFIMCompletions_NonStreaming(t *testing.T) {
 	deps := compatapi.CompatDeps{
-		Agent:              &stubAgent{reply: "name string"},
-		Chains:             &stubChains{},
-		DefaultFIMChainRef: "fim-chain",
-		DefaultModel:       "test-model",
+		Agent:  &stubAgent{reply: "name string"},
+		Chains: &stubChains{},
+		Defaults: stateservice.RuntimeDefaults{
+			FIMChainRef: "fim-chain",
+			Model:       "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -112,10 +117,12 @@ func TestFIMCompletions_NonStreaming(t *testing.T) {
 
 func TestFIMCompletions_LegacyAlias(t *testing.T) {
 	deps := compatapi.CompatDeps{
-		Agent:              &stubAgent{reply: "result"},
-		Chains:             &stubChains{},
-		DefaultFIMChainRef: "fim-chain",
-		DefaultModel:       "test-model",
+		Agent:  &stubAgent{reply: "result"},
+		Chains: &stubChains{},
+		Defaults: stateservice.RuntimeDefaults{
+			FIMChainRef: "fim-chain",
+			Model:       "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -136,10 +143,12 @@ func TestFIMCompletions_LegacyAlias(t *testing.T) {
 func TestFIMCompletions_SentinelFormat(t *testing.T) {
 	capture := &sentinelCapture{}
 	deps := compatapi.CompatDeps{
-		Agent:              capture,
-		Chains:             &stubChains{},
-		DefaultFIMChainRef: "fim-chain",
-		DefaultModel:       "test-model",
+		Agent:  capture,
+		Chains: &stubChains{},
+		Defaults: stateservice.RuntimeDefaults{
+			FIMChainRef: "fim-chain",
+			Model:       "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -165,10 +174,12 @@ func TestFIMCompletions_SentinelFormat(t *testing.T) {
 func TestFIMCompletions_OverridesSessionAndStopStrings(t *testing.T) {
 	agent := &stubAgent{reply: "name string STOP tail"}
 	deps := compatapi.CompatDeps{
-		Agent:              agent,
-		Chains:             &stubChains{chain: modelAndMaxTokensTemplateChain("fim-chain")},
-		DefaultFIMChainRef: "fim-chain",
-		DefaultModel:       "test-model",
+		Agent:  agent,
+		Chains: &stubChains{chain: modelAndMaxTokensTemplateChain("fim-chain")},
+		Defaults: stateservice.RuntimeDefaults{
+			FIMChainRef: "fim-chain",
+			Model:       "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()

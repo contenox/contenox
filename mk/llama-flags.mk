@@ -1,7 +1,7 @@
 # Shared llama.cpp build configuration.
 # Requires PROJECT_ROOT from the including Makefile.
 
-LLAMA_CPP_COMMIT ?= ee3a5a10adf9e83722d1914dddc56a0623ececaf
+LLAMA_CPP_COMMIT ?= 86b94708f22478f900b76ca02e316f4f3418faff
 
 # Pinned upstream llama.cpp source checkout.
 LLAMA_CPP_REF_REPO ?= https://github.com/ggml-org/llama.cpp.git
@@ -16,5 +16,5 @@ LLAMA_DIRECT_CPPFLAGS = -I$(LLAMA_RUNTIME_DIR)/include
 LLAMA_COMMON_CPPFLAGS = -I$(LLAMA_CPP_REF_DIR)/common -I$(LLAMA_CPP_REF_DIR)/vendor
 # Link modeld against the llama.cpp core libraries.
 # Runtime plugins are loaded from CONTENOX_LLAMA_BACKEND_DIR.
-LLAMA_DIRECT_LINK_LIBS = -l:libcommon.a -l:libllama.so -l:libggml.so -l:libggml-base.so -lstdc++ -lm -ldl -lpthread
+LLAMA_DIRECT_LINK_LIBS = -l:libllama-common.so -l:libllama.so -l:libggml.so -l:libggml-base.so -lstdc++ -lm -ldl -lpthread
 LLAMA_DIRECT_LDFLAGS = -L$(LLAMA_RUNTIME_LIB_DIR) -Wl,--disable-new-dtags -Wl,-rpath,$(LLAMA_RUNTIME_LIB_DIR) -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR) $(LLAMA_DIRECT_LINK_LIBS)

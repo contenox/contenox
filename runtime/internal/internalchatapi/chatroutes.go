@@ -14,22 +14,18 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/chatservice"
+	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 type ChatDeps struct {
-	Agent              agentservice.Agent
-	ChatMgr            *chatservice.Manager
-	Chains             taskchainservice.Service
-	DB                 libdb.DBManager
-	DefaultChainRef    string
-	DefaultModel       string
-	DefaultProvider    string
-	AltDefaultModel    string
-	AltDefaultProvider string
-	DefaultMaxTokens   string
-	DefaultThink       string
+	Agent        agentservice.Agent
+	ChatMgr      *chatservice.Manager
+	Chains       taskchainservice.Service
+	DB           libdb.DBManager
+	StateService stateservice.Service
+	Defaults     stateservice.RuntimeDefaults
 }
 
 func AddChatRoutes(mux *http.ServeMux, deps ChatDeps, auth middleware.AuthZReader) {
@@ -290,8 +286,9 @@ func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	defaults := stateservice.ResolveRuntimeDefaults(ctx, h.deps.StateService, h.deps.Defaults)
 	if chainRef == "" {
-		chainRef = h.deps.DefaultChainRef
+		chainRef = defaults.ChainRef
 	}
 	if chainRef == "" {
 		_ = apiframework.Error(w, r, apiframework.BadRequest(
@@ -307,34 +304,19 @@ func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if model == "" {
-		model = h.deps.DefaultModel
+		model = defaults.Model
 	}
 	if provider == "" {
-		provider = h.deps.DefaultProvider
+		provider = defaults.Provider
 	}
 	if think == "" {
-		think = h.deps.DefaultThink
+		think = defaults.Think
 	}
 
-	templateVars := map[string]string{}
-	if model != "" {
-		templateVars["model"] = model
-	}
-	if provider != "" {
-		templateVars["provider"] = provider
-	}
-	if h.deps.AltDefaultModel != "" {
-		templateVars["alt_model"] = h.deps.AltDefaultModel
-	}
-	if h.deps.AltDefaultProvider != "" {
-		templateVars["alt_provider"] = h.deps.AltDefaultProvider
-	}
-	if h.deps.DefaultMaxTokens != "" {
-		templateVars["max_tokens"] = h.deps.DefaultMaxTokens
-	}
-	if think != "" {
-		templateVars["think"] = think
-	}
+	defaults.Model = model
+	defaults.Provider = provider
+	defaults.Think = think
+	templateVars := defaults.TemplateVars()
 
 	resp, err := h.deps.Agent.Prompt(ctx, agentservice.PromptRequest{
 		SessionID:    id,

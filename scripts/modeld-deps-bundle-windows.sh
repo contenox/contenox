@@ -32,7 +32,8 @@ fi
 need_file "$LLAMA_REF/common/chat.h"
 need_dir  "$LLAMA_REF/vendor"
 need_dir  "$LLAMA_RUNTIME/include"
-need_file "$LLAMA_RUNTIME/lib/libcommon.a"
+common_dll=$(glob1 "$LLAMA_RUNTIME/lib" -name 'libllama-common.dll' -o -name 'llama-common.dll')
+[ -n "$common_dll" ] || fail "no llama-common .dll in $LLAMA_RUNTIME/lib"
 llama_dll=$(glob1 "$LLAMA_RUNTIME/lib" -name 'libllama.dll' -o -name 'llama.dll')
 [ -n "$llama_dll" ] || fail "no llama .dll in $LLAMA_RUNTIME/lib"
 

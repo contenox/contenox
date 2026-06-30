@@ -22,10 +22,12 @@ func TestChatCompletions_Streaming(t *testing.T) {
 	agent := &stubAgent{reply: "pong"}
 	chains := &stubChains{}
 	deps := compatapi.CompatDeps{
-		Agent:           agent,
-		Chains:          chains,
-		DefaultChainRef: "test-chain",
-		DefaultModel:    "test-model",
+		Agent:  agent,
+		Chains: chains,
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "test-chain",
+			Model:    "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -81,10 +83,12 @@ func TestChatCompletions_NonStreaming(t *testing.T) {
 	agent := &stubAgent{reply: "pong"}
 	chains := &stubChains{}
 	deps := compatapi.CompatDeps{
-		Agent:           agent,
-		Chains:          chains,
-		DefaultChainRef: "test-chain",
-		DefaultModel:    "test-model",
+		Agent:  agent,
+		Chains: chains,
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "test-chain",
+			Model:    "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -122,10 +126,12 @@ func TestChatCompletions_NamedChain(t *testing.T) {
 	agent := &stubAgent{reply: "ok"}
 	chains := &stubChains{}
 	deps := compatapi.CompatDeps{
-		Agent:           agent,
-		Chains:          chains,
-		DefaultChainRef: "default-chain",
-		DefaultModel:    "test-model",
+		Agent:  agent,
+		Chains: chains,
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "default-chain",
+			Model:    "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -161,11 +167,13 @@ func TestChatCompletions_OverridesSessionAndUnknownModelFallsBack(t *testing.T) 
 		}},
 	}}
 	deps := compatapi.CompatDeps{
-		Agent:           agent,
-		Chains:          chains,
-		StateService:    &stubStateService{states: observedState("contenox-known")},
-		DefaultChainRef: "test-chain",
-		DefaultModel:    "contenox-default",
+		Agent:        agent,
+		Chains:       chains,
+		StateService: &stubStateService{states: observedState("contenox-known")},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "test-chain",
+			Model:    "contenox-default",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -224,11 +232,13 @@ func TestChatCompletions_OverridesSessionAndUnknownModelFallsBack(t *testing.T) 
 func TestChatCompletions_KnownObservedModelPassesThrough(t *testing.T) {
 	agent := &stubAgent{reply: "pong"}
 	deps := compatapi.CompatDeps{
-		Agent:           agent,
-		Chains:          &stubChains{chain: modelTemplateChain("test-chain")},
-		StateService:    &stubStateService{states: observedState("known-model")},
-		DefaultChainRef: "test-chain",
-		DefaultModel:    "contenox-default",
+		Agent:        agent,
+		Chains:       &stubChains{chain: modelTemplateChain("test-chain")},
+		StateService: &stubStateService{states: observedState("known-model")},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "test-chain",
+			Model:    "contenox-default",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -248,12 +258,60 @@ func TestChatCompletions_KnownObservedModelPassesThrough(t *testing.T) {
 	}
 }
 
+func TestChatCompletions_UsesCurrentAltDefaults(t *testing.T) {
+	agent := &stubAgent{reply: "pong"}
+	deps := compatapi.CompatDeps{
+		Agent:  agent,
+		Chains: &stubChains{chain: altModelTemplateChain("test-chain")},
+		StateService: &stubStateService{config: stateservice.CLIConfigSnapshot{
+			DefaultModel:       "current-model",
+			DefaultProvider:    "current-provider",
+			DefaultAltModel:    "current-alt-model",
+			DefaultAltProvider: "current-alt-provider",
+		}},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef:    "test-chain",
+			Model:       "stale-model",
+			Provider:    "stale-provider",
+			AltModel:    "stale-alt-model",
+			AltProvider: "stale-alt-provider",
+		},
+	}
+
+	mux := http.NewServeMux()
+	compatapi.AddOpenAIRoutes(mux, deps)
+
+	body := `{"model":"default","messages":[{"role":"user","content":"ping"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if got := agent.lastReq.TemplateVars["model"]; got != "current-model" {
+		t.Fatalf("expected current model, got %q", got)
+	}
+	if got := agent.lastReq.TemplateVars["provider"]; got != "current-provider" {
+		t.Fatalf("expected current provider, got %q", got)
+	}
+	if got := agent.lastReq.TemplateVars["alt_model"]; got != "current-alt-model" {
+		t.Fatalf("expected current alt model, got %q", got)
+	}
+	if got := agent.lastReq.TemplateVars["alt_provider"]; got != "current-alt-provider" {
+		t.Fatalf("expected current alt provider, got %q", got)
+	}
+}
+
 func TestChatCompletions_MissingMessagesIsBadRequest(t *testing.T) {
 	deps := compatapi.CompatDeps{
-		Agent:           &stubAgent{reply: "pong"},
-		Chains:          &stubChains{},
-		DefaultChainRef: "test-chain",
-		DefaultModel:    "test-model",
+		Agent:  &stubAgent{reply: "pong"},
+		Chains: &stubChains{},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "test-chain",
+			Model:    "test-model",
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -271,12 +329,14 @@ func TestChatCompletions_MissingMessagesIsBadRequest(t *testing.T) {
 
 func TestRootRoutes_TokenProtectsMutatingCompatAndListsDefaultModels(t *testing.T) {
 	deps := compatapi.CompatDeps{
-		Agent:           &stubAgent{reply: "pong"},
-		Chains:          &stubChains{chain: modelTemplateChain("test-chain")},
-		StateService:    &stubStateService{states: observedState("observed-model")},
-		DefaultChainRef: "test-chain",
-		DefaultModel:    "contenox-default",
-		Token:           "secret-token",
+		Agent:        &stubAgent{reply: "pong"},
+		Chains:       &stubChains{chain: modelTemplateChain("test-chain")},
+		StateService: &stubStateService{states: observedState("observed-model")},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "test-chain",
+			Model:    "contenox-default",
+		},
+		Token: "secret-token",
 	}
 
 	mux := http.NewServeMux()
@@ -330,10 +390,12 @@ func TestRootRoutes_TokenProtectsMutatingCompatAndListsDefaultModels(t *testing.
 func TestRootRoutes_GETChatCompletionsIsMethodNotAllowed(t *testing.T) {
 	mux := http.NewServeMux()
 	compatapi.AddRootRoutes(mux, compatapi.CompatDeps{
-		Agent:           &stubAgent{reply: "pong"},
-		Chains:          &stubChains{},
-		DefaultChainRef: "test-chain",
-		DefaultModel:    "test-model",
+		Agent:  &stubAgent{reply: "pong"},
+		Chains: &stubChains{},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "test-chain",
+			Model:    "test-model",
+		},
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/chat/completions", nil)
@@ -400,10 +462,14 @@ func (s *stubChains) DeleteByPath(_ context.Context, _ string) error { return ni
 
 type stubStateService struct {
 	states []statetype.BackendRuntimeState
+	config stateservice.CLIConfigSnapshot
 }
 
 func (s *stubStateService) Get(_ context.Context) ([]statetype.BackendRuntimeState, error) {
 	return s.states, nil
+}
+func (s *stubStateService) CLIConfig(_ context.Context) (stateservice.CLIConfigSnapshot, error) {
+	return s.config, nil
 }
 func (s *stubStateService) SetupStatus(_ context.Context) (setupcheck.Result, error) {
 	return setupcheck.Result{}, nil
@@ -429,6 +495,19 @@ func modelTemplateChain(id string) *taskengine.TaskChainDefinition {
 		Tasks: []taskengine.TaskDefinition{{
 			ID:            "llm",
 			ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "{{var:model}}"},
+		}},
+	}
+}
+
+func altModelTemplateChain(id string) *taskengine.TaskChainDefinition {
+	return &taskengine.TaskChainDefinition{
+		ID: id,
+		Tasks: []taskengine.TaskDefinition{{
+			ID: "llm",
+			ExecuteConfig: &taskengine.LLMExecutionConfig{
+				Model:    "{{var:alt_model|var:model}}",
+				Provider: "{{var:alt_provider|var:provider}}",
+			},
 		}},
 	}
 }

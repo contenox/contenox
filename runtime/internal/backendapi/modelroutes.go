@@ -13,11 +13,8 @@ import (
 	"github.com/contenox/runtime/runtime/statetype"
 )
 
-func AddModelRoutes(mux *http.ServeMux, stateService stateservice.Service, defaultModels ...string) {
-	s := &service{stateService: stateService}
-	if len(defaultModels) > 0 {
-		s.defaultModel = strings.TrimSpace(defaultModels[0])
-	}
+func AddModelRoutes(mux *http.ServeMux, stateService stateservice.Service, defaults stateservice.RuntimeDefaults) {
+	s := &service{stateService: stateService, defaults: defaults}
 
 	mux.HandleFunc("GET /openai/v1/models", s.listModels)
 	mux.HandleFunc("GET /openai/{chainID}/v1/models", s.listModels)
@@ -26,7 +23,7 @@ func AddModelRoutes(mux *http.ServeMux, stateService stateservice.Service, defau
 
 type service struct {
 	stateService stateservice.Service
-	defaultModel string
+	defaults     stateservice.RuntimeDefaults
 }
 
 type ObservedModel struct {
@@ -67,7 +64,8 @@ func (s *service) listModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	openAIModels := OpenAIModelsFromObserved(ListObservedModels(internalModels), s.defaultModel, time.Now().Unix())
+	defaults := stateservice.ResolveRuntimeDefaults(ctx, s.stateService, s.defaults)
+	openAIModels := OpenAIModelsFromObserved(ListObservedModels(internalModels), defaults.Model, time.Now().Unix())
 	if limit < len(openAIModels) {
 		openAIModels = openAIModels[:limit]
 	}

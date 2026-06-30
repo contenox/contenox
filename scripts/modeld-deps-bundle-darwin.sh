@@ -22,7 +22,7 @@ need_file "$LLAMA_REF/common/chat.h"
 need_dir  "$LLAMA_REF/vendor"
 need_dir  "$LLAMA_RUNTIME/include"
 need_file "$LLAMA_RUNTIME/lib/libllama.dylib"
-need_file "$LLAMA_RUNTIME/lib/libcommon.a"
+need_file "$LLAMA_RUNTIME/lib/libllama-common.dylib"
 
 # The accelerator on macOS is Metal (no CUDA/HIP). The variant records metal vs a
 # CPU-only fallback from the presence of the Metal ggml plugin. cuda/hip stay OFF in

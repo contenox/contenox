@@ -21,6 +21,8 @@ type Service interface {
 	SetupStatus(ctx context.Context) (setupcheck.Result, error)
 	// Refresh reconciles registered backends/models, then returns the updated setup status.
 	Refresh(ctx context.Context) (setupcheck.Result, error)
+	// CLIConfig returns the current resolved CLI config without mutating it.
+	CLIConfig(ctx context.Context) (CLIConfigSnapshot, error)
 	// SetCLIConfig updates CLI default keys in SQLite KV (same as contenox config set / PUT /cli-config).
 	// Nil fields in the patch are left unchanged. Empty string fields are written and can clear a resolved setting.
 	SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLIConfigSnapshot, error)
@@ -35,6 +37,7 @@ type CLIConfigPatch struct {
 	DefaultAutocompleteModel    *string
 	DefaultAutocompleteProvider *string
 	DefaultMaxTokens            *string
+	DefaultThink                *string
 	DefaultChain                *string
 	HITLPolicyName              *string
 }
@@ -48,9 +51,11 @@ type CLIConfigSnapshot struct {
 	DefaultAutocompleteModel    string
 	DefaultAutocompleteProvider string
 	DefaultMaxTokens            string
+	DefaultThink                string
 	DefaultChain                string
 	HITLPolicyName              string
 	ResolvedFrom                map[string]string
+	Present                     map[string]bool
 }
 
 type service struct {
@@ -96,6 +101,12 @@ func (s *service) Refresh(ctx context.Context) (setupcheck.Result, error) {
 	return s.SetupStatus(ctx)
 }
 
+// CLIConfig implements Service.
+func (s *service) CLIConfig(ctx context.Context) (CLIConfigSnapshot, error) {
+	store := runtimetypes.New(s.db.WithoutTransaction())
+	return s.cliConfigSnapshot(ctx, store), nil
+}
+
 // SetCLIConfig implements Service.
 func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLIConfigSnapshot, error) {
 	if patch.DefaultModel == nil &&
@@ -105,6 +116,7 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 		patch.DefaultAutocompleteModel == nil &&
 		patch.DefaultAutocompleteProvider == nil &&
 		patch.DefaultMaxTokens == nil &&
+		patch.DefaultThink == nil &&
 		patch.DefaultChain == nil &&
 		patch.HITLPolicyName == nil {
 		return CLIConfigSnapshot{}, fmt.Errorf("provide at least one CLI config key")
@@ -149,6 +161,11 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-max-tokens: %w", err)
 		}
 	}
+	if patch.DefaultThink != nil {
+		if err := clikv.SetString(ctx, store, "default-think", strings.TrimSpace(*patch.DefaultThink)); err != nil {
+			return CLIConfigSnapshot{}, fmt.Errorf("set default-think: %w", err)
+		}
+	}
 	if patch.DefaultChain != nil {
 		if err := clikv.WriteConfig(ctx, store, s.workspaceID, "default-chain", strings.TrimSpace(*patch.DefaultChain)); err != nil {
 			return CLIConfigSnapshot{}, fmt.Errorf("set default-chain: %w", err)
@@ -159,23 +176,67 @@ func (s *service) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLICo
 			return CLIConfigSnapshot{}, fmt.Errorf("set hitl-policy-name: %w", err)
 		}
 	}
-	defaultChain, chainFrom := clikv.ReadConfig(ctx, store, s.workspaceID, "default-chain")
-	hitlPolicy, policyFrom := clikv.ReadConfig(ctx, store, s.workspaceID, "hitl-policy-name")
+	return s.cliConfigSnapshot(ctx, store), nil
+}
+
+func (s *service) cliConfigSnapshot(ctx context.Context, store runtimetypes.Store) CLIConfigSnapshot {
+	defaultModel, defaultModelPresent := readCLIConfigValue(ctx, store, "default-model")
+	defaultProvider, defaultProviderPresent := readCLIConfigValue(ctx, store, "default-provider")
+	defaultAltModel, defaultAltModelPresent := readCLIConfigValue(ctx, store, "default-alt-model")
+	defaultAltProvider, defaultAltProviderPresent := readCLIConfigValue(ctx, store, "default-alt-provider")
+	defaultAutocompleteModel, defaultAutocompleteModelPresent := readCLIConfigValue(ctx, store, "default-autocomplete-model")
+	defaultAutocompleteProvider, defaultAutocompleteProviderPresent := readCLIConfigValue(ctx, store, "default-autocomplete-provider")
+	defaultMaxTokens, defaultMaxTokensPresent := readCLIConfigValue(ctx, store, "default-max-tokens")
+	defaultThink, defaultThinkPresent := readCLIConfigValue(ctx, store, "default-think")
+	defaultChain, chainFrom, defaultChainPresent := readWorkspaceCLIConfigValue(ctx, store, s.workspaceID, "default-chain")
+	hitlPolicy, policyFrom, hitlPolicyPresent := readWorkspaceCLIConfigValue(ctx, store, s.workspaceID, "hitl-policy-name")
 	return CLIConfigSnapshot{
-		DefaultModel:                clikv.Read(ctx, store, "default-model"),
-		DefaultProvider:             clikv.Read(ctx, store, "default-provider"),
-		DefaultAltModel:             clikv.Read(ctx, store, "default-alt-model"),
-		DefaultAltProvider:          clikv.Read(ctx, store, "default-alt-provider"),
-		DefaultAutocompleteModel:    clikv.Read(ctx, store, "default-autocomplete-model"),
-		DefaultAutocompleteProvider: clikv.Read(ctx, store, "default-autocomplete-provider"),
-		DefaultMaxTokens:            clikv.Read(ctx, store, "default-max-tokens"),
+		DefaultModel:                defaultModel,
+		DefaultProvider:             defaultProvider,
+		DefaultAltModel:             defaultAltModel,
+		DefaultAltProvider:          defaultAltProvider,
+		DefaultAutocompleteModel:    defaultAutocompleteModel,
+		DefaultAutocompleteProvider: defaultAutocompleteProvider,
+		DefaultMaxTokens:            defaultMaxTokens,
+		DefaultThink:                defaultThink,
 		DefaultChain:                defaultChain,
 		HITLPolicyName:              hitlPolicy,
 		ResolvedFrom: map[string]string{
 			"defaultChain":   chainFrom,
 			"hitlPolicyName": policyFrom,
 		},
-	}, nil
+		Present: map[string]bool{
+			"default-model":                 defaultModelPresent,
+			"default-provider":              defaultProviderPresent,
+			"default-alt-model":             defaultAltModelPresent,
+			"default-alt-provider":          defaultAltProviderPresent,
+			"default-autocomplete-model":    defaultAutocompleteModelPresent,
+			"default-autocomplete-provider": defaultAutocompleteProviderPresent,
+			"default-max-tokens":            defaultMaxTokensPresent,
+			"default-think":                 defaultThinkPresent,
+			"default-chain":                 defaultChainPresent,
+			"hitl-policy-name":              hitlPolicyPresent,
+		},
+	}
+}
+
+func readCLIConfigValue(ctx context.Context, store runtimetypes.Store, key string) (string, bool) {
+	var val string
+	if err := store.GetKV(ctx, clikv.Prefix+key, &val); err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(val), true
+}
+
+func readWorkspaceCLIConfigValue(ctx context.Context, store runtimetypes.Store, workspaceID, key string) (string, string, bool) {
+	if workspaceID != "" {
+		var val string
+		if err := store.GetWorkspaceKV(ctx, workspaceID, clikv.Prefix+key, &val); err == nil {
+			return strings.TrimSpace(val), "workspace", true
+		}
+	}
+	val, present := readCLIConfigValue(ctx, store, key)
+	return val, "global", present
 }
 
 func normalizeDefaultMaxTokens(value string) (string, error) {

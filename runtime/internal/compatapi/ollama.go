@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/statetype"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
@@ -120,7 +121,7 @@ func (h *ollamaHandler) tags(w http.ResponseWriter, r *http.Request) {
 		writeOllamaError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	models, err := h.ollamaModels(r.Context())
+	models, err := h.ollamaModels(r.Context(), runtimeDefaults(r.Context(), h.deps))
 	if err != nil {
 		writeOllamaError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -134,7 +135,7 @@ func (h *ollamaHandler) ps(w http.ResponseWriter, r *http.Request) {
 		writeOllamaError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	models, err := h.ollamaModels(r.Context())
+	models, err := h.ollamaModels(r.Context(), runtimeDefaults(r.Context(), h.deps))
 	if err != nil {
 		writeOllamaError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -163,7 +164,7 @@ func (h *ollamaHandler) show(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, ok, err := h.ollamaModelInfo(r.Context(), name)
+	info, ok, err := h.ollamaModelInfo(r.Context(), runtimeDefaults(r.Context(), h.deps), name)
 	if err != nil {
 		writeOllamaError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -189,6 +190,7 @@ func (h *ollamaHandler) chat(w http.ResponseWriter, r *http.Request) {
 		writeOllamaError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	defaults := runtimeDefaults(ctx, h.deps)
 	if h.deps.Agent == nil || h.deps.Chains == nil {
 		writeOllamaError(w, http.StatusInternalServerError, "compat dependencies are not configured")
 		return
@@ -203,20 +205,20 @@ func (h *ollamaHandler) chat(w http.ResponseWriter, r *http.Request) {
 		writeOllamaError(w, http.StatusBadRequest, "messages is required")
 		return
 	}
-	if strings.TrimSpace(h.deps.DefaultChainRef) == "" {
+	if strings.TrimSpace(defaults.ChainRef) == "" {
 		writeOllamaError(w, http.StatusInternalServerError, "no compat chain configured")
 		return
 	}
 
-	chain, err := h.deps.Chains.Get(ctx, h.deps.DefaultChainRef)
+	chain, err := h.deps.Chains.Get(ctx, defaults.ChainRef)
 	if err != nil {
-		writeOllamaError(w, http.StatusBadRequest, fmt.Sprintf("chain not found: %s", h.deps.DefaultChainRef))
+		writeOllamaError(w, http.StatusBadRequest, fmt.Sprintf("chain not found: %s", defaults.ChainRef))
 		return
 	}
 
-	model := resolveRequestedModel(ctx, h.deps, req.Model)
+	model := resolveRequestedModel(ctx, h.deps, defaults, req.Model)
 	temp, maxTokens := ollamaExecOverrides(req.Options)
-	templateVars := buildTemplateVars(chain, model, h.deps.DefaultProvider, h.deps.DefaultMaxTokens, maxTokens)
+	templateVars := buildTemplateVars(chain, defaults, model, maxTokens)
 	chain = patchExecOverrides(chain, temp)
 	sessionID, err := compatSessionID(ctx, w, r, h.deps)
 	if err != nil {
@@ -284,6 +286,7 @@ func (h *ollamaHandler) generate(w http.ResponseWriter, r *http.Request) {
 		writeOllamaError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	defaults := runtimeDefaults(ctx, h.deps)
 	if h.deps.Agent == nil || h.deps.Chains == nil {
 		writeOllamaError(w, http.StatusInternalServerError, "compat dependencies are not configured")
 		return
@@ -294,10 +297,10 @@ func (h *ollamaHandler) generate(w http.ResponseWriter, r *http.Request) {
 		writeOllamaError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	chainRef := strings.TrimSpace(h.deps.DefaultFIMChainRef)
+	chainRef := strings.TrimSpace(defaults.FIMChainRef)
 	useFIM := chainRef != "" || req.Suffix != ""
 	if chainRef == "" {
-		chainRef = strings.TrimSpace(h.deps.DefaultChainRef)
+		chainRef = strings.TrimSpace(defaults.ChainRef)
 	}
 	if chainRef == "" {
 		writeOllamaError(w, http.StatusInternalServerError, "no compat chain configured")
@@ -310,9 +313,9 @@ func (h *ollamaHandler) generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model := resolveRequestedModel(ctx, h.deps, req.Model)
+	model := resolveRequestedModel(ctx, h.deps, defaults, req.Model)
 	temp, maxTokens := ollamaExecOverrides(req.Options)
-	templateVars := buildTemplateVars(chain, model, h.deps.DefaultProvider, h.deps.DefaultMaxTokens, maxTokens)
+	templateVars := buildTemplateVars(chain, defaults, model, maxTokens)
 	chain = patchExecOverrides(chain, temp)
 	sessionID, err := compatSessionID(ctx, w, r, h.deps)
 	if err != nil {
@@ -374,8 +377,8 @@ func (h *ollamaHandler) generate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *ollamaHandler) ollamaModels(ctx context.Context) ([]ollamaModel, error) {
-	infos, err := h.ollamaModelInfos(ctx)
+func (h *ollamaHandler) ollamaModels(ctx context.Context, defaults stateservice.RuntimeDefaults) ([]ollamaModel, error) {
+	infos, err := h.ollamaModelInfos(ctx, defaults)
 	if err != nil {
 		return nil, err
 	}
@@ -386,12 +389,12 @@ func (h *ollamaHandler) ollamaModels(ctx context.Context) ([]ollamaModel, error)
 	return models, nil
 }
 
-func (h *ollamaHandler) ollamaModelInfo(ctx context.Context, name string) (ollamaModelInfo, bool, error) {
+func (h *ollamaHandler) ollamaModelInfo(ctx context.Context, defaults stateservice.RuntimeDefaults, name string) (ollamaModelInfo, bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return ollamaModelInfo{}, false, nil
 	}
-	infos, err := h.ollamaModelInfos(ctx)
+	infos, err := h.ollamaModelInfos(ctx, defaults)
 	if err != nil {
 		return ollamaModelInfo{}, false, err
 	}
@@ -403,10 +406,10 @@ func (h *ollamaHandler) ollamaModelInfo(ctx context.Context, name string) (ollam
 	return ollamaModelInfo{}, false, nil
 }
 
-func (h *ollamaHandler) ollamaModelInfos(ctx context.Context) ([]ollamaModelInfo, error) {
+func (h *ollamaHandler) ollamaModelInfos(ctx context.Context, defaults stateservice.RuntimeDefaults) ([]ollamaModelInfo, error) {
 	now := time.Now().UTC()
 	byName := map[string]ollamaModelInfo{}
-	defaultProvider := strings.TrimSpace(h.deps.DefaultProvider)
+	defaultProvider := strings.TrimSpace(defaults.Provider)
 	if h.deps.StateService != nil {
 		states, err := h.deps.StateService.Get(ctx)
 		if err != nil {
@@ -446,7 +449,7 @@ func (h *ollamaHandler) ollamaModelInfos(ctx context.Context) ([]ollamaModelInfo
 		seen[name] = struct{}{}
 		models = append(models, info)
 	}
-	defaultModel := strings.TrimSpace(h.deps.DefaultModel)
+	defaultModel := strings.TrimSpace(defaults.Model)
 	if defaultModel != "" {
 		defaultInfo := byName[defaultModel]
 		if defaultInfo.Model.Name == "" || !defaultInfo.supportsCompletion() {

@@ -60,6 +60,21 @@ func (d *activityTrackerDecorator) Refresh(ctx context.Context) (setupcheck.Resu
 	return res, err
 }
 
+func (d *activityTrackerDecorator) CLIConfig(ctx context.Context) (CLIConfigSnapshot, error) {
+	reportErrFn, _, endFn := d.tracker.Start(
+		ctx,
+		"read",
+		"cli_config",
+	)
+	defer endFn()
+
+	snap, err := d.service.CLIConfig(ctx)
+	if err != nil {
+		reportErrFn(err)
+	}
+	return snap, err
+}
+
 func (d *activityTrackerDecorator) SetCLIConfig(ctx context.Context, patch CLIConfigPatch) (CLIConfigSnapshot, error) {
 	reportErrFn, _, endFn := d.tracker.Start(
 		ctx,

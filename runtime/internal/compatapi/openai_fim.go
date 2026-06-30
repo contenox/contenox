@@ -26,13 +26,14 @@ func (h *fimHandler) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"message":"invalid request body","type":"invalid_request_error"}}`, http.StatusBadRequest)
 		return
 	}
+	defaults := runtimeDefaults(ctx, h.deps)
 	if h.deps.Agent == nil || h.deps.Chains == nil {
 		http.Error(w, `{"error":{"message":"compat dependencies are not configured","type":"server_error"}}`, http.StatusInternalServerError)
 		return
 	}
 
 	chainID := strings.TrimSpace(r.PathValue("chainID"))
-	chainRef := h.deps.DefaultFIMChainRef
+	chainRef := defaults.FIMChainRef
 	if chainID != "" {
 		chainRef = chainID
 	}
@@ -47,8 +48,8 @@ func (h *fimHandler) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model := resolveRequestedModel(ctx, h.deps, req.Model)
-	templateVars := buildTemplateVars(chain, model, h.deps.DefaultProvider, h.deps.DefaultMaxTokens, req.MaxTokens)
+	model := resolveRequestedModel(ctx, h.deps, defaults, req.Model)
+	templateVars := buildTemplateVars(chain, defaults, model, req.MaxTokens)
 	chain = patchExecOverrides(chain, req.Temperature)
 	sessionID, err := compatSessionID(ctx, w, r, h.deps)
 	if err != nil {

@@ -10,27 +10,22 @@ import (
 	"github.com/contenox/runtime/apiframework/middleware"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
+	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskengine"
 )
 
-type Defaults struct {
-	Model       string
-	Provider    string
-	AltModel    string
-	AltProvider string
-	MaxTokens   string
-	Think       string
-}
+type Defaults = stateservice.RuntimeDefaults
 
-func AddRoutes(mux *http.ServeMux, agent agentservice.Agent, auth middleware.AuthZReader, defaults Defaults) {
-	h := &handler{agent: agent, auth: auth, defaults: defaults}
+func AddRoutes(mux *http.ServeMux, agent agentservice.Agent, auth middleware.AuthZReader, stateService stateservice.Service, defaults Defaults) {
+	h := &handler{agent: agent, auth: auth, stateService: stateService, defaults: defaults}
 	mux.HandleFunc("POST /tasks", h.execute)
 }
 
 type handler struct {
-	agent    agentservice.Agent
-	auth     middleware.AuthZReader
-	defaults Defaults
+	agent        agentservice.Agent
+	auth         middleware.AuthZReader
+	stateService stateservice.Service
+	defaults     Defaults
 }
 
 type executeTaskRequest struct {
@@ -90,7 +85,7 @@ func (h *handler) execute(w http.ResponseWriter, r *http.Request) {
 		InputValue:   req.Input,
 		InputType:    inputType,
 		Chain:        &req.Chain,
-		TemplateVars: h.templateVars(req.TemplateVars),
+		TemplateVars: h.templateVars(ctx, req.TemplateVars),
 	})
 	if err != nil {
 		_ = apiframework.Error(w, r, err, apiframework.CreateOperation)
@@ -108,28 +103,14 @@ func (h *handler) execute(w http.ResponseWriter, r *http.Request) {
 	_ = apiframework.Encode(w, r, http.StatusOK, out) // @response taskexecapi.executeTaskResponse
 }
 
-func (h *handler) templateVars(raw map[string]string) map[string]string {
+func (h *handler) templateVars(ctx context.Context, raw map[string]string) map[string]string {
+	defaults := stateservice.ResolveRuntimeDefaults(ctx, h.stateService, h.defaults)
 	vars := make(map[string]string, len(raw)+5)
 	for k, v := range raw {
 		vars[k] = v
 	}
-	if h.defaults.Model != "" {
-		vars["model"] = h.defaults.Model
-	}
-	if h.defaults.Provider != "" {
-		vars["provider"] = h.defaults.Provider
-	}
-	if h.defaults.AltModel != "" {
-		vars["alt_model"] = h.defaults.AltModel
-	}
-	if h.defaults.AltProvider != "" {
-		vars["alt_provider"] = h.defaults.AltProvider
-	}
-	if h.defaults.MaxTokens != "" {
-		vars["max_tokens"] = h.defaults.MaxTokens
-	}
-	if h.defaults.Think != "" {
-		vars["think"] = h.defaults.Think
+	for k, v := range defaults.TemplateVars() {
+		vars[k] = v
 	}
 	return vars
 }

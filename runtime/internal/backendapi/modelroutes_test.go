@@ -17,7 +17,7 @@ func TestOpenAIModelsIncludesDefaultAliasAndObservedModels(t *testing.T) {
 	mux := http.NewServeMux()
 	backendapi.AddModelRoutes(mux, &stubStateService{states: []statetype.BackendRuntimeState{{
 		PulledModels: []statetype.ModelPullStatus{{Model: "observed-model"}},
-	}}}, "contenox-default")
+	}}}, stateservice.RuntimeDefaults{Model: "contenox-default"})
 
 	req := httptest.NewRequest(http.MethodGet, "/openai/v1/models", nil)
 	rr := httptest.NewRecorder()
@@ -46,10 +46,14 @@ func TestOpenAIModelsIncludesDefaultAliasAndObservedModels(t *testing.T) {
 
 type stubStateService struct {
 	states []statetype.BackendRuntimeState
+	config stateservice.CLIConfigSnapshot
 }
 
 func (s *stubStateService) Get(_ context.Context) ([]statetype.BackendRuntimeState, error) {
 	return s.states, nil
+}
+func (s *stubStateService) CLIConfig(_ context.Context) (stateservice.CLIConfigSnapshot, error) {
+	return s.config, nil
 }
 func (s *stubStateService) SetupStatus(_ context.Context) (setupcheck.Result, error) {
 	return setupcheck.Result{}, nil
