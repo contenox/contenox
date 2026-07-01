@@ -41,7 +41,7 @@ A backend points at an LLM provider. Supported types:
                                 embeddings, and live prefix reuse. Point --url at the models directory.
                                 Registered automatically by 'contenox init'. modeld serves one active
                                 model at a time. --type local maps here.
-  openvino                      Local OpenVINO IR runtime served by the modeld daemon (CPU / GPU / NPU) —
+  openvino                      Local OpenVINO IR runtime served by the modeld daemon (CPU / GPU) —
                                 NO external server, NO network, NO API key. Point --url at the models
                                 directory. Registered automatically by 'contenox init'. modeld serves one
                                 local backend mode at a time; inactive local registrations are hidden

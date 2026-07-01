@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -70,6 +72,7 @@ type genaiSession struct {
 
 	mu         sync.Mutex
 	closed     bool
+	fatalErr   string
 	manifest   transport.ContextManifest
 	stable     string // raw stable text from the runtime
 	suffix     string // raw volatile text appended after stable
@@ -84,10 +87,20 @@ type genaiSession struct {
 	// keeps by evicting, not a hard logical ceiling, so the adapter lets the
 	// logical context grow past it instead of returning ErrContextOverflow — the
 	// OpenVINO parallel to the llama decode-time slide.
-	evictionEnabled bool
+	evictionEnabled              bool
+	sparseAttention              bool
+	slidingWindowAttentionTokens int
 
 	residencyPlan residency.Plan
 	residencyErr  string
+
+	deferPhysicalPrefill   bool
+	physicalPrefillCalls   int
+	physicalPrefillTokens  int
+	deferredPrefillCalls   int
+	deferredPrefillTokens  int
+	decodeCalls            int
+	decodePromptTokenCount int
 }
 
 func newGenaiSession(backend genaiBackend, numCtx int) *genaiSession {
@@ -99,6 +112,10 @@ func newGenaiSessionWithEviction(backend genaiBackend, numCtx int, eviction bool
 }
 
 func newGenaiSessionWithPlanner(backend genaiBackend, numCtx, plannerCtx int, eviction bool) *genaiSession {
+	return newGenaiSessionWithNativeFeatures(backend, numCtx, plannerCtx, eviction, true, 0)
+}
+
+func newGenaiSessionWithNativeFeatures(backend genaiBackend, numCtx, plannerCtx int, eviction, sparseAttention bool, slidingWindowAttentionTokens int) *genaiSession {
 	if plannerCtx <= 0 {
 		plannerCtx = numCtx
 	}
@@ -106,11 +123,13 @@ func newGenaiSessionWithPlanner(backend genaiBackend, numCtx, plannerCtx int, ev
 		plannerCtx = numCtx
 	}
 	return &genaiSession{
-		backend:         backend,
-		numCtx:          numCtx,
-		plannerCtx:      plannerCtx,
-		coldMaxTokens:   max(plannerCtx-numCtx, 0),
-		evictionEnabled: eviction,
+		backend:                      backend,
+		numCtx:                       numCtx,
+		plannerCtx:                   plannerCtx,
+		coldMaxTokens:                max(plannerCtx-numCtx, 0),
+		evictionEnabled:              eviction,
+		sparseAttention:              sparseAttention,
+		slidingWindowAttentionTokens: slidingWindowAttentionTokens,
 		// Default to the lossless (f16) assumption; OpenSession lowers this to the
 		// model's actual configured precision. Constructed test sessions keep the
 		// cold path enabled, matching prior behavior.
@@ -145,11 +164,12 @@ func (s *genaiSession) Capabilities() residency.Capabilities {
 	// and imports them back into destination prefix-cache blocks; shifted admits
 	// rotate RoPE-positioned keys in the native GenAI bridge.
 	return residency.Capabilities{
-		RemoveTail:      cold,
-		RemoveMiddle:    cold,
-		PositionShift:   cold,
-		SparseAttention: true,
-		ColdStore:       cold,
+		RemoveTail:                   cold,
+		RemoveMiddle:                 cold,
+		PositionShift:                cold,
+		SparseAttention:              s.sparseAttention,
+		SlidingWindowAttentionTokens: s.slidingWindowAttentionTokens,
+		ColdStore:                    cold,
 	}
 }
 
@@ -160,6 +180,117 @@ func (s *genaiSession) available() int {
 		return 0
 	}
 	return s.numCtx - s.residentTokens()
+}
+
+func (s *genaiSession) closedErrLocked() error {
+	if s.fatalErr != "" {
+		return fmt.Errorf("%w: %s", transport.ErrSessionFatal, s.fatalErr)
+	}
+	return transport.ErrSessionClosed
+}
+
+func (s *genaiSession) markFatalLocked(err error) error {
+	if err == nil {
+		err = transport.ErrSessionFatal
+	}
+	if s.fatalErr == "" {
+		s.fatalErr = err.Error()
+	}
+	s.closed = true
+	s.plannerCtx = 0
+	s.coldMaxTokens = 0
+	s.clearColdStoreLocked()
+	s.stable = ""
+	s.suffix = ""
+	s.prefixText = ""
+	s.stableMsgs = nil
+	s.tools = ""
+	s.resident = nil
+	s.prefixLen = 0
+	s.residencyPlan = residency.Plan{}
+	s.residencyErr = "session fatal: " + s.fatalErr
+	if s.backend != nil {
+		_ = s.backend.Close()
+	}
+	return fmt.Errorf("%w: %v", transport.ErrSessionFatal, err)
+}
+
+func (s *genaiSession) backendError(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if openvinoPoisonedPipelineError(err) || errors.Is(err, transport.ErrSessionFatal) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return fmt.Errorf("%w: %s: %v", s.markFatalLocked(err), stage, err)
+	}
+	return err
+}
+
+func (s *genaiSession) backendErrorLocked(stage string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if openvinoPoisonedPipelineError(err) || errors.Is(err, transport.ErrSessionFatal) {
+		return fmt.Errorf("%w: %s: %v", s.markFatalLocked(err), stage, err)
+	}
+	return fmt.Errorf("%w: %s: %v", transport.ErrSessionFatal, stage, err)
+}
+
+func openvinoPoisonedPipelineError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	needles := []string{
+		"BlockManager leaked",
+		"BlockAllocator leaked",
+		"leaked sequence block tables",
+		"Expected num free blocks",
+		"m_ref_count > 0",
+	}
+	for _, needle := range needles {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *genaiSession) shouldPhysicalPrefillLocked() bool {
+	return !s.deferPhysicalPrefill || s.coldEnabledLocked()
+}
+
+func (s *genaiSession) prefillResidentLocked(ctx context.Context, tokens []int, stage string) error {
+	if len(tokens) == 0 {
+		return nil
+	}
+	if !s.shouldPhysicalPrefillLocked() {
+		s.deferredPrefillCalls++
+		s.deferredPrefillTokens += len(tokens)
+		return nil
+	}
+	s.physicalPrefillCalls++
+	s.physicalPrefillTokens += len(tokens)
+	if err := s.backend.PrefillTokens(ctx, tokens); err != nil {
+		return s.backendErrorLocked(stage, err)
+	}
+	return nil
+}
+
+func (s *genaiSession) recordDecodePrompt(tokens int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.decodeCalls++
+	if tokens > 0 {
+		s.decodePromptTokenCount += tokens
+	}
 }
 
 func (s *genaiSession) tokenize(ctx context.Context, text string, addSpecial bool) ([]int, error) {
@@ -173,7 +304,7 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return transport.PrefixStatus{}, transport.ErrSessionClosed
+		return transport.PrefixStatus{}, s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return transport.PrefixStatus{}, err
@@ -200,10 +331,8 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	if s.numCtx > 0 && len(tokens) > s.numCtx {
 		return transport.PrefixStatus{}, transport.ErrContextOverflow
 	}
-	if len(tokens) > 0 {
-		if err := s.backend.PrefillTokens(ctx, tokens); err != nil {
-			return transport.PrefixStatus{}, fmt.Errorf("%w: openvino prefill stable prefix: %v", transport.ErrSessionFatal, err)
-		}
+	if err := s.prefillResidentLocked(ctx, tokens, "openvino prefill stable prefix"); err != nil {
+		return transport.PrefixStatus{}, err
 	}
 
 	reuse := 0
@@ -248,7 +377,7 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return transport.SuffixStatus{}, transport.ErrSessionClosed
+		return transport.SuffixStatus{}, s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return transport.SuffixStatus{}, err
@@ -299,10 +428,8 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 		return transport.SuffixStatus{}, transport.ErrContextOverflow
 	}
 	resident := append(append([]int(nil), s.resident...), tokens...)
-	if len(resident) > 0 {
-		if err := s.backend.PrefillTokens(ctx, resident); err != nil {
-			return transport.SuffixStatus{}, fmt.Errorf("%w: openvino prefill suffix: %v", transport.ErrSessionFatal, err)
-		}
+	if err := s.prefillResidentLocked(ctx, resident, "openvino prefill suffix"); err != nil {
+		return transport.SuffixStatus{}, err
 	}
 	enriched, err := s.enrichVolatileManifest(ctx, suffix.Text, suffixManifest, tokens, addSpecial, volatileMsgs)
 	if err != nil {
@@ -325,8 +452,9 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (<-chan transport.StreamChunk, error) {
 	s.mu.Lock()
 	if s.closed {
+		err := s.closedErrLocked()
 		s.mu.Unlock()
-		return nil, transport.ErrSessionClosed
+		return nil, err
 	}
 	fullText := s.stable + s.suffix
 	manifest := s.manifest
@@ -356,6 +484,7 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 	}
 
 	if len(tokens) > 0 {
+		s.recordDecodePrompt(len(tokens))
 		return s.decodePromptTokens(ctx, backend, tokens, opts, cfg, out)
 	}
 
@@ -365,6 +494,7 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 			prompt = templated
 		}
 	}
+	s.recordDecodePrompt(0)
 	return s.decodePrompt(ctx, backend, prompt, opts, cfg, out)
 }
 
@@ -591,7 +721,7 @@ func (s *genaiSession) streamPolicyLocked() residency.StreamPolicy {
 	if !caps.RemoveMiddle || !caps.PositionShift {
 		return residency.StreamPolicy{}
 	}
-	budget := residency.DeriveEvictionBudget(s.numCtx, openvinoEvictionBlock)
+	budget := residency.DeriveEvictionBudget(s.numCtx, s.slidingWindowAttentionTokens, openvinoEvictionBlock)
 	return residency.StreamPolicy{
 		Enabled:      budget.Valid(),
 		SinkTokens:   budget.SinkTokens,
@@ -627,7 +757,7 @@ func (s *genaiSession) decodePrompt(ctx context.Context, backend genaiBackend, p
 			defer close(out)
 			res, err := backend.Generate(ctx, prompt, opts)
 			if err != nil {
-				_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: err})
+				_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: s.backendError("openvino generate", err)})
 				return
 			}
 			chunk, err := chunkFromGenAIResult(res, cfg.StructuredOutput)
@@ -644,11 +774,14 @@ func (s *genaiSession) decodePrompt(ctx context.Context, backend genaiBackend, p
 
 	src, err := backend.Stream(ctx, prompt, opts)
 	if err != nil {
-		return nil, err
+		return nil, s.backendError("openvino stream", err)
 	}
 	go func() {
 		defer close(out)
 		for chunk := range src {
+			if chunk.Error != nil {
+				chunk.Error = s.backendError("openvino stream", chunk.Error)
+			}
 			select {
 			case out <- transport.StreamChunk{Text: chunk.Text, Thinking: chunk.Thinking, Error: chunk.Error}:
 			case <-ctx.Done():
@@ -666,7 +799,7 @@ func (s *genaiSession) decodePromptTokens(ctx context.Context, backend genaiBack
 			defer close(out)
 			res, err := backend.GenerateTokens(ctx, tokens, opts)
 			if err != nil {
-				_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: err})
+				_ = sessionkit.Send(ctx, out, transport.StreamChunk{Error: s.backendError("openvino generate tokens", err)})
 				return
 			}
 			chunk, err := chunkFromGenAIResult(res, cfg.StructuredOutput)
@@ -683,11 +816,14 @@ func (s *genaiSession) decodePromptTokens(ctx context.Context, backend genaiBack
 
 	src, err := backend.StreamTokens(ctx, tokens, opts)
 	if err != nil {
-		return nil, err
+		return nil, s.backendError("openvino stream tokens", err)
 	}
 	go func() {
 		defer close(out)
 		for chunk := range src {
+			if chunk.Error != nil {
+				chunk.Error = s.backendError("openvino stream tokens", chunk.Error)
+			}
 			select {
 			case out <- transport.StreamChunk{Text: chunk.Text, Thinking: chunk.Thinking, Error: chunk.Error}:
 			case <-ctx.Done():
@@ -812,6 +948,9 @@ func chunkFromStructuredToolJSON(text string) (transport.StreamChunk, error) {
 	if len(raw) == 0 {
 		return transport.StreamChunk{}, fmt.Errorf("openvino: structured tool call output is empty")
 	}
+	if raw[0] != '{' {
+		return chunkFromQwenToolCallTags(text)
+	}
 
 	var envelope struct {
 		Content   *string          `json:"content"`
@@ -820,18 +959,67 @@ func chunkFromStructuredToolJSON(text string) (transport.StreamChunk, error) {
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return transport.StreamChunk{}, fmt.Errorf("openvino: parse structured tool call envelope: %w", err)
 	}
+	chunk := transport.StreamChunk{}
+	if envelope.Content != nil {
+		chunk.Text = *envelope.Content
+	}
 	if len(envelope.ToolCalls) == 0 {
-		return transport.StreamChunk{}, fmt.Errorf("openvino: structured tool call envelope contained no tool_calls")
+		if envelope.Content == nil {
+			return transport.StreamChunk{}, fmt.Errorf("openvino: structured tool call envelope contained neither content nor tool_calls")
+		}
+		return chunk, nil
 	}
 	calls, err := transportToolCalls(envelope.ToolCalls)
 	if err != nil {
 		return transport.StreamChunk{}, err
 	}
-	chunk := transport.StreamChunk{ToolCalls: calls}
-	if envelope.Content != nil {
-		chunk.Text = *envelope.Content
-	}
+	chunk.ToolCalls = calls
 	return chunk, nil
+}
+
+var qwenToolCallTagRE = regexp.MustCompile(`(?s)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
+
+func chunkFromQwenToolCallTags(text string) (transport.StreamChunk, error) {
+	matches := qwenToolCallTagRE.FindAllStringSubmatchIndex(text, -1)
+	if len(matches) == 0 {
+		return transport.StreamChunk{Text: strings.TrimSpace(text)}, nil
+	}
+
+	var remaining strings.Builder
+	toolCalls := make([]parsedToolCall, 0, len(matches))
+	last := 0
+	for _, match := range matches {
+		remaining.WriteString(text[last:match[0]])
+		last = match[1]
+
+		rawCall := strings.TrimSpace(text[match[2]:match[3]])
+		var parsed struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if err := json.Unmarshal([]byte(rawCall), &parsed); err != nil {
+			return transport.StreamChunk{}, fmt.Errorf("openvino: parse qwen tool_call payload: %w", err)
+		}
+		if parsed.Name == "" {
+			return transport.StreamChunk{}, fmt.Errorf("openvino: qwen tool_call payload missing name")
+		}
+		toolCalls = append(toolCalls, parsedToolCall{
+			ID:        fmt.Sprintf("call_%d", len(toolCalls)+1),
+			Type:      "function",
+			Name:      parsed.Name,
+			Arguments: parsed.Arguments,
+		})
+	}
+	remaining.WriteString(text[last:])
+
+	calls, err := transportToolCalls(toolCalls)
+	if err != nil {
+		return transport.StreamChunk{}, err
+	}
+	return transport.StreamChunk{
+		Text:      strings.TrimSpace(remaining.String()),
+		ToolCalls: calls,
+	}, nil
 }
 
 func normalizeToolArguments(raw json.RawMessage) (string, error) {
@@ -871,6 +1059,13 @@ func (s *genaiSession) ExplainContext() transport.ContextReport {
 		ManifestDigest:          s.manifest.Digest(),
 		Manifest:                s.manifest,
 		Closed:                  s.closed,
+		FatalError:              s.fatalErr,
+		PhysicalPrefillCalls:    s.physicalPrefillCalls,
+		PhysicalPrefillTokens:   s.physicalPrefillTokens,
+		DeferredPrefillCalls:    s.deferredPrefillCalls,
+		DeferredPrefillTokens:   s.deferredPrefillTokens,
+		DecodeCalls:             s.decodeCalls,
+		DecodePromptTokens:      s.decodePromptTokenCount,
 		Residency:               sessionkit.ResidencyReport(s.residencyPlan, s.residencyErr, s.Capabilities()),
 	}
 }
@@ -879,7 +1074,7 @@ func (s *genaiSession) Snapshot(ctx context.Context) (transport.SessionSnapshot,
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return transport.SessionSnapshot{}, transport.ErrSessionClosed
+		return transport.SessionSnapshot{}, s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return transport.SessionSnapshot{}, err
@@ -901,7 +1096,7 @@ func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapsh
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return transport.ErrSessionClosed
+		return s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -952,10 +1147,8 @@ func (s *genaiSession) Restore(ctx context.Context, snap transport.SessionSnapsh
 	if len(resident) != snap.ResidentTokens {
 		return contextasm.NewManifestMismatchError("snapshot resident token ids do not match resident token count")
 	}
-	if len(resident) > 0 {
-		if err := s.backend.PrefillTokens(ctx, resident); err != nil {
-			return fmt.Errorf("%w: openvino restore prefill: %v", transport.ErrSessionFatal, err)
-		}
+	if err := s.prefillResidentLocked(ctx, resident, "openvino restore prefill"); err != nil {
+		return err
 	}
 	s.stable = snap.StableText
 	s.suffix = ""
@@ -1120,7 +1313,7 @@ func decodeOptions(cfg transport.DecodeConfig) ovsession.GenerateOptions {
 func openvinoStructuredProtocol(protocol string) string {
 	switch protocol {
 	case "openvino:json_schema_tool_calls":
-		return "openvino:json_schema"
+		return "openvino:triggered_tags"
 	default:
 		return protocol
 	}

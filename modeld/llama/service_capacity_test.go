@@ -1,8 +1,6 @@
 package llama
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -327,35 +325,29 @@ func writeTestGGUF(t *testing.T, ctx int) string {
 
 func writeTestGGUFWithSWA(t *testing.T, ctx, slidingWindow int) string {
 	t.Helper()
-	var b bytes.Buffer
-	b.WriteString("GGUF")
-	_ = binary.Write(&b, binary.LittleEndian, uint32(3))
-	_ = binary.Write(&b, binary.LittleEndian, uint64(0))
-	kvs := []struct {
-		key string
-		val uint32
-	}{
-		{"qwen2.context_length", uint32(ctx)},
-		{"qwen2.block_count", 2},
-		{"qwen2.attention.head_count_kv", 1},
-		{"qwen2.attention.head_count", 2},
-		{"qwen2.attention.key_length", 128},
-	}
-	if slidingWindow > 0 {
-		kvs = append(kvs, struct {
-			key string
-			val uint32
-		}{"qwen2.attention.sliding_window", uint32(slidingWindow)})
-	}
-	_ = binary.Write(&b, binary.LittleEndian, uint64(len(kvs)))
-	for _, kv := range kvs {
-		writeGGUFString(&b, kv.key)
-		_ = binary.Write(&b, binary.LittleEndian, ggufUint32)
-		_ = binary.Write(&b, binary.LittleEndian, kv.val)
-	}
+	return writeTestModelProfile(t, ggufParams{
+		ContextLength: ctx,
+		BlockCount:    2,
+		HeadCountKV:   1,
+		HeadCount:     2,
+		KeyLength:     128,
+		SlidingWindow: slidingWindow,
+	})
+}
+
+func writeTestModelProfile(t *testing.T, params ggufParams) string {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "model.gguf")
-	if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("test model bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	old := inspectLlamaModel
+	inspectLlamaModel = func(got string) (ggufParams, error) {
+		if got != path {
+			t.Fatalf("inspectLlamaModel path = %q, want %q", got, path)
+		}
+		return params, nil
+	}
+	t.Cleanup(func() { inspectLlamaModel = old })
 	return path
 }

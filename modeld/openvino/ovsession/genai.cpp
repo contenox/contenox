@@ -670,6 +670,11 @@ static ov::genai::GenerationConfig generation_config_from(ov::genai::GenerationC
     } else if (gen.max_new_tokens == 0 || gen.max_new_tokens == SIZE_MAX) {
         gen.max_new_tokens = 256;
     }
+    // Some HF generation_config.json files carry a small total-token max_length
+    // (for example 2048). ContinuousBatchingPipeline still asserts max_length
+    // against prompt_len even when max_new_tokens is set, so clear the inherited
+    // total cap and let the explicit prompt-exclusive budget govern generation.
+    gen.max_length = SIZE_MAX;
     gen.apply_chat_template = false;
     if (use_temperature) {
         gen.temperature = temperature;
@@ -692,6 +697,7 @@ static ov::genai::GenerationConfig generation_config_from(ov::genai::GenerationC
 
 static ov::genai::GenerationConfig prefill_config_from(ov::genai::GenerationConfig gen) {
     gen.max_new_tokens = 0;
+    gen.max_length = SIZE_MAX;
     gen.min_new_tokens = 0;
     gen.echo = true;
     gen.apply_chat_template = false;

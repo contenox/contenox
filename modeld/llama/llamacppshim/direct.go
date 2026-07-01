@@ -7,17 +7,23 @@ package llamacppshim
 #cgo CXXFLAGS: -std=c++17
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
+#include "gguf.h"
 #include "llama.h"
 #include "ggml-backend.h"
 
 struct cx_chat_apply_result {
     char *prompt;
+    char *parser;
+    char *generation_prompt;
     int format;
-    int thinking_forced_open;
 };
 
-int cx_common_chat_format_generic(void);
+struct cx_chat_syntax_result {
+    char *parser;
+    int format;
+};
 
 struct cx_chat_apply_result cx_common_chat_apply(const struct llama_model *model,
                                                  const char *messages_json,
@@ -31,14 +37,19 @@ struct cx_chat_apply_result cx_common_chat_apply(const struct llama_model *model
 int cx_common_chat_parse(const char *input,
                          int is_partial,
                          int format,
+                         const char *parser_json,
+                         const char *generation_prompt,
                          const char *reasoning_format,
-                         int thinking_forced_open,
                          int parse_tool_calls,
                          char **content_out,
                          char **reasoning_out,
                          char **tool_calls_out,
                          char *errbuf,
                          size_t errlen);
+
+struct cx_chat_syntax_result cx_common_chat_syntax_openai_tools(const char *tools_json,
+                                                                char *errbuf,
+                                                                size_t errlen);
 */
 import "C"
 
@@ -76,10 +87,6 @@ func initBackend() {
 		}
 		C.llama_backend_init()
 	})
-}
-
-func commonChatFormatGeneric() int {
-	return int(C.cx_common_chat_format_generic())
 }
 
 // SystemInfo returns llama.cpp's linked runtime system information string.
@@ -142,6 +149,149 @@ func deviceType(t C.enum_ggml_backend_dev_type) string {
 	default:
 		return fmt.Sprintf("unknown(%d)", int(t))
 	}
+}
+
+// ModelKVProfile contains model metadata needed to budget KV cache. It is read
+// through llama.cpp/ggml public GGUF APIs, without model tensor allocation.
+type ModelKVProfile struct {
+	ContextLength              int
+	BlockCount                 int
+	HeadCountKV                int
+	HeadCount                  int
+	KeyLength                  int
+	EmbeddingLength            int
+	SlidingWindow              int
+	SlidingWindowPattern       []bool
+	SlidingWindowPatternStride int
+}
+
+// InspectModelKVProfile reads GGUF metadata through the public gguf.h API. It
+// does not load tensor data.
+func InspectModelKVProfile(path string) (ModelKVProfile, error) {
+	if path == "" {
+		return ModelKVProfile{}, errors.New("llamacppshim: model path is required")
+	}
+	cpath := C.CString(path)
+	defer C.free(unsafe.Pointer(cpath))
+
+	params := C.struct_gguf_init_params{no_alloc: C.bool(true)}
+	ctx := C.gguf_init_from_file(cpath, params)
+	if ctx == nil {
+		return ModelKVProfile{}, fmt.Errorf("llamacppshim: inspect GGUF metadata %q", path)
+	}
+	defer C.gguf_free(ctx)
+
+	var p ModelKVProfile
+	nKV := int(C.gguf_get_n_kv(ctx))
+	for i := 0; i < nKV; i++ {
+		key := C.GoString(C.gguf_get_key(ctx, C.int64_t(i)))
+		id := C.int64_t(i)
+		switch {
+		case strings.HasSuffix(key, ".context_length"):
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.ContextLength = int(v)
+			}
+		case strings.HasSuffix(key, ".block_count"):
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.BlockCount = int(v)
+			}
+		case strings.HasSuffix(key, ".attention.head_count_kv"):
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.HeadCountKV = int(v)
+			}
+		case strings.HasSuffix(key, ".attention.head_count"):
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.HeadCount = int(v)
+			}
+		case strings.HasSuffix(key, ".attention.key_length"):
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.KeyLength = int(v)
+			}
+		case strings.HasSuffix(key, ".attention.sliding_window"):
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.SlidingWindow = int(v)
+			}
+		case strings.HasSuffix(key, ".attention.sliding_window_pattern"):
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.SlidingWindowPatternStride = int(v)
+			} else if pattern := ggufBoolPatternArray(ctx, id); len(pattern) > 0 {
+				p.SlidingWindowPattern = pattern
+			}
+		case strings.HasSuffix(key, ".embedding_length"):
+			if v, ok := ggufScalarInt(ctx, id); ok {
+				p.EmbeddingLength = int(v)
+			}
+		}
+	}
+	return p, nil
+}
+
+func ggufScalarInt(ctx *C.struct_gguf_context, id C.int64_t) (int64, bool) {
+	switch C.gguf_get_kv_type(ctx, id) {
+	case C.GGUF_TYPE_UINT8:
+		return int64(C.gguf_get_val_u8(ctx, id)), true
+	case C.GGUF_TYPE_INT8:
+		return int64(C.gguf_get_val_i8(ctx, id)), true
+	case C.GGUF_TYPE_UINT16:
+		return int64(C.gguf_get_val_u16(ctx, id)), true
+	case C.GGUF_TYPE_INT16:
+		return int64(C.gguf_get_val_i16(ctx, id)), true
+	case C.GGUF_TYPE_UINT32:
+		return int64(C.gguf_get_val_u32(ctx, id)), true
+	case C.GGUF_TYPE_INT32:
+		return int64(C.gguf_get_val_i32(ctx, id)), true
+	case C.GGUF_TYPE_UINT64:
+		return int64(C.gguf_get_val_u64(ctx, id)), true
+	case C.GGUF_TYPE_INT64:
+		return int64(C.gguf_get_val_i64(ctx, id)), true
+	case C.GGUF_TYPE_BOOL:
+		if bool(C.gguf_get_val_bool(ctx, id)) {
+			return 1, true
+		}
+		return 0, true
+	default:
+		return 0, false
+	}
+}
+
+func ggufBoolPatternArray(ctx *C.struct_gguf_context, id C.int64_t) []bool {
+	if C.gguf_get_kv_type(ctx, id) != C.GGUF_TYPE_ARRAY {
+		return nil
+	}
+	n := int(C.gguf_get_arr_n(ctx, id))
+	if n <= 0 {
+		return nil
+	}
+	data := C.gguf_get_arr_data(ctx, id)
+	if data == nil {
+		return nil
+	}
+	out := make([]bool, n)
+	switch C.gguf_get_arr_type(ctx, id) {
+	case C.GGUF_TYPE_BOOL, C.GGUF_TYPE_UINT8, C.GGUF_TYPE_INT8:
+		vals := unsafe.Slice((*C.int8_t)(data), n)
+		for i, v := range vals {
+			out[i] = v != 0
+		}
+	case C.GGUF_TYPE_UINT16, C.GGUF_TYPE_INT16:
+		vals := unsafe.Slice((*C.int16_t)(data), n)
+		for i, v := range vals {
+			out[i] = v != 0
+		}
+	case C.GGUF_TYPE_UINT32, C.GGUF_TYPE_INT32:
+		vals := unsafe.Slice((*C.int32_t)(data), n)
+		for i, v := range vals {
+			out[i] = v != 0
+		}
+	case C.GGUF_TYPE_UINT64, C.GGUF_TYPE_INT64:
+		vals := unsafe.Slice((*C.int64_t)(data), n)
+		for i, v := range vals {
+			out[i] = v != 0
+		}
+	default:
+		return nil
+	}
+	return out
 }
 
 // ModelConfig controls model loading for the direct shim.
@@ -350,8 +500,9 @@ type ChatTemplateOptions struct {
 // application path. The format is intentionally opaque to Go; it is passed back
 // to llama.cpp's common_chat_parse for model-native output parsing.
 type ChatSyntax struct {
-	Format             int
-	ThinkingForcedOpen bool
+	Format           int
+	Parser           string
+	GenerationPrompt string
 }
 
 // ChatTemplateResult is a rendered prompt plus the syntax llama.cpp selected
@@ -398,11 +549,14 @@ func (m *Model) ApplyChatTemplateCommonWithOptions(messagesJSON, toolsJSON strin
 		return ChatTemplateResult{}, errors.New("llamacppshim: common chat template: " + C.GoString(errbuf))
 	}
 	defer C.free(unsafe.Pointer(result.prompt))
+	defer C.free(unsafe.Pointer(result.parser))
+	defer C.free(unsafe.Pointer(result.generation_prompt))
 	return ChatTemplateResult{
 		Prompt: C.GoString(result.prompt),
 		Syntax: ChatSyntax{
-			Format:             int(result.format),
-			ThinkingForcedOpen: result.thinking_forced_open != 0,
+			Format:           int(result.format),
+			Parser:           C.GoString(result.parser),
+			GenerationPrompt: C.GoString(result.generation_prompt),
 		},
 	}, nil
 }
@@ -414,6 +568,10 @@ func ParseChatResponse(input string, partial bool, syntax ChatSyntax, reasoningF
 	defer C.free(unsafe.Pointer(cInput))
 	cReasoning := C.CString(reasoningFormat)
 	defer C.free(unsafe.Pointer(cReasoning))
+	cParser := C.CString(syntax.Parser)
+	defer C.free(unsafe.Pointer(cParser))
+	cGenerationPrompt := C.CString(syntax.GenerationPrompt)
+	defer C.free(unsafe.Pointer(cGenerationPrompt))
 
 	const errLen = 1024
 	errbuf := (*C.char)(C.calloc(1, errLen))
@@ -426,10 +584,6 @@ func ParseChatResponse(input string, partial bool, syntax ChatSyntax, reasoningF
 	if partial {
 		isPartial = 1
 	}
-	forcedOpen := C.int(0)
-	if syntax.ThinkingForcedOpen {
-		forcedOpen = 1
-	}
 	parseTools := C.int(0)
 	if parseToolCalls {
 		parseTools = 1
@@ -438,8 +592,9 @@ func ParseChatResponse(input string, partial bool, syntax ChatSyntax, reasoningF
 		cInput,
 		isPartial,
 		C.int(syntax.Format),
+		cParser,
+		cGenerationPrompt,
 		cReasoning,
-		forcedOpen,
 		parseTools,
 		&cContent,
 		&cReasoningOut,
@@ -456,6 +611,25 @@ func ParseChatResponse(input string, partial bool, syntax ChatSyntax, reasoningF
 		Content:       C.GoString(cContent),
 		Thinking:      C.GoString(cReasoningOut),
 		ToolCallsJSON: C.GoString(cToolCalls),
+	}, nil
+}
+
+func openAIChatToolSyntax(toolsJSON string) (ChatSyntax, error) {
+	cTools := C.CString(toolsJSON)
+	defer C.free(unsafe.Pointer(cTools))
+
+	const errLen = 1024
+	errbuf := (*C.char)(C.calloc(1, errLen))
+	defer C.free(unsafe.Pointer(errbuf))
+
+	result := C.cx_common_chat_syntax_openai_tools(cTools, errbuf, C.size_t(errLen))
+	if result.parser == nil {
+		return ChatSyntax{}, errors.New("llamacppshim: common chat syntax: " + C.GoString(errbuf))
+	}
+	defer C.free(unsafe.Pointer(result.parser))
+	return ChatSyntax{
+		Format: int(result.format),
+		Parser: C.GoString(result.parser),
 	}, nil
 }
 
@@ -633,7 +807,9 @@ func (c *Context) SetAdapter(a *Adapter, scale float32) error {
 	if a == nil || a.ptr == nil {
 		return errors.New("llamacppshim: adapter is closed")
 	}
-	if rc := C.llama_set_adapter_lora(c.ptr, a.ptr, C.float(scale)); rc != 0 {
+	adapter := a.ptr
+	cscale := C.float(scale)
+	if rc := C.llama_set_adapters_lora(c.ptr, &adapter, C.size_t(1), &cscale); rc != 0 {
 		return fmt.Errorf("llamacppshim: set LoRA adapter failed (rc=%d)", int(rc))
 	}
 	return nil
@@ -645,7 +821,7 @@ func (c *Context) ClearAdapters() {
 	if c == nil || c.ptr == nil {
 		return
 	}
-	C.llama_clear_adapter_lora(c.ptr)
+	_ = C.llama_set_adapters_lora(c.ptr, nil, C.size_t(0), nil)
 }
 
 // ClearMemory clears llama.cpp memory/KV state.

@@ -247,7 +247,7 @@ func TestUnit_PlanHotSet_RejectsOverlappingRanges(t *testing.T) {
 
 func TestUnit_DeriveEvictionBudget(t *testing.T) {
 	// Block-aligned (OpenVINO-style): sizes round up to blockSize, Max = window.
-	b := DeriveEvictionBudget(2048, 32)
+	b := DeriveEvictionBudget(2048, 0, 32)
 	if b.SinkTokens%32 != 0 || b.RecentTokens%32 != 0 {
 		t.Fatalf("sizes not block-aligned: %+v", b)
 	}
@@ -259,13 +259,19 @@ func TestUnit_DeriveEvictionBudget(t *testing.T) {
 	}
 
 	// Token-granular (llama-style): no block rounding.
-	tok := DeriveEvictionBudget(400, 1)
+	tok := DeriveEvictionBudget(400, 0, 1)
 	if !tok.Valid() || tok.MaxTokens != 400 {
 		t.Fatalf("token budget = %+v", tok)
 	}
 
+	// Sliding-window models cap eviction policy to their actual attention span.
+	swa := DeriveEvictionBudget(2048, 512, 32)
+	if !swa.Valid() || swa.MaxTokens != 512 || swa.RecentTokens >= b.RecentTokens {
+		t.Fatalf("SWA budget = %+v, want valid Max=512 and smaller recent window than %+v", swa, b)
+	}
+
 	// Window too small to split: everything hot, not Valid (no eviction).
-	small := DeriveEvictionBudget(64, 32)
+	small := DeriveEvictionBudget(64, 0, 32)
 	if small.Valid() || small.MaxTokens != 64 {
 		t.Fatalf("small-window budget should keep all hot and be invalid: %+v", small)
 	}

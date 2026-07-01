@@ -1,4 +1,4 @@
-# ACP Registry Submission Draft
+# ACP Registry Submission
 
 This directory contains the files to copy into a fork of
 `agentclientprotocol/registry`:
@@ -9,9 +9,10 @@ contenox/
   icon.svg
 ```
 
-The manifest targets the current release in `runtime/version/version.txt`.
-Before opening the registry PR, verify the release asset URLs still return
-`200` and run the registry validator from the registry checkout:
+The manifest version must match `runtime/version/version.txt`.
+
+Before opening the registry PR, verify the release asset URLs return `200` and
+run the registry validator from the registry checkout:
 
 ```bash
 uv run --with jsonschema .github/workflows/build_registry.py
@@ -19,9 +20,11 @@ uv run --with jsonschema --with agent-client-protocol \
   .github/workflows/verify_agents.py --auth-check --agent contenox
 ```
 
-Current local checks:
+Release facts:
 
-- `v0.28.1` release asset URLs returned `200` on 2026-06-06.
+- `agent.json` targets `v0.32.8`.
+- The `v0.32.8` release asset URLs for darwin-arm64, linux-arm64, linux-amd64,
+  and windows-amd64 return `200`.
 - `contenox-linux-amd64.tar.gz` contains a single executable named `contenox`.
 - Windows releases should publish `contenox-windows-amd64.zip` containing
   `contenox.exe`; the registry `cmd` must be `./contenox.exe`.

@@ -49,7 +49,7 @@ func TestUnit_LocalModeldSourceBuildStepsKeepModelChoices(t *testing.T) {
 		"make deps-modeld",
 		"CONTENOX_MODELD_BACKEND=openvino make run-modeld",
 		"qwen2.5-coder-0.5b-ov",
-		"gemma4-e4b-ov",
+		"qwen3-8b-ov",
 		"default-autocomplete-provider openvino",
 		"default-autocomplete-model qwen2.5-coder-1.5b-ov",
 	} {

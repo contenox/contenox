@@ -95,8 +95,8 @@ runtime: deps-ref
 		ls "$$libdir"/libggml-cpu*.so >/dev/null 2>&1 || { echo "direct llama.cpp runtime missing libggml-cpu*.so backend plugins (GGML_BACKEND_DL install layout changed?)"; exit 1; }; \
 		{ [ "$(LLAMA_CUDA)" != "ON" ] || [ -f "$$libdir/libggml-cuda.so" ]; } || { echo "direct llama.cpp runtime built with CUDA but missing libggml-cuda.so in $$libdir"; exit 1; }; \
 		{ [ "$(LLAMA_HIP)" != "ON" ] || [ -f "$$libdir/libggml-hip.so" ]; } || { echo "direct llama.cpp runtime built with HIP but missing libggml-hip.so in $$libdir"; exit 1; }; \
-		for lib in "$$libdir"/lib*.so; do \
-			[ -e "$$lib" ] || continue; \
+		for lib in "$$libdir"/lib*.so.*; do \
+			[ -f "$$lib" ] && [ ! -L "$$lib" ] || continue; \
 			soname="$$(readelf -d "$$lib" | awk -F'[][]' '/SONAME/ { print $$2; exit }')"; \
 			base="$$(basename "$$lib")"; \
 			if [ -n "$$soname" ] && [ "$$soname" != "$$base" ]; then ln -sf "$$base" "$$libdir/$$soname"; fi; \

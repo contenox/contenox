@@ -241,7 +241,10 @@ func (s *Service) resolvePolicy(st capacity.DeviceSnapshot) (capacity.Policy, er
 
 func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInfo, error) {
 	cfg := applyDaemonEnvOverrides(req.Config)
-	params := ggufModelParams(req.Path)
+	params, err := inspectLlamaModel(req.Path)
+	if err != nil {
+		return transport.ModelInfo{}, err
+	}
 	st, err := capacity.Snapshot(s.memorySource(cfg))
 	if err != nil {
 		return transport.ModelInfo{}, fmt.Errorf("llama capacity memory probe: %w", err)

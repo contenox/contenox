@@ -96,7 +96,7 @@ func TestUnit_LlamaProvider_UsesResolvedAutoGpuLayersFromModeld(t *testing.T) {
 	}
 }
 
-func TestUnit_LlamaProvider_DescribeLeavesOmittedContextUnset(t *testing.T) {
+func TestUnit_LlamaProvider_UsesDescribeResolvedContextWhenProfileOmitsNumCtx(t *testing.T) {
 	old := sessionFactory
 	sessionFactory = nil
 	t.Cleanup(func() { sessionFactory = old })
@@ -126,8 +126,8 @@ func TestUnit_LlamaProvider_DescribeLeavesOmittedContextUnset(t *testing.T) {
 		t.Fatalf("GetChatConnection: %v", err)
 	}
 	c := got.(*client)
-	if c.cfg.NumCtx != 8192 {
-		t.Fatalf("NumCtx = %d, want runtime default hot context", c.cfg.NumCtx)
+	if c.cfg.NumCtx != 24576-modeldCapacitySafetyTokens {
+		t.Fatalf("NumCtx = %d, want Describe effective context minus modeld safety margin", c.cfg.NumCtx)
 	}
 	if c.cfg.PlannerEffectiveContext != 32768 {
 		t.Fatalf("PlannerEffectiveContext = %d, want modeld planner context", c.cfg.PlannerEffectiveContext)
@@ -135,6 +135,49 @@ func TestUnit_LlamaProvider_DescribeLeavesOmittedContextUnset(t *testing.T) {
 	req := svc.lastDescribeRequest()
 	if req.Config.NumCtx != 0 {
 		t.Fatalf("Describe request NumCtx = %d, want unset so modeld can discover max", req.Config.NumCtx)
+	}
+}
+
+func TestUnit_LlamaProvider_ExplicitProfileContextStillCapsDescribe(t *testing.T) {
+	old := sessionFactory
+	sessionFactory = nil
+	t.Cleanup(func() { sessionFactory = old })
+
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, profileFileName), []byte(`{"runtime":{"num_ctx":4096}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &recordingEmbedService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:         32768,
+			EffectiveContext:        24576,
+			PlannerEffectiveContext: 32768,
+		},
+	}
+	serveLlamaModeldForTest(t, svc)
+
+	got, err := newProvider("coder", root, modelrepo.CapabilityConfig{ContextLength: 32768}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	if c.cfg.NumCtx != 4096 {
+		t.Fatalf("NumCtx = %d, want explicit profile context", c.cfg.NumCtx)
+	}
+	if c.cfg.PlannerEffectiveContext != 32768 {
+		t.Fatalf("PlannerEffectiveContext = %d, want modeld planner context", c.cfg.PlannerEffectiveContext)
+	}
+	req := svc.lastDescribeRequest()
+	if req.Config.NumCtx != 4096 {
+		t.Fatalf("Describe request NumCtx = %d, want explicit profile context", req.Config.NumCtx)
 	}
 }
 

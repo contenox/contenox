@@ -46,7 +46,9 @@ func SetSessionFactory(f SessionFactory) { sessionFactory = f }
 // gap during a daemon restart does not momentarily drop openvino models from
 // capability advertisement / the model picker. A daemon running in a different
 // mode (e.g. llama) advertises no openvino capability.
-func SessionAvailable() bool { return sessionFactory != nil || modeldconn.ServeableBackend() == "openvino" }
+func SessionAvailable() bool {
+	return sessionFactory != nil || modeldconn.ServeableBackend() == "openvino"
+}
 
 // newSession opens an openvino session on the modeld daemon over the transport.
 // ref.Path is the OpenVINO IR directory; modeld makes it resident after checking
@@ -72,6 +74,7 @@ func NewUnsupportedFeatureError(feature string) error {
 // which case the next call reopens against the new leader.
 func fatalSessionError(err error) bool {
 	return errors.Is(err, transport.ErrSessionClosed) ||
+		errors.Is(err, transport.ErrSessionFatal) ||
 		errors.Is(err, transport.ErrStaleFence) ||
 		errors.Is(err, transport.ErrSlotGenerationStale) ||
 		errors.Is(err, transport.ErrModelNotActive)

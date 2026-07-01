@@ -581,22 +581,38 @@ func (s *Service) beginOperation(gen uint64, op string) (transport.Session, erro
 }
 
 func (s *Service) markReadyOrError(err error) {
+	var closeSess transport.Session
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.busyOp = ""
 	s.touchLocked()
 	if err != nil && !errors.Is(err, context.Canceled) {
 		s.lastErr = err.Error()
+		if errors.Is(err, transport.ErrSessionFatal) {
+			if s.active != nil {
+				closeSess = s.active.sess
+				s.active = nil
+				s.generation++
+			}
+			s.state = transport.SlotFailed
+			s.mu.Unlock()
+			if closeSess != nil {
+				_ = closeSess.Close()
+			}
+			return
+		}
 		if errors.Is(err, transport.ErrSessionClosed) || errors.Is(err, transport.ErrSlotGenerationStale) {
 			s.state = transport.SlotFailed
+			s.mu.Unlock()
 			return
 		}
 	}
 	if s.active == nil {
 		s.state = transport.SlotEmpty
+		s.mu.Unlock()
 		return
 	}
 	s.state = transport.SlotReady
+	s.mu.Unlock()
 }
 
 func sameIdentity(a, b transport.OpenSessionRequest) bool {

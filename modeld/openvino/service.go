@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/contenox/runtime/modeld/capacity"
@@ -18,7 +19,14 @@ import (
 // block granularity.
 const openvinoEvictionBlock = 32
 
-// buildTokenizersPath is the build-time fallback path to libopenvino_tokenizers.so
+const (
+	openvinoDefaultSchedulerCacheGiB    = 1
+	openvinoMaxDerivedSchedulerCacheGiB = 4
+	openvinoSchedulerCacheOverheadNum   = 5
+	openvinoSchedulerCacheOverheadDen   = 4
+)
+
+// buildTokenizersPath is the build-time fallback path to the OpenVINO tokenizers extension
 // (set via build-modeld -ldflags -X) for an in-place dev build whose libs live in
 // the venv. OpenVINO GenAI loads that extension via OPENVINO_TOKENIZERS_PATH_GENAI.
 var buildTokenizersPath string
@@ -33,7 +41,12 @@ var buildGenAIVersion string
 func BuildGenAIVersion() string { return buildGenAIVersion }
 
 // tokenizersLibName is the extension file the bundle/venv provides.
-const tokenizersLibName = "libopenvino_tokenizers.so"
+func tokenizersLibName() string {
+	if runtime.GOOS == "windows" {
+		return "openvino_tokenizers.dll"
+	}
+	return "libopenvino_tokenizers.so"
+}
 
 // init points OpenVINO GenAI at the tokenizers extension without requiring the
 // caller to set OPENVINO_TOKENIZERS_PATH_GENAI. It prefers a bundle next to the
@@ -43,7 +56,7 @@ func init() {
 		return
 	}
 	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), "modeld-libs", tokenizersLibName)
+		cand := filepath.Join(filepath.Dir(exe), "modeld-libs", tokenizersLibName())
 		if _, err := os.Stat(cand); err == nil {
 			_ = os.Setenv("OPENVINO_TOKENIZERS_PATH_GENAI", cand)
 			return
@@ -115,7 +128,10 @@ func (s *Service) resolvePolicy(st capacity.DeviceSnapshot) (capacity.Policy, er
 
 var _ transport.Service = (*Service)(nil)
 
-var inspectOpenVINOModel = ovsession.InspectModelKVProfile
+var (
+	inspectOpenVINOModel = ovsession.InspectModelKVProfile
+	newOpenVINOGenAI     = ovsession.NewGenAI
+)
 
 // OpenSession makes the model at req.Path (an OpenVINO IR directory, resolved by
 // the runtime) resident and returns a session bound to it. It rejects a model
@@ -127,7 +143,11 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	if req.Type != "" && req.Type != "openvino" {
 		return nil, fmt.Errorf("%w: requested %q, this daemon serves openvino", transport.ErrBackendMismatch, req.Type)
 	}
-	cfg, err := s.resolveConfig(req)
+	info, err := s.describe(req)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := resolveConfigFromInfo(req.Config, info)
 	if err != nil {
 		return nil, err
 	}
@@ -136,6 +156,7 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	// profile, with the environment as the device fallback. transport.Config
 	// carries only the neutral context window.
 	genaiCfg := genAIConfigFromProfile(req.Path, resolveDevice())
+	applyOpenVINOSchedulerCacheDefault(&genaiCfg, info, cfg.HotContextTokens)
 	// Enforce the residency policy with OpenVINO's native sink+recent+evictable
 	// cache eviction (the declarative parallel to the llama slide). The budget is
 	// derived from the served window; tiny windows stay un-evicted.
@@ -143,7 +164,7 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	if hotContext <= 0 {
 		hotContext = cfg.NumCtx
 	}
-	budget := residency.DeriveEvictionBudget(hotContext, openvinoEvictionBlock)
+	budget := residency.DeriveEvictionBudget(hotContext, info.SlidingWindowAttentionTokens, openvinoEvictionBlock)
 	eviction := budget.Valid()
 	if eviction {
 		on := true
@@ -155,11 +176,48 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 	// LoRA adapters make this a distinct model variant (registered MODE_DYNAMIC at
 	// pipeline construction). Empty = the base model.
 	genaiCfg.LoRAAdapters = toGenAILoRA(req.Adapters)
-	backend, err := ovsession.NewGenAI(req.Path, genaiCfg)
-	if err != nil {
-		return nil, err
+	// Autodetect + priority device selection: when the selector is AUTO, try the
+	// enumerated devices in priority order (discrete GPU -> iGPU -> CPU) and open
+	// on the first that constructs. An explicit CONTENOX_OPENVINO_DEVICE / profile
+	// device pins a single device and skips autodetection.
+	candidates := openSessionDevices(genaiCfg.Device, devicePriority())
+	// The Intel NPU compiler cannot compile PagedAttention, so the NPU cannot run the
+	// continuous-batching pipeline used here. AUTO excludes it; reject an explicit NPU
+	// pin with an actionable error instead of a cryptic Level-Zero compile failure.
+	if len(candidates) == 1 && openvinoDeviceBase(candidates[0]) == "NPU" {
+		return nil, fmt.Errorf("%w: OpenVINO NPU cannot run the continuous-batching (effective-context) pipeline; PagedAttention is unsupported on the NPU; use CONTENOX_OPENVINO_DEVICE=GPU or CPU, or AUTO", transport.ErrUnsupportedFeature)
 	}
-	sess := newGenaiSessionWithPlanner(backend, cfg.NumCtx, cfg.PlannerEffectiveContext, eviction)
+	var backend *ovsession.GenAISession
+	var lastErr error
+	for _, dev := range candidates {
+		genaiCfg.Device = dev
+		b, usedCfg, derr := openGenAIWithSparseFallback(req.Path, req.ModelName, genaiCfg)
+		if derr == nil {
+			backend = b
+			genaiCfg = usedCfg
+			break
+		}
+		lastErr = derr
+		if len(candidates) > 1 {
+			slog.Warn("openvino device candidate unavailable, trying next",
+				"model", req.ModelName, "device", dev, "error", derr)
+		}
+	}
+	if backend == nil {
+		if lastErr == nil {
+			lastErr = fmt.Errorf("no openvino device candidates")
+		}
+		return nil, fmt.Errorf("openvino: no usable device among %v: %w", candidates, lastErr)
+	}
+	if len(candidates) > 1 {
+		slog.Info("openvino device autoselected", "model", req.ModelName, "device", genaiCfg.Device)
+	}
+	sparseAttention := true
+	if genaiCfg.UseSparseAttention != nil {
+		sparseAttention = *genaiCfg.UseSparseAttention
+	}
+	sess := newGenaiSessionWithNativeFeatures(backend, cfg.NumCtx, cfg.PlannerEffectiveContext, eviction, sparseAttention, info.SlidingWindowAttentionTokens)
+	sess.deferPhysicalPrefill = openvinoDeferPhysicalPrefill()
 	// Cold-KV evict/admit/snapshot copies physical KV blocks, which only survive a
 	// round-trip at float precision. A quantized KV precision would silently
 	// degrade an evicted-then-readmitted block, so the cold path is disabled (the
@@ -175,6 +233,68 @@ func (s *Service) OpenSession(_ context.Context, req transport.OpenSessionReques
 		)
 	}
 	return sess, nil
+}
+
+func openGenAIWithSparseFallback(modelPath, modelName string, cfg ovsession.GenAIConfig) (*ovsession.GenAISession, ovsession.GenAIConfig, error) {
+	backend, err := newOpenVINOGenAI(modelPath, cfg)
+	if err == nil {
+		return backend, cfg, nil
+	}
+	if cfg.UseSparseAttention != nil || !openvinoXAttentionUnsupported(err) {
+		return nil, cfg, err
+	}
+	denseCfg := cfg
+	off := false
+	denseCfg.UseSparseAttention = &off
+	backend, denseErr := newOpenVINOGenAI(modelPath, denseCfg)
+	if denseErr != nil {
+		return nil, cfg, fmt.Errorf("%w; dense fallback after unsupported XAttention also failed: %v", err, denseErr)
+	}
+	slog.Warn("openvino XAttention unsupported on selected device; retried with dense attention",
+		"model", modelName,
+		"device", cfg.Device,
+		"error", err,
+	)
+	return backend, denseCfg, nil
+}
+
+func openvinoXAttentionUnsupported(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "XAttention is not supported")
+}
+
+func openvinoDeferPhysicalPrefill() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("CONTENOX_OPENVINO_DEFER_PREFILL")))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func applyOpenVINOSchedulerCacheDefault(cfg *ovsession.GenAIConfig, info transport.ModelInfo, hotContext int) {
+	if cfg == nil || cfg.CacheSizeExplicit || cfg.CacheSize > 0 {
+		return
+	}
+	cfg.CacheSize = deriveOpenVINOSchedulerCacheSizeGiB(info, hotContext)
+}
+
+func deriveOpenVINOSchedulerCacheSizeGiB(info transport.ModelInfo, hotContext int) int {
+	if hotContext <= 0 {
+		hotContext = info.HotContextTokens
+	}
+	if hotContext <= 0 || info.KVBytesPerToken <= 0 {
+		return openvinoDefaultSchedulerCacheGiB
+	}
+	const gib = int64(1 << 30)
+	kvBytes := int64(hotContext) * info.KVBytesPerToken
+	if kvBytes <= 0 {
+		return openvinoDefaultSchedulerCacheGiB
+	}
+	withOverhead := kvBytes * openvinoSchedulerCacheOverheadNum / openvinoSchedulerCacheOverheadDen
+	cacheGiB := int((withOverhead + gib - 1) / gib)
+	if cacheGiB < openvinoDefaultSchedulerCacheGiB {
+		return openvinoDefaultSchedulerCacheGiB
+	}
+	if cacheGiB > openvinoMaxDerivedSchedulerCacheGiB {
+		return openvinoMaxDerivedSchedulerCacheGiB
+	}
+	return cacheGiB
 }
 
 // toGenAILoRA maps the transport adapter handles onto OpenVINO's safetensors
@@ -286,7 +406,10 @@ func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Con
 	if err != nil {
 		return transport.Config{}, err
 	}
-	cfg := req.Config
+	return resolveConfigFromInfo(req.Config, info)
+}
+
+func resolveConfigFromInfo(cfg transport.Config, info transport.ModelInfo) (transport.Config, error) {
 	if info.EffectiveContext <= 0 {
 		return cfg, nil
 	}
@@ -432,18 +555,41 @@ func (s openvinoDeviceMemorySource) Snapshot() (capacity.DeviceSnapshot, error) 
 	if err != nil {
 		return capacity.DeviceSnapshot{}, err
 	}
-	if !d.MemoryFreeKnown || !d.MemoryTotalKnown || d.MemoryTotal == 0 {
-		return capacity.DeviceSnapshot{}, fmt.Errorf("OpenVINO device %q reported no memory telemetry; set CONTENOX_OPENVINO_DEVICE=CPU or use a plugin exposing device memory", s.device)
-	}
+	return openvinoDeviceSnapshot(d, capacity.SystemRAM{})
+}
+
+func openvinoDeviceSnapshot(d ovsession.DeviceInfo, host capacity.MemorySource) (capacity.DeviceSnapshot, error) {
 	kind := d.Type
 	if kind == "" {
 		kind = openvinoDeviceKind(d.Name)
 	}
+	totalKnown, freeKnown := d.MemoryTotalKnown, d.MemoryFreeKnown
+	total, free := int64(d.MemoryTotal), int64(d.MemoryFree)
+	if d.SharedWithDisplay && (!freeKnown || free <= 0 || !totalKnown || total <= 0) {
+		hostSnapshot, err := capacity.Snapshot(host)
+		if err != nil {
+			return capacity.DeviceSnapshot{}, fmt.Errorf("OpenVINO shared-memory device %q host memory fallback: %w", d.Name, err)
+		}
+		if !totalKnown || total <= 0 {
+			total = hostSnapshot.TotalBytes
+			totalKnown = total > 0
+		}
+		if !freeKnown || free <= 0 {
+			free = hostSnapshot.FreeBytes
+			if total > 0 && free > total {
+				free = total
+			}
+			freeKnown = free > 0
+		}
+	}
+	if !freeKnown || !totalKnown || total <= 0 {
+		return capacity.DeviceSnapshot{}, fmt.Errorf("OpenVINO device %q reported no memory telemetry; set CONTENOX_OPENVINO_DEVICE=CPU or use a plugin exposing device memory", d.Name)
+	}
 	return capacity.DeviceSnapshot{
 		Kind:              kind,
 		DeviceID:          d.Name,
-		TotalBytes:        int64(d.MemoryTotal),
-		FreeBytes:         int64(d.MemoryFree),
+		TotalBytes:        total,
+		FreeBytes:         free,
 		SharedWithDisplay: d.SharedWithDisplay,
 	}, nil
 }
@@ -508,37 +654,19 @@ func resolveDevice() string {
 
 // effectiveDevice resolves a device selector to the concrete device that
 // capacity planning should budget against. AUTO does not expose memory
-// telemetry, so mirror its priority (GPU, then NPU, then CPU) against the
-// enumerated devices and budget against the device inference will actually land
-// on. Concrete selectors pass through unchanged; if enumeration fails we fall
-// back to CPU so capacity uses system RAM rather than failing the request.
+// telemetry, so mirror the inference priority against the enumerated devices and
+// budget against the device inference will actually land on. Concrete selectors
+// pass through unchanged; if enumeration fails we fall back to CPU so capacity
+// uses system RAM rather than failing the request.
 func effectiveDevice(device string) string {
 	if openvinoDeviceBase(device) != "AUTO" {
 		return device
 	}
-	info, err := ovsession.Runtime()
-	if err != nil {
+	// Budget against the same device the pipeline will land on: mirror the
+	// inference priority order so capacity planning and device selection agree.
+	candidates := openSessionDevices("AUTO", devicePriority())
+	if len(candidates) == 0 {
 		return "CPU"
 	}
-	var gpu, npu string
-	for _, d := range info.Devices {
-		switch openvinoDeviceBase(d.Name) {
-		case "GPU":
-			if gpu == "" {
-				gpu = d.Name
-			}
-		case "NPU":
-			if npu == "" {
-				npu = d.Name
-			}
-		}
-	}
-	switch {
-	case gpu != "":
-		return gpu
-	case npu != "":
-		return npu
-	default:
-		return "CPU"
-	}
+	return candidates[0]
 }

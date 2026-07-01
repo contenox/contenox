@@ -87,6 +87,24 @@ func serveLlamaModeldForTest(t *testing.T, svc transport.Service) {
 	go func() { _ = transportgrpc.Serve(ctx, lis, svc, rec.InstanceID, "llama") }()
 	modeldconn.SetDataRoot(dataRoot)
 	t.Cleanup(func() { modeldconn.SetDataRoot("") })
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		pingCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		client, err := transportgrpc.DialLeader(endpoint, "")
+		if err == nil {
+			h, healthErr := client.Health(pingCtx)
+			_ = client.Close()
+			if healthErr == nil && h.Ready && h.InstanceID == rec.InstanceID {
+				cancel()
+				break
+			}
+		}
+		cancel()
+		if time.Now().After(deadline) {
+			t.Fatalf("modeld test server did not become healthy at %s", endpoint)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // TestUnit_LlamaProvider_EmbeddingUsesModeldTransport proves llama embeddings now

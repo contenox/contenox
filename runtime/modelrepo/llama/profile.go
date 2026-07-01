@@ -133,11 +133,15 @@ func (p modelProfile) config() Config {
 	return normalizeConfig(c)
 }
 
+func (p modelProfile) explicitRuntimeContext() bool {
+	return p.Runtime.NumCtx > 0 || os.Getenv("CONTENOX_LLAMA_CTX") != ""
+}
+
 // describeConfig preserves an omitted num_ctx as "let modeld discover the
 // model/device maximum" while still honoring explicit profile or env requests.
 func (p modelProfile) describeConfig() Config {
 	cfg := p.config()
-	if p.Runtime.NumCtx <= 0 && os.Getenv("CONTENOX_LLAMA_CTX") == "" {
+	if !p.explicitRuntimeContext() {
 		cfg.NumCtx = 0
 	}
 	return cfg

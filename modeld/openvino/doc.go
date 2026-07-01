@@ -1,6 +1,6 @@
 // Package openvino implements the runtime/transport.Service boundary for the
 // OpenVINO (Intel) backend: it opens persistent, manifest-keyed sessions on the
-// owned device (CPU / GPU / NPU) that the runtime drives over the transport. It
+// owned device (CPU / GPU) that the runtime drives over the transport. It
 // is not a modelprovider — the stateless modelprovider lives in the runtime; this
 // package is the daemon-side compute implementation.
 //
@@ -13,5 +13,5 @@
 // OpenSession returns the not-compiled-in error.
 //
 // Build and benchmark the native path with Makefile.openvino (the CGO flags are
-// derived from the OpenVINO wheels; CONTENOX_OPENVINO_DEVICE selects CPU/GPU/NPU).
+// derived from the OpenVINO wheels; CONTENOX_OPENVINO_DEVICE selects CPU/GPU).
 package openvino

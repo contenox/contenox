@@ -23,6 +23,7 @@ type fakeGenAIBackend struct {
 	generateTokenPrompts        [][]int
 	generateOptions             []ovsession.GenerateOptions
 	prefillTokenPrompts         [][]int
+	prefillErr                  error
 	templateCalls               [][]ovsession.ChatMessage
 	templateTools               []string
 	templateAddGenerationPrompt []bool
@@ -63,6 +64,9 @@ func (f *fakeGenAIBackend) StreamTokens(_ context.Context, tokens []int, opts ov
 
 func (f *fakeGenAIBackend) PrefillTokens(_ context.Context, tokens []int) error {
 	f.prefillTokenPrompts = append(f.prefillTokenPrompts, append([]int(nil), tokens...))
+	if f.prefillErr != nil {
+		return f.prefillErr
+	}
 	return nil
 }
 
@@ -239,6 +243,86 @@ func TestGenaiSessionDecodeConcatenatesStableAndSuffix(t *testing.T) {
 	}
 }
 
+func TestGenaiSessionPoisonedPrefillMarksSessionFatal(t *testing.T) {
+	fake := &fakeGenAIBackend{
+		prefillErr: errors.New("Check 'm_ref_count > 0' failed; BlockAllocator leaked blocks. Expected num free blocks: 2665, actual: 17"),
+	}
+	s := newGenaiSession(fake, 4096)
+	ctx := context.Background()
+
+	_, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "SYSTEM", Manifest: ovManifest("hash-AAA", "r1")})
+	if !errors.Is(err, transport.ErrSessionFatal) {
+		t.Fatalf("EnsurePrefix error = %v, want ErrSessionFatal", err)
+	}
+	if !fake.closed {
+		t.Fatal("poisoned prefill should close the backend")
+	}
+	report := s.ExplainContext()
+	if !report.Closed || report.FatalError == "" {
+		t.Fatalf("report = %+v, want closed fatal context", report)
+	}
+	_, err = s.PrefillSuffix(ctx, transport.SuffixInput{Text: "USER", Manifest: ovManifest("hash-AAA", "r1")})
+	if !errors.Is(err, transport.ErrSessionFatal) {
+		t.Fatalf("PrefillSuffix after fatal = %v, want ErrSessionFatal", err)
+	}
+}
+
+func TestGenaiSessionDeferredPrefillSkipsPhysicalPrefillWithoutColdStore(t *testing.T) {
+	fake := &fakeGenAIBackend{emit: []string{"ok"}}
+	s := newGenaiSession(fake, 4096)
+	s.deferPhysicalPrefill = true
+	ctx := context.Background()
+	m := ovManifest("hash-AAA", "r1")
+
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "SYSTEM", Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	if _, err := s.PrefillSuffix(ctx, transport.SuffixInput{Text: "USER", Manifest: m}); err != nil {
+		t.Fatalf("PrefillSuffix: %v", err)
+	}
+	if len(fake.prefillTokenPrompts) != 0 {
+		t.Fatalf("physical prefill calls = %+v, want none", fake.prefillTokenPrompts)
+	}
+	ch, err := s.Decode(ctx, transport.DecodeConfig{MaxTokens: 1})
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	for chunk := range ch {
+		if chunk.Error != nil {
+			t.Fatalf("decode error: %v", chunk.Error)
+		}
+	}
+	if len(fake.streamTokenPrompts) != 1 || string(runesFromInts(fake.streamTokenPrompts[0])) != "SYSTEMUSER" {
+		t.Fatalf("decode token prompt = %+v, want SYSTEMUSER", fake.streamTokenPrompts)
+	}
+	report := s.ExplainContext()
+	if report.PhysicalPrefillCalls != 0 || report.DeferredPrefillCalls != 2 {
+		t.Fatalf("prefill counters = physical %d deferred %d, want 0/2", report.PhysicalPrefillCalls, report.DeferredPrefillCalls)
+	}
+	if report.DecodeCalls != 1 || report.DecodePromptTokens != len("SYSTEMUSER") {
+		t.Fatalf("decode counters = calls %d tokens %d, want 1/%d", report.DecodeCalls, report.DecodePromptTokens, len("SYSTEMUSER"))
+	}
+}
+
+func TestGenaiSessionDeferredPrefillStillPrefillsWithColdStore(t *testing.T) {
+	fake := &fakeGenAIBackend{supportsColdKV: true}
+	s := newGenaiSessionWithPlanner(fake, 6, 10, true)
+	s.deferPhysicalPrefill = true
+	ctx := context.Background()
+	m := ovManifest(contextasm.HashString("abcdef"), "r1")
+
+	if _, err := s.EnsurePrefix(ctx, transport.PrefixInput{Text: "abcdef", Manifest: m}); err != nil {
+		t.Fatalf("EnsurePrefix: %v", err)
+	}
+	if len(fake.prefillTokenPrompts) != 1 {
+		t.Fatalf("physical prefill calls = %+v, want one cold-store prefill", fake.prefillTokenPrompts)
+	}
+	report := s.ExplainContext()
+	if report.PhysicalPrefillCalls != 1 || report.DeferredPrefillCalls != 0 {
+		t.Fatalf("prefill counters = physical %d deferred %d, want 1/0", report.PhysicalPrefillCalls, report.DeferredPrefillCalls)
+	}
+}
+
 func TestGenaiSessionExplainContextSurfacesResidencyPlan(t *testing.T) {
 	fake := &fakeGenAIBackend{emit: []string{"ok"}}
 	s := newGenaiSession(fake, 4096)
@@ -282,6 +366,20 @@ func TestGenaiSessionExplainContextSurfacesResidencyPlan(t *testing.T) {
 	}
 	if res.Error != "" {
 		t.Fatalf("unexpected residency error: %q", res.Error)
+	}
+}
+
+func TestGenaiSessionCapabilitiesReflectConfiguredSparseAttention(t *testing.T) {
+	s := newGenaiSessionWithNativeFeatures(&fakeGenAIBackend{}, 4096, 4096, false, false, 0)
+	if caps := s.Capabilities(); caps.SparseAttention {
+		t.Fatalf("SparseAttention = true, want false when native sparse attention is disabled: %+v", caps)
+	}
+}
+
+func TestGenaiSessionCapabilitiesReportSlidingWindowAttention(t *testing.T) {
+	s := newGenaiSessionWithNativeFeatures(&fakeGenAIBackend{}, 4096, 4096, false, true, 512)
+	if caps := s.Capabilities(); caps.SlidingWindowAttentionTokens != 512 {
+		t.Fatalf("SlidingWindowAttentionTokens = %d, want 512: %+v", caps.SlidingWindowAttentionTokens, caps)
 	}
 }
 
@@ -688,7 +786,7 @@ func TestGenaiSessionDecodeStructuredJSONSchemaToolCalls(t *testing.T) {
 		t.Fatalf("generate options = %+v", fake.generateOptions)
 	}
 	lastGenerate := fake.generateOptions[len(fake.generateOptions)-1]
-	if got := lastGenerate.StructuredOutput; got.Protocol != "openvino:json_schema" || got.Payload != `{"type":"object"}` {
+	if got := lastGenerate.StructuredOutput; got.Protocol != "openvino:triggered_tags" || got.Payload != `{"type":"object"}` {
 		t.Fatalf("structured output = %+v", got)
 	}
 	if len(fake.generateTokenPrompts) != 1 || string(runesFromInts(fake.generateTokenPrompts[0])) != "USER" {
@@ -699,14 +797,52 @@ func TestGenaiSessionDecodeStructuredJSONSchemaToolCalls(t *testing.T) {
 	}
 }
 
-func TestGenaiSessionDecodeStructuredJSONSchemaRequiresToolCallsEnvelope(t *testing.T) {
-	_, err := chunkFromStructuredToolJSON(`[{"function":{"name":"echo.echo","arguments":{"input":"hello"}}}]`)
-	if err == nil || !strings.Contains(err.Error(), "structured tool call envelope") {
-		t.Fatalf("array fallback error = %v", err)
+func TestGenaiSessionDecodeStructuredJSONSchemaAllowsContentOnly(t *testing.T) {
+	chunk, err := chunkFromStructuredToolJSON(`{"content":"answer without tools"}`)
+	if err != nil {
+		t.Fatalf("content-only envelope: %v", err)
 	}
+	if chunk.Text != "answer without tools" {
+		t.Fatalf("text = %q, want content", chunk.Text)
+	}
+	if len(chunk.ToolCalls) != 0 {
+		t.Fatalf("tool calls = %+v, want none", chunk.ToolCalls)
+	}
+}
 
-	_, err = chunkFromStructuredToolJSON(`{"function":{"name":"echo.echo","arguments":{"input":"hello"}}}`)
-	if err == nil || !strings.Contains(err.Error(), "contained no tool_calls") {
+func TestGenaiSessionDecodeStructuredJSONSchemaAllowsPlainText(t *testing.T) {
+	chunk, err := chunkFromStructuredToolJSON(`answer without tools`)
+	if err != nil {
+		t.Fatalf("plain text: %v", err)
+	}
+	if chunk.Text != "answer without tools" {
+		t.Fatalf("text = %q, want plain text", chunk.Text)
+	}
+	if len(chunk.ToolCalls) != 0 {
+		t.Fatalf("tool calls = %+v, want none", chunk.ToolCalls)
+	}
+}
+
+func TestGenaiSessionDecodeStructuredJSONSchemaParsesQwenToolCallTag(t *testing.T) {
+	chunk, err := chunkFromStructuredToolJSON("prefix\n<tool_call>\n{\"name\":\"echo.echo\",\"arguments\":{\"input\":\"hello\"}}\n</tool_call>\n")
+	if err != nil {
+		t.Fatalf("qwen tool call tag: %v", err)
+	}
+	if chunk.Text != "prefix" {
+		t.Fatalf("text = %q, want prefix", chunk.Text)
+	}
+	if len(chunk.ToolCalls) != 1 {
+		t.Fatalf("tool calls = %+v, want one", chunk.ToolCalls)
+	}
+	call := chunk.ToolCalls[0]
+	if call.ID != "call_1" || call.Type != "function" || call.Function.Name != "echo.echo" || call.Function.Arguments != `{"input":"hello"}` {
+		t.Fatalf("tool call = %+v", call)
+	}
+}
+
+func TestGenaiSessionDecodeStructuredJSONSchemaRejectsMalformedLegacyEnvelope(t *testing.T) {
+	_, err := chunkFromStructuredToolJSON(`{"function":{"name":"echo.echo","arguments":{"input":"hello"}}}`)
+	if err == nil || !strings.Contains(err.Error(), "contained neither content nor tool_calls") {
 		t.Fatalf("single-object fallback error = %v", err)
 	}
 }

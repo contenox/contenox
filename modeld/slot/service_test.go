@@ -45,15 +45,19 @@ func (b *fakeBackend) recordClosed(name string) {
 }
 
 type fakeSession struct {
-	name     string
-	owner    *fakeBackend
-	closed   bool
-	decodeCh <-chan transport.StreamChunk
+	name      string
+	owner     *fakeBackend
+	closed    bool
+	prefixErr error
+	decodeCh  <-chan transport.StreamChunk
 }
 
 func (s *fakeSession) EnsurePrefix(context.Context, transport.PrefixInput) (transport.PrefixStatus, error) {
 	if s.closed {
 		return transport.PrefixStatus{}, transport.ErrSessionClosed
+	}
+	if s.prefixErr != nil {
+		return transport.PrefixStatus{}, s.prefixErr
 	}
 	return transport.PrefixStatus{PrefixTokens: 1}, nil
 }
@@ -149,6 +153,37 @@ func TestUnit_Slot_OpenSessionAutoLoadsAndCloseReleasesImplicitModel(t *testing.
 	}
 	if len(backend.sessions) != 1 || !backend.sessions[0].closed {
 		t.Fatalf("implicit session was not closed on release")
+	}
+}
+
+func TestUnit_Slot_SessionFatalEvictsActiveSlotAndReopens(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"))
+
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	backend.sessions[0].prefixErr = transport.ErrSessionFatal
+	if _, err := sess.EnsurePrefix(ctx, transport.PrefixInput{}); !errors.Is(err, transport.ErrSessionFatal) {
+		t.Fatalf("EnsurePrefix fatal = %v, want ErrSessionFatal", err)
+	}
+	st, _ := svc.Status(ctx)
+	if st.State != transport.SlotFailed || st.Active != nil {
+		t.Fatalf("status after fatal = %+v, want failed/no-active", st)
+	}
+	if !backend.sessions[0].closed {
+		t.Fatal("fatal backend session was not closed")
+	}
+
+	next, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession after fatal: %v", err)
+	}
+	defer next.Close()
+	if len(backend.sessions) != 2 {
+		t.Fatalf("backend sessions = %d, want reopened session", len(backend.sessions))
 	}
 }
 

@@ -22,14 +22,28 @@ fail() { echo "modeld-package-release: $*" >&2; exit 1; }
 for v in DIST_DIR RELEASE_OUT NAME VERSION PLATFORM EXPECT_OPENVINO; do
   [ -n "${!v:-}" ] || fail "missing required env var: $v"
 done
-[ -x "$DIST_DIR/modeld" ] || fail "missing packaged launcher: $DIST_DIR/modeld"
+LAUNCHER=${LAUNCHER:-modeld}
+TARGET_OS=${TARGET_OS:-linux}
+[ -f "$DIST_DIR/$LAUNCHER" ] || fail "missing packaged launcher: $DIST_DIR/$LAUNCHER"
+if [ "$TARGET_OS" != "windows" ]; then
+  [ -x "$DIST_DIR/$LAUNCHER" ] || fail "packaged launcher is not executable: $DIST_DIR/$LAUNCHER"
+fi
+
+if [ "${MODELD_PACKAGE_DEFER_SMOKE:-0}" = "1" ]; then
+  echo "modeld-package-release: deferred smoke/finalize for $DIST_DIR/$LAUNCHER"
+  exit 0
+fi
 
 # Smoke gate: the packaged binary must run and report the expected backends. The
 # wrapper/launcher resolves the bundled native libs, so this also proves the link is sound.
-LAUNCHER=${LAUNCHER:-modeld}
-TARGET_OS=${TARGET_OS:-linux}
-echo "modeld-package-release: smoke -> $DIST_DIR/$LAUNCHER version --json"
-report=$("$DIST_DIR/$LAUNCHER" version --json) || fail "packaged binary failed to run 'version'"
+if [ -n "${MODELD_PACKAGE_REPORT_FILE:-}" ]; then
+  [ -f "$MODELD_PACKAGE_REPORT_FILE" ] || fail "missing report file: $MODELD_PACKAGE_REPORT_FILE"
+  echo "modeld-package-release: smoke report <- $MODELD_PACKAGE_REPORT_FILE"
+  report=$(cat "$MODELD_PACKAGE_REPORT_FILE")
+else
+  echo "modeld-package-release: smoke -> $DIST_DIR/$LAUNCHER version --json"
+  report=$("$DIST_DIR/$LAUNCHER" version --json) || fail "packaged binary failed to run 'version'"
+fi
 echo "$report"
 
 reported_version=$(printf '%s' "$report" | sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' | head -1)

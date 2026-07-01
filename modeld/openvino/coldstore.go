@@ -33,7 +33,7 @@ func (s *genaiSession) EvictRange(ctx context.Context, r residency.Range) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return transport.ErrSessionClosed
+		return s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -59,10 +59,8 @@ func (s *genaiSession) evictRangeLocked(ctx context.Context, r residency.Range) 
 	oldPrefix := s.prefixLen
 	newResident := append(append([]int(nil), s.resident[:r.Start]...), s.resident[r.End:]...)
 	newPrefixLen := min(r.Start, oldPrefix) + max(0, oldPrefix-r.End)
-	if len(newResident) > 0 {
-		if err := s.backend.PrefillTokens(ctx, newResident); err != nil {
-			return fmt.Errorf("%w: openvino prefill after evict range [%d,%d): %v", transport.ErrSessionFatal, r.Start, r.End, err)
-		}
+	if err := s.prefillResidentLocked(ctx, newResident, fmt.Sprintf("openvino prefill after evict range [%d,%d)", r.Start, r.End)); err != nil {
+		return err
 	}
 	s.resident = newResident
 	s.prefixLen = newPrefixLen
@@ -83,7 +81,7 @@ func (s *genaiSession) AdmitRange(ctx context.Context, r residency.Range) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return transport.ErrSessionClosed
+		return s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -132,7 +130,7 @@ func (s *genaiSession) exportColdBlockLocked(ctx context.Context, a, b int) (*op
 		TokenHash:    tokenHash,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%w: openvino export cold kv [%d,%d): %v", transport.ErrSessionFatal, a, b, err)
+		return nil, s.backendErrorLocked(fmt.Sprintf("openvino export cold kv [%d,%d)", a, b), err)
 	}
 	if len(kv) == 0 {
 		return nil, fmt.Errorf("%w: openvino export cold kv [%d,%d) returned empty data", transport.ErrSessionFatal, a, b)
@@ -331,7 +329,7 @@ func (s *genaiSession) admitRangeLocked(ctx context.Context, r residency.Range) 
 		PrefixTokens: append([]int(nil), newResident...),
 		TokenHash:    block.TokenHash,
 	}, block.KV); err != nil {
-		return fmt.Errorf("%w: openvino import cold kv [%d,%d) -> %d: %v", transport.ErrSessionFatal, r.Start, r.End, destStart, err)
+		return s.backendErrorLocked(fmt.Sprintf("openvino import cold kv [%d,%d) -> %d", r.Start, r.End, destStart), err)
 	}
 	s.resident = newResident
 	s.deleteColdBlockLocked(key)

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
+	"github.com/contenox/runtime/modeld/residency"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
@@ -168,6 +170,20 @@ func TestUnit_ServiceDescribeUsesShimSWAProfile(t *testing.T) {
 	}
 }
 
+func TestUnit_OpenVINOEvictionBudgetCapsAtSlidingWindow(t *testing.T) {
+	dense := residency.DeriveEvictionBudget(4096, 0, openvinoEvictionBlock)
+	swa := residency.DeriveEvictionBudget(4096, 512, openvinoEvictionBlock)
+	if dense.MaxTokens != 4096 {
+		t.Fatalf("dense MaxTokens = %d, want 4096", dense.MaxTokens)
+	}
+	if swa.MaxTokens != 512 {
+		t.Fatalf("SWA MaxTokens = %d, want capped at 512", swa.MaxTokens)
+	}
+	if !swa.Valid() || swa.RecentTokens >= dense.RecentTokens {
+		t.Fatalf("SWA budget not capped as expected: dense=%+v swa=%+v", dense, swa)
+	}
+}
+
 func TestUnit_ServiceDescribeReportsRuntimeAndDeviceFields(t *testing.T) {
 	dir := writeTestIR(t)
 	svc := NewService(
@@ -196,6 +212,231 @@ func TestUnit_ServiceDescribeReportsRuntimeAndDeviceFields(t *testing.T) {
 	}
 	if info.OverheadBytes != 0 {
 		t.Fatalf("OverheadBytes = %d, want 0 until OpenVINO exposes pre-open overhead", info.OverheadBytes)
+	}
+}
+
+func TestUnit_OpenVINODeviceSnapshotSharedGPUZeroFreeFallsBackToHostRAM(t *testing.T) {
+	st, err := openvinoDeviceSnapshot(ovsession.DeviceInfo{
+		Name:              "GPU",
+		Type:              "igpu",
+		MemoryTotal:       16 << 30,
+		MemoryTotalKnown:  true,
+		MemoryFreeKnown:   true,
+		MemoryFree:        0,
+		SharedWithDisplay: true,
+	}, staticSnapshot{snap: capacity.DeviceSnapshot{
+		Kind:       "system",
+		DeviceID:   "ram",
+		TotalBytes: 32 << 30,
+		FreeBytes:  8 << 30,
+	}})
+	if err != nil {
+		t.Fatalf("openvinoDeviceSnapshot: %v", err)
+	}
+	if st.Kind != "igpu" || st.DeviceID != "GPU" || !st.SharedWithDisplay {
+		t.Fatalf("device identity = %+v, want shared igpu GPU", st)
+	}
+	if st.TotalBytes != 16<<30 || st.FreeBytes != 8<<30 {
+		t.Fatalf("memory = %d/%d, want 8GiB free capped by 16GiB total", st.FreeBytes, st.TotalBytes)
+	}
+}
+
+func TestUnit_OpenVINODeviceSnapshotSharedGPUHostFallbackClampsToDeviceTotal(t *testing.T) {
+	st, err := openvinoDeviceSnapshot(ovsession.DeviceInfo{
+		Name:              "GPU",
+		Type:              "igpu",
+		MemoryTotal:       16 << 30,
+		MemoryTotalKnown:  true,
+		MemoryFreeKnown:   true,
+		MemoryFree:        0,
+		SharedWithDisplay: true,
+	}, staticSnapshot{snap: capacity.DeviceSnapshot{
+		Kind:       "system",
+		DeviceID:   "ram",
+		TotalBytes: 64 << 30,
+		FreeBytes:  48 << 30,
+	}})
+	if err != nil {
+		t.Fatalf("openvinoDeviceSnapshot: %v", err)
+	}
+	if st.FreeBytes != st.TotalBytes || st.TotalBytes != 16<<30 {
+		t.Fatalf("memory = %d/%d, want host free clamped to 16GiB total", st.FreeBytes, st.TotalBytes)
+	}
+}
+
+func TestUnit_OpenVINODeviceSnapshotDiscreteGPURequiresTelemetry(t *testing.T) {
+	_, err := openvinoDeviceSnapshot(ovsession.DeviceInfo{
+		Name: "GPU.0",
+		Type: "gpu",
+	}, staticSnapshot{snap: capacity.DeviceSnapshot{
+		Kind:       "system",
+		DeviceID:   "ram",
+		TotalBytes: 64 << 30,
+		FreeBytes:  48 << 30,
+	}})
+	if err == nil {
+		t.Fatal("openvinoDeviceSnapshot error = nil, want missing telemetry error")
+	}
+}
+
+func TestUnit_OpenGenAIWithSparseFallbackRetriesDenseForAutoSparse(t *testing.T) {
+	orig := newOpenVINOGenAI
+	defer func() { newOpenVINOGenAI = orig }()
+	var attempts []bool
+	newOpenVINOGenAI = func(_ string, cfg ovsession.GenAIConfig) (*ovsession.GenAISession, error) {
+		sparse := true
+		if cfg.UseSparseAttention != nil {
+			sparse = *cfg.UseSparseAttention
+		}
+		attempts = append(attempts, sparse)
+		if len(attempts) == 1 {
+			return nil, errors.New("[GPU] XAttention is not supported by your current GPU architecture or IGC version")
+		}
+		return &ovsession.GenAISession{}, nil
+	}
+
+	backend, used, err := openGenAIWithSparseFallback("model-dir", "model-name", ovsession.GenAIConfig{Device: "GPU"})
+	if err != nil {
+		t.Fatalf("openGenAIWithSparseFallback: %v", err)
+	}
+	if backend == nil {
+		t.Fatal("backend = nil, want fallback backend")
+	}
+	if len(attempts) != 2 || !attempts[0] || attempts[1] {
+		t.Fatalf("attempts = %v, want sparse then dense", attempts)
+	}
+	if used.UseSparseAttention == nil || *used.UseSparseAttention {
+		t.Fatalf("UseSparseAttention = %v, want explicit false after fallback", used.UseSparseAttention)
+	}
+}
+
+func TestUnit_OpenGenAIWithSparseFallbackDoesNotOverrideExplicitSparse(t *testing.T) {
+	orig := newOpenVINOGenAI
+	defer func() { newOpenVINOGenAI = orig }()
+	attempts := 0
+	newOpenVINOGenAI = func(_ string, _ ovsession.GenAIConfig) (*ovsession.GenAISession, error) {
+		attempts++
+		return nil, errors.New("[GPU] XAttention is not supported by your current GPU architecture or IGC version")
+	}
+	on := true
+	_, _, err := openGenAIWithSparseFallback("model-dir", "model-name", ovsession.GenAIConfig{
+		Device:             "GPU",
+		UseSparseAttention: &on,
+	})
+	if err == nil {
+		t.Fatal("openGenAIWithSparseFallback error = nil, want explicit sparse failure")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want no dense retry for explicit sparse", attempts)
+	}
+}
+
+func TestUnit_ServiceOpenSessionDerivesSchedulerCacheSizeFromHotContext(t *testing.T) {
+	dir := writeTestIRWithProfile(t, ovsession.ModelKVProfile{
+		MaxPositionEmbeddings: 32768,
+		NumHiddenLayers:       16,
+		NumKeyValueHeads:      4,
+		NumAttentionHeads:     4,
+		HeadDim:               128,
+		GlobalLayers:          16,
+	})
+	orig := newOpenVINOGenAI
+	defer func() { newOpenVINOGenAI = orig }()
+	var gotCacheSize int
+	newOpenVINOGenAI = func(_ string, cfg ovsession.GenAIConfig) (*ovsession.GenAISession, error) {
+		gotCacheSize = cfg.CacheSize
+		return &ovsession.GenAISession{}, nil
+	}
+	t.Setenv("CONTENOX_OPENVINO_DEVICE", "GPU")
+	svc := NewService(
+		WithMemorySource(staticSnapshot{snap: capacity.DeviceSnapshot{
+			Kind:       "gpu",
+			DeviceID:   "GPU.0",
+			TotalBytes: 24 << 30,
+			FreeBytes:  20 << 30,
+		}}),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{MaxResidentBytes: 20 << 30, HeadroomFrac: 0.1}),
+	)
+
+	sess, err := svc.OpenSession(t.Context(), transport.OpenSessionRequest{
+		Type:   "openvino",
+		Path:   dir,
+		Config: transport.Config{NumCtx: 32768},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	if sess == nil {
+		t.Fatal("OpenSession returned nil session")
+	}
+	if gotCacheSize != 2 {
+		t.Fatalf("CacheSize = %d, want 2 GiB derived from 1 GiB KV plus overhead", gotCacheSize)
+	}
+}
+
+func TestUnit_ServiceOpenSessionHonorsExplicitProfileCacheSize(t *testing.T) {
+	dir := writeTestIRWithProfile(t, ovsession.ModelKVProfile{
+		MaxPositionEmbeddings: 32768,
+		NumHiddenLayers:       16,
+		NumKeyValueHeads:      4,
+		NumAttentionHeads:     4,
+		HeadDim:               128,
+		GlobalLayers:          16,
+	})
+	if err := os.WriteFile(filepath.Join(dir, "contenox-openvino.json"), []byte(`{"genai":{"cache_size":3}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	orig := newOpenVINOGenAI
+	defer func() { newOpenVINOGenAI = orig }()
+	var gotCacheSize int
+	newOpenVINOGenAI = func(_ string, cfg ovsession.GenAIConfig) (*ovsession.GenAISession, error) {
+		gotCacheSize = cfg.CacheSize
+		return &ovsession.GenAISession{}, nil
+	}
+	t.Setenv("CONTENOX_OPENVINO_DEVICE", "GPU")
+	svc := NewService(
+		WithMemorySource(staticSnapshot{snap: capacity.DeviceSnapshot{
+			Kind:       "gpu",
+			DeviceID:   "GPU.0",
+			TotalBytes: 24 << 30,
+			FreeBytes:  20 << 30,
+		}}),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{MaxResidentBytes: 20 << 30, HeadroomFrac: 0.1}),
+	)
+
+	if _, err := svc.OpenSession(t.Context(), transport.OpenSessionRequest{
+		Type:   "openvino",
+		Path:   dir,
+		Config: transport.Config{NumCtx: 32768},
+	}); err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	if gotCacheSize != 3 {
+		t.Fatalf("CacheSize = %d, want explicit profile cache_size 3", gotCacheSize)
+	}
+}
+
+func TestUnit_ServiceOpenSessionRejectsExplicitNPU(t *testing.T) {
+	t.Setenv("CONTENOX_OPENVINO_DEVICE", "NPU")
+	dir := writeTestIR(t)
+	svc := NewService(
+		WithMemorySource(staticMemory(128<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{MaxResidentBytes: 128 << 20, HeadroomFrac: 0.1}),
+	)
+
+	_, err := svc.OpenSession(t.Context(), transport.OpenSessionRequest{
+		Type:   "openvino",
+		Path:   dir,
+		Config: transport.Config{NumCtx: 512},
+	})
+	if !errors.Is(err, transport.ErrUnsupportedFeature) {
+		t.Fatalf("OpenSession with NPU pin = %v, want ErrUnsupportedFeature", err)
+	}
+	if err != nil && !strings.Contains(err.Error(), "PagedAttention") {
+		t.Fatalf("OpenSession NPU error = %q, want actionable PagedAttention message", err.Error())
 	}
 }
 

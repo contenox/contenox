@@ -11,7 +11,7 @@ import (
 	"github.com/contenox/runtime/runtime/transport"
 )
 
-// provider implements modelrepo.Provider for the graduated llama.cpp local node.
+// provider implements modelrepo.Provider for the llama.cpp GGUF compatibility node.
 // A model lives at <modelDir>/<name>/model.gguf with an optional
 // contenox-llama.json runtime profile beside it.
 type provider struct {
@@ -112,7 +112,16 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 	if profileID == "" {
 		profileID = p.name
 	}
-	cfg := clampContext(profile.config(), p.caps.ContextLength)
+	baseCfg := profile.config()
+	cfg := baseCfg
+	if !profile.explicitRuntimeContext() {
+		cfg.NumCtx = 0
+	}
+	if p.caps.ContextLength > 0 {
+		cfg = clampContext(cfg, p.caps.ContextLength)
+	} else if profile.explicitRuntimeContext() {
+		cfg = normalizeConfig(cfg)
+	}
 	ref := modeldconn.ModelRef{Name: p.name, Type: "llama", Digest: modelDigest, Path: modelPath, Adapters: adapters}
 	backendID := backendVersion()
 	// Capacity facts from modeld's Describe, kept so a context overflow can be
@@ -131,7 +140,11 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 			if v := backendVersionFromModelInfo(info); v != "" {
 				backendID = v
 			}
+		} else {
+			cfg = normalizeConfig(baseCfg)
 		}
+	} else {
+		cfg = normalizeConfig(cfg)
 	}
 	return &client{
 		modelName:         p.name,
@@ -210,11 +223,10 @@ func applyModeldInfoToConfig(cfg Config, info transport.ModelInfo) Config {
 }
 
 func clampContext(cfg Config, cap int) Config {
-	cfg = normalizeConfig(cfg)
-	if cap > 0 && cfg.NumCtx > cap {
+	if cap > 0 && (cfg.NumCtx <= 0 || cfg.NumCtx > cap) {
 		cfg.NumCtx = cap
 	}
-	return cfg
+	return normalizeConfig(cfg)
 }
 
 func clampContextForModeld(cfg Config, cap int) Config {

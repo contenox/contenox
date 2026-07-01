@@ -446,6 +446,13 @@ type ContextReport struct {
 	ManifestDigest          string
 	Manifest                ContextManifest
 	Closed                  bool
+	FatalError              string `json:"fatal_error,omitempty"`
+	PhysicalPrefillCalls    int    `json:"physical_prefill_calls,omitempty"`
+	PhysicalPrefillTokens   int    `json:"physical_prefill_tokens,omitempty"`
+	DeferredPrefillCalls    int    `json:"deferred_prefill_calls,omitempty"`
+	DeferredPrefillTokens   int    `json:"deferred_prefill_tokens,omitempty"`
+	DecodeCalls             int    `json:"decode_calls,omitempty"`
+	DecodePromptTokens      int    `json:"decode_prompt_tokens,omitempty"`
 	// Residency is the backend's current KV residency plan: the hot/cold
 	// partition it would apply under the derived hot budget. It is observability;
 	// the plan is enforced only when the backend can execute it (Capabilities).

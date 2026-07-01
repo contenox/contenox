@@ -2,10 +2,9 @@
 # Produce a native dependency bundle for modeld on Windows (.dll + import libs).
 #
 # Peer of modeld-deps-bundle-linux.sh; same bundle layout and manifest/fingerprint
-# contract, with Windows library names. Assumes a MinGW/UCRT toolchain under a bash
-# (MSYS2/Git-Bash) shell — the same shell the rest of the Makefile uses. Library
-# globs are tolerant of the lib-prefix difference; verify names on a Windows build
-# host. Run on Windows (cannot be built on Linux); push the result to S3.
+# contract, with Windows library names. Run under a bash shell on a Windows build
+# host; the runtime stamp carries the actual native ABI/toolchain identity (for
+# example dl-v1-msvc for the Clang/MSVC ABI build).
 #
 # Inputs (env, set by the Makefile bundle target): PLATFORM OUT LLAMA_REF
 # LLAMA_RUNTIME LLAMA_CPP_COMMIT OPENVINO_PKG GENAI_SRC GENAI_PKG TOKENIZERS_LIB
@@ -32,8 +31,8 @@ fi
 need_file "$LLAMA_REF/common/chat.h"
 need_dir  "$LLAMA_REF/vendor"
 need_dir  "$LLAMA_RUNTIME/include"
-common_dll=$(glob1 "$LLAMA_RUNTIME/lib" -name 'libllama-common.dll' -o -name 'llama-common.dll')
-[ -n "$common_dll" ] || fail "no llama-common .dll in $LLAMA_RUNTIME/lib"
+common_dll=$(glob1 "$LLAMA_RUNTIME/lib" -name 'libllama-common.dll' -o -name 'llama-common.dll' -o -name 'common.dll')
+[ -n "$common_dll" ] || fail "no llama common .dll in $LLAMA_RUNTIME/lib"
 llama_dll=$(glob1 "$LLAMA_RUNTIME/lib" -name 'libllama.dll' -o -name 'llama.dll')
 [ -n "$llama_dll" ] || fail "no llama .dll in $LLAMA_RUNTIME/lib"
 
@@ -98,6 +97,8 @@ if [ "$HAVE_OPENVINO" = "1" ]; then
   genai_so=$(glob1 "$GENAI_PKG" -name 'libopenvino_genai*.dll' -o -name 'openvino_genai*.dll')
   [ -n "$genai_so" ] || fail "no openvino_genai*.dll in $GENAI_PKG"
   cp -a "$genai_so" "$BUNDLE/openvino/genai/"
+  genai_lib=$(glob1 "$GENAI_PKG" -name 'libopenvino_genai*.lib' -o -name 'openvino_genai*.lib')
+  [ -z "$genai_lib" ] || cp -a "$genai_lib" "$BUNDLE/openvino/genai/"
 
   tok=$(glob1 "$TOKENIZERS_LIB" -name 'libopenvino_tokenizers.dll' -o -name 'openvino_tokenizers.dll')
   [ -n "$tok" ] || fail "no openvino_tokenizers.dll in $TOKENIZERS_LIB"
@@ -112,6 +113,7 @@ cat > "$BUNDLE/manifest.json" <<EOF
   "variant": "$variant",
   "fingerprint": "$FINGERPRINT",
   "llama_cpp_commit": "$LLAMA_CPP_COMMIT",
+  "llama_runtime_abi": "$runtime_abi",
   "openvino_genai_version": "$OPENVINO_GENAI_VERSION",
   "accelerator": { "cuda": $cuda, "hip": $hip },
   "openvino": $([ "$HAVE_OPENVINO" = "1" ] && echo true || echo false),
@@ -124,6 +126,7 @@ cat > "$BUNDLE/bundle.env" <<EOF
 MODELD_BUNDLE_PLATFORM=$PLATFORM
 MODELD_BUNDLE_VARIANT=$variant
 MODELD_BUNDLE_FINGERPRINT=$FINGERPRINT
+MODELD_BUNDLE_RUNTIME_ABI=$runtime_abi
 MODELD_BUNDLE_OPENVINO=$HAVE_OPENVINO
 MODELD_BUNDLE_CUDA=$($cuda && echo 1 || echo 0)
 MODELD_BUNDLE_HIP=$($hip && echo 1 || echo 0)

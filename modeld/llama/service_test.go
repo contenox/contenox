@@ -1,13 +1,12 @@
 //go:build !llamanode
 
-package llama_test
+package llama
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/contenox/runtime/modeld/llama"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
@@ -40,26 +39,27 @@ func (f *fakeSession) Restore(context.Context, transport.SessionSnapshot) error 
 func (f *fakeSession) Close() error { f.closed = true; return nil }
 
 // The reshaped modeld/llama exposes exactly one boundary: transport.Service.
-var _ transport.Service = (*llama.Service)(nil)
+var _ transport.Service = (*Service)(nil)
 
 func TestOpenSessionWithoutBackendIsUnavailable(t *testing.T) {
-	llama.SetSessionFactory(nil)
-	if llama.SessionAvailable() {
+	SetSessionFactory(nil)
+	if SessionAvailable() {
 		t.Fatal("no backend should be available after clearing the factory")
 	}
-	_, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{Path: "x", Type: "llama"})
-	if !errors.Is(err, llama.ErrSessionUnavailable) {
+	path := writeTestGGUF(t, 32768)
+	_, err := (&Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{Path: path, Type: "llama"})
+	if !errors.Is(err, ErrSessionUnavailable) {
 		t.Fatalf("want ErrSessionUnavailable, got %v", err)
 	}
 }
 
 func TestOpenSessionRejectsForeignBackend(t *testing.T) {
-	llama.SetSessionFactory(func(string, transport.Config, []llama.AdapterSpec) (transport.Session, error) {
+	SetSessionFactory(func(string, transport.Config, []AdapterSpec) (transport.Session, error) {
 		t.Fatal("backend must not be reached for a foreign model type")
 		return nil, nil
 	})
-	t.Cleanup(func() { llama.SetSessionFactory(nil) })
-	_, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
+	t.Cleanup(func() { SetSessionFactory(nil) })
+	_, err := (&Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
 		Path: "/ir/coder", Type: "openvino",
 	})
 	if !errors.Is(err, transport.ErrBackendMismatch) {
@@ -71,27 +71,28 @@ func TestOpenSessionRoutesModelAndConfigToBackend(t *testing.T) {
 	var gotModel string
 	var gotCfg transport.Config
 	fake := &fakeSession{}
-	llama.SetSessionFactory(func(modelPath string, cfg transport.Config, _ []llama.AdapterSpec) (transport.Session, error) {
+	SetSessionFactory(func(modelPath string, cfg transport.Config, _ []AdapterSpec) (transport.Session, error) {
 		gotModel, gotCfg = modelPath, cfg
 		return fake, nil
 	})
-	t.Cleanup(func() { llama.SetSessionFactory(nil) })
+	t.Cleanup(func() { SetSessionFactory(nil) })
+	path := writeTestGGUF(t, 32768)
 
 	// NumGpuLayers is intentionally omitted: GPU layers are subject to capacity
 	// resolution (zeroed without an accelerator), which is covered by the capacity
 	// tests. This test checks request routing to the backend, so it uses
 	// fields that pass through unchanged.
 	cfg := transport.Config{NumCtx: 4096, PromptFormat: "chatml"}
-	sess, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
+	sess, err := (&Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
 		ModelName: "foo",
 		Type:      "llama",
-		Path:      "/models/foo/model.gguf",
+		Path:      path,
 		Config:    cfg,
 	})
 	if err != nil {
 		t.Fatalf("OpenSession: %v", err)
 	}
-	if gotModel != "/models/foo/model.gguf" {
+	if gotModel != path {
 		t.Errorf("model id not routed to backend: got %q", gotModel)
 	}
 	if gotCfg.NumCtx != 4096 || gotCfg.PromptFormat != "chatml" {
@@ -113,18 +114,19 @@ func TestOpenSessionRoutesModelAndConfigToBackend(t *testing.T) {
 // variant identity). This proves Service.OpenSession → toAdapterSpecs → the
 // registered factory, without the CGo backend.
 func TestOpenSessionRoutesAdaptersToBackend(t *testing.T) {
-	var gotAdapters []llama.AdapterSpec
+	var gotAdapters []AdapterSpec
 	fake := &fakeSession{}
-	llama.SetSessionFactory(func(_ string, _ transport.Config, adapters []llama.AdapterSpec) (transport.Session, error) {
+	SetSessionFactory(func(_ string, _ transport.Config, adapters []AdapterSpec) (transport.Session, error) {
 		gotAdapters = adapters
 		return fake, nil
 	})
-	t.Cleanup(func() { llama.SetSessionFactory(nil) })
+	t.Cleanup(func() { SetSessionFactory(nil) })
+	path := writeTestGGUF(t, 32768)
 
-	sess, err := (&llama.Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
+	sess, err := (&Service{}).OpenSession(context.Background(), transport.OpenSessionRequest{
 		ModelName: "foo",
 		Type:      "llama",
-		Path:      "/models/foo/model.gguf",
+		Path:      path,
 		Config:    transport.Config{NumCtx: 4096, PromptFormat: "chatml"},
 		Adapters: []transport.AdapterSpec{
 			{Name: "style", Path: "/adapters/style.gguf", Digest: "adapter-1", Scale: 1.5},

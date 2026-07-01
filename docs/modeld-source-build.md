@@ -1,7 +1,10 @@
 # modeld Source Build and Packaging
 
-`modeld` is the native local inference daemon for Contenox. It owns llama.cpp
-GGUF and OpenVINO IR model execution, while the `contenox` CLI stays pure Go.
+`modeld` is the native local inference daemon for Contenox. It currently hosts
+local adapters for llama.cpp GGUF compatibility and OpenVINO IR execution, while
+the `contenox` CLI stays pure Go. Strategic accelerator work belongs in
+chip-vendor runtime adapters; this document describes the source-build path for
+the currently shipped native inputs.
 
 Current distribution status:
 
@@ -136,7 +139,6 @@ Starter OpenVINO models:
 | `qwen3-4b-ov` | ~2.3 GB | |
 | `qwen3-8b-ov` | ~4.9 GB | |
 | `phi-4-mini-ov` | ~2.4 GB | |
-| `gemma4-e4b-ov` | ~6.5 GB | |
 | `gpt-oss-20b-ov` | ~12.6 GB | |
 
 ## Use Local modeld for VS Code Autocomplete

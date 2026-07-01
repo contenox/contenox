@@ -68,6 +68,19 @@ func TestUnit_Registry_ResolveCuratedQwen25CoderOpenVINOTiny(t *testing.T) {
 	assert.True(t, d.Curated)
 }
 
+func TestUnit_Registry_ResolveCuratedTinyLlamaOpenVINO(t *testing.T) {
+	reg := newCuratedOnly()
+	d, err := reg.Resolve(context.Background(), "tinyllama-1.1b-chat-v1.0-int4-ov")
+	require.NoError(t, err)
+
+	assert.Equal(t, "tinyllama-1.1b-chat-v1.0-int4-ov", d.Name)
+	assert.Equal(t, "openvino", d.BackendType())
+	assert.Equal(t, "OpenVINO/TinyLlama-1.1B-Chat-v1.0-int4-ov", d.Repo)
+	assert.Equal(t, int64(636_000_000), d.SizeBytes)
+	assert.Empty(t, d.ToolProtocol)
+	assert.True(t, d.Curated)
+}
+
 func TestUnit_Registry_ResolveCuratedDeepSeekOpenVINO(t *testing.T) {
 	reg := newCuratedOnly()
 	d, err := reg.Resolve(context.Background(), "deepseek-r1-distill-qwen-7b-ov")
@@ -92,6 +105,7 @@ func TestUnit_Registry_ListIncludesCurated(t *testing.T) {
 	}
 	assert.True(t, names["qwen3-8b"])
 	assert.True(t, names["qwen2.5-coder-0.5b-ov"])
+	assert.True(t, names["tinyllama-1.1b-chat-v1.0-int4-ov"])
 	assert.True(t, names["qwen3-coder-30b-a3b"])
 	assert.True(t, names["qwen3-coder-30b-a3b-ov"])
 	assert.True(t, names["gemma4-e4b"])
@@ -101,9 +115,6 @@ func TestUnit_Registry_ListIncludesCurated(t *testing.T) {
 	assert.True(t, names["phi-4-mini"])
 	assert.True(t, names["granite-3.2-2b"])
 	assert.False(t, names["tiny"])
-	for _, e := range entries {
-		assert.NotEmpty(t, e.ToolProtocol, e.Name)
-	}
 }
 
 func TestUnit_Registry_OptimalForExactCuratedMatch(t *testing.T) {
@@ -143,8 +154,8 @@ func TestUnit_Registry_OptimalForCurrentFamilies(t *testing.T) {
 		"DeepSeek-R1-0528-Qwen3-8B":                    "deepseek-r1-0528-qwen3-8b",
 		"bartowski/openai_gpt-oss-20b":                 "gpt-oss-20b",
 		"OpenVINO/gpt-oss-20b-int4-ov":                 "gpt-oss-20b-ov",
-		"OpenVINO/gemma-4-E4B-it-int4-ov":              "gemma4-e4b-ov",
 		"OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov": "qwen2.5-coder-0.5b-ov",
+		"OpenVINO/TinyLlama-1.1B-Chat-v1.0-int4-ov":    "tinyllama-1.1b-chat-v1.0-int4-ov",
 	}
 	for input, want := range tests {
 		got, err := reg.OptimalFor(context.Background(), input)
@@ -156,7 +167,6 @@ func TestUnit_Registry_OptimalForCurrentFamilies(t *testing.T) {
 func TestUnit_Registry_OpenVINOCrossSyncWithCuratedLlamaModels(t *testing.T) {
 	reg := newCuratedOnly()
 	pairs := map[string]string{
-		"gemma4-e4b":                  "gemma4-e4b-ov",
 		"phi-4-mini":                  "phi-4-mini-ov",
 		"qwen3-4b":                    "qwen3-4b-ov",
 		"qwen3-8b":                    "qwen3-8b-ov",
@@ -184,6 +194,16 @@ func TestUnit_Registry_OpenVINOCrossSyncWithCuratedLlamaModels(t *testing.T) {
 			assert.NotEqual(t, llamaModel.ToolProtocol, openvinoModel.ToolProtocol, openvinoName)
 		}
 	}
+}
+
+func TestUnit_Registry_DoesNotCurateMultimodalGemmaOpenVINOForTextBackend(t *testing.T) {
+	reg := newCuratedOnly()
+	_, err := reg.Resolve(context.Background(), "gemma4-e4b-ov")
+	require.ErrorIs(t, err, modelregistry.ErrNotFound)
+
+	got, err := reg.OptimalFor(context.Background(), "OpenVINO/gemma-4-E4B-it-int4-ov")
+	require.NoError(t, err)
+	assert.Equal(t, "gemma4-e4b", got)
 }
 
 func TestUnit_Registry_UserEntryKeepsCuratedBackendAndToolProtocol(t *testing.T) {

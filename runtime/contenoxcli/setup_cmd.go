@@ -367,7 +367,6 @@ func printOpenVINOModelChoices(out io.Writer) {
 	fmt.Fprintln(out, "       qwen3-4b-ov              ~2.3 GB")
 	fmt.Fprintln(out, "       qwen3-8b-ov              ~4.9 GB")
 	fmt.Fprintln(out, "       phi-4-mini-ov            ~2.4 GB")
-	fmt.Fprintln(out, "       gemma4-e4b-ov            ~6.5 GB")
 	fmt.Fprintln(out, "       gpt-oss-20b-ov           ~12.6 GB")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")

@@ -123,7 +123,7 @@ func (s *session) evictRangeLocked(a, b int) error {
 }
 
 func (s *session) slideForDecodeLocked() (bool, error) {
-	recent := residency.DeriveEvictionBudget(s.numCtx, 1).RecentTokens
+	recent := residency.DeriveEvictionBudget(s.numCtx, s.slidingWindowAttentionTokens, 1).RecentTokens
 	a := s.prefixLen
 	b := len(s.resident) - recent
 	if b <= a {
@@ -1051,7 +1051,7 @@ func (s *session) planForBudgetLocked(budget int) (residency.Plan, error) {
 }
 
 func (s *session) streamPolicyLocked() residency.StreamPolicy {
-	budget := residency.DeriveEvictionBudget(s.numCtx, 1)
+	budget := residency.DeriveEvictionBudget(s.numCtx, s.slidingWindowAttentionTokens, 1)
 	return residency.StreamPolicy{
 		Enabled:      budget.Valid(),
 		SinkTokens:   budget.SinkTokens,

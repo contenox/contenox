@@ -31,6 +31,7 @@ type GenAIConfig struct {
 	Device                      string
 	KVCachePrecision            string
 	CacheSize                   int
+	CacheSizeExplicit           bool
 	DynamicSplitFuse            *bool
 	EnablePrefixCaching         *bool
 	UseSparseAttention          *bool

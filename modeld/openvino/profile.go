@@ -19,7 +19,7 @@ func genAIConfigFromProfile(modelDir, device string) ovsession.GenAIConfig {
 		Device string `json:"device"`
 		GenAI  struct {
 			KVCachePrecision            string  `json:"kv_cache_precision"`
-			CacheSize                   int     `json:"cache_size"`
+			CacheSize                   *int    `json:"cache_size"`
 			DynamicSplitFuse            *bool   `json:"dynamic_split_fuse"`
 			EnablePrefixCaching         *bool   `json:"enable_prefix_caching"`
 			UseSparseAttention          *bool   `json:"use_sparse_attention"`
@@ -45,7 +45,6 @@ func genAIConfigFromProfile(modelDir, device string) ovsession.GenAIConfig {
 	cfg := ovsession.GenAIConfig{
 		Device:                      device,
 		KVCachePrecision:            g.KVCachePrecision,
-		CacheSize:                   g.CacheSize,
 		DynamicSplitFuse:            g.DynamicSplitFuse,
 		EnablePrefixCaching:         g.EnablePrefixCaching,
 		UseSparseAttention:          g.UseSparseAttention,
@@ -54,11 +53,12 @@ func genAIConfigFromProfile(modelDir, device string) ovsession.GenAIConfig {
 		XAttentionBlockSize:         g.XAttentionBlockSize,
 		XAttentionStride:            g.XAttentionStride,
 	}
+	if g.CacheSize != nil && *g.CacheSize > 0 {
+		cfg.CacheSize = *g.CacheSize
+		cfg.CacheSizeExplicit = true
+	}
 	if cfg.KVCachePrecision == "" {
 		cfg.KVCachePrecision = "f16"
-	}
-	if cfg.CacheSize <= 0 {
-		cfg.CacheSize = 1
 	}
 	if cfg.EnablePrefixCaching == nil {
 		enabled := true

@@ -234,7 +234,10 @@ func TestUnit_OpenVINOStream_JSONSchemaToolProtocolUsesStructuredOutput(t *testi
 	if fake.decode.StructuredOutput.Protocol != "openvino:json_schema_tool_calls" {
 		t.Fatalf("structured protocol = %q", fake.decode.StructuredOutput.Protocol)
 	}
-	if !strings.Contains(fake.decode.StructuredOutput.Payload, `"echo.echo"`) || !strings.Contains(fake.decode.StructuredOutput.Payload, `"tool_calls"`) {
+	if !strings.Contains(fake.decode.StructuredOutput.Payload, `"echo.echo"`) ||
+		!strings.Contains(fake.decode.StructuredOutput.Payload, `"triggered_tags"`) ||
+		!strings.Contains(fake.decode.StructuredOutput.Payload, `tool_call`) ||
+		!strings.Contains(fake.decode.StructuredOutput.Payload, `"arguments"`) {
 		t.Fatalf("structured payload missing tool schema: %s", fake.decode.StructuredOutput.Payload)
 	}
 	if len(fake.decode.ParserProtocols) != 0 {

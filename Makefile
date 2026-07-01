@@ -191,7 +191,7 @@ build-llamacpp-runtime:
 
 check-modeld-llama-deps:
 	@test -f "$(LLAMA_CPP_REF_DIR)/common/chat.h" || { echo "missing pinned llama.cpp common headers ($(LLAMA_CPP_REF_DIR)) — run: make deps-llamacpp-ref"; exit 1; }
-	@ls "$(LLAMA_RUNTIME_LIB_DIR)"/libllama-common.* >/dev/null 2>&1 || ls "$(LLAMA_RUNTIME_LIB_DIR)"/llama-common.dll >/dev/null 2>&1 || { echo "missing direct llama.cpp common library ($(LLAMA_RUNTIME_LIB_DIR)/libllama-common.*) — run: make build-llamacpp-runtime"; exit 1; }
+	@ls "$(LLAMA_RUNTIME_LIB_DIR)"/libllama-common.* >/dev/null 2>&1 || ls "$(LLAMA_RUNTIME_LIB_DIR)"/llama-common.dll >/dev/null 2>&1 || ls "$(LLAMA_RUNTIME_LIB_DIR)"/common.dll >/dev/null 2>&1 || { echo "missing direct llama.cpp common library ($(LLAMA_RUNTIME_LIB_DIR)/libllama-common.* / common.dll) — run: make build-llamacpp-runtime"; exit 1; }
 
 # Build modeld with llama.cpp and, when available, OpenVINO GenAI.
 # Run `make deps-modeld` before building with OpenVINO support.
@@ -210,15 +210,19 @@ build-modeld: build-llamacpp-runtime check-modeld-llama-deps
 # MODELD_LIBS_COPY=1 copies files instead of symlinking them.
 bundle-modeld-libs:
 	@rm -rf "$(MODELD_LIBS_DIR)" && mkdir -p "$(MODELD_LIBS_DIR)"
-	@if [ -n "$(MODELD_LIBS_COPY)" ]; then \
+	@genai_lib=$$(find "$(OPENVINO_GENAI_PKG)" -maxdepth 1 \( -name 'libopenvino_genai.so*' -o -name 'libopenvino_genai*.dylib' -o -name 'openvino_genai*.dll' \) | head -1); \
+	tokenizers_lib=$$(find "$(OPENVINO_TOKENIZERS_LIB)" -maxdepth 1 \( -name 'libopenvino_tokenizers.so*' -o -name 'libopenvino_tokenizers*.dylib' -o -name 'openvino_tokenizers*.dll' \) | head -1); \
+	test -n "$$genai_lib" || { echo "missing openvino_genai runtime library in $(OPENVINO_GENAI_PKG)"; exit 1; }; \
+	test -n "$$tokenizers_lib" || { echo "missing openvino_tokenizers runtime library in $(OPENVINO_TOKENIZERS_LIB)"; exit 1; }; \
+	if [ -n "$(MODELD_LIBS_COPY)" ]; then \
 		cp -L $(OPENVINO_PKG)/libs/* "$(MODELD_LIBS_DIR)/"; \
-		cp -L $(OPENVINO_GENAI_PKG)/libopenvino_genai.so.2620 "$(MODELD_LIBS_DIR)/"; \
-		cp -L $(OPENVINO_TOKENIZERS_SO) "$(MODELD_LIBS_DIR)/"; \
+		cp -L "$$genai_lib" "$(MODELD_LIBS_DIR)/"; \
+		cp -L "$$tokenizers_lib" "$(MODELD_LIBS_DIR)/"; \
 		echo "bundled OpenVINO runtime (copies) -> $(MODELD_LIBS_DIR)"; \
 	else \
 		ln -sf $(OPENVINO_PKG)/libs/* "$(MODELD_LIBS_DIR)/"; \
-		ln -sf $(OPENVINO_GENAI_PKG)/libopenvino_genai.so.2620 "$(MODELD_LIBS_DIR)/"; \
-		ln -sf $(OPENVINO_TOKENIZERS_SO) "$(MODELD_LIBS_DIR)/"; \
+		ln -sf "$$genai_lib" "$(MODELD_LIBS_DIR)/"; \
+		ln -sf "$$tokenizers_lib" "$(MODELD_LIBS_DIR)/"; \
 		echo "bundled OpenVINO runtime (symlinks) -> $(MODELD_LIBS_DIR)"; \
 	fi
 
@@ -226,7 +230,7 @@ bundle-modeld-libs:
 bundle-llama-libs:
 	@test -n "$(LLAMA_RUNTIME_LIB_SRC)" || { echo "missing direct llama.cpp runtime lib directory. Fetch ref code with: make deps-llamacpp-ref"; exit 1; }
 	@test -d "$(LLAMA_RUNTIME_LIB_SRC)" || { echo "direct llama.cpp runtime lib directory does not exist: $(LLAMA_RUNTIME_LIB_SRC)"; exit 1; }
-	@test -f "$(LLAMA_RUNTIME_LIB_SRC)/libllama.so" || { echo "direct llama.cpp runtime at $(LLAMA_RUNTIME_LIB_SRC) does not contain libllama.so"; exit 1; }
+	@{ test -f "$(LLAMA_RUNTIME_LIB_SRC)/libllama.so" || test -f "$(LLAMA_RUNTIME_LIB_SRC)/libllama.dylib" || test -f "$(LLAMA_RUNTIME_LIB_SRC)/libllama.dll" || test -f "$(LLAMA_RUNTIME_LIB_SRC)/llama.dll"; } || { echo "direct llama.cpp runtime at $(LLAMA_RUNTIME_LIB_SRC) does not contain libllama.{so,dylib,dll}"; exit 1; }
 	@rm -rf "$(LLAMA_LIBS_DIR)" && mkdir -p "$(dir $(LLAMA_LIBS_DIR))"
 	@if [ -n "$(LLAMA_LIBS_COPY)" ]; then \
 		mkdir -p "$(LLAMA_LIBS_DIR)"; \
@@ -469,7 +473,7 @@ check-modeld-deps-bundle:
 	@test -f "$(MODELD_DEPS_ROOT)/manifest.json" || { echo "bundle missing manifest.json: $(MODELD_DEPS_ROOT)"; exit 1; }
 	@test -f "$(MODELD_DEPS_ROOT)/llama/ref/common/chat.h" || { echo "bundle missing llama.cpp ref headers"; exit 1; }
 	@ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/libllama.* >/dev/null 2>&1 || ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/llama.dll >/dev/null 2>&1 || { echo "bundle missing llama runtime lib (libllama.{so,dylib,dll})"; exit 1; }
-	@ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/libllama-common.* >/dev/null 2>&1 || ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/llama-common.dll >/dev/null 2>&1 || { echo "bundle missing llama common runtime lib (libllama-common.{so,dylib} / llama-common.dll)"; exit 1; }
+	@ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/libllama-common.* >/dev/null 2>&1 || ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/llama-common.dll >/dev/null 2>&1 || ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/common.dll >/dev/null 2>&1 || { echo "bundle missing llama common runtime lib (libllama-common.{so,dylib} / llama-common.dll / common.dll)"; exit 1; }
 	@if [ "$(MODELD_RELEASE_OPENVINO)" = "1" ]; then \
 		grep -q '"openvino": *true' "$(MODELD_DEPS_ROOT)/manifest.json" || { echo "MODELD_RELEASE_OPENVINO=1 but bundle manifest does not declare openvino:true (refusing to silently drop OpenVINO)"; exit 1; }; \
 		test -d "$(MODELD_DEPS_ROOT)/openvino/genai/src/cpp/include" || { echo "bundle missing OpenVINO GenAI headers"; exit 1; }; \
@@ -485,9 +489,9 @@ check-modeld-deps-bundle:
 # The root paths/tags are re-pointed at the bundle via target-specific variables shared
 # by all OSes; only the link flags, wrapper, and archive differ per OS. Deterministic
 # and self-contained: it does not rebuild llama.cpp/OpenVINO and refuses to drop a
-# backend. Linux is verified end-to-end; the darwin/windows link flags follow platform
-# convention (ld64 @loader_path / MinGW import libs + DLL-next-to-exe) — verify on a
-# build host of that OS.
+# backend. Linux is verified end-to-end; Darwin follows ld64 @loader_path, and Windows
+# supports either MinGW-style DLL linking or Clang/MSVC import libraries selected by
+# MODELD_WINDOWS_TOOLCHAIN.
 MODELD_RELEASE_OSES := linux darwin windows
 MODELD_RELEASE_TARGETS := $(addprefix package-modeld-release-,$(MODELD_RELEASE_OSES))
 
@@ -495,18 +499,30 @@ MODELD_RELEASE_TARGETS := $(addprefix package-modeld-release-,$(MODELD_RELEASE_O
 MODELD_PKG_RPATH_linux   = -Wl,--disable-new-dtags -Wl,-rpath,\$$ORIGIN/lib/llamacpp -Wl,-rpath,\$$ORIGIN/modeld-libs -Wl,-rpath-link,$(LLAMA_RUNTIME_LIB_DIR)
 MODELD_PKG_RPATH_darwin  = -Wl,-rpath,@loader_path/lib/llamacpp -Wl,-rpath,@loader_path/modeld-libs
 MODELD_PKG_RPATH_windows =
+MODELD_WINDOWS_TOOLCHAIN ?= mingw
 MODELD_PKG_LLAMA_LIBS_linux   = $(LLAMA_DIRECT_LINK_LIBS)
 MODELD_PKG_LLAMA_LIBS_darwin  = -lcommon -lllama -lggml -lggml-base -lstdc++
-MODELD_PKG_LLAMA_LIBS_windows = -lcommon -lllama -lggml -lggml-base -lstdc++ -static-libgcc -static-libstdc++
+MODELD_PKG_LLAMA_LIBS_windows_mingw = -l:libllama-common.dll -l:libllama.dll -l:ggml.dll -l:ggml-base.dll -lstdc++ -static-libgcc -static-libstdc++
+MODELD_PKG_LLAMA_LIBS_windows_msvc = $(LLAMA_RUNTIME_LIB_DIR)/llama-common.lib $(LLAMA_RUNTIME_LIB_DIR)/llama.lib $(LLAMA_RUNTIME_LIB_DIR)/ggml.lib $(LLAMA_RUNTIME_LIB_DIR)/ggml-base.lib
+MODELD_PKG_LLAMA_LIBS_windows = $(MODELD_PKG_LLAMA_LIBS_windows_$(MODELD_WINDOWS_TOOLCHAIN))
 MODELD_PKG_OV_LIBS_linux   = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(OPENVINO_GENAI_LINK_FLAGS),)
 MODELD_PKG_OV_LIBS_darwin  = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),-L$(OPENVINO_PKG)/libs -L$(OPENVINO_GENAI_PKG) -L$(OPENVINO_TOKENIZERS_LIB) -lopenvino_genai -lopenvino -lstdc++,)
-MODELD_PKG_OV_LIBS_windows = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),-L$(OPENVINO_PKG)/libs -L$(OPENVINO_GENAI_PKG) -L$(OPENVINO_TOKENIZERS_LIB) -lopenvino_genai -lopenvino,)
+MODELD_PKG_OV_LIBS_windows_mingw = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),-L$(OPENVINO_PKG)/libs -L$(OPENVINO_GENAI_PKG) -L$(OPENVINO_TOKENIZERS_LIB) -l:openvino_genai.dll -l:openvino.dll,)
+MODELD_PKG_OV_LIBS_windows_msvc = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(OPENVINO_GENAI_PKG)/openvino_genai.lib $(OPENVINO_PKG)/libs/openvino.lib,)
+MODELD_PKG_OV_LIBS_windows = $(MODELD_PKG_OV_LIBS_windows_$(MODELD_WINDOWS_TOOLCHAIN))
+MODELD_PKG_OPENVINO_LD_FLAGS_linux = -X 'github.com/contenox/runtime/modeld/openvino.buildTokenizersPath=$(OPENVINO_TOKENIZERS_LIB)/libopenvino_tokenizers.so' -X 'github.com/contenox/runtime/modeld/openvino.buildGenAIVersion=$(OPENVINO_GENAI_VERSION)'
+MODELD_PKG_OPENVINO_LD_FLAGS_darwin = -X 'github.com/contenox/runtime/modeld/openvino.buildTokenizersPath=$(OPENVINO_TOKENIZERS_LIB)/libopenvino_tokenizers.dylib' -X 'github.com/contenox/runtime/modeld/openvino.buildGenAIVersion=$(OPENVINO_GENAI_VERSION)'
+MODELD_PKG_OPENVINO_LD_FLAGS_windows = -X 'github.com/contenox/runtime/modeld/openvino.buildTokenizersPath=$(OPENVINO_TOKENIZERS_LIB)/openvino_tokenizers.dll' -X 'github.com/contenox/runtime/modeld/openvino.buildGenAIVersion=$(OPENVINO_GENAI_VERSION)'
 MODELD_PKG_BIN_linux   = modeld.bin
 MODELD_PKG_BIN_darwin  = modeld.bin
 MODELD_PKG_BIN_windows = modeld.exe
 MODELD_PKG_LAUNCHER_linux   = modeld
 MODELD_PKG_LAUNCHER_darwin  = modeld
 MODELD_PKG_LAUNCHER_windows = modeld.cmd
+MODELD_MSVC_REDIST_DIR ?=
+# vcomp140.dll (MSVC OpenMP) is a load-time import of ggml-base.dll, so it is
+# required for the daemon to start, not optional.
+MODELD_MSVC_REDIST_DLLS ?= msvcp140.dll vcruntime140.dll vcruntime140_1.dll vcomp140.dll
 
 # Dispatch to the packager for the host OS.
 package-modeld-release:
@@ -524,7 +540,6 @@ $(MODELD_RELEASE_TARGETS): OPENVINO_TOKENIZERS_LIB := $(MODELD_DEPS_ROOT)/openvi
 # Recursive (=) so they honor a per-target MODELD_RELEASE_OPENVINO (darwin sets 0).
 $(MODELD_RELEASE_TARGETS): MODELD_TAGS = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),llamanode llamacpp_direct openvino openvino_genai,llamanode llamacpp_direct)
 $(MODELD_RELEASE_TARGETS): MODELD_OV_CXXFLAGS = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(OPENVINO_GENAI_CGO_CXXFLAGS),)
-$(MODELD_RELEASE_TARGETS): MODELD_LD_FLAGS = $(MODELD_VERSION_LD_FLAGS) $(MODELD_LLAMA_LD_FLAGS) $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(MODELD_OPENVINO_LD_FLAGS),)
 # Apple Silicon is llama + Metal; OpenVINO GenAI is not supported there, so the darwin
 # package never requires/links OpenVINO (override on the command line if that changes).
 package-modeld-release-darwin: MODELD_RELEASE_OPENVINO := 0
@@ -537,7 +552,7 @@ $(MODELD_RELEASE_TARGETS): package-modeld-release-%: check-modeld-deps-bundle
 	CGO_CXXFLAGS="$(MODELD_OV_CXXFLAGS)" \
 	CGO_LDFLAGS="-L$(LLAMA_RUNTIME_LIB_DIR) $(MODELD_PKG_RPATH_$*) $(MODELD_PKG_LLAMA_LIBS_$*) $(MODELD_PKG_OV_LIBS_$*)" \
 	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_TAGS)' \
-		-ldflags "$(MODELD_LD_FLAGS)" \
+		-ldflags "$(MODELD_VERSION_LD_FLAGS) $(MODELD_LLAMA_LD_FLAGS) $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(MODELD_PKG_OPENVINO_LD_FLAGS_$*),)" \
 		-o "$(MODELD_DIST_DIR)/$(MODELD_PKG_BIN_$*)" $(PROJECT_ROOT)/cmd/modeld
 	@if [ "$*" = "windows" ]; then \
 		{ printf '%s\r\n' '@echo off'; \
@@ -561,14 +576,24 @@ $(MODELD_RELEASE_TARGETS): package-modeld-release-%: check-modeld-deps-bundle
 	fi
 	@if [ "$(MODELD_RELEASE_OPENVINO)" = "1" ]; then $(MAKE) --no-print-directory \
 		OPENVINO_PKG="$(OPENVINO_PKG)" OPENVINO_GENAI_PKG="$(OPENVINO_GENAI_PKG)" \
-		OPENVINO_TOKENIZERS_SO="$(OPENVINO_TOKENIZERS_LIB)/libopenvino_tokenizers.so" \
+		OPENVINO_TOKENIZERS_LIB="$(OPENVINO_TOKENIZERS_LIB)" \
 		MODELD_LIBS_DIR="$(MODELD_DIST_DIR)/modeld-libs" MODELD_LIBS_COPY=1 bundle-modeld-libs; fi
 	@$(MAKE) --no-print-directory LLAMA_RUNTIME_LIB_SRC="$(LLAMA_RUNTIME_LIB_DIR)" LLAMA_LIBS_DIR="$(MODELD_DIST_DIR)/lib/llamacpp" LLAMA_LIBS_COPY=1 bundle-llama-libs
+	@if [ "$*" = "windows" ] && [ -n "$(MODELD_MSVC_REDIST_DIR)" ]; then \
+		test -d "$(MODELD_MSVC_REDIST_DIR)" || { echo "MODELD_MSVC_REDIST_DIR does not exist: $(MODELD_MSVC_REDIST_DIR)"; exit 1; }; \
+		mkdir -p "$(MODELD_DIST_DIR)/modeld-libs"; \
+		for dll in $(MODELD_MSVC_REDIST_DLLS); do \
+			test -f "$(MODELD_MSVC_REDIST_DIR)/$$dll" || { echo "missing MSVC redistributable DLL: $(MODELD_MSVC_REDIST_DIR)/$$dll"; exit 1; }; \
+			cp -a "$(MODELD_MSVC_REDIST_DIR)/$$dll" "$(MODELD_DIST_DIR)/modeld-libs/"; \
+		done; \
+	fi
 	@if [ -d "$(MODELD_DEPS_ROOT)/licenses" ]; then rm -rf "$(MODELD_DIST_DIR)/LICENSES"; cp -a "$(MODELD_DEPS_ROOT)/licenses" "$(MODELD_DIST_DIR)/LICENSES"; fi
 	@DIST_DIR="$(MODELD_DIST_DIR)" RELEASE_OUT="$(MODELD_RELEASE_DIST_DIR)" \
 	NAME="$(MODELD_RELEASE_NAME)" VERSION="$(MODELD_VERSION)" PLATFORM="$(MODELD_PLATFORM)" \
 	MIN_PROTOCOL="$(MODELD_MIN_PROTOCOL)" PROTOCOL_VERSION="$(MODELD_PROTOCOL_VERSION)" \
 	EXPECT_OPENVINO="$(MODELD_RELEASE_OPENVINO)" TARGET_OS="$*" LAUNCHER="$(MODELD_PKG_LAUNCHER_$*)" \
+	MODELD_PACKAGE_DEFER_SMOKE="$(MODELD_PACKAGE_DEFER_SMOKE)" \
+	MODELD_PACKAGE_REPORT_FILE="$(MODELD_PACKAGE_REPORT_FILE)" \
 	bash $(PROJECT_ROOT)scripts/modeld-package-release.sh
 
 build-vscode: deps-vscode

@@ -1,185 +1,131 @@
-# Blueprint: Effective-Context KV / Sparse-Attention Layer
+# Blueprint: Effective-Context Runtime Strategy
 
-Status: proposed
+Status: design; certified specialization portfolio
 Owner: runtime / modeld
-Relates to: north-star effective context (~200k on one consumer accelerator, single-user/
-single-model, <2–3 min worst case)
+Target: large effective context on one local accelerator, single-user/single-model,
+with bounded prefill latency, usable decode throughput, and explicit quality gates.
 
-## 1. The bet, and the gap
+Related OpenVINO validation:
+- [OpenVINO/modeld hardening blueprint](openvino-hardening-blueprint.md)
+- [OpenVINO benchmark findings](openvino-bench-findings.md)
+- [Local NVIDIA llama benchmark findings](local-nvidia-llama-bench-findings.md)
 
-The core product bet is **large effective context on one consumer accelerator, for arbitrary
-models, locally** — not just for the rare architectures that ship native sliding-window
-attention. Delivering it has two walls:
+Related hardware/runtime strategy:
+- [Latency-budgeted effective context](hardware-effective-context-blueprint.md)
+- [Specialization cells and multi-GPU runtime shapes](specialization-cells-blueprint.md)
 
-- **Memory wall** — fitting the KV cache in VRAM as context grows.
-- **Latency wall** — prefilling a long prompt within the worst-case budget. Cold prefill is
-  O(N²) in attention and is the dominant cost at long context.
+Session-derived guardrails:
+- [Session aac21f41 learning map](session-aac21f41-learning-map.md)
+- [modeld capability-truth boundary](modeld-capability-truth-blueprint.md)
+- [Benchmark integrity and reproducibility](benchmark-integrity-blueprint.md)
 
-Today contenox clears neither wall generically. Concretely, from the code:
+## 1. Backend Stance
 
-- **The capacity planner over-counts KV and clamps the window.**
-  `capacity.KVBytesPerToken` (`modeld/capacity/capacity.go:54`) multiplies by `nLayers`
-  flat, and `modeld/llama/service.go:254` passes `params.BlockCount` — *every* layer billed
-  as full-context. For a sliding-window model (Gemma 4 E4B: 42 layers, ~5 local : 1 global,
-  window 512, 512 head-dim → 168 KiB/tok dense) this over-counts KV ~6×. The sliding window
-  *is* read (`modeld/llama/gguf.go:37,116`) and detected (`service.go:285`) but only set as a
-  **report field** (`info.SparseAttention`); it never enters the budget or `capacity.Resolve`.
-  Result: a constrained 3060 was clamped to 10,608 tokens for a model whose real SWA KV for
-  the full 131k window is ~3.6 GiB — i.e. it fits.
+`modeld`'s durable product boundary is the backend-neutral session contract:
+`EnsurePrefix -> PrefillSuffix -> Decode`, plus `Snapshot`/`Restore` and capability reports.
 
-- **There is no model-agnostic KV algorithm on the llama path.** The only token reduction is
-  whatever the model declares natively (GGUF SWA). The field's own doc admits the boundary
-  (`runtime/transport/session.go:99`): *"For llama.cpp this means GGUF-declared SWA; it does
-  not mean arbitrary XAttention can be forced on a dense model."* For dense models (Qwen,
-  Llama — the majority) there is no eviction, no attention-aware retention, no block-sparse
-  prefill: you get full dense KV and hit the VRAM/latency walls.
+The acceleration strategy is a portfolio of certified runtime cells, not one stack:
 
-- **The cold-KV offload is spill, not reduction.** `modeld/llama/llamasession/coldstore.go`
-  parks evicted blocks to host RAM (`planner context > hot`, e.g. 15,682 > 10,608). It
-  stretches the *logical* window but is bandwidth/latency-bound and does not make a dense
-  long window cheap.
+- chip-vendor runtime adapters when they expose the right primitives and pass `contenox` gates.
+- modeld-native kernels when a narrow model/hardware/workload cell can beat generic abstractions.
+- compatibility backends when they are useful for GGUF coverage, development, fallback, or regression tests.
 
-For comparison, OpenVINO GenAI already has this layer and contenox merely flips it on
-(`modeld/openvino/ovsession/genai.go:264`: `use_sparse_attention`, `xattention_threshold`,
-`num_last_dense_tokens_in_prefill`). That capability is Intel-only. The llama path — the
-primary, multi-vendor one — has no equivalent. Building it is the subject of this blueprint.
+`llama.cpp` is a compatibility, bootstrap, GGUF, and test backend. It is not the long-term
+multi-vendor acceleration strategy by itself. A modeld-owned narrow kernel path remains valid
+when it is explicitly scoped and proves a step-function result.
 
-## 2. What already exists (the substrate we build on)
+## 2. Performance Walls
 
-This is **not greenfield.** The residency layer was scaffolded for exactly this and the
-intent is in the code (`modeld/residency/residency.go:50`): *"Sinks and recent-window blocks
-are protected because sparse/streaming attention requires them hot."*
+- **Memory wall:** resident KV grows with context and limits physical hot context.
+- **Latency wall:** long-prompt prefill is attention-heavy and dominates time to first token.
+- **Decode wall:** generated tokens are serial and often KV-bandwidth-bound.
+- **Quality wall:** lossy eviction, sparse attention, quantized KV, and long-context extension require
+  retrieval/answer-quality gates, not only throughput numbers.
 
-- **Block flags** (`residency.go:55`): `FlagPinned`, `FlagSink`, `FlagRecent`, `FlagRetrieved`.
-  `Block.protected()` (`:76`) already keeps sinks + recent + pinned.
-- **Retention classes** (`runtime/contextasm/segments.go:32`): `ClassTaskPinned`, `ClassRepoMap`,
-  `ClassVolatile`, with `MoreEvictableThan` ordering.
-- **Plan/Drive eviction** (`residency.go:223` `Plan{KeepHot,EvictCold}`, `:235` `PlanHotSet`;
-  `residency/drive.go:16` `EvictColdRanges` tail-first; `Drive` executes eviction).
-- **KV primitives already wrapped in the shim** (`modeld/llama/llamacppshim/direct.go`):
-  `MemorySeqRm` (`:664`), `MemorySeqCp` (`:672`), `MemorySeqAdd` (`:676`), `Decode` (`:703`)
-  over `llama_memory_seq_*` (`include/llama.h:718–775`, `llama_memory_can_shift:775`).
+## 3. Existing Substrate
 
-What is missing is the **policy** (which tokens to keep/evict, by what signal) and the
-**prefill-time sparse kernel** — plus the capacity fix so the planner stops clamping below
-what the hardware holds.
+- **Session contract:** `runtime/transport/session.go` keeps runtime callers independent from backend
+  internals.
+- **SWA-aware capacity:** `capacity.LayerKVProfile` and `modeld/llama/service.go` feed global/windowed
+  layer splits into capacity resolution.
+- **Residency policy:** `modeld/residency` has block classes, sink/recent flags, hot/cold planning,
+  and an optional attention-score seam.
+- **Prefix reuse:** llama and OpenVINO sessions already implement stable-prefix reuse through
+  `EnsurePrefix`.
+- **Snapshot/restore:** the transport supports persisted session state for branch/reuse workflows.
+- **OpenVINO controls:** OpenVINO GenAI exposes prefix caching, cache eviction, sparse prefill, KV
+  precision, and scheduler cache controls through model profiles.
+- **llama compatibility controls:** the llama adapter exposes KV precision, flash attention, middle
+  removal, position shift, cold KV, and decode sliding where llama.cpp supports them.
 
-## 3. The three tiers, and how they combine
+## 4. Work That Survives Backend Replacement
 
-The real system is not one technique; it is a layered KV/attention subsystem combining all
-three, each attacking a different wall. They are independent enough to ship in order.
+- **Certification matrix:** publish hardware, driver/runtime version, model digest, context limits,
+  prompt sizes, `contenox` end-to-end throughput, raw backend control throughput, token accounting,
+  quality smoke, and unsupported modes.
+- **Runtime selection:** select backend adapters by certified profile and measured `contenox`
+  behavior, not by raw backend microbenchmarks.
+- **Prefix snapshot cache:** cache stable-prefix snapshots keyed by model, backend, profile, adapters,
+  prompt template, tokenizer policy, and manifest digest.
+- **Split K/V cache configuration:** carry `kv_cache_type_k` and `kv_cache_type_v` through profiles,
+  transport identity, capacity math, and backend adapters that support it.
+- **Residency telemetry:** expose sink/recent sizes, hot tokens, cold tokens, evicted ranges, and
+  restore/recompute events in traces.
+- **Agentic benchmark harness:** keep workload definitions backend-neutral and runnable through
+  `contenox-runtime` on every certified platform.
 
-### Tier 0 (prerequisite, small): SWA-aware capacity budget
-Make `KVBytesPerToken`/`Resolve` split **global** layers (grow with context) from
-**sliding-window** layers (capped at the window). Feed `params.SlidingWindow` and the
-per-layer pattern into the budget instead of the report field. Unblocks Gemma-class models
-immediately (~6× more offered context) with no kernel work. Touch points:
-`modeld/capacity/capacity.go:54,113`, `modeld/llama/service.go:254,285`,
-`modeld/llama/gguf.go` (read `sliding_window_pattern`). Validate: Gemma 4 E4B effective
-context on the 3060 moves from 10,608 toward the memory-fit ceiling.
+## 5. Specialization Cells
 
-### Tier 1: StreamingLLM — attention-sink + recency eviction (memory + decode wall, any model)
-Keep the first few **sink** tokens + a recent **window**, discard the middle, re-base
-positions. Needs **no attention scores**, works on dense models, and the substrate is mostly
-there:
-- Policy: extend `PlanHotSet` to emit a sink+recency eviction (not just cold-offload),
-  honoring `FlagSink`/`FlagRecent`/`protected()`.
-- Mechanism: `MemorySeqRm` to drop the middle range; `MemorySeqAdd` to shift the kept recent
-  window's positions (`can_shift` gating); native sink support via
-  `ggml_flash_attn_ext_add_sinks` (`ggml.h:2426`) so dropping the prefix stays numerically
-  correct.
-- Property: lossy (forgets the middle) but decouples resident tokens from context length.
-  This is the first **real, model-agnostic** KV algorithm on the llama path.
+### Intel / OpenVINO
 
-### Tier 2: attention-aware eviction (H2O / SnapKV) — keep the *important* tokens
-Replace "evict by recency/class" with "evict by accumulated attention mass," so the kept set
-is the heavy hitters, not just the recent window. This is the quality upgrade over Tier 1 and
-plugs into the same `Plan`/`CacheClass`/eviction path — `CacheClass` ranking becomes
-attention-driven.
-- **The hard dependency:** it needs per-token attention scores, and flash attention (the
-  `fattn` kernels) deliberately never materializes the attention matrix. Options, in
-  increasing cost: (a) a cheap periodic scoring pass over a subset of heads/layers with
-  flash-attn disabled; (b) instrument the ggml fattn kernel to emit per-block attention
-  sums as a side output; (c) approximate heavy-hitters from a proxy (e.g. recent-window
-  attention to older blocks). (b) is the principled path and overlaps with Tier 3's kernel
-  work.
+- Keep ContinuousBatching/PagedAttention text models as the certified path.
+- Keep NPU out of the effective-context path unless Intel provides a supported text pipeline.
+- Keep sparse prefill and cache eviction profile-gated and benchmarked per model/device.
+- Fix trace-visible token accounting for OpenVINO runs.
 
-### Tier 3: block-sparse prefill (XAttention-class) — the latency wall
-Cut prefill from O(N²) by skipping low-importance (query-block, key-block) pairs. This is the
-deepest and highest-value tier; it does **not** shrink KV (you keep the full cache) — it makes
-prefilling a long context fast enough to meet the budget.
-- Algorithm (XAttention): tile the attention matrix; score each block cheaply via the
-  **antidiagonal sum** of Q·K; threshold-select blocks (`xattention_threshold`), force-keeping
-  diagonal + sink blocks; run attention only over selected blocks.
-- Integration seam: `ggml_flash_attn_ext(q,k,v,mask,…)` (`ggml.h:2409`). The `mask` is
-  `src[3]` in the CUDA dispatcher (`ggml-cuda/fattn.cu`). Two routes:
-  1. **Mask-only (cheap, no speedup):** set unselected blocks to −inf in the mask. Correct,
-     but the dense kernel still iterates all blocks — proves the math, not the latency.
-  2. **Block-index kernel (the real win):** add a new op (`ggml_flash_attn_sparse`) or a
-     block-index input, and fork the fattn inner loop (`fattn-common.cuh`, `fattn-tile.cu`,
-     `fattn-mma-f16.cuh`) to iterate only selected key-blocks. Thread it through llama's
-     `build_attn` for long prefill; branch dense for decode.
-- This is net-new CUDA in the most performance-critical, numerically-delicate kernel, with
-  data-dependent sparsity (warp divergence, irregular gather, load-balancing). The MMA
-  (tensor-core) variant is hardest. It is a **maintained fork of the hottest file in
-  llama.cpp**, carried across pin bumps.
+### NVIDIA and AMD Vendor Runtime Cells
 
-### How they compose
-- Tier 0 stops the planner under-selling. Tier 1 makes the offered window real on dense
-  models by bounding resident KV. Tier 2 makes the kept set *good* instead of merely recent.
-  Tier 3 makes prefilling that window fast.
-- Shared spine: the `residency.Plan` decides the retained block set (Tiers 1–2 set
-  `FlagSink/FlagRecent` + attention-driven `CacheClass`); the same retained set defines the
-  block-selection input for Tier 3's prefill. One retention model drives both eviction and
-  sparse prefill.
+- Add adapters when the runtime can implement the session contract or a strict equivalent.
+- Require prefix reuse, explicit context limits, token accounting, and reproducible packaging.
+- Use vendor-provided KV/cache/sparse/speculative mechanisms when they produce the best certified cell.
+- Certify per runtime version, driver, accelerator, model format, and context profile.
 
-## 4. Multi-vendor strategy
+### modeld-Native Narrow Kernel Cells
 
-ggml has no write-once-run-everywhere GPU layer; kernels are per-backend — **except CUDA and
-HIP share source** (the HIP backend compiles `ggml-cuda/*.cu` via hipcc; we already build
-both). So:
-- Tier 3 kernel lands in `ggml-cuda` → **NVIDIA + AMD** from one source. Caveat: `tile`/`vec`
-  variants port to HIP cleanly; the tensor-core **MMA** path needs AMD-specific divergence
-  (warp size 64 vs 32, matrix-core intrinsics).
-- Backends without the sparse path (Metal/Vulkan/SYCL/CPU) **fall back to dense** — correct
-  output, no speedup. "Works everywhere, accelerated where ported."
-- Order: CUDA/HIP first (two vendors, the stack we build), Vulkan as the single most-portable
-  follow-up, Metal for Apple Silicon as a separate kernel if that segment is first-class.
+- Scope each cell to a named model family, hardware topology, backend, context tier, and quality gate.
+- Valid targets include replicated-weights/sharded-KV, block-sparse prefill, fused quantized KV
+  attention, and model-family-specific prefix/KV reuse.
+- Keep the implementation only if it unlocks a step-function: larger usable context, much lower
+  prefill wall time, or materially better end-to-end agent turn time.
+- Do not generalize the kernel path until a certified narrow cell proves the value.
 
-## 5. Phasing (each milestone independently shippable + verifiable)
+### llama.cpp Compatibility Cell
 
-- **M0 — SWA budget (Tier 0).** Planner splits global/SWA layers. *Proof:* Gemma 4 E4B offered
-  context rises ~6× on the 3060; no regression for dense models (Qwen unchanged).
-- **M1 — StreamingLLM eviction (Tier 1).** Sink+recency discard policy on the residency Plan +
-  `MemorySeqRm/Add` + native sinks. *Proof:* a dense model (Qwen) serves a context far beyond
-  its dense VRAM fit, resident KV stays bounded, quality holds on a needle-in-haystack at the
-  sink+recent regions.
-- **M2 — attention-score side-output (Tier 2 dependency).** Instrument fattn to emit per-block
-  attention sums (shared with M3). *Proof:* scores match a dense reference within tolerance.
-- **M3 — attention-aware eviction (Tier 2).** Drive `CacheClass`/eviction by M2 scores.
-  *Proof:* beats Tier 1 on long-context retrieval at equal resident budget.
-- **M4 — block-sparse prefill, mask route (Tier 3a).** Correctness-only. *Proof:* output
-  matches dense within tolerance at a given threshold.
-- **M5 — block-sparse prefill, kernel route (Tier 3b).** Forked fattn iterating selected
-  blocks, CUDA then HIP. *Proof:* measured prefill speedup at 64k/131k on the 3060 with
-  bounded quality loss; worst-case prefill under the 2–3 min budget.
+- Keep GGUF compatibility, local development, fallback, and regression tests.
+- Use llama.cpp primitives when they are already exposed and stable.
+- Avoid broad product-critical CUDA/HIP fork work; allow narrow modeld-owned kernels under the
+  same certification gates as every other cell.
+- Keep llama-specific behavior behind backend capabilities and profile identity.
 
-## 6. Risks
+## 6. Do Not Do Blindly
 
-- **Fork maintenance.** Tier 3 forks the hottest llama.cpp kernel; every pin bump risks
-  conflicts (cf. the `libcommon.a`→`libllama-common.so` break from a single 8-month jump).
-  Prefer an upstreamable shape (new op behind a flag) over an invasive patch.
-- **Numerical correctness.** Online-softmax renormalization across a sparse block set, and
-  position re-basing after eviction, are easy to get subtly wrong. Gate every tier behind a
-  dense-reference tolerance test on real backends.
-- **Quality loss.** Tiers 1–3 are approximations; thresholds/window sizes are per-model.
-  Needs a retrieval/quality harness, not just "it ran."
-- **Score exposure cost.** Materializing attention stats fights flash attention's reason for
-  existing; the side-output must stay cheap or it eats the latency it's meant to save.
+- Picking one backend stack before the benchmark matrix says it wins.
+- Broad CUDA/HIP/ggml fork work without a named model/hardware/workload cell.
+- Advertising raw backend context behavior as supported runtime context.
+- Backend-specific benchmark results without the `contenox-runtime` agentic path.
+- Throughput claims without answer-quality smoke results.
 
-## 7. Non-goals
+## 7. Implementation Order
 
-- Datacenter batching / multi-tenant serving (that is vLLM/SGLang territory and contradicts
-  the single-user, embeddable, ship-a-binary deployment bet).
-- Replacing the OpenVINO backend, which already provides this on Intel; this blueprint brings
-  parity to the llama (CUDA/HIP/…) path.
+- **M0 - Backend stance cleanup.** Catalog/profile docs and setup output describe supported cells
+  by certified backend/runtime/hardware/model/workload facts.
+- **M1 - Certification schema.** Add a profile schema for backend/runtime/device/model/context
+  certification and report it through model capability output.
+- **M2 - Prefix snapshot cache.** Add a bounded persistent cache for stable-prefix snapshots.
+- **M3 - Split K/V cache config.** Add separate K/V cache precision fields and capacity accounting.
+- **M4 - Cell contract.** Define the minimal adapter/kernel requirements against the existing
+  `transport.Session` behavior.
+- **M5 - Candidate cells.** Benchmark vendor-runtime cells and modeld-native narrow-kernel cells
+  against the same `contenox-runtime` workloads and quality smoke.
+- **M6 - Keep/drop decisions.** Keep only cells that deliver a step-function result over the
+  baseline for the target workload.
