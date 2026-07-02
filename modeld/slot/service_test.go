@@ -16,6 +16,10 @@ type fakeBackend struct {
 	closed   []string
 	openErr  error
 	sessions []*fakeSession
+	// requiredBytes is returned as ModelInfo.RequiredBytes so tests can control
+	// the footprint estimate the slot captures at load time.
+	requiredBytes int64
+	describes     []transport.OpenSessionRequest
 }
 
 func (b *fakeBackend) OpenSession(_ context.Context, req transport.OpenSessionRequest) (transport.Session, error) {
@@ -31,7 +35,24 @@ func (b *fakeBackend) OpenSession(_ context.Context, req transport.OpenSessionRe
 }
 
 func (b *fakeBackend) Describe(_ context.Context, req transport.OpenSessionRequest) (transport.ModelInfo, error) {
-	return transport.ModelInfo{ModelMaxContext: req.Config.NumCtx, EffectiveContext: req.Config.NumCtx}, nil
+	b.mu.Lock()
+	b.describes = append(b.describes, req)
+	required := b.requiredBytes
+	b.mu.Unlock()
+	eff := req.Config.NumCtx
+	if eff <= 0 {
+		eff = 1024
+	}
+	return transport.ModelInfo{ModelMaxContext: req.Config.NumCtx, EffectiveContext: eff, RequiredBytes: required}, nil
+}
+
+func (b *fakeBackend) lastDescribe() transport.OpenSessionRequest {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.describes) == 0 {
+		return transport.OpenSessionRequest{}
+	}
+	return b.describes[len(b.describes)-1]
 }
 
 func (b *fakeBackend) Embed(context.Context, transport.EmbedRequest) (transport.EmbedResult, error) {
@@ -530,5 +551,98 @@ func TestUnit_Slot_DecodeCancellationReleasesBusyWhenOutputNotDrained(t *testing
 		default:
 			time.Sleep(10 * time.Millisecond)
 		}
+	}
+}
+
+func TestUnit_Slot_DescribeCreditsReclaimableBytesWhenSwitchWouldEvict(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{requiredBytes: 3 << 30}
+	svc := New(backend, WithBackend("llama"))
+
+	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	if _, err := svc.Describe(ctx, req("b")); err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	got := backend.lastDescribe()
+	if got.ModelName != "b" {
+		t.Fatalf("last describe model = %q, want b", got.ModelName)
+	}
+	if got.ReclaimableBytes != 3<<30 {
+		t.Fatalf("ReclaimableBytes = %d, want resident model a's footprint (%d)", got.ReclaimableBytes, int64(3<<30))
+	}
+}
+
+func TestUnit_Slot_DescribeSameIdentityReturnsResidentOpenInfo(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{requiredBytes: 3 << 30}
+	svc := New(backend, WithBackend("llama"))
+
+	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	describesAfterLoad := len(backend.describes)
+	// A live recompute after this point would be encumbered by the resident
+	// session; the stored open-time answer is the session's truth. Mutating the
+	// fake's answer proves the response comes from the store, not a new call.
+	backend.requiredBytes = 1
+	info, err := svc.Describe(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.RequiredBytes != 3<<30 {
+		t.Fatalf("RequiredBytes = %d, want the open-time answer (%d), not a recompute", info.RequiredBytes, int64(3<<30))
+	}
+	if len(backend.describes) != describesAfterLoad {
+		t.Fatalf("backend.Describe called %d extra time(s) for a same-identity request", len(backend.describes)-describesAfterLoad)
+	}
+}
+
+func TestUnit_Slot_DescribeNoCreditWhenNothingResident(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{requiredBytes: 3 << 30}
+	svc := New(backend, WithBackend("llama"))
+
+	inbound := req("a")
+	// An inbound value must be ignored: ReclaimableBytes is owner-set by contract.
+	inbound.ReclaimableBytes = 42 << 30
+	if _, err := svc.Describe(ctx, inbound); err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	got := backend.lastDescribe()
+	if got.ReclaimableBytes != 0 {
+		t.Fatalf("ReclaimableBytes = %d, want 0 with an empty slot", got.ReclaimableBytes)
+	}
+}
+
+func TestUnit_Slot_ImplicitSessionStaysResidentWithReaper(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithIdleTTL(5*time.Minute))
+
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	st, _ := svc.Status(ctx)
+	if st.State != transport.SlotReady || st.Active == nil || st.Active.ModelName != "a" {
+		t.Fatalf("status after release = %+v, want model kept resident for the reaper", st)
+	}
+	if backend.sessions[0].closed {
+		t.Fatal("implicit session was closed on release despite an active idle reaper")
+	}
+
+	// The next one-shot turn reuses the resident session without a reload.
+	next, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession reuse: %v", err)
+	}
+	defer next.Close()
+	if len(backend.opened) != 1 {
+		t.Fatalf("backend opens = %d, want 1 (warm reuse, no reload)", len(backend.opened))
 	}
 }

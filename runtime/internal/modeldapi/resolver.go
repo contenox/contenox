@@ -335,9 +335,11 @@ func llamaTransportConfig(profile llamaProfile, pulled statetype.ModelPullStatus
 			cfg.NumCtx = n
 		}
 	}
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = firstPositive(profile.ContextLength, pulled.ContextLength, 8192)
-	}
+	// No fallback when nothing explicit is set: NumCtx=0 means "auto" and lets
+	// modeld resolve the window fresh from live memory for both LoadModel and
+	// Describe. A concrete placeholder here (the old firstPositive(..., 8192))
+	// silently converted every auto request into a static-ctx request, keeping
+	// modeld's dynamic capacity path permanently disengaged.
 	if cfg.NumBatch <= 0 {
 		cfg.NumBatch = 512
 	}
@@ -367,8 +369,11 @@ func resolveOpenVINOModel(root, name string, pulled statetype.ModelPullStatus) (
 	if err != nil {
 		return modeldconn.ModelRef{}, transport.Config{}, "", err
 	}
+	// NumCtx stays 0 (auto) unless the model profile declares an explicit
+	// context: modeld resolves the window fresh from live memory, and derives
+	// the trained ceiling from the model files itself.
 	cfg := transport.Config{
-		NumCtx:               firstPositive(profile.ContextLength, pulled.ContextLength, 8192),
+		NumCtx:               profile.ContextLength,
 		PromptFormat:         "openvino-chat-template",
 		PromptTemplateDigest: templateDigest,
 	}
@@ -513,15 +518,6 @@ func capacityInfoFromTransport(info transport.ModelInfo) CapacityInfo {
 		SupportsGPUOffload:           info.SupportsGPUOffload,
 		Devices:                      devices,
 	}
-}
-
-func firstPositive(values ...int) int {
-	for _, value := range values {
-		if value > 0 {
-			return value
-		}
-	}
-	return 0
 }
 
 func firstNonEmptyString(values ...string) string {

@@ -57,7 +57,7 @@ func (s *recordingService) lastEmbedRequest() transport.EmbedRequest {
 	return s.embed
 }
 
-func TestUnit_OpenVINOProvider_UsesDescribeResolvedContextAndRuntime(t *testing.T) {
+func TestUnit_OpenVINOProvider_AutoContextStaysZeroAndRuntimeIdentityKept(t *testing.T) {
 	root := t.TempDir()
 	modelDir := filepath.Join(root, "coder")
 	if err := os.MkdirAll(modelDir, 0o755); err != nil {
@@ -92,11 +92,20 @@ func TestUnit_OpenVINOProvider_UsesDescribeResolvedContextAndRuntime(t *testing.
 		t.Fatalf("GetChatConnection: %v", err)
 	}
 	c := got.(*client)
-	if c.cfg.NumCtx != 24576-modeldCapacitySafetyTokens {
-		t.Fatalf("NumCtx = %d, want Describe effective context minus modeld safety margin", c.cfg.NumCtx)
+	// Describe's answer stays informational: baking it into cfg would make a
+	// possibly-stale snapshot a hard Request ceiling. The real session goes out
+	// with NumCtx=0 so modeld resolves the window fresh, post-eviction.
+	if c.cfg.NumCtx != 0 {
+		t.Fatalf("NumCtx = %d, want 0 so modeld resolves the window fresh at open", c.cfg.NumCtx)
 	}
-	if c.cfg.PlannerEffectiveContext != 32768 {
-		t.Fatalf("PlannerEffectiveContext = %d, want Describe planner context", c.cfg.PlannerEffectiveContext)
+	if c.cfg.PlannerEffectiveContext != 0 {
+		t.Fatalf("PlannerEffectiveContext = %d, want 0 (auto)", c.cfg.PlannerEffectiveContext)
+	}
+	if c.describedEffectiveContext != 24576 {
+		t.Fatalf("describedEffectiveContext = %d, want Describe answer kept informationally", c.describedEffectiveContext)
+	}
+	if c.describedPlannerContext != 32768 {
+		t.Fatalf("describedPlannerContext = %d, want Describe answer kept informationally", c.describedPlannerContext)
 	}
 	if c.backendVersion != "OpenVINO GenAI@2026.2-test" {
 		t.Fatalf("backendVersion = %q", c.backendVersion)
@@ -285,21 +294,6 @@ func TestUnit_OpenVINOProfile_ToolProtocolMustBeNativeOpenVINOProtocol(t *testin
 	}
 	if _, err := loadModelProfile(modelDir); err == nil {
 		t.Fatal("qwen should not be accepted as an OpenVINO parser protocol")
-	}
-}
-
-func TestUnit_OpenVINOProvider_ModeldClampLeavesCapacitySafetyMargin(t *testing.T) {
-	cfg := clampContextForModeld(Config{NumCtx: 8192}, 4339)
-	if cfg.NumCtx != 4275 {
-		t.Fatalf("NumCtx = %d, want 4275", cfg.NumCtx)
-	}
-	if cfg.PromptFormat != "openvino-chat-template" {
-		t.Fatalf("PromptFormat = %q", cfg.PromptFormat)
-	}
-
-	cfg = clampContextForModeld(Config{NumCtx: 100}, 50)
-	if cfg.NumCtx != 50 {
-		t.Fatalf("small cap should not subtract safety margin, got %d", cfg.NumCtx)
 	}
 }
 

@@ -351,3 +351,41 @@ func writeTestModelProfile(t *testing.T, params ggufParams) string {
 	t.Cleanup(func() { inspectLlamaModel = old })
 	return path
 }
+
+func TestUnit_ServiceDescribeAppliesReclaimableBytesToFreeMemory(t *testing.T) {
+	path := writeTestGGUF(t, 32768)
+	svc := NewService(
+		WithMemorySource(staticMemory(4<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	base, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	credited, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:             "llama",
+		Path:             path,
+		Config:           transport.Config{KVCacheType: "f16"},
+		ReclaimableBytes: 4 << 20,
+	})
+	if err != nil {
+		t.Fatalf("Describe with credit: %v", err)
+	}
+	if credited.FreeBytes != base.FreeBytes+4<<20 {
+		t.Fatalf("FreeBytes = %d, want snapshot %d plus reclaim credit", credited.FreeBytes, base.FreeBytes)
+	}
+	if credited.EffectiveContext <= base.EffectiveContext {
+		t.Fatalf("EffectiveContext = %d, want above uncredited %d", credited.EffectiveContext, base.EffectiveContext)
+	}
+	// The credit must land before policy derivation so the live 80%%-of-free
+	// resident cap sees the post-switch picture too.
+	if credited.UserLimitBytes <= base.UserLimitBytes {
+		t.Fatalf("UserLimitBytes = %d, want above uncredited %d", credited.UserLimitBytes, base.UserLimitBytes)
+	}
+}

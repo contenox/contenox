@@ -113,52 +113,71 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		profileID = p.name
 	}
 	baseCfg := profile.config()
+	explicitCtx := profile.explicitRuntimeContext()
 	cfg := baseCfg
-	if !profile.explicitRuntimeContext() {
+	if !explicitCtx {
+		// Auto context: NumCtx stays 0 end-to-end so modeld's authoritative,
+		// post-eviction Resolve() computes the window fresh at OpenSession.
+		// Pre-clamping to the advertised trained ceiling here would turn the
+		// auto request into a concrete one — and any concrete value derived
+		// from a Describe taken while another session was still resident
+		// becomes a stale ceiling the real open is then frozen at. modeld's
+		// ModelMaxCtx clamp enforces the trained ceiling regardless.
 		cfg.NumCtx = 0
-	}
-	if p.caps.ContextLength > 0 {
+		cfg = normalizeConfig(cfg)
+	} else if p.caps.ContextLength > 0 {
 		cfg = clampContext(cfg, p.caps.ContextLength)
-	} else if profile.explicitRuntimeContext() {
+	} else {
 		cfg = normalizeConfig(cfg)
 	}
 	ref := modeldconn.ModelRef{Name: p.name, Type: "llama", Digest: modelDigest, Path: modelPath, Adapters: adapters}
 	backendID := backendVersion()
 	// Capacity facts from modeld's Describe, kept so a context overflow can be
 	// explained with the device's real limits instead of raw token counts.
+	// In auto mode they are informational only and must never be baked into
+	// cfg — see capacity.HardContextLimit.
 	var deviceKind string
 	var freeBytes int64
+	var describedEffectiveContext, describedPlannerContext, describedModelMaxContext int
 	if sessionFactory == nil {
 		describeCfg := profile.describeConfig()
 		if p.caps.ContextLength > 0 && describeCfg.NumCtx > p.caps.ContextLength {
 			describeCfg.NumCtx = p.caps.ContextLength
 		}
 		if info, derr := modeldconn.Describe(ctx, ref, transport.Config(describeCfg)); derr == nil {
-			cfg = applyModeldInfoToConfig(cfg, info)
 			deviceKind = info.DeviceKind
 			freeBytes = info.FreeBytes
+			describedEffectiveContext = info.EffectiveContext
+			describedPlannerContext = info.PlannerEffectiveContext
+			describedModelMaxContext = info.ModelMaxContext
 			if v := backendVersionFromModelInfo(info); v != "" {
 				backendID = v
 			}
-		} else {
+			if explicitCtx {
+				// Idempotent for an explicit setting: the same value is re-sent
+				// every turn, so this is a stable clamp, not a ratchet.
+				cfg = applyModeldInfoToConfig(cfg, info)
+			}
+		} else if explicitCtx {
 			cfg = normalizeConfig(baseCfg)
 		}
-	} else {
-		cfg = normalizeConfig(cfg)
 	}
 	return &client{
-		modelName:         p.name,
-		modelPath:         modelPath,
-		profileID:         profileID,
-		modelDigest:       modelDigest,
-		backendVersion:    backendID,
-		cfg:               cfg,
-		adapters:          adapters,
-		maxOutputTokens:   p.caps.MaxOutputTokens,
-		toolProtocol:      profile.ToolCalls.Protocol,
-		reasoningProtocol: profile.Reasoning.Protocol,
-		deviceKind:        deviceKind,
-		freeBytes:         freeBytes,
+		modelName:                 p.name,
+		modelPath:                 modelPath,
+		profileID:                 profileID,
+		modelDigest:               modelDigest,
+		backendVersion:            backendID,
+		cfg:                       cfg,
+		adapters:                  adapters,
+		maxOutputTokens:           p.caps.MaxOutputTokens,
+		toolProtocol:              profile.ToolCalls.Protocol,
+		reasoningProtocol:         profile.Reasoning.Protocol,
+		deviceKind:                deviceKind,
+		freeBytes:                 freeBytes,
+		describedEffectiveContext: describedEffectiveContext,
+		describedPlannerContext:   describedPlannerContext,
+		describedModelMaxContext:  describedModelMaxContext,
 	}, nil
 }
 

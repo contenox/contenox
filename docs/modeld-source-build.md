@@ -30,6 +30,36 @@ sudo apt-get install -y git make gcc g++ cmake python3 python3-venv
 For CUDA-backed llama.cpp, install the CUDA toolkit so `nvcc` is on `PATH`
 before building. If `nvcc` is absent, the llama.cpp runtime is CPU-only.
 
+**Common trap:** installing the CUDA toolkit (via `apt`, runfile, etc.) does
+not put `nvcc` on `PATH` by default — it typically lands in
+`/usr/local/cuda/bin`, which most shells don't add automatically. `make
+run-modeld` / `make build-modeld` detect this with a plain `command -v nvcc`
+(`Makefile.llamacpp-direct:13`) and **silently fall back to a CPU-only
+build** if it's missing — no warning, no error, the build just succeeds
+without GPU support. Symptom: `nvidia-smi` shows a GPU, but the runtime
+panel / `contenox doctor` reports the loaded device as CPU/`system`/`ram`
+instead of the GPU.
+
+Check before building:
+
+```bash
+command -v nvcc || echo "nvcc not on PATH — GPU build will silently be skipped"
+```
+
+Fix (adjust the path to your CUDA install, e.g. `/usr/local/cuda-13.3/bin`):
+
+```bash
+export PATH="/usr/local/cuda/bin:$PATH"
+```
+
+Add that line to your shell rc file (`~/.bashrc`/`~/.zshrc`) to make it
+persistent. Once `nvcc` is on `PATH`, just re-run `make run-modeld` /
+`make build-modeld` — the llama.cpp runtime build is cached by a stamp file
+keyed on the CUDA flag (`Makefile.llamacpp-direct:74-84`), so a PATH change
+alone is enough to trigger an automatic rebuild with `-DGGML_CUDA=ON`; no
+`make clean` needed. Confirm it worked by checking for `direct llama.cpp
+runtime (cuda=ON ...)` in the build output.
+
 ## Clone the Matching Source
 
 Use the same tag as your installed `contenox` CLI when possible:

@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/contenox/runtime/modeld/capacity"
 	"github.com/contenox/runtime/runtime/transport"
@@ -249,6 +248,12 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if err != nil {
 		return transport.ModelInfo{}, fmt.Errorf("llama capacity memory probe: %w", err)
 	}
+	// Credit memory the slot owner says an eviction would reclaim (Describe-only
+	// hint) before deriving the policy, so WithResidentDefault's live cap also
+	// sees the post-switch picture.
+	if req.ReclaimableBytes > 0 {
+		st.FreeBytes += req.ReclaimableBytes
+	}
 	policy, err := s.resolvePolicy(st)
 	if err != nil {
 		return transport.ModelInfo{}, err
@@ -283,8 +288,11 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		UserLimitBytes:      policy.MaxResidentBytes,
 		MinFreeBytes:        policy.MinFreeBytes,
 		HostColdBudgetBytes: policy.HostColdBudgetBytes,
-		Request:             cfg.NumCtx,
-		HeadroomFrac:        policy.HeadroomFrac,
+		// cfg.NumCtx here must only ever carry a genuine explicit setting
+		// (profile runtime.num_ctx / CONTENOX_LLAMA_CTX) or 0 for auto — never a
+		// prior resolution's EffectiveContext; see capacity.HardContextLimit.
+		Request:      capacity.HardContextLimit(cfg.NumCtx),
+		HeadroomFrac: policy.HeadroomFrac,
 	})
 	info := modelInfo(resolved, st)
 	if params.SlidingWindow > 0 {
@@ -434,7 +442,7 @@ func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, layerKV 
 			UserLimitBytes:      policy.MaxResidentBytes,
 			MinFreeBytes:        policy.MinFreeBytes,
 			HostColdBudgetBytes: policy.HostColdBudgetBytes,
-			Request:             cfg.NumCtx,
+			Request:             capacity.HardContextLimit(cfg.NumCtx),
 			HeadroomFrac:        policy.HeadroomFrac,
 		})
 		if resolved.EffectiveContext <= 0 {
@@ -469,10 +477,5 @@ func estimateLlamaGPUWeights(weights int64, blockCount, gpuLayers int) int64 {
 }
 
 func isAcceleratorSnapshot(st capacity.DeviceSnapshot) bool {
-	switch strings.ToLower(strings.TrimSpace(st.Kind)) {
-	case "gpu", "igpu", "accel":
-		return true
-	default:
-		return false
-	}
+	return st.IsAccelerator()
 }

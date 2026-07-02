@@ -13,11 +13,14 @@ func TestUnit_LocalNodeProfile_DefaultContextFeedsCapabilities(t *testing.T) {
 	cfg := p.config()
 	caps := p.capabilityConfig()
 
-	if cfg.NumCtx != 8192 {
-		t.Fatalf("default NumCtx = %d, want 8192", cfg.NumCtx)
+	// An omitted context is "auto", not a placeholder: forcing a concrete
+	// default here would ride to the real OpenSession as a hard Request
+	// ceiling and permanently override modeld's live capacity computation.
+	if cfg.NumCtx != 0 {
+		t.Fatalf("default NumCtx = %d, want 0 (auto — modeld resolves the window live)", cfg.NumCtx)
 	}
-	if caps.ContextLength != 8192 {
-		t.Fatalf("default ContextLength = %d, want 8192", caps.ContextLength)
+	if caps.ContextLength != 0 {
+		t.Fatalf("default ContextLength = %d, want 0 (unknown until modeld describes it)", caps.ContextLength)
 	}
 }
 

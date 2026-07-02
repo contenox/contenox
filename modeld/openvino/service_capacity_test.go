@@ -567,3 +567,37 @@ func writeTestIRWithProfile(t *testing.T, profile ovsession.ModelKVProfile) stri
 	t.Cleanup(func() { inspectOpenVINOModel = old })
 	return dir
 }
+
+func TestUnit_ServiceDescribeAppliesReclaimableBytesToFreeMemory(t *testing.T) {
+	dir := writeTestIR(t)
+	svc := NewService(
+		WithMemorySource(staticMemory(4<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	base, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type: "openvino",
+		Path: dir,
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	credited, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:             "openvino",
+		Path:             dir,
+		ReclaimableBytes: 4 << 20,
+	})
+	if err != nil {
+		t.Fatalf("Describe with credit: %v", err)
+	}
+	if credited.FreeBytes != base.FreeBytes+4<<20 {
+		t.Fatalf("FreeBytes = %d, want snapshot %d plus reclaim credit", credited.FreeBytes, base.FreeBytes)
+	}
+	if credited.EffectiveContext <= base.EffectiveContext {
+		t.Fatalf("EffectiveContext = %d, want above uncredited %d", credited.EffectiveContext, base.EffectiveContext)
+	}
+	if credited.UserLimitBytes <= base.UserLimitBytes {
+		t.Fatalf("UserLimitBytes = %d, want above uncredited %d", credited.UserLimitBytes, base.UserLimitBytes)
+	}
+}

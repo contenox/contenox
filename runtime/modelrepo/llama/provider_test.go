@@ -96,7 +96,7 @@ func TestUnit_LlamaProvider_UsesResolvedAutoGpuLayersFromModeld(t *testing.T) {
 	}
 }
 
-func TestUnit_LlamaProvider_UsesDescribeResolvedContextWhenProfileOmitsNumCtx(t *testing.T) {
+func TestUnit_LlamaProvider_AutoContextStaysZeroWhenProfileOmitsNumCtx(t *testing.T) {
 	old := sessionFactory
 	sessionFactory = nil
 	t.Cleanup(func() { sessionFactory = old })
@@ -126,15 +126,81 @@ func TestUnit_LlamaProvider_UsesDescribeResolvedContextWhenProfileOmitsNumCtx(t 
 		t.Fatalf("GetChatConnection: %v", err)
 	}
 	c := got.(*client)
-	if c.cfg.NumCtx != 24576-modeldCapacitySafetyTokens {
-		t.Fatalf("NumCtx = %d, want Describe effective context minus modeld safety margin", c.cfg.NumCtx)
+	// Describe's answer is a snapshot that may be stale by open time (e.g. taken
+	// while another session was still resident). Baking it into cfg would make
+	// it a hard Request ceiling modeld can never raise — the real session must
+	// go out with NumCtx=0 so modeld resolves the window fresh, post-eviction.
+	if c.cfg.NumCtx != 0 {
+		t.Fatalf("NumCtx = %d, want 0 so modeld resolves the window fresh at open", c.cfg.NumCtx)
 	}
-	if c.cfg.PlannerEffectiveContext != 32768 {
-		t.Fatalf("PlannerEffectiveContext = %d, want modeld planner context", c.cfg.PlannerEffectiveContext)
+	if c.cfg.PlannerEffectiveContext != 0 {
+		t.Fatalf("PlannerEffectiveContext = %d, want 0 (auto)", c.cfg.PlannerEffectiveContext)
+	}
+	if c.describedEffectiveContext != 24576 {
+		t.Fatalf("describedEffectiveContext = %d, want Describe answer kept informationally", c.describedEffectiveContext)
+	}
+	if c.describedPlannerContext != 32768 {
+		t.Fatalf("describedPlannerContext = %d, want Describe answer kept informationally", c.describedPlannerContext)
+	}
+	if c.describedModelMaxContext != 32768 {
+		t.Fatalf("describedModelMaxContext = %d, want Describe answer kept informationally", c.describedModelMaxContext)
 	}
 	req := svc.lastDescribeRequest()
 	if req.Config.NumCtx != 0 {
 		t.Fatalf("Describe request NumCtx = %d, want unset so modeld can discover max", req.Config.NumCtx)
+	}
+}
+
+// TestUnit_LlamaProvider_AutoContextKeepsWarmCacheKeyStableAcrossJitter is the
+// regression test for the shrink-then-freeze bug: with no explicit context,
+// two client constructions whose Describe answers differ (live free-VRAM
+// jitter) must still produce the identical session cache key, so the warm
+// session is reused instead of being evicted and reopened with a stale,
+// smaller ceiling every turn.
+func TestUnit_LlamaProvider_AutoContextKeepsWarmCacheKeyStableAcrossJitter(t *testing.T) {
+	old := sessionFactory
+	sessionFactory = nil
+	t.Cleanup(func() { sessionFactory = old })
+
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &recordingEmbedService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:         32768,
+			EffectiveContext:        17198,
+			PlannerEffectiveContext: 24576,
+		},
+	}
+	serveLlamaModeldForTest(t, svc)
+
+	first, err := newProvider("coder", root, modelrepo.CapabilityConfig{}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	// Simulate memory jitter: the next Describe reports a much smaller window
+	// (e.g. taken while the previous session is still resident).
+	svc.info.EffectiveContext = 366
+	svc.info.PlannerEffectiveContext = 14102
+	second, err := newProvider("coder", root, modelrepo.CapabilityConfig{}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+
+	a, b := first.(*client), second.(*client)
+	keyA := sessionCacheKey(a.ref(), a.cfg)
+	keyB := sessionCacheKey(b.ref(), b.cfg)
+	if keyA != keyB {
+		t.Fatalf("session cache keys differ across Describe jitter:\n  a=%q\n  b=%q\nwarm reuse would evict and reopen every turn", keyA, keyB)
+	}
+	if b.cfg.NumCtx != 0 {
+		t.Fatalf("second client NumCtx = %d, want 0 (jittery Describe answer must not become a request ceiling)", b.cfg.NumCtx)
 	}
 }
 

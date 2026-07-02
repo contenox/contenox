@@ -44,6 +44,13 @@ type activeSlot struct {
 	generation uint64
 	refs       int
 	explicit   bool
+	// openInfo is the backend's capacity resolution captured immediately before
+	// this session opened (post-eviction, unencumbered snapshot) — the same
+	// inputs the session's own open resolved from. Describe returns it for
+	// same-identity requests as the resident session's truth, and its
+	// RequiredBytes is the reclaim credit for different-identity requests.
+	// Immutable after construction; zero when the pre-open Describe failed.
+	openInfo transport.ModelInfo
 }
 
 // Option configures a slot Service.
@@ -163,6 +170,8 @@ func (s *Service) LoadModel(ctx context.Context, req transport.LoadModelRequest)
 		}
 	}
 
+	openInfo := s.describeForOpen(ctx, openReq)
+
 	sess, err := s.backend.OpenSession(ctx, openReq)
 	if err != nil {
 		if sess != nil {
@@ -174,7 +183,7 @@ func (s *Service) LoadModel(ctx context.Context, req transport.LoadModelRequest)
 	s.mu.Lock()
 	s.generation++
 	gen := s.generation
-	s.active = &activeSlot{req: openReq, sess: sess, generation: gen, explicit: true}
+	s.active = &activeSlot{req: openReq, sess: sess, generation: gen, explicit: true, openInfo: openInfo}
 	s.state = transport.SlotReady
 	s.busyOp = ""
 	s.lastErr = ""
@@ -286,6 +295,8 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	s.lastErr = ""
 	s.mu.Unlock()
 
+	openInfo := s.describeForOpen(ctx, req)
+
 	sess, err := s.backend.OpenSession(ctx, req)
 	if err != nil {
 		if sess != nil {
@@ -297,7 +308,7 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	s.mu.Lock()
 	s.generation++
 	gen := s.generation
-	s.active = &activeSlot{req: req, sess: sess, generation: gen, refs: 1}
+	s.active = &activeSlot{req: req, sess: sess, generation: gen, refs: 1, openInfo: openInfo}
 	s.state = transport.SlotReady
 	s.busyOp = ""
 	s.lastErr = ""
@@ -306,12 +317,48 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	return &slotSession{svc: s, generation: gen}, nil
 }
 
+// describeForOpen captures the backend's capacity resolution for the session
+// about to open. It runs after any old session closed and before the new one
+// allocates, so the snapshot is unencumbered — the same picture the open itself
+// resolves from. Best-effort: a failure just yields a zero ModelInfo, which
+// disables the same-identity shortcut and the reclaim credit.
+func (s *Service) describeForOpen(ctx context.Context, req transport.OpenSessionRequest) transport.ModelInfo {
+	req.ReclaimableBytes = 0
+	info, err := s.backend.Describe(ctx, req)
+	if err != nil {
+		return transport.ModelInfo{}
+	}
+	return info
+}
+
+// Describe stays side-effect-free: it never evicts the resident session.
+//   - Same identity resident: the truthful answer is what that session actually
+//     resolved at open — a live recompute would be encumbered by the session's
+//     own footprint and report a uselessly small hypothetical (the "panel shows
+//     439 while the session serves 2891" bug).
+//   - Different identity resident: pass the resident session's footprint as
+//     ReclaimableBytes so the backend's free-memory snapshot reflects what an
+//     actual OpenSession would see after the switch closed the old session.
 func (s *Service) Describe(ctx context.Context, req transport.OpenSessionRequest) (transport.ModelInfo, error) {
 	if err := ctxErr(ctx); err != nil {
 		return transport.ModelInfo{}, err
 	}
 	if err := s.checkFence(req.Fence.OwnerInstanceID); err != nil {
 		return transport.ModelInfo{}, err
+	}
+	// ReclaimableBytes is owner-set by contract; never trust an inbound value.
+	req.ReclaimableBytes = 0
+	s.mu.Lock()
+	active := s.active
+	s.mu.Unlock()
+	if active != nil {
+		if sameIdentity(active.req, req) {
+			if active.openInfo.EffectiveContext > 0 {
+				return active.openInfo, nil
+			}
+		} else {
+			req.ReclaimableBytes = active.openInfo.RequiredBytes
+		}
 	}
 	return s.backend.Describe(ctx, req)
 }
@@ -436,9 +483,17 @@ func (s *Service) release(gen uint64) error {
 	if s.active.refs > 0 {
 		s.active.refs--
 	}
-	if s.active.refs > 0 || s.active.explicit {
+	// Keep implicit sessions resident after the handle is released whenever the
+	// idle reaper owns reclamation: closing here throws away warm KV (hot and
+	// cold) that the very next one-shot CLI turn would reuse — the measured 10x
+	// warm-turn win. The reaper frees the device after the idle TTL regardless
+	// of how the session was opened. Without a reaper (idleTTL <= 0) release
+	// stays the only reclamation point, so the old close-on-release behavior is
+	// preserved.
+	if s.active.refs > 0 || s.active.explicit || s.idleTTL > 0 {
 		s.state = transport.SlotReady
 		s.busyOp = ""
+		s.touchLocked()
 		s.mu.Unlock()
 		return nil
 	}

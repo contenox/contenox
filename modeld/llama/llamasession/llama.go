@@ -297,8 +297,12 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	if err != nil {
 		return llama.PrefixStatus{}, fmt.Errorf("llamasession: tokenize prefix: %w", err)
 	}
-	if len(toks) > s.numCtx {
-		return llama.PrefixStatus{}, llama.NewContextOverflowError("prefix", 0, len(toks), s.numCtx)
+	// Gate at the logical budget (hot window + cold budget), not the hot window:
+	// a prefix larger than the hot window streams through it below, parking
+	// completed ranges to the cold store. Without a cold store the logical
+	// budget is the hot window and this stays the old hard gate.
+	if len(toks) > s.logicalBudgetLocked() {
+		return llama.PrefixStatus{}, llama.NewContextOverflowError("prefix", 0, len(toks), s.logicalBudgetLocked())
 	}
 
 	oldResident := len(s.resident)
@@ -326,23 +330,34 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 			s.prefixText = ""
 		}
 	}
-	if err := s.prefillAt(ctx, toks[reuse:], reuse, false); err != nil {
-		if rollbackErr := s.removeKV(reuse, -1); rollbackErr != nil {
-			return llama.PrefixStatus{}, errors.Join(prefillFailureError("prefix", err), rollbackErr)
-		}
-		s.resident = s.resident[:reuse]
-		if s.prefixLen > reuse {
-			s.prefixLen = reuse
-			s.prefixText = ""
-		}
-		if isContextErr(err) {
+	if len(toks) > s.numCtx {
+		// Beyond-hot-window prefix: stream through the window, parking ranges to
+		// cold as it fills. s.resident ends as the hot subset of toks; every
+		// resident token belongs to the stable prefix. No rollback exists across
+		// evictions — prefillStreamLocked closes the session on mid-stream error.
+		if err := s.prefillStreamLocked(ctx, "prefix", toks[reuse:], false); err != nil {
 			return llama.PrefixStatus{}, err
 		}
-		s.closeLocked()
-		return llama.PrefixStatus{}, prefillFailureError("prefix", err)
+		s.prefixLen = len(s.resident)
+	} else {
+		if err := s.prefillAt(ctx, toks[reuse:], reuse, false); err != nil {
+			if rollbackErr := s.removeKV(reuse, -1); rollbackErr != nil {
+				return llama.PrefixStatus{}, errors.Join(prefillFailureError("prefix", err), rollbackErr)
+			}
+			s.resident = s.resident[:reuse]
+			if s.prefixLen > reuse {
+				s.prefixLen = reuse
+				s.prefixText = ""
+			}
+			if isContextErr(err) {
+				return llama.PrefixStatus{}, err
+			}
+			s.closeLocked()
+			return llama.PrefixStatus{}, prefillFailureError("prefix", err)
+		}
+		s.resident = toks
+		s.prefixLen = len(toks)
 	}
-	s.resident = toks
-	s.prefixLen = len(toks)
 	s.stableText = prefix.Text
 	s.prefixText = text
 	s.stableMsgs = stableMsgs
@@ -404,29 +419,45 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	if err != nil {
 		return llama.SuffixStatus{}, fmt.Errorf("llamasession: tokenize suffix: %w", err)
 	}
-	// Residency driver: when the suffix would overflow the hot window, evict
-	// ranges selected by the shared policy. With cold storage this parks KV for
-	// later admit; without it, StreamingLLM makes the drop intentionally lossy.
-	if (s.coldEnabledLocked() || s.streamPolicyLocked().Enabled) && len(s.resident)+len(stoks) > s.numCtx {
-		if err := s.driveEvictToFitLocked(len(stoks)); err != nil {
+	// Honest gate at the logical budget (hot window + cold budget when cold KV
+	// is enabled): inputs within it are served by streaming below; beyond it is
+	// a genuine overflow reported against the window that actually exists.
+	if budget := s.logicalBudgetLocked(); len(s.resident)+len(stoks) > budget {
+		if !s.coldEnabledLocked() && s.streamPolicyLocked().Enabled {
+			// StreamingLLM-only session (no cold store): keep the historical
+			// intentionally-lossy behavior — drop policy-selected middle ranges,
+			// then require the suffix to fit the hot window.
+			if err := s.driveEvictToFitLocked(len(stoks)); err != nil {
+				return llama.SuffixStatus{}, err
+			}
+			if len(s.resident)+len(stoks) > s.numCtx {
+				return llama.SuffixStatus{}, llama.NewContextOverflowError("suffix", len(s.resident), len(stoks), s.numCtx)
+			}
+		} else {
+			return llama.SuffixStatus{}, llama.NewContextOverflowError("suffix", len(s.resident), len(stoks), budget)
+		}
+	}
+	if s.coldEnabledLocked() && len(s.resident)+len(stoks) > s.numCtx {
+		// Beyond-hot-window suffix: stream through the window, parking earlier
+		// ranges to cold. No rollback exists across evictions —
+		// prefillStreamLocked closes the session on mid-stream error.
+		if err := s.prefillStreamLocked(ctx, "suffix", stoks, true); err != nil {
 			return llama.SuffixStatus{}, err
 		}
-	}
-	if len(s.resident)+len(stoks) > s.numCtx {
-		return llama.SuffixStatus{}, llama.NewContextOverflowError("suffix", len(s.resident), len(stoks), s.numCtx)
-	}
-	beforeLen := len(s.resident)
-	if err := s.prefillAt(ctx, stoks, len(s.resident), true); err != nil {
-		if rollbackErr := s.removeKV(beforeLen, -1); rollbackErr != nil {
-			return llama.SuffixStatus{}, errors.Join(prefillFailureError("suffix", err), rollbackErr)
+	} else {
+		beforeLen := len(s.resident)
+		if err := s.prefillAt(ctx, stoks, len(s.resident), true); err != nil {
+			if rollbackErr := s.removeKV(beforeLen, -1); rollbackErr != nil {
+				return llama.SuffixStatus{}, errors.Join(prefillFailureError("suffix", err), rollbackErr)
+			}
+			if isContextErr(err) {
+				return llama.SuffixStatus{}, err
+			}
+			s.closeLocked()
+			return llama.SuffixStatus{}, prefillFailureError("suffix", err)
 		}
-		if isContextErr(err) {
-			return llama.SuffixStatus{}, err
-		}
-		s.closeLocked()
-		return llama.SuffixStatus{}, prefillFailureError("suffix", err)
+		s.resident = append(s.resident, stoks...)
 	}
-	s.resident = append(s.resident, stoks...)
 	if err := s.enrichVolatileSegments(s.prefixLen, volatileMsgs, stoks); err != nil {
 		return llama.SuffixStatus{}, err
 	}
@@ -1027,6 +1058,15 @@ func (s *session) updateResidencyPlanLocked(requireComplete bool) {
 	s.residencyPlan = plan
 }
 
+// evictionDriverBlockSize splits large manifest segments into uniform blocks
+// for the overflow/eviction driver. Without a split, a single big message (one
+// segment = one block) can span the whole hot window and overlap both the sink
+// head and the recent tail — flagged protected, leaving the driver nothing to
+// evict even though most of the window is parkable middle. llama KV is
+// token-granular, so the split costs nothing at the cache level; 256 balances
+// cold-block granularity against per-block bookkeeping.
+const evictionDriverBlockSize = 256
+
 // planForBudgetLocked computes a residency plan for the current resident tape
 // under an explicit hot-token budget, without mutating s.residencyPlan. The
 // overflow driver uses it to decide which ranges to park so an incoming prefill
@@ -1038,6 +1078,7 @@ func (s *session) planForBudgetLocked(budget int) (residency.Plan, error) {
 	blocks, err := residency.BlocksFromManifest(s.manifest, residency.ManifestOptions{
 		ResidentTokens:  len(s.resident),
 		RequireComplete: false,
+		BlockSize:       evictionDriverBlockSize,
 	})
 	if err != nil && len(blocks) == 0 {
 		return residency.Plan{}, err
@@ -1057,6 +1098,99 @@ func (s *session) streamPolicyLocked() residency.StreamPolicy {
 		SinkTokens:   budget.SinkTokens,
 		RecentTokens: budget.RecentTokens,
 	}
+}
+
+// logicalBudgetLocked is the total token tape the session can hold: the hot
+// window plus the cold-store budget when cold KV is enabled. Gating inputs at
+// this budget (instead of the hot window) is what makes the planner-advertised
+// context actually reachable, and it also guarantees streaming prefill never
+// overflows the cold store into silent LRU drops. Caller holds s.mu.
+func (s *session) logicalBudgetLocked() int {
+	if s.coldEnabledLocked() && s.plannerCtx > s.numCtx {
+		return s.plannerCtx
+	}
+	return s.numCtx
+}
+
+// prefillStreamLocked prefills an arbitrary-length token run by streaming it
+// through the hot window: fill the free space, park policy-selected resident
+// ranges to the cold store, repeat. Tokens keep index==position because
+// evictRangeLocked compacts positions after each parking. logitsOnLast applies
+// to the final token of the whole run. On any error after the tape has been
+// mutated the session is closed: evictions cannot be rolled back, so a partial
+// stream must never be presented as a usable state. Caller holds s.mu and has
+// already gated len(toks) against logicalBudgetLocked.
+func (s *session) prefillStreamLocked(ctx context.Context, stage string, toks []int, logitsOnLast bool) error {
+	mutated := false
+	fail := func(err error) error {
+		if !mutated {
+			return err
+		}
+		s.closeLocked()
+		if isContextErr(err) || errors.Is(err, llama.ErrSessionFatal) {
+			return err
+		}
+		return prefillFailureError(stage, err)
+	}
+	off := 0
+	for off < len(toks) {
+		remaining := len(toks) - off
+		space := s.numCtx - len(s.resident)
+		if space <= 0 {
+			freed, err := s.streamEvictLocked()
+			if err != nil {
+				mutated = mutated || freed > 0
+				return fail(err)
+			}
+			if freed > 0 {
+				mutated = true
+			}
+			space = s.numCtx - len(s.resident)
+			if space <= 0 {
+				// Nothing parkable (sink + recent fill the window): genuine overflow.
+				return fail(llama.NewContextOverflowError(stage, len(s.resident), remaining, s.numCtx))
+			}
+		}
+		n := min(space, remaining)
+		last := logitsOnLast && off+n == len(toks)
+		if err := s.prefillAt(ctx, toks[off:off+n], len(s.resident), last); err != nil {
+			return fail(err)
+		}
+		mutated = true
+		s.resident = append(s.resident, toks[off:off+n]...)
+		off += n
+	}
+	return nil
+}
+
+// streamEvictLocked parks the middle of the resident tape — everything between
+// the StreamingLLM sink head and the recent tail — to the cold store, in
+// fixed-size blocks (tail-first, so earlier indices stay stable across the
+// compaction each eviction performs). It deliberately does NOT consult the
+// manifest-driven residency plan: mid-stream, the manifest only describes
+// segments enriched on previous calls, so freshly streamed tokens have no
+// blocks there and a plan-based driver would see nothing to evict. Returns the
+// number of tokens parked. Caller holds s.mu.
+func (s *session) streamEvictLocked() (int, error) {
+	pol := s.streamPolicyLocked()
+	if !pol.Enabled {
+		return 0, nil
+	}
+	a := max(pol.SinkTokens, 0)
+	b := len(s.resident) - max(pol.RecentTokens, 0)
+	if b <= a {
+		return 0, nil
+	}
+	freed := 0
+	for end := b; end > a; {
+		start := max(a, end-evictionDriverBlockSize)
+		if err := s.evictRangeLocked(start, end); err != nil {
+			return freed, err
+		}
+		freed += end - start
+		end = start
+	}
+	return freed, nil
 }
 
 // driveEvictToFitLocked parks evictable ranges to the cold store so the current

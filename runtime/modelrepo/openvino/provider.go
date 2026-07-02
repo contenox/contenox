@@ -91,10 +91,6 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	}
 	reasoningParser, reasoningStream := profile.Reasoning.protocols()
 	caps := profile.capabilityConfig()
-	numCtx := p.caps.ContextLength
-	if numCtx == 0 {
-		numCtx = caps.ContextLength
-	}
 	maxOut := p.caps.MaxOutputTokens
 	if maxOut == 0 {
 		maxOut = caps.MaxOutputTokens
@@ -108,46 +104,51 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		return nil, err
 	}
 	profileID := p.name
-	cfg := Config{
-		NumCtx:               numCtx,
+	// NumCtx stays 0 (auto) end-to-end: modeld's authoritative, post-eviction
+	// resolveConfigFromInfo computes the window fresh at OpenSession. The
+	// catalog's declared context length is the trained ceiling, which modeld
+	// derives itself from the model files (ModelMaxCtx) — pre-baking it (or a
+	// Describe answer taken while another session was still resident) here
+	// would freeze the session at a stale ceiling. See capacity.HardContextLimit.
+	cfg := normalizeConfig(Config{
 		PromptFormat:         "openvino-chat-template",
 		PromptTemplateDigest: templateDigest,
-	}
+	})
 	ref := modeldconn.ModelRef{Name: p.name, Type: "openvino", Digest: modelDigest, Path: dir, Adapters: adapters}
 	backendID := backendVersion()
 	// Capacity facts from modeld's Describe, kept so a context overflow can be
 	// explained with the device's real limits instead of raw token counts.
+	// Informational only: never written back into cfg.
 	var deviceKind string
 	var freeBytes int64
+	var describedEffectiveContext, describedPlannerContext, describedModelMaxContext int
 	if info, derr := modeldconn.Describe(ctx, ref, transport.Config(cfg)); derr == nil {
-		if info.EffectiveContext > 0 {
-			cfg = clampContextForModeld(cfg, info.EffectiveContext)
-		} else {
-			cfg = normalizeConfig(cfg)
-		}
-		cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
 		deviceKind = info.DeviceKind
 		freeBytes = info.FreeBytes
+		describedEffectiveContext = info.EffectiveContext
+		describedPlannerContext = info.PlannerEffectiveContext
+		describedModelMaxContext = info.ModelMaxContext
 		if v := backendVersionFromModelInfo(info); v != "" {
 			backendID = v
 		}
-	} else {
-		cfg = normalizeConfig(cfg)
 	}
 	return &client{
-		modelName:       p.name,
-		modelPath:       dir,
-		profileID:       profileID,
-		modelDigest:     modelDigest,
-		backendVersion:  backendID,
-		toolProtocol:    profile.ToolCalls.Protocol,
-		reasoningParser: reasoningParser,
-		reasoningStream: reasoningStream,
-		cfg:             cfg,
-		adapters:        adapters,
-		maxOutputTokens: maxOut,
-		deviceKind:      deviceKind,
-		freeBytes:       freeBytes,
+		modelName:                 p.name,
+		modelPath:                 dir,
+		profileID:                 profileID,
+		modelDigest:               modelDigest,
+		backendVersion:            backendID,
+		toolProtocol:              profile.ToolCalls.Protocol,
+		reasoningParser:           reasoningParser,
+		reasoningStream:           reasoningStream,
+		cfg:                       cfg,
+		adapters:                  adapters,
+		maxOutputTokens:           maxOut,
+		deviceKind:                deviceKind,
+		freeBytes:                 freeBytes,
+		describedEffectiveContext: describedEffectiveContext,
+		describedPlannerContext:   describedPlannerContext,
+		describedModelMaxContext:  describedModelMaxContext,
 	}, nil
 }
 
@@ -191,25 +192,5 @@ func backendVersionFromModelInfo(info transport.ModelInfo) string {
 		return ""
 	}
 }
-
-func clampContext(cfg Config, cap int) Config {
-	if cfg.PromptFormat == "" {
-		cfg.PromptFormat = "openvino-chat-template"
-	}
-	if cap > 0 && (cfg.NumCtx <= 0 || cfg.NumCtx > cap) {
-		cfg.NumCtx = cap
-	}
-	return normalizeConfig(cfg)
-}
-
-func clampContextForModeld(cfg Config, cap int) Config {
-	cfg = clampContext(cfg, cap)
-	if cap > modeldCapacitySafetyTokens && cfg.NumCtx > cap-modeldCapacitySafetyTokens {
-		cfg.NumCtx = cap - modeldCapacitySafetyTokens
-	}
-	return cfg
-}
-
-const modeldCapacitySafetyTokens = 64
 
 var _ modelrepo.Provider = (*openvinoProvider)(nil)

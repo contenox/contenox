@@ -194,6 +194,15 @@ type OpenSessionRequest struct {
 	// Adapters are LoRA adapters applied to this session, in order. Empty = the
 	// base model. They are part of the cache identity, not a Config knob.
 	Adapters []AdapterSpec `json:"adapters,omitempty"`
+	// ReclaimableBytes is a Describe-only hint set by the slot owner: bytes it
+	// estimates would be freed if answering this request required evicting the
+	// currently resident session. Backends credit it to the free-memory
+	// snapshot so Describe answers "what would I get if I opened this now"
+	// instead of under-reporting against memory the switch itself would
+	// reclaim. OpenSession/LoadModel ignore it (they describe after the real
+	// close). Deliberately top-level, not a Config field: it must never enter
+	// session cache identity or config equality.
+	ReclaimableBytes int64 `json:"reclaimable_bytes,omitempty"`
 }
 
 // EmbedRequest asks the owner to compute a one-shot embedding for Text.

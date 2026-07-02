@@ -71,9 +71,10 @@ func HashTokenIDs(tokens []int) string {
 }
 
 func normalizeConfig(cfg Config) Config {
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = 8192
-	}
+	// NumCtx <= 0 means "auto" and must stay 0: this runs right before the real
+	// session-open request is built (client.acquire), and any concrete
+	// placeholder written here becomes a hard Request ceiling on the wire,
+	// permanently overriding modeld's live capacity computation.
 	if cfg.NumBatch <= 0 {
 		cfg.NumBatch = 512
 	}

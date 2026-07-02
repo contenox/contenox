@@ -26,9 +26,9 @@ func hashString(s string) string { return contextasm.HashString(s) }
 // template (set from the model files in the provider) — never a hardcoded format,
 // so the cache key is honest across different models. They are left as supplied.
 func normalizeConfig(cfg Config) Config {
-	if cfg.NumCtx <= 0 {
-		cfg.NumCtx = 8192
-	}
+	// NumCtx <= 0 means "auto" and must stay 0: a concrete placeholder here
+	// becomes a hard Request ceiling on the wire, permanently overriding
+	// modeld's live capacity computation.
 	if cfg.PromptFormat == "" {
 		cfg.PromptFormat = "openvino-chat-template"
 	}

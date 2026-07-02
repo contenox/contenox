@@ -362,3 +362,38 @@ func TestUnit_SystemRAM_ReportsPositive(t *testing.T) {
 		t.Fatalf("SystemRAM free = %d, want > 0", got)
 	}
 }
+
+func TestUnit_WithResidentDefault_AcceleratorGetsMinFreeFloor(t *testing.T) {
+	// 6 GiB card: 10% (614MiB) beats the 512MiB flat floor.
+	p := WithResidentDefault(Policy{}, DeviceSnapshot{Kind: "gpu", TotalBytes: 6 << 30, FreeBytes: 5 << 30})
+	total := int64(6 << 30)
+	want := int64(float64(total) * DefaultAcceleratorMinFreeFrac)
+	if p.MinFreeBytes != want {
+		t.Fatalf("MinFreeBytes = %d, want %d (10%% of total)", p.MinFreeBytes, want)
+	}
+
+	// Tiny/unknown total: flat 512MiB floor wins.
+	p = WithResidentDefault(Policy{}, DeviceSnapshot{Kind: "gpu", FreeBytes: 2 << 30})
+	if p.MinFreeBytes != DefaultAcceleratorMinFreeBytes {
+		t.Fatalf("MinFreeBytes = %d, want flat default %d", p.MinFreeBytes, DefaultAcceleratorMinFreeBytes)
+	}
+
+	// Explicit user reserve always wins.
+	p = WithResidentDefault(Policy{MinFreeBytes: 1}, DeviceSnapshot{Kind: "gpu", TotalBytes: 6 << 30, FreeBytes: 5 << 30})
+	if p.MinFreeBytes != 1 {
+		t.Fatalf("MinFreeBytes = %d, want explicit value preserved", p.MinFreeBytes)
+	}
+
+	// Tiny device with known total: floor is capped at a quarter of the device
+	// so the reserve cannot make the card unusable.
+	p = WithResidentDefault(Policy{}, DeviceSnapshot{Kind: "gpu", TotalBytes: 256 << 20, FreeBytes: 130 << 20})
+	if p.MinFreeBytes != 64<<20 {
+		t.Fatalf("MinFreeBytes = %d, want 64MiB (25%% cap on tiny device)", p.MinFreeBytes)
+	}
+
+	// System RAM devices get no floor by default.
+	p = WithResidentDefault(Policy{}, DeviceSnapshot{Kind: "system", TotalBytes: 16 << 30, FreeBytes: 8 << 30})
+	if p.MinFreeBytes != 0 {
+		t.Fatalf("MinFreeBytes = %d, want 0 for non-accelerator", p.MinFreeBytes)
+	}
+}

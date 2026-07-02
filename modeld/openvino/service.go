@@ -439,6 +439,12 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if err != nil {
 		return transport.ModelInfo{}, fmt.Errorf("openvino capacity memory probe: %w", err)
 	}
+	// Credit memory the slot owner says an eviction would reclaim (Describe-only
+	// hint) before deriving the policy, so WithResidentDefault's live cap also
+	// sees the post-switch picture.
+	if req.ReclaimableBytes > 0 {
+		st.FreeBytes += req.ReclaimableBytes
+	}
 	policy, err := s.resolvePolicy(st)
 	if err != nil {
 		return transport.ModelInfo{}, err
@@ -454,8 +460,11 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		UserLimitBytes:      policy.MaxResidentBytes,
 		MinFreeBytes:        policy.MinFreeBytes,
 		HostColdBudgetBytes: policy.HostColdBudgetBytes,
-		Request:             req.Config.NumCtx,
-		HeadroomFrac:        policy.HeadroomFrac,
+		// req.Config.NumCtx must only carry a genuine explicit setting or 0 for
+		// auto — never a prior resolution's EffectiveContext; see
+		// capacity.HardContextLimit.
+		Request:      capacity.HardContextLimit(req.Config.NumCtx),
+		HeadroomFrac: policy.HeadroomFrac,
 	})
 	info := modelInfo(resolved, st)
 	if params.SlidingWindow > 0 {

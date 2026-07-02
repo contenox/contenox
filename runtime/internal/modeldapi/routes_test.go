@@ -333,6 +333,67 @@ func TestCapacityResolvesLlamaModelServerSide(t *testing.T) {
 	}
 }
 
+// Without a profile/env override, capacity and load requests must go out with
+// NumCtx=0 (auto) so modeld resolves the window fresh from live memory — a
+// concrete placeholder (the old 8192 fallback) silently disabled modeld's
+// dynamic capacity path for these routes.
+func TestCapacityUsesAutoContextWithoutProfileOverride(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "qwen3-8b")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeStatusProvider{describeInfo: transport.ModelInfo{EffectiveContext: 17198}}
+	state := fakeStateReader{states: []statetype.BackendRuntimeState{localRuntimeState(root, "qwen3-8b", "llama")}}
+	mux := http.NewServeMux()
+	addRoutesForTest(mux, provider, state)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/modeld/capacity?model=llama:qwen3-8b", nil))
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if provider.describeCfg.NumCtx != 0 {
+		t.Fatalf("describe config NumCtx = %d, want 0 (auto) without a profile override", provider.describeCfg.NumCtx)
+	}
+}
+
+func TestLoadUsesAutoContextWithoutProfileOverride(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake gguf"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakeStatusProvider{
+		loadActive: transport.ActiveModel{ModelName: "coder", Type: "llama", Generation: 8},
+	}
+	state := fakeStateReader{states: []statetype.BackendRuntimeState{localRuntimeState(root, "coder", "llama")}}
+	mux := http.NewServeMux()
+	addRoutesForTest(mux, provider, state)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/modeld/load", strings.NewReader(`{"model":"llama:coder","expectedGeneration":7}`))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !provider.loadCalled {
+		t.Fatal("expected LoadModel to be called")
+	}
+	if provider.loadCfg.NumCtx != 0 {
+		t.Fatalf("load config NumCtx = %d, want 0 (auto) without a profile override", provider.loadCfg.NumCtx)
+	}
+}
+
 func TestCapacityRejectsAmbiguousLocalModelName(t *testing.T) {
 	root := t.TempDir()
 	provider := &fakeStatusProvider{}

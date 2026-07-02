@@ -30,6 +30,17 @@ const DefaultMaxResidentFrac = 0.8
 // when the user did not set one explicitly.
 const DefaultHostColdFrac = 0.25
 
+// Accelerator devices are shared with every other process holding a context on
+// them (compositors, browsers, editors via PRIME render offload — even when the
+// display is wired to another GPU). Without a reserve floor, modeld's
+// 80%-of-free budget plus weight load/free churn can starve those clients of
+// VRAM. When the user set no explicit MinFreeBytes, accelerators default to
+// max(DefaultAcceleratorMinFreeBytes, DefaultAcceleratorMinFreeFrac × total).
+const (
+	DefaultAcceleratorMinFreeBytes int64 = 512 << 20
+	DefaultAcceleratorMinFreeFrac        = 0.10
+)
+
 // kvTypeBytes is the per-element size of one KV cache entry for a precision.
 // KV is two tensors (K and V); KVBytesPerToken accounts for both. Quantized KV
 // rounds up to a whole byte — KV is tiny next to weights, so over-estimating is
@@ -135,6 +146,20 @@ func (p LayerKVProfile) tokensForBudget(budget int64, limit int) int {
 	return int((budget - int64(max(p.WindowedLayers, 0))*p.PerLayerKVBytes*int64(p.Window)) / marginal)
 }
 
+// HardContextLimit is a genuinely-current explicit context ceiling: a value a
+// user or operator set right now (CONTENOX_LLAMA_CTX, a model profile's
+// runtime.num_ctx, or the equivalent OpenVINO knob). Resolve always honors a
+// positive value as a hard ceiling, even when more memory is available.
+//
+// NEVER populate this from an EffectiveContext, HotContextTokens, or
+// PlannerEffectiveContext that Resolve (or a prior Describe/OpenSession
+// round-trip) itself returned earlier: feeding a stale advisory value back in
+// as a request freezes every future resolution at it, even after the memory
+// that constrained it has been freed. Leave it 0 to let Resolve compute purely
+// from live FreeBytes/ModelMaxCtx/policy. The distinct type exists so a caller
+// cannot pass a bare int without a visible, greppable conversion.
+type HardContextLimit int
+
 // Params are the inputs to a capacity resolution. Zero values mean "unknown":
 // an unknown ModelMaxCtx or KVBytesPerToken disables that side of the clamp
 // rather than producing a bogus window.
@@ -142,15 +167,15 @@ type Params struct {
 	ModelMaxCtx         int   // model's trained context ceiling (0 = unknown)
 	KVBytesPerToken     int64 // 0 = unknown (cannot budget by memory)
 	LayerKV             LayerKVProfile
-	WeightsBytes        int64   // resident model weight footprint
-	OverheadBytes       int64   // fixed runtime buffers (compute graph, staging)
-	FreeBytes           int64   // device free memory
-	ReservedBytes       int64   // memory already reserved by resident sessions
-	UserLimitBytes      int64   // user cap for modeld resident memory (0 = no cap)
-	MinFreeBytes        int64   // memory to leave free for the desktop/other workloads
-	HostColdBudgetBytes int64   // host-RAM budget for cold KV blocks (0 = none)
-	Request             int     // requested window (0 = use the resolved max)
-	HeadroomFrac        float64 // <=0 or >=1 falls back to DefaultHeadroomFrac
+	WeightsBytes        int64            // resident model weight footprint
+	OverheadBytes       int64            // fixed runtime buffers (compute graph, staging)
+	FreeBytes           int64            // device free memory
+	ReservedBytes       int64            // memory already reserved by resident sessions
+	UserLimitBytes      int64            // user cap for modeld resident memory (0 = no cap)
+	MinFreeBytes        int64            // memory to leave free for the desktop/other workloads
+	HostColdBudgetBytes int64            // host-RAM budget for cold KV blocks (0 = none)
+	Request             HardContextLimit // explicit requested window (0 = use the resolved max); see HardContextLimit
+	HeadroomFrac        float64          // <=0 or >=1 falls back to DefaultHeadroomFrac
 }
 
 // ModelCapacity is the resolved result reported to the runtime. EffectiveContext
@@ -189,6 +214,7 @@ type ModelCapacity struct {
 // Unknown inputs degrade gracefully: with no KV cost it falls back to the model
 // ceiling (clamped by request); with no ceiling it uses the memory budget.
 func Resolve(p Params) ModelCapacity {
+	request := int(p.Request)
 	headroom := p.HeadroomFrac
 	if headroom <= 0 || headroom >= 1 {
 		headroom = DefaultHeadroomFrac
@@ -210,7 +236,7 @@ func Resolve(p Params) ModelCapacity {
 	if kvBudget > 0 {
 		budget := max(usable-p.WeightsBytes-p.OverheadBytes, 0)
 		if p.LayerKV.Valid() {
-			memoryTokens = p.LayerKV.tokensForBudget(budget, max(p.ModelMaxCtx, p.Request))
+			memoryTokens = p.LayerKV.tokensForBudget(budget, max(p.ModelMaxCtx, request))
 		} else {
 			memoryTokens = int(budget / kvBudget)
 		}
@@ -219,19 +245,19 @@ func Resolve(p Params) ModelCapacity {
 		}
 	}
 
-	if p.Request > 0 {
+	if request > 0 {
 		switch {
-		case eff > 0 && p.Request < eff:
-			eff = p.Request
+		case eff > 0 && request < eff:
+			eff = request
 		case eff <= 0 && kvBudget <= 0 && p.ModelMaxCtx <= 0:
-			eff = p.Request
+			eff = request
 		}
 	}
 	if eff < 0 {
 		eff = 0
 	}
 
-	requestForRequired := p.Request
+	requestForRequired := request
 	if requestForRequired <= 0 {
 		requestForRequired = eff
 	}
@@ -249,9 +275,9 @@ func Resolve(p Params) ModelCapacity {
 		clamped, reason = true, "request_exceeds_user_limit"
 	case p.MinFreeBytes > 0 && p.FreeBytes <= p.MinFreeBytes:
 		clamped, reason = true, "device_free_memory_below_reserve"
-	case p.Request > 0 && eff < p.Request:
+	case request > 0 && eff < request:
 		clamped, reason = true, "request_exceeds_memory_budget"
-	case p.Request <= 0 && p.ModelMaxCtx > 0 && eff < p.ModelMaxCtx:
+	case request <= 0 && p.ModelMaxCtx > 0 && eff < p.ModelMaxCtx:
 		clamped, reason = true, "model_context_exceeds_memory_budget"
 	}
 
@@ -261,8 +287,8 @@ func Resolve(p Params) ModelCapacity {
 		if p.ModelMaxCtx > 0 && hotTokens > p.ModelMaxCtx {
 			hotTokens = p.ModelMaxCtx
 		}
-		if p.Request > 0 && hotTokens > p.Request {
-			hotTokens = p.Request
+		if request > 0 && hotTokens > request {
+			hotTokens = request
 		}
 	}
 	coldTokens := 0
@@ -273,8 +299,8 @@ func Resolve(p Params) ModelCapacity {
 	if p.ModelMaxCtx > 0 && planner > p.ModelMaxCtx {
 		planner = p.ModelMaxCtx
 	}
-	if p.Request > 0 && planner > p.Request {
-		planner = p.Request
+	if request > 0 && planner > request {
+		planner = request
 	}
 	if planner < eff {
 		planner = eff
@@ -316,8 +342,23 @@ type Policy struct {
 // CURRENT free memory. Services call it with a fresh snapshot on every
 // resolution, so the default tracks the device live — it rises when memory frees
 // up and falls when other workloads claim it. An explicit MaxResidentBytes (the
-// user's hard cap) always wins and is left untouched.
+// user's hard cap) always wins and is left untouched. On accelerator devices it
+// also fills a missing MinFreeBytes reserve floor (see
+// DefaultAcceleratorMinFreeBytes) so other GPU clients keep working memory; an
+// explicit MinFreeBytes always wins.
 func WithResidentDefault(p Policy, dev DeviceSnapshot) Policy {
+	if p.MinFreeBytes <= 0 && dev.IsAccelerator() {
+		reserve := DefaultAcceleratorMinFreeBytes
+		if byFrac := int64(float64(dev.TotalBytes) * DefaultAcceleratorMinFreeFrac); byFrac > reserve {
+			reserve = byFrac
+		}
+		// Never reserve more than a quarter of a known device: the floor
+		// protects co-tenants, it must not make small devices unusable.
+		if capMax := dev.TotalBytes / 4; capMax > 0 && reserve > capMax {
+			reserve = capMax
+		}
+		p.MinFreeBytes = reserve
+	}
 	if p.MaxResidentBytes <= 0 && dev.FreeBytes > 0 {
 		p.MaxResidentBytes = int64(float64(dev.FreeBytes) * DefaultMaxResidentFrac)
 	}
@@ -441,6 +482,18 @@ type DeviceSnapshot struct {
 	TotalBytes        int64  `json:"total_bytes,omitempty"`
 	FreeBytes         int64  `json:"free_bytes,omitempty"`
 	SharedWithDisplay bool   `json:"shared_with_display,omitempty"`
+}
+
+// IsAccelerator reports whether the snapshot describes a discrete/integrated
+// accelerator (as opposed to system RAM), i.e. a device other processes share
+// via driver contexts and that deserves a free-memory reserve floor.
+func (d DeviceSnapshot) IsAccelerator() bool {
+	switch strings.ToLower(strings.TrimSpace(d.Kind)) {
+	case "gpu", "igpu", "accel":
+		return true
+	default:
+		return false
+	}
 }
 
 // SystemRAM reports available host RAM via gopsutil — the CPU-device source.

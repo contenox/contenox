@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useListChains } from '../../../hooks/useChains';
 import { useCreateChat } from '../../../hooks/useChats';
+import { useRefreshSetupStatus } from '../../../hooks/useRefreshSetupStatus';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { ArtifactRegistryProvider } from '../../../lib/artifacts';
 import { getBlockingSetupIssue, getSetupIssueFixPath } from '../../../lib/setupHealth';
@@ -58,6 +59,7 @@ function ChatLandingPageImpl() {
   const { data: setupStatus } = useSetupStatus(true);
   const { data: chainPaths = [], isLoading: chainsLoading, error: chainsError } = useListChains();
   const blockingSetupIssue = getBlockingSetupIssue(setupStatus);
+  const refreshSetupStatus = useRefreshSetupStatus();
 
   const sortedChainPaths = useMemo(
     () =>
@@ -144,15 +146,25 @@ function ChatLandingPageImpl() {
                     </code>
                   ) : null}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  palette="neutral"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => navigate(getSetupIssueFixPath(blockingSetupIssue))}>
-                  {t('chat.setup_blocked_action', 'Open setup')}
-                </Button>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    palette="neutral"
+                    size="sm"
+                    disabled={refreshSetupStatus.isPending}
+                    onClick={() => refreshSetupStatus.mutate()}>
+                    {t('chat.setup_blocked_refresh', 'Refresh')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    palette="neutral"
+                    size="sm"
+                    onClick={() => navigate(getSetupIssueFixPath(blockingSetupIssue))}>
+                    {t('chat.setup_blocked_action', 'Open setup')}
+                  </Button>
+                </div>
               </div>
             </InlineNotice>
           ) : setupStatus && !setupStatus.defaultModel ? (

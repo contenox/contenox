@@ -20,11 +20,18 @@ func formatIdleTTL(ttl time.Duration) string {
 }
 
 func formatPolicy(policy capacity.Policy) string {
-	return fmt.Sprintf("max_resident=%s reserve_free=%s host_cold=%s headroom=%.2f",
+	// Unset headroom prints as "unset", not "0.00": the effective default
+	// (capacity.DefaultHeadroomFrac) is applied later inside Resolve, and
+	// logging a literal zero misreads as "no headroom reserved".
+	headroom := "unset"
+	if policy.HeadroomFrac > 0 {
+		headroom = fmt.Sprintf("%.2f", policy.HeadroomFrac)
+	}
+	return fmt.Sprintf("max_resident=%s reserve_free=%s host_cold=%s headroom=%s",
 		formatPolicyBytes(policy.MaxResidentBytes),
 		formatPolicyBytes(policy.MinFreeBytes),
 		formatPolicyBytes(policy.HostColdBudgetBytes),
-		policy.HeadroomFrac,
+		headroom,
 	)
 }
 

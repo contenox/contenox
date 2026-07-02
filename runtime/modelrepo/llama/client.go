@@ -72,11 +72,17 @@ type client struct {
 	maxOutputTokens   int
 	toolProtocol      string // profile-declared tool-call protocol ("" = tools unsupported)
 	reasoningProtocol string // profile-declared reasoning parser ("" = no reasoning parser)
-	// deviceKind/freeBytes are the capacity facts modeld reported at construction
-	// (empty/zero when modeld did not answer Describe). They turn a context
-	// overflow into an actionable message — see explainOverflow.
-	deviceKind string
-	freeBytes  int64
+	// deviceKind/freeBytes and the described* fields are the capacity facts
+	// modeld reported at construction (empty/zero when modeld did not answer
+	// Describe). They turn a context overflow into an actionable message — see
+	// explainOverflow. Informational only: they must never be written back into
+	// cfg, or a stale Describe answer becomes a hard ceiling on the real
+	// session (see capacity.HardContextLimit).
+	deviceKind                string
+	freeBytes                 int64
+	describedEffectiveContext int
+	describedPlannerContext   int
+	describedModelMaxContext  int
 }
 
 // explainOverflow enriches a context-overflow error with the capacity facts this
@@ -97,8 +103,49 @@ func (c *client) explainOverflow(err error) error {
 	if c.freeBytes > 0 {
 		free = fmt.Sprintf(" with %s free", humanBytes(c.freeBytes))
 	}
+	// Prefer the live session's window carried inside the overflow error itself
+	// (modeld's ContextOverflowError arrives over gRPC as text): the
+	// construction-time Describe answer can be stale — e.g. computed while a
+	// previous session was still resident — and quoting it produces nonsense
+	// like "serves only 433 tokens" for a session actually serving 3854.
+	served := overflowNumCtx(err)
+	if served <= 0 && c.cfg.NumCtx > 0 {
+		served = c.cfg.NumCtx
+	}
+	if served <= 0 {
+		served = c.describedEffectiveContext
+	}
+	if served <= 0 {
+		return fmt.Errorf("%w: model %q exceeded its context window on %s%s — free VRAM, use a smaller model, or enable q8_0 KV cache",
+			err, c.modelName, where, free)
+	}
 	return fmt.Errorf("%w: model %q serves only %d context tokens on %s%s after model weights — free VRAM, use a smaller model, or enable q8_0 KV cache",
-		err, c.modelName, normalizeConfig(c.cfg).NumCtx, where, free)
+		err, c.modelName, served, where, free)
+}
+
+// overflowNumCtx extracts the live session window from a context-overflow
+// error's text ("… num_ctx=2890 …"). modeld's typed ContextOverflowError does
+// not survive the gRPC boundary — it arrives re-wrapped as a string — so text
+// is the only cross-wire carrier of the session's actual window.
+func overflowNumCtx(err error) int {
+	if err == nil {
+		return 0
+	}
+	msg := err.Error()
+	i := strings.LastIndex(msg, "num_ctx=")
+	if i < 0 {
+		return 0
+	}
+	rest := msg[i+len("num_ctx="):]
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	n, convErr := strconv.Atoi(rest[:end])
+	if convErr != nil {
+		return 0
+	}
+	return n
 }
 
 // humanBytes formats a byte count with binary (KiB/MiB/…) units for diagnostics.
