@@ -256,15 +256,7 @@ func resolveRunInput(cmd *cobra.Command, args []string) (string, error) {
 
 	if flags.Changed("input") {
 		val, _ := flags.GetString("input")
-		if strings.HasPrefix(val, "@") {
-			path := strings.TrimPrefix(val, "@")
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return "", fmt.Errorf("--input @%s: cannot read file: %w", path, err)
-			}
-			return string(data), nil
-		}
-		return val, nil
+		return resolveInputFlagValue("--input", val)
 	}
 
 	if len(args) > 0 {

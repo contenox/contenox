@@ -610,7 +610,11 @@ func runChat(cmd *cobra.Command, args []string) error {
 		inputValue = prompt
 		inputPassed = true
 	} else if changed("input") {
-		inputValue, _ = flags.GetString("input")
+		rawInput, _ := flags.GetString("input")
+		inputValue, err = resolveInputFlagValue("--input", rawInput)
+		if err != nil {
+			return err
+		}
 		inputPassed = true
 	} else if len(args) > 0 {
 		inputValue = strings.Join(args, " ")

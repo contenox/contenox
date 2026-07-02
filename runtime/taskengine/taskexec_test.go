@@ -36,6 +36,48 @@ func TestUnit_TaskExec_ChatCompletionRejectsNilInput(t *testing.T) {
 	require.Contains(t, err.Error(), "input is nil for task acp_chat")
 }
 
+func TestUnit_TaskExec_ChatCompletionAddsNoToolsGuardWhenRequestedToolsResolveEmpty(t *testing.T) {
+	var seenMessages []libmodelprovider.Message
+	var seenToolCount int
+	repo := &mockModelRepo{
+		chatFunc: func(_ context.Context, _ llmrepo.Request, messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument) (libmodelprovider.ChatResult, llmrepo.Meta, error) {
+			cfg := &libmodelprovider.ChatConfig{}
+			for _, opt := range opts {
+				opt.Apply(cfg)
+			}
+			seenToolCount = len(cfg.Tools)
+			seenMessages = append([]libmodelprovider.Message(nil), messages...)
+			return libmodelprovider.ChatResult{
+				Message: libmodelprovider.Message{Role: "assistant", Content: "no tools answer"},
+			}, llmrepo.Meta{ModelName: "test-model", ProviderType: "llama"}, nil
+		},
+	}
+	exec, err := taskengine.NewExec(context.Background(), repo, tools.NewMockToolsRegistry(), libtracker.NoopTracker{})
+	require.NoError(t, err)
+
+	task := &taskengine.TaskDefinition{
+		ID:                "chat",
+		Handler:           taskengine.HandleChatCompletion,
+		SystemInstruction: "Use tools when they help.",
+		ExecuteConfig: &taskengine.LLMExecutionConfig{
+			Model: "test-model",
+			Tools: []string{"*"},
+		},
+	}
+
+	_, _, _, err = exec.TaskExec(
+		context.Background(), time.Now().UTC(), 4000,
+		&taskengine.ChainContext{}, task,
+		taskengine.ChatHistory{Messages: []taskengine.Message{{Role: "user", Content: "inspect this"}}},
+		taskengine.DataTypeChatHistory,
+	)
+	require.NoError(t, err)
+	require.Zero(t, seenToolCount)
+	require.NotEmpty(t, seenMessages)
+	require.Equal(t, "system", seenMessages[0].Role)
+	require.Contains(t, seenMessages[0].Content, "No tools are available in this turn")
+}
+
 func TestUnit_TaskExec_ChatCompletionRetriesWithoutToolsWhenProviderRejectsToolCalls(t *testing.T) {
 	var seenToolNames [][]string
 	var secondMessages []libmodelprovider.Message

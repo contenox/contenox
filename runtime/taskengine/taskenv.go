@@ -317,6 +317,7 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			taskInput = rendered
 			taskInputType = DataTypeString
 		}
+		taskInput, taskInputType = capTaskInputForExecution(taskInput, taskInputType, currentTask.InputMaxBytes)
 		maxRetries := max(currentTask.RetryOnFailure, 0)
 
 		for retry := 0; retry <= maxRetries; retry++ {

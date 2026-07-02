@@ -71,12 +71,16 @@ func TestOpenSessionDevices_ExplicitPinSkipsAutodetect(t *testing.T) {
 	}
 }
 
-func TestOpenSessionDevices_AutoWithoutNativeBackendFallsBackToCPU(t *testing.T) {
-	// In the default (non-cgo) build ovsession.Runtime() reports the GenAI backend
-	// is not compiled in; AUTO must still yield a usable CPU candidate.
+func TestOpenSessionDevices_AutoIncludesCPUFallback(t *testing.T) {
+	// In the default non-CGO build ovsession.Runtime reports that GenAI is not
+	// compiled in, so AUTO is exactly CPU. In the tagged native build it may
+	// enumerate accelerators first, but CPU must remain the universal fallback.
 	got := openSessionDevices("AUTO", nil)
-	if !reflect.DeepEqual(got, []string{"CPU"}) {
-		t.Fatalf("openSessionDevices(AUTO) = %v, want [CPU]", got)
+	if len(got) == 0 || got[len(got)-1] != "CPU" {
+		t.Fatalf("openSessionDevices(AUTO) = %v, want CPU fallback as final candidate", got)
+	}
+	if _, err := ovsession.Runtime(); err != nil && !reflect.DeepEqual(got, []string{"CPU"}) {
+		t.Fatalf("openSessionDevices(AUTO) = %v, want [CPU] when runtime probe fails", got)
 	}
 }
 

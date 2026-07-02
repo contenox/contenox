@@ -331,13 +331,14 @@ func TestUnit_ParseBytes(t *testing.T) {
 
 func TestUnit_LoadPolicy_FromConfigAndEnv(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "modeld.json"), []byte(`{"memory":{"max_resident":"4GiB","reserve_free":"1GiB","host_cold_budget":"8GiB","headroom_frac":0.2}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "modeld.json"), []byte(`{"memory":{"max_resident":"4GiB","reserve_free":"1GiB","host_cold_budget":"8GiB","min_hot_context_tokens":4096,"headroom_frac":0.2}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CONTENOX_MODELD_MEM_MAX", "2GiB")
 	t.Setenv("CONTENOX_MODELD_MEM_RESERVE", "")
 	t.Setenv("CONTENOX_MODELD_MEM_COLD", "6GiB")
 	t.Setenv("CONTENOX_MODELD_MEM_HEADROOM", "")
+	t.Setenv("CONTENOX_MODELD_MIN_HOT_CONTEXT", "8192")
 	p := LoadPolicy(dir)
 	if p.MaxResidentBytes != 2<<30 {
 		t.Fatalf("MaxResidentBytes = %d, want env override 2GiB", p.MaxResidentBytes)
@@ -347,6 +348,9 @@ func TestUnit_LoadPolicy_FromConfigAndEnv(t *testing.T) {
 	}
 	if p.HostColdBudgetBytes != 6<<30 {
 		t.Fatalf("HostColdBudgetBytes = %d, want env override 6GiB", p.HostColdBudgetBytes)
+	}
+	if p.MinHotContextTokens != 8192 {
+		t.Fatalf("MinHotContextTokens = %d, want env override 8192", p.MinHotContextTokens)
 	}
 	if p.HeadroomFrac != 0.2 {
 		t.Fatalf("HeadroomFrac = %v, want config 0.2", p.HeadroomFrac)

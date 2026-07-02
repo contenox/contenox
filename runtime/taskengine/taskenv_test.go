@@ -3,6 +3,7 @@ package taskengine_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,6 +162,58 @@ func TestUnit_SimpleEnv_ExecEnv_ErrorTransitionPreservesTaskInputForNextTask(t *
 	require.Equal(t, "acp_chat", exec.calls[1].task)
 	require.Equal(t, chainInput, exec.calls[1].input)
 	require.Equal(t, taskengine.DataTypeChatHistory, exec.calls[1].dataType)
+}
+
+func TestUnit_SimpleEnv_ExecEnv_CapsInputForFailureSummaryTask(t *testing.T) {
+	longContent := strings.Repeat("oversized ", 200)
+	chainInput := taskengine.ChatHistory{
+		Messages:     []taskengine.Message{{Role: "user", Content: longContent}},
+		InputTokens:  999,
+		OutputTokens: 1,
+	}
+	exec := &scriptedExecutor{
+		outputs:     []any{nil, "summary"},
+		outputTypes: []taskengine.DataType{taskengine.DataTypeAny, taskengine.DataTypeString},
+		errors:      []error{errors.New("context overflow"), nil},
+	}
+
+	tracker := libtracker.NoopTracker{}
+	env, err := taskengine.NewEnv(context.Background(), tracker, exec, taskengine.NewSimpleInspector(), tools.NewMockToolsRegistry())
+	require.NoError(t, err)
+
+	chain := &taskengine.TaskChainDefinition{
+		Tasks: []taskengine.TaskDefinition{
+			{
+				ID:      "main",
+				Handler: taskengine.HandleNoop,
+				Transition: taskengine.TaskTransition{
+					OnFailure: "summarise_failure",
+				},
+			},
+			{
+				ID:            "summarise_failure",
+				Handler:       taskengine.HandleNoop,
+				InputMaxBytes: 64,
+				Transition: taskengine.TaskTransition{
+					Branches: []taskengine.TransitionBranch{
+						{Operator: taskengine.OpDefault, Goto: taskengine.TermEnd},
+					},
+				},
+			},
+		},
+	}
+
+	_, _, _, err = env.ExecEnv(libtracker.WithNewRequestID(context.Background()), chain, chainInput, taskengine.DataTypeChatHistory)
+	require.NoError(t, err)
+	require.Len(t, exec.calls, 2)
+	require.Equal(t, "summarise_failure", exec.calls[1].task)
+	require.Equal(t, taskengine.DataTypeChatHistory, exec.calls[1].dataType)
+	got := exec.calls[1].input.(taskengine.ChatHistory)
+	require.Zero(t, got.InputTokens, "truncated chat input must be recounted")
+	require.Zero(t, got.OutputTokens, "truncated chat input must be recounted")
+	require.Len(t, got.Messages, 1)
+	require.Less(t, len(got.Messages[0].Content), len(longContent))
+	require.Contains(t, got.Messages[0].Content, "truncated original_bytes=")
 }
 
 func TestUnit_SimpleEnv_ExecEnv_UsesParentCancellation(t *testing.T) {

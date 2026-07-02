@@ -319,6 +319,46 @@ func TestUnit_ServiceResolveConfigClampsDaemonGpuLayersToMemoryBudget(t *testing
 	}
 }
 
+func TestUnit_ResolveGPULayersForBudgetHonorsMinHotContextInAutoMode(t *testing.T) {
+	params := ggufParams{ContextLength: 10000, BlockCount: 4}
+	st := capacity.DeviceSnapshot{Kind: "gpu", FreeBytes: 1000}
+	policy := capacity.Policy{MinHotContextTokens: 600, HeadroomFrac: 0.000001}
+
+	got := resolveGPULayersForBudget(
+		transport.Config{NumGpuLayers: 5},
+		params,
+		capacity.LayerKVProfile{},
+		500,
+		1,
+		0,
+		st,
+		policy,
+	)
+	if got != 3 {
+		t.Fatalf("gpu layers = %d, want 3: 5/4 slots miss the 600-token hot target, 3 slots reaches it", got)
+	}
+}
+
+func TestUnit_ResolveGPULayersForBudgetIgnoresMinHotContextForExplicitNumCtx(t *testing.T) {
+	params := ggufParams{ContextLength: 10000, BlockCount: 4}
+	st := capacity.DeviceSnapshot{Kind: "gpu", FreeBytes: 1000}
+	policy := capacity.Policy{MinHotContextTokens: 600, HeadroomFrac: 0.000001}
+
+	got := resolveGPULayersForBudget(
+		transport.Config{NumCtx: 400, NumGpuLayers: 5},
+		params,
+		capacity.LayerKVProfile{},
+		500,
+		1,
+		0,
+		st,
+		policy,
+	)
+	if got != 5 {
+		t.Fatalf("gpu layers = %d, want explicit num_ctx to preserve maximum fitting offload", got)
+	}
+}
+
 func writeTestGGUF(t *testing.T, ctx int) string {
 	return writeTestGGUFWithSWA(t, ctx, 0)
 }

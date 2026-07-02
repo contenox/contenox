@@ -8,7 +8,7 @@
 //
 // Usage:
 //
-//	modeld serve   [--data-root DIR] [--ttl DURATION] [--mem-max 8GiB] [--mem-reserve 2GiB] [--mem-cold 16GiB]
+//	modeld serve   [--data-root DIR] [--ttl DURATION] [--mem-max 8GiB] [--mem-reserve 2GiB] [--mem-cold 16GiB] [--min-hot-context 4096]
 //	modeld status  [--data-root DIR] [--json]
 //	modeld version [--json]
 package main
@@ -54,6 +54,7 @@ func run(args []string) error {
 	memMax := fs.String("mem-max", "", "maximum modeld resident memory budget (bytes or e.g. 8GiB)")
 	memReserve := fs.String("mem-reserve", "", "memory to leave free for desktop/other workloads (bytes or e.g. 2GiB)")
 	memCold := fs.String("mem-cold", "", "host-RAM KV cold-store budget (bytes or e.g. 16GiB)")
+	minHotContext := fs.Int("min-hot-context", 0, "minimum hot context tokens to prefer before reducing llama GPU layers (0 disables)")
 	idleTTL := fs.String("idle-ttl", "", "release the resident model after it sits idle this long, freeing device memory (e.g. 5m; 0/off disables; default 5m)")
 	asJSON := fs.Bool("json", false, "machine-readable JSON output (status)")
 	if err := fs.Parse(args); err != nil {
@@ -73,7 +74,7 @@ func run(args []string) error {
 
 	switch cmd {
 	case "serve":
-		policy, err := resolvePolicy(resolvedRoot, *memMax, *memReserve, *memCold)
+		policy, err := resolvePolicy(resolvedRoot, *memMax, *memReserve, *memCold, *minHotContext)
 		if err != nil {
 			return err
 		}
@@ -89,7 +90,7 @@ func run(args []string) error {
 	}
 }
 
-func resolvePolicy(dataRoot, memMax, memReserve, memCold string) (capacity.Policy, error) {
+func resolvePolicy(dataRoot, memMax, memReserve, memCold string, minHotContext int) (capacity.Policy, error) {
 	policy := capacity.LoadPolicy(dataRoot)
 	if memMax != "" {
 		v, err := capacity.ParseBytes(memMax)
@@ -111,6 +112,9 @@ func resolvePolicy(dataRoot, memMax, memReserve, memCold string) (capacity.Polic
 			return capacity.Policy{}, fmt.Errorf("parse --mem-cold: %w", err)
 		}
 		policy.HostColdBudgetBytes = v
+	}
+	if minHotContext > 0 {
+		policy.MinHotContextTokens = minHotContext
 	}
 	return policy, nil
 }

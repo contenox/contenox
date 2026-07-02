@@ -430,6 +430,7 @@ func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, layerKV 
 		maxSlots = params.BlockCount + 1 // output layer
 	}
 	requestedSlots := min(cfg.NumGpuLayers, maxSlots)
+	fallbackSlots := 0
 	for slots := requestedSlots; slots >= 1; slots-- {
 		modelBytes := estimateLlamaGPUWeights(weights, params.BlockCount, slots)
 		resolved := capacity.Resolve(capacity.Params{
@@ -451,7 +452,16 @@ func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, layerKV 
 		if cfg.NumCtx > 0 && resolved.EffectiveContext < cfg.NumCtx {
 			continue
 		}
+		if cfg.NumCtx <= 0 && policy.MinHotContextTokens > 0 && resolved.HotContextTokens < policy.MinHotContextTokens {
+			if fallbackSlots == 0 {
+				fallbackSlots = slots
+			}
+			continue
+		}
 		return slots
+	}
+	if fallbackSlots > 0 {
+		return fallbackSlots
 	}
 	return 0
 }

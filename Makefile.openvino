@@ -32,7 +32,9 @@ genai-src:
 	test -d "$(OPENVINO_GENAI_REPO)/.git" || git clone https://github.com/openvinotoolkit/openvino.genai.git "$(OPENVINO_GENAI_REPO)"
 	git -C "$(OPENVINO_GENAI_REPO)" fetch --tags --force
 	test -d "$(OPENVINO_GENAI_SRC)" || git -C "$(OPENVINO_GENAI_REPO)" worktree add --detach "$(OPENVINO_GENAI_SRC)" "$(OPENVINO_GENAI_VERSION)"
+	test -f "$(OPENVINO_GENAI_SRC)/build/_deps/nlohmann_json-src/single_include/nlohmann/json.hpp" || (mkdir -p "$(OPENVINO_GENAI_SRC)/build/_deps" && curl -fsSL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz | tar -xz -C "$(OPENVINO_GENAI_SRC)/build/_deps" && mv "$(OPENVINO_GENAI_SRC)/build/_deps/json-3.11.3" "$(OPENVINO_GENAI_SRC)/build/_deps/nlohmann_json-src")
 	test -f "$(OPENVINO_GENAI_SRC)/build/_deps/minja-src/include/minja/minja.hpp" || (mkdir -p "$(OPENVINO_GENAI_SRC)/build/_deps" && git clone https://github.com/google/minja.git "$(OPENVINO_GENAI_SRC)/build/_deps/minja-src" && git -C "$(OPENVINO_GENAI_SRC)/build/_deps/minja-src" checkout 3e4c61c616eda133cfb1e440fc7a14bf1729bbee)
+	test -f "$(OPENVINO_GENAI_SRC)/build/_deps/safetensors.h-src/safetensors.h" || (mkdir -p "$(OPENVINO_GENAI_SRC)/build/_deps" && curl -fsSL https://github.com/hsnyder/safetensors.h/archive/974a85d7dfd6e010558353226638bb26d6b9d756.tar.gz | tar -xz -C "$(OPENVINO_GENAI_SRC)/build/_deps" && mv "$(OPENVINO_GENAI_SRC)/build/_deps/safetensors.h-974a85d7dfd6e010558353226638bb26d6b9d756" "$(OPENVINO_GENAI_SRC)/build/_deps/safetensors.h-src")
 	test -f "$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src/gguflib.h" || (mkdir -p "$(OPENVINO_GENAI_SRC)/build/_deps" && git clone https://github.com/Lourdle/gguf-tools.git "$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src" && git -C "$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src" checkout bac796ada809ac293e685db59b075971181cb008)
 
 model: deps

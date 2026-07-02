@@ -474,6 +474,11 @@ type TaskDefinition struct {
 	// Each task stores its output in a variable named with it's task id.
 	InputVar string `yaml:"input_var,omitempty" json:"input_var,omitempty" example:"input"`
 
+	// InputMaxBytes caps oversized string/chat-history inputs before this task
+	// runs. It is intended for recovery/summarization tasks that should explain
+	// a failure without re-feeding the same huge input that caused it.
+	InputMaxBytes int `yaml:"input_max_bytes,omitempty" json:"input_max_bytes,omitempty" example:"8192"`
+
 	// Transition defines what to do after this task completes.
 	Transition TaskTransition `yaml:"transition" json:"transition" openapi_include_type:"taskengine.TaskTransition"`
 

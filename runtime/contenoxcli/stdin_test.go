@@ -1,7 +1,9 @@
 package contenoxcli
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -63,5 +65,30 @@ func TestUnit_ResolveRunInputCombinesArgsAndReadyStdin(t *testing.T) {
 	want := "suggest message\n\ndiff body"
 	if got != want {
 		t.Fatalf("unexpected input:\nwant: %q\ngot:  %q", want, got)
+	}
+}
+
+func TestUnit_ResolveInputFlagValueExpandsAtFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prompt.txt")
+	if err := os.WriteFile(path, []byte("file prompt\n"), 0o644); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+
+	got, err := resolveInputFlagValue("--input", "@"+path)
+	if err != nil {
+		t.Fatalf("resolveInputFlagValue: %v", err)
+	}
+	if got != "file prompt\n" {
+		t.Fatalf("input = %q, want file contents", got)
+	}
+}
+
+func TestUnit_ResolveInputFlagValueReportsMissingAtFile(t *testing.T) {
+	_, err := resolveInputFlagValue("--input", "@"+filepath.Join(t.TempDir(), "missing.txt"))
+	if err == nil {
+		t.Fatal("resolveInputFlagValue error = nil, want missing-file error")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("error = %v, want os.ErrNotExist", err)
 	}
 }

@@ -1001,6 +1001,12 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 	return output, outputType, transitionEval, taskErr
 }
 
+const noResolvedToolsInstruction = "No tools are available in this turn. Do not claim to have inspected files, run commands, opened URLs, or used tools. Answer only from the provided conversation and context; if tool access or external inspection is needed, say so explicitly."
+
+func llmCallRequestedTools(llmCall *LLMExecutionConfig) bool {
+	return llmCall != nil && (llmCall.PassClientsTools || len(llmCall.Tools) > 0)
+}
+
 func (exe *SimpleExec) executeLLM(
 	ctx context.Context,
 	input ChatHistory,
@@ -1066,6 +1072,16 @@ func (exe *SimpleExec) executeLLM(
 				})
 			}
 		}
+	}
+	if len(tools) == 0 && llmCallRequestedTools(llmCall) {
+		prelude = append(prelude, Message{
+			Role:    "system",
+			Content: noResolvedToolsInstruction,
+		})
+		reportChange("no_tools_prompt_guard", map[string]any{
+			"requested_registry_tools": len(llmCall.Tools) > 0,
+			"requested_client_tools":   llmCall.PassClientsTools,
+		})
 	}
 
 	// Token counting

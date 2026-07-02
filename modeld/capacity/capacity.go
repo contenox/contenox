@@ -335,6 +335,7 @@ type Policy struct {
 	MaxResidentBytes    int64   `json:"max_resident_bytes,omitempty"`
 	MinFreeBytes        int64   `json:"min_free_bytes,omitempty"`
 	HostColdBudgetBytes int64   `json:"host_cold_budget_bytes,omitempty"`
+	MinHotContextTokens int     `json:"min_hot_context_tokens,omitempty"`
 	HeadroomFrac        float64 `json:"headroom_frac,omitempty"`
 }
 
@@ -387,6 +388,7 @@ func LoadPolicy(dataRoot string) Policy {
 				MaxResidentBytes    int64   `json:"max_resident_bytes"`
 				MinFreeBytes        int64   `json:"min_free_bytes"`
 				HostColdBudgetBytes int64   `json:"host_cold_budget_bytes"`
+				MinHotContextTokens int     `json:"min_hot_context_tokens"`
 				MaxResident         string  `json:"max_resident"`
 				ReserveFree         string  `json:"reserve_free"`
 				HostColdBudget      string  `json:"host_cold_budget"`
@@ -398,6 +400,7 @@ func LoadPolicy(dataRoot string) Policy {
 			p.MaxResidentBytes = raw.Memory.MaxResidentBytes
 			p.MinFreeBytes = raw.Memory.MinFreeBytes
 			p.HostColdBudgetBytes = raw.Memory.HostColdBudgetBytes
+			p.MinHotContextTokens = raw.Memory.MinHotContextTokens
 			p.HeadroomFrac = raw.Memory.HeadroomFrac
 			if v, err := ParseBytes(raw.Memory.MaxResident); err == nil && v > 0 {
 				p.MaxResidentBytes = v
@@ -422,6 +425,11 @@ func LoadPolicy(dataRoot string) Policy {
 	if v := os.Getenv("CONTENOX_MODELD_MEM_HEADROOM"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f < 1 {
 			p.HeadroomFrac = f
+		}
+	}
+	if v := os.Getenv("CONTENOX_MODELD_MIN_HOT_CONTEXT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			p.MinHotContextTokens = n
 		}
 	}
 	return p

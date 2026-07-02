@@ -633,6 +633,18 @@ func pipelineMetricsFromC(cmetrics C.cx_genai_metrics) PipelineMetrics {
 	}
 }
 
+func sendTerminalStreamError(ctx context.Context, ch chan<- StreamChunk, err error) {
+	if err == nil {
+		return
+	}
+	chunk := StreamChunk{Error: err}
+	if ctx.Err() != nil {
+		sessionkit.TrySend(ch, chunk)
+		return
+	}
+	_ = sessionkit.Send(ctx, ch, chunk)
+}
+
 // Stream runs one prompt and returns decoded text deltas as GenAI produces them.
 func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateOptions) (<-chan StreamChunk, error) {
 	if err := ctx.Err(); err != nil {
@@ -781,16 +793,19 @@ func (s *GenAISession) Stream(ctx context.Context, prompt string, opts GenerateO
 					return
 				}
 			case 1:
+				if err := ctx.Err(); err != nil {
+					sendTerminalStreamError(ctx, ch, err)
+				}
 				return
 			case 3:
 				if err := ctx.Err(); err != nil {
-					_ = sessionkit.Send(ctx, ch, StreamChunk{Error: err})
+					sendTerminalStreamError(ctx, ch, err)
 				} else {
-					_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("openvino GenAI generation canceled")})
+					sendTerminalStreamError(ctx, ch, errors.New("openvino GenAI generation canceled"))
 				}
 				return
 			default:
-				_ = sessionkit.Send(ctx, ch, StreamChunk{Error: fmt.Errorf("openvino GenAI stream: %s", C.GoString((*C.char)(errbuf)))})
+				sendTerminalStreamError(ctx, ch, fmt.Errorf("openvino GenAI stream: %s", C.GoString((*C.char)(errbuf))))
 				return
 			}
 		}
@@ -950,16 +965,19 @@ func (s *GenAISession) StreamTokens(ctx context.Context, tokens []int, opts Gene
 					return
 				}
 			case 1:
+				if err := ctx.Err(); err != nil {
+					sendTerminalStreamError(ctx, ch, err)
+				}
 				return
 			case 3:
 				if err := ctx.Err(); err != nil {
-					_ = sessionkit.Send(ctx, ch, StreamChunk{Error: err})
+					sendTerminalStreamError(ctx, ch, err)
 				} else {
-					_ = sessionkit.Send(ctx, ch, StreamChunk{Error: errors.New("openvino GenAI generation canceled")})
+					sendTerminalStreamError(ctx, ch, errors.New("openvino GenAI generation canceled"))
 				}
 				return
 			default:
-				_ = sessionkit.Send(ctx, ch, StreamChunk{Error: fmt.Errorf("openvino GenAI stream tokens: %s", C.GoString((*C.char)(errbuf)))})
+				sendTerminalStreamError(ctx, ch, fmt.Errorf("openvino GenAI stream tokens: %s", C.GoString((*C.char)(errbuf))))
 				return
 			}
 		}

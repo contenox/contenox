@@ -141,7 +141,69 @@ Closed and verified today (all in the working doc docs/blueprints/effective-cont
 - BUG-1c — implicit sessions stay resident after handle release when the idle reaper is on. Verified live: one backend session open across four CLI turns spanning two conversations — cross-process warm reuse works.
 - BUG-1a/1b — the big one, landed after three live-fail iterations (each narrowing the root cause: hot-window hard gate → single-block manifest segments defeating the eviction plan → manifest lag making plan-based eviction fundamentally wrong mid-stream). Final design: prefillStreamLocked streams arbitrary prefixes/suffixes through the hot window with direct, manifest-independent StreamingLLM eviction (sink+recent pinned, middle parked to cold in 256-token blocks). Verified: the exact 3-turn scenario that killed conversations this morning now passes with zero overflows — ~7.5k tokens of history through a ~3k hot window, correct answers every turn. The 15k single-paste runs without error (slow on this GPU — a perf note, not a correctness bug; final confirmation run still in flight).
 - BUG-9 — startup log now prints headroom=unset instead of a misleading 0.00.
+- BUG-7 — `contenox chat --input @file` now shares the same `@path` expansion
+  helper as `contenox run --input @file`; missing files surface as the original
+  filesystem error.
+- BUG-8 — failure-summary tasks can opt into `input_max_bytes`; default
+  `summarise_failure` tasks now cap oversized string/chat-history input to 8192
+  bytes before model execution, clearing stale token counts so the shortened
+  input is recounted.
+- BUG-6 — when a task requested tools but none resolve, the LLM receives a
+  transient no-tools system prelude: do not claim file inspection, commands, URL
+  opens, or tool execution. Optional narrated-execution detection remains a
+  future hardening item, but the primary no-tools prompt bug is closed.
+- BUG-5 — modeld now has a context-vs-speed knob:
+  `--min-hot-context`, `CONTENOX_MODELD_MIN_HOT_CONTEXT`, or
+  `modeld.json memory.min_hot_context_tokens`. In auto-context llama mode the GPU
+  layer resolver reduces offload only as needed to reach the requested hot
+  context; explicit `num_ctx` remains authoritative.
+- P2.7 capability truth — no code change needed in this cycle: llama/openvino
+  catalogs already prefer modeld `PlannerEffectiveContext`, and local runtime
+  state builds model-list rows from observed catalog facts rather than declared
+  context overrides. Post-BUG-1a/1b, planner context is reachable, so advertising
+  planner context is now truthful.
+- OpenVINO cross-check — forced with `CONTENOX_MODELD_BACKEND=openvino` and the
+  tiny OpenVINO Qwen Coder INT4 IR model. The llama-specific BUG-1 streaming fix
+  does not directly apply: OpenVINO uses native cache eviction plus the shared
+  residency planner/cold-store driver. The real OpenVINO effective-context tests
+  pass (`PrefillSuffixOverflowParksToCold`, tail evict/admit, native cache
+  eviction, warm prefix reuse). Shared runtime bugs BUG-6/7/8 are backend-neutral
+  and affect OpenVINO callers the same way.
+- Curated OpenVINO product E2E — isolated temp HOME/workspace, then the documented
+  flow: `contenox init openvino`, `contenox model pull qwen2.5-coder-0.5b-ov`,
+  `CONTENOX_MODELD_BACKEND=openvino CONTENOX_OPENVINO_DEVICE=CPU modeld serve`,
+  `contenox model local`, `contenox model list`, `contenox doctor`, `contenox run`,
+  and `contenox chat`. The pull downloaded the curated HF repo
+  `OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov`, wrote
+  `contenox-openvino.json`, set `default-model = qwen2.5-coder-0.5b-ov`, model
+  list showed `CHAT ✓`, `PROMPT ✓`, `CTX 32768`, doctor passed, `contenox run`
+  generated through the model, `contenox chat "What is 2 + 2?"` returned `4`,
+  and `contenox model local` showed the model `active:Ready`.
+- OpenVINO test-harness/cancellation follow-up — `Makefile.openvino` now fetches
+  the GenAI header dependencies it directly includes from CGO
+  (`nlohmann_json`, `safetensors.h`) and includes them in `OPENVINO_GENAI_CGO_CXXFLAGS`.
+  A stale native-device unit expectation was relaxed to the stable invariant
+  (AUTO keeps CPU as the final fallback). Real streaming cancellation now emits a
+  terminal `context.Canceled` chunk even when the context is already canceled.
 
-Still open (documented in the doc's Phase 2/3): capability-truth for model list CTX (P2.7), the context-vs-speed GPU-layer knob (BUG-5), honest no-tools chat prompts (BUG-6), @file expansion (BUG-7), and failure-summary input truncation (BUG-8). Those are product/design-flavored rather than correctness-critical — BUG-5 and BUG-6 in particular have real design decisions in them that are worth your input before I pick a direction.
+Verification after this cycle:
 
-The unit suite is green across all touched packages (only the known environmental lease failure, which comes and goes with my test daemon). My suggestion for next session: restart your own make run-modeld and use the beam chat normally — the difference should be immediately felt — while I take on P2.7 and the Phase 3 items.
+- `go test -run 'TestUnit_(ResolveRunInputCombinesArgsAndReadyStdin|ResolveInputFlagValue)' ./runtime/contenoxcli`
+- `go test -run 'TestUnit_SimpleEnv_ExecEnv_(ErrorTransitionPreservesTaskInputForNextTask|CapsInputForFailureSummaryTask)' ./runtime/taskengine`
+- `go test -run 'TestUnit_TaskExec_ChatCompletion(AddsNoToolsGuardWhenRequestedToolsResolveEmpty|RetriesWithoutToolsWhenProviderRejectsToolCalls|RejectsNilInput)' ./runtime/taskengine`
+- `go test -run 'TestUnit_LoadPolicy_FromConfigAndEnv|TestUnit_WithResidentDefault_AcceleratorGetsMinFreeFloor' ./modeld/capacity`
+- `go test -run 'TestUnit_ResolveGPULayersForBudget|TestUnit_ServiceResolveConfigClampsDaemonGpuLayersToMemoryBudget' ./modeld/llama`
+- `go test ./cmd/modeld`
+- `go test ./runtime/contenoxcli ./runtime/taskengine ./modeld/capacity ./modeld/llama ./cmd/modeld`
+- `go test -run 'TestUnit_OpenVINO_DriveEvictToFit|TestGenaiSessionEvictionEnabledGeneratesPastNumCtx|TestUnit_OpenVINOEvictionBudgetCapsAtSlidingWindow|TestUnit_OpenVINO.*Context|TestUnit_ServiceOpenSessionDerivesSchedulerCacheSizeFromHotContext' ./modeld/openvino`
+- `make -f Makefile.openvino model`
+- `make -f Makefile.openvino test-genai` (first full real-backend run: effective-context
+  tests passed; exposed the streaming-cancel bug above)
+- focused tagged rerun: `TestSystem_OpenVINOGenAI_StreamCanceledInFlight` passed
+- `make -f Makefile.openvino test-genai-scheduler`
+- forced daemon smoke: `CONTENOX_MODELD_BACKEND=openvino CONTENOX_OPENVINO_DEVICE=CPU bin/modeld serve ...`
+  selected `backend=openvino reason=env_override compiled=llama, openvino`
+- curated product E2E: `contenox init openvino`; `contenox model pull qwen2.5-coder-0.5b-ov`;
+  live `model list` showed `qwen2.5-coder-0.5b-ov *` on `openvino` with `CHAT ✓`
+  and `CTX 32768`; `doctor` passed; `contenox run` and `contenox chat` generated
+  through the loaded OpenVINO daemon; post-run `model local` showed `active:Ready`

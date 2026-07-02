@@ -27,7 +27,7 @@ OPENVINO_SO := $(notdir $(firstword $(wildcard $(OPENVINO_PKG)/libs/libopenvino.
 OPENVINO_GENAI_SO := $(notdir $(firstword $(wildcard $(OPENVINO_GENAI_PKG)/libopenvino_genai.so.[0-9]*)))
 
 OPENVINO_CGO_LDFLAGS = -L$(OPENVINO_PKG)/libs -l:$(OPENVINO_SO) -lstdc++ $(OPENVINO_RPATH_DTAGS) -Wl,-rpath,$(OPENVINO_PKG)/libs
-OPENVINO_GENAI_CGO_CXXFLAGS = $(OPENVINO_CGO_CXXFLAGS) -I$(OPENVINO_GENAI_SRC)/src/cpp/include -I$(OPENVINO_GENAI_SRC)/src/cpp/src -I$(OPENVINO_GENAI_SRC)/build/_deps/minja-src/include -I$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src
+OPENVINO_GENAI_CGO_CXXFLAGS = $(OPENVINO_CGO_CXXFLAGS) -I$(OPENVINO_GENAI_SRC)/src/cpp/include -I$(OPENVINO_GENAI_SRC)/src/cpp/src -I$(OPENVINO_GENAI_SRC)/build/_deps/minja-src/include -I$(OPENVINO_GENAI_SRC)/build/_deps/nlohmann_json-src/single_include -I$(OPENVINO_GENAI_SRC)/build/_deps/safetensors.h-src -I$(OPENVINO_GENAI_SRC)/build/_deps/gguflib-src
 
 # GenAI link flags without a runtime rpath.
 # Tests and packages append the appropriate runtime rpath.
