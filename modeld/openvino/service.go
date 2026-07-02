@@ -259,7 +259,14 @@ func openGenAIWithSparseFallback(modelPath, modelName string, cfg ovsession.GenA
 }
 
 func openvinoXAttentionUnsupported(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "XAttention is not supported")
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "xattention") &&
+		(strings.Contains(msg, "not supported") ||
+			strings.Contains(msg, "unsupported") ||
+			strings.Contains(msg, "not available"))
 }
 
 func openvinoDeferPhysicalPrefill() bool {

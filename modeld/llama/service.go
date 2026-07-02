@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/contenox/runtime/modeld/capacity"
+	"github.com/contenox/runtime/modeld/llama/llamacppshim"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
@@ -188,6 +189,9 @@ func applyDaemonEnvOverrides(cfg transport.Config) transport.Config {
 			cfg.NumCtx = n
 		}
 	}
+	if v := os.Getenv("CONTENOX_LLAMA_KV_CACHE_TYPE"); v != "" {
+		cfg.KVCacheType = v
+	}
 	return cfg
 }
 
@@ -301,6 +305,7 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	}
 	info.RequestedGpuLayers = explicitGpuLayers
 	info.ResolvedGpuLayers = resolvedGpuLayers
+	applyChatTemplateProbe(&info, req.Path)
 	if explicitGpuLayers > 0 && resolvedGpuLayers < explicitGpuLayers {
 		info.Clamped = true
 		if info.Reason == "" {
@@ -312,6 +317,22 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		}
 	}
 	return info, nil
+}
+
+func applyChatTemplateProbe(info *transport.ModelInfo, modelPath string) {
+	probe, err := llamacppshim.ProbeChatTemplate(modelPath)
+	if err != nil {
+		slog.Debug("llama chat template probe skipped", "model", modelPath, "err", err)
+		return
+	}
+	info.ChatTemplateFormat = probe.FormatName
+	info.ChatTemplateThinkingStartTag = probe.ThinkingStartTag
+	info.ChatTemplateSupportsToolCalls = probe.SupportsToolCalls
+	info.ChatTemplateSupportsThinking = probe.SupportsThinking
+	info.ChatTemplateSupportsReasoningEffort = probe.SupportsReasoningEffort
+	if probe.SupportsThinking || probe.SupportsReasoningEffort || probe.ThinkingStartTag != "" {
+		info.ChatTemplateReasoningFormat = "auto"
+	}
 }
 
 func llamaLayerKVProfile(params ggufParams, kvType string) capacity.LayerKVProfile {

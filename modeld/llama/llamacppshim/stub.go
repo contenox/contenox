@@ -24,3 +24,18 @@ type ModelKVProfile struct {
 func InspectModelKVProfile(string) (ModelKVProfile, error) {
 	return ModelKVProfile{}, errors.New("llamacppshim: direct llama.cpp backend is not compiled in")
 }
+
+// ChatTemplateProbe reports what the linked llama.cpp common_chat engine
+// detects from a model's own chat template.
+type ChatTemplateProbe struct {
+	FormatName              string
+	ThinkingStartTag        string
+	SupportsToolCalls       bool
+	SupportsThinking        bool
+	SupportsReasoningEffort bool
+}
+
+// ProbeChatTemplate is available only in direct llama.cpp builds.
+func ProbeChatTemplate(string) (ChatTemplateProbe, error) {
+	return ChatTemplateProbe{}, errors.New("llamacppshim: direct llama.cpp backend is not compiled in")
+}

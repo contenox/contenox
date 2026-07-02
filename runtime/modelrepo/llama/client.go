@@ -116,10 +116,10 @@ func (c *client) explainOverflow(err error) error {
 		served = c.describedEffectiveContext
 	}
 	if served <= 0 {
-		return fmt.Errorf("%w: model %q exceeded its context window on %s%s — free VRAM, use a smaller model, or enable q8_0 KV cache",
+		return fmt.Errorf("%w: model %q exceeded its context window on %s%s — free VRAM, use a smaller model, or set CONTENOX_LLAMA_KV_CACHE_TYPE=q8_0 for modeld",
 			err, c.modelName, where, free)
 	}
-	return fmt.Errorf("%w: model %q serves only %d context tokens on %s%s after model weights — free VRAM, use a smaller model, or enable q8_0 KV cache",
+	return fmt.Errorf("%w: model %q serves only %d context tokens on %s%s after model weights — free VRAM, use a smaller model, or set CONTENOX_LLAMA_KV_CACHE_TYPE=q8_0 for modeld",
 		err, c.modelName, served, where, free)
 }
 
@@ -191,14 +191,14 @@ func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ..
 		}
 	}
 
-	dc, showThinking, enableThinking, err := c.decodeOptions(cfg)
+	dc, showThinking, enableThinking, reasoningEffort, err := c.decodeOptions(cfg)
 	if err != nil {
 		return modelrepo.ChatResult{}, err
 	}
 	if parseToolCalls {
 		dc.ParserProtocols = append(dc.ParserProtocols, toolParserProtocolCommonChat)
 	}
-	text, thinking, toolCalls, err := c.generate(ctx, messages, dc, toolsJSON, enableThinking, showThinking)
+	text, thinking, toolCalls, err := c.generate(ctx, messages, dc, toolsJSON, enableThinking, reasoningEffort, showThinking)
 	if err != nil {
 		return modelrepo.ChatResult{}, err
 	}
@@ -218,11 +218,11 @@ func (c *client) Prompt(ctx context.Context, systemInstruction string, temperatu
 	}
 	messages = append(messages, modelrepo.Message{Role: "user", Content: prompt})
 	temp := float64(temperature)
-	dc, _, enableThinking, err := c.decodeOptions(&modelrepo.ChatConfig{Temperature: &temp})
+	dc, _, enableThinking, reasoningEffort, err := c.decodeOptions(&modelrepo.ChatConfig{Temperature: &temp})
 	if err != nil {
 		return "", err
 	}
-	text, _, _, err := c.generate(ctx, messages, dc, "", enableThinking, false)
+	text, _, _, err := c.generate(ctx, messages, dc, "", enableThinking, reasoningEffort, false)
 	return text, err
 }
 
@@ -231,7 +231,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	if len(cfg.Tools) > 0 {
 		return nil, NewUnsupportedFeatureError("tool calls")
 	}
-	dc, showThinking, enableThinking, err := c.decodeOptions(cfg)
+	dc, showThinking, enableThinking, reasoningEffort, err := c.decodeOptions(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	}
 
 	cs.Turn.Lock()
-	if err := c.prime(ctx, cs, messages, "", enableThinking); err != nil {
+	if err := c.prime(ctx, cs, messages, "", enableThinking, reasoningEffort); err != nil {
 		cs.Turn.Unlock()
 		if fatalSessionError(err) {
 			warm.Drop(cs)
@@ -280,7 +280,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	return out, nil
 }
 
-func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string, enableThinking *bool, showThinking bool) (string, string, []modelrepo.ToolCall, error) {
+func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string, enableThinking *bool, reasoningEffort string, showThinking bool) (string, string, []modelrepo.ToolCall, error) {
 	cs, err := c.acquire()
 	if err != nil {
 		return "", "", nil, err
@@ -288,7 +288,7 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 	cs.Turn.Lock()
 	defer cs.Turn.Unlock()
 
-	if err := c.prime(ctx, cs, messages, toolsJSON, enableThinking); err != nil {
+	if err := c.prime(ctx, cs, messages, toolsJSON, enableThinking, reasoningEffort); err != nil {
 		if fatalSessionError(err) {
 			warm.Drop(cs)
 		}
@@ -331,7 +331,7 @@ func appendToolCalls(dst []modelrepo.ToolCall, src []ToolCall) []modelrepo.ToolC
 
 // prime ensures the warm stable prefix and prefills the volatile suffix. Caller
 // holds cs.Turn.
-func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string, enableThinking *bool) error {
+func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string, enableThinking *bool, reasoningEffort string) error {
 	plan, err := buildPromptPlan(messages, c.cfg, promptIdentity{
 		ProfileID:      c.profileID,
 		ModelDigest:    c.modelDigest,
@@ -345,6 +345,7 @@ func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], me
 		return c.explainOverflow(err)
 	}
 	plan.Volatile.EnableThinking = enableThinking
+	plan.Volatile.ReasoningEffort = reasoningEffort
 	_, err = cs.Sess.PrefillSuffix(ctx, plan.Volatile)
 	return c.explainOverflow(err)
 }
@@ -378,33 +379,48 @@ func decodeConfig(cfg *modelrepo.ChatConfig, maxOutputTokens int) DecodeConfig {
 	return dc
 }
 
-func (c *client) decodeOptions(cfg *modelrepo.ChatConfig) (DecodeConfig, bool, *bool, error) {
+func (c *client) decodeOptions(cfg *modelrepo.ChatConfig) (DecodeConfig, bool, *bool, string, error) {
 	dc := decodeConfig(cfg, c.maxOutputTokens)
 	if err := validateReasoningProtocol(c.reasoningProtocol); err != nil {
-		return DecodeConfig{}, false, nil, err
+		return DecodeConfig{}, false, nil, "", err
 	}
 	if c.reasoningProtocol == "" {
-		return dc, false, nil, nil
+		return dc, false, nil, "", nil
 	}
 	if c.cfg.ReasoningFormat == "" {
-		return DecodeConfig{}, false, nil, fmt.Errorf("%w: reasoning format is required when reasoning protocol %q is set", ErrUnsupportedFeature, c.reasoningProtocol)
+		return DecodeConfig{}, false, nil, "", fmt.Errorf("%w: reasoning format is required when reasoning protocol %q is set", ErrUnsupportedFeature, c.reasoningProtocol)
 	}
 	dc.ParserProtocols = append(dc.ParserProtocols, c.reasoningProtocol)
 	dc.ReasoningFormat = c.cfg.ReasoningFormat
 	showThinking := false
 	var enableThinking *bool
+	var reasoningEffort string
 	if cfg != nil && cfg.Think != nil {
 		level, ok, err := reasoning.NormalizeOptional(*cfg.Think)
 		if err != nil {
-			return DecodeConfig{}, false, nil, err
+			return DecodeConfig{}, false, nil, "", err
 		}
 		if ok && level != reasoning.Auto {
 			v := level != reasoning.Off
 			enableThinking = &v
 		}
 		showThinking = ok && level != reasoning.Off && level != reasoning.Auto
+		reasoningEffort = reasoningEffortForTemplate(level)
 	}
-	return dc, showThinking, enableThinking, nil
+	return dc, showThinking, enableThinking, reasoningEffort, nil
+}
+
+func reasoningEffortForTemplate(level string) string {
+	switch level {
+	case reasoning.Low, reasoning.Medium, reasoning.High:
+		return level
+	case reasoning.Minimal:
+		return reasoning.Low
+	case reasoning.XHigh:
+		return reasoning.High
+	default:
+		return ""
+	}
 }
 
 func fatalSessionError(err error) bool {

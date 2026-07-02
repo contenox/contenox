@@ -103,6 +103,16 @@ type ModelInfo struct {
 	SparseAttention              bool `json:"sparse_attention,omitempty"`
 	SlidingWindowAttentionTokens int  `json:"sliding_window_attention_tokens,omitempty"`
 
+	// Chat-template capabilities are detected by the backend from the model's own
+	// template and parser implementation. The runtime uses these as the default
+	// capability truth; registry/profile strings are explicit overrides.
+	ChatTemplateFormat                  string `json:"chat_template_format,omitempty"`
+	ChatTemplateThinkingStartTag        string `json:"chat_template_thinking_start_tag,omitempty"`
+	ChatTemplateReasoningFormat         string `json:"chat_template_reasoning_format,omitempty"`
+	ChatTemplateSupportsToolCalls       bool   `json:"chat_template_supports_tool_calls,omitempty"`
+	ChatTemplateSupportsThinking        bool   `json:"chat_template_supports_thinking,omitempty"`
+	ChatTemplateSupportsReasoningEffort bool   `json:"chat_template_supports_reasoning_effort,omitempty"`
+
 	// Runtime identity and device inventory explain which native runtime modeld
 	// actually linked and what memory pools it can allocate from.
 	RuntimeName        string       `json:"runtime_name,omitempty"`
@@ -379,6 +389,9 @@ type SuffixInput struct {
 	// assistant generation prompt when a backend supports it. nil means backend
 	// default.
 	EnableThinking *bool `json:",omitempty"`
+	// ReasoningEffort is passed to templates that consume a reasoning_effort
+	// kwarg (for example harmony/gpt-oss). Empty means backend default.
+	ReasoningEffort string `json:",omitempty"`
 }
 
 // PrefixStatus reports what EnsurePrefix reused versus had to (re)compute.

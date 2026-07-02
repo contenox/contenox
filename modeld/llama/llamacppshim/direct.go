@@ -31,8 +31,21 @@ struct cx_chat_apply_result cx_common_chat_apply(const struct llama_model *model
                                                  int add_generation_prompt,
                                                  const char *reasoning_format,
                                                  int enable_thinking,
+                                                 const char *reasoning_effort,
                                                  char *errbuf,
                                                  size_t errlen);
+
+struct cx_chat_probe_result {
+    char *format_name;
+    char *thinking_start_tag;
+    int supports_tool_calls;
+    int supports_thinking;
+    int supports_reasoning_effort;
+};
+
+struct cx_chat_probe_result cx_probe_chat_template(const char *model_path,
+                                                   char *errbuf,
+                                                   size_t errlen);
 
 int cx_common_chat_parse(const char *input,
                          int is_partial,
@@ -494,6 +507,10 @@ type ChatTemplateOptions struct {
 	AddAssistant    bool
 	ReasoningFormat string
 	EnableThinking  bool
+	// ReasoningEffort is passed to the template as the reasoning_effort kwarg
+	// ("low"/"medium"/"high"). Templates without the variable ignore it; only
+	// models whose template consumes it (e.g. gpt-oss harmony) change output.
+	ReasoningEffort string
 }
 
 // ChatSyntax is the llama.cpp common parser syntax returned by the template
@@ -544,7 +561,9 @@ func (m *Model) ApplyChatTemplateCommonWithOptions(messagesJSON, toolsJSON strin
 	if opts.EnableThinking {
 		enableThinking = 1
 	}
-	result := C.cx_common_chat_apply(m.ptr, cMsgs, cTools, add, cReasoning, enableThinking, errbuf, C.size_t(errLen))
+	cEffort := C.CString(opts.ReasoningEffort)
+	defer C.free(unsafe.Pointer(cEffort))
+	result := C.cx_common_chat_apply(m.ptr, cMsgs, cTools, add, cReasoning, enableThinking, cEffort, errbuf, C.size_t(errLen))
 	if result.prompt == nil {
 		return ChatTemplateResult{}, errors.New("llamacppshim: common chat template: " + C.GoString(errbuf))
 	}
@@ -558,6 +577,43 @@ func (m *Model) ApplyChatTemplateCommonWithOptions(messagesJSON, toolsJSON strin
 			Parser:           C.GoString(result.parser),
 			GenerationPrompt: C.GoString(result.generation_prompt),
 		},
+	}, nil
+}
+
+// ChatTemplateProbe reports what the linked llama.cpp common_chat engine
+// detects from a model's own chat template — the capability-truth source for
+// tool-call and thinking support. Curated protocol tables are overrides.
+type ChatTemplateProbe struct {
+	FormatName              string
+	ThinkingStartTag        string
+	SupportsToolCalls       bool
+	SupportsThinking        bool
+	SupportsReasoningEffort bool
+}
+
+// ProbeChatTemplate inspects the model's chat template via a vocab-only load
+// (no tensors). Cost is a metadata+vocab read; callers should cache by digest.
+func ProbeChatTemplate(modelPath string) (ChatTemplateProbe, error) {
+	initBackend()
+	cPath := C.CString(modelPath)
+	defer C.free(unsafe.Pointer(cPath))
+
+	const errLen = 1024
+	errbuf := (*C.char)(C.calloc(1, errLen))
+	defer C.free(unsafe.Pointer(errbuf))
+
+	result := C.cx_probe_chat_template(cPath, errbuf, C.size_t(errLen))
+	if result.format_name == nil {
+		return ChatTemplateProbe{}, errors.New("llamacppshim: chat template probe: " + C.GoString(errbuf))
+	}
+	defer C.free(unsafe.Pointer(result.format_name))
+	defer C.free(unsafe.Pointer(result.thinking_start_tag))
+	return ChatTemplateProbe{
+		FormatName:              C.GoString(result.format_name),
+		ThinkingStartTag:        C.GoString(result.thinking_start_tag),
+		SupportsToolCalls:       result.supports_tool_calls != 0,
+		SupportsThinking:        result.supports_thinking != 0,
+		SupportsReasoningEffort: result.supports_reasoning_effort != 0,
 	}, nil
 }
 

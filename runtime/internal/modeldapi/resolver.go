@@ -56,36 +56,42 @@ type CapacityResponse struct {
 }
 
 type CapacityInfo struct {
-	ModelMaxContext              int              `json:"modelMaxContext"`
-	EffectiveContext             int              `json:"effectiveContext"`
-	MemoryContextTokens          int              `json:"memoryContextTokens,omitempty"`
-	HotContextTokens             int              `json:"hotContextTokens,omitempty"`
-	PlannerEffectiveContext      int              `json:"plannerEffectiveContext,omitempty"`
-	KVBytesPerToken              int64            `json:"kvBytesPerToken,omitempty"`
-	FreeBytes                    int64            `json:"freeBytes,omitempty"`
-	WeightsBytes                 int64            `json:"weightsBytes,omitempty"`
-	OverheadBytes                int64            `json:"overheadBytes,omitempty"`
-	ReservedBytes                int64            `json:"reservedBytes,omitempty"`
-	UserLimitBytes               int64            `json:"userLimitBytes,omitempty"`
-	MinFreeBytes                 int64            `json:"minFreeBytes,omitempty"`
-	HostColdBudgetBytes          int64            `json:"hostColdBudgetBytes,omitempty"`
-	UsableBytes                  int64            `json:"usableBytes,omitempty"`
-	RequiredBytes                int64            `json:"requiredBytes,omitempty"`
-	Clamped                      bool             `json:"clamped,omitempty"`
-	Reason                       string           `json:"reason,omitempty"`
-	DeviceKind                   string           `json:"deviceKind,omitempty"`
-	DeviceID                     string           `json:"deviceId,omitempty"`
-	DeviceTotalBytes             int64            `json:"deviceTotalBytes,omitempty"`
-	SharedWithDisplay            bool             `json:"sharedWithDisplay,omitempty"`
-	RequestedGpuLayers           int              `json:"requestedGpuLayers,omitempty"`
-	ResolvedGpuLayers            int              `json:"resolvedGpuLayers,omitempty"`
-	SparseAttention              bool             `json:"sparseAttention,omitempty"`
-	SlidingWindowAttentionTokens int              `json:"slidingWindowAttentionTokens,omitempty"`
-	RuntimeName                  string           `json:"runtimeName,omitempty"`
-	RuntimeDigest                string           `json:"runtimeDigest,omitempty"`
-	RuntimeSystemInfo            string           `json:"runtimeSystemInfo,omitempty"`
-	SupportsGPUOffload           bool             `json:"supportsGpuOffload,omitempty"`
-	Devices                      []CapacityDevice `json:"devices,omitempty" openapi_include_type:"modeldapi.CapacityDevice"`
+	ModelMaxContext                     int              `json:"modelMaxContext"`
+	EffectiveContext                    int              `json:"effectiveContext"`
+	MemoryContextTokens                 int              `json:"memoryContextTokens,omitempty"`
+	HotContextTokens                    int              `json:"hotContextTokens,omitempty"`
+	PlannerEffectiveContext             int              `json:"plannerEffectiveContext,omitempty"`
+	KVBytesPerToken                     int64            `json:"kvBytesPerToken,omitempty"`
+	FreeBytes                           int64            `json:"freeBytes,omitempty"`
+	WeightsBytes                        int64            `json:"weightsBytes,omitempty"`
+	OverheadBytes                       int64            `json:"overheadBytes,omitempty"`
+	ReservedBytes                       int64            `json:"reservedBytes,omitempty"`
+	UserLimitBytes                      int64            `json:"userLimitBytes,omitempty"`
+	MinFreeBytes                        int64            `json:"minFreeBytes,omitempty"`
+	HostColdBudgetBytes                 int64            `json:"hostColdBudgetBytes,omitempty"`
+	UsableBytes                         int64            `json:"usableBytes,omitempty"`
+	RequiredBytes                       int64            `json:"requiredBytes,omitempty"`
+	Clamped                             bool             `json:"clamped,omitempty"`
+	Reason                              string           `json:"reason,omitempty"`
+	DeviceKind                          string           `json:"deviceKind,omitempty"`
+	DeviceID                            string           `json:"deviceId,omitempty"`
+	DeviceTotalBytes                    int64            `json:"deviceTotalBytes,omitempty"`
+	SharedWithDisplay                   bool             `json:"sharedWithDisplay,omitempty"`
+	RequestedGpuLayers                  int              `json:"requestedGpuLayers,omitempty"`
+	ResolvedGpuLayers                   int              `json:"resolvedGpuLayers,omitempty"`
+	SparseAttention                     bool             `json:"sparseAttention,omitempty"`
+	SlidingWindowAttentionTokens        int              `json:"slidingWindowAttentionTokens,omitempty"`
+	ChatTemplateFormat                  string           `json:"chatTemplateFormat,omitempty"`
+	ChatTemplateThinkingStartTag        string           `json:"chatTemplateThinkingStartTag,omitempty"`
+	ChatTemplateReasoningFormat         string           `json:"chatTemplateReasoningFormat,omitempty"`
+	ChatTemplateSupportsToolCalls       bool             `json:"chatTemplateSupportsToolCalls,omitempty"`
+	ChatTemplateSupportsThinking        bool             `json:"chatTemplateSupportsThinking,omitempty"`
+	ChatTemplateSupportsReasoningEffort bool             `json:"chatTemplateSupportsReasoningEffort,omitempty"`
+	RuntimeName                         string           `json:"runtimeName,omitempty"`
+	RuntimeDigest                       string           `json:"runtimeDigest,omitempty"`
+	RuntimeSystemInfo                   string           `json:"runtimeSystemInfo,omitempty"`
+	SupportsGPUOffload                  bool             `json:"supportsGpuOffload,omitempty"`
+	Devices                             []CapacityDevice `json:"devices,omitempty" openapi_include_type:"modeldapi.CapacityDevice"`
 }
 
 type CapacityDevice struct {
@@ -487,36 +493,42 @@ func capacityInfoFromTransport(info transport.ModelInfo) CapacityInfo {
 		})
 	}
 	return CapacityInfo{
-		ModelMaxContext:              info.ModelMaxContext,
-		EffectiveContext:             info.EffectiveContext,
-		MemoryContextTokens:          info.MemoryContextTokens,
-		HotContextTokens:             info.HotContextTokens,
-		PlannerEffectiveContext:      info.PlannerEffectiveContext,
-		KVBytesPerToken:              info.KVBytesPerToken,
-		FreeBytes:                    info.FreeBytes,
-		WeightsBytes:                 info.WeightsBytes,
-		OverheadBytes:                info.OverheadBytes,
-		ReservedBytes:                info.ReservedBytes,
-		UserLimitBytes:               info.UserLimitBytes,
-		MinFreeBytes:                 info.MinFreeBytes,
-		HostColdBudgetBytes:          info.HostColdBudgetBytes,
-		UsableBytes:                  info.UsableBytes,
-		RequiredBytes:                info.RequiredBytes,
-		Clamped:                      info.Clamped,
-		Reason:                       info.Reason,
-		DeviceKind:                   info.DeviceKind,
-		DeviceID:                     info.DeviceID,
-		DeviceTotalBytes:             info.DeviceTotalBytes,
-		SharedWithDisplay:            info.SharedWithDisplay,
-		RequestedGpuLayers:           info.RequestedGpuLayers,
-		ResolvedGpuLayers:            info.ResolvedGpuLayers,
-		SparseAttention:              info.SparseAttention,
-		SlidingWindowAttentionTokens: info.SlidingWindowAttentionTokens,
-		RuntimeName:                  info.RuntimeName,
-		RuntimeDigest:                info.RuntimeDigest,
-		RuntimeSystemInfo:            info.RuntimeSystemInfo,
-		SupportsGPUOffload:           info.SupportsGPUOffload,
-		Devices:                      devices,
+		ModelMaxContext:                     info.ModelMaxContext,
+		EffectiveContext:                    info.EffectiveContext,
+		MemoryContextTokens:                 info.MemoryContextTokens,
+		HotContextTokens:                    info.HotContextTokens,
+		PlannerEffectiveContext:             info.PlannerEffectiveContext,
+		KVBytesPerToken:                     info.KVBytesPerToken,
+		FreeBytes:                           info.FreeBytes,
+		WeightsBytes:                        info.WeightsBytes,
+		OverheadBytes:                       info.OverheadBytes,
+		ReservedBytes:                       info.ReservedBytes,
+		UserLimitBytes:                      info.UserLimitBytes,
+		MinFreeBytes:                        info.MinFreeBytes,
+		HostColdBudgetBytes:                 info.HostColdBudgetBytes,
+		UsableBytes:                         info.UsableBytes,
+		RequiredBytes:                       info.RequiredBytes,
+		Clamped:                             info.Clamped,
+		Reason:                              info.Reason,
+		DeviceKind:                          info.DeviceKind,
+		DeviceID:                            info.DeviceID,
+		DeviceTotalBytes:                    info.DeviceTotalBytes,
+		SharedWithDisplay:                   info.SharedWithDisplay,
+		RequestedGpuLayers:                  info.RequestedGpuLayers,
+		ResolvedGpuLayers:                   info.ResolvedGpuLayers,
+		SparseAttention:                     info.SparseAttention,
+		SlidingWindowAttentionTokens:        info.SlidingWindowAttentionTokens,
+		ChatTemplateFormat:                  info.ChatTemplateFormat,
+		ChatTemplateThinkingStartTag:        info.ChatTemplateThinkingStartTag,
+		ChatTemplateReasoningFormat:         info.ChatTemplateReasoningFormat,
+		ChatTemplateSupportsToolCalls:       info.ChatTemplateSupportsToolCalls,
+		ChatTemplateSupportsThinking:        info.ChatTemplateSupportsThinking,
+		ChatTemplateSupportsReasoningEffort: info.ChatTemplateSupportsReasoningEffort,
+		RuntimeName:                         info.RuntimeName,
+		RuntimeDigest:                       info.RuntimeDigest,
+		RuntimeSystemInfo:                   info.RuntimeSystemInfo,
+		SupportsGPUOffload:                  info.SupportsGPUOffload,
+		Devices:                             devices,
 	}
 }
 

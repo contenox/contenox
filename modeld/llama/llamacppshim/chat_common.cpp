@@ -51,6 +51,7 @@ extern "C" struct cx_chat_apply_result cx_common_chat_apply(
     int add_generation_prompt,
     const char *reasoning_format,
     int enable_thinking,
+    const char *reasoning_effort,
     char *errbuf,
     size_t errlen) {
     struct cx_chat_apply_result result = {};
@@ -66,6 +67,12 @@ extern "C" struct cx_chat_apply_result cx_common_chat_apply(
         inputs.add_generation_prompt = add_generation_prompt != 0;
         inputs.reasoning_format = cx_reasoning_format_or_none(reasoning_format);
         inputs.enable_thinking = enable_thinking != 0;
+        // Model-owned effort levels (e.g. gpt-oss harmony templates read
+        // reasoning_effort). Templates without the variable ignore it.
+        if (reasoning_effort != nullptr && reasoning_effort[0] != '\0') {
+            inputs.chat_template_kwargs["reasoning_effort"] =
+                std::string("\"") + reasoning_effort + "\"";
+        }
         inputs.messages = common_chat_msgs_parse_oaicompat(
             json::parse(messages_json != nullptr ? messages_json : "[]"));
         if (tools_json != nullptr && tools_json[0] != '\0') {
@@ -178,6 +185,100 @@ extern "C" int cx_common_chat_parse(
             std::snprintf(errbuf, errlen, "unknown common chat parse error");
         }
         return -1;
+    }
+}
+
+extern "C" struct cx_chat_probe_result {
+    char *format_name;
+    char *thinking_start_tag;
+    int supports_tool_calls;
+    int supports_thinking;
+    int supports_reasoning_effort;
+};
+
+// cx_probe_chat_template inspects a model's own chat template without loading
+// tensors (vocab-only model load): what llama.cpp's common_chat engine detects
+// is what the linked runtime can actually render and parse — tool-call syntax,
+// a thinking toggle, and model-owned reasoning-effort levels. This is the
+// capability-truth source; curated protocol tables are overrides on top of it.
+extern "C" struct cx_chat_probe_result cx_probe_chat_template(
+    const char *model_path,
+    char *errbuf,
+    size_t errlen) {
+    struct cx_chat_probe_result result = {};
+    llama_model *model = nullptr;
+    try {
+        if (model_path == nullptr || model_path[0] == '\0') {
+            throw std::runtime_error("model path is empty");
+        }
+        llama_model_params mp = llama_model_default_params();
+        mp.vocab_only = true;
+        model = llama_model_load_from_file(model_path, mp);
+        if (model == nullptr) {
+            throw std::runtime_error("vocab-only model load failed");
+        }
+        auto tmpls = common_chat_templates_init(model, "");
+
+        common_chat_templates_inputs base;
+        base.use_jinja = true;
+        base.add_generation_prompt = true;
+        base.messages = common_chat_msgs_parse_oaicompat(json::parse(
+            R"([{"role":"user","content":"ping"}])"));
+        auto plain_params = common_chat_templates_apply(tmpls.get(), base);
+
+        // Tool support: render with one dummy tool; a template that engages a
+        // tool-call syntax changes the prompt and yields parser metadata.
+        auto with_tools = base;
+        with_tools.tools = common_chat_tools_parse_oaicompat(json::parse(
+            R"([{"type":"function","function":{"name":"probe","description":"probe","parameters":{"type":"object","properties":{}}}}])"));
+        auto tool_params = common_chat_templates_apply(tmpls.get(), with_tools);
+        result.supports_tool_calls =
+            (tool_params.prompt != plain_params.prompt &&
+             (tool_params.format != COMMON_CHAT_FORMAT_CONTENT_ONLY || !tool_params.parser.empty())) ? 1 : 0;
+
+        // Thinking toggle + tag come straight from the template engine.
+        result.supports_thinking = common_chat_templates_support_enable_thinking(tmpls.get()) ? 1 : 0;
+        result.thinking_start_tag = cx_strdup_string(plain_params.thinking_start_tag);
+
+        // Effort levels: real iff different levels render different prompts.
+        auto low = base;
+        low.chat_template_kwargs["reasoning_effort"] = "\"low\"";
+        auto high = base;
+        high.chat_template_kwargs["reasoning_effort"] = "\"high\"";
+        try {
+            auto low_params = common_chat_templates_apply(tmpls.get(), low);
+            auto high_params = common_chat_templates_apply(tmpls.get(), high);
+            result.supports_reasoning_effort = (low_params.prompt != high_params.prompt) ? 1 : 0;
+        } catch (...) {
+            result.supports_reasoning_effort = 0;
+        }
+
+        result.format_name = cx_strdup_string(common_chat_format_name(tool_params.format));
+        if (result.format_name == nullptr || result.thinking_start_tag == nullptr) {
+            std::free(result.format_name);
+            std::free(result.thinking_start_tag);
+            result.format_name = nullptr;
+            result.thinking_start_tag = nullptr;
+            throw std::runtime_error("out of memory");
+        }
+        llama_model_free(model);
+        return result;
+    } catch (const std::exception &e) {
+        if (model != nullptr) {
+            llama_model_free(model);
+        }
+        if (errbuf != nullptr && errlen > 0) {
+            std::snprintf(errbuf, errlen, "%s", e.what());
+        }
+        return result;
+    } catch (...) {
+        if (model != nullptr) {
+            llama_model_free(model);
+        }
+        if (errbuf != nullptr && errlen > 0) {
+            std::snprintf(errbuf, errlen, "unknown chat template probe error");
+        }
+        return result;
     }
 }
 

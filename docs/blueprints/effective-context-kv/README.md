@@ -11,6 +11,7 @@ Related OpenVINO validation:
 - [Local NVIDIA llama benchmark findings](local-nvidia-llama-bench-findings.md)
 
 Related hardware/runtime strategy:
+- [Local inference cross-compare](modeld-local-inference-cross-compare-blueprint.md)
 - [Latency-budgeted effective context](hardware-effective-context-blueprint.md)
 - [Specialization cells and multi-GPU runtime shapes](specialization-cells-blueprint.md)
 

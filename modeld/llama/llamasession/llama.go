@@ -402,7 +402,7 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	suffixText := suffix.Text
 	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
 		all := append(append([]chatTemplateMessage{}, s.stableMsgs...), volatileMsgs...)
-		rendered, err := s.renderTemplateForDecode(all, s.tools, suffix.EnableThinking)
+		rendered, err := s.renderTemplateForDecode(all, s.tools, suffix.EnableThinking, suffix.ReasoningEffort)
 		if err != nil {
 			return llama.SuffixStatus{}, fmt.Errorf("llamasession: apply chat template: %w", err)
 		}
@@ -892,18 +892,18 @@ func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []chatTe
 }
 
 func (s *session) renderTemplate(msgs []chatTemplateMessage, tools string, addAssistant bool) (string, error) {
-	result, err := s.renderTemplateWithOptions(msgs, tools, addAssistant, nil)
+	result, err := s.renderTemplateWithOptions(msgs, tools, addAssistant, nil, "")
 	if err != nil {
 		return "", err
 	}
 	return result.Prompt, nil
 }
 
-func (s *session) renderTemplateForDecode(msgs []chatTemplateMessage, tools string, enableThinking *bool) (llamacppshim.ChatTemplateResult, error) {
-	return s.renderTemplateWithOptions(msgs, tools, true, enableThinking)
+func (s *session) renderTemplateForDecode(msgs []chatTemplateMessage, tools string, enableThinking *bool, reasoningEffort string) (llamacppshim.ChatTemplateResult, error) {
+	return s.renderTemplateWithOptions(msgs, tools, true, enableThinking, reasoningEffort)
 }
 
-func (s *session) renderTemplateWithOptions(msgs []chatTemplateMessage, tools string, addAssistant bool, enableThinking *bool) (llamacppshim.ChatTemplateResult, error) {
+func (s *session) renderTemplateWithOptions(msgs []chatTemplateMessage, tools string, addAssistant bool, enableThinking *bool, reasoningEffort string) (llamacppshim.ChatTemplateResult, error) {
 	msgsJSON, err := chatMessagesJSON(msgs)
 	if err != nil {
 		return llamacppshim.ChatTemplateResult{}, err
@@ -916,6 +916,7 @@ func (s *session) renderTemplateWithOptions(msgs []chatTemplateMessage, tools st
 		AddAssistant:    addAssistant,
 		ReasoningFormat: s.reasoning,
 		EnableThinking:  thinking,
+		ReasoningEffort: reasoningEffort,
 	})
 }
 

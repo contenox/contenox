@@ -63,6 +63,10 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		// parks cold behind the session boundary.
 		if sessionFactory == nil {
 			info, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "llama", Digest: modelDigest, Path: modelPath, Adapters: adapters}, transport.Config(profile.describeConfig()))
+			if derr == nil {
+				applyModeldTemplateCapabilities(&profile, info)
+				caps.CanThink = caps.CanThink || profile.Reasoning.Protocol != ""
+			}
 			switch {
 			case derr == nil && info.PlannerEffectiveContext > 0:
 				caps.ContextLength = info.PlannerEffectiveContext

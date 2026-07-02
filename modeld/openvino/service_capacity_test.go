@@ -331,6 +331,22 @@ func TestUnit_OpenGenAIWithSparseFallbackDoesNotOverrideExplicitSparse(t *testin
 	}
 }
 
+func TestUnit_OpenVINOXAttentionUnsupportedMatchesDriverVariants(t *testing.T) {
+	cases := []string{
+		"[GPU] XAttention is not supported by your current GPU architecture",
+		"[gpu] xattention unsupported by selected driver",
+		"XAttention kernels are not available on this device",
+	}
+	for _, msg := range cases {
+		if !openvinoXAttentionUnsupported(errors.New(msg)) {
+			t.Fatalf("openvinoXAttentionUnsupported(%q) = false, want true", msg)
+		}
+	}
+	if openvinoXAttentionUnsupported(errors.New("selected GPU does not support dense attention")) {
+		t.Fatal("non-XAttention error matched unexpectedly")
+	}
+}
+
 func TestUnit_ServiceOpenSessionDerivesSchedulerCacheSizeFromHotContext(t *testing.T) {
 	dir := writeTestIRWithProfile(t, ovsession.ModelKVProfile{
 		MaxPositionEmbeddings: 32768,

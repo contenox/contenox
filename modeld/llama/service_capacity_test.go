@@ -149,6 +149,7 @@ func TestUnit_ServiceOpenSessionRejectsOversizedContextBeforeBackend(t *testing.
 func TestUnit_ServiceResolveConfigAppliesDaemonEnvOverrides(t *testing.T) {
 	t.Setenv("CONTENOX_LLAMA_GPU_LAYERS", "999")
 	t.Setenv("CONTENOX_LLAMA_CTX", "16384")
+	t.Setenv("CONTENOX_LLAMA_KV_CACHE_TYPE", "q8_0")
 	path := writeTestGGUF(t, 32768)
 	svc := NewService(
 		// An accelerator snapshot with ample memory: the daemon GPU-layer override
@@ -177,6 +178,9 @@ func TestUnit_ServiceResolveConfigAppliesDaemonEnvOverrides(t *testing.T) {
 	}
 	if cfg.NumCtx != 16384 {
 		t.Fatalf("NumCtx = %d, want daemon env override 16384", cfg.NumCtx)
+	}
+	if cfg.KVCacheType != "q8_0" {
+		t.Fatalf("KVCacheType = %q, want daemon env override q8_0", cfg.KVCacheType)
 	}
 }
 

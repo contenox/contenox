@@ -150,6 +150,11 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 			describedEffectiveContext = info.EffectiveContext
 			describedPlannerContext = info.PlannerEffectiveContext
 			describedModelMaxContext = info.ModelMaxContext
+			applyModeldTemplateCapabilities(&profile, info)
+			if cfg.ReasoningFormat == "" && profile.Reasoning.Format != "" {
+				cfg.ReasoningFormat = profile.Reasoning.Format
+				baseCfg.ReasoningFormat = profile.Reasoning.Format
+			}
 			if v := backendVersionFromModelInfo(info); v != "" {
 				backendID = v
 			}
@@ -179,6 +184,16 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		describedPlannerContext:   describedPlannerContext,
 		describedModelMaxContext:  describedModelMaxContext,
 	}, nil
+}
+
+func applyModeldTemplateCapabilities(profile *modelProfile, info transport.ModelInfo) {
+	if profile.ToolCalls.Protocol == "" && info.ChatTemplateSupportsToolCalls {
+		profile.ToolCalls.Protocol = toolParserProtocolCommonChat
+	}
+	if profile.Reasoning.Protocol == "" && info.ChatTemplateReasoningFormat != "" {
+		profile.Reasoning.Protocol = reasoningProtocolCommonChat
+		profile.Reasoning.Format = info.ChatTemplateReasoningFormat
+	}
 }
 
 func curatedToolProtocol(ctx context.Context, modelName, backendType string) string {

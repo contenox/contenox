@@ -45,6 +45,9 @@ func TestUnit_LlamaClient_ReasoningChatSurfacesThinkingWhenRequested(t *testing.
 	if fake.suffix.EnableThinking == nil || !*fake.suffix.EnableThinking {
 		t.Fatalf("suffix enable_thinking = %v, want true", fake.suffix.EnableThinking)
 	}
+	if fake.suffix.ReasoningEffort != "high" {
+		t.Fatalf("suffix reasoning_effort = %q, want high", fake.suffix.ReasoningEffort)
+	}
 }
 
 func TestUnit_LlamaClient_ReasoningDropsThinkingWhenThinkOff(t *testing.T) {
@@ -70,6 +73,9 @@ func TestUnit_LlamaClient_ReasoningDropsThinkingWhenThinkOff(t *testing.T) {
 	}
 	if fake.suffix.EnableThinking == nil || *fake.suffix.EnableThinking {
 		t.Fatalf("suffix enable_thinking = %v, want false", fake.suffix.EnableThinking)
+	}
+	if fake.suffix.ReasoningEffort != "" {
+		t.Fatalf("suffix reasoning_effort = %q, want empty for think=off", fake.suffix.ReasoningEffort)
 	}
 }
 

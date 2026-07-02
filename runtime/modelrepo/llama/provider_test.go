@@ -247,6 +247,47 @@ func TestUnit_LlamaProvider_ExplicitProfileContextStillCapsDescribe(t *testing.T
 	}
 }
 
+func TestUnit_LlamaProvider_UsesModeldDetectedTemplateCapabilities(t *testing.T) {
+	old := sessionFactory
+	sessionFactory = nil
+	t.Cleanup(func() { sessionFactory = old })
+
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "uncurated")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &recordingEmbedService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:               32768,
+			EffectiveContext:              8192,
+			ChatTemplateSupportsToolCalls: true,
+			ChatTemplateReasoningFormat:   "auto",
+			ChatTemplateSupportsThinking:  true,
+		},
+	}
+	serveLlamaModeldForTest(t, svc)
+
+	got, err := newProvider("uncurated", root, modelrepo.CapabilityConfig{}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	if c.toolProtocol != toolParserProtocolCommonChat {
+		t.Fatalf("tool protocol = %q, want modeld-detected common_chat", c.toolProtocol)
+	}
+	if c.reasoningProtocol != reasoningProtocolCommonChat {
+		t.Fatalf("reasoning protocol = %q, want modeld-detected common_chat", c.reasoningProtocol)
+	}
+	if c.cfg.ReasoningFormat != "auto" {
+		t.Fatalf("reasoning format = %q, want modeld-detected auto", c.cfg.ReasoningFormat)
+	}
+}
+
 func TestUnit_LlamaProvider_ProfileAdaptersReachModelRef(t *testing.T) {
 	withSessionFactory(t, func(string, Config) (Session, error) { return nil, nil })
 

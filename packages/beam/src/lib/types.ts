@@ -146,6 +146,12 @@ export type ModeldCapacityInfo = {
   resolvedGpuLayers?: number;
   sparseAttention?: boolean;
   slidingWindowAttentionTokens?: number;
+  chatTemplateFormat?: string;
+  chatTemplateThinkingStartTag?: string;
+  chatTemplateReasoningFormat?: string;
+  chatTemplateSupportsToolCalls?: boolean;
+  chatTemplateSupportsThinking?: boolean;
+  chatTemplateSupportsReasoningEffort?: boolean;
   runtimeName?: string;
   runtimeDigest?: string;
   runtimeSystemInfo?: string;
