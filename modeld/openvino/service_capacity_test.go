@@ -76,6 +76,45 @@ func TestUnit_ServiceDescribeResolvesCapacity(t *testing.T) {
 	}
 }
 
+func TestUnit_ServiceDescribeReportsChatTemplateProbe(t *testing.T) {
+	dir := writeTestIR(t)
+	oldProbe := probeOpenVINOChatTemplate
+	probeOpenVINOChatTemplate = func(modelDir string) (ovsession.ChatTemplateProbe, error) {
+		if modelDir != dir {
+			t.Fatalf("probe model dir = %q, want %q", modelDir, dir)
+		}
+		return ovsession.ChatTemplateProbe{
+			FormatName:              "openvino:minja",
+			ThinkingStartTag:        "<think>",
+			SupportsToolCalls:       true,
+			SupportsThinking:        true,
+			SupportsReasoningEffort: true,
+		}, nil
+	}
+	t.Cleanup(func() { probeOpenVINOChatTemplate = oldProbe })
+
+	svc := NewService(
+		WithMemorySource(staticMemory(2<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{MaxResidentBytes: 1 << 20, HeadroomFrac: 0.1}),
+	)
+	info, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type: "openvino",
+		Path: dir,
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.ChatTemplateFormat != "openvino:minja" ||
+		info.ChatTemplateThinkingStartTag != "<think>" ||
+		info.ChatTemplateReasoningFormat != "auto" ||
+		!info.ChatTemplateSupportsToolCalls ||
+		!info.ChatTemplateSupportsThinking ||
+		!info.ChatTemplateSupportsReasoningEffort {
+		t.Fatalf("chat template fields not populated from probe: %+v", info)
+	}
+}
+
 func TestUnit_ServiceDescribeDefaultsResidentCapFromDetectedFreeMemory(t *testing.T) {
 	dir := writeTestIR(t)
 	svc := NewService(

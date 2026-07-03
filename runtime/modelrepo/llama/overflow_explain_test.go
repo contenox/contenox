@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// explainOverflow turns a raw context-overflow error into an actionable message
+// explainOverflow turns a typed context-overflow error into an actionable message
 // while staying errors.Is(ErrContextOverflow)-true so existing handling works.
 func TestUnit_ExplainOverflow_EnrichesContextOverflow(t *testing.T) {
 	c := &client{

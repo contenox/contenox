@@ -55,6 +55,9 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		// parks cold behind the session boundary.
 		if sessionFactory == nil {
 			mi, derr := modeldconn.Describe(ctx, modeldconn.ModelRef{Name: e.Name(), Type: "openvino", Digest: modelDigest, Path: modelPath, Adapters: adapters}, Config{NumCtx: caps.ContextLength})
+			if derr == nil {
+				applyModeldTemplateCapabilities(&caps, mi)
+			}
 			switch {
 			case derr == nil && mi.PlannerEffectiveContext > 0:
 				caps.ContextLength = mi.PlannerEffectiveContext

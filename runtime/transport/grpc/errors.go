@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/transport"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -45,7 +47,15 @@ func encodeError(err error) error {
 	}
 	for _, s := range sentinels {
 		if errors.Is(err, s.err) {
-			return status.Error(s.code, s.token+": "+err.Error())
+			st := status.New(s.code, s.token+": "+err.Error())
+			if s.token == "context_overflow" {
+				if detail, ok := transport.ContextOverflowDetailFromError(err); ok {
+					if withDetail, detailErr := st.WithDetails(errorInfoForOverflow(s.token, detail)); detailErr == nil {
+						return withDetail.Err()
+					}
+				}
+			}
+			return st.Err()
 		}
 	}
 	return status.Error(codes.Internal, "internal: "+err.Error())
@@ -68,6 +78,11 @@ func decodeError(err error) error {
 	}
 	for _, s := range sentinels {
 		if s.token == token {
+			if s.token == "context_overflow" {
+				if detail, ok := overflowDetailFromStatus(st); ok {
+					return transport.NewContextOverflowError(detail.Stage, detail.ResidentTokens, detail.AdditionalTokens, detail.NumCtx)
+				}
+			}
 			return fmt.Errorf("%w: %s", s.err, rest)
 		}
 	}
@@ -89,14 +104,73 @@ func errorToken(err error) string {
 	return ""
 }
 
-func decodeWireError(token, msg string) error {
+func decodeWireError(token, msg string, detail *transport.ContextOverflowDetail) error {
 	if msg == "" {
 		return nil
 	}
 	for _, s := range sentinels {
 		if s.token == token {
+			if s.token == "context_overflow" && detail != nil {
+				return transport.NewContextOverflowError(detail.Stage, detail.ResidentTokens, detail.AdditionalTokens, detail.NumCtx)
+			}
 			return fmt.Errorf("%w: %s", s.err, msg)
 		}
 	}
 	return errors.New(msg)
+}
+
+func errorInfoForOverflow(reason string, detail transport.ContextOverflowDetail) *errdetails.ErrorInfo {
+	return &errdetails.ErrorInfo{
+		Reason: reason,
+		Domain: "contenox.transport",
+		Metadata: map[string]string{
+			"stage":             detail.Stage,
+			"resident_tokens":   strconv.Itoa(detail.ResidentTokens),
+			"additional_tokens": strconv.Itoa(detail.AdditionalTokens),
+			"num_ctx":           strconv.Itoa(detail.NumCtx),
+		},
+	}
+}
+
+func overflowDetailFromStatus(st *status.Status) (transport.ContextOverflowDetail, bool) {
+	for _, raw := range st.Details() {
+		info, ok := raw.(*errdetails.ErrorInfo)
+		if !ok || info.Reason != "context_overflow" {
+			continue
+		}
+		detail, ok := overflowDetailFromMetadata(info.Metadata)
+		if ok {
+			return detail, true
+		}
+	}
+	return transport.ContextOverflowDetail{}, false
+}
+
+func overflowDetailFromMetadata(md map[string]string) (transport.ContextOverflowDetail, bool) {
+	if md == nil {
+		return transport.ContextOverflowDetail{}, false
+	}
+	resident, residentOK := atoiMetadata(md["resident_tokens"])
+	additional, additionalOK := atoiMetadata(md["additional_tokens"])
+	numCtx, numCtxOK := atoiMetadata(md["num_ctx"])
+	if !residentOK && !additionalOK && !numCtxOK && md["stage"] == "" {
+		return transport.ContextOverflowDetail{}, false
+	}
+	return transport.ContextOverflowDetail{
+		Stage:            md["stage"],
+		ResidentTokens:   resident,
+		AdditionalTokens: additional,
+		NumCtx:           numCtx,
+	}, true
+}
+
+func atoiMetadata(v string) (int, bool) {
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }

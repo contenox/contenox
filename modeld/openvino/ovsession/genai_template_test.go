@@ -42,6 +42,19 @@ func TestSystem_OpenVINOGenAI_ApplyChatTemplate(t *testing.T) {
 	t.Logf("templated prompt:\n%s", out)
 }
 
+func TestSystem_OpenVINOGenAI_ProbeChatTemplate(t *testing.T) {
+	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
+	if modelDir == "" {
+		t.Skip("set CONTENOX_OPENVINO_TEST_MODEL to an OpenVINO IR model directory")
+	}
+
+	probe, err := ProbeChatTemplate(modelDir)
+	require.NoError(t, err)
+	require.Equal(t, "openvino:minja", probe.FormatName)
+
+	t.Logf("chat template probe: %+v", probe)
+}
+
 // TestSystem_OpenVINOGenAI_ApplyChatTemplateWithTools checks that tool
 // definitions are rendered into the prompt via the model's own template
 // tools-handling.

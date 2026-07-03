@@ -183,11 +183,12 @@ type healthResp struct {
 
 // wireChunk is the JSON-safe form of transport.StreamChunk (error -> string).
 type wireChunk struct {
-	Text       string               `json:"text,omitempty"`
-	Thinking   string               `json:"thinking,omitempty"`
-	ToolCalls  []transport.ToolCall `json:"tool_calls,omitempty"`
-	Error      string               `json:"error,omitempty"`
-	ErrorToken string               `json:"error_token,omitempty"`
+	Text        string                           `json:"text,omitempty"`
+	Thinking    string                           `json:"thinking,omitempty"`
+	ToolCalls   []transport.ToolCall             `json:"tool_calls,omitempty"`
+	Error       string                           `json:"error,omitempty"`
+	ErrorToken  string                           `json:"error_token,omitempty"`
+	ErrorDetail *transport.ContextOverflowDetail `json:"error_detail,omitempty"`
 }
 
 // decodeStreamDesc is the client-side stream descriptor for Decode.

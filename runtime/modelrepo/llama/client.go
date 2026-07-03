@@ -10,6 +10,7 @@ import (
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/reasoning"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 // warm holds the active modeld session handle across turns. It is bounded (idle
@@ -103,9 +104,8 @@ func (c *client) explainOverflow(err error) error {
 	if c.freeBytes > 0 {
 		free = fmt.Sprintf(" with %s free", humanBytes(c.freeBytes))
 	}
-	// Prefer the live session's window carried inside the overflow error itself
-	// (modeld's ContextOverflowError arrives over gRPC as text): the
-	// construction-time Describe answer can be stale — e.g. computed while a
+	// Prefer the live session's window carried as structured transport detail:
+	// the construction-time Describe answer can be stale — e.g. computed while a
 	// previous session was still resident — and quoting it produces nonsense
 	// like "serves only 433 tokens" for a session actually serving 3854.
 	served := overflowNumCtx(err)
@@ -123,29 +123,11 @@ func (c *client) explainOverflow(err error) error {
 		err, c.modelName, served, where, free)
 }
 
-// overflowNumCtx extracts the live session window from a context-overflow
-// error's text ("… num_ctx=2890 …"). modeld's typed ContextOverflowError does
-// not survive the gRPC boundary — it arrives re-wrapped as a string — so text
-// is the only cross-wire carrier of the session's actual window.
 func overflowNumCtx(err error) int {
-	if err == nil {
-		return 0
+	if detail, ok := transport.ContextOverflowDetailFromError(err); ok {
+		return detail.NumCtx
 	}
-	msg := err.Error()
-	i := strings.LastIndex(msg, "num_ctx=")
-	if i < 0 {
-		return 0
-	}
-	rest := msg[i+len("num_ctx="):]
-	end := 0
-	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
-		end++
-	}
-	n, convErr := strconv.Atoi(rest[:end])
-	if convErr != nil {
-		return 0
-	}
-	return n
+	return 0
 }
 
 // humanBytes formats a byte count with binary (KiB/MiB/…) units for diagnostics.
@@ -174,17 +156,21 @@ func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ..
 
 	var toolsJSON string
 	parseToolCalls := false
+	structuredToolCalls := false
 	if len(cfg.Tools) > 0 {
 		// Tools require a profile-declared tool protocol: the daemon renders tool
 		// definitions and parses tool-call output via llama.cpp's model-native
-		// common chat path. No protocol means no guessing.
+		// common chat path, or — for models without native template tool
+		// support — constrains decoding to a tool-call JSON schema via GBNF.
+		// No protocol means no guessing.
 		if c.toolProtocol == "" {
 			return modelrepo.ChatResult{}, NewUnsupportedFeatureError("tool calls (model declares no tool_calls.protocol)")
 		}
 		if !toolCallProtocolKnown(c.toolProtocol) {
 			return modelrepo.ChatResult{}, fmt.Errorf("%w: tool protocol %q", ErrUnsupportedFeature, c.toolProtocol)
 		}
-		parseToolCalls = true
+		structuredToolCalls = c.toolProtocol == toolProtocolJSONSchemaToolCalls
+		parseToolCalls = !structuredToolCalls
 		var err error
 		if toolsJSON, err = serializeToolDefs(cfg.Tools); err != nil {
 			return modelrepo.ChatResult{}, err
@@ -197,6 +183,16 @@ func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ..
 	}
 	if parseToolCalls {
 		dc.ParserProtocols = append(dc.ParserProtocols, toolParserProtocolCommonChat)
+	}
+	if structuredToolCalls {
+		payload, err := toolCallsJSONSchema(cfg.Tools)
+		if err != nil {
+			return modelrepo.ChatResult{}, err
+		}
+		dc.StructuredOutput = transport.StructuredOutputConfig{
+			Protocol: toolProtocolJSONSchemaToolCalls,
+			Payload:  payload,
+		}
 	}
 	text, thinking, toolCalls, err := c.generate(ctx, messages, dc, toolsJSON, enableThinking, reasoningEffort, showThinking)
 	if err != nil {

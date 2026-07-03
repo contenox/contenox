@@ -635,7 +635,7 @@ test-unit:
 	GOMAXPROCS=4 go test -C $(PROJECT_ROOT) -short -timeout 15m -run '^TestUnit_' ./...
 
 test-llamacpp-direct:
-	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct test-shim
+	$(MAKE) -f $(PROJECT_ROOT)Makefile.llamacpp-direct test
 
 test-vllm:
 	CONTENOX_RUN_VLLM_TESTS=1 GOMAXPROCS=1 go test -C $(PROJECT_ROOT) -run '^TestSystem_VLLM' ./runtime/modelrepo

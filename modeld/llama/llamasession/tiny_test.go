@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/modeld/llama"
+	"github.com/contenox/runtime/modeld/llama/llamacppshim"
 )
 
 func TestSystem_LlamaSessionTiny_PopulatesManifestTokenRanges(t *testing.T) {
@@ -172,6 +173,13 @@ func TestSystem_LlamaSessionTiny_SnapshotRestoreOneToken(t *testing.T) {
 func TestSystem_LlamaSessionTiny_ToolsRenderThroughSession(t *testing.T) {
 	modelPath := os.Getenv("CONTENOX_LLAMA_TINY_GGUF")
 	requireTinyGGUF(t, modelPath)
+	probe, err := llamacppshim.ProbeChatTemplate(modelPath)
+	if err != nil {
+		t.Fatalf("probe chat template: %v", err)
+	}
+	if !probe.SupportsToolCalls {
+		t.Skipf("tiny model chat template %q does not support native tool rendering", probe.FormatName)
+	}
 
 	cfg := llama.Config{NumCtx: 512, NumBatch: 16, NumThreads: 1, DisableBOS: true}
 	stable := "system\nYou are a helpful assistant.\n"

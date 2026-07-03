@@ -35,7 +35,7 @@ func TestUnit_ExplainOverflowFallsBackToDescribeAnswer(t *testing.T) {
 	}
 }
 
-// an overflow error with no num_ctx= token in its text
+// an overflow error with no structured num_ctx detail
 func errorsJoinOverflowNoCtx() error {
 	return ErrContextOverflow
 }

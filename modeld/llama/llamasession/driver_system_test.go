@@ -30,8 +30,10 @@ func TestSystem_LlamaSession_PrefillSuffixOverflowParksToCold(t *testing.T) {
 	bigTurn := "user\nalpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon.\n"
 	smallTurn := "user\none two three four five six seven eight nine ten eleven twelve.\n"
 
-	// run feeds the big turn then the overflowing small turn, returning whether the
-	// overflowing turn was absorbed and the largest hot resident observed.
+	// run feeds the big turn then the overflowing small turn, returning whether
+	// the no-cold control absorbed the sequence and the largest hot resident
+	// observed. Tiny test model tokenizers differ enough that the control can
+	// overflow on either volatile turn; both are valid "not absorbed" outcomes.
 	run := func(t *testing.T, plannerCtx int) (absorbed bool, maxResident int) {
 		t.Helper()
 		sess, err := New(modelPath, llama.Config{
@@ -52,6 +54,9 @@ func TestSystem_LlamaSession_PrefillSuffixOverflowParksToCold(t *testing.T) {
 			t.Fatalf("EnsurePrefix: %v", err)
 		}
 		if _, err := sess.PrefillSuffix(ctx, llama.SuffixInput{Text: bigTurn, Manifest: tinyManifest(stable, bigTurn)}); err != nil {
+			if plannerCtx <= numCtx && errors.Is(err, llama.ErrContextOverflow) {
+				return false, maxResident
+			}
 			t.Fatalf("PrefillSuffix(big): %v", err)
 		}
 		afterBig := sess.ExplainContext().ResidentTokens

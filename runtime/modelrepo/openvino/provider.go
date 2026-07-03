@@ -128,6 +128,7 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		describedEffectiveContext = info.EffectiveContext
 		describedPlannerContext = info.PlannerEffectiveContext
 		describedModelMaxContext = info.ModelMaxContext
+		applyModeldTemplateCapabilities(&caps, info)
 		if v := backendVersionFromModelInfo(info); v != "" {
 			backendID = v
 		}
@@ -146,10 +147,17 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		maxOutputTokens:           maxOut,
 		deviceKind:                deviceKind,
 		freeBytes:                 freeBytes,
+		supportsThinking:          p.caps.CanThink || caps.CanThink,
 		describedEffectiveContext: describedEffectiveContext,
 		describedPlannerContext:   describedPlannerContext,
 		describedModelMaxContext:  describedModelMaxContext,
 	}, nil
+}
+
+func applyModeldTemplateCapabilities(caps *modelrepo.CapabilityConfig, info transport.ModelInfo) {
+	if info.ChatTemplateSupportsThinking || info.ChatTemplateSupportsReasoningEffort || info.ChatTemplateReasoningFormat != "" {
+		caps.CanThink = true
+	}
 }
 
 func curatedToolProtocol(ctx context.Context, modelName, backendType string) string {

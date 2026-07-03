@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/contenox/runtime/runtime/modelrepo"
@@ -44,17 +43,18 @@ func sessionCacheKey(ref modeldconn.ModelRef, cfg Config) string {
 }
 
 type client struct {
-	modelName       string
-	modelPath       string
-	profileID       string
-	modelDigest     string
-	backendVersion  string
-	cfg             Config
-	adapters        []transport.AdapterSpec
-	maxOutputTokens int
-	toolProtocol    string // profile-declared OpenVINO tool protocol ("" = tools unsupported)
-	reasoningParser string // profile-declared complete reasoning parser ("" = no complete parser)
-	reasoningStream string // profile-declared incremental reasoning parser ("" = no stream parser)
+	modelName        string
+	modelPath        string
+	profileID        string
+	modelDigest      string
+	backendVersion   string
+	cfg              Config
+	adapters         []transport.AdapterSpec
+	maxOutputTokens  int
+	toolProtocol     string // profile-declared OpenVINO tool protocol ("" = tools unsupported)
+	reasoningParser  string // profile-declared complete reasoning parser ("" = no complete parser)
+	reasoningStream  string // profile-declared incremental reasoning parser ("" = no stream parser)
+	supportsThinking bool   // profile/catalog-declared template thinking controls
 	// deviceKind/freeBytes and the described* fields are the capacity facts
 	// modeld reported at construction (empty/zero when modeld did not answer
 	// Describe). They turn a context overflow into an actionable message — see
@@ -85,9 +85,8 @@ func (c *client) explainOverflow(err error) error {
 	if c.freeBytes > 0 {
 		free = fmt.Sprintf(" with %s free", humanBytes(c.freeBytes))
 	}
-	// Prefer the live session's window carried inside the overflow error itself
-	// (modeld's typed overflow error arrives over gRPC as text); Describe-time
-	// numbers can be stale and misleading.
+	// Prefer the live session's window carried as structured transport detail;
+	// Describe-time numbers can be stale and misleading.
 	served := overflowNumCtx(err)
 	if served <= 0 && c.cfg.NumCtx > 0 {
 		served = c.cfg.NumCtx
@@ -103,28 +102,11 @@ func (c *client) explainOverflow(err error) error {
 		err, c.modelName, served, where, free)
 }
 
-// overflowNumCtx extracts the live session window from a context-overflow
-// error's text ("… num_ctx=2890 …"); the typed error does not survive the gRPC
-// boundary, so text is the only cross-wire carrier of the actual window.
 func overflowNumCtx(err error) int {
-	if err == nil {
-		return 0
+	if detail, ok := transport.ContextOverflowDetailFromError(err); ok {
+		return detail.NumCtx
 	}
-	msg := err.Error()
-	i := strings.LastIndex(msg, "num_ctx=")
-	if i < 0 {
-		return 0
-	}
-	rest := msg[i+len("num_ctx="):]
-	end := 0
-	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
-		end++
-	}
-	n, convErr := strconv.Atoi(rest[:end])
-	if convErr != nil {
-		return 0
-	}
-	return n
+	return 0
 }
 
 // humanBytes formats a byte count with binary (KiB/MiB/…) units for diagnostics.
@@ -155,7 +137,7 @@ func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ..
 		return modelrepo.ChatResult{}, err
 	}
 
-	dc, showThinking, err := c.decodeConfig(cfg, toolPlan.completeDecode())
+	dc, showThinking, enableThinking, reasoningEffort, err := c.decodeConfig(cfg, toolPlan.completeDecode())
 	if err != nil {
 		return modelrepo.ChatResult{}, err
 	}
@@ -163,7 +145,7 @@ func (c *client) Chat(ctx context.Context, messages []modelrepo.Message, args ..
 		dc.ParserProtocols = append(dc.ParserProtocols, toolPlan.ParserProtocol)
 	}
 	dc.StructuredOutput = toolPlan.StructuredOutput
-	text, thinking, toolCalls, err := c.generate(ctx, messages, dc, toolPlan.ToolsJSON, showThinking)
+	text, thinking, toolCalls, err := c.generate(ctx, messages, dc, toolPlan.ToolsJSON, enableThinking, reasoningEffort, showThinking)
 	if err != nil {
 		return modelrepo.ChatResult{}, err
 	}
@@ -184,11 +166,11 @@ func (c *client) Prompt(ctx context.Context, systemInstruction string, temperatu
 	messages = append(messages, modelrepo.Message{Role: "user", Content: prompt})
 	temp := float64(temperature)
 	cfg := &modelrepo.ChatConfig{Temperature: &temp}
-	dc, _, err := c.decodeConfig(cfg, false)
+	dc, _, enableThinking, reasoningEffort, err := c.decodeConfig(cfg, false)
 	if err != nil {
 		return "", err
 	}
-	text, _, _, err := c.generate(ctx, messages, dc, "", false)
+	text, _, _, err := c.generate(ctx, messages, dc, "", enableThinking, reasoningEffort, false)
 	return text, err
 }
 
@@ -198,7 +180,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	if err != nil {
 		return nil, err
 	}
-	dc, showThinking, err := c.decodeConfig(cfg, toolPlan.completeDecode())
+	dc, showThinking, enableThinking, reasoningEffort, err := c.decodeConfig(cfg, toolPlan.completeDecode())
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +194,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	}
 
 	cs.Turn.Lock()
-	if err := c.prime(ctx, cs, messages, toolPlan.ToolsJSON); err != nil {
+	if err := c.prime(ctx, cs, messages, toolPlan.ToolsJSON, enableThinking, reasoningEffort); err != nil {
 		cs.Turn.Unlock()
 		if fatalSessionError(err) {
 			warm.Drop(cs)
@@ -252,7 +234,7 @@ func (c *client) Stream(ctx context.Context, messages []modelrepo.Message, args 
 	return out, nil
 }
 
-func (c *client) decodeConfig(cfg *modelrepo.ChatConfig, completeParsers bool) (DecodeConfig, bool, error) {
+func (c *client) decodeConfig(cfg *modelrepo.ChatConfig, completeParsers bool) (DecodeConfig, bool, *bool, string, error) {
 	dc := decodeConfig(cfg, c.maxOutputTokens)
 	reasoningProtocol := c.reasoningStream
 	if completeParsers {
@@ -262,14 +244,23 @@ func (c *client) decodeConfig(cfg *modelrepo.ChatConfig, completeParsers bool) (
 		dc.ParserProtocols = append(dc.ParserProtocols, reasoningProtocol)
 	}
 	showThinking := false
-	if reasoningProtocol != "" && cfg != nil && cfg.Think != nil {
+	var enableThinking *bool
+	var reasoningEffort string
+	if (c.supportsThinking || reasoningProtocol != "") && cfg != nil && cfg.Think != nil {
 		level, ok, err := reasoning.NormalizeOptional(*cfg.Think)
 		if err != nil {
-			return DecodeConfig{}, false, err
+			return DecodeConfig{}, false, nil, "", err
 		}
-		showThinking = ok && level != reasoning.Off && level != reasoning.Auto
+		if ok && level != reasoning.Auto {
+			v := level != reasoning.Off
+			enableThinking = &v
+		}
+		if reasoningProtocol != "" {
+			showThinking = ok && level != reasoning.Off && level != reasoning.Auto
+		}
+		reasoningEffort = reasoningEffortForTemplate(level)
 	}
-	return dc, showThinking, nil
+	return dc, showThinking, enableThinking, reasoningEffort, nil
 }
 
 type toolPlan struct {
@@ -320,7 +311,7 @@ func (c *client) prepareTools(cfg *modelrepo.ChatConfig) (toolPlan, error) {
 	return toolPlan{}, fmt.Errorf("%w: tool protocol %q", ErrUnsupportedFeature, c.toolProtocol)
 }
 
-func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string, showThinking bool) (string, string, []modelrepo.ToolCall, error) {
+func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc DecodeConfig, toolsJSON string, enableThinking *bool, reasoningEffort string, showThinking bool) (string, string, []modelrepo.ToolCall, error) {
 	cs, err := c.acquire()
 	if err != nil {
 		return "", "", nil, err
@@ -328,7 +319,7 @@ func (c *client) generate(ctx context.Context, messages []modelrepo.Message, dc 
 	cs.Turn.Lock()
 	defer cs.Turn.Unlock()
 
-	if err := c.prime(ctx, cs, messages, toolsJSON); err != nil {
+	if err := c.prime(ctx, cs, messages, toolsJSON, enableThinking, reasoningEffort); err != nil {
 		if fatalSessionError(err) {
 			warm.Drop(cs)
 		}
@@ -385,7 +376,7 @@ func modelToolCalls(in []ToolCall) []modelrepo.ToolCall {
 // prime ensures the warm stable prefix and prefills the volatile suffix. Caller
 // holds cs.Turn. toolsJSON (model-native tool definitions) rides on the stable
 // prefix so modeld renders it via the model's own chat template.
-func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string) error {
+func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], messages []modelrepo.Message, toolsJSON string, enableThinking *bool, reasoningEffort string) error {
 	plan, err := buildPromptPlan(messages, c.cfg, promptIdentity{
 		ProfileID:      c.profileID,
 		ModelDigest:    c.modelDigest,
@@ -398,8 +389,23 @@ func (c *client) prime(ctx context.Context, cs *modelrepo.WarmEntry[Session], me
 	if _, err := cs.Sess.EnsurePrefix(ctx, plan.Stable); err != nil {
 		return c.explainOverflow(err)
 	}
+	plan.Volatile.EnableThinking = enableThinking
+	plan.Volatile.ReasoningEffort = reasoningEffort
 	_, err = cs.Sess.PrefillSuffix(ctx, plan.Volatile)
 	return c.explainOverflow(err)
+}
+
+func reasoningEffortForTemplate(level string) string {
+	switch level {
+	case reasoning.Low, reasoning.Medium, reasoning.High:
+		return level
+	case reasoning.Minimal:
+		return reasoning.Low
+	case reasoning.XHigh:
+		return reasoning.High
+	default:
+		return ""
+	}
 }
 
 func applyChatArgs(args []modelrepo.ChatArgument) *modelrepo.ChatConfig {

@@ -16,6 +16,7 @@ package transport
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/contenox/runtime/runtime/contextasm"
 )
@@ -535,3 +536,61 @@ var (
 	// the requested product surface for this model or backend mode.
 	ErrUnsupportedFeature = errors.New("unsupported transport feature")
 )
+
+// ContextOverflowDetail carries the structured token counts for a context-window
+// overflow. It is intentionally backend-neutral so the gRPC boundary can preserve
+// these fields without knowing whether llama.cpp, OpenVINO, or a future backend
+// produced the error.
+type ContextOverflowDetail struct {
+	Stage            string `json:"stage,omitempty"`
+	ResidentTokens   int    `json:"resident_tokens,omitempty"`
+	AdditionalTokens int    `json:"additional_tokens,omitempty"`
+	NumCtx           int    `json:"num_ctx,omitempty"`
+}
+
+// ContextOverflowError is the typed transport error for ErrContextOverflow.
+type ContextOverflowError struct {
+	ContextOverflowDetail
+}
+
+func (e *ContextOverflowError) Error() string {
+	return fmt.Sprintf("%s during %s: resident_tokens=%d additional_tokens=%d num_ctx=%d",
+		ErrContextOverflow, e.Stage, e.ResidentTokens, e.AdditionalTokens, e.NumCtx)
+}
+
+func (e *ContextOverflowError) Is(target error) bool {
+	return target == ErrContextOverflow
+}
+
+func (e *ContextOverflowError) OverflowDetail() ContextOverflowDetail {
+	if e == nil {
+		return ContextOverflowDetail{}
+	}
+	return e.ContextOverflowDetail
+}
+
+func NewContextOverflowError(stage string, resident, additional, numCtx int) error {
+	return &ContextOverflowError{
+		ContextOverflowDetail: ContextOverflowDetail{
+			Stage:            stage,
+			ResidentTokens:   resident,
+			AdditionalTokens: additional,
+			NumCtx:           numCtx,
+		},
+	}
+}
+
+type overflowDetailer interface {
+	OverflowDetail() ContextOverflowDetail
+}
+
+func ContextOverflowDetailFromError(err error) (ContextOverflowDetail, bool) {
+	var detailer overflowDetailer
+	if errors.As(err, &detailer) {
+		detail := detailer.OverflowDetail()
+		if detail.Stage != "" || detail.ResidentTokens != 0 || detail.AdditionalTokens != 0 || detail.NumCtx != 0 {
+			return detail, true
+		}
+	}
+	return ContextOverflowDetail{}, false
+}

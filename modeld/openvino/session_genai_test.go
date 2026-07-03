@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/contenox/runtime/modeld/internal/sessionkit"
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
 	"github.com/contenox/runtime/modeld/residency"
 	"github.com/contenox/runtime/runtime/contextasm"
@@ -27,8 +28,11 @@ type fakeGenAIBackend struct {
 	templateCalls               [][]ovsession.ChatMessage
 	templateTools               []string
 	templateAddGenerationPrompt []bool
+	templateEnableThinking      []*bool
+	templateReasoningEffort     []string
 	generateResult              ovsession.GenAIResult
 	generateErr                 error
+	templateErr                 error
 	emit                        []string
 	emitChunks                  []ovsession.StreamChunk
 	closed                      bool
@@ -102,10 +106,19 @@ func (f *fakeGenAIBackend) ApplyChatTemplate(messages []ovsession.ChatMessage, t
 }
 
 func (f *fakeGenAIBackend) ApplyChatTemplateWithPrompt(messages []ovsession.ChatMessage, tools string, addGenerationPrompt bool) (string, error) {
+	return f.ApplyChatTemplateWithOptions(messages, tools, addGenerationPrompt, nil, "")
+}
+
+func (f *fakeGenAIBackend) ApplyChatTemplateWithOptions(messages []ovsession.ChatMessage, tools string, addGenerationPrompt bool, enableThinking *bool, reasoningEffort string) (string, error) {
 	cp := append([]ovsession.ChatMessage(nil), messages...)
 	f.templateCalls = append(f.templateCalls, cp)
 	f.templateTools = append(f.templateTools, tools)
 	f.templateAddGenerationPrompt = append(f.templateAddGenerationPrompt, addGenerationPrompt)
+	f.templateEnableThinking = append(f.templateEnableThinking, enableThinking)
+	f.templateReasoningEffort = append(f.templateReasoningEffort, reasoningEffort)
+	if f.templateErr != nil {
+		return "", f.templateErr
+	}
 	out := ""
 	for _, m := range messages {
 		out += "<|" + m.Role + "|>" + m.Content
@@ -243,6 +256,37 @@ func TestGenaiSessionDecodeConcatenatesStableAndSuffix(t *testing.T) {
 	}
 }
 
+func TestGenaiSessionDecodeNoResidentChatTemplateFailureIsError(t *testing.T) {
+	fake := &fakeGenAIBackend{templateErr: errors.New("template exploded")}
+	s := newGenaiSession(fake, 4096)
+	ctx := context.Background()
+	m := ovManifest(contextasm.HashString("SYSTEM"), "r1")
+	m.Segments = []contextasm.ManifestSegment{
+		{Kind: "system", Stable: true, ByteStart: 0, ByteEnd: len("SYSTEM"), ByteHash: contextasm.HashString("SYSTEM")},
+	}
+	if err := s.Restore(ctx, transport.SessionSnapshot{
+		ResidentTokens: 0,
+		PrefixTokens:   0,
+		StableText:     "SYSTEM",
+		PrefixText:     "SYSTEM",
+		Manifest:       m,
+	}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	ch, err := s.Decode(ctx, transport.DecodeConfig{MaxTokens: 1})
+	if err == nil {
+		if ch != nil {
+			for range ch {
+			}
+		}
+		t.Fatal("Decode error = nil, want chat template failure")
+	}
+	if !strings.Contains(err.Error(), "apply chat template for decode") || !strings.Contains(err.Error(), "template exploded") {
+		t.Fatalf("Decode error = %v", err)
+	}
+}
+
 func TestGenaiSessionPoisonedPrefillMarksSessionFatal(t *testing.T) {
 	fake := &fakeGenAIBackend{
 		prefillErr: errors.New("Check 'm_ref_count > 0' failed; BlockAllocator leaked blocks. Expected num free blocks: 2665, actual: 17"),
@@ -359,9 +403,10 @@ func TestGenaiSessionExplainContextSurfacesResidencyPlan(t *testing.T) {
 	if res.HotBlocks == 0 || res.ProtectedTokens == 0 {
 		t.Fatalf("expected pinned hot blocks, got %+v", res)
 	}
-	// OpenVINO does residency declaratively: no runtime-driven KV range ops, but
-	// it runs XAttention sparse attention natively.
-	if want := (transport.ResidencyCapabilities{SparseAttention: true}); res.Capabilities != want {
+	// OpenVINO without a cold store does residency declaratively: no
+	// runtime-driven KV range surgery, but it runs XAttention sparse attention
+	// natively and can always recompute a range by re-prefilling from tokens.
+	if want := (transport.ResidencyCapabilities{SparseAttention: true, RecomputeRange: true}); res.Capabilities != want {
 		t.Fatalf("openvino capabilities = %+v, want %+v", res.Capabilities, want)
 	}
 	if res.Error != "" {
@@ -393,11 +438,23 @@ func TestGenaiSessionColdStoreEvictAdmitUsesBackendKVHooks(t *testing.T) {
 		t.Fatalf("EnsurePrefix: %v", err)
 	}
 	report := s.ExplainContext()
-	if report.Residency == nil || !report.Residency.Capabilities.ColdStore {
-		t.Fatalf("cold-store capability not reported: %+v", report.Residency)
+	if report.Residency == nil {
+		t.Fatal("ExplainContext did not surface a residency report")
 	}
-	if report.Residency.Capabilities.RecomputeRange {
-		t.Fatalf("recompute should not be advertised for native cold-store admit: %+v", report.Residency.Capabilities)
+	// Capabilities report ability: with the lossless cold path active the
+	// session can do native KV surgery AND can still recompute from its token
+	// tape. That admits physically use the KV hooks (not recompute) is asserted
+	// below on the fake backend's export/import calls.
+	wantCaps := transport.ResidencyCapabilities{
+		RemoveTail:      true,
+		RemoveMiddle:    true,
+		PositionShift:   true,
+		SparseAttention: true,
+		ColdStore:       true,
+		RecomputeRange:  true,
+	}
+	if report.Residency.Capabilities != wantCaps {
+		t.Fatalf("capabilities = %+v, want %+v", report.Residency.Capabilities, wantCaps)
 	}
 
 	exec := any(s).(residency.Executor)
@@ -798,7 +855,7 @@ func TestGenaiSessionDecodeStructuredJSONSchemaToolCalls(t *testing.T) {
 }
 
 func TestGenaiSessionDecodeStructuredJSONSchemaAllowsContentOnly(t *testing.T) {
-	chunk, err := chunkFromStructuredToolJSON(`{"content":"answer without tools"}`)
+	chunk, err := sessionkit.StructuredToolCallChunk(`{"content":"answer without tools"}`)
 	if err != nil {
 		t.Fatalf("content-only envelope: %v", err)
 	}
@@ -811,7 +868,7 @@ func TestGenaiSessionDecodeStructuredJSONSchemaAllowsContentOnly(t *testing.T) {
 }
 
 func TestGenaiSessionDecodeStructuredJSONSchemaAllowsPlainText(t *testing.T) {
-	chunk, err := chunkFromStructuredToolJSON(`answer without tools`)
+	chunk, err := sessionkit.StructuredToolCallChunk(`answer without tools`)
 	if err != nil {
 		t.Fatalf("plain text: %v", err)
 	}
@@ -824,7 +881,7 @@ func TestGenaiSessionDecodeStructuredJSONSchemaAllowsPlainText(t *testing.T) {
 }
 
 func TestGenaiSessionDecodeStructuredJSONSchemaParsesQwenToolCallTag(t *testing.T) {
-	chunk, err := chunkFromStructuredToolJSON("prefix\n<tool_call>\n{\"name\":\"echo.echo\",\"arguments\":{\"input\":\"hello\"}}\n</tool_call>\n")
+	chunk, err := sessionkit.StructuredToolCallChunk("prefix\n<tool_call>\n{\"name\":\"echo.echo\",\"arguments\":{\"input\":\"hello\"}}\n</tool_call>\n")
 	if err != nil {
 		t.Fatalf("qwen tool call tag: %v", err)
 	}
@@ -841,9 +898,29 @@ func TestGenaiSessionDecodeStructuredJSONSchemaParsesQwenToolCallTag(t *testing.
 }
 
 func TestGenaiSessionDecodeStructuredJSONSchemaRejectsMalformedLegacyEnvelope(t *testing.T) {
-	_, err := chunkFromStructuredToolJSON(`{"function":{"name":"echo.echo","arguments":{"input":"hello"}}}`)
+	_, err := sessionkit.StructuredToolCallChunk(`{"function":{"name":"echo.echo","arguments":{"input":"hello"}}}`)
 	if err == nil || !strings.Contains(err.Error(), "contained neither content nor tool_calls") {
 		t.Fatalf("single-object fallback error = %v", err)
+	}
+}
+
+func TestGenaiSessionDecodeStructuredJSONSchemaRejectsEmptyParsedEnvelope(t *testing.T) {
+	_, err := chunkFromGenAIResult(
+		ovsession.GenAIResult{ParsedJSON: `{}`},
+		transport.StructuredOutputConfig{Protocol: "openvino:json_schema_tool_calls"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "contained neither content nor tool_calls") {
+		t.Fatalf("empty parsed envelope error = %v", err)
+	}
+}
+
+func TestGenaiSessionDecodeStructuredJSONSchemaRejectsUnsupportedProtocolWithParsedJSON(t *testing.T) {
+	_, err := chunkFromGenAIResult(
+		ovsession.GenAIResult{ParsedJSON: `{"content":"ignored"}`},
+		transport.StructuredOutputConfig{Protocol: "openvino:qwen_xml_parameters"},
+	)
+	if err == nil || !strings.Contains(err.Error(), `unsupported structured output result protocol "openvino:qwen_xml_parameters"`) {
+		t.Fatalf("unsupported parsed protocol error = %v", err)
 	}
 }
 

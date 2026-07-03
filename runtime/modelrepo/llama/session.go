@@ -26,8 +26,8 @@ import (
 // effective-context hot/planner budgets) stay in sync automatically instead of
 // silently breaking the struct conversions in remoteSession. This matches the
 // runtime/modelrepo/openvino sibling. Types the local surface deliberately
-// curates (DecodeConfig drops StructuredOutput; StreamChunk remaps per-chunk
-// errors) stay distinct and are mapped explicitly below.
+// curates (StreamChunk remaps per-chunk errors) stay distinct and are mapped
+// explicitly below.
 type (
 	// Config is the explicit runtime configuration for a local session — every
 	// knob is a tested setting, not a magic default.
@@ -53,13 +53,14 @@ type (
 
 // DecodeConfig controls a single decode pass.
 type DecodeConfig struct {
-	MaxTokens       int
-	Temperature     *float64
-	TopP            *float64
-	TopK            int
-	Seed            *int
-	ParserProtocols []string
-	ReasoningFormat string
+	MaxTokens        int
+	Temperature      *float64
+	TopP             *float64
+	TopK             int
+	Seed             *int
+	ParserProtocols  []string
+	ReasoningFormat  string
+	StructuredOutput transport.StructuredOutputConfig
 }
 
 type ToolCall = transport.ToolCall
@@ -183,13 +184,14 @@ func (r remoteSession) Decode(ctx context.Context, cfg DecodeConfig) (<-chan Str
 
 func transportDecodeConfig(cfg DecodeConfig) transport.DecodeConfig {
 	return transport.DecodeConfig{
-		MaxTokens:       cfg.MaxTokens,
-		Temperature:     cfg.Temperature,
-		TopP:            cfg.TopP,
-		TopK:            cfg.TopK,
-		Seed:            cfg.Seed,
-		ParserProtocols: append([]string(nil), cfg.ParserProtocols...),
-		ReasoningFormat: cfg.ReasoningFormat,
+		MaxTokens:        cfg.MaxTokens,
+		Temperature:      cfg.Temperature,
+		TopP:             cfg.TopP,
+		TopK:             cfg.TopK,
+		Seed:             cfg.Seed,
+		ParserProtocols:  append([]string(nil), cfg.ParserProtocols...),
+		ReasoningFormat:  cfg.ReasoningFormat,
+		StructuredOutput: cfg.StructuredOutput,
 	}
 }
 
@@ -219,6 +221,14 @@ func mapSessionErr(err error) error {
 	case errors.Is(err, transport.ErrSessionFatal), errors.Is(err, transport.ErrStaleFence), errors.Is(err, transport.ErrSlotGenerationStale), errors.Is(err, transport.ErrModelNotActive):
 		return fmt.Errorf("%w: %v", ErrSessionFatal, err)
 	case errors.Is(err, transport.ErrContextOverflow):
+		if detail, ok := transport.ContextOverflowDetailFromError(err); ok {
+			return &ContextOverflowError{
+				Stage:            detail.Stage,
+				ResidentTokens:   detail.ResidentTokens,
+				AdditionalTokens: detail.AdditionalTokens,
+				NumCtx:           detail.NumCtx,
+			}
+		}
 		return fmt.Errorf("%w: %v", ErrContextOverflow, err)
 	default:
 		return err
@@ -282,6 +292,18 @@ func (e *ContextOverflowError) Error() string {
 
 func (e *ContextOverflowError) Is(target error) bool {
 	return target == ErrContextOverflow
+}
+
+func (e *ContextOverflowError) OverflowDetail() transport.ContextOverflowDetail {
+	if e == nil {
+		return transport.ContextOverflowDetail{}
+	}
+	return transport.ContextOverflowDetail{
+		Stage:            e.Stage,
+		ResidentTokens:   e.ResidentTokens,
+		AdditionalTokens: e.AdditionalTokens,
+		NumCtx:           e.NumCtx,
+	}
 }
 
 func NewContextOverflowError(stage string, resident, additional, numCtx int) error {

@@ -100,6 +100,15 @@ func (s *streamErrorSession) Decode(context.Context, transport.DecodeConfig) (<-
 	return ch, nil
 }
 
+type overflowPrefixSession struct {
+	decodeRecordingSession
+	err error
+}
+
+func (s *overflowPrefixSession) EnsurePrefix(context.Context, transport.PrefixInput) (transport.PrefixStatus, error) {
+	return transport.PrefixStatus{}, s.err
+}
+
 type decodeRecordingSession struct {
 	mu     sync.Mutex
 	config transport.DecodeConfig
@@ -319,6 +328,75 @@ func TestContextOverflowSentinelOverWire(t *testing.T) {
 	_, err = sess.EnsurePrefix(ctx, transport.PrefixInput{Text: "too many tokens", Manifest: manifest("too many tokens")})
 	if !errors.Is(err, transport.ErrContextOverflow) {
 		t.Fatalf("EnsurePrefix overflow = %v, want ErrContextOverflow", err)
+	}
+}
+
+func TestContextOverflowDetailsOverUnaryWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := &decodeRecordingService{
+		MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		sess: &overflowPrefixSession{
+			err: transport.NewContextOverflowError("prefix", 2, 5, 4),
+		},
+	}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+
+	sess, err := client.OpenSession(context.Background(), transport.OpenSessionRequest{
+		Fence: transport.Fence{OwnerInstanceID: "owner-1"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	_, err = sess.EnsurePrefix(context.Background(), transport.PrefixInput{Text: "too many", Manifest: manifest("too many")})
+	if !errors.Is(err, transport.ErrContextOverflow) {
+		t.Fatalf("EnsurePrefix overflow = %v, want ErrContextOverflow", err)
+	}
+	var overflow *transport.ContextOverflowError
+	if !errors.As(err, &overflow) {
+		t.Fatalf("EnsurePrefix overflow = %T %[1]v, want typed ContextOverflowError", err)
+	}
+	if overflow.Stage != "prefix" || overflow.ResidentTokens != 2 || overflow.AdditionalTokens != 5 || overflow.NumCtx != 4 {
+		t.Fatalf("overflow detail = %+v", overflow)
+	}
+}
+
+func TestContextOverflowDetailsOverDecodeStream(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := &decodeRecordingService{
+		MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		sess:          &streamErrorSession{err: transport.NewContextOverflowError("decode", 3, 1, 4)},
+	}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+
+	sess, err := client.OpenSession(context.Background(), transport.OpenSessionRequest{
+		Fence: transport.Fence{OwnerInstanceID: "owner-1"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	ch, err := sess.Decode(context.Background(), transport.DecodeConfig{MaxTokens: 1})
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	chunk, ok := <-ch
+	if !ok {
+		t.Fatal("decode stream closed without chunk")
+	}
+	if !errors.Is(chunk.Error, transport.ErrContextOverflow) {
+		t.Fatalf("chunk error = %v, want ErrContextOverflow", chunk.Error)
+	}
+	var overflow *transport.ContextOverflowError
+	if !errors.As(chunk.Error, &overflow) {
+		t.Fatalf("chunk error = %T %[1]v, want typed ContextOverflowError", chunk.Error)
+	}
+	if overflow.Stage != "decode" || overflow.ResidentTokens != 3 || overflow.AdditionalTokens != 1 || overflow.NumCtx != 4 {
+		t.Fatalf("overflow detail = %+v", overflow)
 	}
 }
 

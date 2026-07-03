@@ -129,8 +129,9 @@ func (s *Service) resolvePolicy(st capacity.DeviceSnapshot) (capacity.Policy, er
 var _ transport.Service = (*Service)(nil)
 
 var (
-	inspectOpenVINOModel = ovsession.InspectModelKVProfile
-	newOpenVINOGenAI     = ovsession.NewGenAI
+	inspectOpenVINOModel      = ovsession.InspectModelKVProfile
+	probeOpenVINOChatTemplate = ovsession.ProbeChatTemplate
+	newOpenVINOGenAI          = ovsession.NewGenAI
 )
 
 // OpenSession makes the model at req.Path (an OpenVINO IR directory, resolved by
@@ -478,7 +479,24 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 		info.SparseAttention = true
 		info.SlidingWindowAttentionTokens = params.SlidingWindow
 	}
+	applyOpenVINOChatTemplateProbe(&info, req.Path)
 	return info, nil
+}
+
+func applyOpenVINOChatTemplateProbe(info *transport.ModelInfo, modelPath string) {
+	probe, err := probeOpenVINOChatTemplate(modelPath)
+	if err != nil {
+		slog.Debug("openvino chat template probe skipped", "model", modelPath, "err", err)
+		return
+	}
+	info.ChatTemplateFormat = probe.FormatName
+	info.ChatTemplateThinkingStartTag = probe.ThinkingStartTag
+	info.ChatTemplateSupportsToolCalls = probe.SupportsToolCalls
+	info.ChatTemplateSupportsThinking = probe.SupportsThinking
+	info.ChatTemplateSupportsReasoningEffort = probe.SupportsReasoningEffort
+	if probe.SupportsThinking || probe.SupportsReasoningEffort || probe.ThinkingStartTag != "" {
+		info.ChatTemplateReasoningFormat = "auto"
+	}
 }
 
 func dirSize(root string) int64 {

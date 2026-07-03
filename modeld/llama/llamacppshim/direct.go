@@ -63,6 +63,8 @@ int cx_common_chat_parse(const char *input,
 struct cx_chat_syntax_result cx_common_chat_syntax_openai_tools(const char *tools_json,
                                                                 char *errbuf,
                                                                 size_t errlen);
+
+int cx_json_schema_to_grammar(const char *schema_json, char **out);
 */
 import "C"
 
@@ -1071,6 +1073,10 @@ type SamplingParams struct {
 	MinP        float32
 	Temperature float32
 	Seed        uint32
+	// GrammarGBNF constrains sampling to a GBNF grammar rooted at "root".
+	// Requires the model-aware constructor, because the grammar sampler is
+	// built against the model vocabulary.
+	GrammarGBNF string
 }
 
 // SamplingContext wraps a llama_sampler chain.
@@ -1080,10 +1086,52 @@ type SamplingContext struct {
 
 // NewSamplingContext creates a minimal sampler chain.
 func NewSamplingContext(params SamplingParams) (*SamplingContext, error) {
+	return NewSamplingContextForModel(nil, params)
+}
+
+// JSONSchemaToGrammar converts a JSON schema document into a GBNF grammar
+// rooted at "root", via llama.cpp common's json_schema_to_grammar — the same
+// converter llama-server uses for its structured output.
+func JSONSchemaToGrammar(schemaJSON string) (string, error) {
+	cSchema := C.CString(schemaJSON)
+	defer C.free(unsafe.Pointer(cSchema))
+	var out *C.char
+	rc := C.cx_json_schema_to_grammar(cSchema, &out)
+	if out == nil {
+		return "", errors.New("llamacppshim: json schema to grammar returned nothing")
+	}
+	defer C.free(unsafe.Pointer(out))
+	if rc != 0 {
+		return "", fmt.Errorf("llamacppshim: %s", C.GoString(out))
+	}
+	return C.GoString(out), nil
+}
+
+// NewSamplingContextForModel creates a sampler chain, optionally constrained
+// by params.GrammarGBNF. The grammar sampler masks non-conforming token
+// logits before the truncation/selection samplers run, so it sits first in
+// the chain; Accept propagates sampled tokens to it like any chain member.
+func NewSamplingContextForModel(m *Model, params SamplingParams) (*SamplingContext, error) {
 	cparams := C.llama_sampler_chain_default_params()
 	chain := C.llama_sampler_chain_init(cparams)
 	if chain == nil {
 		return nil, errors.New("llamacppshim: create sampler chain")
+	}
+	if params.GrammarGBNF != "" {
+		if m == nil || m.ptr == nil || m.vocab == nil {
+			C.llama_sampler_free(chain)
+			return nil, errors.New("llamacppshim: grammar sampling requires an open model vocabulary")
+		}
+		cGrammar := C.CString(params.GrammarGBNF)
+		cRoot := C.CString("root")
+		grammar := C.llama_sampler_init_grammar(m.vocab, cGrammar, cRoot)
+		C.free(unsafe.Pointer(cGrammar))
+		C.free(unsafe.Pointer(cRoot))
+		if grammar == nil {
+			C.llama_sampler_free(chain)
+			return nil, errors.New("llamacppshim: create grammar sampler (invalid GBNF?)")
+		}
+		C.llama_sampler_chain_add(chain, grammar)
 	}
 	if params.TopK > 0 {
 		C.llama_sampler_chain_add(chain, C.llama_sampler_init_top_k(C.int32_t(params.TopK)))

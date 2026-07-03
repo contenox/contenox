@@ -444,6 +444,9 @@ func (s *Server) decode(ctx context.Context, in *decodeReq, stream grpclib.Serve
 		if chunk.Error != nil {
 			w.Error = chunk.Error.Error()
 			w.ErrorToken = errorToken(chunk.Error)
+			if detail, ok := transport.ContextOverflowDetailFromError(chunk.Error); ok {
+				w.ErrorDetail = &detail
+			}
 		}
 		if err := stream.SendMsg(w); err != nil {
 			return err

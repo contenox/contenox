@@ -26,8 +26,15 @@ The full `ResidencyCapabilities` struct a backend reports is asserted verbatim
 in tests, so capability drift fails CI. A capability is reported if and only
 if the backend can execute it:
 
-- `RecomputeRange` is true for every backend that can re-prefill a range
-  (all current backends can).
+- `RecomputeRange` follows the transport contract's ability semantics like
+  every other capability: it is reported exactly when the backend retains the
+  tokens needed to re-prefill an arbitrary evicted range (OpenVINO always —
+  the adapter owns the full token tape; llama.cpp never today — evicted
+  tokens survive only inside cold blocks, whose admit path is KV import).
+  Which path an executor prefers when several capabilities apply is the
+  executor's priority decision and must never be encoded by under-reporting
+  a capability. A test that asserts a capability away to steer strategy is
+  drift against the transport contract; fix the test.
 - `ColdStore` is true exactly when the cold store is configured and the
   export/import path is wired.
 - Position/range surgery (`RemoveTail`, `RemoveMiddle`, `PositionShift`) is
@@ -76,7 +83,8 @@ These are engine limits, reported truthfully, not parity failures:
 
 | Behavior | Where supported | Elsewhere |
 |---|---|---|
-| KV range surgery + position shift | llama.cpp (sequence KV ops, RoPE re-shift) | Recompute-based execution (I3) |
+| KV range surgery + position shift | llama.cpp always (sequence KV ops, RoPE re-shift); OpenVINO when the lossless cold-KV path is active (native GenAI bridge, float KV precision) | Recompute-based execution (I3) |
+| Recompute from retained tokens (`RecomputeRange`) | OpenVINO always (adapter owns the full token tape) | llama.cpp drops evicted tokens from the tape; cold blocks admit via KV import, so recompute is truthfully unreported |
 | Engine-state snapshot (`Snapshot.State`) | llama.cpp (`StateGetData`) | Text-level snapshot + cold blocks; restore cost visible in `ExplainContext` |
 | Device-level sparse prefill (XAttention) | OpenVINO | Model-native SWA only; no emulation |
 | Continuous-batching scheduler | OpenVINO GenAI | Not required; single-slot product does not need it |

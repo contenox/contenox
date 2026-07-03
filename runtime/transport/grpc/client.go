@@ -281,7 +281,7 @@ func (s *grpcSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (<
 			}
 			chunk := transport.StreamChunk{Text: w.Text, Thinking: w.Thinking, ToolCalls: w.ToolCalls}
 			if w.Error != "" {
-				chunk.Error = decodeWireError(w.ErrorToken, w.Error)
+				chunk.Error = decodeWireError(w.ErrorToken, w.Error, w.ErrorDetail)
 			}
 			out <- chunk
 			if w.Error != "" {

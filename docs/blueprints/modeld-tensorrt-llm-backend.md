@@ -2,10 +2,11 @@
 
 Owner: modeld
 
-Purpose: record the standing constraints that keep TensorRT-LLM out of the
-modeld process, and the conditions any future TensorRT-LLM cell must satisfy.
-Facts are pinned to TensorRT-LLM release 1.2; re-verify them before acting on
-this blueprint against a newer release.
+Purpose: record the constraints behind the current decision not to embed
+TensorRT-LLM in the modeld process, and the conditions any future TensorRT-LLM
+cell must satisfy. Facts below were rechecked on 2026-07-03 against public
+TensorRT-LLM docs and NGC release metadata; version-sensitive claims must be
+re-verified before acting on this blueprint against a newer release.
 
 ## Invariants
 
@@ -19,15 +20,27 @@ this blueprint against a newer release.
   specialization-cells blueprint; small decode-throughput gains alone do not
   justify a cell.
 
-## TensorRT-LLM Facts (release 1.2)
+## TensorRT-LLM Facts
+
+Separate verified facts from local integration conclusions. The vendor docs are
+an API surface snapshot, not a guarantee that an unlisted integration path does
+not exist.
 
 - The supported backend is PyTorch-based, driven by the Python `tensorrt_llm.LLM`
   API; model definitions are PyTorch Python code, which is how day-0 model
-  support works. There is no C API and no supported C/C++ entry into this
-  backend; Triton itself reaches it through the Python LLM API.
-- The C++ `executor` API serves only the pre-compiled-engine lane. Engines are
-  compiled per GPU architecture and per TensorRT-LLM version, which breaks
-  content-digest artifact identity.
+  support works.
+- TensorRT-LLM also documents a C++ `Executor` API and Python bindings for that
+  API. The documented `Executor` construction path takes a TensorRT-LLM engine
+  directory or engine buffers plus model JSON. That is a real C++ API, but it
+  does not by itself establish a supported C++ entry into the PyTorch-native
+  model-definition workflow used by the high-level `LLM` API.
+- No documented, stable C or C++ entrypoint has been verified that lets Go
+  modeld host the PyTorch-native `LLM` workflow in-process without embedding a
+  Python runtime or switching to pre-built engine artifacts. Treat this as the
+  current integration assessment, not as a vendor-stated impossibility.
+- Pre-built TensorRT-LLM engines are compiled per GPU architecture and
+  TensorRT-LLM version, which breaks content-digest artifact identity unless a
+  separate engine-build artifact policy is introduced.
 - KV cache: engine-global radix-tree block reuse (`enable_block_reuse`,
   `enable_partial_reuse`), priority retention (`KvCacheRetentionConfig`),
   request isolation via `cache_salt`, host offload (`host_cache_size`), an
@@ -40,11 +53,11 @@ this blueprint against a newer release.
 
 ## Consequence
 
-In-process integration is impossible without violating an invariant: the
-supported path requires a Python interpreter, and the C++ path rides a
-deprecating lane with per-architecture artifacts. NVIDIA GPUs are served by
-the llama.cpp CUDA backend; closing its feature gaps is governed by the
-backend-parity blueprint.
+In-process integration is not an admissible modeld cell today under the
+invariants above: the verified PyTorch-native path is Python-facing, while the
+verified C++ path is engine-facing and introduces per-architecture artifacts.
+NVIDIA GPUs are served by the llama.cpp CUDA backend; closing its feature gaps
+is governed by the backend-parity blueprint.
 
 ## Admissible Future Shape
 
@@ -89,6 +102,9 @@ cell is evaluated:
 
 ## Open Unknowns
 
+- Whether the current TensorRT-LLM release exposes a documented, stable C/C++
+  entrypoint for the PyTorch-native model-definition path without embedding
+  Python.
 - Exact LLM-API surface and granularity of per-request KV reuse metrics.
 - Whether priority-100 retention survives sustained pressure.
 - Whether the Connector API can export blocks with positions usable for
@@ -101,7 +117,9 @@ cell is evaluated:
   [PyTorch backend arch](https://github.com/NVIDIA/TensorRT-LLM/blob/main/docs/source/torch/arch_overview.md)
 - [KV cache system](https://nvidia.github.io/TensorRT-LLM/latest/features/kvcache.html) ·
   [KV cache offloading example](https://nvidia.github.io/TensorRT-LLM/examples/llm_kv_cache_offloading.html)
-- [LLM API](https://nvidia.github.io/TensorRT-LLM/llm-api/index.html)
+- [LLM API](https://nvidia.github.io/TensorRT-LLM/llm-api/index.html) ·
+  [C++ Executor API](https://nvidia.github.io/TensorRT-LLM/advanced/executor.html)
 - Connector precedents: [LMCache](https://docs.lmcache.ai/integrations/tensorrt_llm.html) ·
   [Dynamo KVBM](https://docs.nvidia.com/dynamo/archive/0.5.1/guides/run_kvbm_in_trtllm.html)
 - [Triton TRT-LLM backend](https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/tensorrtllm_backend/README.html)
+- [NGC TensorRT-LLM release container](https://catalog.ngc.nvidia.com/orgs/nvidia/tensorrt-llm/containers/release)

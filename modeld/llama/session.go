@@ -113,31 +113,10 @@ var (
 	ErrSessionFatal = transport.ErrSessionFatal
 )
 
-// ContextOverflowError carries token counts for an overflow at a specific
-// primitive boundary.
-type ContextOverflowError struct {
-	Stage            string
-	ResidentTokens   int
-	AdditionalTokens int
-	NumCtx           int
-}
-
-func (e *ContextOverflowError) Error() string {
-	return fmt.Sprintf("%s during %s: resident_tokens=%d additional_tokens=%d num_ctx=%d",
-		ErrContextOverflow, e.Stage, e.ResidentTokens, e.AdditionalTokens, e.NumCtx)
-}
-
-func (e *ContextOverflowError) Is(target error) bool {
-	return target == ErrContextOverflow
-}
+type ContextOverflowError = transport.ContextOverflowError
 
 func NewContextOverflowError(stage string, resident, additional, numCtx int) error {
-	return &ContextOverflowError{
-		Stage:            stage,
-		ResidentTokens:   resident,
-		AdditionalTokens: additional,
-		NumCtx:           numCtx,
-	}
+	return transport.NewContextOverflowError(stage, resident, additional, numCtx)
 }
 
 // UnsupportedFeatureError describes a deliberately unsupported surface.

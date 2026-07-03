@@ -53,24 +53,26 @@ type session struct {
 	manifest                     llama.ContextManifest
 	chatSyntax                   llamacppshim.ChatSyntax
 	reasoning                    string
-	closed                       bool
+	sessionLifecycle
+
+	// Cumulative physical-work counters for ExplainContext observability,
+	// matching the OpenVINO adapter's semantics: prefill counts native prefill
+	// invocations/tokens; decodeCalls counts Decode requests. This backend has
+	// no deferred-prefill mode and its decode carries no prompt tokens, so the
+	// DeferredPrefill* and DecodePromptTokens contract fields stay a truthful
+	// zero.
+	physicalPrefillCalls  int
+	physicalPrefillTokens int
+	decodeCalls           int
 
 	residencyPlan residency.Plan
-	residencyErr  string
 }
 
 var _ llama.Session = (*session)(nil)
 var _ residency.Executor = (*session)(nil)
 
 func (s *session) Capabilities() residency.Capabilities {
-	return residency.Capabilities{
-		RemoveTail:                   true,
-		RemoveMiddle:                 true,
-		PositionShift:                true,
-		SparseAttention:              s.sparseAttention,
-		SlidingWindowAttentionTokens: s.slidingWindowAttentionTokens,
-		ColdStore:                    s.coldMaxTokens > 0,
-	}
+	return capabilitiesFor(s.sparseAttention, s.slidingWindowAttentionTokens, s.coldMaxTokens)
 }
 
 // EvictRange drops the resident token range [r.Start, r.End) from the KV cache
@@ -85,12 +87,12 @@ func (s *session) EvictRange(ctx context.Context, r residency.Range) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return llama.ErrSessionClosed
+		return s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return s.evictRangeLocked(r.Start, r.End)
+	return s.fatalizeLocked(s.evictRangeLocked(r.Start, r.End))
 }
 
 // evictRangeLocked removes [a,b) from the KV, slides the tail, and updates
@@ -139,12 +141,12 @@ func (s *session) AdmitRange(ctx context.Context, r residency.Range) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return llama.ErrSessionClosed
+		return s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return s.admitRangeLocked(ctx, r)
+	return s.fatalizeLocked(s.admitRangeLocked(ctx, r))
 }
 
 func New(modelPath string, cfg llama.Config) (llama.Session, error) {
@@ -277,7 +279,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return llama.PrefixStatus{}, llama.ErrSessionClosed
+		return llama.PrefixStatus{}, s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return llama.PrefixStatus{}, err
@@ -309,7 +311,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	reuse := 0
 	if ok, _ := s.manifest.CompatibleRuntime(prefix.Manifest); !ok {
 		if err := s.removeKV(0, -1); err != nil {
-			return llama.PrefixStatus{}, err
+			return llama.PrefixStatus{}, s.fatalizeLocked(err)
 		}
 		s.clearColdStoreLocked()
 		s.resident = nil
@@ -321,7 +323,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	}
 	if reuse < len(s.resident) {
 		if err := s.removeKV(reuse, -1); err != nil {
-			return llama.PrefixStatus{}, err
+			return llama.PrefixStatus{}, s.fatalizeLocked(err)
 		}
 		s.clearColdStoreLocked()
 		s.resident = s.resident[:reuse]
@@ -342,7 +344,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	} else {
 		if err := s.prefillAt(ctx, toks[reuse:], reuse, false); err != nil {
 			if rollbackErr := s.removeKV(reuse, -1); rollbackErr != nil {
-				return llama.PrefixStatus{}, errors.Join(prefillFailureError("prefix", err), rollbackErr)
+				return llama.PrefixStatus{}, s.markFatalLocked(errors.Join(prefillFailureError("prefix", err), rollbackErr))
 			}
 			s.resident = s.resident[:reuse]
 			if s.prefixLen > reuse {
@@ -352,8 +354,7 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 			if isContextErr(err) {
 				return llama.PrefixStatus{}, err
 			}
-			s.closeLocked()
-			return llama.PrefixStatus{}, prefillFailureError("prefix", err)
+			return llama.PrefixStatus{}, s.markFatalLocked(prefillFailureError("prefix", err))
 		}
 		s.resident = toks
 		s.prefixLen = len(toks)
@@ -387,7 +388,7 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return llama.SuffixStatus{}, llama.ErrSessionClosed
+		return llama.SuffixStatus{}, s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return llama.SuffixStatus{}, err
@@ -428,7 +429,7 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 			// intentionally-lossy behavior — drop policy-selected middle ranges,
 			// then require the suffix to fit the hot window.
 			if err := s.driveEvictToFitLocked(len(stoks)); err != nil {
-				return llama.SuffixStatus{}, err
+				return llama.SuffixStatus{}, s.fatalizeLocked(err)
 			}
 			if len(s.resident)+len(stoks) > s.numCtx {
 				return llama.SuffixStatus{}, llama.NewContextOverflowError("suffix", len(s.resident), len(stoks), s.numCtx)
@@ -448,13 +449,12 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 		beforeLen := len(s.resident)
 		if err := s.prefillAt(ctx, stoks, len(s.resident), true); err != nil {
 			if rollbackErr := s.removeKV(beforeLen, -1); rollbackErr != nil {
-				return llama.SuffixStatus{}, errors.Join(prefillFailureError("suffix", err), rollbackErr)
+				return llama.SuffixStatus{}, s.markFatalLocked(errors.Join(prefillFailureError("suffix", err), rollbackErr))
 			}
 			if isContextErr(err) {
 				return llama.SuffixStatus{}, err
 			}
-			s.closeLocked()
-			return llama.SuffixStatus{}, prefillFailureError("suffix", err)
+			return llama.SuffixStatus{}, s.markFatalLocked(prefillFailureError("suffix", err))
 		}
 		s.resident = append(s.resident, stoks...)
 	}
@@ -479,12 +479,11 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		defer s.mu.Unlock()
 		defer func() {
 			if r := recover(); r != nil {
-				s.closeLocked()
-				sessionkit.TrySend(ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode panicked: %v", llama.ErrSessionFatal, r)})
+				sessionkit.TrySend(ch, llama.StreamChunk{Error: s.markFatalLocked(fmt.Errorf("llamasession decode panicked: %v", r))})
 			}
 		}()
 		if s.closed {
-			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: llama.ErrSessionClosed}) {
+			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: s.closedErrLocked()}) {
 				return
 			}
 			return
@@ -493,8 +492,39 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 			sessionkit.TrySend(ch, llama.StreamChunk{Error: err})
 			return
 		}
+		// Structured output constrains sampling with a GBNF grammar derived
+		// from the request's JSON-schema payload (llama.cpp common's
+		// json_schema_to_grammar, the same converter llama-server uses). The
+		// tool-calls protocol additionally buffers the complete constrained
+		// JSON and parses it into transport tool calls, mirroring the
+		// OpenVINO adapter's semantics over its native structured engine.
+		var grammarGBNF string
+		structuredToolCalls := false
+		switch cfg.StructuredOutput.Protocol {
+		case "":
+		case "json_schema", "llama:json_schema":
+			g, err := llamacppshim.JSONSchemaToGrammar(cfg.StructuredOutput.Payload)
+			if err != nil {
+				sessionkit.TrySend(ch, llama.StreamChunk{Error: fmt.Errorf("llamasession: structured output schema: %w", err)})
+				return
+			}
+			grammarGBNF = g
+		case "llama:json_schema_tool_calls":
+			g, err := llamacppshim.JSONSchemaToGrammar(cfg.StructuredOutput.Payload)
+			if err != nil {
+				sessionkit.TrySend(ch, llama.StreamChunk{Error: fmt.Errorf("llamasession: structured tool-call schema: %w", err)})
+				return
+			}
+			grammarGBNF = g
+			structuredToolCalls = true
+		default:
+			sessionkit.TrySend(ch, llama.StreamChunk{Error: llama.NewUnsupportedFeatureError(
+				fmt.Sprintf("structured output protocol %q is not supported by the llama backend", cfg.StructuredOutput.Protocol))})
+			return
+		}
+		s.decodeCalls++
 
-		params := llamacppshim.SamplingParams{TopK: 40, TopP: 0.9, MinP: 0.05, Temperature: 0.8}
+		params := llamacppshim.SamplingParams{TopK: 40, TopP: 0.9, MinP: 0.05, Temperature: 0.8, GrammarGBNF: grammarGBNF}
 		if cfg.TopK > 0 {
 			params.TopK = cfg.TopK
 		}
@@ -507,7 +537,7 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		if cfg.Seed != nil && *cfg.Seed >= 0 {
 			params.Seed = uint32(*cfg.Seed)
 		}
-		sampler, err := llamacppshim.NewSamplingContext(params)
+		sampler, err := llamacppshim.NewSamplingContextForModel(s.model, params)
 		if err != nil {
 			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("llamasession: sampler: %w", err)}) {
 				return
@@ -523,8 +553,7 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 		if len(s.resident) >= s.numCtx {
 			slid, err := s.slideForDecodeLocked()
 			if err != nil {
-				s.closeLocked()
-				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode slide: %v", llama.ErrSessionFatal, err)})
+				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: s.markFatalLocked(fmt.Errorf("llamasession decode slide: %v", err))})
 				return
 			}
 			if !slid {
@@ -534,18 +563,41 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 				return
 			}
 		}
+		if err := s.refreshTailLogitsLocked(ctx); err != nil {
+			_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: err})
+			return
+		}
 		reasoningFormat := cfg.ReasoningFormat
 		if reasoningFormat == "" {
 			reasoningFormat = s.reasoning
 		}
-		parser, err := newChatOutputParser(cfg.ParserProtocols, s.chatSyntax, reasoningFormat)
-		if err != nil {
-			if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: err}) {
+		// Grammar-constrained output is raw JSON, not chat syntax: the chat
+		// output parser stays off. The tool-calls protocol buffers the whole
+		// generation and parses it once at the end.
+		var parser *chatOutputParser
+		if grammarGBNF == "" {
+			parser, err = newChatOutputParser(cfg.ParserProtocols, s.chatSyntax, reasoningFormat)
+			if err != nil {
+				if !sessionkit.Send(ctx, ch, llama.StreamChunk{Error: err}) {
+					return
+				}
 				return
 			}
-			return
 		}
+		var structuredBuf strings.Builder
 		emitParsed := func(piece string, partial bool) bool {
+			if structuredToolCalls {
+				if partial {
+					structuredBuf.WriteString(piece)
+					return true
+				}
+				structuredBuf.WriteString(piece)
+				chunk, err := sessionkit.StructuredToolCallChunk(structuredBuf.String())
+				if err != nil {
+					return sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("llamasession: parse structured tool calls: %w", err)})
+				}
+				return sessionkit.Send(ctx, ch, chunk)
+			}
 			if parser == nil {
 				if piece != "" {
 					return sessionkit.Send(ctx, ch, llama.StreamChunk{Text: piece})
@@ -568,13 +620,14 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 				return
 			default:
 			}
+			// llama_sampler_sample accepts the selected token into the chain
+			// itself; accepting again here would advance stateful samplers
+			// (the grammar) twice and abort inside llama.cpp.
 			id := sampler.Sample(s.lctx, -1)
 			if id < 0 {
-				s.closeLocked()
-				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode sample returned no token", llama.ErrSessionFatal)})
+				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: s.markFatalLocked(errors.New("llamasession decode sample returned no token"))})
 				return
 			}
-			sampler.Accept(id)
 			if s.model.TokenIsEOG(id) {
 				emitParsed("", false)
 				return
@@ -583,8 +636,7 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 			if len(s.resident) >= s.numCtx {
 				slid, err := s.slideForDecodeLocked()
 				if err != nil {
-					s.closeLocked()
-					_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode slide: %v", llama.ErrSessionFatal, err)})
+					_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: s.markFatalLocked(fmt.Errorf("llamasession decode slide: %v", err))})
 					return
 				}
 				if !slid {
@@ -595,13 +647,11 @@ func (s *session) Decode(ctx context.Context, cfg llama.DecodeConfig) (<-chan ll
 
 			s.batch.Clear()
 			if err := s.batch.Add(id, nil, len(s.resident), true, 0); err != nil {
-				s.closeLocked()
-				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode batch: %v", llama.ErrSessionFatal, err)})
+				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: s.markFatalLocked(fmt.Errorf("llamasession decode batch: %v", err))})
 				return
 			}
 			if res := s.lctx.Decode(s.batch); res.Status != llamacppshim.DecodeOK {
-				s.closeLocked()
-				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: fmt.Errorf("%w: llamasession decode token: %v", llama.ErrSessionFatal, res.Err)})
+				_ = sessionkit.Send(ctx, ch, llama.StreamChunk{Error: s.markFatalLocked(fmt.Errorf("llamasession decode token: %v", res.Err))})
 				return
 			}
 			s.resident = append(s.resident, id)
@@ -629,6 +679,10 @@ func (s *session) ExplainContext() llama.ContextReport {
 		ManifestDigest:          s.manifest.Digest(),
 		Manifest:                s.manifest,
 		Closed:                  s.closed,
+		FatalError:              s.fatalErr,
+		PhysicalPrefillCalls:    s.physicalPrefillCalls,
+		PhysicalPrefillTokens:   s.physicalPrefillTokens,
+		DecodeCalls:             s.decodeCalls,
 		Residency:               sessionkit.ResidencyReport(s.residencyPlan, s.residencyErr, s.Capabilities()),
 	}
 }
@@ -637,14 +691,16 @@ func (s *session) Snapshot(ctx context.Context) (llama.SessionSnapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return llama.SessionSnapshot{}, llama.ErrSessionClosed
+		return llama.SessionSnapshot{}, s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return llama.SessionSnapshot{}, err
 	}
 	state, err := s.lctx.StateGetData()
 	if err != nil {
-		return llama.SessionSnapshot{}, fmt.Errorf("llamasession snapshot: %w", err)
+		// A failing native state read means the context itself is broken; the
+		// resident KV can no longer be trusted, so poison instead of retrying.
+		return llama.SessionSnapshot{}, s.markFatalLocked(fmt.Errorf("llamasession snapshot: %v", err))
 	}
 	return llama.SessionSnapshot{
 		State:            state,
@@ -664,7 +720,7 @@ func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return llama.ErrSessionClosed
+		return s.closedErrLocked()
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -687,8 +743,7 @@ func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error
 		}
 	}
 	if s.lctx == nil {
-		s.closeLocked()
-		return fmt.Errorf("%w: llamasession restore context is nil", llama.ErrSessionFatal)
+		return s.markFatalLocked(errors.New("llamasession restore context is nil"))
 	}
 	if snap.ResidentTokens > 0 && len(snap.State) == 0 {
 		return fmt.Errorf("llamasession restore invalid snapshot: non-empty resident token set has empty state")
@@ -696,14 +751,13 @@ func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error
 	s.lctx.ClearMemory(true)
 	if snap.ResidentTokens > 0 {
 		if err := s.lctx.StateSetData(snap.State); err != nil {
-			s.closeLocked()
-			return fmt.Errorf("%w: llamasession restore state: %v", llama.ErrSessionFatal, err)
+			return s.markFatalLocked(fmt.Errorf("llamasession restore state: %v", err))
 		}
 	}
 	s.resident = append([]int(nil), snap.ResidentTokenIDs...)
 	s.prefixLen = snap.PrefixTokens
 	if err := s.restoreColdBlocksLocked(snap.ColdKVBlocks); err != nil {
-		return err
+		return s.fatalizeLocked(err)
 	}
 	s.stableText = snap.StableText
 	s.prefixText = snap.PrefixText
@@ -714,8 +768,7 @@ func (s *session) Restore(ctx context.Context, snap llama.SessionSnapshot) error
 		if len(s.stableMsgs) > 0 {
 			rendered, err := s.renderTemplate(s.stableMsgs, s.tools, false)
 			if err != nil {
-				s.closeLocked()
-				return fmt.Errorf("%w: llamasession restore template: %v", llama.ErrSessionFatal, err)
+				return s.markFatalLocked(fmt.Errorf("llamasession restore template: %v", err))
 			}
 			s.prefixText = rendered
 		} else {
@@ -736,11 +789,33 @@ func (s *session) Close() error {
 	return nil
 }
 
+// closedErrLocked reports why this session is unusable: the recorded fatal
+// cause when the backend poisoned it, plain ErrSessionClosed otherwise. The
+// distinction is what lets the slot owner evict a poisoned session instead of
+// treating it like an ordinary reopenable close.
+func (s *session) closedErrLocked() error {
+	return s.sessionLifecycle.closedErr()
+}
+
+// markFatalLocked poisons the session: records the first fatal cause, releases
+// the native resources via closeLocked, and returns the cause wrapped in
+// ErrSessionFatal. Every subsequent call observes the fatal state through
+// closedErrLocked, so a poisoned llama.cpp context can never be reused.
+func (s *session) markFatalLocked(err error) error {
+	return s.sessionLifecycle.markFatal(err, s.closeLocked)
+}
+
+// fatalizeLocked routes an already-classified fatal error through the fatal
+// state machine so no ErrSessionFatal ever leaves the session without
+// poisoning it. Non-fatal errors pass through unchanged.
+func (s *session) fatalizeLocked(err error) error {
+	return s.sessionLifecycle.fatalize(err, s.closeLocked)
+}
+
 func (s *session) closeLocked() {
-	if s.closed {
+	if !s.sessionLifecycle.close() {
 		return
 	}
-	s.closed = true
 	if s.lctx != nil {
 		s.lctx.ClearMemory(true)
 		s.lctx.Close()
@@ -1004,6 +1079,10 @@ func (s *session) removeKV(p0, p1 int) error {
 
 func (s *session) prefillAt(ctx context.Context, toks []int, startPos int, logitsOnLast bool) error {
 	n := len(toks)
+	if n > 0 {
+		s.physicalPrefillCalls++
+		s.physicalPrefillTokens += n
+	}
 	for i := 0; i < n; i += s.nBatch {
 		select {
 		case <-ctx.Done():
@@ -1023,6 +1102,30 @@ func (s *session) prefillAt(ctx context.Context, toks []int, startPos int, logit
 		if res := s.lctx.Decode(s.batch); res.Status != llamacppshim.DecodeOK {
 			return fmt.Errorf("llamasession: prefill decode: %w", res.Err)
 		}
+	}
+	return nil
+}
+
+// refreshTailLogitsLocked makes Decode robust after snapshot/restore and KV
+// residency operations. llama.cpp state restoration can leave the output
+// buffer empty even when KV is present; sampling then aborts inside C. Replaying
+// the final resident token at its same position recreates the logits needed for
+// the next sample without changing the logical token tape.
+func (s *session) refreshTailLogitsLocked(ctx context.Context) error {
+	if len(s.resident) == 0 {
+		return llama.NewContextOverflowError("decode", 0, 1, s.numCtx)
+	}
+	lastPos := len(s.resident) - 1
+	lastToken := s.resident[lastPos]
+	if err := s.removeKV(lastPos, -1); err != nil {
+		return s.fatalizeLocked(err)
+	}
+	if err := s.prefillAt(ctx, []int{lastToken}, lastPos, true); err != nil {
+		if isContextErr(err) {
+			s.closeLocked()
+			return err
+		}
+		return s.markFatalLocked(prefillFailureError("decode logits", err))
 	}
 	return nil
 }
@@ -1125,13 +1228,15 @@ func (s *session) prefillStreamLocked(ctx context.Context, stage string, toks []
 	mutated := false
 	fail := func(err error) error {
 		if !mutated {
+			return s.fatalizeLocked(err)
+		}
+		if isContextErr(err) {
+			// Cancellation mid-stream leaves consistent but unusable state
+			// (evictions cannot roll back): close, but the backend is healthy.
+			s.closeLocked()
 			return err
 		}
-		s.closeLocked()
-		if isContextErr(err) || errors.Is(err, llama.ErrSessionFatal) {
-			return err
-		}
-		return prefillFailureError(stage, err)
+		return s.markFatalLocked(prefillFailureError(stage, err))
 	}
 	off := 0
 	for off < len(toks) {

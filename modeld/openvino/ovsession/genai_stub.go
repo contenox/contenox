@@ -103,6 +103,15 @@ type ModelKVProfile struct {
 	WindowedLayers        int
 }
 
+// ChatTemplateProbe is unavailable without the native OpenVINO GenAI shim.
+type ChatTemplateProbe struct {
+	FormatName              string
+	ThinkingStartTag        string
+	SupportsToolCalls       bool
+	SupportsThinking        bool
+	SupportsReasoningEffort bool
+}
+
 // GenAIResult is the generated text plus the pipeline metrics observed for the
 // request.
 type GenAIResult struct {
@@ -124,6 +133,11 @@ func Device(_ string) (DeviceInfo, error) {
 // InspectModelKVProfile reports that the native GenAI backend is not compiled in.
 func InspectModelKVProfile(_ string) (ModelKVProfile, error) {
 	return ModelKVProfile{}, errors.New("openvino GenAI backend is not compiled in")
+}
+
+// ProbeChatTemplate reports that the native GenAI backend is not compiled in.
+func ProbeChatTemplate(_ string) (ChatTemplateProbe, error) {
+	return ChatTemplateProbe{}, errors.New("openvino GenAI backend is not compiled in")
 }
 
 // StreamChunk carries a decoded text delta or a terminal stream error.
@@ -188,6 +202,12 @@ func (s *GenAISession) ApplyChatTemplate(_ []ChatMessage, _ string) (string, err
 // ApplyChatTemplateWithPrompt reports that the native GenAI backend is not
 // compiled in.
 func (s *GenAISession) ApplyChatTemplateWithPrompt(_ []ChatMessage, _ string, _ bool) (string, error) {
+	return "", errors.New("openvino GenAI backend is not compiled in")
+}
+
+// ApplyChatTemplateWithOptions reports that the native GenAI backend is not
+// compiled in.
+func (s *GenAISession) ApplyChatTemplateWithOptions(_ []ChatMessage, _ string, _ bool, _ *bool, _ string) (string, error) {
 	return "", errors.New("openvino GenAI backend is not compiled in")
 }
 

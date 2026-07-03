@@ -119,6 +119,87 @@ func TestUnit_OpenVINOProvider_AutoContextStaysZeroAndRuntimeIdentityKept(t *tes
 	}
 }
 
+func TestUnit_OpenVINOProvider_UsesModeldDetectedTemplateThinkingControls(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "uncurated")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "tokenizer_config.json"), []byte(`{"chat_template":"{{ messages }}"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &recordingService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:                     32768,
+			EffectiveContext:                    8192,
+			ChatTemplateSupportsThinking:        true,
+			ChatTemplateSupportsReasoningEffort: true,
+			ChatTemplateReasoningFormat:         "auto",
+		},
+	}
+	serveModeldForProviderTest(t, svc)
+
+	profile, err := loadModelProfile(modelDir)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	got, err := (&openvinoProvider{name: "uncurated", modelDir: root, caps: profile.capabilityConfig()}).GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	if !c.supportsThinking {
+		t.Fatal("client supportsThinking = false, want modeld-detected template thinking controls")
+	}
+	if c.toolProtocol != "" {
+		t.Fatalf("tool protocol = %q, want no inferred tool parser without profile/catalog protocol", c.toolProtocol)
+	}
+}
+
+func TestUnit_OpenVINOCatalog_UsesModeldDetectedTemplateThinkingControls(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "uncurated")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "tokenizer_config.json"), []byte(`{"chat_template":"{{ messages }}"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &recordingService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:                     32768,
+			EffectiveContext:                    8192,
+			PlannerEffectiveContext:             16384,
+			ChatTemplateSupportsReasoningEffort: true,
+		},
+	}
+	serveModeldForProviderTest(t, svc)
+
+	models, err := (&catalogProvider{dir: root}).ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("models = %d, want one", len(models))
+	}
+	if !models[0].CapabilityConfig.CanThink {
+		t.Fatalf("CanThink = false, want modeld-detected template thinking controls: %+v", models[0].CapabilityConfig)
+	}
+	if models[0].ContextLength != 16384 {
+		t.Fatalf("ContextLength = %d, want planner context from Describe", models[0].ContextLength)
+	}
+}
+
 func TestUnit_OpenVINOProvider_EmbeddingUsesModeldTransport(t *testing.T) {
 	root := t.TempDir()
 	modelDir := filepath.Join(root, "embedder")

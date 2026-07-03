@@ -305,6 +305,12 @@ func TestUnit_OpenVINOStream_ReasoningParserCleansContentAndSurfacesThinkingWhen
 	if got := fake.decode.ParserProtocols; len(got) != 1 || got[0] != "openvino:deepseek_r1_reasoning_incremental_parser" {
 		t.Fatalf("parser protocols = %+v", got)
 	}
+	if fake.suffix.EnableThinking == nil || !*fake.suffix.EnableThinking {
+		t.Fatalf("suffix enable_thinking = %v, want true", fake.suffix.EnableThinking)
+	}
+	if fake.suffix.ReasoningEffort != "high" {
+		t.Fatalf("suffix reasoning_effort = %q, want high", fake.suffix.ReasoningEffort)
+	}
 }
 
 func TestUnit_OpenVINOStream_ReasoningParserStillRunsWhenThinkOff(t *testing.T) {
@@ -348,5 +354,49 @@ func TestUnit_OpenVINOStream_ReasoningParserStillRunsWhenThinkOff(t *testing.T) 
 	}
 	if got := fake.decode.ParserProtocols; len(got) != 1 || got[0] != "openvino:deepseek_r1_reasoning_incremental_parser" {
 		t.Fatalf("parser protocols = %+v", got)
+	}
+	if fake.suffix.EnableThinking == nil || *fake.suffix.EnableThinking {
+		t.Fatalf("suffix enable_thinking = %v, want false", fake.suffix.EnableThinking)
+	}
+	if fake.suffix.ReasoningEffort != "" {
+		t.Fatalf("suffix reasoning_effort = %q, want empty for think=off", fake.suffix.ReasoningEffort)
+	}
+}
+
+func TestUnit_OpenVINOChat_CanThinkSendsTemplateControlsWithoutParser(t *testing.T) {
+	resetOpenVINOStreamTest(t)
+
+	fake := &fakeStreamSession{
+		chunks: []transport.StreamChunk{{Text: "visible", Thinking: "hidden"}},
+	}
+	sessionFactory = func(ref modeldconn.ModelRef, cfg Config) (Session, error) {
+		return fake, nil
+	}
+
+	client := &client{
+		modelName:        "qwen-ov",
+		modelPath:        "/models/qwen-ov",
+		modelDigest:      "digest",
+		backendVersion:   "OpenVINO GenAI@test",
+		cfg:              Config{NumCtx: 4096, PromptTemplateDigest: "tmpl"},
+		supportsThinking: true,
+	}
+	res, err := client.Chat(context.Background(), []modelrepo.Message{
+		{Role: "user", Content: "why?"},
+	}, modelrepo.WithThink("minimal"))
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if res.Message.Content != "visible" || res.Message.Thinking != "" {
+		t.Fatalf("message = %+v, want visible content and no surfaced thinking without parser", res.Message)
+	}
+	if fake.suffix.EnableThinking == nil || !*fake.suffix.EnableThinking {
+		t.Fatalf("suffix enable_thinking = %v, want true", fake.suffix.EnableThinking)
+	}
+	if fake.suffix.ReasoningEffort != "low" {
+		t.Fatalf("suffix reasoning_effort = %q, want low for think=minimal", fake.suffix.ReasoningEffort)
+	}
+	if len(fake.decode.ParserProtocols) != 0 {
+		t.Fatalf("parser protocols = %+v, want none without declared parser", fake.decode.ParserProtocols)
 	}
 }

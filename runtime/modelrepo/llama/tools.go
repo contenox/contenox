@@ -9,6 +9,11 @@ import (
 
 const (
 	toolParserProtocolCommonChat = "llama:common_chat_tool_parser"
+	// toolProtocolJSONSchemaToolCalls constrains decoding with a GBNF grammar
+	// derived from the tools' JSON schema; modeld parses the constrained
+	// envelope into tool calls. For models whose chat template has no native
+	// tool support (curated via the registry's tool protocol).
+	toolProtocolJSONSchemaToolCalls = "llama:json_schema_tool_calls"
 )
 
 func serializeToolDefs(tools []modelrepo.Tool) (string, error) {
@@ -254,7 +259,7 @@ func isLlamaPrimitiveType(s string) bool {
 
 func toolCallProtocolKnown(protocol string) bool {
 	switch protocol {
-	case toolParserProtocolCommonChat:
+	case toolParserProtocolCommonChat, toolProtocolJSONSchemaToolCalls:
 		return true
 	default:
 		return false

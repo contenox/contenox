@@ -129,6 +129,16 @@ type ModelKVProfile struct {
 	WindowedLayers        int
 }
 
+// ChatTemplateProbe reports what OpenVINO GenAI's tokenizer/chat-template
+// renderer actually does for this model directory.
+type ChatTemplateProbe struct {
+	FormatName              string
+	ThinkingStartTag        string
+	SupportsToolCalls       bool
+	SupportsThinking        bool
+	SupportsReasoningEffort bool
+}
+
 // GenAIResult is the generated text plus the pipeline metrics observed for the
 // request.
 type GenAIResult struct {
@@ -222,6 +232,30 @@ func InspectModelKVProfile(modelDir string) (ModelKVProfile, error) {
 		SlidingWindow:         int(out.sliding_window),
 		GlobalLayers:          int(out.global_layers),
 		WindowedLayers:        int(out.windowed_layers),
+	}, nil
+}
+
+// ProbeChatTemplate inspects the model's own OpenVINO GenAI chat template
+// through the native tokenizer renderer, without opening the LLM pipeline.
+func ProbeChatTemplate(modelDir string) (ChatTemplateProbe, error) {
+	cDir := C.CString(modelDir)
+	defer C.free(unsafe.Pointer(cDir))
+	errbuf := C.calloc(1, C.size_t(genAIErrLen))
+	if errbuf == nil {
+		return ChatTemplateProbe{}, errors.New("allocate OpenVINO chat template probe error buffer")
+	}
+	defer C.free(errbuf)
+
+	var out C.cx_ov_chat_template_probe
+	if rc := C.cx_ov_chat_template_probe_get(cDir, &out, (*C.char)(errbuf), C.size_t(genAIErrLen)); rc != 0 {
+		return ChatTemplateProbe{}, fmt.Errorf("openvino chat template probe: %s", C.GoString((*C.char)(errbuf)))
+	}
+	return ChatTemplateProbe{
+		FormatName:              cString(out.format_name[:]),
+		ThinkingStartTag:        cString(out.thinking_start_tag[:]),
+		SupportsToolCalls:       out.supports_tool_calls != 0,
+		SupportsThinking:        out.supports_thinking != 0,
+		SupportsReasoningEffort: out.supports_reasoning_effort != 0,
 	}, nil
 }
 
@@ -1025,6 +1059,13 @@ func (s *GenAISession) ApplyChatTemplate(messages []ChatMessage, toolsJSON strin
 // ApplyChatTemplateWithPrompt renders messages with explicit control over
 // whether the model's assistant generation cue should be appended.
 func (s *GenAISession) ApplyChatTemplateWithPrompt(messages []ChatMessage, toolsJSON string, addGenerationPrompt bool) (string, error) {
+	return s.ApplyChatTemplateWithOptions(messages, toolsJSON, addGenerationPrompt, nil, "")
+}
+
+// ApplyChatTemplateWithOptions additionally forwards thinking/effort controls
+// as chat-template extra context (enable_thinking / reasoning_effort
+// variables). nil / empty means backend default: no extra context is sent.
+func (s *GenAISession) ApplyChatTemplateWithOptions(messages []ChatMessage, toolsJSON string, addGenerationPrompt bool, enableThinking *bool, reasoningEffort string) (string, error) {
 	if len(messages) == 0 {
 		return "", errors.New("openvino GenAI chat template requires at least one message")
 	}
@@ -1074,6 +1115,20 @@ func (s *GenAISession) ApplyChatTemplateWithPrompt(messages []ChatMessage, tools
 	}
 	defer C.free(errbuf)
 
+	cEnableThinking := C.int(-1)
+	if enableThinking != nil {
+		if *enableThinking {
+			cEnableThinking = 1
+		} else {
+			cEnableThinking = 0
+		}
+	}
+	var cReasoningEffort *C.char
+	if reasoningEffort != "" {
+		cReasoningEffort = C.CString(reasoningEffort)
+		defer C.free(unsafe.Pointer(cReasoningEffort))
+	}
+
 	var out *C.char
 	var outLen C.size_t
 	rc := C.cx_genai_apply_chat_template(
@@ -1085,6 +1140,8 @@ func (s *GenAISession) ApplyChatTemplateWithPrompt(messages []ChatMessage, tools
 		C.size_t(len(messages)),
 		cTools,
 		cbool(addGenerationPrompt),
+		cEnableThinking,
+		cReasoningEffort,
 		&out,
 		&outLen,
 		(*C.char)(errbuf),

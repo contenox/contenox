@@ -129,7 +129,7 @@ func TestSystem_LlamaSessionDecode_SlidesPastNumCtx(t *testing.T) {
 	modelPath := os.Getenv("CONTENOX_LLAMA_TINY_GGUF")
 	requireTinyGGUF(t, modelPath)
 
-	const numCtx = 48
+	const numCtx = 64
 	sess, err := New(modelPath, llama.Config{NumCtx: numCtx, NumBatch: 32, NumThreads: 1, DisableBOS: true})
 	if err != nil {
 		t.Fatal(err)
@@ -139,8 +139,8 @@ func TestSystem_LlamaSessionDecode_SlidesPastNumCtx(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	stable := "system\nYou write long numbered lists and never stop early.\n"
-	suffix := "user\nList numbers one per line starting at one.\n"
+	stable := "system\nContinue.\n"
+	suffix := "user\nList numbers.\n"
 	m := tinyManifest(stable, suffix)
 	if _, err := sess.EnsurePrefix(ctx, llama.PrefixInput{Text: stable, Manifest: m}); err != nil {
 		t.Fatal(err)

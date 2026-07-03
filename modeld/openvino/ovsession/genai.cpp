@@ -476,6 +476,123 @@ extern "C" int cx_ov_model_kv_profile_get(const char *model_dir, cx_ov_model_kv_
     }
 }
 
+static std::string render_chat_template_probe(
+        ov::genai::Tokenizer &tokenizer,
+        const std::optional<ov::genai::JsonContainer> &tools,
+        const std::optional<ov::genai::JsonContainer> &extra_context) {
+    std::vector<ov::AnyMap> msgs;
+    msgs.push_back(ov::AnyMap{
+        {"role", std::string("user")},
+        {"content", std::string("cx probe ping")},
+    });
+    ov::genai::ChatHistory history(msgs);
+    return tokenizer.apply_chat_template(history, true, std::string{}, tools, extra_context);
+}
+
+static std::optional<ov::genai::JsonContainer> probe_extra_context_bool(const std::string &key, bool value) {
+    ov::AnyMap extra;
+    extra[key] = value;
+    return ov::genai::JsonContainer(extra);
+}
+
+static std::optional<ov::genai::JsonContainer> probe_extra_context_string(const std::string &key, const std::string &value) {
+    ov::AnyMap extra;
+    extra[key] = value;
+    return ov::genai::JsonContainer(extra);
+}
+
+static bool contains_any(const std::string &s, const std::vector<std::string> &needles) {
+    for (const auto &needle : needles) {
+        if (s.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::string detect_thinking_start_tag(const std::vector<std::string> &prompts) {
+    const std::vector<std::string> tags = {
+        "<think>",
+        "<|START_THINKING|>",
+        "<|channel|>analysis",
+        "<|start_header_id|>analysis<|end_header_id|>",
+    };
+    for (const auto &tag : tags) {
+        for (const auto &prompt : prompts) {
+            if (prompt.find(tag) != std::string::npos) {
+                return tag;
+            }
+        }
+    }
+    return {};
+}
+
+extern "C" int cx_ov_chat_template_probe_get(const char *model_dir, cx_ov_chat_template_probe *out, char *err, size_t err_len) {
+    try {
+        if (!out) {
+            throw std::runtime_error("chat template probe output pointer is null");
+        }
+        std::memset(out, 0, sizeof(*out));
+        if (!model_dir || !model_dir[0]) {
+            return 0;
+        }
+
+        ov::genai::Tokenizer tokenizer{std::filesystem::path(model_dir)};
+        if (tokenizer.get_chat_template().empty()) {
+            return 0;
+        }
+
+        const auto plain = render_chat_template_probe(tokenizer, std::nullopt, std::nullopt);
+        write_fixed(out->format_name, "openvino:minja");
+
+        try {
+            auto tools = ov::genai::JsonContainer::from_json_string(
+                R"([{"type":"function","function":{"name":"cx_probe_tool","description":"cx probe tool","parameters":{"type":"object","properties":{"cx_probe_arg":{"type":"string","description":"probe arg"}},"required":["cx_probe_arg"]}}}])");
+            const auto with_tools = render_chat_template_probe(tokenizer, tools, std::nullopt);
+            out->supports_tool_calls =
+                (with_tools != plain && contains_any(with_tools, {"cx_probe_tool", "cx_probe_arg"})) ? 1 : 0;
+        } catch (...) {
+            out->supports_tool_calls = 0;
+        }
+
+        std::vector<std::string> thinking_prompts;
+        thinking_prompts.push_back(plain);
+        try {
+            const auto thinking_on = render_chat_template_probe(
+                tokenizer, std::nullopt, probe_extra_context_bool("enable_thinking", true));
+            const auto thinking_off = render_chat_template_probe(
+                tokenizer, std::nullopt, probe_extra_context_bool("enable_thinking", false));
+            thinking_prompts.push_back(thinking_on);
+            thinking_prompts.push_back(thinking_off);
+            out->supports_thinking =
+                (thinking_on != thinking_off || thinking_on != plain || thinking_off != plain) ? 1 : 0;
+        } catch (...) {
+            out->supports_thinking = 0;
+        }
+
+        const auto thinking_tag = detect_thinking_start_tag(thinking_prompts);
+        write_fixed(out->thinking_start_tag, thinking_tag);
+
+        try {
+            const auto low = render_chat_template_probe(
+                tokenizer, std::nullopt, probe_extra_context_string("reasoning_effort", "low"));
+            const auto high = render_chat_template_probe(
+                tokenizer, std::nullopt, probe_extra_context_string("reasoning_effort", "high"));
+            out->supports_reasoning_effort = (low != high) ? 1 : 0;
+        } catch (...) {
+            out->supports_reasoning_effort = 0;
+        }
+
+        return 0;
+    } catch (const std::exception &e) {
+        write_buf(err, err_len, e.what());
+        return 1;
+    } catch (...) {
+        write_buf(err, err_len, "unknown OpenVINO chat template probe error");
+        return 1;
+    }
+}
+
 struct model_rope_config {
     double theta = 10000.0;
     std::string scaling_json;
@@ -1784,6 +1901,8 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
                                  size_t n,
                                  const char *tools_json,
                                  int add_generation_prompt,
+                                 int enable_thinking,
+                                 const char *reasoning_effort,
                                  char **out,
                                  size_t *out_len,
                                  char *err,
@@ -1823,7 +1942,23 @@ int cx_genai_apply_chat_template(cx_genai_session *s,
             if (!tools_str.empty()) {
                 tools = ov::genai::JsonContainer::from_json_string(tools_str);
             }
-            templated = s->pipe->get_tokenizer().apply_chat_template(history, add_generation_prompt != 0, std::string{}, tools);
+            // Thinking/effort controls travel as chat-template extra context:
+            // templates that consume enable_thinking (qwen3) or
+            // reasoning_effort (harmony) read them as top-level variables;
+            // templates that don't simply ignore them, matching the llama
+            // backend's chat-template kwargs semantics.
+            std::optional<ov::genai::JsonContainer> extra_context;
+            if (enable_thinking >= 0 || (reasoning_effort && reasoning_effort[0] != '\0')) {
+                ov::AnyMap extra_map;
+                if (enable_thinking >= 0) {
+                    extra_map["enable_thinking"] = (enable_thinking != 0);
+                }
+                if (reasoning_effort && reasoning_effort[0] != '\0') {
+                    extra_map["reasoning_effort"] = std::string(reasoning_effort);
+                }
+                extra_context = ov::genai::JsonContainer(extra_map);
+            }
+            templated = s->pipe->get_tokenizer().apply_chat_template(history, add_generation_prompt != 0, std::string{}, tools, extra_context);
         });
         set_c_output(templated, out, out_len, "chat template output");
         return 0;
