@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/contenox/runtime/liblease"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/transport"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
@@ -116,6 +117,48 @@ func TestUnit_OpenVINOProvider_AutoContextStaysZeroAndRuntimeIdentityKept(t *tes
 	}
 	if req.Type != "openvino" || req.Digest == "" {
 		t.Fatalf("Describe request missing model identity: %+v", req)
+	}
+}
+
+func TestUnit_OpenVINOProvider_RequestedContextOverridesAutoContext(t *testing.T) {
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "config.json"), []byte(`{"max_position_embeddings":32768}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "tokenizer_config.json"), []byte(`{"chat_template":"{{ messages }}"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &recordingService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:         32768,
+			EffectiveContext:        24576,
+			PlannerEffectiveContext: 32768,
+		},
+	}
+	serveModeldForProviderTest(t, svc)
+
+	profile, err := loadModelProfile(modelDir)
+	if err != nil {
+		t.Fatalf("load profile: %v", err)
+	}
+	ctx := modelrepo.WithRequestedContextLength(context.Background(), 8192)
+	got, err := (&openvinoProvider{name: "coder", modelDir: root, caps: profile.capabilityConfig()}).GetChatConnection(ctx, "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	if c.cfg.NumCtx != 8192 {
+		t.Fatalf("NumCtx = %d, want requested context", c.cfg.NumCtx)
+	}
+	req := svc.lastRequest()
+	if req.Config.NumCtx != 8192 {
+		t.Fatalf("Describe request NumCtx = %d, want requested context", req.Config.NumCtx)
 	}
 }
 

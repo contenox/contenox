@@ -519,18 +519,24 @@ func runChat(cmd *cobra.Command, args []string) error {
 
 	changed := func(name string) bool { return flags.Changed(name) }
 
+	configuredDefaultModel := ""
+	if kv, _ := getConfigKV(dbCtx, store, "default-model"); kv != "" {
+		configuredDefaultModel = kv
+	}
+	configuredDefaultProvider := ""
+	if kv, _ := getConfigKV(dbCtx, store, "default-provider"); kv != "" {
+		configuredDefaultProvider = kv
+	}
+
 	// Resolve model: flag > SQLite KV > hardcoded default.
 	effectiveModel, _ := flags.GetString("model")
 	if !changed("model") || effectiveModel == defaultModel {
-		if kv, _ := getConfigKV(dbCtx, store, "default-model"); kv != "" {
-			effectiveModel = kv
+		if configuredDefaultModel != "" {
+			effectiveModel = configuredDefaultModel
 		}
 	}
 
-	effectiveDefaultProvider := ""
-	if kv, _ := getConfigKV(dbCtx, store, "default-provider"); kv != "" {
-		effectiveDefaultProvider = kv
-	}
+	effectiveDefaultProvider := configuredDefaultProvider
 	if changed("provider") {
 		effectiveDefaultProvider, _ = flags.GetString("provider")
 	}
@@ -643,6 +649,8 @@ func runChat(cmd *cobra.Command, args []string) error {
 		EffectiveChain:               effectiveChain,
 		EffectiveDefaultModel:        effectiveModel,
 		EffectiveDefaultProvider:     effectiveDefaultProvider,
+		EffectiveConfiguredModel:     configuredDefaultModel,
+		EffectiveConfiguredProvider:  configuredDefaultProvider,
 		EffectiveAltDefaultModel:     effectiveAltModel,
 		EffectiveAltDefaultProvider:  effectiveAltProvider,
 		EffectiveMaxTokens:           effectiveMaxTokens,

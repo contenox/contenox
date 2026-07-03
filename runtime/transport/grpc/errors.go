@@ -83,6 +83,9 @@ func decodeError(err error) error {
 					return transport.NewContextOverflowError(detail.Stage, detail.ResidentTokens, detail.AdditionalTokens, detail.NumCtx)
 				}
 			}
+			if s.token == "manifest_mismatch" {
+				return contextasm.NewManifestMismatchError(rest)
+			}
 			return fmt.Errorf("%w: %s", s.err, rest)
 		}
 	}
@@ -112,6 +115,9 @@ func decodeWireError(token, msg string, detail *transport.ContextOverflowDetail)
 		if s.token == token {
 			if s.token == "context_overflow" && detail != nil {
 				return transport.NewContextOverflowError(detail.Stage, detail.ResidentTokens, detail.AdditionalTokens, detail.NumCtx)
+			}
+			if s.token == "manifest_mismatch" {
+				return contextasm.NewManifestMismatchError(msg)
 			}
 			return fmt.Errorf("%w: %s", s.err, msg)
 		}

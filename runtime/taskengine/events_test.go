@@ -30,6 +30,7 @@ func (s *captureTaskEventSink) Enabled() bool { return true }
 type mockModelRepo struct {
 	streamFunc func(ctx context.Context, req llmrepo.Request, messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument) (<-chan *libmodelprovider.StreamParcel, llmrepo.Meta, error)
 	chatFunc   func(ctx context.Context, req llmrepo.Request, messages []libmodelprovider.Message, opts ...libmodelprovider.ChatArgument) (libmodelprovider.ChatResult, llmrepo.Meta, error)
+	promptFunc func(ctx context.Context, req llmrepo.Request, systeminstruction string, temperature float32, prompt string) (string, llmrepo.Meta, error)
 }
 
 func (m *mockModelRepo) Tokenize(ctx context.Context, modelName string, prompt string) ([]int, error) {
@@ -41,6 +42,9 @@ func (m *mockModelRepo) CountTokens(ctx context.Context, modelName string, promp
 }
 
 func (m *mockModelRepo) PromptExecute(ctx context.Context, req llmrepo.Request, systeminstruction string, temperature float32, prompt string) (string, llmrepo.Meta, error) {
+	if m.promptFunc != nil {
+		return m.promptFunc(ctx, req, systeminstruction, temperature, prompt)
+	}
 	return "", llmrepo.Meta{}, errors.New("PromptExecute should not be called")
 }
 

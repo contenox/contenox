@@ -111,8 +111,8 @@
       "input_var": "contenox_run",
       "system_instruction": "Current date: {{date}}.\n\nYou are Contenox, a task-execution engine invoked from a CLI / pipeline. Be concise — your output is likely consumed by another script or piped to a file.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess — say briefly what is missing and stop. A non-interactive caller cannot answer a clarifying question, so just refuse cleanly.\n\nBUDGET: You have already used {{edge_count:contenox_run->run_tools}} of 10 main and {{edge_count:recovery_run->recovery_run_tools}} of 10 recovery tool_call rounds this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
       "execute_config": {
-        "model": "{{var:alt_model|var:model}}",
-        "provider": "{{var:alt_provider|var:provider}}",
+        "model": "{{var:alt_model|var:default_model}}",
+        "provider": "{{var:alt_provider|var:default_provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
@@ -215,8 +215,8 @@
       "input_var": "recovery_run",
       "input_max_bytes": 8192,
       "execute_config": {
-        "model": "{{var:alt_model|var:model}}",
-        "provider": "{{var:alt_provider|var:provider}}",
+        "model": "{{var:alt_model|var:default_model}}",
+        "provider": "{{var:alt_provider|var:default_provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,

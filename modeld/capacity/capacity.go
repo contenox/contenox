@@ -9,6 +9,7 @@ package capacity
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -395,44 +396,57 @@ func LoadPolicy(dataRoot string) Policy {
 				HeadroomFrac        float64 `json:"headroom_frac"`
 			} `json:"memory"`
 		}
-		if b, err := os.ReadFile(dataRoot + string(os.PathSeparator) + "modeld.json"); err == nil {
-			_ = json.Unmarshal(b, &raw)
+		path := dataRoot + string(os.PathSeparator) + "modeld.json"
+		if b, err := os.ReadFile(path); err == nil {
+			if err := json.Unmarshal(b, &raw); err != nil {
+				slog.Warn("modeld.json is malformed; memory policy falls back to defaults", "path", path, "err", err)
+			}
 			p.MaxResidentBytes = raw.Memory.MaxResidentBytes
 			p.MinFreeBytes = raw.Memory.MinFreeBytes
 			p.HostColdBudgetBytes = raw.Memory.HostColdBudgetBytes
 			p.MinHotContextTokens = raw.Memory.MinHotContextTokens
 			p.HeadroomFrac = raw.Memory.HeadroomFrac
-			if v, err := ParseBytes(raw.Memory.MaxResident); err == nil && v > 0 {
-				p.MaxResidentBytes = v
-			}
-			if v, err := ParseBytes(raw.Memory.ReserveFree); err == nil && v > 0 {
-				p.MinFreeBytes = v
-			}
-			if v, err := ParseBytes(raw.Memory.HostColdBudget); err == nil && v > 0 {
-				p.HostColdBudgetBytes = v
-			}
+			applyBytesSetting("modeld.json memory.max_resident", raw.Memory.MaxResident, &p.MaxResidentBytes)
+			applyBytesSetting("modeld.json memory.reserve_free", raw.Memory.ReserveFree, &p.MinFreeBytes)
+			applyBytesSetting("modeld.json memory.host_cold_budget", raw.Memory.HostColdBudget, &p.HostColdBudgetBytes)
 		}
 	}
-	if v, err := ParseBytes(os.Getenv("CONTENOX_MODELD_MEM_MAX")); err == nil && v > 0 {
-		p.MaxResidentBytes = v
-	}
-	if v, err := ParseBytes(os.Getenv("CONTENOX_MODELD_MEM_RESERVE")); err == nil && v > 0 {
-		p.MinFreeBytes = v
-	}
-	if v, err := ParseBytes(os.Getenv("CONTENOX_MODELD_MEM_COLD")); err == nil && v > 0 {
-		p.HostColdBudgetBytes = v
-	}
+	applyBytesSetting("CONTENOX_MODELD_MEM_MAX", os.Getenv("CONTENOX_MODELD_MEM_MAX"), &p.MaxResidentBytes)
+	applyBytesSetting("CONTENOX_MODELD_MEM_RESERVE", os.Getenv("CONTENOX_MODELD_MEM_RESERVE"), &p.MinFreeBytes)
+	applyBytesSetting("CONTENOX_MODELD_MEM_COLD", os.Getenv("CONTENOX_MODELD_MEM_COLD"), &p.HostColdBudgetBytes)
 	if v := os.Getenv("CONTENOX_MODELD_MEM_HEADROOM"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 && f < 1 {
 			p.HeadroomFrac = f
+		} else {
+			slog.Warn("memory setting ignored: headroom must be a fraction in (0,1)", "setting", "CONTENOX_MODELD_MEM_HEADROOM", "value", v)
 		}
 	}
 	if v := os.Getenv("CONTENOX_MODELD_MIN_HOT_CONTEXT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			p.MinHotContextTokens = n
+		} else {
+			slog.Warn("memory setting ignored: min hot context must be a positive integer", "setting", "CONTENOX_MODELD_MIN_HOT_CONTEXT", "value", v)
 		}
 	}
 	return p
+}
+
+// applyBytesSetting applies one byte-size policy setting, warning instead of
+// silently ignoring an invalid value: a typo'd "8GBB" degrading quietly to a
+// default budget is exactly the failure mode a memory policy must not have.
+// Empty raw means the setting is absent and dst is left untouched.
+func applyBytesSetting(name, raw string, dst *int64) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	v, err := ParseBytes(raw)
+	if err != nil {
+		slog.Warn("memory setting ignored: invalid byte size", "setting", name, "value", raw, "err", err)
+		return
+	}
+	if v > 0 {
+		*dst = v
+	}
 }
 
 // ParseBytes parses byte strings used by modeld memory settings.

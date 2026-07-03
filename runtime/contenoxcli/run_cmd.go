@@ -155,20 +155,7 @@ Examples:
 		}
 
 		// Template vars
-		templateVars := map[string]string{
-			"model":    o.EffectiveDefaultModel,
-			"provider": o.EffectiveDefaultProvider,
-			"think":    o.EffectiveThink,
-		}
-		if o.EffectiveAltDefaultModel != "" {
-			templateVars["alt_model"] = o.EffectiveAltDefaultModel
-		}
-		if o.EffectiveAltDefaultProvider != "" {
-			templateVars["alt_provider"] = o.EffectiveAltDefaultProvider
-		}
-		if o.EffectiveMaxTokens != "" {
-			templateVars["max_tokens"] = o.EffectiveMaxTokens
-		}
+		templateVars := buildTemplateVars(o)
 
 		// Set timeout
 		timeout, _ := flags.GetDuration("timeout")
@@ -203,11 +190,12 @@ Examples:
 		})
 
 		resp, err := ag.Prompt(execCtx, agentservice.PromptRequest{
-			Input:        rawInput,
-			InputValue:   inputVal,
-			InputType:    inputType,
-			Chain:        chain,
-			TemplateVars: templateVars,
+			Input:         rawInput,
+			InputValue:    inputVal,
+			InputType:     inputType,
+			Chain:         chain,
+			TemplateVars:  templateVars,
+			ContextLength: o.EffectiveContext,
 		})
 		if err != nil {
 			if isModelResolverFailure(err) {
@@ -386,6 +374,8 @@ func buildRunOpts(cmd *cobra.Command, db libdbexec.DBManager, contenoxDir string
 		EffectiveContext:             effectiveContext,
 		EffectiveDefaultModel:        effectiveModel,
 		EffectiveDefaultProvider:     effectiveDefaultProvider,
+		EffectiveConfiguredModel:     kvModel,
+		EffectiveConfiguredProvider:  kvProvider,
 		EffectiveAltDefaultModel:     effectiveAltModel,
 		EffectiveAltDefaultProvider:  effectiveAltProvider,
 		EffectiveMaxTokens:           effectiveMaxTokens,

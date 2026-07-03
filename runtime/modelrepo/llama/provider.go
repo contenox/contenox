@@ -113,9 +113,13 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		profileID = p.name
 	}
 	baseCfg := profile.config()
-	explicitCtx := profile.explicitRuntimeContext()
+	requestedCtx := modelrepo.RequestedContextLengthFromContext(ctx)
+	explicitCtx := profile.explicitRuntimeContext() || requestedCtx > 0
 	cfg := baseCfg
-	if !explicitCtx {
+	if requestedCtx > 0 {
+		cfg.NumCtx = requestedCtx
+		cfg = normalizeConfig(cfg)
+	} else if !explicitCtx {
 		// Auto context: NumCtx stays 0 end-to-end so modeld's authoritative,
 		// post-eviction Resolve() computes the window fresh at OpenSession.
 		// Pre-clamping to the advertised trained ceiling here would turn the
@@ -140,7 +144,10 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 	var freeBytes int64
 	var describedEffectiveContext, describedPlannerContext, describedModelMaxContext int
 	if sessionFactory == nil {
-		describeCfg := profile.describeConfig()
+		describeCfg := cfg
+		if !explicitCtx {
+			describeCfg = profile.describeConfig()
+		}
 		if p.caps.ContextLength > 0 && describeCfg.NumCtx > p.caps.ContextLength {
 			describeCfg.NumCtx = p.caps.ContextLength
 		}
@@ -164,7 +171,7 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 				cfg = applyModeldInfoToConfig(cfg, info)
 			}
 		} else if explicitCtx {
-			cfg = normalizeConfig(baseCfg)
+			cfg = normalizeConfig(cfg)
 		}
 	}
 	return &client{

@@ -899,19 +899,21 @@ func (c *Context) MemorySeqRemove(seqID, p0, p1 int) bool {
 }
 
 // MemorySeqCopy copies KV state from srcSeqID to dstSeqID.
-func (c *Context) MemorySeqCopy(srcSeqID, dstSeqID, p0, p1 int) {
+func (c *Context) MemorySeqCopy(srcSeqID, dstSeqID, p0, p1 int) bool {
 	if c == nil || c.ptr == nil {
-		return
+		return false
 	}
 	C.llama_memory_seq_cp(C.llama_get_memory(c.ptr), C.llama_seq_id(srcSeqID), C.llama_seq_id(dstSeqID), C.llama_pos(p0), C.llama_pos(p1))
+	return true
 }
 
 // MemorySeqAdd shifts positions for seqID.
-func (c *Context) MemorySeqAdd(seqID, p0, p1, delta int) {
+func (c *Context) MemorySeqAdd(seqID, p0, p1, delta int) bool {
 	if c == nil || c.ptr == nil {
-		return
+		return false
 	}
 	C.llama_memory_seq_add(C.llama_get_memory(c.ptr), C.llama_seq_id(seqID), C.llama_pos(p0), C.llama_pos(p1), C.llama_pos(delta))
+	return true
 }
 
 // DecodeStatus preserves llama_decode's exact status class.

@@ -20,6 +20,10 @@ type fakeBackend struct {
 	// the footprint estimate the slot captures at load time.
 	requiredBytes int64
 	describes     []transport.OpenSessionRequest
+	// embedErr, when set, is returned by Embed. embeds records the requests that
+	// reached the backend.
+	embedErr error
+	embeds   []transport.EmbedRequest
 }
 
 func (b *fakeBackend) OpenSession(_ context.Context, req transport.OpenSessionRequest) (transport.Session, error) {
@@ -55,8 +59,15 @@ func (b *fakeBackend) lastDescribe() transport.OpenSessionRequest {
 	return b.describes[len(b.describes)-1]
 }
 
-func (b *fakeBackend) Embed(context.Context, transport.EmbedRequest) (transport.EmbedResult, error) {
-	return transport.EmbedResult{}, transport.ErrUnsupportedFeature
+func (b *fakeBackend) Embed(_ context.Context, req transport.EmbedRequest) (transport.EmbedResult, error) {
+	b.mu.Lock()
+	b.embeds = append(b.embeds, req)
+	err := b.embedErr
+	b.mu.Unlock()
+	if err != nil {
+		return transport.EmbedResult{}, err
+	}
+	return transport.EmbedResult{Vector: []float32{1}}, nil
 }
 
 func (b *fakeBackend) recordClosed(name string) {
@@ -644,5 +655,71 @@ func TestUnit_Slot_ImplicitSessionStaysResidentWithReaper(t *testing.T) {
 	defer next.Close()
 	if len(backend.opened) != 1 {
 		t.Fatalf("backend opens = %d, want 1 (warm reuse, no reload)", len(backend.opened))
+	}
+}
+
+func TestUnit_Slot_EmbedEvictsIdleImplicitResidentModel(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithIdleTTL(5*time.Minute))
+
+	// One-shot chat turn: the reaper keeps the implicit session resident after release.
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	if err := sess.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// The next embed must not wait out the idle TTL: the idle implicit model is
+	// evicted and the embed proceeds.
+	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Text: "hello"}); err != nil {
+		t.Fatalf("Embed after released chat turn = %v, want success", err)
+	}
+	if len(backend.embeds) != 1 {
+		t.Fatalf("backend embeds = %d, want 1", len(backend.embeds))
+	}
+	if !backend.sessions[0].closed {
+		t.Fatal("idle implicit session was not evicted for the embed")
+	}
+	st, _ := svc.Status(ctx)
+	if st.State != transport.SlotEmpty || st.Active != nil {
+		t.Fatalf("status after embed = %+v, want empty", st)
+	}
+}
+
+func TestUnit_Slot_EmbedBusyWhileSessionHeld(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithIdleTTL(5*time.Minute))
+
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	defer sess.Close()
+	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Text: "hello"}); !errors.Is(err, transport.ErrModelBusy) {
+		t.Fatalf("Embed while session held = %v, want ErrModelBusy", err)
+	}
+	if backend.sessions[0].closed {
+		t.Fatal("held session must not be evicted by an embed")
+	}
+}
+
+func TestUnit_Slot_EmbedBusyWithExplicitModel(t *testing.T) {
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithIdleTTL(5*time.Minute))
+
+	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Text: "hello"}); !errors.Is(err, transport.ErrModelBusy) {
+		t.Fatalf("Embed with explicit model = %v, want ErrModelBusy", err)
+	}
+	st, _ := svc.Status(ctx)
+	if st.Active == nil || st.Active.ModelName != "a" {
+		t.Fatalf("explicit model evicted by embed: %+v", st)
 	}
 }

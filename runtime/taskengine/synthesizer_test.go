@@ -252,3 +252,30 @@ func TestUnit_SynthesizeHistory_ErrorAfterPartialOutput(t *testing.T) {
 	assert.Contains(t, strings.ToLower(got[2].Content), "failed")
 	assert.Contains(t, got[2].Content, "stream interrupted")
 }
+
+func TestUnit_SynthesizeHistory_ErrorDropsEmptyAssistantShell(t *testing.T) {
+	prior := []taskengine.Message{{ID: "u1", Role: "user", Content: "x"}}
+	out := taskengine.ChatHistory{
+		Messages: []taskengine.Message{
+			prior[0],
+			{ID: "empty", Role: "assistant"},
+		},
+	}
+	units := []taskengine.CapturedStateUnit{
+		{
+			TaskID:      "respond",
+			TaskHandler: "chat_completion",
+			OutputType:  taskengine.DataTypeChatHistory,
+			Input:       taskengine.ChatHistory{Messages: prior},
+			Output:      out,
+			Error:       taskengine.ErrorResponse{Error: "llamacppshim: common chat parse: The model produced output that does not match the expected peg-native format"},
+		},
+	}
+
+	got := taskengine.SynthesizeHistory(prior, units, nil)
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "user", got[0].Role)
+	assert.Equal(t, "assistant", got[1].Role)
+	assert.Contains(t, got[1].Content, "peg-native format")
+}

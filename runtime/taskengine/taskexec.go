@@ -97,22 +97,22 @@ func (exe *SimpleExec) publishStepChunk(ctx context.Context, meta llmrepo.Meta, 
 	publishTaskEventBestEffort(ctx, exe.tracker, exe.eventSink, event)
 }
 
-// countTokensAndCheckLimit counts tokens for text and checks against context limit
-func (exe *SimpleExec) countTokensAndCheckLimit(ctx context.Context, modelName string, text string, ctxLength int) error {
+// countTokensAndCheckLimit counts tokens for text and checks against context limit.
+func (exe *SimpleExec) countTokensAndCheckLimit(ctx context.Context, modelName string, text string, ctxLength int) (int, error) {
 	if ctxLength <= 0 {
-		return nil // No limit enforced
+		return 0, nil // No limit enforced
 	}
 
 	tokenCount, err := exe.repo.CountTokens(ctx, modelName, text)
 	if err != nil {
-		return fmt.Errorf("token count failed: %w", err)
+		return 0, fmt.Errorf("token count failed: %w", err)
 	}
 
 	if tokenCount > ctxLength {
-		return fmt.Errorf("%w: input token count %d > %d", ErrContextLengthExceeded, tokenCount, ctxLength)
+		return tokenCount, fmt.Errorf("%w: input token count %d > %d", ErrContextLengthExceeded, tokenCount, ctxLength)
 	}
 
-	return nil
+	return tokenCount, nil
 }
 
 // countChatHistoryTokens counts total tokens in chat history
@@ -155,6 +155,13 @@ func reserveOutputTokens(llmCall *LLMExecutionConfig, ctxLength int) int {
 		return ctxLength / 8
 	}
 	return 0
+}
+
+func requestedContextRequirement(ctx context.Context, actualTokens int) int {
+	if requested := RequestedContextLengthFromContext(ctx); requested > actualTokens {
+		return requested
+	}
+	return actualTokens
 }
 
 func pruneDanglingToolLinks(msgs []Message) []Message {
@@ -345,7 +352,8 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 	// Count tokens and check limits
 	modelName := GetPrimaryModel(&llmCall)
 	combinedText := systemInstruction + "\n" + prompt
-	if err := exe.countTokensAndCheckLimit(ctx, modelName, combinedText, ctxLength); err != nil {
+	promptTokens, err := exe.countTokensAndCheckLimit(ctx, modelName, combinedText, ctxLength)
+	if err != nil {
 		reportErr(err)
 		return "", err
 	}
@@ -367,6 +375,7 @@ func (exe *SimpleExec) Prompt(ctx context.Context, systemInstruction string, llm
 	req := llmrepo.Request{
 		ProviderTypes: providerNames,
 		ModelNames:    modelNames,
+		ContextLength: requestedContextRequirement(ctx, promptTokens),
 		Tracker:       exe.tracker,
 	}
 
@@ -1229,7 +1238,7 @@ func (exe *SimpleExec) executeLLM(
 	req := llmrepo.Request{
 		ProviderTypes: providerNames,
 		ModelNames:    modelNames,
-		ContextLength: totalTokens,
+		ContextLength: requestedContextRequirement(ctx, totalTokens),
 		Tracker:       exe.tracker,
 	}
 
@@ -1267,7 +1276,7 @@ func (exe *SimpleExec) executeLLM(
 				"error":      err.Error(),
 			})
 			noToolReq := req
-			noToolReq.ContextLength = totalTokens - toolTokens
+			noToolReq.ContextLength = requestedContextRequirement(ctx, totalTokens-toolTokens)
 			noToolMessages := stripToolProtocolMessages(messagesC)
 			noToolArgs := chatArgsForLLMCall(llmCall, nil)
 			resp, meta, err = exe.chatWithRetry(ctx, reportChange, llmCall, noToolReq, noToolMessages, noToolArgs)

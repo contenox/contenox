@@ -130,8 +130,13 @@ func Join(ctx context.Context, cfg Config) (*Owner, error) {
 		}
 		rec, ierr := inspectLease(cfg.LeasePath)
 		if errors.Is(ierr, os.ErrNotExist) {
-			if err := ctx.Err(); err != nil {
-				return nil, err
+			// The holder released (or its file vanished) between the failed Acquire
+			// and the Inspect. Retry after a short pause so a pathological race
+			// (repeated held-then-gone) cannot spin the CPU.
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(minRenewRetryInterval):
 			}
 			continue
 		}

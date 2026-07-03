@@ -48,7 +48,9 @@ func (s *session) exportColdBlockLocked(a, b int) (*coldBlock, error) {
 	if err := s.clearColdScratchLocked(); err != nil {
 		return nil, err
 	}
-	s.lctx.MemorySeqCopy(0, coldScratchSeqID, a, b)
+	if err := s.copyKVSeq(0, coldScratchSeqID, a, b); err != nil {
+		return nil, err
+	}
 	kv, err := s.lctx.StateSeqGetData(coldScratchSeqID)
 	cleanupErr := s.clearColdScratchLocked()
 	if err != nil {
@@ -255,9 +257,15 @@ func (s *session) admitRangeLocked(ctx context.Context, r residency.Range) error
 	destStart := len(s.resident)
 	destEnd := destStart + len(block.Tokens)
 	if delta := destStart - block.Range.Start; delta != 0 {
-		s.lctx.MemorySeqAdd(coldScratchSeqID, block.Range.Start, block.Range.End, delta)
+		if err := s.addKVSeq(coldScratchSeqID, block.Range.Start, block.Range.End, delta); err != nil {
+			_ = s.clearColdScratchLocked()
+			return err
+		}
 	}
-	s.lctx.MemorySeqCopy(coldScratchSeqID, 0, destStart, destEnd)
+	if err := s.copyKVSeq(coldScratchSeqID, 0, destStart, destEnd); err != nil {
+		_ = s.clearColdScratchLocked()
+		return err
+	}
 	if err := s.clearColdScratchLocked(); err != nil {
 		return err
 	}

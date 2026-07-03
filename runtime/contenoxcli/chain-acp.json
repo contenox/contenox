@@ -155,8 +155,8 @@
       "input_var": "coding_chat",
       "system_instruction": "Current date: {{date}}.\n\nYou are Contenox running inside the user's editor as a coding assistant.\n\nThe main coding loop got stuck or exhausted its tool-call budget. Continue from the actual chat history above. Do not restart from scratch. Pick the most direct remaining path: fix the concrete blocker, run the smallest useful check, or tell the user exactly what blocks completion.\n\nBUDGET: You have already used {{edge_count:coding_chat->coding_tools}} of 12 main and {{edge_count:coding_recovery->coding_recovery_tools}} of 8 recovery tool-call rounds this turn.\n\nGROUND YOUR CLAIMS: State facts only from visible tool output in this turn. Do not claim completion over failed or unavailable checks.",
       "execute_config": {
-        "model": "{{var:alt_model|var:model}}",
-        "provider": "{{var:alt_provider|var:provider}}",
+        "model": "{{var:alt_model|var:default_model}}",
+        "provider": "{{var:alt_provider|var:default_provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
@@ -372,8 +372,8 @@
       "input_var": "acp_chat",
       "system_instruction": "Current date: {{date}}.\n\nYou are Contenox running inside the user's editor.\n\nThe main assistant loop got stuck or exhausted its tool-call budget. Continue from the actual chat history above. Do not restart from scratch. Pick the most direct remaining path, prefer producing a useful answer over gathering more information, and address the concrete blocker instead of retrying the same action.\n\nBUDGET: You have already used {{edge_count:acp_chat->run_tools}} of 10 main and {{edge_count:recovery_chat->recovery_tools}} of 8 recovery tool-call rounds this turn.\n\nGROUND YOUR CLAIMS: State facts only from visible tool output in this turn. Do not claim completion over failed or unavailable checks.",
       "execute_config": {
-        "model": "{{var:alt_model|var:model}}",
-        "provider": "{{var:alt_provider|var:provider}}",
+        "model": "{{var:alt_model|var:default_model}}",
+        "provider": "{{var:alt_provider|var:default_provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
@@ -482,8 +482,8 @@
       "input_max_bytes": 8192,
       "system_instruction": "Current date: {{date}}.\n\nYou are Contenox running inside the user's editor.\n\nThe selected agent loop and its recovery loop could not complete the turn. Do not call tools. In one concise answer, tell the user: what was being attempted, what concrete steps were taken, where it got stuck, and what would unblock the work. Do not pretend the work is complete.\n\nGround this strictly in the actual chat history above. Describe only steps that were really taken and results that actually occurred.",
       "execute_config": {
-        "model": "{{var:alt_model|var:model}}",
-        "provider": "{{var:alt_provider|var:provider}}",
+        "model": "{{var:alt_model|var:default_model}}",
+        "provider": "{{var:alt_provider|var:default_provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,

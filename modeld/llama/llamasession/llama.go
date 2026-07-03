@@ -110,7 +110,9 @@ func (s *session) evictRangeLocked(a, b int) error {
 		return err
 	}
 	if b < n {
-		s.lctx.MemorySeqAdd(0, b, -1, -(b - a))
+		if err := s.addKVSeq(0, b, -1, -(b - a)); err != nil {
+			return err
+		}
 	}
 	s.resident = append(s.resident[:a], s.resident[b:]...)
 	oldPrefix := s.prefixLen
@@ -307,6 +309,15 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 		return llama.PrefixStatus{}, llama.NewContextOverflowError("prefix", 0, len(toks), s.logicalBudgetLocked())
 	}
 
+	// Enrich before any KV mutation: a template/tokenizer failure here must leave
+	// the session exactly as it was, not with a new resident tape under the old
+	// manifest. Tools are passed explicitly because s.tools still holds the
+	// previous prefix's value at this point.
+	enriched, err := s.enrichStableSegments(prefix.Manifest, stableMsgs, toks, prefix.Tools)
+	if err != nil {
+		return llama.PrefixStatus{}, err
+	}
+
 	oldResident := len(s.resident)
 	reuse := 0
 	if ok, _ := s.manifest.CompatibleRuntime(prefix.Manifest); !ok {
@@ -364,10 +375,6 @@ func (s *session) EnsurePrefix(ctx context.Context, prefix llama.PrefixInput) (l
 	s.stableMsgs = stableMsgs
 	s.tools = prefix.Tools
 	s.chatSyntax = llamacppshim.ChatSyntax{}
-	enriched, err := s.enrichStableSegments(prefix.Manifest, stableMsgs, toks)
-	if err != nil {
-		return llama.PrefixStatus{}, err
-	}
 	s.manifest = enriched
 	s.updateResidencyPlanLocked(false)
 
@@ -458,9 +465,10 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 		}
 		s.resident = append(s.resident, stoks...)
 	}
-	if err := s.enrichVolatileSegments(s.prefixLen, volatileMsgs, stoks); err != nil {
-		return llama.SuffixStatus{}, err
-	}
+	// Volatile segment enrichment is advisory residency metadata over the already-
+	// committed resident tape; it never fails the turn (it degrades to coarse
+	// residency internally). The nil return is asserted for future-proofing.
+	_ = s.enrichVolatileSegments(s.prefixLen, volatileMsgs, stoks)
 	s.updateResidencyPlanLocked(true)
 	return llama.SuffixStatus{
 		SuffixTokens:    len(stoks),
@@ -888,7 +896,10 @@ func volatileMessages(text string, m llama.ContextManifest) []chatTemplateMessag
 	return msgs
 }
 
-func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []chatTemplateMessage, toks []int) (llama.ContextManifest, error) {
+// enrichStableSegments computes token ranges for the stable manifest segments.
+// It is pure with respect to session state — tools is the incoming prefix's tool
+// JSON, passed explicitly so this can run before the session commits anything.
+func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []chatTemplateMessage, toks []int, tools string) (llama.ContextManifest, error) {
 	m.Segments = append([]llama.ManifestSegment(nil), m.Segments...)
 	m.StableTokenHash = contextasm.HashTokenIDs(toks)
 	prevEnd, msgIdx := 0, 0
@@ -905,7 +916,7 @@ func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []cha
 		msgIdx++
 		end := len(toks)
 		if msgIdx < len(stableMsgs) {
-			rendered, err := s.renderTemplate(stableMsgs[:msgIdx], s.tools, false)
+			rendered, err := s.renderTemplate(stableMsgs[:msgIdx], tools, false)
 			if err != nil {
 				return llama.ContextManifest{}, fmt.Errorf("llamasession: stable segment template: %w", err)
 			}
@@ -925,20 +936,50 @@ func (s *session) enrichStableSegments(m llama.ContextManifest, stableMsgs []cha
 	return m, nil
 }
 
+// enrichVolatileSegments computes per-message token ranges for the volatile
+// manifest segments. It is advisory: the ranges refine residency planning, but
+// the resident token tape (s.resident) is already authoritative and correct.
+//
+// The per-message boundaries are derived by re-rendering prefixes of the message
+// list and diffing token counts. That is only valid when the model's chat
+// template is token-prefix-additive per message. Real templates often are not:
+// tool definitions and thinking blocks are placed by whole-conversation
+// structure, so a partial re-render tokenizes very differently than the resident
+// tape (observed: a two-message re-render producing 2.7x the full conversation's
+// tokens because the tool block only renders once a user turn is present). When
+// that happens the fine-grained split is simply unavailable — the function falls
+// back to coarse (unsplit) volatile residency and records a diagnostic, rather
+// than failing the chat turn. It returns an error only for a genuine backend
+// template/tokenize failure, which the caller also treats as non-fatal.
 func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []chatTemplateMessage, stoks []int) error {
-	s.manifest.Segments = append([]llama.ManifestSegment(nil), s.manifest.Segments...)
-	s.manifest.VolatileTokenHash = contextasm.HashTokenIDs(stoks)
+	segs := append([]llama.ManifestSegment(nil), s.manifest.Segments...)
+	volatileHash := contextasm.HashTokenIDs(stoks)
+	// Commit the copy and volatile hash up front; token ranges below are applied
+	// only if the whole computation stays consistent, so a partial (and thus
+	// possibly overlapping) result never lands in the manifest.
+	commit := func(diag string) error {
+		s.manifest.Segments = segs
+		s.manifest.VolatileTokenHash = volatileHash
+		if diag != "" {
+			s.residencyErr = diag
+		}
+		return nil
+	}
+
+	type bound struct {
+		start, end int
+		hash       string
+		set        bool
+	}
+	bounds := make([]bound, len(segs))
 	allMsgs := append(append([]chatTemplateMessage{}, s.stableMsgs...), volatileMsgs...)
 	prevEnd, msgIdx := 0, len(s.stableMsgs)
-	for i := range s.manifest.Segments {
-		seg := &s.manifest.Segments[i]
-		if seg.Stable {
+	for i := range segs {
+		if segs[i].Stable {
 			continue
 		}
-		if sessionkit.ChatRole(seg.Kind) == "" {
-			seg.TokenStart = prefixTokens + prevEnd
-			seg.TokenEnd = prefixTokens + len(stoks)
-			seg.TokenHash = contextasm.HashTokenIDs(stoks[prevEnd:])
+		if sessionkit.ChatRole(segs[i].Kind) == "" {
+			bounds[i] = bound{prefixTokens + prevEnd, prefixTokens + len(stoks), contextasm.HashTokenIDs(stoks[prevEnd:]), true}
 			prevEnd = len(stoks)
 			continue
 		}
@@ -947,23 +988,29 @@ func (s *session) enrichVolatileSegments(prefixTokens int, volatileMsgs []chatTe
 		if msgIdx < len(allMsgs) {
 			rendered, err := s.renderTemplate(allMsgs[:msgIdx], s.tools, false)
 			if err != nil {
-				return fmt.Errorf("llamasession: volatile segment template: %w", err)
+				return commit(fmt.Sprintf("volatile segment template render failed: %v", err))
 			}
 			cum, err := s.tokenize(rendered, s.addBOS)
 			if err != nil {
-				return fmt.Errorf("llamasession: volatile segment tokenize: %w", err)
+				return commit(fmt.Sprintf("volatile segment tokenize failed: %v", err))
 			}
 			end = len(cum) - prefixTokens
 		}
 		if end < prevEnd || end > len(stoks) {
-			return llama.NewManifestMismatchError("volatile segment token boundary out of range")
+			// Template not token-prefix-additive for this turn: keep coarse residency.
+			return commit(fmt.Sprintf("volatile segment boundaries unavailable (template not token-prefix-additive): kind=%q", segs[i].Kind))
 		}
-		seg.TokenStart = prefixTokens + prevEnd
-		seg.TokenEnd = prefixTokens + end
-		seg.TokenHash = contextasm.HashTokenIDs(stoks[prevEnd:end])
+		bounds[i] = bound{prefixTokens + prevEnd, prefixTokens + end, contextasm.HashTokenIDs(stoks[prevEnd:end]), true}
 		prevEnd = end
 	}
-	return nil
+	for i := range segs {
+		if bounds[i].set {
+			segs[i].TokenStart = bounds[i].start
+			segs[i].TokenEnd = bounds[i].end
+			segs[i].TokenHash = bounds[i].hash
+		}
+	}
+	return commit("")
 }
 
 func (s *session) renderTemplate(msgs []chatTemplateMessage, tools string, addAssistant bool) (string, error) {
@@ -1042,9 +1089,10 @@ func (p *chatOutputParser) Push(piece string, partial bool) (textDelta, thinking
 		return piece, "", nil, nil
 	}
 	p.raw.WriteString(piece)
-	parsed, err := llamacppshim.ParseChatResponse(p.raw.String(), partial, p.syntax, p.reasoningFormat, p.parseToolCalls)
+	raw := p.raw.String()
+	parsed, err := llamacppshim.ParseChatResponse(raw, partial, p.syntax, p.reasoningFormat, p.parseToolCalls)
 	if err != nil {
-		return "", "", nil, err
+		return "", "", nil, p.parseError(err, partial, raw)
 	}
 	textDelta = stringDelta(p.content, parsed.Content)
 	thinkingDelta = stringDelta(p.thinking, parsed.Thinking)
@@ -1056,6 +1104,26 @@ func (p *chatOutputParser) Push(piece string, partial bool) (textDelta, thinking
 		}
 	}
 	return textDelta, thinkingDelta, toolCalls, nil
+}
+
+const maxChatParsePreviewRunes = 512
+
+func (p *chatOutputParser) parseError(err error, partial bool, raw string) error {
+	if p == nil {
+		return err
+	}
+	return fmt.Errorf("%w (partial=%t, parse_tool_calls=%t, reasoning_format=%q, raw_len=%d, raw_preview=%q)",
+		err, partial, p.parseToolCalls, p.reasoningFormat, len(raw), chatParsePreview(raw))
+}
+
+func chatParsePreview(raw string) string {
+	raw = strings.ToValidUTF8(raw, "?")
+	runes := []rune(raw)
+	if len(runes) <= maxChatParsePreviewRunes {
+		return raw
+	}
+	keep := maxChatParsePreviewRunes / 2
+	return string(runes[:keep]) + "...<truncated>..." + string(runes[len(runes)-keep:])
 }
 
 func stringDelta(previous, current string) string {
@@ -1073,6 +1141,30 @@ func (s *session) removeKV(p0, p1 int) error {
 	if !s.lctx.MemorySeqRemove(0, p0, p1) {
 		s.closeLocked()
 		return fmt.Errorf("%w: llamasession kv remove failed seq=0 p0=%d p1=%d", llama.ErrSessionFatal, p0, p1)
+	}
+	return nil
+}
+
+func (s *session) copyKVSeq(srcSeqID, dstSeqID, p0, p1 int) error {
+	if s.lctx == nil {
+		s.closeLocked()
+		return fmt.Errorf("%w: llamasession context is nil during kv seq copy", llama.ErrSessionFatal)
+	}
+	if !s.lctx.MemorySeqCopy(srcSeqID, dstSeqID, p0, p1) {
+		s.closeLocked()
+		return fmt.Errorf("%w: llamasession kv seq copy failed src=%d dst=%d p0=%d p1=%d", llama.ErrSessionFatal, srcSeqID, dstSeqID, p0, p1)
+	}
+	return nil
+}
+
+func (s *session) addKVSeq(seqID, p0, p1, delta int) error {
+	if s.lctx == nil {
+		s.closeLocked()
+		return fmt.Errorf("%w: llamasession context is nil during kv seq add", llama.ErrSessionFatal)
+	}
+	if !s.lctx.MemorySeqAdd(seqID, p0, p1, delta) {
+		s.closeLocked()
+		return fmt.Errorf("%w: llamasession kv seq add failed seq=%d p0=%d p1=%d delta=%d", llama.ErrSessionFatal, seqID, p0, p1, delta)
 	}
 	return nil
 }
@@ -1260,7 +1352,21 @@ func (s *session) prefillStreamLocked(ctx context.Context, stage string, toks []
 		n := min(space, remaining)
 		last := logitsOnLast && off+n == len(toks)
 		if err := s.prefillAt(ctx, toks[off:off+n], len(s.resident), last); err != nil {
-			return fail(err)
+			// prefillAt commits one nBatch batch at a time, so a mid-chunk failure
+			// can leave KV cells past the resident tape. Roll the chunk back before
+			// classifying, then mirror the non-streaming paths: cancellation keeps a
+			// healthy backend (closed only when evictions already made the state
+			// unusable), any real decode failure poisons the session.
+			if rollbackErr := s.removeKV(len(s.resident), -1); rollbackErr != nil {
+				return s.markFatalLocked(errors.Join(prefillFailureError(stage, err), rollbackErr))
+			}
+			if isContextErr(err) {
+				if mutated {
+					s.closeLocked()
+				}
+				return err
+			}
+			return s.markFatalLocked(prefillFailureError(stage, err))
 		}
 		mutated = true
 		s.resident = append(s.resident, toks[off:off+n]...)

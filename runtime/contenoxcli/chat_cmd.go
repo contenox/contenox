@@ -21,6 +21,8 @@ type chatOpts struct {
 	EffectiveChain               string
 	EffectiveDefaultModel        string
 	EffectiveDefaultProvider     string
+	EffectiveConfiguredModel     string
+	EffectiveConfiguredProvider  string
 	EffectiveAltDefaultModel     string
 	EffectiveAltDefaultProvider  string
 	EffectiveMaxTokens           string
@@ -108,20 +110,7 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 	}
 	sessionEnd()
 
-	templateVars := map[string]string{
-		"model":    opts.EffectiveDefaultModel,
-		"provider": opts.EffectiveDefaultProvider,
-		"think":    opts.EffectiveThink,
-	}
-	if opts.EffectiveAltDefaultModel != "" {
-		templateVars["alt_model"] = opts.EffectiveAltDefaultModel
-	}
-	if opts.EffectiveAltDefaultProvider != "" {
-		templateVars["alt_provider"] = opts.EffectiveAltDefaultProvider
-	}
-	if opts.EffectiveMaxTokens != "" {
-		templateVars["max_tokens"] = opts.EffectiveMaxTokens
-	}
+	templateVars := buildTemplateVars(opts)
 
 	// Create agent using new Engine-based Deps.
 	ag := agentservice.New(agentservice.Deps{
@@ -148,6 +137,7 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 		Input:          in,
 		Chain:          chain,
 		TemplateVars:   templateVars,
+		ContextLength:  opts.EffectiveContext,
 		HistoryTrim:    opts.HistoryTrim,
 		AgentsMD:       agentsMD,
 		AgentsMDSource: agentsMDSource,
@@ -202,4 +192,39 @@ func execChat(ctx context.Context, db libdb.DBManager, opts chatOpts, out, errW 
 		}
 	}
 	return nil
+}
+
+func buildTemplateVars(opts chatOpts) map[string]string {
+	templateVars := map[string]string{
+		"model":    opts.EffectiveDefaultModel,
+		"provider": opts.EffectiveDefaultProvider,
+		"think":    opts.EffectiveThink,
+	}
+
+	defaultModel := opts.EffectiveConfiguredModel
+	if defaultModel == "" {
+		defaultModel = opts.EffectiveDefaultModel
+	}
+	if defaultModel != "" {
+		templateVars["default_model"] = defaultModel
+	}
+
+	defaultProvider := opts.EffectiveConfiguredProvider
+	if defaultProvider == "" {
+		defaultProvider = opts.EffectiveDefaultProvider
+	}
+	if defaultProvider != "" {
+		templateVars["default_provider"] = defaultProvider
+	}
+
+	if opts.EffectiveAltDefaultModel != "" {
+		templateVars["alt_model"] = opts.EffectiveAltDefaultModel
+	}
+	if opts.EffectiveAltDefaultProvider != "" {
+		templateVars["alt_provider"] = opts.EffectiveAltDefaultProvider
+	}
+	if opts.EffectiveMaxTokens != "" {
+		templateVars["max_tokens"] = opts.EffectiveMaxTokens
+	}
+	return templateVars
 }

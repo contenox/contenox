@@ -43,6 +43,9 @@ func SynthesizeHistory(prior []Message, units []CapturedStateUnit, chainErr erro
 					startIdx = len(outHist.Messages)
 				}
 				for _, msg := range outHist.Messages[startIdx:] {
+					if unit.Error.Error != "" && isEmptyAssistantShell(msg) {
+						continue
+					}
 					if msg.ID != "" {
 						if seenIDs[msg.ID] {
 							continue
@@ -72,6 +75,13 @@ func SynthesizeHistory(prior []Message, units []CapturedStateUnit, chainErr erro
 	}
 
 	return out
+}
+
+func isEmptyAssistantShell(msg Message) bool {
+	return msg.Role == "assistant" &&
+		msg.Content == "" &&
+		msg.Thinking == "" &&
+		len(msg.CallTools) == 0
 }
 
 func failureAnnotation(unit CapturedStateUnit) Message {

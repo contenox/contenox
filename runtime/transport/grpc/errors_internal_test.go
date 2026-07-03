@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/contenox/runtime/runtime/contextasm"
 )
 
 // TestSentinelTableRoundTrips asserts every sentinel in the wire map survives
@@ -20,5 +22,16 @@ func TestSentinelTableRoundTrips(t *testing.T) {
 				t.Fatalf("token %q round-trip = %v, want errors.Is %v", s.token, got, s.err)
 			}
 		})
+	}
+}
+
+func TestManifestMismatchRoundTripDoesNotDuplicatePrefix(t *testing.T) {
+	wire := encodeError(contextasm.NewManifestMismatchError("stable prefix changed"))
+	got := decodeError(wire)
+	if !errors.Is(got, contextasm.ErrManifestMismatch) {
+		t.Fatalf("round-trip = %v, want ErrManifestMismatch", got)
+	}
+	if got.Error() != "contextasm: context manifest mismatch: stable prefix changed" {
+		t.Fatalf("round-trip error = %q", got.Error())
 	}
 }

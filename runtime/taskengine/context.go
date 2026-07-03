@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"maps"
+
+	libmodelprovider "github.com/contenox/runtime/runtime/modelrepo"
 )
 
 type templateVarsKey struct{}
@@ -40,6 +42,19 @@ func MergeTemplateVars(ctx context.Context, overlay map[string]string) context.C
 	}
 	maps.Copy(base, overlay)
 	return WithTemplateVars(ctx, base)
+}
+
+// WithRequestedContextLength attaches a per-request context window. Task
+// execution uses it as the resolver/modeld minimum without replacing the
+// chain's token_limit guardrail.
+func WithRequestedContextLength(ctx context.Context, contextLength int) context.Context {
+	return libmodelprovider.WithRequestedContextLength(ctx, contextLength)
+}
+
+// RequestedContextLengthFromContext returns the positive context window attached
+// by WithRequestedContextLength, or 0 when the caller did not request one.
+func RequestedContextLengthFromContext(ctx context.Context) int {
+	return libmodelprovider.RequestedContextLengthFromContext(ctx)
 }
 
 type runtimeToolsAllowlistKey struct{}

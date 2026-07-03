@@ -157,7 +157,8 @@ func idleTTLFromJSON(dataRoot string) string {
 	if dataRoot == "" {
 		return ""
 	}
-	b, err := os.ReadFile(filepath.Join(dataRoot, "modeld.json"))
+	path := filepath.Join(dataRoot, "modeld.json")
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
@@ -166,7 +167,9 @@ func idleTTLFromJSON(dataRoot string) string {
 			TTL string `json:"ttl"`
 		} `json:"idle"`
 	}
-	_ = json.Unmarshal(b, &raw)
+	if err := json.Unmarshal(b, &raw); err != nil {
+		fmt.Fprintf(os.Stderr, "modeld: %s is malformed, idle TTL falls back to the default: %v\n", path, err)
+	}
 	return strings.TrimSpace(raw.Idle.TTL)
 }
 

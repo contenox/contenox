@@ -125,6 +125,7 @@ func (a *agent) Prompt(ctx context.Context, req PromptRequest) (*PromptResponse,
 	}
 	templateVars["chain"] = chain.ID
 	ctx = taskengine.WithTemplateVars(ctx, templateVars)
+	ctx = taskengine.WithRequestedContextLength(ctx, req.ContextLength)
 	if req.ToolsAllowlist != nil {
 		ctx = taskengine.WithRuntimeToolsAllowlist(ctx, req.ToolsAllowlist)
 	}

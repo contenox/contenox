@@ -244,10 +244,12 @@ func (s *genaiSession) backendErrorLocked(stage string, err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	if openvinoPoisonedPipelineError(err) || errors.Is(err, transport.ErrSessionFatal) {
-		return fmt.Errorf("%w: %s: %v", s.markFatalLocked(err), stage, err)
-	}
-	return fmt.Errorf("%w: %s: %v", transport.ErrSessionFatal, stage, err)
+	// Every non-cancellation backend failure on the locked (prefill/restore) path
+	// is fatal for this session: the logical tape and physical KV may be out of
+	// sync. Poison locally rather than only reporting ErrSessionFatal upstream, so
+	// no fatal error ever leaves the session without poisoning it — the same
+	// invariant the llama adapter enforces via fatalizeLocked.
+	return fmt.Errorf("%w: %s: %v", s.markFatalLocked(err), stage, err)
 }
 
 func openvinoPoisonedPipelineError(err error) bool {
@@ -342,6 +344,16 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 		return transport.PrefixStatus{}, err
 	}
 
+	// Enrich before committing any logical state: a template/tokenizer failure
+	// here must leave the session as it was, not with a new resident tape under
+	// the old manifest. (The physical prefill above is harmless prefix-cache
+	// warming.) Tools are passed explicitly because s.tools still holds the
+	// previous prefix's value at this point.
+	enriched, err := s.enrichStableManifest(ctx, prefix.Text, prefix.Manifest, tokens, stableMsgs, prefix.Tools)
+	if err != nil {
+		return transport.PrefixStatus{}, err
+	}
+
 	reuse := 0
 	compatible := false
 	if ok, _ := s.manifest.CompatibleRuntime(prefix.Manifest); ok {
@@ -360,10 +372,6 @@ func (s *genaiSession) EnsurePrefix(ctx context.Context, prefix transport.Prefix
 	s.tools = prefix.Tools
 	s.resident = append(s.resident[:0], tokens...)
 	s.prefixLen = len(tokens)
-	enriched, err := s.enrichStableManifest(ctx, prefix.Text, prefix.Manifest, tokens, stableMsgs)
-	if err != nil {
-		return transport.PrefixStatus{}, err
-	}
 	s.manifest = enriched
 	s.updateResidencyPlanLocked(false)
 
@@ -513,7 +521,10 @@ func (s *genaiSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (
 	return s.decodePrompt(ctx, backend, prompt, opts, cfg, out)
 }
 
-func (s *genaiSession) enrichStableManifest(ctx context.Context, stableText string, manifest transport.ContextManifest, tokens []int, stableMsgs []ovsession.ChatMessage) (transport.ContextManifest, error) {
+// enrichStableManifest computes token ranges for the stable manifest segments.
+// It is pure with respect to session state — tools is the incoming prefix's tool
+// JSON, passed explicitly so this can run before the session commits anything.
+func (s *genaiSession) enrichStableManifest(ctx context.Context, stableText string, manifest transport.ContextManifest, tokens []int, stableMsgs []ovsession.ChatMessage, tools string) (transport.ContextManifest, error) {
 	if len(manifest.Segments) == 0 {
 		if manifest.StableBytes == 0 {
 			manifest.StableBytes = len(stableText)
@@ -522,7 +533,7 @@ func (s *genaiSession) enrichStableManifest(ctx context.Context, stableText stri
 		return manifest, nil
 	}
 	if len(stableMsgs) > 0 {
-		return s.enrichStableChatManifest(ctx, stableText, manifest, tokens, stableMsgs)
+		return s.enrichStableChatManifest(ctx, stableText, manifest, tokens, stableMsgs, tools)
 	}
 	if manifest.StableBytes == 0 {
 		manifest.StableBytes = len(stableText)
@@ -536,7 +547,7 @@ func (s *genaiSession) enrichStableManifest(ctx context.Context, stableText stri
 	return enriched, nil
 }
 
-func (s *genaiSession) enrichStableChatManifest(ctx context.Context, stableText string, manifest transport.ContextManifest, tokens []int, stableMsgs []ovsession.ChatMessage) (transport.ContextManifest, error) {
+func (s *genaiSession) enrichStableChatManifest(ctx context.Context, stableText string, manifest transport.ContextManifest, tokens []int, stableMsgs []ovsession.ChatMessage, tools string) (transport.ContextManifest, error) {
 	out := manifest
 	out.Segments = append([]contextasm.ManifestSegment(nil), manifest.Segments...)
 	out.StableTokenHash = contextasm.HashTokenIDs(tokens)
@@ -560,7 +571,7 @@ func (s *genaiSession) enrichStableChatManifest(ctx context.Context, stableText 
 		msgIdx++
 		end := len(tokens)
 		if msgIdx < len(stableMsgs) {
-			rendered, err := s.backend.ApplyChatTemplateWithPrompt(stableMsgs[:msgIdx], s.tools, false)
+			rendered, err := s.backend.ApplyChatTemplateWithPrompt(stableMsgs[:msgIdx], tools, false)
 			if err != nil {
 				return transport.ContextManifest{}, fmt.Errorf("openvino: stable segment template: %w", err)
 			}
@@ -635,17 +646,30 @@ func (s *genaiSession) enrichVolatileChatManifest(ctx context.Context, suffixTex
 		}
 	}
 
+	// Per-message volatile boundaries are advisory residency metadata over the
+	// already-committed resident tape. They are derived by re-rendering message
+	// prefixes and diffing token counts, which is only valid when the model's chat
+	// template is token-prefix-additive per message. Real templates often are not
+	// (tool/think blocks are placed by whole-conversation structure), so a partial
+	// re-render tokenizes differently than the resident tape. On that inconsistency
+	// fall back to coarse (unsplit) volatile residency instead of failing the turn;
+	// genuine manifest inconsistencies above still error.
+	type bound struct {
+		start, end int
+		hash       string
+		set        bool
+	}
+	bounds := make([]bound, len(out.Segments))
 	allMsgs := append(append([]ovsession.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
 	prevEnd, msgIdx := 0, len(s.stableMsgs)
+	coarse := ""
 	for i := range out.Segments {
 		seg := &out.Segments[i]
 		if seg.Stable {
 			continue
 		}
 		if sessionkit.ChatRole(seg.Kind) == "" {
-			seg.TokenStart = s.prefixLen + prevEnd
-			seg.TokenEnd = s.prefixLen + len(tokens)
-			seg.TokenHash = contextasm.HashTokenIDs(tokens[prevEnd:])
+			bounds[i] = bound{s.prefixLen + prevEnd, s.prefixLen + len(tokens), contextasm.HashTokenIDs(tokens[prevEnd:]), true}
 			prevEnd = len(tokens)
 			continue
 		}
@@ -654,24 +678,37 @@ func (s *genaiSession) enrichVolatileChatManifest(ctx context.Context, suffixTex
 		if msgIdx < len(allMsgs) {
 			rendered, err := s.backend.ApplyChatTemplateWithPrompt(allMsgs[:msgIdx], s.tools, false)
 			if err != nil {
-				return transport.ContextManifest{}, fmt.Errorf("openvino: volatile segment template: %w", err)
+				coarse = fmt.Sprintf("volatile segment template render failed: %v", err)
+				break
 			}
 			if !strings.HasPrefix(rendered, s.prefixText) {
-				return transport.ContextManifest{}, contextasm.NewManifestMismatchError("model template is not prefix-stable across volatile segment")
+				coarse = "volatile segment boundaries unavailable (template not prefix-stable across message)"
+				break
 			}
 			cum, err := s.tokenize(ctx, rendered[len(s.prefixText):], false)
 			if err != nil {
-				return transport.ContextManifest{}, fmt.Errorf("openvino: volatile segment tokenize: %w", err)
+				coarse = fmt.Sprintf("volatile segment tokenize failed: %v", err)
+				break
 			}
 			end = len(cum)
 		}
 		if end < prevEnd || end > len(tokens) {
-			return transport.ContextManifest{}, contextasm.NewManifestMismatchError("volatile segment token boundary out of range")
+			coarse = fmt.Sprintf("volatile segment boundaries unavailable (template not token-prefix-additive): kind=%q", seg.Kind)
+			break
 		}
-		seg.TokenStart = s.prefixLen + prevEnd
-		seg.TokenEnd = s.prefixLen + end
-		seg.TokenHash = contextasm.HashTokenIDs(tokens[prevEnd:end])
+		bounds[i] = bound{s.prefixLen + prevEnd, s.prefixLen + end, contextasm.HashTokenIDs(tokens[prevEnd:end]), true}
 		prevEnd = end
+	}
+	if coarse != "" {
+		s.residencyErr = coarse
+		return out, nil
+	}
+	for i := range out.Segments {
+		if bounds[i].set {
+			out.Segments[i].TokenStart = bounds[i].start
+			out.Segments[i].TokenEnd = bounds[i].end
+			out.Segments[i].TokenHash = bounds[i].hash
+		}
 	}
 	return out, nil
 }

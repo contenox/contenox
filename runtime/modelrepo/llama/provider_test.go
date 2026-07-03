@@ -151,6 +151,44 @@ func TestUnit_LlamaProvider_AutoContextStaysZeroWhenProfileOmitsNumCtx(t *testin
 	}
 }
 
+func TestUnit_LlamaProvider_RequestedContextOverridesAutoContext(t *testing.T) {
+	old := sessionFactory
+	sessionFactory = nil
+	t.Cleanup(func() { sessionFactory = old })
+
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "coder")
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("fake model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := &recordingEmbedService{
+		base: transport.NewMemoryService(),
+		info: transport.ModelInfo{
+			ModelMaxContext:         32768,
+			EffectiveContext:        24576,
+			PlannerEffectiveContext: 32768,
+		},
+	}
+	serveLlamaModeldForTest(t, svc)
+
+	ctx := modelrepo.WithRequestedContextLength(context.Background(), 8192)
+	got, err := newProvider("coder", root, modelrepo.CapabilityConfig{ContextLength: 32768}).GetChatConnection(ctx, "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := got.(*client)
+	if c.cfg.NumCtx != 8192 {
+		t.Fatalf("NumCtx = %d, want requested context", c.cfg.NumCtx)
+	}
+	req := svc.lastDescribeRequest()
+	if req.Config.NumCtx != 8192 {
+		t.Fatalf("Describe request NumCtx = %d, want requested context", req.Config.NumCtx)
+	}
+}
+
 // TestUnit_LlamaProvider_AutoContextKeepsWarmCacheKeyStableAcrossJitter is the
 // regression test for the shrink-then-freeze bug: with no explicit context,
 // two client constructions whose Describe answers differ (live free-VRAM

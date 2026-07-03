@@ -114,6 +114,10 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		PromptFormat:         "openvino-chat-template",
 		PromptTemplateDigest: templateDigest,
 	})
+	if requestedCtx := modelrepo.RequestedContextLengthFromContext(ctx); requestedCtx > 0 {
+		cfg.NumCtx = requestedCtx
+		cfg = normalizeConfig(cfg)
+	}
 	ref := modeldconn.ModelRef{Name: p.name, Type: "openvino", Digest: modelDigest, Path: dir, Adapters: adapters}
 	backendID := backendVersion()
 	// Capacity facts from modeld's Describe, kept so a context overflow can be

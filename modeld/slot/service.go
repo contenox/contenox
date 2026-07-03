@@ -5,10 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sync"
 	"time"
 
+	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
@@ -380,8 +382,26 @@ func (s *Service) Embed(ctx context.Context, req transport.EmbedRequest) (transp
 	}
 	s.mu.Lock()
 	if s.active != nil {
+		// An idle implicit session is only resident because the idle reaper (not
+		// release) owns reclamation now; before that change release would already
+		// have closed it and this embed would have found the slot empty. Evict it
+		// and proceed. In-use sessions and explicitly loaded models keep reporting
+		// busy, exactly as before.
+		if s.active.refs > 0 || s.active.explicit {
+			s.mu.Unlock()
+			return transport.EmbedResult{}, transport.ErrModelBusy
+		}
+		old := s.active
+		s.active = nil
+		s.generation++
+		s.state = transport.SlotUnloading
+		s.busyOp = "embed"
+		s.lastErr = ""
 		s.mu.Unlock()
-		return transport.EmbedResult{}, transport.ErrModelBusy
+		if err := old.sess.Close(); err != nil {
+			return transport.EmbedResult{}, s.finishCloseError(err)
+		}
+		s.mu.Lock()
 	}
 	s.state = transport.SlotBusy
 	s.busyOp = "embed"
@@ -605,9 +625,11 @@ func (s *Service) withSession(ctx context.Context, gen uint64, op string, fn fun
 
 	sess, err := s.beginOperation(gen, op)
 	if err != nil {
+		s.logOperationFailure(op, gen, err)
 		return err
 	}
 	err = fn(sess)
+	s.logOperationFailure(op, gen, err)
 	s.markReadyOrError(err)
 	return err
 }
@@ -668,6 +690,68 @@ func (s *Service) markReadyOrError(err error) {
 	}
 	s.state = transport.SlotReady
 	s.mu.Unlock()
+}
+
+func (s *Service) logOperationFailure(op string, gen uint64, err error) {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return
+	}
+
+	s.mu.Lock()
+	state := s.state
+	busyOp := s.busyOp
+	modelName := ""
+	modelType := ""
+	modelDigest := ""
+	if s.active != nil {
+		modelName = s.active.req.ModelName
+		modelType = s.active.req.Type
+		modelDigest = s.active.req.Digest
+	}
+	s.mu.Unlock()
+
+	level := slog.LevelWarn
+	if errors.Is(err, transport.ErrSlotGenerationStale) ||
+		errors.Is(err, transport.ErrSessionClosed) ||
+		errors.Is(err, transport.ErrModelNotActive) {
+		level = slog.LevelDebug
+	}
+	args := []any{
+		"op", op,
+		"generation", gen,
+		"backend", s.backendName,
+		"state", state,
+		"busy_op", busyOp,
+		"class", operationErrorClass(err),
+		"err", err,
+	}
+	if modelName != "" {
+		args = append(args,
+			"model", modelName,
+			"type", modelType,
+			"digest", modelDigest,
+		)
+	}
+	slog.Log(context.Background(), level, "modeld session operation failed", args...)
+}
+
+func operationErrorClass(err error) string {
+	switch {
+	case errors.Is(err, transport.ErrSessionFatal):
+		return "session_fatal"
+	case errors.Is(err, contextasm.ErrManifestMismatch):
+		return "manifest_mismatch"
+	case errors.Is(err, transport.ErrContextOverflow):
+		return "context_overflow"
+	case errors.Is(err, transport.ErrSlotGenerationStale):
+		return "slot_generation_stale"
+	case errors.Is(err, transport.ErrSessionClosed):
+		return "session_closed"
+	case errors.Is(err, transport.ErrModelNotActive):
+		return "model_not_active"
+	default:
+		return "session_error"
+	}
 }
 
 func sameIdentity(a, b transport.OpenSessionRequest) bool {
@@ -750,10 +834,12 @@ func (s *slotSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (<
 	sess, err := s.svc.beginOperation(s.generation, "decode")
 	if err != nil {
 		unlock()
+		s.svc.logOperationFailure("decode", s.generation, err)
 		return nil, err
 	}
 	src, err := sess.Decode(ctx, cfg)
 	if err != nil {
+		s.svc.logOperationFailure("decode", s.generation, err)
 		s.svc.markReadyOrError(err)
 		unlock()
 		return nil, err
@@ -771,10 +857,12 @@ func (s *slotSession) Decode(ctx context.Context, cfg transport.DecodeConfig) (<
 			case out <- chunk:
 			case <-ctx.Done():
 				streamErr = ctx.Err()
+				s.svc.logOperationFailure("decode", s.generation, streamErr)
 				s.svc.markReadyOrError(streamErr)
 				return
 			}
 		}
+		s.svc.logOperationFailure("decode", s.generation, streamErr)
 		s.svc.markReadyOrError(streamErr)
 	}()
 	return out, nil

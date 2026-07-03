@@ -158,3 +158,13 @@ func TestUnit_ContextasmBuildSplitManifest_RejectsInvalidRangesAndHashes(t *test
 		t.Fatalf("bad byte hash err = %v, want ErrManifestMismatch", err)
 	}
 }
+
+func TestUnit_ManifestMismatchError_TrimsRepeatedPrefix(t *testing.T) {
+	err := NewManifestMismatchError("contextasm: context manifest mismatch: contextasm: context manifest mismatch: stable prefix changed")
+	if !errors.Is(err, ErrManifestMismatch) {
+		t.Fatalf("error = %v, want ErrManifestMismatch", err)
+	}
+	if got, want := err.Error(), "contextasm: context manifest mismatch: stable prefix changed"; got != want {
+		t.Fatalf("Error() = %q, want %q", got, want)
+	}
+}

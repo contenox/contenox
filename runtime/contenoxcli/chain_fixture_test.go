@@ -175,6 +175,37 @@ func TestUnit_ContenoxChain_RoutesToSpecialistLoops(t *testing.T) {
 	require.Empty(t, summary.ExecuteConfig.Tools)
 }
 
+func TestUnit_BuiltinRecoveryTasksUseConfiguredDefaultFallback(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		ids  []string
+	}{
+		{name: "contenox", raw: initChain, ids: []string{"coding_recovery", "recovery_chat", "summarise_failure"}},
+		{name: "run", raw: initRunChain, ids: []string{"recovery_run", "summarise_failure"}},
+		{name: "acp", raw: initACPChain, ids: []string{"coding_recovery", "recovery_chat", "summarise_failure"}},
+		{name: "acpx", raw: initACPXChain, ids: []string{"recovery_chat", "summarise_failure"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var chain taskengine.TaskChainDefinition
+			require.NoError(t, json.Unmarshal([]byte(tc.raw), &chain))
+			byID := make(map[string]taskengine.TaskDefinition)
+			for _, task := range chain.Tasks {
+				byID[task.ID] = task
+			}
+			for _, id := range tc.ids {
+				task, ok := byID[id]
+				require.True(t, ok, "task %s missing", id)
+				require.NotNil(t, task.ExecuteConfig, "task %s execute_config", id)
+				require.Equal(t, "{{var:alt_model|var:default_model}}", task.ExecuteConfig.Model, "task %s model", id)
+				require.Equal(t, "{{var:alt_provider|var:default_provider}}", task.ExecuteConfig.Provider, "task %s provider", id)
+			}
+		})
+	}
+}
+
 func TestUnit_BuiltinInteractiveChains_UseConservativeToolOutputCaps(t *testing.T) {
 	cases := []struct {
 		name string

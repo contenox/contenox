@@ -163,7 +163,7 @@ func Chat(
 		reportErr(err)
 		return nil, nil, "", err
 	}
-	client, err := provider.GetChatConnection(ctx, backend)
+	client, err := provider.GetChatConnection(libmodelprovider.WithRequestedContextLength(ctx, req.ContextLength), backend)
 	if err != nil {
 		reportErr(err)
 		return nil, nil, "", err
@@ -259,7 +259,7 @@ func Stream(
 		reportErr(err)
 		return nil, nil, "", err
 	}
-	client, err := provider.GetStreamConnection(ctx, backend)
+	client, err := provider.GetStreamConnection(libmodelprovider.WithRequestedContextLength(ctx, req.ContextLength), backend)
 	if err != nil {
 		reportErr(err)
 		return nil, nil, "", err
@@ -308,7 +308,7 @@ func PromptExecute(
 		reportErr(err)
 		return nil, nil, "", err
 	}
-	client, err := provider.GetPromptConnection(ctx, backend)
+	client, err := provider.GetPromptConnection(libmodelprovider.WithRequestedContextLength(ctx, req.ContextLength), backend)
 	if err != nil {
 		reportErr(err)
 		return nil, nil, "", err

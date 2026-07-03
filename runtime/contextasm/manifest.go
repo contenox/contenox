@@ -30,7 +30,23 @@ func (e *ManifestMismatchError) Is(target error) bool {
 }
 
 func NewManifestMismatchError(reason string) error {
+	reason = trimManifestMismatchPrefix(reason)
 	return &ManifestMismatchError{Reason: reason}
+}
+
+func trimManifestMismatchPrefix(reason string) string {
+	reason = strings.TrimSpace(reason)
+	prefix := ErrManifestMismatch.Error()
+	for {
+		if reason == prefix {
+			return ""
+		}
+		next, ok := strings.CutPrefix(reason, prefix+": ")
+		if !ok {
+			return reason
+		}
+		reason = strings.TrimSpace(next)
+	}
 }
 
 // ManifestSegment identifies one rendered prompt segment. Byte hashes are

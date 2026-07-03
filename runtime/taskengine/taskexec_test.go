@@ -78,6 +78,62 @@ func TestUnit_TaskExec_ChatCompletionAddsNoToolsGuardWhenRequestedToolsResolveEm
 	require.Contains(t, seenMessages[0].Content, "No tools are available in this turn")
 }
 
+func TestUnit_TaskExec_ChatCompletionUsesRequestedContextLengthMinimum(t *testing.T) {
+	var seenReq llmrepo.Request
+	repo := &mockModelRepo{
+		chatFunc: func(_ context.Context, req llmrepo.Request, _ []libmodelprovider.Message, _ ...libmodelprovider.ChatArgument) (libmodelprovider.ChatResult, llmrepo.Meta, error) {
+			seenReq = req
+			return libmodelprovider.ChatResult{
+				Message: libmodelprovider.Message{Role: "assistant", Content: "ok"},
+			}, llmrepo.Meta{ModelName: "test-model", ProviderType: "llama"}, nil
+		},
+	}
+	exec, err := taskengine.NewExec(context.Background(), repo, tools.NewMockToolsRegistry(), libtracker.NoopTracker{})
+	require.NoError(t, err)
+
+	task := &taskengine.TaskDefinition{
+		ID:            "chat",
+		Handler:       taskengine.HandleChatCompletion,
+		ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "test-model"},
+	}
+	ctx := taskengine.WithRequestedContextLength(context.Background(), 4096)
+	_, _, _, err = exec.TaskExec(
+		ctx, time.Now().UTC(), 131072,
+		&taskengine.ChainContext{}, task,
+		taskengine.ChatHistory{Messages: []taskengine.Message{{Role: "user", Content: "hello"}}},
+		taskengine.DataTypeChatHistory,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 4096, seenReq.ContextLength)
+}
+
+func TestUnit_TaskExec_RouteUsesRequestedContextLengthMinimum(t *testing.T) {
+	var seenReq llmrepo.Request
+	repo := &mockModelRepo{
+		promptFunc: func(_ context.Context, req llmrepo.Request, _ string, _ float32, _ string) (string, llmrepo.Meta, error) {
+			seenReq = req
+			return "general", llmrepo.Meta{ModelName: "test-model", ProviderType: "llama"}, nil
+		},
+	}
+	exec, err := taskengine.NewExec(context.Background(), repo, tools.NewMockToolsRegistry(), libtracker.NoopTracker{})
+	require.NoError(t, err)
+
+	task := &taskengine.TaskDefinition{
+		ID:            "route",
+		Handler:       taskengine.HandleRoute,
+		ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "test-model"},
+		Transition: taskengine.TaskTransition{Branches: []taskengine.TransitionBranch{
+			{Operator: taskengine.OpEquals, When: "general", Goto: "chat"},
+			{Operator: taskengine.OpEquals, When: "coding_change", Goto: "coding"},
+		}},
+	}
+	ctx := taskengine.WithRequestedContextLength(context.Background(), 8192)
+	_, _, eval, err := exec.TaskExec(ctx, time.Now().UTC(), 131072, &taskengine.ChainContext{}, task, "hello", taskengine.DataTypeString)
+	require.NoError(t, err)
+	require.Equal(t, "general", eval)
+	require.Equal(t, 8192, seenReq.ContextLength)
+}
+
 func TestUnit_TaskExec_ChatCompletionRetriesWithoutToolsWhenProviderRejectsToolCalls(t *testing.T) {
 	var seenToolNames [][]string
 	var secondMessages []libmodelprovider.Message

@@ -650,7 +650,6 @@ struct cx_genai_session {
     // the same alpha. nullopt = base model, no adapters.
     std::optional<ov::genai::AdapterConfig> adapters;
 
-    std::thread worker;
     std::mutex mu;
     std::condition_variable cv;
     bool stopping = false;
@@ -659,6 +658,7 @@ struct cx_genai_session {
     bool done = false;
     std::function<void()> task;
     std::exception_ptr task_error;
+    std::thread worker;
 
     cx_genai_session() : worker([this] { loop(); }) {}
 

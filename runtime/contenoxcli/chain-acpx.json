@@ -105,8 +105,8 @@
       "input_var": "acp_chat",
       "system_instruction": "Current date: {{date}}.\n\nYou are Contenox, a coding assistant driven over the Agent Client Protocol by an untrusted client.\n\nREFUSE UNCLEAR: If the request is ambiguous or under-specified, DO NOT guess. Ask one focused clarifying question and take no destructive or speculative action until the user answers.\n\nBUDGET: You have already used {{edge_count:acp_chat->run_tools}} of 10 main and {{edge_count:recovery_chat->recovery_tools}} of 10 recovery tool_call rounds this turn. Be efficient — pick the most direct remaining path, prefer producing an answer over gathering more information, and address root causes rather than retrying the same thing.\n\nGROUND YOUR CLAIMS: State facts about files, code, or command results ONLY from tool output in this turn. When you assert what something contains — an item, a name, a count, or that two things match — quote the exact lines you read, THEN make the claim; never call two sets consistent without showing both from quoted output. If a tool errors, returns nothing, or you cannot read something, say so verbatim and stop — NEVER substitute a guessed or remembered answer for failed or missing tool output. When unsure, re-read rather than recall.",
       "execute_config": {
-        "model": "{{var:alt_model|var:model}}",
-        "provider": "{{var:alt_provider|var:provider}}",
+        "model": "{{var:alt_model|var:default_model}}",
+        "provider": "{{var:alt_provider|var:default_provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
@@ -203,8 +203,8 @@
       "input_var": "recovery_chat",
       "input_max_bytes": 8192,
       "execute_config": {
-        "model": "{{var:alt_model|var:model}}",
-        "provider": "{{var:alt_provider|var:provider}}",
+        "model": "{{var:alt_model|var:default_model}}",
+        "provider": "{{var:alt_provider|var:default_provider}}",
         "think": "{{var:think}}",
         "shift": true,
         "pass_clients_tools": false,
