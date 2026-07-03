@@ -76,14 +76,7 @@ Interpretation:
 | 2,900 | 1,907 assembled, 9.97 s wall, 6.42 tok/s e2e | 1,795 assembled, 3.07 s wall, 20.84 tok/s e2e | Local NVIDIA CUDA path is much faster in this comparable tier. |
 | 11,600 | Runtime rejects TinyLlama because the certified model ceiling is 2,048. | Source-fixed CLI autodetects physical 32,704 and succeeds at 5.29 s wall. | NVIDIA row proves this model/hardware can handle this prompt when the llama provider honors modeld capacity. |
 
-## Required Fixes
-
-- Add llama token usage reporting to trace rows and raw `inputTokens` / `outputTokens`.
-- Add product-path telemetry for `PrefixStatus` and `SuffixStatus` so traces
-  show `reused`, `prefilled`, `dropped`, and `suffix` token counts.
-- Record session-open physical context in benchmark rows; model-list `CTX` is insufficient.
-- Split benchmark suites into cold `run`, warm same-process/session, and repeated
-  one-shot CLI process rows.
-- Keep isolated model directories or cached catalog snapshots for benchmark cells so unrelated local
-  model inventory does not pollute wall-clock latency.
-- Add repeat rounds before publishing p50/p90/p95; these rows are single-run sanity checks.
+These rows are single-run sanity checks, not certified p50/p90/p95 data. The
+telemetry, suite-split, isolation, and repeat-round requirements they imply are
+owned by the [backend parity contract](backend-parity-blueprint.md) and the
+[benchmark integrity blueprint](benchmark-integrity-blueprint.md).

@@ -17,22 +17,22 @@ throughput expectations.
 - Runtime throughput must be measured through `contenox`, not only through raw OpenVINO APIs.
 - Answer quality and token throughput are separate certification dimensions.
 
-## Findings
+## Failure Modes and Required Handling
 
-| ID | Finding | Status |
+| ID | Failure mode | Required handling |
 |---|---|---|
-| OV-1 | CB scheduler pool exhaustion can poison an OpenVINO pipeline. | Mitigated locally with derived bounded `cache_size`, fatal error classification, backend close, and slot eviction. Upstream issue required. |
-| OV-2 | Large static `cache_size` values can thrash unified-memory iGPUs. | Mitigated by derived default capped at `4 GiB`; explicit profile override remains operator-controlled. |
-| OV-3 | Shared-memory GPU plugins can report total memory but zero free memory. | Fixed by falling back to host available RAM capped by plugin total. |
+| OV-1 | CB scheduler pool exhaustion can poison an OpenVINO pipeline. | Derive a bounded `cache_size`; classify pool-exhaustion and allocator/block-leak asserts as fatal; close the backend session; evict the slot; track the upstream issue. |
+| OV-2 | Large static `cache_size` values can thrash unified-memory iGPUs. | Derived default capped at `4 GiB`; explicit profile override remains operator-controlled. |
+| OV-3 | Shared-memory GPU plugins can report total memory but zero free memory. | Fall back to host available RAM capped by plugin total. |
 | OV-4 | Arc iGPU XAttention can be unsupported on the selected driver stack. | Automatic sparse attempts retry dense; explicit sparse remains a hard failure. |
-| OV-5 | NPU cannot run the CB/PagedAttention path. | Explicit NPU opens are rejected; AUTO excludes NPU. |
-| OV-6 | VLM repos such as `gemma4-e4b-ov` are incompatible with the text CB adapter. | Removed from curated OpenVINO text choices and setup guidance. |
-| OV-7 | Model `generation_config.json` `max_length` can cap total length despite `max_new_tokens`. | Fixed by clearing inherited total-length caps for generation and echo-prefill. |
-| OV-8 | Raw OpenVINO benchmark extraction can corrupt token counts if it stringifies Python result objects. | Fixed in the raw script by extracting generation IDs and recording OpenVINO perf counters. |
-| OV-9 | TinyLlama can produce high throughput while echoing/continuing the prompt. | Certification must include answer-quality smoke checks. |
-| OV-10 | Physical prefill before decode can add overhead in no-cold-store sessions. | Counters exist; deferred prefill is behind `CONTENOX_OPENVINO_DEFER_PREFILL=1`; Windows TinyLlama no-tools benchmark shows it is slower and must remain opt-in. |
-| OV-11 | Raw OpenVINO accepts TinyLlama prompts beyond runtime-advertised context. | Runtime rejects oversized TinyLlama requests until a certified long-context model/profile exists. |
-| OV-12 | Windows MSVC/OpenVINO package rebuilds require ad hoc host setup. | Add checked-in reproducible Windows packaging tooling. |
+| OV-5 | NPU cannot run the CB/PagedAttention path. | Reject explicit NPU opens; AUTO excludes NPU. |
+| OV-6 | VLM repos such as `gemma4-e4b-ov` are incompatible with the text CB adapter. | Keep VLM repos out of curated OpenVINO text choices and setup guidance. |
+| OV-7 | Model `generation_config.json` `max_length` can cap total length despite `max_new_tokens`. | Clear inherited total-length caps for generation and echo-prefill. |
+| OV-8 | Raw OpenVINO benchmark extraction can corrupt token counts if it stringifies Python result objects. | Extract generation IDs and record OpenVINO perf counters in raw scripts. |
+| OV-9 | A model can produce high throughput while echoing/continuing the prompt. | Certification includes answer-quality smoke checks. |
+| OV-10 | Physical prefill before decode can add overhead in no-cold-store sessions. | Deferred prefill stays opt-in behind `CONTENOX_OPENVINO_DEFER_PREFILL=1` with contract counters; enabling it by default requires a product-path benchmark win. |
+| OV-11 | Raw OpenVINO accepts prompts beyond runtime-advertised context. | The runtime rejects oversized requests unless a certified long-context model/profile exists. |
+| OV-12 | Windows MSVC/OpenVINO package rebuilds can depend on ad hoc host setup. | Windows packaging must be checked-in and reproducible. |
 
 ## Required Runtime Work
 

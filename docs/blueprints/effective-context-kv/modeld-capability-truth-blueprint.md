@@ -1,6 +1,5 @@
 # Blueprint: modeld Capability-Truth Boundary
 
-Status: design
 Owner: runtime / modeld
 
 Purpose: make every modeld capability surface report what the runtime can actually
@@ -41,10 +40,10 @@ Only the intersection is a supported runtime capability.
 
 ### GGUF architecture support
 
-The session found a model with `general.architecture = gemma4` while the pinned
-llama.cpp runtime did not yet support `LLM_ARCH_GEMMA4`. Numeric metadata was still
-parseable, so capacity output could look valid even though the loader could not serve
-the model.
+A model repository can declare an architecture (for example
+`general.architecture = gemma4`) that the pinned llama.cpp runtime does not
+support. Numeric metadata is still parseable, so capacity output can look
+valid even though the loader cannot serve the model.
 
 Required behavior:
 
@@ -52,6 +51,8 @@ Required behavior:
 - Check loader support before advertising a model as servable.
 - Return `unsupported_architecture` or equivalent when the linked runtime lacks support.
 - Preserve the native loader reason in the modeld error.
+- Treat runtime pin bumps as integration changes: smoke-test build, package,
+  and model load before certifying against the new pin.
 
 ### OpenVINO text versus VLM
 
@@ -90,6 +91,14 @@ Required behavior:
   every token remains physically hot.
 - `CertifiedContext` or equivalent certification metadata must be added before long
   context is advertised as product-supported.
+
+### Resident-session truth
+
+Capacity questions about the identity currently resident in the slot must be
+answered from the resident session's open-time resolved `ModelInfo`, not from
+a hypothetical recomputation made under that session's own memory footprint.
+Same-identity `Describe`, capacity panels, and `model list` must agree with
+what the open session actually serves.
 
 ## Implementation Requirements
 

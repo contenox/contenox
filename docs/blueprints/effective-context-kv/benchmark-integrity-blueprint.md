@@ -1,6 +1,5 @@
 # Blueprint: Benchmark Integrity and Reproducibility
 
-Status: design
 Owner: runtime / modeld
 
 Purpose: prevent backend probes, failed runs, and packaging issues from becoming
@@ -30,10 +29,9 @@ normalized and labeled.
 
 ## Facts Encoded
 
-### Raw OpenVINO probes
+### Raw backend probes
 
-The session measured Python `openvino_genai` paths before the product path was running.
-Those rows bypassed:
+Raw Python backend probes (for example `openvino_genai` scripts) bypass:
 
 - `contenox` CLI behavior.
 - modeld startup and launcher behavior.
@@ -51,12 +49,12 @@ Required behavior:
 
 ### Windows launcher and app-control preflight
 
-The session found two independent Windows facts:
+Two independent Windows facts:
 
 - `modeld.exe` can fail with `0xC0000135` when launched directly because DLL paths are
   set by `modeld.cmd`.
-- Windows CodeIntegrity/WDAC can block `contenox.exe` depending on local app-control
-  state. After Smart App Control was disabled, `contenox version v0.32.8` ran.
+- Windows CodeIntegrity/WDAC/Smart App Control can block `contenox.exe` depending on
+  local app-control state.
 
 Required behavior:
 

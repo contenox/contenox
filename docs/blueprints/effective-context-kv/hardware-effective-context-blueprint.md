@@ -1,6 +1,5 @@
 # Blueprint: Latency-Budgeted Effective Context
 
-Status: design
 Owner: runtime / modeld
 
 Purpose: define how Contenox decides whether a hardware/backend/model cell supports

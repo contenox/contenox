@@ -84,11 +84,9 @@ prompt, chain execution, or session bookkeeping.
   prompt. Throughput and answer quality must be tracked separately.
 - The tested Arc iGPU rows are dense fallback rows, not successful XAttention rows.
 
-## Required Fixes
-
-- Add reproducible Windows MSVC/OpenVINO package tooling.
-- Add a certified model/profile path before advertising TinyLlama beyond its trained context.
-- Add OpenVINO token usage reporting to runtime traces.
-- File an upstream OpenVINO GenAI issue for CB allocator/block leaks after minimal repro cleanup.
-- Keep a benchmark matrix per certified CPU/GPU model, driver, OS, OpenVINO GenAI version, model
-  digest, context, throughput, and answer-quality smoke.
+Requirements implied by these rows are owned by the
+[OpenVINO hardening blueprint](openvino-hardening-blueprint.md) (packaging,
+fatal classification and upstream tracking, certification matrix), the
+[backend parity contract](backend-parity-blueprint.md) (trace token usage),
+and the [capability-truth blueprint](modeld-capability-truth-blueprint.md)
+(context advertisement).

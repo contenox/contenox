@@ -1,10 +1,6 @@
 # Blueprint: modeld Local Inference Cross-Compare
 
-Status: design note
-
-Scope: landscape-derived gaps for `modeld`, focused on how adjacent local-inference systems determine effective context windows for available VRAM. This is not a dependency review.
-
-Snapshot: public repositories cloned into the local temporary comparison workspace on 2026-07-02, plus the existing local `llama.cpp` reference clone under `tmp/ref`.
+Scope: landscape-derived gaps for `modeld`, focused on how adjacent local-inference systems determine effective context windows for available VRAM. This is not a dependency review. Comparisons reflect the public repositories of the listed projects; re-verify a project's mechanism before building on it.
 
 ## Reading Lens
 

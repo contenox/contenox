@@ -1,6 +1,5 @@
 # Blueprint: Specialization Cells and Multi-GPU Runtime Shapes
 
-Status: design
 Owner: runtime / modeld
 
 Purpose: define how Contenox can use narrow hardware/model/runtime assumptions without

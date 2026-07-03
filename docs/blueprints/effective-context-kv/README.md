@@ -1,6 +1,5 @@
 # Blueprint: Effective-Context Runtime Strategy
 
-Status: design; certified specialization portfolio
 Owner: runtime / modeld
 Target: large effective context on one local accelerator, single-user/single-model,
 with bounded prefill latency, usable decode throughput, and explicit quality gates.
@@ -10,13 +9,15 @@ Related OpenVINO validation:
 - [OpenVINO benchmark findings](openvino-bench-findings.md)
 - [Local NVIDIA llama benchmark findings](local-nvidia-llama-bench-findings.md)
 
+Cross-backend parity:
+- [llama/OpenVINO backend parity](backend-parity-blueprint.md)
+
 Related hardware/runtime strategy:
 - [Local inference cross-compare](modeld-local-inference-cross-compare-blueprint.md)
 - [Latency-budgeted effective context](hardware-effective-context-blueprint.md)
 - [Specialization cells and multi-GPU runtime shapes](specialization-cells-blueprint.md)
 
-Session-derived guardrails:
-- [Session aac21f41 learning map](session-aac21f41-learning-map.md)
+Guardrails:
 - [modeld capability-truth boundary](modeld-capability-truth-blueprint.md)
 - [Benchmark integrity and reproducibility](benchmark-integrity-blueprint.md)
 
