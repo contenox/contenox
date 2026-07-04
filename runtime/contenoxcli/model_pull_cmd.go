@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/backendservice"
@@ -23,44 +24,8 @@ import (
 var modelPullCmd = &cobra.Command{
 	Use:   "pull <name>",
 	Short: "Download a model (GGUF or OpenVINO IR) for local inference.",
-	Long: `Download a model from HuggingFace for local inference. GGUF models are stored
-under ~/.contenox/models/llama/<name>/model.gguf; OpenVINO IR models (curated
-names ending in -ov) are fetched as a multi-file repo into
-~/.contenox/models/openvino/<name>/.
-
-Curated models — run 'contenox model registry-list' to see full list with sizes.
-  By model file size (approximate resident memory still depends on context/KV):
-  ~1.5 GB granite-3.2-2b  IBM Granite 3.2 2B
-  ~2-3 GB phi-4-mini      Phi-4 Mini
-  ~3 GB   qwen3-4b        Qwen 3 4B
-  ~5 GB   gemma4-e2b      Gemma 4 E2B (Q8)
-  ~5 GB   gemma4-e4b      Gemma 4 E4B
-  ~5 GB   granite-3.2-8b  IBM Granite 3.2 8B
-  ~5 GB   qwen3-8b        Qwen 3 8B
-  ~5 GB   deepseek-r1-0528-qwen3-8b
-  ~8 GB   gemma4-12b      Gemma 4 12B
-  ~9 GB   qwen3-14b       Qwen 3 14B
-  ~12 GB  gpt-oss-20b     OpenAI gpt-oss 20B
-  ~17 GB  gemma4-26b-a4b  Gemma 4 26B-A4B
-  ~19 GB  qwen3-30b       Qwen 3 30B-A3B (MoE)
-  ~19 GB  qwen3-coder-30b-a3b
-
-VS Code autocomplete can use a separate model from chat. For local ghost text:
-  contenox model pull qwen3-coder-30b-a3b
-  contenox config set default-autocomplete-provider llama
-  contenox config set default-autocomplete-model qwen3-coder-30b-a3b
-
-Or provide an explicit URL:
-  contenox model pull my-model --url https://huggingface.co/.../model.gguf
-
-After downloading, the artifact is installed locally. Use 'contenox model local'
-to inspect installed artifacts. Use 'contenox model list' to see models that are
-currently loadable from live backends; for llama/OpenVINO this requires modeld
-running in the matching backend mode. The first pulled model becomes the default
-model if none is set yet:
-  contenox model local
-  contenox model list`,
-	Args: cobra.MaximumNArgs(1),
+	Long:  modelPullLong(),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := libtracker.WithNewRequestID(context.Background())
 		rawURL, _ := cmd.Flags().GetString("url")
@@ -163,6 +128,83 @@ model if none is set yet:
 		}
 		return nil
 	},
+}
+
+func modelPullLong() string {
+	return `Download a model from HuggingFace for local inference. GGUF models are stored
+under ~/.contenox/models/llama/<name>/model.gguf; OpenVINO IR models (curated
+names ending in -ov) are fetched as a multi-file repo into
+~/.contenox/models/openvino/<name>/.
+
+Curated models - run 'contenox model registry-list' to see full list with
+sizes, advisory VRAM tiers, use cases, notes, and best-effort local fit:
+` + modelPullCuratedHelp() + `
+
+VS Code autocomplete can use a separate model from chat. For local ghost text:
+  contenox model pull qwen3-coder-30b-a3b
+  contenox config set default-autocomplete-provider llama
+  contenox config set default-autocomplete-model qwen3-coder-30b-a3b
+
+Or provide an explicit URL:
+  contenox model pull my-model --url https://huggingface.co/.../model.gguf
+
+After downloading, the artifact is installed locally. Use 'contenox model local'
+to inspect installed artifacts. Use 'contenox model list' to see models that are
+currently loadable from live backends; for llama/OpenVINO this requires modeld
+running in the matching backend mode. The first pulled model becomes the default
+model if none is set yet:
+  contenox model local
+  contenox model list`
+}
+
+func modelPullCuratedHelp() string {
+	reg := modelregistry.New(nil)
+	entries, err := reg.List(context.Background())
+	if err != nil {
+		return "  (curated registry unavailable)"
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].BackendType() != entries[j].BackendType() {
+			return entries[i].BackendType() < entries[j].BackendType()
+		}
+		if lessModelRecommendation(entries[i], entries[j]) {
+			return true
+		}
+		if lessModelRecommendation(entries[j], entries[i]) {
+			return false
+		}
+		return entries[i].Name < entries[j].Name
+	})
+
+	var b strings.Builder
+	currentBackend := ""
+	for _, entry := range entries {
+		if !entry.Curated {
+			continue
+		}
+		backend := entry.BackendType()
+		if backend != currentBackend {
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
+			fmt.Fprintf(&b, "  %s:\n", backend)
+			fmt.Fprintf(&b, "    %-38s %-10s %-5s %-9s %s\n", "name", "size", "vram", "use", "label")
+			currentBackend = backend
+		}
+		note := entry.Notes
+		if note != "" {
+			note = " - " + note
+		}
+		fmt.Fprintf(&b, "    %-38s %-10s %-5s %-9s %s%s\n",
+			entry.Name,
+			humanModelBytes(entry.SizeBytes),
+			entry.RecommendedVRAMLabel(),
+			modelUseCaseLabel(entry),
+			entry.Label(),
+			note,
+		)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func downloadGGUF(url, destPath string, out io.Writer) error {

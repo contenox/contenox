@@ -68,6 +68,35 @@ func TestUnit_Registry_ResolveCuratedQwen25CoderOpenVINOTiny(t *testing.T) {
 	assert.True(t, d.Curated)
 }
 
+func TestUnit_Registry_ResolveCuratedQwen25CoderGGUF(t *testing.T) {
+	reg := newCuratedOnly()
+	d, err := reg.Resolve(context.Background(), "qwen2.5-coder-7b")
+	require.NoError(t, err)
+
+	assert.Equal(t, "qwen2.5-coder-7b", d.Name)
+	assert.Equal(t, "llama", d.BackendType())
+	assert.Equal(t, int64(4_683_073_536), d.SizeBytes)
+	assert.Equal(t, "coding", d.UseCase)
+	assert.Equal(t, 8, d.RecommendedVRAMGB)
+	assert.Contains(t, d.SourceURL, "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF")
+	assert.Empty(t, d.Repo)
+	assert.True(t, d.Curated)
+}
+
+func TestUnit_Registry_ResolveCuratedDevstral(t *testing.T) {
+	reg := newCuratedOnly()
+	d, err := reg.Resolve(context.Background(), "devstral-small-2507")
+	require.NoError(t, err)
+
+	assert.Equal(t, "devstral-small-2507", d.Name)
+	assert.Equal(t, "llama", d.BackendType())
+	assert.Equal(t, int64(14_333_915_904), d.SizeBytes)
+	assert.Equal(t, "coding", d.UseCase)
+	assert.Equal(t, 24, d.RecommendedVRAMGB)
+	assert.Contains(t, d.SourceURL, "mistralai/Devstral-Small-2507_gguf")
+	assert.True(t, d.Curated)
+}
+
 func TestUnit_Registry_ResolveCuratedTinyLlamaOpenVINO(t *testing.T) {
 	reg := newCuratedOnly()
 	d, err := reg.Resolve(context.Background(), "tinyllama-1.1b-chat-v1.0-int4-ov")
@@ -105,6 +134,11 @@ func TestUnit_Registry_ListIncludesCurated(t *testing.T) {
 	}
 	assert.True(t, names["qwen3-8b"])
 	assert.True(t, names["qwen2.5-coder-0.5b-ov"])
+	assert.True(t, names["qwen2.5-coder-7b"])
+	assert.True(t, names["qwen2.5-coder-14b-ov"])
+	assert.True(t, names["starcoder2-7b-instruct"])
+	assert.True(t, names["devstral-small-2507"])
+	assert.True(t, names["codestral-22b"])
 	assert.True(t, names["tinyllama-1.1b-chat-v1.0-int4-ov"])
 	assert.True(t, names["qwen3-coder-30b-a3b"])
 	assert.True(t, names["qwen3-coder-30b-a3b-ov"])
@@ -155,7 +189,13 @@ func TestUnit_Registry_OptimalForCurrentFamilies(t *testing.T) {
 		"bartowski/openai_gpt-oss-20b":                 "gpt-oss-20b",
 		"OpenVINO/gpt-oss-20b-int4-ov":                 "gpt-oss-20b-ov",
 		"OpenVINO/Qwen2.5-Coder-0.5B-Instruct-int4-ov": "qwen2.5-coder-0.5b-ov",
+		"OpenVINO/Qwen2.5-Coder-14B-Instruct-int4-ov":  "qwen2.5-coder-14b-ov",
 		"OpenVINO/TinyLlama-1.1B-Chat-v1.0-int4-ov":    "tinyllama-1.1b-chat-v1.0-int4-ov",
+		"Qwen/Qwen2.5-Coder-7B-Instruct-GGUF":          "qwen2.5-coder-7b",
+		"mistralai/Devstral-Small-2507_gguf":           "devstral-small-2507",
+		"bartowski/Codestral-22B-v0.1-GGUF":            "codestral-22b",
+		"bartowski/DeepSeek-Coder-V2-Lite-Instruct":    "deepseek-coder-v2-lite",
+		"QuantFactory/starcoder2-7b-instruct-GGUF":     "starcoder2-7b-instruct",
 	}
 	for input, want := range tests {
 		got, err := reg.OptimalFor(context.Background(), input)
@@ -167,6 +207,11 @@ func TestUnit_Registry_OptimalForCurrentFamilies(t *testing.T) {
 func TestUnit_Registry_OpenVINOCrossSyncWithCuratedLlamaModels(t *testing.T) {
 	reg := newCuratedOnly()
 	pairs := map[string]string{
+		"qwen2.5-coder-0.5b":          "qwen2.5-coder-0.5b-ov",
+		"qwen2.5-coder-1.5b":          "qwen2.5-coder-1.5b-ov",
+		"qwen2.5-coder-3b":            "qwen2.5-coder-3b-ov",
+		"qwen2.5-coder-7b":            "qwen2.5-coder-7b-ov",
+		"qwen2.5-coder-14b":           "qwen2.5-coder-14b-ov",
 		"phi-4-mini":                  "phi-4-mini-ov",
 		"qwen3-4b":                    "qwen3-4b-ov",
 		"qwen3-8b":                    "qwen3-8b-ov",
@@ -293,4 +338,98 @@ func (s fakeModelRegistryService) List(context.Context, *time.Time, int) ([]*run
 		out = append(out, e)
 	}
 	return out, nil
+}
+
+// Every curated entry must carry a Family and a DisplayLabel: these back the
+// registry-driven listings in `contenox setup`, `model pull --help`, and
+// `model registry-list`. A missing value here would silently degrade those
+// listings back to raw registry keys.
+func TestUnit_Registry_CuratedEntriesHaveFamilyAndDisplayLabel(t *testing.T) {
+	reg := newCuratedOnly()
+	entries, err := reg.List(context.Background())
+	require.NoError(t, err)
+
+	require.NotEmpty(t, entries)
+	for _, e := range entries {
+		assert.NotEmpty(t, e.Family, "model %q has no Family", e.Name)
+		assert.NotEmpty(t, e.DisplayLabel, "model %q has no DisplayLabel", e.Name)
+		assert.NotEmpty(t, e.UseCase, "model %q has no UseCase", e.Name)
+		assert.Greater(t, e.RecommendedVRAMGB, 0, "model %q has no RecommendedVRAMGB", e.Name)
+		assert.Equal(t, e.DisplayLabel, e.Label(), e.Name)
+	}
+}
+
+func TestUnit_Registry_LabelFallsBackToNameWhenNoDisplayLabel(t *testing.T) {
+	d := modelregistry.ModelDescriptor{Name: "custom-model"}
+	assert.Equal(t, "custom-model", d.Label())
+}
+
+func TestUnit_Registry_RecommendedVRAMLabel(t *testing.T) {
+	d := modelregistry.ModelDescriptor{RecommendedVRAMGB: 16}
+	assert.Equal(t, "16GB", d.RecommendedVRAMLabel())
+
+	zero := modelregistry.ModelDescriptor{}
+	assert.Equal(t, "-", zero.RecommendedVRAMLabel())
+}
+
+func TestUnit_Registry_CodingModelsCoverRecommendedVRAMTiers(t *testing.T) {
+	reg := newCuratedOnly()
+	entries, err := reg.List(context.Background())
+	require.NoError(t, err)
+
+	covered := map[int]bool{}
+	for _, e := range entries {
+		if e.UseCase == "coding" {
+			covered[e.RecommendedVRAMGB] = true
+		}
+	}
+	for _, tier := range []int{6, 8, 16, 24, 32} {
+		assert.True(t, covered[tier], "no coding model for %dGB VRAM tier", tier)
+	}
+}
+
+func TestUnit_Registry_EstimatedResidentBytesAppliesHeadroom(t *testing.T) {
+	d := modelregistry.ModelDescriptor{SizeBytes: 4_000_000_000}
+	assert.Equal(t, int64(5_000_000_000), d.EstimatedResidentBytes())
+
+	zero := modelregistry.ModelDescriptor{}
+	assert.Equal(t, int64(0), zero.EstimatedResidentBytes())
+}
+
+func TestUnit_Registry_GroupByFamilyGroupsAndSorts(t *testing.T) {
+	entries := []modelregistry.ModelDescriptor{
+		{Name: "qwen3-14b", Family: "qwen3", SizeBytes: 9_000_000_000},
+		{Name: "qwen3-4b", Family: "qwen3", SizeBytes: 2_000_000_000},
+		{Name: "qwen3-8b", Family: "qwen3", SizeBytes: 5_000_000_000},
+		{Name: "gemma4-e2b", Family: "gemma4", SizeBytes: 4_000_000_000},
+		{Name: "standalone-model"}, // no Family: groups under its own Name
+	}
+
+	groups := modelregistry.GroupByFamily(entries)
+	require.Len(t, groups, 3)
+
+	// Groups sorted alphabetically by family key.
+	assert.Equal(t, "gemma4", groups[0].Family)
+	assert.Equal(t, "qwen3", groups[1].Family)
+	assert.Equal(t, "standalone-model", groups[2].Family)
+
+	// Entries within a group sorted by SizeBytes ascending.
+	qwen3 := groups[1].Entries
+	require.Len(t, qwen3, 3)
+	assert.Equal(t, "qwen3-4b", qwen3[0].Name)
+	assert.Equal(t, "qwen3-8b", qwen3[1].Name)
+	assert.Equal(t, "qwen3-14b", qwen3[2].Name)
+}
+
+func TestUnit_Registry_GroupByFamilyIncludesEveryCuratedModel(t *testing.T) {
+	reg := newCuratedOnly()
+	entries, err := reg.List(context.Background())
+	require.NoError(t, err)
+
+	groups := modelregistry.GroupByFamily(entries)
+	total := 0
+	for _, g := range groups {
+		total += len(g.Entries)
+	}
+	assert.Equal(t, len(entries), total)
 }

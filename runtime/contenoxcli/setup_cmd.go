@@ -9,16 +9,20 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/backendservice"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/internal/hostcapacity"
 	"github.com/contenox/runtime/runtime/internal/modeldinstall"
 	"github.com/contenox/runtime/runtime/internal/modeldprobe"
 	"github.com/contenox/runtime/runtime/internal/setupcheck"
+	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/transport"
@@ -252,11 +256,7 @@ func runLocalModeldSetup(out io.Writer, provider string, opts modeldinstall.Opti
 	fmt.Fprintf(out, "    %s serve\n", res.LauncherPath)
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  Install a local model:")
-	if provider == "openvino" {
-		printOpenVINOModelChoices(out)
-	} else {
-		printLlamaModelChoices(out)
-	}
+	printCuratedModelChoices(out, provider, hostcapacity.Detect(context.Background()))
 	fmt.Fprintln(out, "")
 	printAutocompleteModeldTip(out, provider)
 	fmt.Fprintln(out, "")
@@ -306,11 +306,7 @@ func printLocalModeldSourceBuildSteps(out io.Writer, backend string) {
 	}
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  Keep modeld running, then return here and install a local model:")
-	if backend == "openvino" {
-		printOpenVINOModelChoices(out)
-	} else {
-		printLlamaModelChoices(out)
-	}
+	printCuratedModelChoices(out, backend, hostcapacity.Detect(context.Background()))
 	fmt.Fprintln(out, "")
 	printAutocompleteModeldTip(out, backend)
 	fmt.Fprintln(out, "")
@@ -342,35 +338,58 @@ func printAutocompleteModeldTip(out io.Writer, backend string) {
 	}
 }
 
-func printLlamaModelChoices(out io.Writer) {
+func printCuratedModelChoices(out io.Writer, backend string, budget hostcapacity.Budget) {
+	reg := modelregistry.New(nil)
+	entries, err := reg.List(context.Background())
+	if err != nil {
+		fmt.Fprintf(out, "       Could not load curated models: %v\n", err)
+		return
+	}
+	filtered := make([]modelregistry.ModelDescriptor, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Curated && entry.BackendType() == backend {
+			filtered = append(filtered, entry)
+		}
+	}
+	if len(filtered) == 0 {
+		fmt.Fprintf(out, "       No curated %s models found.\n", backend)
+		return
+	}
+
 	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "       VRAM     Model               Q4 size   Notes")
-	fmt.Fprintln(out, "       ~2 GB    granite-3.2-2b      ~1.5 GB")
-	fmt.Fprintln(out, "       ~3 GB    qwen3-4b            ~3 GB")
-	fmt.Fprintln(out, "       ~3 GB    phi-4-mini          ~2.5 GB")
-	fmt.Fprintln(out, "       ~5 GB    gemma4-e4b          ~5 GB     native tool format")
-	fmt.Fprintln(out, "       ~5 GB    qwen3-8b            ~5 GB")
-	fmt.Fprintln(out, "       ~5 GB    deepseek-r1-0528-qwen3-8b")
-	fmt.Fprintln(out, "       ~8 GB    gemma4-12b          ~8 GB")
-	fmt.Fprintln(out, "       ~12 GB   gpt-oss-20b         ~12 GB")
-	fmt.Fprintln(out, "       ~19 GB   qwen3-coder-30b-a3b ~19 GB")
+	if budget.Known {
+		fmt.Fprintf(out, "       FITS uses %s free on %s; resident estimate includes 25%% headroom.\n", humanModelBytes(budget.FreeBytes), budget.Label)
+	} else {
+		fmt.Fprintln(out, "       FITS is best effort; '-' means host memory could not be detected.")
+	}
+	fmt.Fprintln(out, "       VRAM is an advisory tier; modeld still resolves the live hot-KV/effective-context fit.")
+	sort.Slice(filtered, func(i, j int) bool {
+		return lessModelRecommendation(filtered[i], filtered[j])
+	})
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "       FITS\tVRAM\tUSE\tMODEL\tSIZE\tEST. RESIDENT\tNOTES")
+	for _, entry := range filtered {
+		fmt.Fprintf(w, "       %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			fitMark(fitFor(entry, budget)),
+			entry.RecommendedVRAMLabel(),
+			modelUseCaseLabel(entry),
+			entry.Name,
+			humanModelBytes(entry.SizeBytes),
+			humanModelBytes(entry.EstimatedResidentBytes()),
+			entry.Notes,
+		)
+	}
+	_ = w.Flush()
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")
-	fmt.Fprintln(out, "       contenox model pull qwen3-8b")
+	fmt.Fprintf(out, "       contenox model pull %s\n", defaultCuratedPullExample(backend))
 }
 
-func printOpenVINOModelChoices(out io.Writer) {
-	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "       Model                    Size      Notes")
-	fmt.Fprintln(out, "       qwen2.5-coder-0.5b-ov    ~350 MB   fastest smoke test")
-	fmt.Fprintln(out, "       qwen2.5-coder-1.5b-ov    ~900 MB   small coding model")
-	fmt.Fprintln(out, "       qwen3-4b-ov              ~2.3 GB")
-	fmt.Fprintln(out, "       qwen3-8b-ov              ~4.9 GB")
-	fmt.Fprintln(out, "       phi-4-mini-ov            ~2.4 GB")
-	fmt.Fprintln(out, "       gpt-oss-20b-ov           ~12.6 GB")
-	fmt.Fprintln(out, "")
-	fmt.Fprintln(out, "       contenox model registry-list   # full list with sizes")
-	fmt.Fprintln(out, "       contenox model pull qwen2.5-coder-0.5b-ov")
+func defaultCuratedPullExample(backend string) string {
+	if backend == "openvino" {
+		return "qwen2.5-coder-0.5b-ov"
+	}
+	return "qwen3-8b"
 }
 
 func modeldSourceBuildRef() string {

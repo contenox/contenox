@@ -10,6 +10,7 @@ import (
 
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/internal/hostcapacity"
 	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelregistryservice"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -131,29 +132,57 @@ Examples:
 		if err != nil {
 			return fmt.Errorf("failed to list registry: %w", err)
 		}
-		return printModelRegistryList(cmd.OutOrStdout(), entries)
+		return printModelRegistryList(cmd.OutOrStdout(), entries, hostcapacity.Detect(ctx))
 	},
 }
 
-func printModelRegistryList(out io.Writer, entries []modelregistry.ModelDescriptor) error {
+func printModelRegistryList(out io.Writer, entries []modelregistry.ModelDescriptor, budget hostcapacity.Budget) error {
 	sort.Slice(entries, func(i, j int) bool {
 		leftBackend := entries[i].BackendType()
 		rightBackend := entries[j].BackendType()
 		if leftBackend != rightBackend {
 			return leftBackend < rightBackend
 		}
+		if lessModelRecommendation(entries[i], entries[j]) {
+			return true
+		}
+		if lessModelRecommendation(entries[j], entries[i]) {
+			return false
+		}
+		if entries[i].Family != entries[j].Family {
+			return entries[i].Family < entries[j].Family
+		}
 		return entries[i].Name < entries[j].Name
 	})
 
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tBACKEND\tSIZE (MB)\tCURATED\tSOURCE")
+	fmt.Fprintln(w, "NAME\tFAMILY\tBACKEND\tVRAM\tUSE\tSIZE\tEST. RESIDENT\tFITS\tCURATED\tNOTES\tSOURCE")
 	for _, e := range entries {
 		curated := "-"
 		if e.Curated {
 			curated = "✓"
 		}
-		sizeMB := e.SizeBytes / 1024 / 1024
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\t%s\n", e.Name, e.BackendType(), sizeMB, curated, e.SourceURL)
+		family := e.Family
+		if family == "" {
+			family = "-"
+		}
+		notes := e.Notes
+		if notes == "" {
+			notes = "-"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			e.Name,
+			family,
+			e.BackendType(),
+			e.RecommendedVRAMLabel(),
+			modelUseCaseLabel(e),
+			humanModelBytes(e.SizeBytes),
+			humanModelBytes(e.EstimatedResidentBytes()),
+			fitMark(fitFor(e, budget)),
+			curated,
+			notes,
+			e.SourceURL,
+		)
 	}
 	return w.Flush()
 }

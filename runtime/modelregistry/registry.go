@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	libdb "github.com/contenox/runtime/libdbexec"
@@ -38,6 +39,24 @@ type ModelDescriptor struct {
 	// ReasoningFormat is the backend-native reasoning format passed to the parser
 	// and chat-template renderer, for example llama.cpp common-chat "deepseek".
 	ReasoningFormat string `json:"reasoningFormat,omitempty" example:"deepseek"`
+	// Family groups related size/quant variants of the same model line for
+	// display (e.g. "qwen3", "gemma4", "phi-4"). It is a presentation grouping
+	// key, not a capability signal.
+	Family string `json:"family,omitempty" example:"qwen3"`
+	// DisplayLabel is the human-readable name shown in listings, e.g.
+	// "Qwen 3 8B". Falls back to Name when empty.
+	DisplayLabel string `json:"displayLabel,omitempty" example:"Qwen 3 8B"`
+	// UseCase is the primary workflow this curated entry is meant to serve,
+	// e.g. "coding", "chat", "reasoning", or "smoke".
+	UseCase string `json:"useCase,omitempty" example:"coding"`
+	// RecommendedVRAMGB is the coarse VRAM tier this curated entry is intended
+	// for before live modeld capacity data is available. It is advisory only:
+	// modeld still resolves the real hot-KV/effective-context fit from current
+	// device free memory, resident policy, KV profile, and runtime overhead.
+	RecommendedVRAMGB int `json:"recommendedVramGb,omitempty" example:"8"`
+	// Notes is a short free-text annotation shown alongside the model in
+	// listings, e.g. "native tool format", "MoE", "fastest smoke test".
+	Notes string `json:"notes,omitempty" example:"native tool format"`
 }
 
 // BackendType returns the local backend this model targets, defaulting empty to
@@ -47,6 +66,76 @@ func (d ModelDescriptor) BackendType() string {
 		return "llama"
 	}
 	return d.Backend
+}
+
+// Label returns DisplayLabel, falling back to Name when no display label was set.
+func (d ModelDescriptor) Label() string {
+	if d.DisplayLabel != "" {
+		return d.DisplayLabel
+	}
+	return d.Name
+}
+
+// RecommendedVRAMLabel formats the advisory curated VRAM tier for display.
+func (d ModelDescriptor) RecommendedVRAMLabel() string {
+	if d.RecommendedVRAMGB <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%dGB", d.RecommendedVRAMGB)
+}
+
+// residentHeadroomNumerator/Denominator apply a 25% headroom over the on-disk
+// weight size, approximating KV cache + runtime overhead at moderate context.
+const (
+	residentHeadroomNumerator   = 5
+	residentHeadroomDenominator = 4
+)
+
+// EstimatedResidentBytes is a coarse pre-install RAM/VRAM estimate (on-disk
+// weight size plus ~25% headroom for KV cache and runtime overhead at a
+// moderate context length). It is NOT modeld's real KV-aware
+// capacity.Resolve budget computed from the live device and the model's
+// actual KV profile — only a rough signal for picking a model before modeld
+// is even installed.
+func (d ModelDescriptor) EstimatedResidentBytes() int64 {
+	if d.SizeBytes <= 0 {
+		return 0
+	}
+	return d.SizeBytes * residentHeadroomNumerator / residentHeadroomDenominator
+}
+
+// FamilyGroup is a display grouping of descriptors sharing the same Family.
+type FamilyGroup struct {
+	Family  string
+	Entries []ModelDescriptor
+}
+
+// GroupByFamily groups entries by Family (falling back to Name when Family is
+// empty) and sorts groups by family name and entries within a group by
+// SizeBytes ascending. It is a pure display helper — it takes no context and
+// hits no DB.
+func GroupByFamily(entries []ModelDescriptor) []FamilyGroup {
+	groups := map[string][]ModelDescriptor{}
+	for _, e := range entries {
+		key := e.Family
+		if key == "" {
+			key = e.Name
+		}
+		groups[key] = append(groups[key], e)
+	}
+	keys := make([]string, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	out := make([]FamilyGroup, 0, len(keys))
+	for _, k := range keys {
+		es := groups[k]
+		sort.Slice(es, func(i, j int) bool { return es[i].SizeBytes < es[j].SizeBytes })
+		out = append(out, FamilyGroup{Family: k, Entries: es})
+	}
+	return out
 }
 
 type Registry interface {

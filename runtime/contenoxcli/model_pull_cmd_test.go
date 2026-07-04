@@ -3,6 +3,7 @@ package contenoxcli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -88,4 +89,29 @@ func TestUnit_LocalModelPresentChecksBackendMarkers(t *testing.T) {
 	langDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(langDir, "openvino_language_model.xml"), []byte("<xml/>"), 0o644))
 	assert.True(t, localModelPresent("openvino", langDir))
+}
+
+func TestUnit_ModelPullLongIncludesRegistryGeneratedCuratedModels(t *testing.T) {
+	got := modelPullLong()
+
+	for _, want := range []string{
+		"llama:",
+		"openvino:",
+		"vram",
+		"use",
+		"qwen2.5-coder-7b",
+		"devstral-small-2507",
+		"codestral-22b",
+		"qwen3-coder-30b-a3b",
+		"qwen3-coder-30b-a3b-ov",
+		"qwen2.5-coder-0.5b-ov",
+		"coding default",
+		"gemma4-26b-a4b",
+		"gpt-oss-20b-ov",
+		"fastest smoke test",
+	} {
+		assert.Contains(t, got, want)
+	}
+	assert.NotContains(t, got, "~19 GB")
+	assert.Equal(t, 1, strings.Count(got, "qwen3-coder-30b-a3b-ov"))
 }
