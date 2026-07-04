@@ -25,6 +25,20 @@ type service struct {
 	dbInstance libdb.DBManager
 }
 
+type duplicateBackendError struct {
+	typ     string
+	baseURL string
+	cause   error
+}
+
+func (e duplicateBackendError) Error() string {
+	return fmt.Sprintf("backend already exists for type %q and base URL %q", e.typ, e.baseURL)
+}
+
+func (e duplicateBackendError) Unwrap() error {
+	return e.cause
+}
+
 func New(db libdb.DBManager) Service {
 	return &service{dbInstance: db}
 }
@@ -43,7 +57,10 @@ func (s *service) Create(ctx context.Context, backend *runtimetypes.Backend) err
 		return fmt.Errorf("too many rows in the system (current %d): %w", count, err)
 	}
 
-	return storeInstance.CreateBackend(ctx, backend)
+	if err := storeInstance.CreateBackend(ctx, backend); err != nil {
+		return sanitizeBackendStoreError(backend, err)
+	}
+	return nil
 }
 
 func (s *service) Get(ctx context.Context, id string) (*runtimetypes.Backend, error) {
@@ -56,7 +73,10 @@ func (s *service) Update(ctx context.Context, backend *runtimetypes.Backend) err
 		return err
 	}
 	tx := s.dbInstance.WithoutTransaction()
-	return runtimetypes.New(tx).UpdateBackend(ctx, backend)
+	if err := runtimetypes.New(tx).UpdateBackend(ctx, backend); err != nil {
+		return sanitizeBackendStoreError(backend, err)
+	}
+	return nil
 }
 
 func (s *service) Delete(ctx context.Context, id string) error {
@@ -83,4 +103,18 @@ func validate(backend *runtimetypes.Backend) error {
 	}
 
 	return nil
+}
+
+func sanitizeBackendStoreError(backend *runtimetypes.Backend, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, libdb.ErrUniqueViolation) && backend != nil {
+		return duplicateBackendError{
+			typ:     backend.Type,
+			baseURL: backend.BaseURL,
+			cause:   err,
+		}
+	}
+	return err
 }

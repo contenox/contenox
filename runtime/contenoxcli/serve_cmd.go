@@ -58,10 +58,10 @@ setup-status, providers, tools, mcp-servers, task-chains, hitl-policies, chat,
 task execution, approvals, task events). The Beam web UI is served at /.
 
 The server binds to 127.0.0.1:32123 by default. Override with ADDR and PORT.
-Set TOKEN to require a bearer token on mutating requests; TOKEN is mandatory
-when ADDR is not a loopback address. Set BEAM_DEV_PROXY_URL to proxy Beam UI
-requests to a Vite dev server while keeping /api on this server. A configured
-model is required — run
+Set TOKEN to require a bearer token on mutating API requests and cross-origin
+browser reads; TOKEN is mandatory when ADDR is not a loopback address. Set
+BEAM_DEV_PROXY_URL to proxy Beam UI requests to a Vite dev server while keeping
+/api on this server. A configured model is required — run
 ` + "`contenox setup`" + ` first if you have not configured one.`,
 	RunE: runServe,
 }
@@ -231,9 +231,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rootMux := http.NewServeMux()
 	serverapi.AddHealthRoutes(rootMux)
 	serverapi.AddVersionRoutes(rootMux, version.Get(), nodeID, "local")
-	// Mutating /api/* requests require the bearer token (when configured); the
+	// Mutating /api/* requests require the bearer token when configured; a
+	// configured token also protects cross-origin browser reads. Without a token,
+	// browser-originated mutations must be same-origin or explicitly allowed.
 	// StripPrefix lets route packages register clean paths (/state, /models, ...).
-	rootMux.Handle("/api/", http.StripPrefix("/api", serverapi.ProtectMutatingAPI(config.Token, apiMux)))
+	rootMux.Handle("/api/", http.StripPrefix("/api", serverapi.ProtectMutatingAPIWithAllowedOrigins(config.Token, config.AllowedAPIOrigins, apiMux)))
 	uiHandler := internalweb.SPAHandler()
 	if strings.TrimSpace(config.BeamDevProxyURL) != "" {
 		devProxy, err := internalweb.DevProxyHandler(config.BeamDevProxyURL)
@@ -246,9 +248,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	rootMux.Handle("/", uiHandler)
 
 	handler := middleware.EnableCORS(&middleware.CORSConfig{
-		AllowedAPIOrigins: middleware.DefaultAllowedAPIOrigins,
+		AllowedAPIOrigins: firstNonEmptyStr(config.AllowedAPIOrigins, middleware.DefaultAllowedAPIOrigins),
 		AllowedMethods:    middleware.DefaultAllowedMethods,
 		AllowedHeaders:    middleware.DefaultAllowedHeaders,
+		ProxyOrigin:       config.ProxyOrigin,
 	}, apiframework.RequestIDMiddleware(rootMux))
 
 	srv := &http.Server{

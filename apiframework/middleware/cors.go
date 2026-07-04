@@ -13,7 +13,7 @@ type CORSConfig struct {
 }
 
 const (
-	DefaultAllowedAPIOrigins = "*"
+	DefaultAllowedAPIOrigins = ""
 	DefaultAllowedMethods    = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
 	DefaultAllowedHeaders    = "Content-Type,Authorization,X-Request-ID"
 )

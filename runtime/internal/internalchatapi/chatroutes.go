@@ -226,6 +226,17 @@ func (h *chatHandler) history(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, fmt.Errorf("chat ID is required: %w", apiframework.ErrBadPathValue), apiframework.GetOperation)
 		return
 	}
+	if h.deps.Agent != nil {
+		ok, err := h.chatExists(ctx, id)
+		if err != nil {
+			_ = apiframework.Error(w, r, err, apiframework.GetOperation)
+			return
+		}
+		if !ok {
+			_ = apiframework.Error(w, r, apiframework.NotFound("chat not found"), apiframework.GetOperation)
+			return
+		}
+	}
 
 	msgs, err := h.deps.ChatMgr.ListMessages(ctx, h.deps.DB.WithoutTransaction(), id)
 	if err != nil {
@@ -250,6 +261,19 @@ func (h *chatHandler) history(w http.ResponseWriter, r *http.Request) {
 		resp[len(resp)-1].IsLatest = true
 	}
 	_ = apiframework.Encode(w, r, http.StatusOK, resp) // @response []internalchatapi.chatMessage
+}
+
+func (h *chatHandler) chatExists(ctx context.Context, id string) (bool, error) {
+	sessions, err := h.deps.Agent.SessionList(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, session := range sessions {
+		if session != nil && session.ID == id {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {

@@ -172,7 +172,7 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 }
 
 // Handler wraps a mux with the standard middleware chain: CORS, request ID,
-// tracing, and (when a token is configured) mutating-method protection.
+// tracing, and local API request protection.
 func Handler(mux *http.ServeMux, config *Config) http.Handler {
 	if config == nil {
 		config = &Config{}
@@ -185,7 +185,7 @@ func Handler(mux *http.ServeMux, config *Config) http.Handler {
 	}
 
 	var h http.Handler = mux
-	h = ProtectMutatingAPI(config.Token, h)
+	h = ProtectMutatingAPIWithAllowedOrigins(config.Token, config.AllowedAPIOrigins, h)
 	h = apiframework.TracingMiddleware(h)
 	h = apiframework.RequestIDMiddleware(h)
 	h = middleware.EnableCORS(cors, h)

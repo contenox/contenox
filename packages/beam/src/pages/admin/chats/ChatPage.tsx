@@ -10,6 +10,7 @@ import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { useTaskEvents } from '../../../hooks/useTaskEvents';
 import { api } from '../../../lib/api';
 import { ArtifactRegistryProvider, useArtifactRegistry } from '../../../lib/artifacts';
+import { ApiError } from '../../../lib/fetch';
 import { artifactsToInlineAttachments } from '../../../lib/inlineAttachments';
 import { getBlockingSetupIssue, getSetupIssueFixPath } from '../../../lib/setupHealth';
 import {
@@ -210,6 +211,7 @@ function ChatPageImpl() {
   }, [sortedChainPaths]);
 
   const { data: chatHistory, isLoading: historyLoading, error } = useChatHistory(chatId || '');
+  const historyNotFound = error instanceof ApiError && error.status === 404;
   const { mutate: sendMessage, error: sendError } = useSendMessage(chatId || '');
   const { data: policyNames = [] } = useListPolicies();
   const { data: setupStatus } = useSetupStatus(true);
@@ -681,7 +683,18 @@ function ChatPageImpl() {
             )}
 
             <div className="min-h-0 flex-1">
-              {chatHistory && Array.isArray(chatHistory) && (
+              {historyNotFound ? (
+                <Section
+                  title={t('chat.not_found_title')}
+                  description={t('chat.not_found_description')}
+                  className="text-text dark:text-dark-text flex min-h-full min-w-0 flex-col justify-center">
+                  <div className="mt-6">
+                    <Button type="button" size="lg" onClick={() => navigate('/chat')}>
+                      {t('chat.start_new_chat')}
+                    </Button>
+                  </div>
+                </Section>
+              ) : (
                 <ChatInterface
                   threadItems={threadItems}
                   isLoading={historyLoading}
@@ -759,7 +772,6 @@ function ChatPageImpl() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-row">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatMainFill}</div>
         </div>
-
       </Fill>
     </Page>
   );

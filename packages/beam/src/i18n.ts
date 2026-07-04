@@ -1436,6 +1436,8 @@ const resources = {
         list_error: 'Error loading chats',
         list_chats_404: 'No chats available. Start new chat!',
         error_history: 'Error loading chat history',
+        not_found_title: 'Chat not found',
+        not_found_description: 'This chat no longer exists or is not available in this workspace.',
         role_user: 'User',
         role_assistant: 'Assistant',
         role_system: 'System',
@@ -2735,6 +2737,9 @@ const resources = {
         list_error: 'Fehler beim Laden der Chats',
         list_chats_404: 'Keine Chats verfügbar. Neuen Chat starten!',
         error_history: 'Fehler beim Laden des Chat-Verlaufs',
+        not_found_title: 'Chat nicht gefunden',
+        not_found_description:
+          'Dieser Chat existiert nicht mehr oder ist in diesem Arbeitsbereich nicht verfügbar.',
         role_user: 'Nutzer',
         role_assistant: 'Assistent',
         role_system: 'System',

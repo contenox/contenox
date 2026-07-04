@@ -25,6 +25,7 @@ import (
 
 type fakeAgent struct {
 	sessions   []*agentservice.SessionInfo
+	listErr    error
 	newID      string
 	lastPrompt agentservice.PromptRequest
 }
@@ -41,6 +42,9 @@ func (f *fakeAgent) SessionNew(context.Context, string) (string, error) {
 }
 
 func (f *fakeAgent) SessionList(context.Context) ([]*agentservice.SessionInfo, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return f.sessions, nil
 }
 
@@ -239,6 +243,65 @@ func TestHistoryReadsPersistedMessages(t *testing.T) {
 	require.Len(t, messages, 2)
 	require.True(t, messages[1].IsLatest)
 	require.Equal(t, "short", messages[1].Thinking)
+}
+
+func TestHistoryAllowsKnownEmptyChat(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t, ctx)
+	const workspaceID = "ws-empty-history"
+	const chatID = "chat-empty"
+
+	store := messagestore.New(db.WithoutTransaction(), workspaceID)
+	require.NoError(t, store.CreateNamedMessageIndex(ctx, chatID, "local-user", "empty"))
+
+	mux := http.NewServeMux()
+	AddChatRoutes(mux, ChatDeps{
+		Agent: &fakeAgent{sessions: []*agentservice.SessionInfo{
+			{ID: chatID, Name: "empty", IsActive: true},
+		}},
+		ChatMgr: chatservice.NewManager(workspaceID),
+		DB:      db,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/chats/"+chatID, nil)
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	var messages []chatMessage
+	require.NoError(t, json.Unmarshal(res.Body.Bytes(), &messages))
+	require.Empty(t, messages)
+}
+
+func TestHistoryReturnsNotFoundForUnknownChat(t *testing.T) {
+	ctx := context.Background()
+	db := openTestDB(t, ctx)
+
+	mux := http.NewServeMux()
+	AddChatRoutes(mux, ChatDeps{
+		Agent: &fakeAgent{sessions: []*agentservice.SessionInfo{
+			{ID: "chat-known", Name: "known", IsActive: true},
+		}},
+		ChatMgr: chatservice.NewManager("ws-missing-history"),
+		DB:      db,
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/chats/chat-missing", nil)
+	res := httptest.NewRecorder()
+	mux.ServeHTTP(res, req)
+
+	require.Equal(t, http.StatusNotFound, res.Code)
+	var body struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(res.Body.Bytes(), &body))
+	require.Equal(t, "chat not found", body.Error.Message)
+	require.Equal(t, "invalid_request_error", body.Error.Type)
+	require.Equal(t, "not_found", body.Error.Code)
 }
 
 func openTestDB(t *testing.T, ctx context.Context) libdb.DBManager {
