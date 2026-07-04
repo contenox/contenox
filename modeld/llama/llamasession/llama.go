@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"strings"
 	"sync"
@@ -1084,14 +1085,32 @@ func newChatOutputParser(protocols []string, syntax llamacppshim.ChatSyntax, con
 	return &chatOutputParser{syntax: syntax, reasoningFormat: reasoningFormat, parseToolCalls: parseToolCalls}, nil
 }
 
+// parseChatResponse is the seam over llama.cpp's common chat parser. It is a
+// package var so streaming-tolerance behavior can be unit-tested without a
+// model (the CGo parser is grammar-dependent and, for lenient grammars, never
+// exercises the partial-failure path this indirection lets tests drive).
+var parseChatResponse = llamacppshim.ParseChatResponse
+
 func (p *chatOutputParser) Push(piece string, partial bool) (textDelta, thinkingDelta string, toolCalls []llama.ToolCall, err error) {
 	if p == nil {
 		return piece, "", nil, nil
 	}
 	p.raw.WriteString(piece)
 	raw := p.raw.String()
-	parsed, err := llamacppshim.ParseChatResponse(raw, partial, p.syntax, p.reasoningFormat, p.parseToolCalls)
+	parsed, err := parseChatResponse(raw, partial, p.syntax, p.reasoningFormat, p.parseToolCalls)
 	if err != nil {
+		// Mid-stream, the accumulated output legitimately may not parse yet.
+		// llama.cpp's peg parser only recovers a partial parse when it made
+		// some progress (common/chat.cpp: `if (is_partial && result.end > 0)`);
+		// when a streamed fragment makes zero progress it throws
+		// "does not match the expected <format> format" even with is_partial=1.
+		// Do not fail the turn on that: keep accumulating and let a later parse
+		// (or the authoritative final partial=false parse) emit the cumulative
+		// delta. Only a failure on the final parse is fatal.
+		if partial {
+			slog.Debug("llamasession: tolerating partial chat-parse failure", "error", p.parseError(err, partial, raw))
+			return "", "", nil, nil
+		}
 		return "", "", nil, p.parseError(err, partial, raw)
 	}
 	textDelta = stringDelta(p.content, parsed.Content)

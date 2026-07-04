@@ -433,6 +433,15 @@ func (s *GenAISession) Generate(ctx context.Context, prompt string, opts Generat
 			}
 		}()
 	}
+	// Re-check after acquiring the lock and arming the cancel watcher: a context
+	// canceled during that setup window would otherwise reach the native
+	// generate call, where a per-generation cancel-flag reset can race the
+	// watcher's cancel. Skipping the native call when already canceled closes
+	// that window for the common pre-canceled path.
+	if err := ctx.Err(); err != nil {
+		close(done)
+		return GenAIResult{}, err
+	}
 	rc := C.cx_genai_generate(
 		s.ptr,
 		cPrompt,
