@@ -67,6 +67,35 @@ func filterCandidates(
 	}
 
 	if len(candidates) == 0 {
+		// Distinguish a context-only shortfall — capable, name-matched models exist
+		// but every one advertises less context than the request needs (e.g. tool
+		// schemas pushed the requirement past a small model's window) — from a plain
+		// no-match, so the caller gets an actionable message instead of an opaque
+		// failure. A capable model whose context is 0 (unknown) is never rejected on
+		// context, so reaching here with capable models means they are all too small.
+		if req.ContextLength > 0 {
+			largest := 0
+			var largestName string
+			capable := false
+			for _, p := range providers {
+				if !capCheck(p) {
+					continue
+				}
+				if len(req.ModelNames) > 0 && !providerMatchesAnyName(p, req.ModelNames) {
+					continue
+				}
+				capable = true
+				if cl := p.GetContextLength(); cl > largest {
+					largest = cl
+					largestName = p.ModelName()
+				}
+			}
+			if capable && largest > 0 && largest < req.ContextLength {
+				return nil, fmt.Errorf("%w: request needs %d tokens of context but the largest available model %q provides only %d; use a larger-context model or reduce the request size (fewer tools or shorter history)",
+					ErrNoSatisfactoryModel, req.ContextLength, largestName, largest)
+			}
+		}
+
 		var builder strings.Builder
 
 		builder.WriteString("no models matched requirements:\n")
@@ -84,6 +113,20 @@ func filterCandidates(
 	}
 
 	return candidates, nil
+}
+
+// providerMatchesAnyName reports whether p's model name matches any of names,
+// comparing both the full name and the normalized form (the same match rule the
+// candidate filter uses, minus its per-name priority ordering).
+func providerMatchesAnyName(p libmodelprovider.Provider, names []string) bool {
+	full := p.ModelName()
+	normalized := NormalizeModelName(full)
+	for _, name := range names {
+		if full == name || normalized == NormalizeModelName(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // validateProvider checks if a provider meets requirements.

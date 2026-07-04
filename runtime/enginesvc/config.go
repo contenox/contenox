@@ -21,6 +21,14 @@ type Config struct {
 	AltDefaultModel    string
 	AltDefaultProvider string
 
+	// ReadinessDefaultModel/ReadinessDefaultProvider are effective defaults to
+	// credit during readiness evaluation when the persisted KV config leaves them
+	// unset — e.g. the CLI's --model/--provider flags, which configure a single
+	// invocation without writing config. Empty means "no override"; server/ACP/
+	// editor paths leave these blank and rely solely on persisted config.
+	ReadinessDefaultModel    string
+	ReadinessDefaultProvider string
+
 	ContextLength int
 
 	NoDeleteModels bool

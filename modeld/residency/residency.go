@@ -469,7 +469,12 @@ func DeriveEvictionBudget(windowTokens, slidingWindowTokens, blockSize int) Evic
 	}
 	sinks := alignUp(windowTokens/16, blockSize)
 	recent := alignUp(windowTokens/4, blockSize)
-	maxTokens := windowTokens
+	// MaxTokens feeds block-based caches (OpenVINO's CacheEvictionConfig.max_cache_size),
+	// which reject a value that is not a multiple of the block size. Align down so the
+	// hot budget stays within the served/physical window; the guard below keeps it above
+	// the sink+recent floor. sinks, recent, and blockSize are all block multiples, so the
+	// guarded value is aligned too.
+	maxTokens := alignDown(windowTokens, blockSize)
 	if maxTokens <= sinks+recent {
 		maxTokens = sinks + recent + blockSize
 	}
@@ -481,6 +486,13 @@ func alignUp(n, block int) int {
 		return max(n, 1)
 	}
 	return max(((n+block-1)/block)*block, block)
+}
+
+func alignDown(n, block int) int {
+	if block <= 1 {
+		return n
+	}
+	return (n / block) * block
 }
 
 // Capabilities describes what a backend adapter can actually execute.

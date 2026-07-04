@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/contenox/runtime/runtime/internal/llmresolver"
@@ -181,6 +182,52 @@ func TestUnit_ChatModelResolution(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestUnit_ChatModelResolution_ContextShortfallMessage covers B-004: a tool turn
+// whose context requirement exceeds every capable model's window must fail with an
+// actionable message (required vs largest-available context + remedy), not the
+// opaque generic listing. The error still wraps ErrNoSatisfactoryModel.
+func TestUnit_ChatModelResolution_ContextShortfallMessage(t *testing.T) {
+	getModels := func(providers []libmodelprovider.Provider) func(context.Context, ...string) ([]libmodelprovider.Provider, error) {
+		return func(context.Context, ...string) ([]libmodelprovider.Provider, error) { return providers, nil }
+	}
+
+	t.Run("capable model too small yields an actionable context message", func(t *testing.T) {
+		providers := []libmodelprovider.Provider{
+			&libmodelprovider.MockProvider{ID: "tiny", Name: "tinyllama", ContextLength: 2048, CanChatFlag: true, Backends: []string{"b1"}},
+		}
+		_, _, _, err := llmresolver.Chat(context.Background(), llmresolver.Request{ContextLength: 4940}, getModels(providers), llmresolver.Randomly)
+		if !errors.Is(err, llmresolver.ErrNoSatisfactoryModel) {
+			t.Fatalf("want ErrNoSatisfactoryModel, got %v", err)
+		}
+		for _, want := range []string{"4940", "tinyllama", "2048", "larger-context", "fewer tools"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error message missing %q:\n%s", want, err.Error())
+			}
+		}
+		if strings.Contains(err.Error(), "no models matched requirements") {
+			t.Errorf("expected the focused context message, got the generic listing:\n%s", err.Error())
+		}
+	})
+
+	t.Run("name mismatch falls through to the generic listing", func(t *testing.T) {
+		// A capable model with ample context but a name mismatch is not a context
+		// shortfall, so the generic diagnostic is returned, not the context message.
+		providers := []libmodelprovider.Provider{
+			&libmodelprovider.MockProvider{ID: "big", Name: "qwen3-4b", ContextLength: 8192, CanChatFlag: true, Backends: []string{"b1"}},
+		}
+		_, _, _, err := llmresolver.Chat(context.Background(), llmresolver.Request{ModelNames: []string{"does-not-exist"}, ContextLength: 4940}, getModels(providers), llmresolver.Randomly)
+		if !errors.Is(err, llmresolver.ErrNoSatisfactoryModel) {
+			t.Fatalf("want ErrNoSatisfactoryModel, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "no models matched requirements") {
+			t.Errorf("expected generic listing for a name mismatch:\n%s", err.Error())
+		}
+		if strings.Contains(err.Error(), "reduce the request size") {
+			t.Errorf("context remedy should not appear for a name mismatch:\n%s", err.Error())
+		}
+	})
 }
 
 func TestUnit_EmbedModelResolution(t *testing.T) {

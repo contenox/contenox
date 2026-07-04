@@ -177,6 +177,45 @@ func Evaluate(in Input) Result {
 	return r
 }
 
+// OverlayEffectiveDefaults credits an effective default model/provider that was
+// supplied out-of-band (e.g. the CLI's --model/--provider flags) but never
+// persisted to KV config. For each default the persisted config left empty, a
+// non-empty override fills it and clears the corresponding "missing default"
+// blocking issue, so a single-invocation flag is not rejected by preflight just
+// because it was never written to config. Empty overrides are ignored, and a
+// default already set by persisted config is never overwritten. Model/provider
+// availability against a live backend is still validated later at resolution time.
+func OverlayEffectiveDefaults(res Result, model, provider string) Result {
+	model = strings.TrimSpace(model)
+	provider = strings.TrimSpace(provider)
+
+	dropModel := res.DefaultModel == "" && model != ""
+	if dropModel {
+		res.DefaultModel = model
+	}
+	dropProvider := res.DefaultProvider == "" && provider != ""
+	if dropProvider {
+		res.DefaultProvider = provider
+	}
+	if !dropModel && !dropProvider {
+		return res
+	}
+
+	// Rebuild into a fresh slice so the caller's Issues backing array is untouched.
+	kept := make([]Issue, 0, len(res.Issues))
+	for _, iss := range res.Issues {
+		if dropModel && iss.Code == "missing_default_model" {
+			continue
+		}
+		if dropProvider && iss.Code == "missing_default_provider" {
+			continue
+		}
+		kept = append(kept, iss)
+	}
+	res.Issues = kept
+	return res
+}
+
 // ResolveMaxOutputTokens returns the known output-token ceiling for the active
 // provider/model from already-synced runtime state. It returns 0 when unknown.
 func ResolveMaxOutputTokens(states []statetype.BackendRuntimeState, provider, model string) int {

@@ -61,23 +61,45 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		askApproval = NewCLIAskApproval(os.Stderr)
 	}
 
+	readinessModel, readinessProvider := readinessDefaults(opts)
+
 	return enginesvc.Build(ctx, db, enginesvc.Config{
-		DefaultModel:       opts.EffectiveDefaultModel,
-		DefaultProvider:    opts.EffectiveDefaultProvider,
-		AltDefaultModel:    opts.EffectiveAltDefaultModel,
-		AltDefaultProvider: opts.EffectiveAltDefaultProvider,
-		ContextLength:      opts.EffectiveContext,
-		NoDeleteModels:     opts.EffectiveNoDeleteModels,
-		LocalTools:         tools,
-		EnableHITL:         opts.EffectiveHITL,
-		AskApproval:        askApproval,
-		Tracker:            tracker,
-		Tracing:            opts.EffectiveTracing,
-		SkipBackendCycle:   opts.EffectiveSkipBackendCycle,
-		WorkspaceID:        ResolveWorkspaceID(opts.ContenoxDir),
-		HITLPolicySource:   hitlPolicySource(opts.ContenoxDir),
-		TaskEventSink:      opts.EffectiveTaskEventSink,
+		DefaultModel:             opts.EffectiveDefaultModel,
+		DefaultProvider:          opts.EffectiveDefaultProvider,
+		AltDefaultModel:          opts.EffectiveAltDefaultModel,
+		AltDefaultProvider:       opts.EffectiveAltDefaultProvider,
+		ReadinessDefaultModel:    readinessModel,
+		ReadinessDefaultProvider: readinessProvider,
+		ContextLength:            opts.EffectiveContext,
+		NoDeleteModels:           opts.EffectiveNoDeleteModels,
+		LocalTools:               tools,
+		EnableHITL:               opts.EffectiveHITL,
+		AskApproval:              askApproval,
+		Tracker:                  tracker,
+		Tracing:                  opts.EffectiveTracing,
+		SkipBackendCycle:         opts.EffectiveSkipBackendCycle,
+		WorkspaceID:              ResolveWorkspaceID(opts.ContenoxDir),
+		HITLPolicySource:         hitlPolicySource(opts.ContenoxDir),
+		TaskEventSink:            opts.EffectiveTaskEventSink,
 	})
+}
+
+// readinessDefaults derives the effective default model/provider to credit during
+// setup preflight when they were supplied via --model/--provider but never written
+// to KV config. Only values that came from an explicit flag are credited: a model
+// equal to the hardcoded fallback (with no persisted config) is treated as unset,
+// matching the flag-vs-config precedence in cli.go/run_cmd.go. When persisted config
+// already provides a value, the setup check sees it directly and no override is needed.
+func readinessDefaults(opts chatOpts) (model, provider string) {
+	if opts.EffectiveConfiguredModel == "" &&
+		opts.EffectiveDefaultModel != "" &&
+		opts.EffectiveDefaultModel != defaultModel {
+		model = opts.EffectiveDefaultModel
+	}
+	if opts.EffectiveConfiguredProvider == "" && opts.EffectiveDefaultProvider != "" {
+		provider = opts.EffectiveDefaultProvider
+	}
+	return model, provider
 }
 
 // hitlPolicySource builds the CLI's HITL policy lookup: the workspace .contenox

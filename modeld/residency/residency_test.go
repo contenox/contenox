@@ -277,6 +277,40 @@ func TestUnit_DeriveEvictionBudget(t *testing.T) {
 	}
 }
 
+// TestUnit_DeriveEvictionBudget_BlockAlignsMaxTokens is the B-003 regression: a
+// served window that is not a multiple of the block size must still yield a
+// block-aligned MaxTokens, because OpenVINO GenAI rejects a
+// CacheEvictionConfig.max_cache_size that is not a multiple of the block size.
+// MaxTokens is aligned down so it stays within the served window.
+func TestUnit_DeriveEvictionBudget_BlockAlignsMaxTokens(t *testing.T) {
+	const block = 32
+	// Includes the 4940-token turn from the stress run plus other non-aligned windows.
+	for _, window := range []int{129, 200, 2000, 4940, 8191} {
+		b := DeriveEvictionBudget(window, 0, block)
+		if !b.Valid() {
+			t.Fatalf("window=%d: budget not valid: %+v", window, b)
+		}
+		if b.MaxTokens%block != 0 {
+			t.Errorf("window=%d: MaxTokens=%d not a multiple of block %d", window, b.MaxTokens, block)
+		}
+		if b.SinkTokens%block != 0 || b.RecentTokens%block != 0 {
+			t.Errorf("window=%d: sink/recent not block-aligned: %+v", window, b)
+		}
+		if b.MaxTokens > window {
+			t.Errorf("window=%d: MaxTokens=%d exceeds served window", window, b.MaxTokens)
+		}
+	}
+
+	// A non-aligned sliding-window span must also produce an aligned MaxTokens.
+	swa := DeriveEvictionBudget(8192, 500, block)
+	if !swa.Valid() || swa.MaxTokens%block != 0 {
+		t.Fatalf("non-aligned SWA span must yield aligned MaxTokens: %+v", swa)
+	}
+	if swa.MaxTokens > 500 {
+		t.Errorf("SWA MaxTokens=%d exceeds the 500-token attention span", swa.MaxTokens)
+	}
+}
+
 func blockRanges(blocks []Block) []Range {
 	out := make([]Range, 0, len(blocks))
 	for _, b := range blocks {

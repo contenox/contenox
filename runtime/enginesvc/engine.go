@@ -12,6 +12,7 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/execservice"
 	"github.com/contenox/runtime/runtime/hitlservice"
+	"github.com/contenox/runtime/runtime/internal/setupcheck"
 	"github.com/contenox/runtime/runtime/internal/tools"
 	"github.com/contenox/runtime/runtime/llmrepo"
 	"github.com/contenox/runtime/runtime/localtools"
@@ -141,12 +142,23 @@ func Build(ctx context.Context, db libdbexec.DBManager, cfg Config) (*Engine, er
 	reachableEnd()
 
 	ss := stateservice.New(state, db, cfg.WorkspaceID)
-	res, err := ss.SetupStatus(ctx)
+	// setupStatus wraps the pure DB-config readiness check so that effective
+	// defaults supplied out-of-band (CLI --model/--provider) satisfy preflight
+	// even when they were never persisted to KV config. Both the build-time
+	// snapshot and the live recompute go through the same overlay.
+	setupStatus := func(ctx context.Context) (setupcheck.Result, error) {
+		r, err := ss.SetupStatus(ctx)
+		if err != nil {
+			return setupcheck.Result{}, err
+		}
+		return setupcheck.OverlayEffectiveDefaults(r, cfg.ReadinessDefaultModel, cfg.ReadinessDefaultProvider), nil
+	}
+	res, err := setupStatus(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("setup status failed: %w", err)
 	}
 	engine.SetupCheck = res
-	engine.SetupStatus = ss.SetupStatus
+	engine.SetupStatus = setupStatus
 
 	tokenizer := ollamatokenizer.NewEstimateTokenizer()
 
