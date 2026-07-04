@@ -411,8 +411,10 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 	if suffixManifest.TotalBytes == 0 {
 		suffixManifest.TotalBytes = len(s.stable) + len(suffix.Text)
 	}
-	suffixText := suffix.Text
 	volatileMsgs := volatileMessagesFromManifest(suffix.Text, suffixManifest)
+
+	addSpecial := s.prefixLen == 0 && suffix.Manifest.AddBOS
+	var tokens []int
 	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
 		all := append(append([]ovsession.ChatMessage{}, s.stableMsgs...), volatileMsgs...)
 		// Thinking/effort controls ride the generation-prompt render as
@@ -422,16 +424,35 @@ func (s *genaiSession) PrefillSuffix(ctx context.Context, suffix transport.Suffi
 		if err != nil {
 			return transport.SuffixStatus{}, fmt.Errorf("openvino: apply full chat template: %w", err)
 		}
-		if !strings.HasPrefix(rendered, s.prefixText) {
-			return transport.SuffixStatus{}, contextasm.NewManifestMismatchError("model template is not prefix-stable across the suffix")
+		fullToks, err := s.tokenize(ctx, rendered, suffix.Manifest.AddBOS)
+		if err != nil {
+			return transport.SuffixStatus{}, fmt.Errorf("openvino: tokenize prompt: %w", err)
 		}
-		suffixText = rendered[len(s.prefixText):]
-	}
-
-	addSpecial := s.prefixLen == 0 && suffix.Manifest.AddBOS
-	tokens, err := s.tokenize(ctx, suffixText, addSpecial)
-	if err != nil {
-		return transport.SuffixStatus{}, fmt.Errorf("openvino: tokenize suffix: %w", err)
+		// Reconcile at the token level against the resident stable region instead of
+		// byte-matching a separately rendered stable prefix. Some model templates are
+		// not prefix-stable (e.g. phi-4-mini appends an end-of-text marker to a
+		// system-only render), which byte-matching fatally rejected. Match only the
+		// stable region so accumulated volatile turns are preserved; drop just a
+		// diverging stable tail, then append this turn's volatile. prefillResidentLocked
+		// re-prefills the reconciled token list, so the physical KV self-corrects.
+		stableEnd := s.prefixLen
+		if stableEnd > len(s.resident) {
+			stableEnd = len(s.resident)
+		}
+		stableShared := sessionkit.CommonPrefixLen(s.resident[:stableEnd], fullToks)
+		if stableShared < s.prefixLen {
+			s.clearColdStoreLocked()
+			s.resident = s.resident[:stableShared]
+			s.prefixLen = stableShared
+			s.prefixText = ""
+		}
+		tokens = fullToks[stableShared:]
+	} else {
+		toks, err := s.tokenize(ctx, suffix.Text, addSpecial)
+		if err != nil {
+			return transport.SuffixStatus{}, fmt.Errorf("openvino: tokenize suffix: %w", err)
+		}
+		tokens = toks
 	}
 	// Residency driver: when the suffix would overflow the hot window and a cold
 	// store is available, park evictable ranges to host KV to make room instead

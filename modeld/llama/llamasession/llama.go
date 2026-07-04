@@ -408,25 +408,60 @@ func (s *session) PrefillSuffix(ctx context.Context, suffix llama.SuffixInput) (
 		return llama.SuffixStatus{}, llama.NewManifestMismatchError("stable prefix changed between EnsurePrefix and PrefillSuffix")
 	}
 	volatileMsgs := volatileMessages(suffix.Text, suffix.Manifest)
-	suffixText := suffix.Text
+
+	// Reconcile against the resident tape at the token level instead of byte-
+	// matching a separately rendered stable prefix. Some model templates are not
+	// prefix-stable: rendering the stable messages alone produces a different
+	// string than the head of the full render — e.g. phi-4-mini appends an
+	// end-of-text marker to a system-only render. Byte-matching those fatally
+	// rejected the turn. Instead, render the whole conversation, tokenize it, and
+	// keep the longest shared token prefix already resident; the leftover tokens
+	// (including any stray marker from the isolated stable render) are diffed away
+	// and re-prefilled. This is the template-agnostic definition of prefix caching
+	// and never depends on the template being prefix-additive per message.
+	var stoks []int
 	if len(s.stableMsgs)+len(volatileMsgs) > 0 {
 		all := append(append([]chatTemplateMessage{}, s.stableMsgs...), volatileMsgs...)
 		rendered, err := s.renderTemplateForDecode(all, s.tools, suffix.EnableThinking, suffix.ReasoningEffort)
 		if err != nil {
 			return llama.SuffixStatus{}, fmt.Errorf("llamasession: apply chat template: %w", err)
 		}
-		full := rendered.Prompt
-		if !strings.HasPrefix(full, s.prefixText) {
-			return llama.SuffixStatus{}, llama.NewManifestMismatchError("model template is not prefix-stable across the suffix")
+		fullToks, err := s.tokenize(rendered.Prompt, s.addBOS)
+		if err != nil {
+			return llama.SuffixStatus{}, fmt.Errorf("llamasession: tokenize prompt: %w", err)
 		}
-		suffixText = full[len(s.prefixText):]
 		s.chatSyntax = rendered.Syntax
-	}
 
-	addSpecial := s.prefixLen == 0 && s.addBOS
-	stoks, err := s.tokenize(suffixText, addSpecial)
-	if err != nil {
-		return llama.SuffixStatus{}, fmt.Errorf("llamasession: tokenize suffix: %w", err)
+		// This turn's new tokens are the full render minus the stable prefix already
+		// resident. Match against the resident *stable region* (resident[:prefixLen]),
+		// not the whole tape: volatile turns accumulated by earlier PrefillSuffix calls
+		// must be preserved and appended to. Only a diverging stable *tail* is dropped
+		// — e.g. the end-of-text marker phi-4-mini appends to a system-only render,
+		// which never appears mid-conversation. This keeps prefixLen honest (residency
+		// treats the true stable tokens as sinks) without a prefix-stable template
+		// assumption.
+		stableEnd := s.prefixLen
+		if stableEnd > len(s.resident) {
+			stableEnd = len(s.resident)
+		}
+		stableShared := sessionkit.CommonPrefixLen(s.resident[:stableEnd], fullToks)
+		if stableShared < s.prefixLen {
+			if err := s.removeKV(stableShared, -1); err != nil {
+				return llama.SuffixStatus{}, s.fatalizeLocked(err)
+			}
+			s.clearColdStoreLocked()
+			s.resident = s.resident[:stableShared]
+			s.prefixLen = stableShared
+			s.prefixText = ""
+		}
+		stoks = fullToks[stableShared:]
+	} else {
+		addSpecial := s.prefixLen == 0 && s.addBOS
+		toks, err := s.tokenize(suffix.Text, addSpecial)
+		if err != nil {
+			return llama.SuffixStatus{}, fmt.Errorf("llamasession: tokenize suffix: %w", err)
+		}
+		stoks = toks
 	}
 	// Honest gate at the logical budget (hot window + cold budget when cold KV
 	// is enabled): inputs within it are served by streaming below; beyond it is
