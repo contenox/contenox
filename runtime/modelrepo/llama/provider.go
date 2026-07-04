@@ -113,20 +113,19 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		profileID = p.name
 	}
 	baseCfg := profile.config()
-	requestedCtx := modelrepo.RequestedContextLengthFromContext(ctx)
-	explicitCtx := profile.explicitRuntimeContext() || requestedCtx > 0
+	// Only a genuine, user-set context pin (profile runtime.num_ctx or
+	// CONTENOX_LLAMA_CTX) fixes the window from the runtime side. A per-request
+	// prompt-size requirement is NOT a pin: the served window and GPU offload are
+	// modeld's to resolve live from hardware telemetry. The runtime must never turn
+	// a prompt requirement into an explicit num_ctx, nor bake modeld's own Describe
+	// answers (effective context, resolved GPU layers) back into the open request —
+	// doing so froze sessions at a stale, under-memory-pressure window and bypassed
+	// modeld's usable-context floor (see capacity.HardContextLimit).
+	explicitCtx := profile.explicitRuntimeContext()
 	cfg := baseCfg
-	if requestedCtx > 0 {
-		cfg.NumCtx = requestedCtx
-		cfg = normalizeConfig(cfg)
-	} else if !explicitCtx {
+	if !explicitCtx {
 		// Auto context: NumCtx stays 0 end-to-end so modeld's authoritative,
 		// post-eviction Resolve() computes the window fresh at OpenSession.
-		// Pre-clamping to the advertised trained ceiling here would turn the
-		// auto request into a concrete one — and any concrete value derived
-		// from a Describe taken while another session was still resident
-		// becomes a stale ceiling the real open is then frozen at. modeld's
-		// ModelMaxCtx clamp enforces the trained ceiling regardless.
 		cfg.NumCtx = 0
 		cfg = normalizeConfig(cfg)
 	} else if p.caps.ContextLength > 0 {
@@ -252,14 +251,17 @@ func backendVersionFromModelInfo(info transport.ModelInfo) string {
 	}
 }
 
+// applyModeldInfoToConfig clamps a genuine, user-pinned num_ctx down to what
+// modeld reports it can actually serve, so an over-large explicit pin becomes a
+// served window instead of a hard open-time error. It runs only for a real user
+// pin, never for an auto request. It deliberately does NOT touch GPU offload:
+// layer count is modeld's to resolve live from hardware, and baking a Describe-time
+// value back in pins the session to a stale, encumbered snapshot.
 func applyModeldInfoToConfig(cfg Config, info transport.ModelInfo) Config {
 	if info.EffectiveContext > 0 {
 		cfg = clampContextForModeld(cfg, info.EffectiveContext)
 	}
 	cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
-	if info.RequestedGpuLayers > 0 || info.ResolvedGpuLayers > 0 {
-		cfg.NumGpuLayers = info.ResolvedGpuLayers
-	}
 	return cfg
 }
 

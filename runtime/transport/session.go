@@ -528,6 +528,7 @@ var (
 	ErrModelSwitchRequired = errors.New("modeld active model slot must be switched")
 	ErrModelLoadFailed     = errors.New("modeld failed to load model")
 	ErrInsufficientMemory  = errors.New("insufficient memory for requested model")
+	ErrDeviceBusy          = errors.New("modeld accelerator device is busy")
 	ErrSlotGenerationStale = errors.New("stale modeld slot generation")
 	// ErrBackendMismatch means the requested model Type is not the backend this
 	// daemon serves (e.g. a llama model requested from an openvino-mode modeld).

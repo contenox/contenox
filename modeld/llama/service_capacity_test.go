@@ -146,6 +146,106 @@ func TestUnit_ServiceOpenSessionRejectsOversizedContextBeforeBackend(t *testing.
 	}
 }
 
+// TestUnit_ServiceRefusesAutoSessionBelowUsableContextFloor is the regression
+// guard for the sub-usable-window bug: under memory pressure the resolver used to
+// stop shedding the instant context went positive and open sessions of a few
+// hundred tokens — a window too small to hold a system prompt, so the model
+// silently degraded (wrong language, ignored instructions). With the default
+// floor, an auto session whose best achievable window is below the floor must be
+// refused loudly, and a session with headroom must clear the floor and resolve.
+func TestUnit_ServiceRefusesAutoSessionBelowUsableContextFloor(t *testing.T) {
+	path := writeTestGGUF(t, 32768) // model max well above the floor
+
+	// Tight budget: leaves room for a positive but sub-floor KV window.
+	tight := NewService(
+		WithMemorySource(staticMemory(3<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+	if _, err := tight.resolveConfig(transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"}, // NumCtx=0 => auto, modeld owns the window
+	}); !errors.Is(err, transport.ErrContextOverflow) {
+		t.Fatalf("tight auto resolveConfig = %v, want ErrContextOverflow (refuse below usable floor)", err)
+	}
+
+	// Comfortable budget: the auto window clears the floor and resolves.
+	roomy := NewService(
+		WithMemorySource(staticMemory(256<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+	cfg, err := roomy.resolveConfig(transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("roomy auto resolveConfig: %v", err)
+	}
+	if cfg.NumCtx < DefaultMinHotContextTokens {
+		t.Fatalf("roomy auto NumCtx = %d, want >= usable floor %d", cfg.NumCtx, DefaultMinHotContextTokens)
+	}
+}
+
+func TestUnit_ServiceMinHotContextCanBeDisabled(t *testing.T) {
+	path := writeTestGGUF(t, 32768)
+	svc := NewService(
+		WithMemorySource(staticMemory(3<<20)),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{MinHotContextTokens: -1, HeadroomFrac: 0.1}),
+	)
+	cfg, err := svc.resolveConfig(transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("resolveConfig with floor disabled: %v", err)
+	}
+	if cfg.NumCtx <= 0 || cfg.NumCtx >= DefaultMinHotContextTokens {
+		t.Fatalf("NumCtx with floor disabled = %d, want positive sub-default window", cfg.NumCtx)
+	}
+}
+
+func TestUnit_ServiceRefusesSubFloorAcceleratorFitInsteadOfSilentCPUFallback(t *testing.T) {
+	t.Setenv("CONTENOX_LLAMA_GPU_COMPUTE_RESERVE", "1MiB")
+	path := writeTestGGUF(t, 32768)
+	svc := NewService(
+		WithMemorySource(staticSnapshot{snap: capacity.DeviceSnapshot{
+			Kind:       "gpu",
+			DeviceID:   "test-gpu",
+			TotalBytes: 4 << 20,
+			FreeBytes:  4 << 20,
+		}}),
+		WithHostMemorySource(staticMemory(0)),
+		WithCapacityPolicy(capacity.Policy{HeadroomFrac: 0.1}),
+	)
+
+	info, err := svc.Describe(t.Context(), transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	})
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.ResolvedGpuLayers <= 0 {
+		t.Fatalf("ResolvedGpuLayers = %d, want best positive accelerator fit", info.ResolvedGpuLayers)
+	}
+	if info.HotContextTokens >= DefaultMinHotContextTokens {
+		t.Fatalf("HotContextTokens = %d, want sub-floor fit", info.HotContextTokens)
+	}
+	if _, err := svc.resolveConfig(transport.OpenSessionRequest{
+		Type:   "llama",
+		Path:   path,
+		Config: transport.Config{KVCacheType: "f16"},
+	}); !errors.Is(err, transport.ErrContextOverflow) {
+		t.Fatalf("resolveConfig = %v, want ErrContextOverflow instead of silent CPU fallback", err)
+	}
+}
+
 func TestUnit_ServiceResolveConfigAppliesDaemonEnvOverrides(t *testing.T) {
 	t.Setenv("CONTENOX_LLAMA_GPU_LAYERS", "999")
 	t.Setenv("CONTENOX_LLAMA_CTX", "16384")

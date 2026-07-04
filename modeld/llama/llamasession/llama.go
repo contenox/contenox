@@ -1111,6 +1111,16 @@ func (p *chatOutputParser) Push(piece string, partial bool) (textDelta, thinking
 			slog.Debug("llamasession: tolerating partial chat-parse failure", "error", p.parseError(err, partial, raw))
 			return "", "", nil, nil
 		}
+		if p.parseToolCalls {
+			textDelta, thinkingDelta, toolCalls, ok, fallbackErr := p.qwenToolCallFallback(raw)
+			if fallbackErr != nil {
+				return "", "", nil, fmt.Errorf("%w; qwen tool-call fallback failed: %v", p.parseError(err, partial, raw), fallbackErr)
+			}
+			if ok {
+				slog.Debug("llamasession: recovered qwen tool-call output after common chat parse failure", "error", p.parseError(err, partial, raw))
+				return textDelta, thinkingDelta, toolCalls, nil
+			}
+		}
 		return "", "", nil, p.parseError(err, partial, raw)
 	}
 	textDelta = stringDelta(p.content, parsed.Content)
@@ -1123,6 +1133,33 @@ func (p *chatOutputParser) Push(piece string, partial bool) (textDelta, thinking
 		}
 	}
 	return textDelta, thinkingDelta, toolCalls, nil
+}
+
+func (p *chatOutputParser) qwenToolCallFallback(raw string) (textDelta, thinkingDelta string, toolCalls []llama.ToolCall, ok bool, err error) {
+	if !strings.Contains(raw, "<tool_call>") {
+		return "", "", nil, false, nil
+	}
+	chunk, err := sessionkit.StructuredToolCallChunk(raw)
+	if err != nil {
+		return "", "", nil, false, err
+	}
+	if len(chunk.ToolCalls) == 0 {
+		return "", "", nil, false, nil
+	}
+	content := chunk.Text
+	thinking := ""
+	if strings.TrimSpace(content) != "" {
+		parsed, err := parseChatResponse(content, false, p.syntax, p.reasoningFormat, false)
+		if err == nil {
+			content = parsed.Content
+			thinking = parsed.Thinking
+		}
+	}
+	textDelta = stringDelta(p.content, content)
+	thinkingDelta = stringDelta(p.thinking, thinking)
+	p.content = content
+	p.thinking = thinking
+	return textDelta, thinkingDelta, chunk.ToolCalls, true, nil
 }
 
 const maxChatParsePreviewRunes = 512

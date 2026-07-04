@@ -31,6 +31,7 @@ var sentinels = []struct {
 	{"model_busy", codes.FailedPrecondition, transport.ErrModelBusy},
 	{"model_not_active", codes.FailedPrecondition, transport.ErrModelNotActive},
 	{"model_switch_required", codes.FailedPrecondition, transport.ErrModelSwitchRequired},
+	{"device_busy", codes.ResourceExhausted, transport.ErrDeviceBusy},
 	{"model_load_failed", codes.Internal, transport.ErrModelLoadFailed},
 	{"insufficient_memory", codes.ResourceExhausted, transport.ErrInsufficientMemory},
 	{"slot_generation_stale", codes.FailedPrecondition, transport.ErrSlotGenerationStale},

@@ -28,7 +28,9 @@ func formatPolicy(policy capacity.Policy) string {
 		headroom = fmt.Sprintf("%.2f", policy.HeadroomFrac)
 	}
 	minHot := "unset"
-	if policy.MinHotContextTokens > 0 {
+	if policy.MinHotContextTokens < 0 {
+		minHot = "off"
+	} else if policy.MinHotContextTokens > 0 {
 		minHot = strconv.Itoa(policy.MinHotContextTokens)
 	}
 	return fmt.Sprintf("max_resident=%s reserve_free=%s host_cold=%s min_hot_context=%s headroom=%s",
@@ -52,6 +54,7 @@ func logRuntimeEnv() {
 		"CONTENOX_MODELD_MEM_COLD",
 		"CONTENOX_MODELD_MEM_HEADROOM",
 		"CONTENOX_MODELD_MIN_HOT_CONTEXT",
+		"CONTENOX_MODELD_DEVICE_LEASE_DIR",
 		"CONTENOX_MODELD_IDLE_TTL",
 	} {
 		if value := os.Getenv(name); value != "" {

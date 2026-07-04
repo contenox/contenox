@@ -336,7 +336,7 @@ type Policy struct {
 	MaxResidentBytes    int64   `json:"max_resident_bytes,omitempty"`
 	MinFreeBytes        int64   `json:"min_free_bytes,omitempty"`
 	HostColdBudgetBytes int64   `json:"host_cold_budget_bytes,omitempty"`
-	MinHotContextTokens int     `json:"min_hot_context_tokens,omitempty"`
+	MinHotContextTokens int     `json:"min_hot_context_tokens,omitempty"` // 0 = backend default, <0 = explicitly disabled
 	HeadroomFrac        float64 `json:"headroom_frac,omitempty"`
 }
 
@@ -389,7 +389,7 @@ func LoadPolicy(dataRoot string) Policy {
 				MaxResidentBytes    int64   `json:"max_resident_bytes"`
 				MinFreeBytes        int64   `json:"min_free_bytes"`
 				HostColdBudgetBytes int64   `json:"host_cold_budget_bytes"`
-				MinHotContextTokens int     `json:"min_hot_context_tokens"`
+				MinHotContextTokens *int    `json:"min_hot_context_tokens"`
 				MaxResident         string  `json:"max_resident"`
 				ReserveFree         string  `json:"reserve_free"`
 				HostColdBudget      string  `json:"host_cold_budget"`
@@ -404,7 +404,13 @@ func LoadPolicy(dataRoot string) Policy {
 			p.MaxResidentBytes = raw.Memory.MaxResidentBytes
 			p.MinFreeBytes = raw.Memory.MinFreeBytes
 			p.HostColdBudgetBytes = raw.Memory.HostColdBudgetBytes
-			p.MinHotContextTokens = raw.Memory.MinHotContextTokens
+			if raw.Memory.MinHotContextTokens != nil {
+				if *raw.Memory.MinHotContextTokens <= 0 {
+					p.MinHotContextTokens = -1 // explicit off; zero value means unset/default.
+				} else {
+					p.MinHotContextTokens = *raw.Memory.MinHotContextTokens
+				}
+			}
 			p.HeadroomFrac = raw.Memory.HeadroomFrac
 			applyBytesSetting("modeld.json memory.max_resident", raw.Memory.MaxResident, &p.MaxResidentBytes)
 			applyBytesSetting("modeld.json memory.reserve_free", raw.Memory.ReserveFree, &p.MinFreeBytes)
@@ -422,10 +428,14 @@ func LoadPolicy(dataRoot string) Policy {
 		}
 	}
 	if v := os.Getenv("CONTENOX_MODELD_MIN_HOT_CONTEXT"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			p.MinHotContextTokens = n
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			if n == 0 {
+				p.MinHotContextTokens = -1 // explicit off; zero value means unset/default.
+			} else {
+				p.MinHotContextTokens = n
+			}
 		} else {
-			slog.Warn("memory setting ignored: min hot context must be a positive integer", "setting", "CONTENOX_MODELD_MIN_HOT_CONTEXT", "value", v)
+			slog.Warn("memory setting ignored: min hot context must be a non-negative integer", "setting", "CONTENOX_MODELD_MIN_HOT_CONTEXT", "value", v)
 		}
 	}
 	return p

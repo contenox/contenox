@@ -83,8 +83,8 @@ func TestSystem_Ollama_Tools(t *testing.T) {
 		resp, err := chatClient.Chat(ctx, messages, modelrepo.WithTools(tools...))
 
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp.Message.Content)
 		assert.Equal(t, "assistant", resp.Message.Role)
+		assertResponseTextOrToolCalls(t, resp)
 
 		t.Logf("Response: %s", resp.Message.Content)
 		if len(resp.ToolCalls) > 0 {
@@ -148,9 +148,25 @@ func TestSystem_Ollama_Tools(t *testing.T) {
 
 		resp, err := chatClient.Chat(ctx, messages, modelrepo.WithTool(tool))
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp.Message.Content)
 		assert.Equal(t, "assistant", resp.Message.Role)
+		assertResponseTextOrToolCalls(t, resp)
 
 		t.Logf("Response with single tool: %s", resp.Message.Content)
+		if len(resp.ToolCalls) > 0 {
+			call := resp.ToolCalls[0]
+			assert.Equal(t, "function", call.Type)
+			assert.Equal(t, "get_time", call.Function.Name)
+			var args map[string]interface{}
+			err := json.Unmarshal([]byte(call.Function.Arguments), &args)
+			assert.NoError(t, err)
+			assert.Contains(t, args, "timezone")
+		}
 	})
+}
+
+func assertResponseTextOrToolCalls(t *testing.T, resp modelrepo.ChatResult) {
+	t.Helper()
+	if resp.Message.Content == "" {
+		require.NotEmpty(t, resp.ToolCalls, "ollama may return empty assistant content when the model emits tool calls")
+	}
 }

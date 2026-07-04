@@ -162,6 +162,15 @@ func (s *Service) resolveSession(req transport.OpenSessionRequest) (sessionPlan,
 			transport.ErrContextOverflow, info.RequestedGpuLayers, info.DeviceKind, info.Reason)
 	}
 	if cfg.NumCtx <= 0 {
+		// Auto mode: modeld owns the window. describe() already shed GPU layers to
+		// reach the usable-context floor when it could; if the best achievable hot
+		// window is still below the floor, refuse loudly instead of opening a session
+		// too small to hold a prompt (which degrades into incoherent output).
+		floor := effectiveMinHotContext(s.policy.MinHotContextTokens, info.ModelMaxContext)
+		if info.HotContextTokens < floor {
+			return sessionPlan{}, fmt.Errorf("%w: model %q fits only %d usable context tokens on the %s device after weights — below the %d-token minimum for a usable session; free device memory, use a smaller model, or lower CONTENOX_MODELD_MIN_HOT_CONTEXT",
+				transport.ErrContextOverflow, req.ModelName, info.HotContextTokens, info.DeviceKind, floor)
+		}
 		cfg.NumCtx = info.HotContextTokens
 		cfg.HotContextTokens = info.HotContextTokens
 		cfg.PlannerEffectiveContext = transport.ResolvePlannerEffectiveContext(cfg.PlannerEffectiveContext, cfg.NumCtx, info)
@@ -262,6 +271,11 @@ func (s *Service) describe(req transport.OpenSessionRequest) (transport.ModelInf
 	if err != nil {
 		return transport.ModelInfo{}, err
 	}
+	// Guarantee a usable auto window: resolveGPULayersForBudget sheds GPU layers to
+	// keep at least this many hot tokens instead of spending all VRAM on weights and
+	// leaving a sub-usable KV window. Capped by the model's trained ceiling; an
+	// explicit negative policy disables the floor for operator diagnostics.
+	policy.MinHotContextTokens = effectiveMinHotContext(policy.MinHotContextTokens, params.ContextLength)
 	weights := fileSize(req.Path)
 	layerKV := llamaLayerKVProfile(params, cfg.KVCacheType)
 	kvBytes := layerKV.DenseKVBytesPerToken()
@@ -428,6 +442,33 @@ func llamaGPUComputeReserveBytes(cfg transport.Config) int64 {
 // means "as many as fit"; it is large enough to exceed any real model's depth.
 const allGpuLayers = 999
 
+// DefaultMinHotContextTokens is the usable-context floor modeld guarantees for an
+// auto (unpinned) session. A chat model handed only a few hundred KV tokens
+// silently degrades — it cannot even hold a system prompt, so instruction
+// following collapses — so modeld prefers to shed GPU layers, trading some speed
+// for a usable window, and refuses only when even a minimal offload cannot reach
+// the floor. Operators override it with modeld.json memory.min_hot_context_tokens
+// or CONTENOX_MODELD_MIN_HOT_CONTEXT.
+const DefaultMinHotContextTokens = 4096
+
+// effectiveMinHotContext resolves the usable-context floor for a model: the
+// configured floor, or the default when unset (0), never above the model's own
+// trained ceiling so a small-context model stays servable. A negative configured
+// value means the operator explicitly disabled the floor.
+func effectiveMinHotContext(configured, modelMaxCtx int) int {
+	if configured < 0 {
+		return 0
+	}
+	floor := configured
+	if floor == 0 {
+		floor = DefaultMinHotContextTokens
+	}
+	if modelMaxCtx > 0 && floor > modelMaxCtx {
+		floor = modelMaxCtx
+	}
+	return floor
+}
+
 // autoGpuLayerCeiling is the offload ceiling modeld aims for once an accelerator
 // is detected: an explicit cap when the caller set one (model profile or
 // CONTENOX_LLAMA_GPU_LAYERS), otherwise all layers. resolveGPULayersForBudget
@@ -482,6 +523,10 @@ func resolveGPULayersForBudget(cfg transport.Config, params ggufParams, layerKV 
 		return slots
 	}
 	if fallbackSlots > 0 {
+		// Keep the best positive accelerator placement so the caller can report
+		// the truthful sub-floor fit and refuse loudly. Do not silently fall back
+		// to zero GPU layers here: that changes the served device class and must be
+		// an explicit operator choice (CONTENOX_LLAMA_GPU_LAYERS=0).
 		return fallbackSlots
 	}
 	return 0

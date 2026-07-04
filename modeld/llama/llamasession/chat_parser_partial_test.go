@@ -75,6 +75,37 @@ func TestUnit_ChatOutputParser_FinalParseErrorIsFatal(t *testing.T) {
 	}
 }
 
+func TestUnit_ChatOutputParser_FinalParseErrorFallsBackToQwenToolCallTags(t *testing.T) {
+	orig := parseChatResponse
+	t.Cleanup(func() { parseChatResponse = orig })
+	parseChatResponse = func(input string, _ bool, _ llamacppshim.ChatSyntax, _ string, parseTools bool) (llamacppshim.ChatParseResult, error) {
+		if parseTools {
+			return llamacppshim.ChatParseResult{}, errors.New("llamacppshim: common chat parse: The model produced output that does not match the expected peg-native format")
+		}
+		return llamacppshim.ChatParseResult{Content: input}, nil
+	}
+
+	p := &chatOutputParser{reasoningFormat: "deepseek", parseToolCalls: true}
+	raw := "<tool_call>\n{\"name\":\"echo\",\"arguments\":{\"input\":\"TOOL_STRICT_OK\"}}\n</tool_call>"
+	text, thinking, tools, err := p.Push(raw, false)
+	if err != nil {
+		t.Fatalf("final qwen tool-call fallback returned error: %v", err)
+	}
+	if text != "" || thinking != "" {
+		t.Fatalf("fallback emitted content: text=%q thinking=%q", text, thinking)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("tool calls = %+v, want one", tools)
+	}
+	call := tools[0]
+	if call.ID != "call_1" || call.Type != "function" || call.Function.Name != "echo" {
+		t.Fatalf("normalized tool call = %+v", call)
+	}
+	if call.Function.Arguments != `{"input":"TOOL_STRICT_OK"}` {
+		t.Fatalf("arguments = %q", call.Function.Arguments)
+	}
+}
+
 // TestUnit_ChatOutputParser_RealQwenStreamReconstructs streams a real captured
 // qwen3 completion (see TestSystem_LlamaChatParser_QwenThinkingStreamTolerated)
 // rune-by-rune through the actual CGo parser and asserts the turn never aborts

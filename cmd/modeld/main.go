@@ -29,6 +29,7 @@ import (
 
 	"github.com/contenox/runtime/liblease"
 	"github.com/contenox/runtime/modeld/capacity"
+	"github.com/contenox/runtime/modeld/devicelease"
 	"github.com/contenox/runtime/modeld/owner"
 	"github.com/contenox/runtime/modeld/slot"
 	transportgrpc "github.com/contenox/runtime/runtime/transport/grpc"
@@ -54,7 +55,7 @@ func run(args []string) error {
 	memMax := fs.String("mem-max", "", "maximum modeld resident memory budget (bytes or e.g. 8GiB)")
 	memReserve := fs.String("mem-reserve", "", "memory to leave free for desktop/other workloads (bytes or e.g. 2GiB)")
 	memCold := fs.String("mem-cold", "", "host-RAM KV cold-store budget (bytes or e.g. 16GiB)")
-	minHotContext := fs.Int("min-hot-context", 0, "minimum hot context tokens to prefer before reducing llama GPU layers (0 disables)")
+	minHotContext := fs.Int("min-hot-context", -1, "minimum hot context tokens to prefer before reducing llama GPU layers (unset uses default, 0 disables)")
 	idleTTL := fs.String("idle-ttl", "", "release the resident model after it sits idle this long, freeing device memory (e.g. 5m; 0/off disables; default 5m)")
 	asJSON := fs.Bool("json", false, "machine-readable JSON output (status)")
 	if err := fs.Parse(args); err != nil {
@@ -113,7 +114,7 @@ func resolvePolicy(dataRoot, memMax, memReserve, memCold string, minHotContext i
 		}
 		policy.HostColdBudgetBytes = v
 	}
-	if minHotContext > 0 {
+	if minHotContext >= 0 {
 		policy.MinHotContextTokens = minHotContext
 	}
 	return policy, nil
@@ -207,6 +208,13 @@ func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy 
 	// network round-trip. A build with no local backend still owns the lease and
 	// answers health probes so detection reports the daemon running.
 	svc, backend := selectBackend(policy)
+	svc = devicelease.New(svc,
+		devicelease.WithTTL(ttl),
+		devicelease.WithMeta(map[string]string{
+			"data_root": dataRoot,
+			"backend":   backend,
+		}),
+	)
 
 	o, err := owner.Join(ctx, owner.Config{LeasePath: leasePath, TTL: ttl, Endpoint: endpoint, Backend: backend})
 	if err != nil {

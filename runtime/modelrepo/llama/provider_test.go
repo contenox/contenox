@@ -80,7 +80,12 @@ func TestUnit_LlamaProvider_ModeldClampLeavesCapacitySafetyMargin(t *testing.T) 
 	}
 }
 
-func TestUnit_LlamaProvider_UsesResolvedAutoGpuLayersFromModeld(t *testing.T) {
+func TestUnit_LlamaProvider_NeverBakesGpuLayersFromModeld(t *testing.T) {
+	// GPU offload is modeld's to resolve live from hardware telemetry. Baking a
+	// Describe-time ResolvedGpuLayers into the open request pins the session to a
+	// stale, encumbered snapshot (see capacity.HardContextLimit) and — because it
+	// implies an explicit request — bypasses modeld's usable-context floor. Even
+	// for a genuine pinned num_ctx the runtime must leave GPU layers unset.
 	cfg := applyModeldInfoToConfig(Config{NumCtx: 8192}, transport.ModelInfo{
 		ModelMaxContext:         32768,
 		EffectiveContext:        8192,
@@ -88,8 +93,8 @@ func TestUnit_LlamaProvider_UsesResolvedAutoGpuLayersFromModeld(t *testing.T) {
 		RequestedGpuLayers:      0,
 		ResolvedGpuLayers:       27,
 	})
-	if cfg.NumGpuLayers != 27 {
-		t.Fatalf("NumGpuLayers = %d, want resolved auto offload count", cfg.NumGpuLayers)
+	if cfg.NumGpuLayers != 0 {
+		t.Fatalf("NumGpuLayers = %d, want 0 (modeld resolves GPU offload; the runtime never bakes it)", cfg.NumGpuLayers)
 	}
 	if cfg.PlannerEffectiveContext != 16384 {
 		t.Fatalf("PlannerEffectiveContext = %d, want modeld planner context", cfg.PlannerEffectiveContext)
@@ -151,7 +156,7 @@ func TestUnit_LlamaProvider_AutoContextStaysZeroWhenProfileOmitsNumCtx(t *testin
 	}
 }
 
-func TestUnit_LlamaProvider_RequestedContextOverridesAutoContext(t *testing.T) {
+func TestUnit_LlamaProvider_RequestedContextDoesNotPinAutoWindow(t *testing.T) {
 	old := sessionFactory
 	sessionFactory = nil
 	t.Cleanup(func() { sessionFactory = old })
@@ -174,18 +179,22 @@ func TestUnit_LlamaProvider_RequestedContextOverridesAutoContext(t *testing.T) {
 	}
 	serveLlamaModeldForTest(t, svc)
 
+	// A per-request prompt-size requirement is NOT a user pin. It must not turn the
+	// auto request into a concrete num_ctx — the window stays modeld's to resolve
+	// live at open, so the real session (and the Describe probe) go out with
+	// NumCtx=0. Pinning it here reintroduces the stale-window / floor-bypass bug.
 	ctx := modelrepo.WithRequestedContextLength(context.Background(), 8192)
 	got, err := newProvider("coder", root, modelrepo.CapabilityConfig{ContextLength: 32768}).GetChatConnection(ctx, "")
 	if err != nil {
 		t.Fatalf("GetChatConnection: %v", err)
 	}
 	c := got.(*client)
-	if c.cfg.NumCtx != 8192 {
-		t.Fatalf("NumCtx = %d, want requested context", c.cfg.NumCtx)
+	if c.cfg.NumCtx != 0 {
+		t.Fatalf("NumCtx = %d, want 0 (a prompt requirement must not pin the auto window)", c.cfg.NumCtx)
 	}
 	req := svc.lastDescribeRequest()
-	if req.Config.NumCtx != 8192 {
-		t.Fatalf("Describe request NumCtx = %d, want requested context", req.Config.NumCtx)
+	if req.Config.NumCtx != 0 {
+		t.Fatalf("Describe request NumCtx = %d, want 0 (auto)", req.Config.NumCtx)
 	}
 }
 

@@ -357,6 +357,23 @@ func TestUnit_LoadPolicy_FromConfigAndEnv(t *testing.T) {
 	}
 }
 
+func TestUnit_LoadPolicy_MinHotContextZeroDisables(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "modeld.json"), []byte(`{"memory":{"min_hot_context_tokens":0}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := LoadPolicy(dir)
+	if p.MinHotContextTokens >= 0 {
+		t.Fatalf("config MinHotContextTokens = %d, want explicit-off sentinel", p.MinHotContextTokens)
+	}
+
+	t.Setenv("CONTENOX_MODELD_MIN_HOT_CONTEXT", "0")
+	p = LoadPolicy(t.TempDir())
+	if p.MinHotContextTokens >= 0 {
+		t.Fatalf("env MinHotContextTokens = %d, want explicit-off sentinel", p.MinHotContextTokens)
+	}
+}
+
 func TestUnit_SystemRAM_ReportsPositive(t *testing.T) {
 	got, err := SystemRAM{}.FreeBytes()
 	if err != nil {

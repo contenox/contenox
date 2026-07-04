@@ -51,6 +51,9 @@ type Config struct {
 	// "openvino" / "none"), advertised via the lease so the runtime can tell which
 	// mode the daemon is in without a network round-trip.
 	Backend string
+	// Meta carries additional holder metadata for specialized leases. Endpoint
+	// and Backend, when set above, override same-named entries here.
+	Meta map[string]string
 }
 
 // EndpointMetaKey is the lease metadata key used to advertise the owner's
@@ -70,6 +73,11 @@ var (
 // omitted so a non-serving owner publishes no endpoint/backend.
 func leaseMeta(cfg Config) map[string]string {
 	meta := map[string]string{}
+	for k, v := range cfg.Meta {
+		if k != "" && v != "" {
+			meta[k] = v
+		}
+	}
 	if cfg.Endpoint != "" {
 		meta[EndpointMetaKey] = cfg.Endpoint
 	}
