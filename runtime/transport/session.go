@@ -341,7 +341,8 @@ type Session interface {
 }
 
 type SessionSnapshot struct {
-	State            []byte          `json:"state,omitempty"`
+	StateID          string          `json:"state_id,omitempty"`
+	State            []byte          `json:"-"`
 	ResidentTokens   int             `json:"resident_tokens,omitempty"`
 	PrefixTokens     int             `json:"prefix_tokens,omitempty"`
 	NumCtx           int             `json:"num_ctx,omitempty"`

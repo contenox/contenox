@@ -3,9 +3,13 @@ package slot
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
@@ -38,6 +42,7 @@ type Service struct {
 	idleTTL      time.Duration
 	lastActivity time.Time
 	now          func() time.Time
+	dataRoot     string
 }
 
 type activeSlot struct {
@@ -68,6 +73,10 @@ func WithOwner(owner string) Option {
 // WithBackend records the backend mode for Status.
 func WithBackend(backend string) Option {
 	return func(s *Service) { s.backendName = backend }
+}
+
+func WithDataRoot(root string) Option {
+	return func(s *Service) { s.dataRoot = root }
 }
 
 // WithIdleTTL sets how long a resident model may sit idle before the background
@@ -883,6 +892,14 @@ func (s *slotSession) ExplainContext() transport.ContextReport {
 	return out
 }
 
+func (s *slotSession) blobDir() string {
+	d := s.svc.dataRoot
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "modeld-blobs", s.svc.backendName)
+}
+
 func (s *slotSession) Snapshot(ctx context.Context) (transport.SessionSnapshot, error) {
 	if s.isClosed() {
 		return transport.SessionSnapshot{}, transport.ErrSessionClosed
@@ -893,12 +910,37 @@ func (s *slotSession) Snapshot(ctx context.Context) (transport.SessionSnapshot, 
 		out, err = sess.Snapshot(ctx)
 		return err
 	})
+	if err == nil && len(out.State) > 0 && s.svc.dataRoot != "" {
+		hash := sha256.Sum256(out.State)
+		stateID := hex.EncodeToString(hash[:])
+		dir := s.blobDir()
+		if err := os.MkdirAll(dir, 0700); err == nil {
+			path := filepath.Join(dir, stateID+".bin")
+			tmp := path + ".tmp"
+			if err := os.WriteFile(tmp, out.State, 0600); err == nil {
+				os.Rename(tmp, path)
+				out.StateID = stateID
+				out.State = nil
+			} else {
+				slog.Error("failed to write snapshot blob", "path", tmp, "err", err)
+			}
+		}
+	}
 	return out, err
 }
 
 func (s *slotSession) Restore(ctx context.Context, snap transport.SessionSnapshot) error {
 	if s.isClosed() {
 		return transport.ErrSessionClosed
+	}
+	if snap.StateID != "" && len(snap.State) == 0 && s.svc.dataRoot != "" {
+		path := filepath.Join(s.blobDir(), snap.StateID+".bin")
+		if data, err := os.ReadFile(path); err == nil {
+			snap.State = data
+		} else {
+			slog.Error("failed to read snapshot blob", "path", path, "err", err)
+			return fmt.Errorf("snapshot blob not found: %w", err)
+		}
 	}
 	return s.svc.withSession(ctx, s.generation, "restore", func(sess transport.Session) error {
 		return sess.Restore(ctx, snap)

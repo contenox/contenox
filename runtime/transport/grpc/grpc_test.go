@@ -120,8 +120,8 @@ type largeSnapshotSession struct {
 
 	snap transport.SessionSnapshot
 
-	mu          sync.Mutex
-	restoredLen int
+	mu         sync.Mutex
+	restoredID string
 }
 
 func transportToolCall(id, name, arguments string) transport.ToolCall {
@@ -170,14 +170,14 @@ func (s *largeSnapshotSession) Snapshot(context.Context) (transport.SessionSnaps
 func (s *largeSnapshotSession) Restore(_ context.Context, snap transport.SessionSnapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.restoredLen = len(snap.State)
+	s.restoredID = snap.StateID
 	return nil
 }
 
-func (s *largeSnapshotSession) restoredStateLen() int {
+func (s *largeSnapshotSession) restoredStateID() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.restoredLen
+	return s.restoredID
 }
 
 func (s *decodeRecordingSession) lastConfig() transport.DecodeConfig {
@@ -334,15 +334,20 @@ func TestRoundTripContractOverWire(t *testing.T) {
 	}
 }
 
-func TestLargeSnapshotRoundTripOverWire(t *testing.T) {
+func TestSnapshotStateIDRoundTripOverWire(t *testing.T) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	state := bytes.Repeat([]byte{0x7a}, 5<<20)
+	// The raw State blob is deliberately excluded from the wire (json:"-"); the
+	// slot layer indirects it through a StateID-keyed blob on the daemon's disk.
+	// The transport must carry the StateID and metadata, and must drop State so a
+	// multi-megabyte blob never travels over gRPC.
+	const stateID = "deadbeefcafef00d"
 	large := &largeSnapshotSession{
 		snap: transport.SessionSnapshot{
-			State:          state,
+			State:          bytes.Repeat([]byte{0x7a}, 5<<20),
+			StateID:        stateID,
 			ResidentTokens: 42,
 			PrefixTokens:   21,
 			NumCtx:         128,
@@ -364,14 +369,20 @@ func TestLargeSnapshotRoundTripOverWire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	if !bytes.Equal(snap.State, state) {
-		t.Fatalf("snapshot state was not preserved over wire: got %d bytes want %d", len(snap.State), len(state))
+	if snap.StateID != stateID {
+		t.Fatalf("StateID not preserved over wire: got %q want %q", snap.StateID, stateID)
+	}
+	if len(snap.State) != 0 {
+		t.Fatalf("raw State must not cross the wire: got %d bytes", len(snap.State))
+	}
+	if snap.ResidentTokens != 42 || snap.PrefixTokens != 21 || snap.NumCtx != 128 {
+		t.Fatalf("snapshot metadata not preserved over wire: %+v", snap)
 	}
 	if err := sess.Restore(context.Background(), snap); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
-	if got := large.restoredStateLen(); got != len(state) {
-		t.Fatalf("restored state length = %d, want %d", got, len(state))
+	if got := large.restoredStateID(); got != stateID {
+		t.Fatalf("restored StateID = %q, want %q", got, stateID)
 	}
 }
 

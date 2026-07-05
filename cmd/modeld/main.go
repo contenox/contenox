@@ -242,7 +242,7 @@ func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy 
 
 	// Serve the runtime/transport.Service contract over gRPC, fenced by the owner
 	// instance id, while we hold the lease.
-	slotSvc := slot.New(svc, slot.WithOwner(o.InstanceID()), slot.WithBackend(backend), slot.WithIdleTTL(idleTTL))
+	slotSvc := slot.New(svc, slot.WithOwner(o.InstanceID()), slot.WithBackend(backend), slot.WithIdleTTL(idleTTL), slot.WithDataRoot(dataRoot))
 	svc = slotSvc
 	fmt.Printf("modeld transport serving: instance=%s endpoint=%s backend=%s idle_ttl=%s\n", o.InstanceID(), endpoint, backend, formatIdleTTL(idleTTL))
 	serveCtx, serveCancel := context.WithCancel(ctx)
