@@ -2,6 +2,7 @@ package llama
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -15,8 +16,43 @@ import (
 
 // warm holds the active modeld session handle across turns. It is bounded (idle
 // TTL + resident cap, see modelrepo.WarmCache): switching models evicts and
-// closes idle handles before opening another slot.
-var warm = modelrepo.NewWarmCache[Session]()
+// closes idle handles before opening another slot. Eviction captures the
+// session's Snapshot to a durable on-disk store keyed by the same identity as
+// sessionCacheKey, so swapping a model back in later restores its warm KV
+// instead of cold-prefilling — see modeld-snapshot-survival design in
+// modelrepo.WarmCache. Snapshot survival is off (falls back to always-cold
+// reopen, the pre-existing behavior) when modeldconn.SnapshotDir returns "".
+var warm = modelrepo.NewWarmCacheWithSnapshots[Session](
+	modelrepo.NewDiskSnapshotStore(func() string { return modeldconn.SnapshotDir("llama") }, modelrepo.SnapshotMaxBytes, modelrepo.SnapshotTTL),
+	func(ctx context.Context, s Session) ([]byte, error) {
+		// Short-circuit the Snapshot round-trip when snapshot survival is disabled
+		// (SnapshotDir == ""), so the kill switch costs nothing per eviction/exit.
+		if modeldconn.SnapshotDir("llama") == "" {
+			return nil, nil
+		}
+		snap, err := s.Snapshot(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(snap)
+	},
+	func(ctx context.Context, s Session, blob []byte) error {
+		var snap SessionSnapshot
+		if err := json.Unmarshal(blob, &snap); err != nil {
+			return err
+		}
+		return s.Restore(ctx, snap)
+	},
+)
+
+// init flushes resident warm sessions to the durable snapshot store on graceful
+// process exit (modelrepo.Shutdown, invoked by the CLI after a command returns).
+// This is what makes warm KV survive a runtime restart — and, for the one-shot
+// `contenox chat` process, survive between invocations — since a single-turn
+// process never evicts and so never captures on the eviction path alone.
+func init() {
+	modelrepo.RegisterShutdownHook(func() error { warm.CaptureResident(); return nil })
+}
 
 // acquire returns the warm entry for this client's model+config, opening a modeld
 // session on a miss. The caller must hold the entry's Turn for the whole turn.

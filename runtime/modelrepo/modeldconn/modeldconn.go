@@ -8,6 +8,8 @@ package modeldconn
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -32,6 +34,38 @@ func SetDataRoot(root string) {
 }
 
 func detector() *modeldprobe.Detector { return modeldprobe.New(dataRoot) }
+
+const (
+	// snapshotDirEnv overrides the on-disk root for durable warm-session
+	// snapshots. snapshotDisableEnv (any non-empty value) turns snapshot
+	// survival off entirely, restoring the pre-snapshot always-cold-reopen
+	// behavior.
+	snapshotDirEnv     = "CONTENOX_WARM_SNAPSHOT_DIR"
+	snapshotDisableEnv = "CONTENOX_WARM_SNAPSHOT_DISABLE"
+	snapshotSubdir     = "modeld-snapshots"
+)
+
+// SnapshotDir resolves the on-disk directory a backend's warm cache should
+// persist durable session snapshots to: $CONTENOX_WARM_SNAPSHOT_DIR/<backend>
+// when set, else <data root>/modeld-snapshots/<backend>. It returns "" when
+// $CONTENOX_WARM_SNAPSHOT_DISABLE is set, which the caller (a
+// modelrepo.DiskSnapshotStore) treats as "no snapshot dir" — Save/Load become
+// no-ops and the warm cache behaves exactly as it did before snapshot wiring
+// existed.
+func SnapshotDir(backend string) string {
+	if os.Getenv(snapshotDisableEnv) != "" {
+		return ""
+	}
+	root := os.Getenv(snapshotDirEnv)
+	if root == "" {
+		d := dataRoot
+		if d == "" {
+			d = modeldprobe.DefaultDataRoot()
+		}
+		root = filepath.Join(d, snapshotSubdir)
+	}
+	return filepath.Join(root, backend)
+}
 
 // Available is the cheap, offline check (lease inspection, no network): is a
 // modeld owner currently holding a fresh lease? Providers use it to gate

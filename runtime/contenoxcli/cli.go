@@ -18,6 +18,7 @@ import (
 
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/reasoning"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/version"
@@ -77,7 +78,13 @@ func Main() {
 	case !onlyHelp && !firstNonFlagIsReserved(args):
 		rootCmd.SetArgs(append([]string{"run"}, args...))
 	}
-	if err := rootCmd.Execute(); err != nil {
+	err := rootCmd.Execute()
+	// Flush warm-session KV snapshots to the durable store before the process
+	// exits, so the next invocation (one-shot CLI) or the next start (a restarted
+	// server) can restore warm instead of cold-prefilling. Best-effort; a capture
+	// failure must never change the command's exit status.
+	_ = modelrepo.Shutdown()
+	if err != nil {
 		recordStartupFailure(err)
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 		os.Exit(1)

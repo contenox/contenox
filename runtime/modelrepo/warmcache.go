@@ -1,6 +1,7 @@
 package modelrepo
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -31,19 +32,53 @@ type WarmEntry[S WarmSession] struct {
 	lastUsed time.Time
 }
 
+// snapshotHooks is the optional durable-warm-KV wiring for a WarmCache. When set,
+// the cache captures a session's snapshot just before it evicts (closes) the
+// handle, persists it to Store keyed by the cache key, and restores it into a
+// freshly opened session on the next miss. This lets a stable prefix's KV survive
+// a model swap on the single modeld slot (and, via a durable Store, a runtime
+// restart): the reopened session is warm instead of cold. Restore is a pure
+// optimization — capture and restore failures fall back to a cold prefill and can
+// never corrupt resident state.
+type snapshotHooks[S WarmSession] struct {
+	// capture serializes the session's current snapshot to an opaque blob.
+	capture func(context.Context, S) ([]byte, error)
+	// restore applies a blob previously produced by capture to a fresh session.
+	restore func(context.Context, S, []byte) error
+	store   SnapshotStore
+}
+
 // WarmCache is a bounded, idle-reaped cache of warm backend sessions keyed by a
 // model+config identity. It evicts by idle TTL and a max-resident cap (LRU),
 // never evicting a session that is mid-turn, and closes evicted handles so the
-// modeld slot can be switched or unloaded. Construct with NewWarmCache.
+// modeld slot can be switched or unloaded. Construct with NewWarmCache, or
+// NewWarmCacheWithSnapshots to make evicted warm KV survive the swap.
 type WarmCache[S WarmSession] struct {
-	mu  sync.Mutex
-	m   map[string]*WarmEntry[S]
-	now func() time.Time
+	mu   sync.Mutex
+	m    map[string]*WarmEntry[S]
+	now  func() time.Time
+	snap *snapshotHooks[S]
 }
 
-// NewWarmCache returns an empty cache.
+// NewWarmCache returns an empty cache with no snapshot survival.
 func NewWarmCache[S WarmSession]() *WarmCache[S] {
 	return &WarmCache[S]{m: map[string]*WarmEntry[S]{}, now: time.Now}
+}
+
+// NewWarmCacheWithSnapshots returns a cache that captures an evicted session's
+// snapshot to store and restores it into the reopened session on the next
+// acquire. capture and restore bridge the backend session's Snapshot/Restore to
+// opaque blobs; store persists them by cache key. All three must be non-nil.
+func NewWarmCacheWithSnapshots[S WarmSession](
+	store SnapshotStore,
+	capture func(context.Context, S) ([]byte, error),
+	restore func(context.Context, S, []byte) error,
+) *WarmCache[S] {
+	c := NewWarmCache[S]()
+	if store != nil && capture != nil && restore != nil {
+		c.snap = &snapshotHooks[S]{capture: capture, restore: restore, store: store}
+	}
+	return c
 }
 
 // Acquire returns the warm entry for key, opening one via open on a miss. The
@@ -67,7 +102,7 @@ func (c *WarmCache[S]) Acquire(key string, open func() (S, error)) (*WarmEntry[S
 	c.mu.Lock()
 	preVictims := c.selectVictimsLocked(nil, 1) // reserve a slot for the open below
 	c.mu.Unlock()
-	closeAll(preVictims)
+	c.closeVictims(preVictims)
 
 	s, err := open()
 	if err != nil {
@@ -81,12 +116,92 @@ func (c *WarmCache[S]) Acquire(key string, open func() (S, error)) (*WarmEntry[S
 		return e, nil
 	}
 	e := &WarmEntry[S]{Sess: s, key: key, lastUsed: c.now()}
+	if c.snap != nil {
+		// Hold Turn for the restore below so a concurrent caller that receives
+		// this same entry from the map blocks on its own Turn.Lock() until the
+		// restore finishes, instead of racing a partially-restored session.
+		e.Turn.Lock()
+	}
 	c.m[key] = e
 	victims := c.selectVictimsLocked(e, 0)
 	c.mu.Unlock()
 
-	closeAll(victims)
+	c.closeVictims(victims)
+
+	if c.snap != nil {
+		c.tryRestore(e)
+		e.Turn.Unlock()
+	}
 	return e, nil
+}
+
+// tryRestore applies a previously captured snapshot to a freshly opened session,
+// if one exists for e's key. A missing, corrupt, or incompatible snapshot is not
+// an error here: it is deleted (if present) and the caller proceeds with the
+// cold session exactly as if no snapshot wiring existed.
+func (c *WarmCache[S]) tryRestore(e *WarmEntry[S]) {
+	blob, ok := c.snap.store.Load(e.key)
+	if !ok {
+		return
+	}
+	ctx := context.Background()
+	if SnapshotTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, SnapshotTimeout)
+		defer cancel()
+	}
+	if err := c.snap.restore(ctx, e.Sess, blob); err != nil {
+		c.snap.store.Delete(e.key)
+	}
+}
+
+// capture persists a session's snapshot under its key so a later re-acquire can
+// restore instead of cold-prefilling. Best-effort: a capture error, an empty
+// blob (the capture bridge returns one when snapshot survival is disabled), or a
+// blob over SnapshotMaxBlobBytes just means the next open is cold, same as
+// today. The caller must exclusively hold e (its Turn), since capture reads the
+// live session.
+func (c *WarmCache[S]) capture(e *WarmEntry[S]) {
+	ctx := context.Background()
+	if SnapshotTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, SnapshotTimeout)
+		defer cancel()
+	}
+	blob, err := c.snap.capture(ctx, e.Sess)
+	if err != nil || len(blob) == 0 {
+		return
+	}
+	if SnapshotMaxBlobBytes > 0 && int64(len(blob)) > SnapshotMaxBlobBytes {
+		return
+	}
+	c.snap.store.Save(e.key, blob)
+}
+
+// CaptureResident snapshots every currently-resident session to the store without
+// closing it. It is the graceful-shutdown/exit hook: a one-shot CLI process (and
+// a long-running server on restart) never evicts a still-in-use model, so
+// eviction-time capture alone would never persist the hot session — this flushes
+// it so the next process restores warm. Mid-turn sessions are skipped (their KV
+// is being mutated); their state is captured on a later exit or eviction. It is a
+// no-op when snapshot survival is not configured.
+func (c *WarmCache[S]) CaptureResident() {
+	if c.snap == nil {
+		return
+	}
+	c.mu.Lock()
+	entries := make([]*WarmEntry[S], 0, len(c.m))
+	for _, e := range c.m {
+		entries = append(entries, e)
+	}
+	c.mu.Unlock()
+	for _, e := range entries {
+		if !e.Turn.TryLock() {
+			continue // mid-turn: skip, capture it on a later exit/eviction
+		}
+		c.capture(e)
+		e.Turn.Unlock()
+	}
 }
 
 // Drop evicts an entry whose session became unusable (closed/stale/fatal) so the
@@ -110,7 +225,7 @@ func (c *WarmCache[S]) Reap() {
 	c.mu.Lock()
 	victims := c.selectVictimsLocked(nil, 0)
 	c.mu.Unlock()
-	closeAll(victims)
+	c.closeVictims(victims)
 }
 
 // Clear evicts and closes every session (test cleanup / shutdown).
@@ -173,8 +288,15 @@ func (c *WarmCache[S]) selectVictimsLocked(keep *WarmEntry[S], reserve int) []*W
 	return victims
 }
 
-func closeAll[S WarmSession](victims []*WarmEntry[S]) {
+// closeVictims closes each evicted entry, first capturing its snapshot (when
+// snapshot survival is configured) so the key can be restored warm later. Each
+// victim's Turn is already locked by selectVictimsLocked, so the capture and
+// Close race no concurrent user of the session.
+func (c *WarmCache[S]) closeVictims(victims []*WarmEntry[S]) {
 	for _, e := range victims {
+		if c.snap != nil {
+			c.capture(e)
+		}
 		_ = e.Sess.Close()
 	}
 }
