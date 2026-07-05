@@ -166,7 +166,7 @@ var modelSnapshotRestoreCmd = &cobra.Command{
 		if opts.contextTokens == 0 && file.Snapshot.NumCtx > 0 {
 			cfg.NumCtx = file.Snapshot.NumCtx
 		}
-		if err := validateSnapshotForRef(file, ref, opts.backend); err != nil {
+		if err := validateSnapshotForSession(file, ref, opts.backend, cfg); err != nil {
 			return err
 		}
 		file.Config = cfg
@@ -695,18 +695,46 @@ func snapshotFileSHA256(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func writeModelSnapshotFile(path string, file modelSnapshotFile) error {
+func writeModelSnapshotFile(path string, file modelSnapshotFile) (err error) {
 	data, err := json.MarshalIndent(file, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal snapshot file: %w", err)
 	}
-	if dir := filepath.Dir(path); dir != "." && dir != "" {
+	dir := filepath.Dir(path)
+	if dir == "" {
+		dir = "."
+	}
+	if dir != "." {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create snapshot directory: %w", err)
 		}
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary snapshot file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		if err != nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err = tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("chmod temporary snapshot file: %w", err)
+	}
+	if _, err = tmp.Write(append(data, '\n')); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temporary snapshot file: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary snapshot file: %w", err)
+	}
+	if err = os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("write snapshot file %s: %w", path, err)
+	}
+	if err = os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("chmod snapshot file %s: %w", path, err)
 	}
 	return nil
 }
@@ -741,6 +769,53 @@ func validateSnapshotForRef(file modelSnapshotFile, ref modeldconn.ModelRef, bac
 	}
 	if file.Snapshot.Manifest.ModelDigest != "" && ref.Digest != "" && file.Snapshot.Manifest.ModelDigest != ref.Digest {
 		return fmt.Errorf("snapshot manifest model digest %q does not match current model digest %q", file.Snapshot.Manifest.ModelDigest, ref.Digest)
+	}
+	return nil
+}
+
+func validateSnapshotForSession(file modelSnapshotFile, ref modeldconn.ModelRef, backend string, cfg transport.Config) error {
+	if err := validateSnapshotForRef(file, ref, backend); err != nil {
+		return err
+	}
+	snap := file.Snapshot
+	if snap.NumCtx < 0 {
+		return fmt.Errorf("snapshot num_ctx must be >= 0, got %d", snap.NumCtx)
+	}
+	if snap.ResidentTokens < 0 {
+		return fmt.Errorf("snapshot resident_tokens must be >= 0, got %d", snap.ResidentTokens)
+	}
+	if snap.PrefixTokens < 0 {
+		return fmt.Errorf("snapshot prefix_tokens must be >= 0, got %d", snap.PrefixTokens)
+	}
+	if snap.PrefixTokens > snap.ResidentTokens {
+		return fmt.Errorf("snapshot prefix_tokens %d exceeds resident_tokens %d", snap.PrefixTokens, snap.ResidentTokens)
+	}
+	if snap.NumCtx > 0 && snap.ResidentTokens > snap.NumCtx {
+		return fmt.Errorf("snapshot resident_tokens %d exceeds num_ctx %d", snap.ResidentTokens, snap.NumCtx)
+	}
+	if cfg.NumCtx > 0 && snap.NumCtx > 0 && cfg.NumCtx != snap.NumCtx {
+		return fmt.Errorf("snapshot num_ctx %d does not match requested context %d", snap.NumCtx, cfg.NumCtx)
+	}
+	if snap.Manifest.StableBytes < 0 {
+		return fmt.Errorf("snapshot manifest stable_bytes must be >= 0, got %d", snap.Manifest.StableBytes)
+	}
+	if snap.Manifest.TotalBytes < 0 {
+		return fmt.Errorf("snapshot manifest total_bytes must be >= 0, got %d", snap.Manifest.TotalBytes)
+	}
+	if snap.Manifest.TotalBytes < snap.Manifest.StableBytes {
+		return fmt.Errorf("snapshot manifest total_bytes %d is less than stable_bytes %d", snap.Manifest.TotalBytes, snap.Manifest.StableBytes)
+	}
+	if file.Prefix != "" {
+		if snap.Manifest.StableBytes != len(file.Prefix) {
+			return fmt.Errorf("snapshot manifest stable_bytes %d does not match prefix bytes %d", snap.Manifest.StableBytes, len(file.Prefix))
+		}
+		if snap.Manifest.StableByteHash != contextasm.HashString(file.Prefix) {
+			return fmt.Errorf("snapshot manifest stable byte hash does not match stored prefix")
+		}
+		wantTotal := len(file.Prefix) + len(file.Suffix)
+		if snap.Manifest.TotalBytes != wantTotal {
+			return fmt.Errorf("snapshot manifest total_bytes %d does not match prefix+suffix bytes %d", snap.Manifest.TotalBytes, wantTotal)
+		}
 	}
 	return nil
 }

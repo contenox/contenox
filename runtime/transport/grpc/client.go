@@ -24,7 +24,13 @@ var _ transport.ModelController = (*Client)(nil)
 // DialLeader connects to the owner's advertised endpoint and fences every call
 // with the expected owner instance id resolved from the lease record.
 func DialLeader(endpoint, expectedOwner string, opts ...grpclib.DialOption) (*Client, error) {
-	base := []grpclib.DialOption{grpclib.WithTransportCredentials(insecure.NewCredentials())}
+	base := []grpclib.DialOption{
+		grpclib.WithTransportCredentials(insecure.NewCredentials()),
+		grpclib.WithDefaultCallOptions(
+			grpclib.MaxCallRecvMsgSize(maxTransportMessageBytes),
+			grpclib.MaxCallSendMsgSize(maxTransportMessageBytes),
+		),
+	}
 	cc, err := grpclib.NewClient("passthrough:///"+endpoint, append(base, opts...)...)
 	if err != nil {
 		return nil, err

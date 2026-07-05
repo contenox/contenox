@@ -52,7 +52,11 @@ func (s *Server) Register(reg grpclib.ServiceRegistrar) { reg.RegisterService(&s
 // gracefully. This is the entry point modeld calls once it holds the lease.
 func Serve(ctx context.Context, lis net.Listener, svc transport.Service, instanceID, backend string) error {
 	srv := NewServer(svc, instanceID, backend)
-	gs := grpclib.NewServer(grpclib.StatsHandler(srv))
+	gs := grpclib.NewServer(
+		grpclib.StatsHandler(srv),
+		grpclib.MaxRecvMsgSize(maxTransportMessageBytes),
+		grpclib.MaxSendMsgSize(maxTransportMessageBytes),
+	)
 	srv.Register(gs)
 	go func() {
 		<-ctx.Done()

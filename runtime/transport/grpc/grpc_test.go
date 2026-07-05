@@ -1,6 +1,7 @@
 package grpc_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
@@ -114,6 +115,15 @@ type decodeRecordingSession struct {
 	config transport.DecodeConfig
 }
 
+type largeSnapshotSession struct {
+	decodeRecordingSession
+
+	snap transport.SessionSnapshot
+
+	mu          sync.Mutex
+	restoredLen int
+}
+
 func transportToolCall(id, name, arguments string) transport.ToolCall {
 	var tc transport.ToolCall
 	tc.ID = id
@@ -152,6 +162,23 @@ func (s *decodeRecordingSession) Restore(context.Context, transport.SessionSnaps
 	return nil
 }
 func (s *decodeRecordingSession) Close() error { return nil }
+
+func (s *largeSnapshotSession) Snapshot(context.Context) (transport.SessionSnapshot, error) {
+	return s.snap, nil
+}
+
+func (s *largeSnapshotSession) Restore(_ context.Context, snap transport.SessionSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.restoredLen = len(snap.State)
+	return nil
+}
+
+func (s *largeSnapshotSession) restoredStateLen() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.restoredLen
+}
 
 func (s *decodeRecordingSession) lastConfig() transport.DecodeConfig {
 	s.mu.Lock()
@@ -304,6 +331,47 @@ func TestRoundTripContractOverWire(t *testing.T) {
 	// After close the handle is gone: the sentinel must survive the wire.
 	if _, err := sess.EnsurePrefix(ctx, transport.PrefixInput{Text: "x", Manifest: manifest("x")}); !errors.Is(err, transport.ErrSessionClosed) {
 		t.Fatalf("EnsurePrefix after close = %v, want ErrSessionClosed", err)
+	}
+}
+
+func TestLargeSnapshotRoundTripOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	state := bytes.Repeat([]byte{0x7a}, 5<<20)
+	large := &largeSnapshotSession{
+		snap: transport.SessionSnapshot{
+			State:          state,
+			ResidentTokens: 42,
+			PrefixTokens:   21,
+			NumCtx:         128,
+			Manifest:       manifest("large"),
+		},
+	}
+	svc := &decodeRecordingService{
+		MemoryService: transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		sess:          large,
+	}
+	client := startServerWithService(t, svc, lis, "owner-1", "owner-1")
+	sess, err := client.OpenSession(context.Background(), transport.OpenSessionRequest{
+		Fence: transport.Fence{OwnerInstanceID: "owner-1"},
+	})
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	snap, err := sess.Snapshot(context.Background())
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if !bytes.Equal(snap.State, state) {
+		t.Fatalf("snapshot state was not preserved over wire: got %d bytes want %d", len(snap.State), len(state))
+	}
+	if err := sess.Restore(context.Background(), snap); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if got := large.restoredStateLen(); got != len(state) {
+		t.Fatalf("restored state length = %d, want %d", got, len(state))
 	}
 }
 
