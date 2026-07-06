@@ -15,7 +15,7 @@ for (const entry of entries) {
     rootEntries.push(entry);
   }
 }
-const order = ['guide', 'chains', 'tools', 'reference', 'development'];
+const order = ['guide', 'specification', 'integrations', 'use-cases', 'reference', 'development'];
 const sectionNames = [...order.filter((s) => sections[s]), ...Object.keys(sections).filter((s) => !order.includes(s)).sort()];
 ---
 <Base title="Contenox Docs">
@@ -39,7 +39,7 @@ const sectionNames = [...order.filter((s) => sections[s]), ...Object.keys(sectio
       )}
       {sectionNames.map((section) => (
         <section class="mt-10">
-          <h2 class="font-mono text-xs font-semibold tracking-widest text-neutral-500">{section}/</h2>
+          <h2 id={section} class="scroll-mt-16 font-mono text-xs font-semibold tracking-widest text-neutral-500">{section}/</h2>
           <ul class="mt-3 divide-y divide-neutral-200 dark:divide-neutral-900">
             {sections[section]
               .sort((a, b) => a.id.localeCompare(b.id))

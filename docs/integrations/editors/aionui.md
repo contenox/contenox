@@ -100,5 +100,5 @@ Models are global; chains are local. Switching the model for ACP also switches i
 
 - [Author your first chain](/docs/guide/first-chain/) — the chain defines the agent's behavior, regardless of which client drives it.
 - [HITL policies](/docs/guide/hitl/) — choose what requires approval.
-- [MCP](/docs/guide/mcp/) — register servers once globally; ACP sessions pick them up.
-- [Use from Zed](/docs/guide/zed/) · [Use from JetBrains](/docs/guide/jetbrains/) — the same agent, other clients.
+- [MCP](/docs/integrations/tools/mcp/) — register servers once globally; ACP sessions pick them up.
+- [Use from Zed](/docs/integrations/editors/zed/) · [Use from JetBrains](/docs/integrations/editors/jetbrains/) — the same agent, other clients.

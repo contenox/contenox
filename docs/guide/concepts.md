@@ -47,7 +47,7 @@ Each item in `tasks[]` is a **task** — a single step with a handler, optional 
 }
 ```
 
-The `handler` determines what the task does. See [Handlers](/docs/chains/handlers) for all types.
+The `handler` determines what the task does. See [Handlers](/docs/specification/handlers) for all types.
 
 ## Tools
 
@@ -70,7 +70,7 @@ Tools are listed by name in `execute_config.tools`. Use `["*"]` to expose all re
 > `"tools": ["*"]` grants the model access to every registered tool in this run.
 > For production or sensitive environments, list only the tools the task actually needs.
 > This is how Contenox enforces per-invocation tool policy — the model can only call what you explicitly grant.
-> See [Tools reference](/docs/tools/) for access control patterns.
+> See [Tools reference](/docs/integrations/tools/) for access control patterns.
 
 ## Transitions
 
@@ -115,4 +115,4 @@ Chain JSON supports runtime macros inside string fields:
 | `{{now:2006-01-02}}` | Current date (Go time format) |
 | `{{toolservice:list}}` | JSON manifest of tools visible to the current task |
 
-See [Transitions & Branching](/docs/chains/transitions) and [Handlers](/docs/chains/handlers) for the full reference.
+See [Transitions & Branching](/docs/specification/transitions) and [Handlers](/docs/specification/handlers) for the full reference.

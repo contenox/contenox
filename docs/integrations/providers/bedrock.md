@@ -68,6 +68,6 @@ contenox config set default-model us.anthropic.claude-3-5-sonnet-20241022-v2:0
 
 ## See also
 
-- [Anthropic (direct API)](/docs/guide/providers/anthropic/) — Claude without an AWS account
+- [Anthropic (direct API)](/docs/integrations/providers/anthropic/) — Claude without an AWS account
 - [Configuration reference](/docs/reference/config/)
 - [CLI reference: `backend add`](/docs/reference/contenox-cli/)

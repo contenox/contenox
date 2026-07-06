@@ -19,9 +19,9 @@ contenox config set default-provider gemini
 
 ## Vertex AI
 
-Want Gemini billed through your GCP project instead of AI Studio? Use the Vertex AI backend. See [Vertex AI](/docs/guide/providers/vertex/) for setup, auth methods, and credential renewal.
+Want Gemini billed through your GCP project instead of AI Studio? Use the Vertex AI backend. See [Vertex AI](/docs/integrations/providers/vertex/) for setup, auth methods, and credential renewal.
 
 ## See also
 
-- [Vertex AI](/docs/guide/providers/vertex/) — Gemini hosted on GCP
+- [Vertex AI](/docs/integrations/providers/vertex/) — Gemini hosted on GCP
 - [Configuration reference](/docs/reference/config/)

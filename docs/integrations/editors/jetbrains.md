@@ -42,7 +42,7 @@ Restart the IDE. Open the agent panel — Contenox now appears in the agent pick
 
 **Native filesystem.** `local_fs.read_file` / `local_fs.write_file` route through the IDE's own filesystem capability — sandboxed, with a read-before-write contract.
 
-**Shell commands.** `local_shell` runs the command and returns its output in the tool card. GoLand does not advertise the ACP terminal capability, so the command is executed and reported rather than embedded as an interactive terminal session (this differs from [Zed](/docs/guide/zed/), which does embed a live terminal).
+**Shell commands.** `local_shell` runs the command and returns its output in the tool card. GoLand does not advertise the ACP terminal capability, so the command is executed and reported rather than embedded as an interactive terminal session (this differs from [Zed](/docs/integrations/editors/zed/), which does embed a live terminal).
 
 **HITL through the editor.** If your chain uses `local_fs`/`local_shell`/`webtools`, Contenox's [HITL policy](/docs/guide/hitl/) applies — and the approval dialog is routed to the IDE's permission UI instead of a terminal prompt. The default policy gates `local_fs.write_file`, `local_fs.sed`, `local_shell.*`, and mutating `webtools` calls.
 
@@ -101,5 +101,5 @@ Subsequent ACP sessions write structured operation traces to `~/.contenox/teleme
 
 - [Author your first chain](/docs/guide/first-chain/) — the chain file is what defines the agent's behavior, regardless of which client drives it.
 - [HITL policies](/docs/guide/hitl/) — choose what requires approval and what doesn't.
-- [MCP](/docs/guide/mcp/) — register MCP servers once globally; ACP sessions pick them up automatically.
-- [Use from Zed](/docs/guide/zed/) — the same agent, driven from Zed (with a live embedded terminal).
+- [MCP](/docs/integrations/tools/mcp/) — register MCP servers once globally; ACP sessions pick them up automatically.
+- [Use from Zed](/docs/integrations/editors/zed/) — the same agent, driven from Zed (with a live embedded terminal).

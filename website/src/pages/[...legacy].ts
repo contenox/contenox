@@ -16,13 +16,14 @@ export async function getStaticPaths() {
   };
 
   add('docs.html', '/docs/');
-  add('cookbook.html', '/cookbook/');
-  add('stories.html', '/stories/');
+  add('cookbook.html', '/docs/use-cases/');
+  add('stories.html', '/docs/use-cases/');
   add('de.html', '/de/');
   add('features.html', '/docs/guide/quickstart/');
+  add('legal.html', '/legal/');
   for (const retired of [
     'pricing', 'services', 'cloud', 'login', 'signup', 'forgot-password',
-    'reset-password', 'invite', 'admin', 'bob', 'pilot', 'about', 'legal',
+    'reset-password', 'invite', 'admin', 'bob', 'pilot', 'about',
   ]) {
     add(`${retired}.html`, '/');
   }
@@ -30,12 +31,6 @@ export async function getStaticPaths() {
   const skip = (id: string) => id === 'index' || id.endsWith('/index');
   for (const entry of await getCollection('docs')) {
     if (!skip(entry.id)) add(`docs/${entry.id}.html`, `/docs/${entry.id}/`);
-  }
-  for (const entry of await getCollection('cookbook')) {
-    if (!skip(entry.id)) add(`cookbook/${entry.id}.html`, `/cookbook/${entry.id}/`);
-  }
-  for (const entry of await getCollection('stories')) {
-    if (!skip(entry.id)) add(`stories/${entry.id}.html`, `/stories/${entry.id}/`);
   }
   return paths;
 }

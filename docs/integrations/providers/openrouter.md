@@ -29,5 +29,5 @@ The base URL (`https://openrouter.ai/api/v1`) is inferred; pass `--url` only for
 
 ## Related
 
-- [OpenAI](/docs/guide/providers/openai/) — direct OpenAI API
+- [OpenAI](/docs/integrations/providers/openai/) — direct OpenAI API
 - [Configuration reference](/docs/reference/config/)

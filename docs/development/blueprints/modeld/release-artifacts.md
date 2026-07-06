@@ -388,7 +388,7 @@ modeld has two S3-backed phases:
 No GitHub Actions workflow orchestrates these phases yet.
 
 The maintainer command sequence lives in
-[the modeld release runbook](../../development/modeld-release-runbook.md). This blueprint defines
+[the modeld release runbook](../../modeld-release-runbook.md). This blueprint defines
 the artifact shape and invariants; the runbook is the operational source for
 bucket setup, repo-local `.env`, cross-device dependency handoff, release
 assembly, upload, and verification.

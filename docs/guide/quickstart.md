@@ -58,10 +58,10 @@ contenox chat -e
 
 Contenox can also run inside editor or desktop clients that speak ACP. The same chains, model config, tools, and HITL policy are used either way:
 
-- [Use from Zed](/docs/guide/zed/)
-- [Use from VS Code or VSCodium](/docs/guide/vscode-vscodium/)
-- [Use from JetBrains](/docs/guide/jetbrains/)
-- [Use from AionUi](/docs/guide/aionui/)
+- [Use from Zed](/docs/integrations/editors/zed/)
+- [Use from VS Code or VSCodium](/docs/integrations/editors/vscode-vscodium/)
+- [Use from JetBrains](/docs/integrations/editors/jetbrains/)
+- [Use from AionUi](/docs/integrations/editors/aionui/)
 
 ---
 
@@ -71,16 +71,16 @@ Contenox needs at least one model to work. Pick the option that fits:
 
 | Option | What you need |
 |--------|--------------|
-| [Built-in local models](/docs/guide/local-models/) | Nothing - Contenox downloads and runs GGUF models itself |
-| [Ollama](/docs/guide/providers/ollama/) | Ollama installed locally, or an Ollama Cloud key |
-| [Google Gemini](/docs/guide/providers/gemini/) | A free Gemini API key (no GPU) |
-| [OpenRouter](/docs/guide/providers/openrouter/) | One OpenRouter API key for many hosted models |
-| [OpenAI](/docs/guide/providers/openai/) | An OpenAI API key |
-| [Anthropic](/docs/guide/providers/anthropic/) | An Anthropic API key (Claude) |
-| [Mistral](/docs/guide/providers/mistral/) | A Mistral API key |
-| [AWS Bedrock](/docs/guide/providers/bedrock/) | An AWS account with Bedrock model access |
+| [Built-in local models](/docs/integrations/providers/local-models/) | Nothing - Contenox downloads and runs GGUF models itself |
+| [Ollama](/docs/integrations/providers/ollama/) | Ollama installed locally, or an Ollama Cloud key |
+| [Google Gemini](/docs/integrations/providers/gemini/) | A free Gemini API key (no GPU) |
+| [OpenRouter](/docs/integrations/providers/openrouter/) | One OpenRouter API key for many hosted models |
+| [OpenAI](/docs/integrations/providers/openai/) | An OpenAI API key |
+| [Anthropic](/docs/integrations/providers/anthropic/) | An Anthropic API key (Claude) |
+| [Mistral](/docs/integrations/providers/mistral/) | A Mistral API key |
+| [AWS Bedrock](/docs/integrations/providers/bedrock/) | An AWS account with Bedrock model access |
 
-If you're not sure, start with [built-in local models](/docs/guide/local-models/) — no account or API key needed.
+If you're not sure, start with [built-in local models](/docs/integrations/providers/local-models/) — no account or API key needed.
 
 ---
 
@@ -88,4 +88,4 @@ If you're not sure, start with [built-in local models](/docs/guide/local-models/
 
 - [**Your first chain**](/docs/guide/first-chain/) — author your own agent in five edits
 - [Core concepts](/docs/guide/concepts/) — how chains, tasks, and tools fit together
-- [MCP integration](/docs/guide/mcp/) — connect external tools
+- [MCP integration](/docs/integrations/tools/mcp/) — connect external tools

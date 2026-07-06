@@ -120,7 +120,7 @@ The agent now answers in your voice, not the model's default voice.
 
 Authored resilience: when the local model is down, you fall back to OpenAI. You picked the order; the vendor didn't.
 
-See [the providers guide](/docs/guide/providers/ollama/) for backend setup.
+See [the providers guide](/docs/integrations/providers/ollama/) for backend setup.
 
 ---
 
@@ -163,7 +163,7 @@ A single task is a function call. A chain becomes interesting when it branches. 
 }
 ```
 
-You authored the labels (`urgent` / `normal`) and the routing — the route set is just the branches you can read. See [Transitions & branching](/docs/chains/transitions/) for all available operators (`equals`, `contains`, `starts_with`, `ends_with`, `edge_traversed_at_least`, `default`).
+You authored the labels (`urgent` / `normal`) and the routing — the route set is just the branches you can read. See [Transitions & branching](/docs/specification/transitions/) for all available operators (`equals`, `contains`, `starts_with`, `ends_with`, `edge_traversed_at_least`, `default`).
 
 ---
 
@@ -232,7 +232,7 @@ This file works against Ollama, OpenAI, Gemini, vLLM, or in-process llama.cpp by
 
 ## Next
 
-- [Annotated examples](/docs/chains/examples/) — four longer chains, fully commented
-- [Handlers reference](/docs/chains/handlers/) — every available task type
-- [Transitions & branching](/docs/chains/transitions/) — operators, edges, and `on_failure`
+- [Annotated examples](/docs/specification/examples/) — four longer chains, fully commented
+- [Handlers reference](/docs/specification/handlers/) — every available task type
+- [Transitions & branching](/docs/specification/transitions/) — operators, edges, and `on_failure`
 - [Cookbook](/cookbook/) — end-to-end recipes for real workflows

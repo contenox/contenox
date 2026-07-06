@@ -9,6 +9,7 @@ interface Props {
   ogType?: string;
   /** hreflang alternates for translated pages, e.g. { en: '/', de: '/de/' } */
   alternates?: Record<string, string>;
+  noindex?: boolean;
 }
 const {
   title,
@@ -16,6 +17,7 @@ const {
   lang = 'en',
   ogType = 'website',
   alternates,
+  noindex = false,
 } = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, Astro.site);
@@ -34,6 +36,7 @@ const navSections = await buildNavSections();
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
     <link rel="canonical" href={canonical} />
     {alternates && Object.entries(alternates).map(([hl, path]) => (
       <link rel="alternate" hreflang={hl} href={new URL(path, Astro.site)} />
@@ -108,9 +111,9 @@ const navSections = await buildNavSections();
         <nav class="flex gap-4">
           <a href="mailto:hello@contenox.com" class="hover:text-black dark:hover:text-white">hello@contenox.com</a>
           <a href="https://github.com/contenox/runtime" class="hover:text-black dark:hover:text-white">GitHub</a>
-          <a href="/docs/" class="hover:text-black dark:hover:text-white">{t.docs}</a>
-          <a href="/cookbook/" class="hover:text-black dark:hover:text-white">{t.cookbook}</a>
-          <a href="/stories/" class="hover:text-black dark:hover:text-white">{t.stories}</a>
+          <a href="/docs/" class="hover:text-black dark:hover:text-white">Docs</a>
+          <a href="/docs/use-cases/" class="hover:text-black dark:hover:text-white">Use cases</a>
+          <a href="/legal/" class="hover:text-black dark:hover:text-white">Legal</a>
           {lang === 'de'
             ? <a href="/" class="hover:text-black dark:hover:text-white">English</a>
             : <a href="/de/" class="hover:text-black dark:hover:text-white">Deutsch</a>}

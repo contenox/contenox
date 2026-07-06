@@ -47,17 +47,17 @@ A task chain is a JSON state machine that defines how the AI agent behaves end-t
 |-------|------|-------------|
 | `id` | string | Unique identifier for this task |
 | `description` | string | Human-readable summary of what the task does |
-| `handler` | string | Handler type — see [Handlers](/docs/chains/handlers) |
+| `handler` | string | Handler type — see [Handlers](/docs/specification/handlers) |
 | `system_instruction` | string | System prompt (supports template macros) |
 | `execute_config` | object | Model, provider, tools, and execution policy settings |
-| `transition` | object | Branching rules — see [Transitions](/docs/chains/transitions) |
+| `transition` | object | Branching rules — see [Transitions](/docs/specification/transitions) |
 | `retry_on_failure` | int | Number of times to retry if the task errors (default: `0`) |
 | `timeout` | string | Per-task timeout, e.g. `"30s"` or `"2m"` |
 
-See [Handlers](/docs/chains/handlers) and [Transitions](/docs/chains/transitions) for the full field reference.
+See [Handlers](/docs/specification/handlers) and [Transitions](/docs/specification/transitions) for the full field reference.
 
 ## Sections
 
-- **[Handlers](/docs/chains/handlers)** — all task handler types and their fields
-- **[Transitions & Branching](/docs/chains/transitions)** — how the chain decides what to do next
-- **[Annotated Examples](/docs/chains/examples)** — full working chains with commentary
+- **[Handlers](/docs/specification/handlers)** — all task handler types and their fields
+- **[Transitions & Branching](/docs/specification/transitions)** — how the chain decides what to do next
+- **[Annotated Examples](/docs/specification/examples)** — full working chains with commentary

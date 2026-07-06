@@ -246,4 +246,4 @@ Always available. Echoes the input back, prefixed with `"Echo: "`. Useful for ve
 
 ## Adding custom local tools
 
-Adding new local tools types requires modifying the Contenox Go source code and implementing the `taskengine.HookRepo` interface. For custom capabilities without writing Go, build a small HTTP service (FastAPI, Express, etc.) and register it as a [Remote Tools](/docs/tools/remote) instead — no code changes required.
+Adding new local tools types requires modifying the Contenox Go source code and implementing the `taskengine.HookRepo` interface. For custom capabilities without writing Go, build a small HTTP service (FastAPI, Express, etc.) and register it as a [Remote Tools](/docs/integrations/tools/remote) instead — no code changes required.

@@ -1,0 +1,13 @@
+# Per-Dockerfile ignore (BuildKit): applies only to website/Dockerfile builds.
+# Allowlist style — the site needs docs/, packages/ui/, and website/ sources.
+*
+!docs
+!packages/ui
+packages/ui/node_modules
+packages/ui/dist
+!website
+website/node_modules
+website/dist
+website/.astro
+website/Dockerfile
+website/Dockerfile.dockerignore

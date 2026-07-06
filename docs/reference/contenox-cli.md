@@ -124,7 +124,7 @@ contenox doctor --skip-cycle    # faster; skips backend sync (status may be stal
 
 ### `contenox model`
 
-Manage models in the local **Model Registry** — a name-to-URL index of GGUF files that can be downloaded for local inference. See [Local Models (GGUF)](/docs/guide/local-models/) for a full walkthrough.
+Manage models in the local **Model Registry** — a name-to-URL index of GGUF files that can be downloaded for local inference. See [Local Models (GGUF)](/docs/integrations/providers/local-models/) for a full walkthrough.
 
 #### `contenox model registry-list`
 
@@ -203,7 +203,7 @@ contenox model set-context gemini-3.1-pro-preview --context 1m
 
 ### `contenox tools`
 
-Manage remote OpenAPI tools. See [Remote Tools](/docs/tools/remote) and [Tools Allowlist Patterns](/docs/tools/#how-it-works).
+Manage remote OpenAPI tools. See [Remote Tools](/docs/integrations/tools/remote) and [Tools Allowlist Patterns](/docs/integrations/tools/#how-it-works).
 
 ```bash
 contenox tools add <name> --url <url>

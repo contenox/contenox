@@ -142,6 +142,6 @@ Reads working while every write, shell, and network action is refused is the pro
 
 - [The nested permission bomb](/stories/nested-permission-bomb/) — why an untrusted driver gets an authored policy, not your keyring.
 - [HITL policies](/docs/guide/hitl/) — the acpx policy is an authored file you can tighten.
-- [Use from Zed](/docs/guide/zed/) · [JetBrains](/docs/guide/jetbrains/) · [AionUi](/docs/guide/aionui/) — device-owner clients, with interactive approval.
+- [Use from Zed](/docs/integrations/editors/zed/) · [JetBrains](/docs/integrations/editors/jetbrains/) · [AionUi](/docs/integrations/editors/aionui/) — device-owner clients, with interactive approval.
 
 Sources: [ACP agents](https://docs.openclaw.ai/tools/acp-agents) · [Channels](https://docs.openclaw.ai/cli/channels) · [Pairing](https://docs.openclaw.ai/cli/pairing)

@@ -40,6 +40,6 @@ That is the whole thesis in one operational fact: capability is opt-in, per tool
 ## Where to next
 
 - [The nested permission bomb](/stories/nested-permission-bomb/) — why inherited human access is the anti-pattern this replaces.
-- [Use from OpenClaw](/docs/guide/openclaw/) — the untrusted-driver profile, wired end to end.
+- [Use from OpenClaw](/docs/integrations/editors/openclaw/) — the untrusted-driver profile, wired end to end.
 - [HITL policies](/docs/guide/hitl/) — the authored allow/deny file itself.
-- [Remote tools](/docs/tools/remote/) — registering an API as a tool, in full.
+- [Remote tools](/docs/integrations/tools/remote/) — registering an API as a tool, in full.

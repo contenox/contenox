@@ -71,7 +71,7 @@ Microsoft Entra/workload identity before global Azure DevOps PAT retirement.
 ## Workflows
 
 Release gating and tag ownership are tracked separately in
-[`ci-release-hardening.md`](ci-release-hardening.md). Marketplace publishing
+[`ci-release-hardening.md`](../ci-release-hardening.md). Marketplace publishing
 should eventually be entered only through that promoted-release path, not by
 manually pushing a `v*` tag.
 

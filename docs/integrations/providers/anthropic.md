@@ -20,5 +20,5 @@ The base URL (`https://api.anthropic.com`) is inferred; pass `--url` only for a 
 
 ## See also
 
-- [AWS Bedrock](/docs/guide/providers/bedrock/) — Claude (and others) billed through your AWS account
+- [AWS Bedrock](/docs/integrations/providers/bedrock/) — Claude (and others) billed through your AWS account
 - [Configuration reference](/docs/reference/config/)

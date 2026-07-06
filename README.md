@@ -311,9 +311,9 @@ Tool calls render as cards with the real command/path, HITL prompts route throug
 the editor's permission UI, and session history replays when you reopen the
 project.
 
-Full guides: [Zed](https://contenox.com/docs/guide/zed/),
-[JetBrains](https://contenox.com/docs/guide/jetbrains/),
-[AionUi](https://contenox.com/docs/guide/aionui/).
+Full guides: [Zed](https://contenox.com/docs/integrations/editors/zed/),
+[JetBrains](https://contenox.com/docs/integrations/editors/jetbrains/),
+[AionUi](https://contenox.com/docs/integrations/editors/aionui/).
 
 ---
 

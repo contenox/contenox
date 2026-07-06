@@ -65,5 +65,5 @@ backends and versions independently of the runtime.
 | [ortgenai-windows-ai.md](ortgenai-windows-ai.md) | spike | ORT GenAI / Windows ML as an AI PC backend track; can it express the modeld session shape |
 | [alternative-silicon.md](alternative-silicon.md) | strategy | AI PC / alternative-silicon runtime strategy across candidate backends (NPU, QNN, Ryzen AI, RKLLM) |
 
-Contributor build/release docs live in [`docs/development/`](../../development/) (`modeld-source-build.md`,
+Contributor build/release docs live in [`docs/development/`](../../modeld-source-build.md) (`modeld-source-build.md`,
 `modeld-release-runbook.md`, `modeld-llama-backend.md`).

@@ -9,12 +9,19 @@ interface Props {
 }
 const current = Astro.url.pathname;
 
-// Map the URL path to the source file in the repo.
-// /docs/guide/quickstart/ → docs/guide/quickstart.md
-const docPath = current.replace(/^\//, '').replace(/\/$/, '') + '.md';
+// Map the URL path to the source file in the repo. All content lives under
+// docs/ (cookbook/stories routes drop the prefix), and readme slugs come
+// from README.md files.
+const segments = current.replace(/^\//, '').replace(/\/$/, '').split('/');
+if (segments[0] !== 'docs') segments.unshift('docs');
+if (segments[segments.length - 1] === 'readme') segments[segments.length - 1] = 'README';
+const docPath = segments.join('/') + '.md';
 const editUrl = `https://github.com/contenox/runtime/blob/main/${docPath}`;
+
+// Blueprints are design records: browsable, but kept out of search engines.
+const noindex = current.startsWith('/docs/development/blueprints/');
 ---
-<Base {...Astro.props} ogType="article">
+<Base {...Astro.props} ogType="article" noindex={noindex}>
   <div class="mx-auto flex max-w-6xl gap-8 px-5">
     <aside class="sticky top-13 hidden max-h-[calc(100vh-3.25rem)] w-64 shrink-0 overflow-y-auto py-10 lg:block">
       <Sidebar current={current} />

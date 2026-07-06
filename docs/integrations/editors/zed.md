@@ -116,4 +116,4 @@ Subsequent ACP sessions write structured operation traces to `~/.contenox/teleme
 
 - [Author your first chain](/docs/guide/first-chain/) — the chain file is what defines the agent's behavior, regardless of which client drives it.
 - [HITL policies](/docs/guide/hitl/) — choose what requires approval and what doesn't.
-- [MCP](/docs/guide/mcp/) — register MCP servers once globally; ACP sessions pick them up automatically.
+- [MCP](/docs/integrations/tools/mcp/) — register MCP servers once globally; ACP sessions pick them up automatically.

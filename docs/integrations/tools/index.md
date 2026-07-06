@@ -78,5 +78,5 @@ Contenox ships with built-in local tools and supports unlimited remote tools:
 
 ## Further reading
 
-- [Remote Tools](/docs/tools/remote) — register external APIs as agent tools
-- [Local Tools](/docs/tools/local) — built-in in-process tools reference
+- [Remote Tools](/docs/integrations/tools/remote) — register external APIs as agent tools
+- [Local Tools](/docs/integrations/tools/local) — built-in in-process tools reference
