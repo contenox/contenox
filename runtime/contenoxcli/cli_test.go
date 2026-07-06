@@ -127,3 +127,24 @@ func TestUnit_resolveContenoxDir(t *testing.T) {
 		t.Errorf("Expected fallback dir %q, got %q", fallbackDir, resolvedDir2)
 	}
 }
+
+// Bare invocations must route to session-backed chat, not the stateless run
+// pipeline — this dispatch silently regressed to "run" once before (BUG-011),
+// making the documented default-session auto-create a no-op.
+func TestUnit_DispatchSubcommand_BarePromptIsChat(t *testing.T) {
+	if got := dispatchSubcommand([]string{"say hello"}, false); got != "chat" {
+		t.Fatalf("bare prompt dispatched to %q, want chat", got)
+	}
+	if got := dispatchSubcommand([]string{"--db", "x.db", "say hello"}, false); got != "chat" {
+		t.Fatalf("bare prompt with flags dispatched to %q, want chat", got)
+	}
+	if got := dispatchSubcommand([]string{"--experimental-acp"}, false); got != "acp" {
+		t.Fatalf("--experimental-acp dispatched to %q, want acp", got)
+	}
+	if got := dispatchSubcommand([]string{"run", "input"}, false); got != "" {
+		t.Fatalf("explicit run subcommand re-dispatched to %q, want none", got)
+	}
+	if got := dispatchSubcommand([]string{"--help"}, true); got != "" {
+		t.Fatalf("help-only dispatched to %q, want none", got)
+	}
+}

@@ -66,20 +66,8 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		}
 	}
 
-	templateVars := map[string]string{
-		"model":    sess.modelOrDefault(t.model()),
-		"provider": sess.providerOrDefault(t.provider()),
-		"think":    sess.think(),
-	}
-	if altModel := t.altModel(); altModel != "" {
-		templateVars["alt_model"] = altModel
-	}
-	if altProvider := t.altProvider(); altProvider != "" {
-		templateVars["alt_provider"] = altProvider
-	}
-	if maxTokens := t.maxTokens(); maxTokens != "" {
-		templateVars["max_tokens"] = maxTokens
-	}
+	templateVars := t.chainTemplateVars(sess)
+	templateVars["think"] = sess.think()
 	var toolsAllowlist []string
 	if t.deps.DB != nil {
 		var err error

@@ -1,0 +1,67 @@
+---
+import Base from '../layouts/Base.astro';
+import Landing from '../components/Landing.astro';
+import type { LandingStrings } from '../components/Landing.astro';
+
+const t: LandingStrings = {
+  badge: 'Local-first AI workflow runtime',
+  h1a: 'AI workflows you can run,',
+  h1b: 'review, and own.',
+  lede: 'Package repeatable coding work into versioned Chains, connect the models and tools you choose, and run them from the CLI, VS Code, or ACP clients with explicit approval gates. No hosted Contenox service required.',
+  ctaRecipe: 'Run a recipe',
+  ctaPackage: 'Package a workflow',
+  ctaGithub: 'View on GitHub',
+  installNote: 'Installs <code class="font-mono">contenox</code>. Run <code class="font-mono">contenox init</code> to scaffold a workspace.',
+  positioning: 'Contenox is not just a chatbot, not just a VS Code extension, and not just an agent framework. It is a local-first workflow runtime for specific, reviewable AI work.',
+  tableWorld: 'Nearby world',
+  tableWhy: 'Why Contenox is different',
+  rows: [
+    ['Cursor / IDE copilots', 'Runtime-first, not editor-first. The same engine works from the terminal, VS Code, and ACP clients.'],
+    ['Aider / CLI coding agents', 'Broader workflow, session, tool policy, and provider scope than a single coding loop.'],
+    ['LangChain / agent frameworks', 'End-user executable product, not just a library you wire into an application.'],
+    ['Dify / n8n / web AI workflow tools', 'Local desktop/workspace-first, not web-app or SaaS-first.'],
+    ['Ollama wrappers', 'Provider-neutral and workflow/tool/HITL-oriented, with local and hosted models.'],
+  ],
+  authorEyebrow: 'What you can author',
+  authorH2: 'Repeatable work, with policy in the file.',
+  authorItems: [
+    'Release evidence pack: feed in git history, PRs, ticket notes, and CI output; the chain drafts the changelog, risk notes, and deployment checklist, then stops before publishing.',
+    'API-to-workflow wrapper: register a narrow OpenAPI subset, inject hidden workspace or environment arguments, and require approval for mutating calls.',
+    'Repo maintenance chain: inspect an issue, plan the patch, touch only approved files, run tests, and prepare a review packet instead of silently changing the project.',
+    'Browser QA evidence: Playwright captures the live app state, the chain writes documentation or screenshots, and the policy decides what needs human approval.',
+  ],
+  editorsEyebrow: 'Run it where work happens',
+  editorsH2: 'The same chain can run in your editor, terminal, or automation.',
+  editorsLede: 'Contenox ships a native VS Code extension, and speaks the Agent Client Protocol over stdio for other editors. Use VS Code, Zed, JetBrains, or AionUi when an editor UI helps; keep the workflow itself in the chain file, with tool calls and HITL approvals routed through the client.',
+  guides: [
+    ['Read the VS Code guide', '/docs/guide/vscode-vscodium/'],
+    ['Read the Zed guide', '/docs/guide/zed/'],
+    ['Read the JetBrains guide', '/docs/guide/jetbrains/'],
+    ['Read the AionUi guide', '/docs/guide/aionui/'],
+  ],
+  capsEyebrow: 'Core capabilities',
+  caps: [
+    ['The Chain is the contract', 'Prompts, model routing, tool allowlists, command policy, budgets, and approval gates are visible keys in a versioned file — reviewable, diffable, repeatable.'],
+    ['Runs where work happens', 'One runtime behind the CLI, the VS Code extension, and any ACP editor. Same chains, same sessions, same policy everywhere.'],
+    ['Providers are config', 'Route inference to local modeld, Ollama, vLLM, OpenAI, Anthropic, Mistral, Gemini, OpenRouter, Bedrock, or Vertex — without touching the workflow.'],
+    ['Local by default', 'Sessions, config, run logs, and state live in SQLite on your machine. No hosted Contenox service, no account, no telemetry.'],
+  ],
+  standardsEyebrow: 'Built on open standards',
+  standardsH2: 'Speaks the protocols your tools already use.',
+  standards: [
+    ['Agent Client Protocol', 'The full runtime inside Zed, JetBrains, AionUi, and any ACP client — over stdio, no plugin lock-in.', 'https://agentclientprotocol.com'],
+    ['Model Context Protocol', 'Register any MCP server — stdio, SSE, or HTTP — and its tools become policy-scoped chain tools.', 'https://modelcontextprotocol.io'],
+    ['OpenAPI', 'Point at any HTTP service with a spec and every operation becomes a callable, allowlistable tool.', '/docs/tools/remote/'],
+  ],
+  bottomEyebrow: 'Get started',
+  bottomH2: 'Own your AI workflows in the next five minutes.',
+  bottomCta: 'Read the Quickstart',
+  bottomContact: 'Questions? <a href="mailto:hello@contenox.com" class="underline hover:text-black dark:hover:text-white">hello@contenox.com</a> · Issues and PRs on <a href="https://github.com/contenox/runtime" class="underline hover:text-black dark:hover:text-white">GitHub</a>',
+};
+---
+<Base
+  title="Contenox - Local-first AI workflow runtime for developers"
+  alternates={{ en: '/', de: '/de/' }}
+>
+  <Landing t={t} />
+</Base>

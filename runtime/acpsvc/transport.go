@@ -180,6 +180,42 @@ func (t *Transport) maxTokens() string {
 	return t.defaultMaxTokens
 }
 
+// chainTemplateVars seeds the template vars every chain execution needs.
+// The seeded chains reference {{var:alt_model|var:default_model}} (and the
+// provider equivalent), so default_model/default_provider must always be
+// set when a model is known — configured default first, falling back to the
+// session's effective selection, matching the CLI chat path.
+func (t *Transport) chainTemplateVars(sess *sessionEntry) map[string]string {
+	vars := map[string]string{
+		"model":    sess.modelOrDefault(t.model()),
+		"provider": sess.providerOrDefault(t.provider()),
+	}
+	defaultModel := t.model()
+	if defaultModel == "" {
+		defaultModel = vars["model"]
+	}
+	if defaultModel != "" {
+		vars["default_model"] = defaultModel
+	}
+	defaultProvider := t.provider()
+	if defaultProvider == "" {
+		defaultProvider = vars["provider"]
+	}
+	if defaultProvider != "" {
+		vars["default_provider"] = defaultProvider
+	}
+	if altModel := t.altModel(); altModel != "" {
+		vars["alt_model"] = altModel
+	}
+	if altProvider := t.altProvider(); altProvider != "" {
+		vars["alt_provider"] = altProvider
+	}
+	if maxTokens := t.maxTokens(); maxTokens != "" {
+		vars["max_tokens"] = maxTokens
+	}
+	return vars
+}
+
 func (t *Transport) setModel(v string) {
 	t.cfgMu.Lock()
 	t.defaultModel = v

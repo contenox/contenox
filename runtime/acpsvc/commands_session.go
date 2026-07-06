@@ -63,20 +63,8 @@ func (t *Transport) handleCompact(ctx context.Context, _ libacp.SessionID, sess 
 		return "", err
 	}
 
-	templateVars := map[string]string{
-		"model":    sess.modelOrDefault(t.model()),
-		"provider": sess.providerOrDefault(t.provider()),
-		"chain":    chain.ID,
-	}
-	if altModel := t.altModel(); altModel != "" {
-		templateVars["alt_model"] = altModel
-	}
-	if altProvider := t.altProvider(); altProvider != "" {
-		templateVars["alt_provider"] = altProvider
-	}
-	if maxTokens := t.maxTokens(); maxTokens != "" {
-		templateVars["max_tokens"] = maxTokens
-	}
+	templateVars := t.chainTemplateVars(sess)
+	templateVars["chain"] = chain.ID
 	execCtx := taskengine.WithTemplateVars(ctx, templateVars)
 
 	compacted, err := chatservice.CompactHistory(execCtx, t.deps.Engine.TaskService, chain, history, keep)

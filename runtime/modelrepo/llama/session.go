@@ -34,7 +34,7 @@ type (
 	Config = transport.Config
 	// AdapterSpec is one LoRA adapter applied to a session. Its digest and scale
 	// are part of the session/manifest cache identity: base+A and base+B must not
-	// share warm KV (see docs/blueprints/modeld-lora-adapters.md).
+	// share warm KV (see docs/blueprints/modeld/lora-adapters.md).
 	AdapterSpec = transport.AdapterSpec
 	// PrefixInput is the stable prefix text plus the manifest that makes reuse
 	// valid (tokenizer, template, runtime config, BOS policy, and model identity

@@ -1,0 +1,27 @@
+---
+import Base from './Base.astro';
+import Sidebar from '../components/Sidebar.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  lang?: string;
+}
+const current = Astro.url.pathname;
+---
+<Base {...Astro.props} ogType="article">
+  <div class="mx-auto flex max-w-6xl gap-8 px-5">
+    <aside class="sticky top-13 hidden max-h-[calc(100vh-3.25rem)] w-64 shrink-0 overflow-y-auto py-10 lg:block">
+      <Sidebar current={current} />
+    </aside>
+    <div class="min-w-0 flex-1">
+      <details class="mt-6 rounded-lg border border-neutral-200 px-3 py-2 lg:hidden dark:border-neutral-800">
+        <summary class="cursor-pointer text-sm font-semibold select-none">Browse docs/</summary>
+        <div class="pt-3"><Sidebar current={current} /></div>
+      </details>
+      <article data-pagefind-body class="prose prose-compact prose-neutral dark:prose-invert max-w-3xl py-10 prose-img:rounded-lg prose-img:border prose-img:border-neutral-200 dark:prose-img:border-neutral-800 prose-code:before:content-none prose-code:after:content-none">
+        <slot />
+      </article>
+    </div>
+  </div>
+</Base>

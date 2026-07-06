@@ -10,7 +10,7 @@
 // showed both backends sit at this higher, manifest-keyed altitude: OpenVINO
 // GenAI holds the tokenizer and chat template internally and caches a string
 // prefix, so a token-only daemon could not honor its proven prefix reuse. See
-// docs/blueprints/modeld-interface-boundary.md.
+// docs/blueprints/modeld/interface-boundary.md.
 package transport
 
 import (
@@ -180,7 +180,7 @@ type Service interface {
 // changes model behavior, so a session built with adapters is a different model
 // variant than its base. Adapter identity (digest + scale, in order) is therefore
 // part of every session, manifest, and slot cache key — warm KV for base+A must
-// never be reused for base+B (see docs/blueprints/modeld-lora-adapters.md). The
+// never be reused for base+B (see docs/blueprints/modeld/lora-adapters.md). The
 // backend adapters (modeld/llama.AdapterSpec, ovsession.GenAILoRAAdapter) mirror
 // this shape; Scale maps to the llama scale and to OpenVINO's folded alpha.
 type AdapterSpec struct {

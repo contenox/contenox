@@ -1,0 +1,20 @@
+# Cookbook
+
+Production-ready, copy-paste patterns for automating real work with `contenox run` and friends.
+
+Each recipe is a **pre-built solution**: pipe data in, the model executes your chain, you get structured output back. Stateless runs stay composable with the rest of your shell.
+
+> **Prerequisites**
+> - Run `contenox init` in your project once, then either pull a local model (`contenox model pull granite-3.2-2b`) or configure a cloud backend — see [Quickstart](/docs/guide/quickstart/).
+> - Use `--shell` for direct CLI recipes that need command execution; command policy lives in each chain’s `tools_policies`.
+
+## Categories
+
+- [Git & DevOps](/cookbook/git-devops/) — commit messages, PR reviews, log summarization
+- [Automated Release Notes](/cookbook/release-notes/) — generate `RELEASE_NOTES.md` from `git log` using a chain pipeline
+- [Stateful Agents with MCP](/cookbook/stateful-agents-mcp/) — persistent memory across tool calls via MCP
+- [Browser Automation with Playwright MCP](/cookbook/playwright-mcp/) — drive a real browser with natural language
+- [Notion as a Tool](/cookbook/notion-mcp/) — create, search, and update Notion via OAuth MCP
+- [Codebase Documentation](/cookbook/codebase-docs/) — architecture guides from your source tree
+- [Leads → HubSpot](/cookbook/leads-to-hubspot/) — pipe a leads file into HubSpot CRM via an OpenAPI sub-spec
+- [HubSpot via MCP](/cookbook/hubspot-mcp/) — OAuth + pre-issued client credentials, works for any vendor MCP without dynamic registration

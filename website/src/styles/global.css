@@ -1,0 +1,118 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* The shared Contenox design system — same tokens Beam uses. */
+@import '../../../packages/ui/src/index.css';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@layer components {
+  /* Shiki dual-theme code blocks (defaultColor: false emits both palettes). */
+  .astro-code {
+    background-color: var(--shiki-light-bg) !important;
+    border: 1px solid var(--color-neutral-200);
+    border-radius: 0.5rem;
+  }
+  .astro-code,
+  .astro-code span {
+    color: var(--shiki-light);
+  }
+  .dark .astro-code {
+    background-color: var(--shiki-dark-bg) !important;
+    border-color: var(--color-neutral-800);
+  }
+  .dark .astro-code,
+  .dark .astro-code span {
+    color: var(--shiki-dark);
+  }
+
+  /* Inline code chips — only OUTSIDE pre blocks. */
+  .prose :not(pre) > code {
+    background: var(--color-neutral-100);
+    border: 1px solid var(--color-neutral-200);
+    border-radius: 0.25rem;
+    padding: 0.1em 0.35em;
+    font-weight: 400;
+  }
+  .dark .prose :not(pre) > code {
+    background: var(--color-neutral-900);
+    border-color: var(--color-neutral-800);
+  }
+
+  /* Copy-to-clipboard button injected on every <pre> (see Base.astro). */
+  pre {
+    position: relative;
+  }
+  .code-copy-btn {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.72rem;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    border-radius: 0.375rem;
+    border: 1px solid var(--color-neutral-300);
+    background: rgb(255 255 255 / 0.85);
+    color: var(--color-neutral-600);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 120ms ease, color 120ms ease;
+  }
+  .dark .code-copy-btn {
+    border-color: var(--color-neutral-700);
+    background: rgb(10 10 10 / 0.85);
+    color: var(--color-neutral-400);
+  }
+  pre:hover .code-copy-btn,
+  .code-copy-btn:focus-visible {
+    opacity: 1;
+  }
+  @media (hover: none) {
+    .code-copy-btn {
+      opacity: 1;
+    }
+  }
+  .code-copy-btn:hover {
+    color: var(--color-neutral-950);
+  }
+  .dark .code-copy-btn:hover {
+    color: white;
+  }
+
+  /* Pagefind search UI — themed to the design system. */
+  #pagefind-search {
+    --pagefind-ui-scale: 0.9;
+    --pagefind-ui-primary: var(--color-neutral-950);
+    --pagefind-ui-text: var(--color-neutral-800);
+    --pagefind-ui-background: #ffffff;
+    --pagefind-ui-border: var(--color-neutral-200);
+    --pagefind-ui-tag: var(--color-neutral-100);
+    --pagefind-ui-border-width: 1px;
+    --pagefind-ui-border-radius: 0.5rem;
+    --pagefind-ui-font: var(--font-sans);
+  }
+  .dark #pagefind-search {
+    --pagefind-ui-primary: #ffffff;
+    --pagefind-ui-text: var(--color-neutral-300);
+    --pagefind-ui-background: var(--color-neutral-950);
+    --pagefind-ui-border: var(--color-neutral-800);
+    --pagefind-ui-tag: var(--color-neutral-900);
+  }
+
+  /* Subtle grid backdrop for the landing hero (matches contenox.com). */
+  .hero-grid {
+    background-image:
+      linear-gradient(rgb(10 10 10 / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(10 10 10 / 0.045) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .dark .hero-grid {
+    background-image:
+      linear-gradient(rgb(237 237 237 / 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(237 237 237 / 0.04) 1px, transparent 1px);
+  }
+}

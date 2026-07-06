@@ -72,11 +72,8 @@ func Main() {
 		}
 		onlyHelp = allRootFlags
 	}
-	switch {
-	case containsExperimentalACPFlag(args) && !firstNonFlagIsReserved(args):
-		rootCmd.SetArgs(append([]string{"acp"}, args...))
-	case !onlyHelp && !firstNonFlagIsReserved(args):
-		rootCmd.SetArgs(append([]string{"run"}, args...))
+	if sub := dispatchSubcommand(args, onlyHelp); sub != "" {
+		rootCmd.SetArgs(append([]string{sub}, args...))
 	}
 	err := rootCmd.Execute()
 	// Flush warm-session KV snapshots to the durable store before the process
@@ -93,6 +90,21 @@ func Main() {
 
 func containsExperimentalACPFlag(args []string) bool {
 	return slices.Contains(args, "--experimental-acp")
+}
+
+// dispatchSubcommand decides which subcommand a bare invocation is routed to.
+// Bare input is session-backed chat, as the quickstart and chat help document
+// ("the first run auto-creates a 'default' session"); 'contenox run' remains
+// the explicit stateless path. Returns "" when args already name a subcommand
+// or are help/version-only.
+func dispatchSubcommand(args []string, onlyHelp bool) string {
+	switch {
+	case containsExperimentalACPFlag(args) && !firstNonFlagIsReserved(args):
+		return "acp"
+	case !onlyHelp && !firstNonFlagIsReserved(args):
+		return "chat"
+	}
+	return ""
 }
 
 func recordStartupFailure(execErr error) {
@@ -172,7 +184,7 @@ work directly from the CLI; local GGUF/OpenVINO inference is served by modeld.
   Quickstart:
     contenox setup                         # interactive wizard — pick provider, model, API key
     contenox init                          # scaffold .contenox/ with default chains
-    contenox "list files in my home dir"   # one-shot chain run using your configured policy
+    contenox "list files in my home dir"   # session-backed chat using your configured policy
 
   Inspect models:
     contenox model list                    # models exposed by registered live backends

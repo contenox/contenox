@@ -2,6 +2,7 @@ package contenoxcli
 
 import (
 	"encoding/json"
+	"regexp"
 	"testing"
 
 	"github.com/contenox/runtime/runtime/taskengine"
@@ -304,4 +305,42 @@ func branchGoto(t *testing.T, task taskengine.TaskDefinition, operator taskengin
 	}
 	require.Failf(t, "missing branch", "task %s missing branch operator=%s when=%q goto=%q", task.ID, operator, when, gotoID)
 	return taskengine.TransitionBranch{}
+}
+
+// Every model macro in the seeded chains must bottom out in a var that both
+// execution paths (CLI buildTemplateVars, ACP chainTemplateVars) always seed
+// when a model is known. A final fallback outside this set fails at runtime
+// with "template fallback var not set" (BUG-014: ACP did not seed
+// default_model, so every recovery task died before model resolution).
+func TestUnit_BuiltinChains_ModelMacroFallbacksAlwaysSeeded(t *testing.T) {
+	alwaysSeeded := map[string]bool{
+		"model": true, "provider": true,
+		"default_model": true, "default_provider": true,
+	}
+	chains := map[string]string{
+		"contenox": initChain,
+		"run":      initRunChain,
+		"acp":      initACPChain,
+		"acpx":     initACPXChain,
+		"compact":  initCompactChain,
+	}
+	macroRe := regexp.MustCompile(`^\{\{var:([a-z_]+)(\|var:([a-z_]+))?\}\}$`)
+	for name, raw := range chains {
+		var chain taskengine.TaskChainDefinition
+		require.NoError(t, json.Unmarshal([]byte(raw), &chain), name)
+		for _, task := range chain.Tasks {
+			if task.ExecuteConfig == nil || task.ExecuteConfig.Model == "" {
+				continue
+			}
+			m := macroRe.FindStringSubmatch(task.ExecuteConfig.Model)
+			require.NotNil(t, m, "%s/%s: unexpected model macro shape %q", name, task.ID, task.ExecuteConfig.Model)
+			final := m[1]
+			if m[3] != "" {
+				final = m[3] // fallback var is the floor
+			}
+			require.True(t, alwaysSeeded[final],
+				"%s/%s: model macro %q bottoms out in %q, which is not always seeded",
+				name, task.ID, task.ExecuteConfig.Model, final)
+		}
+	}
 }

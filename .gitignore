@@ -124,3 +124,5 @@ enterprise/
 
 .notes/
 .claude
+website/dist/
+website/.astro/

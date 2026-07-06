@@ -360,7 +360,7 @@ The `llama` and `openvino` backends are local `modeld`-backed providers.
 artifacts into `~/.contenox/models/<backend>/`. Current normal CLI and VS Code
 release packages do not bundle `modeld` yet, so local `modeld` providers require
 a source build:
-[modeld Source Build and Packaging](docs/modeld-source-build.md).
+[modeld Source Build and Packaging](docs/development/modeld-source-build.md).
 
 ---
 
@@ -395,9 +395,9 @@ workstation: resident context, reusable sessions, and optional adaptation such a
 LoRA where it makes sense.
 
 How it maps onto the code:
-[Effective-Context Runtime Strategy](docs/blueprints/effective-context-kv/README.md).
+[Effective-Context Runtime Strategy](docs/blueprints/modeld/effective-context/README.md).
 How it relates to nearby local and serving projects:
-[modeld Local Inference Landscape](docs/modeld-local-inference-landscape.md).
+[modeld Local Inference Landscape](docs/development/modeld-local-inference-landscape.md).
 
 ---
 
@@ -418,7 +418,7 @@ make deps-modeld
 CONTENOX_MODELD_BACKEND=openvino make run-modeld
 ```
 
-See [modeld Source Build and Packaging](docs/modeld-source-build.md) for the
+See [modeld Source Build and Packaging](docs/development/modeld-source-build.md) for the
 complete local modeld flow and relocatable bundles.
 
 ---

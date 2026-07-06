@@ -1,0 +1,16 @@
+---
+import { getCollection, render } from 'astro:content';
+import Prose from '../../layouts/Prose.astro';
+import { entryTitle, published } from '../../lib/entries';
+
+export async function getStaticPaths() {
+  const entries = await getCollection('docs', published);
+  return entries.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+<Prose title={`${entryTitle(entry)} — Contenox Docs`} description={entry.data.description}>
+  <Content />
+</Prose>

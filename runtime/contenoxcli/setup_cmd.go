@@ -318,7 +318,7 @@ func printLocalModeldSourceBuildSteps(out io.Writer, backend string) {
 	fmt.Fprintln(out, "  that the running modeld can describe/load.")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  Build guide:")
-	fmt.Fprintln(out, "    https://github.com/contenox/runtime/blob/main/docs/modeld-source-build.md")
+	fmt.Fprintln(out, "    https://github.com/contenox/runtime/blob/main/docs/development/modeld-source-build.md")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  The first pulled model becomes default-model automatically.")
 }

@@ -20,6 +20,10 @@ LLAMA_HIP := $(if $(LLAMA_HAVE_HIPCC),ON,OFF)
 # Runtime ABI stamp for generated llama.cpp libraries.
 LLAMA_RUNTIME_ABI := dl-v1
 
+# In-tree tiny model that gates the llamasession system tests; without it
+# every real inference test silently skips and test-session is a false green.
+CONTENOX_LLAMA_TINY_GGUF ?= $(LLAMA_RUNTIME_ROOT)/models/fastthink-0.5b-tiny-q2_k.gguf
+
 # Build ggml CPU/CUDA backends as runtime-loaded plugins.
 # CPU variants are built portably instead of using -march=native.
 LLAMA_CPP_COMMON_CMAKE_FLAGS = \
@@ -125,6 +129,8 @@ test-session: runtime
 	@libdir="$(LLAMA_RUNTIME_LIB_DIR)"; \
 		test -f "$$libdir/libllama.so" || { echo "missing direct llama.cpp runtime; run: make build-llamacpp-runtime"; exit 1; }; \
 		test -f "$$libdir/libllama-common.so" || { echo "missing direct llama.cpp common library; run: make build-llamacpp-runtime"; exit 1; }; \
+		test -f "$(CONTENOX_LLAMA_TINY_GGUF)" || { echo "missing tiny test model at $(CONTENOX_LLAMA_TINY_GGUF); without it every llamasession system test skips (false green). Restore the in-tree model or set CONTENOX_LLAMA_TINY_GGUF."; exit 1; }; \
+		CONTENOX_LLAMA_TINY_GGUF="$(CONTENOX_LLAMA_TINY_GGUF)" \
 		CGO_ENABLED=1 \
 		CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
 		CGO_LDFLAGS="-L$$libdir -Wl,--disable-new-dtags -Wl,-rpath,$$libdir -Wl,-rpath-link,$$libdir -l:libllama-common.so -l:libllama.so -l:libggml.so -l:libggml-base.so -lstdc++ -lm -ldl -lpthread" \

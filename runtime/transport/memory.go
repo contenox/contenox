@@ -11,7 +11,7 @@ import (
 // it models the warm-reuse contract so the runtime wrapper can be built and
 // tested against the boundary before any CGO backend exists. Reuse is keyed on
 // the stable byte hash plus compatible profile/template/runtime identity; token
-// counts are byte-length proxies. See docs/blueprints/modeld-interface-boundary.md.
+// counts are byte-length proxies. See docs/blueprints/modeld/interface-boundary.md.
 //
 // It is safe for concurrent use.
 type MemoryService struct {

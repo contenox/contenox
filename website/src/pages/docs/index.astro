@@ -1,0 +1,60 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Sidebar from '../../components/Sidebar.astro';
+import { entryTitle, published } from '../../lib/entries';
+
+const entries = await getCollection('docs', published);
+const sections: Record<string, typeof entries> = {};
+const rootEntries: typeof entries = [];
+for (const entry of entries) {
+  if (entry.id.includes('/')) {
+    const section = entry.id.split('/')[0];
+    (sections[section] ??= []).push(entry);
+  } else {
+    rootEntries.push(entry);
+  }
+}
+const order = ['guide', 'chains', 'tools', 'reference', 'development', 'blueprints'];
+const sectionNames = [...order.filter((s) => sections[s]), ...Object.keys(sections).filter((s) => !order.includes(s)).sort()];
+---
+<Base title="Contenox Docs">
+  <div class="mx-auto flex max-w-6xl gap-8 px-5">
+    <aside class="sticky top-13 hidden max-h-[calc(100vh-3.25rem)] w-64 shrink-0 overflow-y-auto py-10 lg:block">
+      <Sidebar current="/docs/" />
+    </aside>
+    <div class="min-w-0 max-w-3xl flex-1 py-10">
+      <h1 class="text-3xl font-bold tracking-tight">Documentation</h1>
+      {rootEntries.length > 0 && (
+        <ul class="mt-6 divide-y divide-neutral-200 dark:divide-neutral-900">
+          {rootEntries.map((entry) => (
+            <li>
+              <a href={`/docs/${entry.id}/`} class="group flex flex-wrap items-baseline gap-x-3 py-2.5 no-underline">
+                <span class="font-medium group-hover:underline">{entryTitle(entry)}</span>
+                {entry.data.description && <span class="text-sm text-neutral-500">{entry.data.description}</span>}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+      {sectionNames.map((section) => (
+        <section class="mt-10">
+          <h2 class="font-mono text-xs font-semibold tracking-widest text-neutral-500">{section}/</h2>
+          <ul class="mt-3 divide-y divide-neutral-200 dark:divide-neutral-900">
+            {sections[section]
+              .sort((a, b) => a.id.localeCompare(b.id))
+              .map((entry) => (
+                <li>
+                  <a href={`/docs/${entry.id}/`} class="group flex flex-wrap items-baseline gap-x-3 py-2.5 no-underline">
+                    <span class="font-mono text-xs text-neutral-400 dark:text-neutral-600">{entry.id.split('/').slice(1, -1).join('/')}</span>
+                    <span class="font-medium group-hover:underline">{entryTitle(entry)}</span>
+                    {entry.data.description && <span class="text-sm text-neutral-500">{entry.data.description}</span>}
+                  </a>
+                </li>
+              ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  </div>
+</Base>

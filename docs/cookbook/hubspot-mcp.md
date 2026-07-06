@@ -1,0 +1,145 @@
+# HubSpot via MCP
+
+Read and write your HubSpot CRM with contenox using HubSpot's own MCP server — OAuth 2.1 + PKCE, your tokens stored locally, your data routed direct between CLI and HubSpot.
+
+This recipe is the counterpart to [Leads → HubSpot](/cookbook/leads-to-hubspot/). That one shows the OpenAPI route (narrow hand-curated tool surface, bearer token). This one shows the MCP route (HubSpot's full curated tool set, OAuth with pre-issued client credentials). Same outcome, different integration pattern — pick whichever fits your workflow.
+
+The wider point: the **OAuth-with-pre-issued-credentials** path also works for Salesforce, Microsoft Graph, and any other vendor MCP that requires a manually-registered OAuth app (no RFC 7591 dynamic client registration). HubSpot is just the example.
+
+---
+
+## Prerequisites
+
+- contenox **vX.Y.Z+** *(the release containing `--oauth-client-id` / `--oauth-client-secret-env` support on `mcp add`)*
+- A configured LLM backend with tool calling
+- A HubSpot CRM portal you have admin access to
+- A HubSpot developer account (free, same login as your CRM)
+
+---
+
+## 1. Create an MCP Auth App in HubSpot
+
+In `developers.hubspot.com`:
+
+1. Sidebar → **Development** → **MCP Auth Apps**
+2. Top-right → **Create MCP auth app**
+3. Fill in:
+   - **Name:** anything readable, e.g. `contenox-local` (shows up on the OAuth consent screen)
+   - **Description:** optional
+   - **Weiterleitungs-URL / Redirect URL:** `http://127.0.0.1:49152/callback` *(this is contenox's default callback; the port must match exactly — see Caveats below for changing it)*
+   - **Symbol:** skip — only required for marketplace certification
+4. Click **Create**
+
+You'll be redirected to the app's details page. Copy two values:
+
+- **Client ID** (UUID)
+- **Client Secret** (separate UUID — click "Show" or "Reveal" if it's hidden behind a button)
+
+---
+
+## 2. Register the MCP server with contenox
+
+```bash
+export HUBSPOT_MCP_CLIENT_SECRET=<the client_secret from HubSpot, NOT the client_id>
+
+contenox mcp add hubspot \
+    --transport http \
+    --url https://mcp.hubspot.com/ \
+    --auth-type oauth \
+    --oauth-client-id <client_id from HubSpot> \
+    --oauth-client-secret-env HUBSPOT_MCP_CLIENT_SECRET
+```
+
+What `--oauth-client-secret-env` does: contenox stores only the env var **name** in its local SQLite, not the secret value. At each connection, the secret is resolved from your environment at runtime.
+
+---
+
+## 3. Authorize in the browser
+
+```bash
+contenox mcp auth hubspot
+```
+
+This opens your browser at HubSpot's authorization URL. You:
+
+1. Pick which HubSpot portal to authorize
+2. Review the scopes (HubSpot determines them automatically from the MCP server's current tool set and your user permissions)
+3. Click **Approve**
+
+contenox catches the redirect at `http://127.0.0.1:49152/callback`, exchanges the code for an access token + refresh token using your client_secret, and persists the tokens locally. From now on, refresh is automatic until the refresh token expires.
+
+Real output from a fresh run:
+
+```text
+Opening browser for contenox-local authorization...
+hubspot: authenticated successfully.
+```
+
+---
+
+## 4. Use it
+
+Anything contenox normally does with tools, now talking to HubSpot:
+
+```bash
+contenox chat "use hubspot to read the companies we have there"
+```
+
+Sample output from a live run against a CRM populated by the [other recipe](/cookbook/leads-to-hubspot/):
+
+```text
+Here are the companies currently in your HubSpot CRM (showing the first 5 out of 6):
+
+1. Clove (ID: 429875908839)
+   - Description: A fintech SaaS platform that aims to democratize access to professional financial advice…
+   - Associated Contacts: 2
+
+2. ThatRound (ID: 429786803417)
+   - Description: An AI-powered SaaS fundraising marketplace…
+   - Associated Contacts: 1
+
+3. Round (Round Treasury) (ID: 429794020561)
+   - Description: An AI-powered finance automation platform…
+   - Associated Contacts: 2
+
+4. Paygentic (ID: 429822814428)
+   - Description: Provides an agent-first billing and payments infrastructure…
+   - Associated Contacts: 2
+
+5. Cyb3r Operations (ID: 429788612851)
+   - Description: A cybersecurity SaaS platform…
+   - Associated Contacts: 1
+```
+
+---
+
+## What HubSpot's MCP exposes
+
+Per HubSpot's [official documentation](https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server), the tools the model gets to see:
+
+- `search_crm_objects` — search CRM records with filters and pagination
+- `get_crm_objects` — fetch up to 100 records by ID
+- `manage_crm_objects` — create or update records and activities
+- `search_properties` / `get_properties` — discover schema
+- `search_owners` — look up CRM record owners
+- `get_user_details` — authenticated user info
+- `get_campaign_contacts_by_type`, `get_campaign_analytics`, `get_campaign_asset_types`, `get_campaign_asset_metrics` — campaign analytics
+
+The supported objects: contacts, companies, deals, tickets, line items, products (write); plus calls, emails, meetings, notes, tasks (activities, write); plus quotes, subscriptions, segments, blog posts, landing pages, site pages, campaigns, marketing events (read).
+
+---
+
+## Customize
+
+- **Change the callback port.** If port 49152 is already in use on your machine, set `OAuthCallbackPort` in your contenox config to anything else and **re-register the same port in HubSpot's MCP Auth App** — they have to match exactly.
+- **Different OAuth-only MCP.** Same flags work for any vendor whose MCP requires a manually-registered OAuth app (Salesforce, Microsoft Graph). Create the app in their UI, register the redirect URL `http://127.0.0.1:49152/callback`, then `contenox mcp add <name> --auth-type oauth --oauth-client-id ... --oauth-client-secret-env ...`.
+
+---
+
+## Caveats
+
+- **Scopes are determined by HubSpot, not you.** Per their docs: "available scopes are automatically determined by (1) the tools available in the MCP server at the time of installation and (2) the permissions that the user chooses to grant during installation." You can't pre-declare scopes; the user picks at consent time.
+- **Sensitive Data setting blocks activities.** If your HubSpot account has Sensitive Data turned on, the MCP server blocks access to activity objects (calls, emails, meetings, notes, tasks) — even though they're listed as supported. This is HubSpot-specific behavior; standard CRM API calls are unaffected.
+- **Token refresh on stale sessions.** If the refresh token expires (long inactivity, or you revoked access in HubSpot), `contenox mcp auth hubspot` re-runs the browser flow cleanly.
+- **The MCP server uses HubSpot's CRM search API under the hood**, which doesn't include vector search. For semantic similarity over CRM records, you'd still need a separate embedding pipeline.
+- **OpenAPI route still has its place.** For workflows where you want a narrow, hand-curated tool surface (e.g. "the agent can only create companies and contacts, nothing else"), the [OpenAPI recipe](/cookbook/leads-to-hubspot/) is the better fit — `manage_crm_objects` in the MCP is broad enough that scoping it down requires HITL policy rules, not spec subsetting.

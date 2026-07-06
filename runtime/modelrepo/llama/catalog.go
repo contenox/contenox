@@ -2,6 +2,7 @@ package llama
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -32,6 +33,8 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 		return nil, err
 	}
 	var out []modelrepo.ObservedModel
+	var omitted int
+	var lastDescribeErr error
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -75,6 +78,8 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 			case modeldconn.Available():
 				// modeld is live but cannot describe THIS model — it is genuinely
 				// unusable, so omit it rather than advertise a broken model.
+				omitted++
+				lastDescribeErr = derr
 				continue
 			default:
 				// modeld is momentarily gone (lease gap / restart); keep the model
@@ -97,6 +102,12 @@ func (c *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 				"node":    "llama",
 			},
 		})
+	}
+	// Omitting individually broken models is fine, but if a live modeld could
+	// describe none of them the backend is misconfigured, not empty — surface
+	// the diagnosis instead of an empty catalog.
+	if len(out) == 0 && omitted > 0 {
+		return nil, fmt.Errorf("modeld is live but could not describe any of the %d llama model(s) in %s: %w", omitted, c.dir, lastDescribeErr)
 	}
 	return out, nil
 }

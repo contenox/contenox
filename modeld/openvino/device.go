@@ -52,12 +52,21 @@ func devicePriorityCategory(s string) string {
 // category, enumeration order is preserved. CPU is always appended as a final
 // fallback because OpenVINO exposes a CPU plugin even when it is not enumerated as
 // an accelerator, so a session can always be opened.
+//
+// Devices whose memory cannot be budgeted are excluded: capacity planning needs
+// telemetry (or the shared-with-display host-RAM fallback), and a device it
+// cannot budget must not be selected under AUTO. OpenVINO enumerates non-Intel
+// GPUs (e.g. NVIDIA via OpenCL) without memory telemetry; selecting one fails
+// every capacity probe and, through Describe, empties the model catalog.
 func orderDeviceCandidates(devices []ovsession.DeviceInfo, priority []string) []string {
 	if len(priority) == 0 {
 		priority = defaultDevicePriority
 	}
 	byType := make(map[string][]string)
 	for _, d := range devices {
+		if !deviceBudgetable(d) {
+			continue
+		}
 		t := strings.ToLower(strings.TrimSpace(d.Type))
 		byType[t] = append(byType[t], d.Name)
 	}
@@ -82,6 +91,15 @@ func orderDeviceCandidates(devices []ovsession.DeviceInfo, priority []string) []
 		out = append(out, "CPU")
 	}
 	return out
+}
+
+// deviceBudgetable mirrors openvinoDeviceSnapshot's requirements: usable memory
+// telemetry, or shared-with-display (host-RAM fallback), or CPU (system RAM).
+func deviceBudgetable(d ovsession.DeviceInfo) bool {
+	if openvinoDeviceBase(d.Name) == "CPU" || d.SharedWithDisplay {
+		return true
+	}
+	return d.MemoryTotalKnown && d.MemoryFreeKnown && d.MemoryTotal > 0
 }
 
 // openSessionDevices expands a session's device selector into the ordered list of

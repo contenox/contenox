@@ -1,0 +1,81 @@
+---
+title: AGENTS.md
+description: Project-level instructions and context that load automatically into every session.
+---
+
+# AGENTS.md
+
+Contenox follows the [AGENTS.md community standard](https://agents.md) — a `README` for AI coding agents. Drop an `AGENTS.md` file at your project root (or any parent directory) and it loads automatically into every new chat session as a system message.
+
+The same file works across [60+ tools](https://agents.md) including Codex, Aider, Cursor, Gemini CLI, Jules, Devin, and more. Write it once, every agent reads it.
+
+## How it loads
+
+When `contenox chat` starts a new session, it walks up from the current working directory to find the closest `AGENTS.md`. If found, it's prepended to the chat history as a single `system` message — once per session, not once per turn — and persisted alongside the conversation.
+
+Because it lands in chat history (not the system prompt), it's:
+
+- **Cached** by providers on subsequent turns — no re-render cost
+- **Persisted** in `messagestore` — survives restarts, visible in `sqlite3 ~/.contenox/local.db`
+- **Reference material**, not unconditional rules — the model treats it as project context to consult, not directives to obey blindly
+
+`contenox run` is stateless, so it loads `AGENTS.md` afresh on every invocation when input type is `chat`.
+
+## Closest-wins precedence
+
+If you have nested `AGENTS.md` files (monorepo with per-package context), the one closest to your current working directory wins. The loader walks up from `cwd` toward the filesystem root and stops at the first hit.
+
+For very large monorepos, this means each package can ship tailored instructions without polluting the root file.
+
+## Cap
+
+Files larger than 64 KiB are truncated with a marker. Keep AGENTS.md focused on the things the agent *needs* to know, not full architectural docs — link to longer docs from there.
+
+## Staleness
+
+`AGENTS.md` is read at session start and persists in history. Updating the file mid-session does *not* update the loaded copy — start a new session (`contenox session new`) to pick up changes. This matches how Claude Code's `CLAUDE.md` and most other agents handle this.
+
+## What to put in it
+
+The spec is open — any markdown — but useful sections include:
+
+```markdown
+# Project name
+
+## Setup commands
+- Install deps: `make deps`
+- Run tests: `make test`
+- Build binary: `make build`
+
+## Code style
+- Go 1.25, no panics in library code
+- All tools take `libdb.DBManager` at construction
+- Tests use `t.TempDir()` + `libdb.NewSQLiteDBManager` for SQLite
+
+## Project conventions
+- Mutating local_fs operations require a prior `read_file` (read-before-write contract)
+- HITL is on by default for write_file, sed, local_shell, and mutating web verbs
+
+## Don't do
+- Never run `git push --force` unprompted
+- Never edit files under `vendor/`
+```
+
+## Verifying it loaded
+
+After starting a session, the AGENTS.md content is the first message in the persisted history:
+
+```bash
+sqlite3 ~/.contenox/local.db \
+  "SELECT json_extract(payload,'\$.role'),
+          length(json_extract(payload,'\$.content'))
+   FROM messages
+   WHERE idx_id = (SELECT value FROM kv WHERE key='contenox.session.active' LIMIT 1)
+   ORDER BY added_at LIMIT 1"
+```
+
+The first row should have role `system` and a content length matching your `AGENTS.md` size plus the wrapper text.
+
+## Per-tool conventions
+
+Other AGENTS.md adopters expose configuration knobs (Aider's `read: AGENTS.md`, Gemini CLI's `context.fileName`). Contenox doesn't need configuration — the loader is on by default and follows the spec verbatim. To disable, simply don't ship an `AGENTS.md` in the project tree.

@@ -133,9 +133,9 @@ Keep these files in sync when changing public surface area:
 
 - `docs/blueprints/v1-feature-map.md`
 - `docs/contenox-cli.md`
-- `docs/modeld-source-build.md`
+- `docs/development/modeld-source-build.md`
 - `packages/vscode/README.md`
-- `docs/blueprints/acp-registry-submission/README.md`
+- `docs/blueprints/acp/registry-submission/README.md`
 
 ## Local development setup
 
@@ -275,8 +275,8 @@ make package-modeld-release MODELD_DEPS_ROOT=<bundle>   # (-> package-modeld-rel
 
 Point `MODELD_DEPS_S3_URI` / `MODELD_RELEASE_S3_URI` at a local directory to test the
 push/pull/package flow without AWS. See
-[`docs/blueprints/modeld-release-artifacts.md`](docs/blueprints/modeld-release-artifacts.md)
-for the design and `docs/modeld-source-build.md` for source-build details.
+[`docs/blueprints/modeld/release-artifacts.md`](docs/blueprints/modeld/release-artifacts.md)
+for the design and `docs/development/modeld-source-build.md` for source-build details.
 
 #### Reusing prebuilt dependency bundles (dev fast path)
 

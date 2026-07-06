@@ -141,6 +141,7 @@ CONTENOX_DEV_PORT ?= 32123
 CONTENOX_DEV_URL ?= http://$(CONTENOX_DEV_ADDR):$(CONTENOX_DEV_PORT)
 
 .PHONY: help \
+	deps-website dev-website build-website preview-website \
 	openapi \
 	build-contenox build-contenox-windows build-ui build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-prebuilt build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
 	bundle-modeld-deps bundle-modeld-deps-linux bundle-modeld-deps-darwin bundle-modeld-deps-windows \
@@ -158,7 +159,7 @@ help:
 	@echo "build-*    build-contenox build-contenox-windows build-ui build-llamacpp-runtime build-modeld build-vscode"
 	@echo "package-*  package-modeld package-modeld-prebuilt package-modeld-release package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
 	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] modeld-release-metadata push-modeld-release push-modeld-index"
-	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/modeld-release-runbook.md)"
+	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/development/modeld-release-runbook.md)"
 	@echo "test-*     test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
 	@echo "dev-*      dev-beam dev-web-proxy dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
 	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
@@ -742,6 +743,19 @@ deps-ui:
 
 deps-vscode:
 	cd $(PROJECT_ROOT)/packages/vscode && npm ci
+
+# website (static contenox.com built from docs/; see website/README.md)
+deps-website:
+	cd $(PROJECT_ROOT)/website && npm ci
+
+dev-website:
+	cd $(PROJECT_ROOT)/website && npm run dev
+
+build-website:
+	cd $(PROJECT_ROOT)/website && npm run build
+
+preview-website: build-website
+	cd $(PROJECT_ROOT)/website && npm run preview
 
 # clean
 clean:

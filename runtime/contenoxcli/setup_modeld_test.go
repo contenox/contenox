@@ -42,7 +42,7 @@ func TestUnit_LocalModeldSourceBuildStepsKeepModelChoices(t *testing.T) {
 		"default-autocomplete-provider llama",
 		"default-autocomplete-model qwen3-coder-30b-a3b",
 		"contenox model registry-list",
-		"docs/modeld-source-build.md",
+		"docs/development/modeld-source-build.md",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("llama modeld setup text missing %q:\n%s", want, got)

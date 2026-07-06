@@ -7,8 +7,21 @@ import (
 	"github.com/contenox/runtime/modeld/openvino/ovsession"
 )
 
+// di is a budgetable device: telemetry known, so it stays a candidate.
 func di(name, typ string) ovsession.DeviceInfo {
+	return ovsession.DeviceInfo{Name: name, Type: typ, MemoryFree: 1 << 30, MemoryTotal: 2 << 30, MemoryFreeKnown: true, MemoryTotalKnown: true}
+}
+
+// diNoTelemetry is a device without memory telemetry (e.g. a non-Intel GPU
+// enumerated via OpenCL): capacity cannot budget it, so AUTO must skip it.
+func diNoTelemetry(name, typ string) ovsession.DeviceInfo {
 	return ovsession.DeviceInfo{Name: name, Type: typ}
+}
+
+// diShared is a shared-with-display device (iGPU): telemetry may be absent
+// because the host-RAM fallback budgets it.
+func diShared(name, typ string) ovsession.DeviceInfo {
+	return ovsession.DeviceInfo{Name: name, Type: typ, SharedWithDisplay: true}
 }
 
 func TestOrderDeviceCandidates(t *testing.T) {
@@ -50,6 +63,19 @@ func TestOrderDeviceCandidates(t *testing.T) {
 			name:    "unknown device types are dropped, cpu still guaranteed",
 			devices: []ovsession.DeviceInfo{di("FOO", "weird")},
 			want:    []string{"CPU"},
+		},
+		{
+			// BUG-013: OpenVINO enumerates a non-Intel GPU (NVIDIA via OpenCL)
+			// without memory telemetry. Selecting it fails every capacity probe
+			// and empties the model catalog — AUTO must fall through to CPU.
+			name:    "gpu without memory telemetry is skipped",
+			devices: []ovsession.DeviceInfo{diNoTelemetry("GPU", "gpu"), di("CPU", "cpu")},
+			want:    []string{"CPU"},
+		},
+		{
+			name:    "shared-with-display igpu without telemetry stays budgetable",
+			devices: []ovsession.DeviceInfo{diShared("GPU.0", "igpu"), di("CPU", "cpu")},
+			want:    []string{"GPU.0", "CPU"},
 		},
 	}
 	for _, tt := range tests {
