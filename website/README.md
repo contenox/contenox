@@ -14,7 +14,7 @@ make preview-website   # build + serve the built output
 
 `docs/` is the site's whole content source: `guide/`, `chains/`, `tools/`,
 `reference/`, `cookbook/`, `stories/` publish today; `development/` (contributor
-docs) and `blueprints/` (design records) are public and can join the publish
+docs) and `development/blueprints/` (design records) are public and can join the publish
 set by extending the collection patterns. Internal working notes never live in
 `docs/` — they go to the gitignored `.notes/` at the repo root.
 

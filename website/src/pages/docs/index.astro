@@ -15,7 +15,7 @@ for (const entry of entries) {
     rootEntries.push(entry);
   }
 }
-const order = ['guide', 'chains', 'tools', 'reference', 'development', 'blueprints'];
+const order = ['guide', 'chains', 'tools', 'reference', 'development'];
 const sectionNames = [...order.filter((s) => sections[s]), ...Object.keys(sections).filter((s) => !order.includes(s)).sort()];
 ---
 <Base title="Contenox Docs">

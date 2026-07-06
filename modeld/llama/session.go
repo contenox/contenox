@@ -23,7 +23,7 @@ type Config = transport.Config
 // file (Path) applied at Scale, plus Name/Digest carried for cache identity and
 // diagnostics. Applying an adapter does not modify the base model weights, but it
 // changes model behavior, so adapter identity must be part of every session and
-// manifest cache key (see docs/blueprints/modeld/lora-adapters.md). It mirrors the
+// manifest cache key (see docs/development/blueprints/modeld/lora-adapters.md). It mirrors the
 // transport-level adapter handle without importing the wire shape here.
 type AdapterSpec struct {
 	Name   string

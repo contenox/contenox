@@ -1,7 +1,7 @@
 // Package modeldinstall discovers, downloads, verifies, installs, and validates a
 // prebuilt modeld package for the current machine. It is the implementation behind
 // the `contenox setup` check for the local llama/openvino providers: see
-// docs/blueprints/modeld/version-decoupling.md.
+// docs/development/blueprints/modeld/version-decoupling.md.
 //
 // It speaks plain HTTPS to the public release prefix — no AWS SDK, no bucket
 // listing, no credentials. The public index is the availability source of truth;

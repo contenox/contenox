@@ -38,7 +38,7 @@ The V1 public surface is:
 
 The V1 public surface does not include `contenox serve`, Beam, a browser UI,
 OpenAI/Ollama-compatible proxy routes, or generated local OpenAPI docs. Do not
-reintroduce those surfaces without updating `docs/blueprints/v1-feature-map.md`
+reintroduce those surfaces without updating `docs/development/blueprints/v1-feature-map.md`
 and the relevant user docs first.
 
 ### Abstraction layers
@@ -105,7 +105,7 @@ runtime/localtools/   local shell, local filesystem, web, echo, print tools
 runtime/*service/     runtime services
 runtime/vscodeagent/  stdio bridge used by the VS Code extension
 packages/vscode/      VS Code extension
-docs/blueprints/      product and release planning notes
+docs/development/blueprints/      product and release planning notes
 lib*/                 infrastructure libraries with no LLM dependency
 ```
 
@@ -131,11 +131,11 @@ Version bumps and release notes for the **contenox runtime** live in
 
 Keep these files in sync when changing public surface area:
 
-- `docs/blueprints/v1-feature-map.md`
+- `docs/development/blueprints/v1-feature-map.md`
 - `docs/contenox-cli.md`
 - `docs/development/modeld-source-build.md`
 - `packages/vscode/README.md`
-- `docs/blueprints/acp/registry-submission/README.md`
+- `docs/development/blueprints/acp/registry-submission/README.md`
 
 ## Local development setup
 
@@ -275,7 +275,7 @@ make package-modeld-release MODELD_DEPS_ROOT=<bundle>   # (-> package-modeld-rel
 
 Point `MODELD_DEPS_S3_URI` / `MODELD_RELEASE_S3_URI` at a local directory to test the
 push/pull/package flow without AWS. See
-[`docs/blueprints/modeld/release-artifacts.md`](docs/blueprints/modeld/release-artifacts.md)
+[`docs/development/blueprints/modeld/release-artifacts.md`](docs/development/blueprints/modeld/release-artifacts.md)
 for the design and `docs/development/modeld-source-build.md` for source-build details.
 
 #### Reusing prebuilt dependency bundles (dev fast path)

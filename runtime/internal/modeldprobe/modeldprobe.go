@@ -12,7 +12,7 @@
 // runtime's gRPC transport — it confirms the lease holder actually answers and
 // is the instance serving the endpoint, downgrading a wedged owner to
 // unreachable. Probe imports the runtime transport client (not modeld). See
-// docs/blueprints/modeld/provisioning-detection.md.
+// docs/development/blueprints/modeld/provisioning-detection.md.
 package modeldprobe
 
 import (

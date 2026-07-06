@@ -9,8 +9,7 @@ const { current } = Astro.props;
 const tree = await buildDocsTree();
 ---
 <nav aria-label="Documentation tree" class="text-sm">
-  <p class="px-2 pb-2 font-mono text-xs text-neutral-500">docs/</p>
-  <ul>
+  <ul class="space-y-0.5">
     {tree.children.map((node) => (
       <SidebarNode node={node} current={current} />
     ))}

@@ -3,7 +3,7 @@
 // warm-reuse claims stay honest. It drives the backend-neutral
 // runtime/transport.Session contract (EnsurePrefix / PrefillSuffix / Decode), so
 // the same harness measures llama.cpp and OpenVINO. The shape follows
-// docs/blueprints/local-coding-node-goals.md ("Required benchmark report").
+// docs/development/blueprints/local-coding-node-goals.md ("Required benchmark report").
 package benchreport
 
 // Report is the full local-node benchmark report. Sections that a given run does

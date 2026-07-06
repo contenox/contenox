@@ -2,17 +2,6 @@
 
 This document outlines a **clean path** toward Cursor-like **modes** (Ask vs agent-style, read-only vs tool-heavy, etc.) and **meaningful injection** of each mode’s **outputs** into the next turn’s chat context. It fixes **boundaries** so UI, HTTP API, persistence, and the chain engine stay separable.
 
-## Goals
-
-1. **Modes** are explicit: the user (or product defaults) picks a **policy** for the next turn or session — not only “which chain JSON” hidden in a long dropdown.
-2. **Outputs of modes** can feed the **next** user or assistant turns in a **structured** way (summaries, retrieved snippets, plan state, review artifacts) — not only invisible side effects inside one chain run.
-3. **Single chat thread** stays coherent: injected material is **visible to the model** and ideally **inspectable in the UI** (collapsible strips, badges), not buried in opaque history blobs.
-
-## Non-goals (for early phases)
-
-- Pixel-perfect parity with Cursor (Review queue UX, diff viewer) — those can layer on once **context bundles** exist.
-- Replacing the task-chain engine — modes **map onto** chains and template variables; they do not fork execution.
-
 ---
 
 ## Terminology

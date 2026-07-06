@@ -9,29 +9,59 @@ const { node, current } = Astro.props;
 
 const containsCurrent = (n: TreeNode): boolean =>
   n.url === current || n.children.some(containsCurrent);
+
+const isCurrent = node.url === current;
+const hasChildren = node.children.length > 0;
 ---
-{node.url ? (
-  <li>
-    <a
-      href={node.url}
-      aria-current={node.url === current ? 'page' : undefined}
-      class:list={[
-        'block rounded px-2 py-1 text-sm no-underline transition-colors',
-        node.url === current
-          ? 'bg-neutral-100 font-semibold text-black dark:bg-neutral-900 dark:text-white'
-          : 'text-neutral-600 hover:text-black dark:text-neutral-400 dark:hover:text-white',
-      ]}
-    >{node.title ?? node.name}</a>
-  </li>
-) : (
-  <li>
+{hasChildren ? (
+  <li class="pt-1">
     <details open={containsCurrent(node)}>
-      <summary class="cursor-pointer rounded px-2 py-1 font-mono text-sm text-neutral-700 select-none hover:text-black dark:text-neutral-300 dark:hover:text-white">{node.name}/</summary>
-      <ul class="ml-3 border-l border-neutral-200 pl-1 dark:border-neutral-800">
+      <summary class="cursor-pointer list-none rounded-md px-2 py-1.5 select-none transition-colors">
+        {node.url ? (
+          <a
+            href={node.url}
+            aria-current={isCurrent ? 'page' : undefined}
+            class:list={[
+              'inline-flex w-full items-center gap-1.5 text-xs font-semibold tracking-wider uppercase no-underline transition-colors',
+              isCurrent
+                ? 'text-indigo-600 dark:text-indigo-400'
+                : 'text-neutral-400 hover:text-indigo-600 dark:text-neutral-500 dark:hover:text-indigo-400',
+            ]}
+          >
+            {node.title ?? node.name}
+          </a>
+        ) : (
+          <span class="text-xs font-semibold tracking-wider text-neutral-400 uppercase hover:text-indigo-600 dark:text-neutral-500 dark:hover:text-indigo-400 transition-colors">
+            {node.name}
+          </span>
+        )}
+      </summary>
+      <ul class="ml-3 mt-0.5 space-y-0.5 border-l border-neutral-200/70 pl-2 dark:border-neutral-800/70">
         {node.children.map((child) => (
           <Astro.self node={child} current={current} />
         ))}
       </ul>
     </details>
   </li>
+) : (
+  <li>
+    <a
+      href={node.url}
+      aria-current={isCurrent ? 'page' : undefined}
+      class:list={[
+        'group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm no-underline transition-all',
+        isCurrent
+          ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300'
+          : 'text-neutral-600 hover:bg-neutral-100 hover:text-indigo-700 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-indigo-400',
+      ]}
+    >
+      {isCurrent && (
+        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500"></span>
+      )}
+      <span class:list={[!isCurrent && 'group-hover:translate-x-0.5 transition-transform']}>
+        {node.title ?? node.name}
+      </span>
+    </a>
+  </li>
 )}
+

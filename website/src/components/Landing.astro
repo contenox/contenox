@@ -33,26 +33,26 @@ interface Props {
   t: LandingStrings;
 }
 const { t } = Astro.props;
-const th = 'border border-neutral-200 bg-neutral-100 px-4 py-2 text-left font-semibold dark:border-neutral-800 dark:bg-neutral-950';
-const tdKey = 'border border-neutral-200 px-4 py-2 font-medium text-neutral-800 dark:border-neutral-800 dark:text-neutral-200';
-const tdVal = 'border border-neutral-200 px-4 py-2 dark:border-neutral-800';
-const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-semibold transition-colors hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-900';
+const th = 'border-b border-neutral-200 bg-neutral-100/50 px-4 py-3 text-left font-semibold text-neutral-900 dark:border-neutral-800 dark:bg-neutral-900/50 dark:text-neutral-100';
+const tdKey = 'border-b border-neutral-100 px-4 py-3 font-medium text-neutral-800 dark:border-neutral-800/50 dark:text-neutral-200';
+const tdVal = 'border-b border-neutral-100 px-4 py-3 dark:border-neutral-800/50';
+const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-semibold transition-all hover:bg-neutral-50 hover:shadow-sm dark:border-neutral-800 dark:hover:bg-neutral-900';
 ---
 <section class="hero-grid border-b border-neutral-200 px-5 py-20 text-center dark:border-neutral-800">
   <span class="inline-block rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-600 dark:border-neutral-800 dark:bg-black dark:text-neutral-400">
     {t.badge}
   </span>
-  <h1 class="mx-auto mt-6 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl">
+  <h1 class="mx-auto mt-6 max-w-3xl bg-gradient-to-br from-neutral-900 to-neutral-500 bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl dark:from-white dark:to-neutral-500">
     {t.h1a}
     <span class="text-neutral-500 dark:text-neutral-400">{t.h1b}</span>
   </h1>
   <p class="mx-auto mt-6 max-w-xl text-neutral-600 dark:text-neutral-400">{t.lede}</p>
   <div class="mt-8 flex flex-wrap justify-center gap-3">
-    <a href="/cookbook/" class="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200">{t.ctaRecipe}</a>
+    <a href="/cookbook/" class="rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition-all hover:scale-105 hover:shadow-indigo-500/40">{t.ctaRecipe}</a>
     <a href="/docs/chains/" class={btnGhost}>{t.ctaPackage}</a>
     <a href="https://github.com/contenox/runtime" class={btnGhost}>{t.ctaGithub}</a>
   </div>
-  <div class="mx-auto mt-10 flex max-w-lg items-center gap-4 overflow-x-auto rounded-lg border border-neutral-200 bg-white px-4 py-3 font-mono text-sm whitespace-nowrap dark:border-neutral-800 dark:bg-neutral-950">
+  <div class="mx-auto mt-10 flex max-w-lg items-center gap-4 overflow-x-auto rounded-xl border border-neutral-200/50 bg-white/60 px-4 py-3 font-mono text-sm shadow-sm backdrop-blur-md whitespace-nowrap dark:border-neutral-800/50 dark:bg-neutral-950/60">
     <span class="text-neutral-400 dark:text-neutral-500">$</span>
     <span>curl -fsSL https://contenox.com/install.sh | sh</span>
   </div>
@@ -68,7 +68,7 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
   <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.capsEyebrow}</p>
   <div class="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-2">
     {t.caps.map(([title, body]) => (
-      <div class="rounded-lg border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-950">
+      <div class="rounded-xl border border-neutral-200/60 bg-white/80 p-5 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-1 hover:border-indigo-500/30 hover:shadow-lg hover:shadow-indigo-500/10 dark:border-neutral-800/60 dark:bg-neutral-950/80 dark:hover:border-indigo-400/30">
         <h3 class="font-semibold">{title}</h3>
         <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">{body}</p>
       </div>
@@ -78,8 +78,8 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
 
 <section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">
   <p class="mx-auto max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.positioning}</p>
-  <div class="mx-auto mt-10 max-w-3xl overflow-x-auto">
-    <table class="w-full border-collapse text-sm">
+  <div class="mx-auto mt-10 max-w-3xl overflow-x-auto rounded-xl border border-neutral-200/60 bg-white/50 shadow-sm backdrop-blur-sm dark:border-neutral-800/60 dark:bg-neutral-950/50">
+    <table class="w-full text-sm">
       <thead>
         <tr>
           <th class={th}>{t.tableWorld}</th>
@@ -112,7 +112,7 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
   <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.editorsEyebrow}</p>
   <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.editorsH2}</h2>
   <p class="mx-auto mt-6 max-w-2xl text-center text-neutral-600 dark:text-neutral-400">{t.editorsLede}</p>
-  <div class="mx-auto mt-8 max-w-lg overflow-x-auto rounded-lg border border-neutral-200 bg-white p-4 font-mono text-sm text-neutral-700 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-300">
+  <div class="mx-auto mt-8 max-w-lg overflow-x-auto rounded-xl border border-neutral-200/60 bg-white/60 p-4 font-mono text-sm text-neutral-700 shadow-sm backdrop-blur-md dark:border-neutral-800/60 dark:bg-neutral-950/60 dark:text-neutral-300">
     <pre class="m-0">// ~/.config/zed/settings.json
 &#123;
   "agent_servers": &#123;
@@ -136,7 +136,7 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
   <h2 class="mt-2 text-center text-2xl font-bold tracking-tight sm:text-3xl">{t.standardsH2}</h2>
   <div class="mx-auto mt-8 grid max-w-4xl gap-4 sm:grid-cols-3">
     {t.standards.map(([name, body, href]) => (
-      <a href={href} class="rounded-lg border border-neutral-200 bg-white p-5 no-underline transition-colors hover:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-950 dark:hover:border-neutral-600">
+      <a href={href} class="rounded-xl border border-neutral-200/60 bg-white/80 p-5 shadow-sm backdrop-blur-sm transition-all hover:-translate-y-1 hover:border-indigo-500/30 hover:shadow-lg hover:shadow-indigo-500/10 dark:border-neutral-800/60 dark:bg-neutral-950/80 dark:hover:border-indigo-400/30 no-underline">
         <h3 class="font-semibold">{name}</h3>
         <p class="mt-2 text-sm text-neutral-600 dark:text-neutral-400">{body}</p>
       </a>
@@ -147,12 +147,12 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
 <section class="hero-grid border-t border-neutral-200 px-5 py-16 text-center dark:border-neutral-800">
   <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.bottomEyebrow}</p>
   <h2 class="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{t.bottomH2}</h2>
-  <div class="mx-auto mt-8 flex max-w-lg items-center gap-4 overflow-x-auto rounded-lg border border-neutral-200 bg-white px-4 py-3 font-mono text-sm whitespace-nowrap dark:border-neutral-800 dark:bg-neutral-950">
+  <div class="mx-auto mt-8 flex max-w-lg items-center gap-4 overflow-x-auto rounded-xl border border-neutral-200/50 bg-white/60 px-4 py-3 font-mono text-sm shadow-sm backdrop-blur-md whitespace-nowrap dark:border-neutral-800/50 dark:bg-neutral-950/60">
     <span class="text-neutral-400 dark:text-neutral-500">$</span>
     <span>curl -fsSL https://contenox.com/install.sh | sh</span>
   </div>
   <div class="mt-6 flex flex-wrap justify-center gap-3">
-    <a href="/docs/guide/quickstart/" class="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-neutral-700 dark:bg-white dark:text-black dark:hover:bg-neutral-200">{t.bottomCta}</a>
+    <a href="/docs/guide/quickstart/" class="rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition-all hover:scale-105 hover:shadow-indigo-500/40">{t.bottomCta}</a>
   </div>
   <p class="mt-6 text-sm text-neutral-500" set:html={t.bottomContact} />
 </section>

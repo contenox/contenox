@@ -395,7 +395,7 @@ workstation: resident context, reusable sessions, and optional adaptation such a
 LoRA where it makes sense.
 
 How it maps onto the code:
-[Effective-Context Runtime Strategy](docs/blueprints/modeld/effective-context/README.md).
+[Effective-Context Runtime Strategy](docs/development/blueprints/modeld/effective-context/README.md).
 How it relates to nearby local and serving projects:
 [modeld Local Inference Landscape](docs/development/modeld-local-inference-landscape.md).
 

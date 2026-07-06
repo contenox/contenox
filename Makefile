@@ -24,7 +24,7 @@ LLAMA_LIBS_DIR ?= $(PROJECT_ROOT)lib/llamacpp
 LLAMA_LIBS_COPY ?=
 MODELD_DIST_DIR ?= $(PROJECT_ROOT)bin/dist
 
-# Release packaging (see docs/blueprints/modeld-release-artifacts.md).
+# Release packaging (see docs/development/blueprints/modeld-release-artifacts.md).
 # MODELD_PLATFORM names the goos-goarch of this host's outputs.
 # bundle-modeld-deps writes native dependency bundles under MODELD_DEPS_OUT; they
 # are pushed to S3 (push-modeld-deps) and consumed by package-modeld-release via
