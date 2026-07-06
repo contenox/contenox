@@ -57,6 +57,15 @@ const t: LandingStrings = {
   bottomH2: 'Own your AI workflows in the next five minutes.',
   bottomCta: 'Read the Quickstart',
   bottomContact: 'Questions? <a href="mailto:hello@contenox.com" class="underline hover:text-black dark:hover:text-white">hello@contenox.com</a> · Issues and PRs on <a href="https://github.com/contenox/runtime" class="underline hover:text-black dark:hover:text-white">GitHub</a>',
+  builtOnEyebrow: 'Built on',
+  builtOnNote: 'Local inference links these upstream projects at build time; their runtime libraries and license texts ship inside each release package. Hosted providers connect over their public APIs.',
+  builtOn: [
+    ['llama.cpp', 'GGUF inference · CPU/CUDA/HIP/Metal', 'https://github.com/ggml-org/llama.cpp'],
+    ['OpenVINO', 'inference runtime · CPU/iGPU', 'https://github.com/openvinotoolkit/openvino'],
+    ['OpenVINO GenAI', 'LLM pipeline', 'https://github.com/openvinotoolkit/openvino.genai'],
+    ['Go', 'the pure-Go runtime', 'https://go.dev'],
+    ['SQLite', 'local state', 'https://sqlite.org'],
+  ],
 };
 ---
 <Base

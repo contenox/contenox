@@ -57,6 +57,15 @@ const t: LandingStrings = {
   bottomH2: 'Besitze deine KI-Workflows — in den nächsten fünf Minuten.',
   bottomCta: 'Quickstart lesen',
   bottomContact: 'Fragen? <a href="mailto:hello@contenox.com" class="underline hover:text-black dark:hover:text-white">hello@contenox.com</a> · Issues und PRs auf <a href="https://github.com/contenox/runtime" class="underline hover:text-black dark:hover:text-white">GitHub</a>',
+  builtOnEyebrow: 'Baut auf',
+  builtOnNote: 'Lokale Inferenz linkt diese Upstream-Projekte zur Build-Zeit; ihre Laufzeitbibliotheken und Lizenztexte liegen jedem Release-Paket bei. Gehostete Provider werden über ihre öffentlichen APIs angebunden.',
+  builtOn: [
+    ['llama.cpp', 'GGUF-Inferenz · CPU/CUDA/HIP/Metal', 'https://github.com/ggml-org/llama.cpp'],
+    ['OpenVINO', 'Inferenz-Runtime · CPU/iGPU', 'https://github.com/openvinotoolkit/openvino'],
+    ['OpenVINO GenAI', 'LLM-Pipeline', 'https://github.com/openvinotoolkit/openvino.genai'],
+    ['Go', 'die pure-Go-Runtime', 'https://go.dev'],
+    ['SQLite', 'lokaler Zustand', 'https://sqlite.org'],
+  ],
 };
 ---
 <Base

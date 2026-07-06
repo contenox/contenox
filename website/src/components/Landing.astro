@@ -28,6 +28,9 @@ export interface LandingStrings {
   bottomH2: string;
   bottomCta: string;
   bottomContact: string;
+  builtOnEyebrow: string;
+  builtOnNote: string;
+  builtOn: [string, string, string][];
 }
 interface Props {
   t: LandingStrings;
@@ -142,6 +145,19 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
       </a>
     ))}
   </div>
+</section>
+
+<section class="border-t border-neutral-200 px-5 py-12 dark:border-neutral-800">
+  <p class="text-center text-xs font-semibold tracking-widest text-neutral-500 uppercase">{t.builtOnEyebrow}</p>
+  <div class="mx-auto mt-6 flex max-w-3xl flex-wrap items-baseline justify-center gap-x-8 gap-y-3">
+    {t.builtOn.map(([name, role, href]) => (
+      <a href={href} rel="noopener noreferrer" class="group text-sm no-underline">
+        <span class="font-semibold text-neutral-700 group-hover:text-black dark:text-neutral-300 dark:group-hover:text-white">{name}</span>
+        <span class="ml-1.5 text-neutral-500">{role}</span>
+      </a>
+    ))}
+  </div>
+  <p class="mx-auto mt-5 max-w-2xl text-center text-xs text-neutral-500">{t.builtOnNote}</p>
 </section>
 
 <section class="hero-grid border-t border-neutral-200 px-5 py-16 text-center dark:border-neutral-800">
