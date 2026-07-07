@@ -38,6 +38,12 @@ contenox model pull granite-3.2-2b
 contenox doctor
 ```
 
+Local models are served by the bundled `modeld` daemon. With `contenox serve`
+running, the Beam UI's modeld console shows the daemon and lets you load or
+unload the resident model:
+
+![Beam's modeld console: pick a local model, load it into the GPU slot, watch it go resident, unload it](/modeld-console.gif)
+
 On a fresh install, the first pulled model becomes `default-model`, and `contenox init` sets `default-provider` to `local` when no provider was already configured.
 
 Run your first prompt:
@@ -45,6 +51,8 @@ Run your first prompt:
 ```bash
 contenox "hello, what can you do?"
 ```
+
+![contenox backend list showing local and hosted providers, then a first chat on a local model](/quickstart.gif)
 
 For a persistent chat session:
 

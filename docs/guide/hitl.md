@@ -15,7 +15,11 @@ HITL is **on by default**. When the engine runs a tool call, it evaluates the ac
 - **allow** — pass through silently (no prompt)
 - **deny** — reject the call immediately without prompting
 
-In the **CLI**, approval prompts appear inline in the terminal (TTY). To disable HITL entirely, pass `--auto`:
+In the **CLI**, approval prompts appear inline in the terminal (TTY):
+
+![A destructive rm command stops at a human approval gate before it runs](/hitl-approve.gif)
+
+To disable HITL entirely, pass `--auto`:
 
 ```bash
 # HITL on (default) — the engine pauses before destructive tool calls:

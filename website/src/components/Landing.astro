@@ -21,6 +21,9 @@ export interface LandingStrings {
   guides: [string, string][];
   capsEyebrow: string;
   caps: [string, string][];
+  hitlDemoAlt: string;
+  beamShotAlt: string;
+  beamShotCaption: string;
   standardsEyebrow: string;
   standardsH2: string;
   standards: [string, string, string][];
@@ -60,6 +63,17 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
     <span>curl -fsSL https://contenox.com/install.sh | sh</span>
   </div>
   <p class="mt-3 text-xs text-neutral-500" set:html={t.installNote} />
+  <video
+    src="/beam-demo.webm"
+    poster="/beam-video-cover.png"
+    autoplay
+    loop
+    muted
+    playsinline
+    aria-label={t.beamShotAlt}
+    class="mx-auto mt-10 w-full max-w-4xl rounded-xl border border-neutral-200/60 shadow-lg dark:border-neutral-800/60"
+  ></video>
+  <p class="mx-auto mt-3 max-w-2xl text-center text-xs text-neutral-500">{t.beamShotCaption}</p>
   <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
     <a href="https://github.com/contenox/runtime"><img src="https://img.shields.io/github/stars/contenox/runtime?style=flat&logo=github&color=444" alt="GitHub stars" loading="lazy" /></a>
     <a href="https://github.com/contenox/runtime/releases"><img src="https://img.shields.io/github/v/release/contenox/runtime?label=version&color=444" alt="Latest release" loading="lazy" /></a>
@@ -77,6 +91,12 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
       </div>
     ))}
   </div>
+  <img
+    src="/hitl-approve.gif"
+    alt={t.hitlDemoAlt}
+    loading="lazy"
+    class="mx-auto mt-10 w-full max-w-3xl rounded-xl border border-neutral-200/60 shadow-lg dark:border-neutral-800/60"
+  />
 </section>
 
 <section class="border-b border-neutral-200 px-5 py-16 dark:border-neutral-800">

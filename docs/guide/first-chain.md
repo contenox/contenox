@@ -192,6 +192,8 @@ If the task uses tools, you author the policy. Allowlists, denylists, per-tool c
 
 The vendor didn't decide what `local_shell` can run on your machine. You did.
 
+![A sudo command is refused because the chain's command policy denies it; the policy is plain JSON](/chain-blocked.gif)
+
 ---
 
 ## Edit 5 — Add a retry policy

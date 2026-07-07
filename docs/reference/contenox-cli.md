@@ -2,6 +2,8 @@
 
 `contenox` is the local AI agent CLI. It runs the Contenox chain engine entirely on your machine.
 
+![A natural-language task in the terminal: contenox reads the repo and answers](/hero.gif)
+
 ## Global Flags
 
 Persistent flags on the root command (also shown under **Global Flags** on subcommands). Run `contenox --help` for the full list.

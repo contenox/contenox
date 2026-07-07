@@ -20,6 +20,8 @@ local model, a private-network backend, or a hosted provider. Sessions, config,
 run logs, and runtime state stay on your machine. No hosted Contenox service
 required.
 
+![A natural-language task in the terminal: contenox reads the repo and answers](website/public/hero.gif)
+
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/contenox/runtime?label=version&logo=github)](https://github.com/contenox/runtime/releases)
@@ -60,6 +62,8 @@ contenox chat -e                        # open $EDITOR to compose a prompt
 
 Resume past work with `contenox session list` and `contenox session switch <name>`.
 
+![contenox backend list showing local and hosted providers, then a first chat on a local model](website/public/quickstart.gif)
+
 Inline editor autocomplete is intentionally a separate model from chat, so ghost
 text can stay local and low-latency while chat uses a larger model:
 
@@ -91,6 +95,8 @@ act:
 
 In Contenox, a Chain is not a prompt pipeline. It is the reviewed execution
 contract around an agent loop.
+
+![A sudo command is refused because the chain's command policy denies it; the policy is plain JSON](website/public/chain-blocked.gif)
 
 ---
 
@@ -232,6 +238,8 @@ The operator decides what it may change.
 | Routine work burns frontier-model budget | Route simple work to local or private-network models |
 | Team knowledge leaves the workstation | Sessions, state, config, and run logs stay local |
 
+![A destructive rm command stops at a human approval gate before it runs](website/public/hitl-approve.gif)
+
 ---
 
 ## The Stance: Exoskeleton, Not Autopilot
@@ -315,12 +323,19 @@ Full guides: [Zed](https://contenox.com/docs/integrations/editors/zed/),
 [JetBrains](https://contenox.com/docs/integrations/editors/jetbrains/),
 [AionUi](https://contenox.com/docs/integrations/editors/aionui/).
 
+Prefer a browser? `contenox serve` opens the same sessions, chains, and backends
+in Beam, the bundled local web UI:
+
+![Beam web UI: a shell tool call passed a human approval gate and the agent reports the result](website/public/beam-chat.png)
+
 ---
 
 ## Backends
 
 Provider/model routing is configuration, not application logic. Add local,
 private-network, or hosted backends the same way:
+
+![Beam's modeld console: pick a local model, load it into the GPU slot, watch it go resident, unload it](website/public/modeld-console.gif)
 
 ```bash
 # Private network / self-hosted inference
