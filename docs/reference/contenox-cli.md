@@ -26,14 +26,28 @@ Persistent flags on the root command (also shown under **Global Flags** on subco
 | `--raw`                          | Print full structured output (e.g. entire chat JSON)                                                                              |
 | `--shell`                        | Enable `local_shell` tools (trusted environments only)                                                                             |
 | `--local-exec-allowed-dir <dir>` | Restrict local filesystem access and `local_shell` executable/script paths for this invocation                                    |
+| `--alt-model <name>`             | Alt model name (for chains referencing `{{var:alt_model}}`). Overrides `default-alt-model` config.                                  |
+| `--alt-provider <type>`          | Alt provider type (for chains referencing `{{var:alt_provider}}`). Overrides `default-alt-provider` config.                          |
+| `--max-tokens <N>`               | Response token cap (for chains referencing `{{var:max_tokens}}`). Overrides `default-max-tokens` config.                             |
+| `-e, --editor`                   | Open `$EDITOR` (or `$VISUAL`, fallback `nano`) to compose the prompt.                                                             |
 
 ## Subcommands
 
-### `contenox` (bare — stateless `run`)
+### `contenox setup`
 
-If the first token is **not** a reserved subcommand (`chat`, `init`, `run`, …), the CLI **prepends `run`**. That is stateless: no chat session.
+Runs an interactive setup wizard to configure your primary provider, model, and API key. This is the recommended first step for all new users. It ensures your global `~/.contenox/` configuration is ready for use.
 
-The default run chain is resolved by name: workspace `.contenox/default-run-chain.json` wins when present, otherwise Contenox falls back to `~/.contenox/default-run-chain.json`. If no `--chain` is set and neither file exists, `contenox run` errors with a hint to run `contenox init` or pass `--chain`.
+```bash
+contenox setup
+```
+
+The wizard will guide you through picking a provider (like a local model, OpenAI, or Gemini), entering an API key if required, and setting your first default model.
+
+### `contenox` (bare — stateful `chat`)
+
+If the first token is **not** a reserved subcommand (`chat`, `init`, `run`, …), the CLI **prepends `chat`**. This starts or continues a stateful, session-backed conversation. It is the default, interactive mode.
+
+The default chat chain is resolved by name: workspace `.contenox/default-chain.json` wins when present, otherwise Contenox falls back to `~/.contenox/default-chain.json`.
 
 ```bash
 contenox "what can you do?"
@@ -42,15 +56,9 @@ contenox --shell "list files here"
 contenox --local-exec-allowed-dir . "summarise the README"
 ```
 
-| Flag                             | Description                                                                |
-| -------------------------------- | -------------------------------------------------------------------------- |
-| `--shell`                        | Enable `local_shell` tools (opt-in; command policy is defined in the chain) |
-| `--local-exec-allowed-dir <dir>` | Restrict local filesystem access and shell executable/script paths         |
-| `--auto`                         | Disable HITL prompts for this invocation. HITL is on by default.           |
-
 ### `contenox chat`
 
-Sends a message to the **active chat session** and prints the response. History is persisted across invocations in SQLite.
+Sends a message to the **active chat session** and prints the response. History is persisted across invocations in SQLite. This is the explicit version of the bare `contenox` command.
 
 ```bash
 contenox chat "what can you do?"
@@ -96,7 +104,7 @@ A namespace is the session-name prefix before its generated id (e.g. `jetbrainsg
 
 ### `contenox run`
 
-Executes a chain non-interactively. No session history.
+Executes a chain non-interactively. Unlike `chat`, `run` does not use session history. It is for stateless, one-shot chain executions.
 
 ```bash
 contenox run --chain .contenox/chain-nws.json --input-type chat "how is the weather?"
@@ -225,18 +233,18 @@ contenox tools remove <name>
 | `--inject`  | Tool call argument to inject and hide from the model, e.g. `"tenant_id=acme"` (repeatable) |
 | `--timeout` | Request timeout in milliseconds (default: 10000)                                           |
 
-### `contenox init`
+### `contenox init [provider]`
 
-Initializes a workspace and ensures the default runtime presets exist. The workspace marker is `.contenox/workspace.id`; default chains and HITL policies are written under `~/.contenox/` unless they already exist. Workspace `.contenox/` files can override the global presets by name.
+Initializes a workspace (`.contenox/`) and ensures default runtime presets exist globally (`~/.contenox/`). It's best to run `contenox setup` first for a guided configuration.
 
-With no provider argument, `init` keeps an existing configured provider, otherwise defaults to `local` and ensures the built-in local backend exists.
+`init` creates the `.contenox/workspace.id` marker. Default chains and HITL policies are written under `~/.contenox/` unless they already exist. Workspace-local `.contenox/` files can override these global presets by name.
+
+You can optionally specify a provider to pre-configure defaults.
 
 ```bash
 contenox init                    # local-first default
-contenox init local              # same, explicit
 contenox init gemini             # pre-configure for Gemini
 contenox init openai             # pre-configure for OpenAI
-contenox init openrouter         # pre-configure for OpenRouter
 contenox init --force            # overwrite existing files
 contenox init --update           # refresh unchanged default files
 ```
@@ -245,16 +253,6 @@ contenox init --update           # refresh unchanged default files
 | ----------- | ----------------------------------- |
 | `-f, --force` | Overwrite existing preset files |
 | `--update`  | Refresh unchanged default files to the latest embedded versions |
-
-After init, either pull a local model or configure a cloud backend:
-
-```bash
-contenox model pull granite-3.2-2b
-# or
-contenox backend add gemini --type gemini --api-key-env GEMINI_API_KEY
-contenox config set default-provider gemini
-contenox config set default-model gemini-2.5-pro
-```
 
 ### `contenox backend`
 
@@ -375,3 +373,4 @@ contenox version
 | Variable | Description |
 |---|---|
 | `CONTENOX_ACP_CHAIN_PATH` | Override the chain file used by ACP sessions |
+| `CONTENOX_ACPX_CHAIN_PATH`| Override the chain file used by headless ACPX sessions |
