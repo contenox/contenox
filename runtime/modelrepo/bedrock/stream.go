@@ -17,7 +17,7 @@ type bedrockStreamClient struct{ bedrockClient }
 // visible text deltas as parcels (parity with the other stream clients, whose
 // StreamParcel carries no tool-call field — tool calls come from non-stream Chat).
 func (c *bedrockStreamClient) Stream(ctx context.Context, messages []modelrepo.Message, args ...modelrepo.ChatArgument) (<-chan *modelrepo.StreamParcel, error) {
-	in := buildConverseInput(c.modelName, messages, chatConfigFromArgs(args), c.maxOutputTokens)
+	in, _ := buildConverseInput(c.modelName, messages, chatConfigFromArgs(args), c.maxOutputTokens)
 	streamIn := &bedrockruntime.ConverseStreamInput{
 		ModelId:         in.ModelId,
 		Messages:        in.Messages,

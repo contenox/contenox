@@ -14,8 +14,12 @@ import (
 
 // buildConverseInput maps neutral messages + config into a Converse request.
 // Adjacent same-role messages are merged (Bedrock requires alternating roles).
-func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig, maxOutputTokens int) *bedrockruntime.ConverseInput {
+// Bedrock tool names must match ^[a-zA-Z0-9_-]{1,64}$, so tool names are
+// sanitized before being sent; the returned map lets the caller translate
+// sanitized names in the response back to the caller's original names.
+func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *modelrepo.ChatConfig, maxOutputTokens int) (*bedrockruntime.ConverseInput, map[string]string) {
 	in := &bedrockruntime.ConverseInput{ModelId: aws.String(modelName)}
+	toOriginal := map[string]string{}
 
 	var system []types.SystemContentBlock
 	var msgs []types.Message
@@ -50,9 +54,11 @@ func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *mod
 				blocks = append(blocks, &types.ContentBlockMemberText{Value: m.Content})
 			}
 			for _, tc := range m.ToolCalls {
+				safeName := sanitizeToolName(tc.Function.Name)
+				toOriginal[safeName] = tc.Function.Name
 				blocks = append(blocks, &types.ContentBlockMemberToolUse{Value: types.ToolUseBlock{
 					ToolUseId: aws.String(tc.ID),
-					Name:      aws.String(tc.Function.Name),
+					Name:      aws.String(safeName),
 					Input:     jsonStringToDocument(tc.Function.Arguments),
 				}})
 			}
@@ -101,8 +107,10 @@ func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *mod
 			if strings.ToLower(t.Type) != "function" || t.Function == nil {
 				continue
 			}
+			safeName := sanitizeToolName(t.Function.Name)
+			toOriginal[safeName] = t.Function.Name
 			tools = append(tools, &types.ToolMemberToolSpec{Value: types.ToolSpecification{
-				Name:        aws.String(t.Function.Name),
+				Name:        aws.String(safeName),
 				Description: aws.String(t.Function.Description),
 				InputSchema: &types.ToolInputSchemaMemberJson{Value: document.NewLazyDocument(t.Function.Parameters)},
 			}})
@@ -112,11 +120,13 @@ func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *mod
 		}
 	}
 
-	return in
+	return in, toOriginal
 }
 
-// decodeConverse maps a Converse response into a neutral ChatResult.
-func decodeConverse(out *bedrockruntime.ConverseOutput) (modelrepo.ChatResult, error) {
+// decodeConverse maps a Converse response into a neutral ChatResult. toOriginal
+// translates sanitized tool names (as sent to Bedrock) back to the caller's
+// original tool names; unknown names are passed through unchanged.
+func decodeConverse(out *bedrockruntime.ConverseOutput, toOriginal map[string]string) (modelrepo.ChatResult, error) {
 	if out == nil || out.Output == nil {
 		return modelrepo.ChatResult{}, fmt.Errorf("bedrock: empty converse output")
 	}
@@ -132,9 +142,13 @@ func decodeConverse(out *bedrockruntime.ConverseOutput) (modelrepo.ChatResult, e
 		case *types.ContentBlockMemberText:
 			text.WriteString(v.Value)
 		case *types.ContentBlockMemberToolUse:
+			name := aws.ToString(v.Value.Name)
+			if orig, ok := toOriginal[name]; ok {
+				name = orig
+			}
 			toolCalls = append(toolCalls, newToolCall(
 				aws.ToString(v.Value.ToolUseId),
-				aws.ToString(v.Value.Name),
+				name,
 				documentToJSONString(v.Value.Input),
 			))
 		}
@@ -154,4 +168,34 @@ func newToolCall(id, name, args string) modelrepo.ToolCall {
 	tc.Function.Name = name
 	tc.Function.Arguments = args
 	return tc
+}
+
+// sanitizeToolName replaces invalid characters with '_' and trims leading/trailing separators.
+// Allowed: letters, digits, underscore, hyphen. Maximum length is 64 characters.
+func sanitizeToolName(in string) string {
+	if in == "" {
+		return "tool"
+	}
+	var b strings.Builder
+	for _, r := range in {
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	s := b.String()
+	// avoid leading/trailing separators
+	s = strings.Trim(s, "_-")
+	if len(s) > 64 {
+		s = s[:64]
+		s = strings.TrimRight(s, "_-")
+	}
+	if s == "" {
+		return "tool"
+	}
+	return s
 }

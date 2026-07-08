@@ -3,6 +3,7 @@ package bedrock
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -30,7 +31,7 @@ func TestUnit_BuildConverseInput_RolesSystemToolsAndInference(t *testing.T) {
 		{Role: "tool", ToolCallID: "t1", Content: `{"files":["a"]}`},
 	}
 
-	in := buildConverseInput("anthropic.claude-3-5-sonnet-20241022-v2:0", msgs, cfg, 0)
+	in, toOrig := buildConverseInput("anthropic.claude-3-5-sonnet-20241022-v2:0", msgs, cfg, 0)
 
 	require.Equal(t, "anthropic.claude-3-5-sonnet-20241022-v2:0", aws.ToString(in.ModelId))
 	require.Len(t, in.System, 1)
@@ -40,6 +41,9 @@ func TestUnit_BuildConverseInput_RolesSystemToolsAndInference(t *testing.T) {
 	require.NotNil(t, in.ToolConfig)
 	require.Len(t, in.ToolConfig.Tools, 1)
 
+	// Check mapping/sanitisation
+	require.Equal(t, "fs.list", toOrig["fs_list"])
+
 	// user, assistant(tool_use), user(tool_result)
 	require.Len(t, in.Messages, 3)
 	require.Equal(t, types.ConversationRoleUser, in.Messages[0].Role)
@@ -47,7 +51,7 @@ func TestUnit_BuildConverseInput_RolesSystemToolsAndInference(t *testing.T) {
 	tu, ok := in.Messages[1].Content[0].(*types.ContentBlockMemberToolUse)
 	require.True(t, ok, "assistant tool call must map to a tool_use block")
 	require.Equal(t, "t1", aws.ToString(tu.Value.ToolUseId))
-	require.Equal(t, "fs.list", aws.ToString(tu.Value.Name))
+	require.Equal(t, "fs_list", aws.ToString(tu.Value.Name)) // The sanitized name sent to Bedrock
 	require.Equal(t, types.ConversationRoleUser, in.Messages[2].Role)
 	tr, ok := in.Messages[2].Content[0].(*types.ContentBlockMemberToolResult)
 	require.True(t, ok, "tool message must map to a tool_result block")
@@ -58,7 +62,7 @@ func TestUnit_BuildConverseInput_ClampsMaxTokens(t *testing.T) {
 	maxTok := 9000
 	cfg := &modelrepo.ChatConfig{MaxTokens: &maxTok}
 
-	in := buildConverseInput("anthropic.claude-3-5-sonnet-20241022-v2:0", []modelrepo.Message{{Role: "user", Content: "hi"}}, cfg, 4096)
+	in, _ := buildConverseInput("anthropic.claude-3-5-sonnet-20241022-v2:0", []modelrepo.Message{{Role: "user", Content: "hi"}}, cfg, 4096)
 
 	require.NotNil(t, in.InferenceConfig)
 	require.NotNil(t, in.InferenceConfig.MaxTokens)
@@ -73,13 +77,13 @@ func TestUnit_DecodeConverse_TextAndToolUse(t *testing.T) {
 				&types.ContentBlockMemberText{Value: "on it"},
 				&types.ContentBlockMemberToolUse{Value: types.ToolUseBlock{
 					ToolUseId: aws.String("t9"),
-					Name:      aws.String("fs.list"),
+					Name:      aws.String("fs_list"),
 					Input:     document.NewLazyDocument(map[string]any{"path": "/x"}),
 				}},
 			},
 		}},
 	}
-	res, err := decodeConverse(out)
+	res, err := decodeConverse(out, map[string]string{"fs_list": "fs.list"})
 	require.NoError(t, err)
 	require.Equal(t, "on it", res.Message.Content)
 	require.Len(t, res.ToolCalls, 1)
@@ -125,6 +129,31 @@ func TestUnit_BedrockProvider_CanThinkFromCapabilityConfigOnly(t *testing.T) {
 
 	provider = NewBedrockProvider("us-east-1", "", "custom", modelrepo.CapabilityConfig{CanChat: true, CanThink: true}, nil, nil)
 	require.True(t, provider.CanThink(), "explicit capability config must set CanThink")
+}
+
+func TestUnit_SanitizeToolName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"", "tool"},
+		{"abc", "abc"},
+		{"a.b.c", "a_b_c"},
+		{"fs.list", "fs_list"},
+		{"-abc-", "abc"},
+		{"_abc_", "abc"},
+		{".", "tool"},
+		{"__.-.__", "tool"},
+		{strings.Repeat("a", 100), strings.Repeat("a", 64)},
+		{strings.Repeat("a", 64) + "_", strings.Repeat("a", 64)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			got := sanitizeToolName(tc.input)
+			require.Equal(t, tc.expected, got)
+		})
+	}
 }
 
 func tc(id, name, args string) modelrepo.ToolCall {
