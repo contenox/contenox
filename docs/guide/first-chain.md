@@ -46,6 +46,12 @@ The second one is a real authored chain: a main agentic loop with a 10-round bud
 
 You don't have to start there. You can write your own.
 
+Every chain in `~/.contenox/` (and your workspace `.contenox/`) is selectable
+per conversation — in the Beam UI (`contenox serve`) they appear as a picker
+when you start a chat:
+
+![Beam's new-chat page: the chain picker listing default-chain, chain-compact, and the other scaffolded chains](/beam-new-chat.png)
+
 ---
 
 ## A minimal chain

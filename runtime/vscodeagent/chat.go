@@ -672,6 +672,15 @@ func (s *Server) templateVars(ctx context.Context, sessionID string) map[string]
 		"provider": cfg.DefaultProvider,
 		"think":    s.effectiveThink(ctx, sessionID),
 	}
+	// The seeded chains reference {{var:alt_model|var:default_model}} (and the
+	// provider equivalent), so default_model/default_provider must be set
+	// whenever a model is known, matching the CLI chat and ACP paths.
+	if cfg.DefaultModel != "" {
+		vars["default_model"] = cfg.DefaultModel
+	}
+	if cfg.DefaultProvider != "" {
+		vars["default_provider"] = cfg.DefaultProvider
+	}
 	if cfg.DefaultAltModel != "" {
 		vars["alt_model"] = cfg.DefaultAltModel
 	}

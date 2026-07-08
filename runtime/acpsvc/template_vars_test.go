@@ -40,17 +40,27 @@ func TestUnit_ChainTemplateVars_FallsBackToSessionSelection(t *testing.T) {
 	}
 }
 
-func TestUnit_ChainTemplateVars_ConfiguredDefaultWinsOverSessionOverride(t *testing.T) {
+// A session model selection (e.g. Zed's model dropdown) is session-only and does
+// not touch the transport-configured default. default_model/default_provider —
+// the recovery fallback for {{var:alt_model|var:default_model}} — must follow the
+// session-effective selection, not the (possibly stale/unreachable) configured
+// default, or recovery/summarise_failure resolves a provider with no models in
+// runtime state while the main tasks succeed on the session model. Power users who
+// want a distinct recovery model still get it via alt_model, which wins the macro.
+func TestUnit_ChainTemplateVars_SessionSelectionSeedsRecoveryFallback(t *testing.T) {
 	tr := &Transport{defaultModel: "gemma4-e4b", defaultProvider: "llama", defaultAltModel: "claude-sonnet-5", defaultAltProvider: "anthropic"}
 	sess := &sessionEntry{Provider: "openai", Model: "gpt-5-mini"}
 
 	vars := tr.chainTemplateVars(sess)
 
 	if vars["model"] != "gpt-5-mini" {
-		t.Fatalf("model = %q, want session override gpt-5-mini", vars["model"])
+		t.Fatalf("model = %q, want session selection gpt-5-mini", vars["model"])
 	}
-	if vars["default_model"] != "gemma4-e4b" {
-		t.Fatalf("default_model = %q, want configured gemma4-e4b", vars["default_model"])
+	if vars["default_model"] != "gpt-5-mini" {
+		t.Fatalf("default_model = %q, want session selection gpt-5-mini", vars["default_model"])
+	}
+	if vars["default_provider"] != "openai" {
+		t.Fatalf("default_provider = %q, want session selection openai", vars["default_provider"])
 	}
 	if vars["alt_model"] != "claude-sonnet-5" || vars["alt_provider"] != "anthropic" {
 		t.Fatalf("alt_model/alt_provider = %q/%q, want claude-sonnet-5/anthropic", vars["alt_model"], vars["alt_provider"])

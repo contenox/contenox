@@ -13,7 +13,19 @@ description: Install Contenox and connect a model.
 curl -fsSL https://contenox.com/install.sh | sh
 ```
 
+To also preinstall the local inference daemon (a ~600 MB download, otherwise
+installed on demand by `contenox setup` or `contenox modeld install`):
+
+```bash
+curl -fsSL https://contenox.com/install.sh | CONTENOX_WITH_MODELD=1 sh
+```
+
 Or download the binary directly from [GitHub Releases](https://github.com/contenox/runtime/releases/latest).
+
+The whole local-first path — install, setup, daemon, model pull, first prompt —
+in one take:
+
+![Install demo: install.sh, contenox setup picking the local llama provider, starting modeld, pulling a model, and a first local answer](/install.gif)
 
 ---
 
@@ -31,12 +43,17 @@ This creates the workspace marker, writes the default chain and HITL policy pres
 
 ## 3. Pull a local model
 
-For the local-first path, pull a curated GGUF model:
+For the local-first path, install and start the `modeld` daemon, then pull a
+curated GGUF model:
 
 ```bash
+contenox modeld install     # downloads + verifies the daemon; prints the serve command
 contenox model pull granite-3.2-2b
 contenox doctor
 ```
+
+Keep the printed `modeld serve` command running in another terminal — it is
+the process that loads models and serves inference.
 
 Local models are served by the bundled `modeld` daemon. With `contenox serve`
 running, the Beam UI's modeld console shows the daemon and lets you load or
@@ -89,6 +106,11 @@ Contenox needs at least one model to work. Pick the option that fits:
 | [AWS Bedrock](/docs/integrations/providers/bedrock/) | An AWS account with Bedrock model access |
 
 If you're not sure, start with [built-in local models](/docs/integrations/providers/local-models/) — no account or API key needed.
+
+All providers can also be configured from the Beam UI (`contenox serve`), which
+stores keys and creates the matching backend for you:
+
+![Beam's cloud providers page: Ollama, OpenAI, Anthropic, Gemini, Mistral, and Vertex AI configuration cards](/beam-providers.png)
 
 ---
 

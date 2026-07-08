@@ -211,6 +211,17 @@ contenox model set-context gemini-3.1-pro-preview --context 1m
 | ----------- | ---------------------------------------------------------------- |
 | `--context` | Context window size: bare integer or shorthand (`12k`, `128k`, `1m`). Required. |
 
+### `contenox modeld`
+
+Manage the local `modeld` inference daemon that serves GGUF (llama) and OpenVINO models.
+
+```bash
+contenox modeld install                       # download + verify the prebuilt daemon
+contenox modeld install --backend openvino    # require the openvino backend
+```
+
+`install` resolves the newest protocol-compatible prebuilt build for this platform, verifies its checksum, installs it under `~/.contenox/modeld/`, and prints the `modeld serve` command to start it. It is non-interactive (the same install runs inside `contenox setup` when a local provider is selected); the installer supports it via `CONTENOX_WITH_MODELD=1`.
+
 ### `contenox tools`
 
 Manage remote OpenAPI tools. See [Remote Tools](/docs/integrations/tools/remote) and [Tools Allowlist Patterns](/docs/integrations/tools/#how-it-works).

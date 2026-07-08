@@ -14,7 +14,10 @@ type ProposedChat = typeof vscode.chat & {
     chatSessionType: string,
     refreshHandler: (token: vscode.CancellationToken) => Thenable<void>,
   ) => ProposedChatSessionItemController;
-  registerChatSessionItemProvider?: (chatSessionType: string, provider: ProposedChatSessionItemProvider) => vscode.Disposable;
+  registerChatSessionItemProvider?: (
+    chatSessionType: string,
+    provider: ProposedChatSessionItemProvider,
+  ) => vscode.Disposable;
   registerChatSessionContentProvider?: (
     scheme: string,
     provider: ProposedChatSessionContentProvider,
@@ -40,13 +43,21 @@ interface ProposedChatSessionItemCollection {
 
 interface ProposedChatSessionItemController extends vscode.Disposable {
   readonly items: ProposedChatSessionItemCollection;
-  createChatSessionItem(resource: vscode.Uri, label: string): ProposedChatSessionItem;
+  createChatSessionItem(
+    resource: vscode.Uri,
+    label: string,
+  ): ProposedChatSessionItem;
 }
 
 interface ProposedChatSessionItemProvider {
   readonly onDidChangeChatSessionItems: vscode.Event<void>;
-  readonly onDidCommitChatSessionItem: vscode.Event<{ original: ProposedChatSessionItem; modified: ProposedChatSessionItem }>;
-  provideChatSessionItems(token: vscode.CancellationToken): vscode.ProviderResult<ProposedChatSessionItem[]>;
+  readonly onDidCommitChatSessionItem: vscode.Event<{
+    original: ProposedChatSessionItem;
+    modified: ProposedChatSessionItem;
+  }>;
+  provideChatSessionItems(
+    token: vscode.CancellationToken,
+  ): vscode.ProviderResult<ProposedChatSessionItem[]>;
 }
 
 interface ProposedChatSessionContentProvider {
@@ -119,33 +130,54 @@ export function registerAgentSessions(
   onSessionsChanged: () => void,
 ): vscode.Disposable {
   if (!nativeAgentSessionsEnabled()) {
-    telemetry.event("agent_sessions.skipped", { reason: "disabled_by_setting" });
+    telemetry.event("agent_sessions.skipped", {
+      reason: "disabled_by_setting",
+    });
     return disposableFrom([]);
   }
 
   if (!declaresChatSessionsProposal(context)) {
-    telemetry.event("agent_sessions.skipped", { reason: "proposal_not_declared" });
+    telemetry.event("agent_sessions.skipped", {
+      reason: "proposal_not_declared",
+    });
     return disposableFrom([]);
   }
 
   const chatApi = vscode.chat as ProposedChat;
   if (typeof chatApi.registerChatSessionContentProvider !== "function") {
-    telemetry.warn("agent_sessions.skipped", { reason: "api_unavailable", vscodeVersion: vscode.version });
+    telemetry.warn("agent_sessions.skipped", {
+      reason: "api_unavailable",
+      vscodeVersion: vscode.version,
+    });
     return disposableFrom([]);
   }
 
   const disposables: vscode.Disposable[] = [];
 
   try {
-    const provider = new ContenoxAgentSessionProvider(context, bridge, chatParticipant, telemetry, onSessionsChanged);
+    const provider = new ContenoxAgentSessionProvider(
+      bridge,
+      chatParticipant,
+      telemetry,
+      onSessionsChanged,
+    );
     disposables.push(provider);
 
-    const sessionAgent = vscode.chat.createChatParticipant(sessionType, (request, chatContext, response, token) =>
-      provider.handleParticipantRequest(request, chatContext, response, token),
+    const sessionAgent = vscode.chat.createChatParticipant(
+      sessionType,
+      (request, chatContext, response, token) =>
+        provider.handleParticipantRequest(
+          request,
+          chatContext,
+          response,
+          token,
+        ),
     );
-    sessionAgent.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "contenox-icon.png");
+    sessionAgent.iconPath = new vscode.ThemeIcon("contenox");
     disposables.push(sessionAgent);
-    telemetry.event("agent_sessions.participant.registered", { id: sessionAgent.id });
+    telemetry.event("agent_sessions.participant.registered", {
+      id: sessionAgent.id,
+    });
 
     disposables.push(
       chatApi.registerChatSessionContentProvider(
@@ -158,15 +190,31 @@ export function registerAgentSessions(
     telemetry.event("agent_sessions.content.registered", { type: sessionType });
 
     if (typeof chatApi.createChatSessionItemController === "function") {
-      const controller = chatApi.createChatSessionItemController(sessionType, (token) => provider.refreshController(token));
+      const controller = chatApi.createChatSessionItemController(
+        sessionType,
+        (token) => provider.refreshController(token),
+      );
       provider.attachController(controller);
       disposables.push(controller);
-      telemetry.event("agent_sessions.controller.registered", { type: sessionType, mode: "controller" });
+      telemetry.event("agent_sessions.controller.registered", {
+        type: sessionType,
+        mode: "controller",
+      });
     } else if (typeof chatApi.registerChatSessionItemProvider === "function") {
-      disposables.push(chatApi.registerChatSessionItemProvider(sessionType, provider.legacyItemProvider()));
-      telemetry.event("agent_sessions.controller.registered", { type: sessionType, mode: "legacy_provider" });
+      disposables.push(
+        chatApi.registerChatSessionItemProvider(
+          sessionType,
+          provider.legacyItemProvider(),
+        ),
+      );
+      telemetry.event("agent_sessions.controller.registered", {
+        type: sessionType,
+        mode: "legacy_provider",
+      });
     } else {
-      telemetry.warn("agent_sessions.items.skipped", { reason: "item_api_unavailable" });
+      telemetry.warn("agent_sessions.items.skipped", {
+        reason: "item_api_unavailable",
+      });
     }
   } catch (error) {
     telemetry.error("agent_sessions.register.failed", error);
@@ -175,7 +223,9 @@ export function registerAgentSessions(
   return disposableFrom(disposables);
 }
 
-export async function openAgentSession(telemetry: TelemetryLogger): Promise<void> {
+export async function openAgentSession(
+  telemetry: TelemetryLogger,
+): Promise<void> {
   telemetry.event("agent_sessions.open.command");
   if (!nativeAgentSessionsEnabled()) {
     vscode.window.showInformationMessage(
@@ -192,7 +242,10 @@ export async function openAgentSession(telemetry: TelemetryLogger): Promise<void
       telemetry.event("agent_sessions.open.ok", { command });
       return;
     } catch (error) {
-      telemetry.warn("agent_sessions.open.failed", { command, error: errorMessage(error) });
+      telemetry.warn("agent_sessions.open.failed", {
+        command,
+        error: errorMessage(error),
+      });
     }
   }
 
@@ -201,33 +254,51 @@ export async function openAgentSession(telemetry: TelemetryLogger): Promise<void
   );
 }
 
-export async function diagnoseAgentSessions(context: vscode.ExtensionContext, telemetry: TelemetryLogger): Promise<void> {
+export async function diagnoseAgentSessions(
+  context: vscode.ExtensionContext,
+  telemetry: TelemetryLogger,
+): Promise<void> {
   const chatApi = vscode.chat as ProposedChat;
   const commands = await vscode.commands.getCommands(true);
   const report = {
     declared: declaresChatSessionsProposal(context),
     sessionType,
-    contentProviderApi: typeof chatApi.registerChatSessionContentProvider === "function",
-    controllerApi: typeof chatApi.createChatSessionItemController === "function",
-    itemProviderApi: typeof chatApi.registerChatSessionItemProvider === "function",
-    openSidebarCommand: commands.includes(`workbench.action.chat.openNewSessionSidebar.${sessionType}`),
-    openEditorCommand: commands.includes(`workbench.action.chat.openNewSessionEditor.${sessionType}`),
-    openWithPromptCommand: commands.includes(`workbench.action.chat.openSessionWithPrompt.${sessionType}`),
+    contentProviderApi:
+      typeof chatApi.registerChatSessionContentProvider === "function",
+    controllerApi:
+      typeof chatApi.createChatSessionItemController === "function",
+    itemProviderApi:
+      typeof chatApi.registerChatSessionItemProvider === "function",
+    openSidebarCommand: commands.includes(
+      `workbench.action.chat.openNewSessionSidebar.${sessionType}`,
+    ),
+    openEditorCommand: commands.includes(
+      `workbench.action.chat.openNewSessionEditor.${sessionType}`,
+    ),
+    openWithPromptCommand: commands.includes(
+      `workbench.action.chat.openSessionWithPrompt.${sessionType}`,
+    ),
     vscodeVersion: vscode.version,
   };
   telemetry.event("agent_sessions.diagnose", report);
-  vscode.window.showInformationMessage(`Contenox native agent session diagnostics: ${JSON.stringify(report)}`);
+  vscode.window.showInformationMessage(
+    `Contenox native agent session diagnostics: ${JSON.stringify(report)}`,
+  );
 }
 
-class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider, vscode.Disposable {
+class ContenoxAgentSessionProvider
+  implements ProposedChatSessionContentProvider, vscode.Disposable
+{
   private readonly itemChangeEmitter = new vscode.EventEmitter<void>();
-  private readonly commitEmitter = new vscode.EventEmitter<{ original: ProposedChatSessionItem; modified: ProposedChatSessionItem }>();
+  private readonly commitEmitter = new vscode.EventEmitter<{
+    original: ProposedChatSessionItem;
+    modified: ProposedChatSessionItem;
+  }>();
   private readonly resourceSessionIds = new Map<string, string>();
   private readonly staleResources = new Set<string>();
   private controller: ProposedChatSessionItemController | undefined;
 
   public constructor(
-    private readonly context: vscode.ExtensionContext,
     private readonly bridge: BridgeProcess,
     private readonly chatParticipant: ContenoxChatParticipant,
     private readonly telemetry: TelemetryLogger,
@@ -252,15 +323,22 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
     };
   }
 
-  public async refreshController(token: vscode.CancellationToken): Promise<void> {
+  public async refreshController(
+    token: vscode.CancellationToken,
+  ): Promise<void> {
     const controller = this.controller;
     if (!controller) {
       return;
     }
     const sessions = await this.listSessions(token);
-    const items = sessions.map((session) => this.itemFromSession(session, controller));
+    const items = sessions.map((session) =>
+      this.itemFromSession(session, controller),
+    );
     controller.items.replace(items);
-    this.telemetry.event("agent_sessions.items.refreshed", { count: items.length, mode: "controller" });
+    this.telemetry.event("agent_sessions.items.refreshed", {
+      count: items.length,
+      mode: "controller",
+    });
   }
 
   public async provideChatSessionContent(
@@ -281,8 +359,12 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
       }
     }
     return {
-      title: loaded?.session.name || (sessionId ? "Deleted Contenox session" : "Contenox"),
-      history: loaded ? messagesToChatTurns(loaded.messages, this.telemetry) : [],
+      title:
+        loaded?.session.name ||
+        (sessionId ? "Deleted Contenox session" : "Contenox"),
+      history: loaded
+        ? messagesToChatTurns(loaded.messages, this.telemetry)
+        : [],
       requestHandler: (request, _chatContext, response, requestToken) =>
         this.handleSessionRequest(resource, request, response, requestToken),
     };
@@ -297,7 +379,12 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
     const resource = sessionResourceFromChatContext(chatContext);
     if (!resource) {
       this.telemetry.warn("agent_sessions.request.no_resource");
-      return this.chatParticipant.handleAgentSessionRequest(undefined, request, response, token);
+      return this.chatParticipant.handleAgentSessionRequest(
+        undefined,
+        request,
+        response,
+        token,
+      );
     }
     return this.handleSessionRequest(resource, request, response, token);
   }
@@ -313,8 +400,17 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
     response: vscode.ChatResponseStream,
     token: vscode.CancellationToken,
   ): Promise<vscode.ChatResult> {
-    const sessionId = await this.ensureSessionForResource(resource, request, token);
-    return this.chatParticipant.handleAgentSessionRequest(sessionId, request, response, token);
+    const sessionId = await this.ensureSessionForResource(
+      resource,
+      request,
+      token,
+    );
+    return this.chatParticipant.handleAgentSessionRequest(
+      sessionId,
+      request,
+      response,
+      token,
+    );
   }
 
   private async ensureSessionForResource(
@@ -327,14 +423,20 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
       if (await this.sessionExists(existing, token)) {
         return existing;
       }
-      this.markResourceStale(resource, existing, new Error(`session "${existing}" not found`));
+      this.markResourceStale(
+        resource,
+        existing,
+        new Error(`session "${existing}" not found`),
+      );
     }
     if (token.isCancellationRequested) {
       throw new vscode.CancellationError();
     }
 
     const client = await this.client(token);
-    const created = await client.sessionCreate({ name: sessionTitleFromChatInput(request.command, request.prompt) });
+    const created = await client.sessionCreate({
+      name: sessionTitleFromChatInput(request.command, request.prompt),
+    });
     this.resourceSessionIds.set(resource.toString(), created.session.id);
     this.staleResources.delete(resource.toString());
 
@@ -353,25 +455,38 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
     return created.session.id;
   }
 
-  private async legacyItems(token: vscode.CancellationToken): Promise<ProposedChatSessionItem[]> {
+  private async legacyItems(
+    token: vscode.CancellationToken,
+  ): Promise<ProposedChatSessionItem[]> {
     const sessions = await this.listSessions(token);
     const items = sessions.map((session) => this.itemFromSession(session));
-    this.telemetry.event("agent_sessions.items.refreshed", { count: items.length, mode: "legacy_provider" });
+    this.telemetry.event("agent_sessions.items.refreshed", {
+      count: items.length,
+      mode: "legacy_provider",
+    });
     return items;
   }
 
-  private async listSessions(token: vscode.CancellationToken): Promise<SessionInfo[]> {
+  private async listSessions(
+    token: vscode.CancellationToken,
+  ): Promise<SessionInfo[]> {
     const client = await this.client(token);
     const result = await client.sessionList();
     return result.sessions;
   }
 
-  private async loadSession(sessionId: string, token: vscode.CancellationToken) {
+  private async loadSession(
+    sessionId: string,
+    token: vscode.CancellationToken,
+  ) {
     const client = await this.client(token);
     return client.sessionRead({ sessionId });
   }
 
-  private async sessionExists(sessionId: string, token: vscode.CancellationToken): Promise<boolean> {
+  private async sessionExists(
+    sessionId: string,
+    token: vscode.CancellationToken,
+  ): Promise<boolean> {
     try {
       await this.loadSession(sessionId, token);
       return true;
@@ -398,13 +513,21 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
     return client;
   }
 
-  private itemFromSession(session: SessionInfo, controller?: ProposedChatSessionItemController): ProposedChatSessionItem {
+  private itemFromSession(
+    session: SessionInfo,
+    controller?: ProposedChatSessionItemController,
+  ): ProposedChatSessionItem {
     const label = session.name || session.id;
     const resource = sessionResource(session.id);
-    const item = controller?.createChatSessionItem(resource, label) ?? { resource, label };
+    const item = controller?.createChatSessionItem(resource, label) ?? {
+      resource,
+      label,
+    };
     item.label = label;
-    item.iconPath = vscode.Uri.joinPath(this.context.extensionUri, "media", "contenox-icon.png");
-    item.description = session.isActive ? "active" : `${session.messageCount} messages`;
+    item.iconPath = new vscode.ThemeIcon("contenox");
+    item.description = session.isActive
+      ? "active"
+      : `${session.messageCount} messages`;
     item.tooltip = `${label}\n${session.messageCount} messages`;
     item.metadata = { sessionId: session.id };
     return item;
@@ -412,10 +535,19 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
 
   private sessionIdForResource(resource: vscode.Uri): string | undefined {
     const key = resource.toString();
-    return this.resourceSessionIds.get(key) ?? (this.staleResources.has(key) ? undefined : sessionIdFromResource(resource));
+    return (
+      this.resourceSessionIds.get(key) ??
+      (this.staleResources.has(key)
+        ? undefined
+        : sessionIdFromResource(resource))
+    );
   }
 
-  private markResourceStale(resource: vscode.Uri, sessionId: string, error: unknown): void {
+  private markResourceStale(
+    resource: vscode.Uri,
+    sessionId: string,
+    error: unknown,
+  ): void {
     const key = resource.toString();
     this.staleResources.add(key);
     this.resourceSessionIds.delete(key);
@@ -427,9 +559,14 @@ class ContenoxAgentSessionProvider implements ProposedChatSessionContentProvider
   }
 }
 
-function messagesToChatTurns(messages: readonly SessionMessage[], telemetry: TelemetryLogger): unknown[] {
+function messagesToChatTurns(
+  messages: readonly SessionMessage[],
+  telemetry: TelemetryLogger,
+): unknown[] {
   const turns: unknown[] = [];
-  const recent = messages.slice(Math.max(0, messages.length - maxHistoryMessages));
+  const recent = messages.slice(
+    Math.max(0, messages.length - maxHistoryMessages),
+  );
   for (const message of recent) {
     if (!message.content?.trim()) {
       continue;
@@ -451,7 +588,10 @@ function messagesToChatTurns(messages: readonly SessionMessage[], telemetry: Tel
   return turns;
 }
 
-function requestTurn(prompt: string, telemetry: TelemetryLogger): unknown | undefined {
+function requestTurn(
+  prompt: string,
+  telemetry: TelemetryLogger,
+): unknown | undefined {
   const api = vscode as unknown as DynamicVscodeApi;
   const Constructor = api.ChatRequestTurn2 ?? api.ChatRequestTurn;
   if (!Constructor) {
@@ -461,12 +601,17 @@ function requestTurn(prompt: string, telemetry: TelemetryLogger): unknown | unde
   try {
     return new Constructor(prompt, undefined, [], participantId, []);
   } catch (error) {
-    telemetry.warn("agent_sessions.history.request_turn_failed", { error: errorMessage(error) });
+    telemetry.warn("agent_sessions.history.request_turn_failed", {
+      error: errorMessage(error),
+    });
     return undefined;
   }
 }
 
-function responseTurn(content: string, telemetry: TelemetryLogger): unknown | undefined {
+function responseTurn(
+  content: string,
+  telemetry: TelemetryLogger,
+): unknown | undefined {
   const api = vscode as unknown as DynamicVscodeApi;
   const Constructor = api.ChatResponseTurn2 ?? api.ChatResponseTurn;
   if (!Constructor) {
@@ -474,9 +619,15 @@ function responseTurn(content: string, telemetry: TelemetryLogger): unknown | un
     return undefined;
   }
   try {
-    return new Constructor([new vscode.ChatResponseMarkdownPart(content)], {}, participantId);
+    return new Constructor(
+      [new vscode.ChatResponseMarkdownPart(content)],
+      {},
+      participantId,
+    );
   } catch (error) {
-    telemetry.warn("agent_sessions.history.response_turn_failed", { error: errorMessage(error) });
+    telemetry.warn("agent_sessions.history.response_turn_failed", {
+      error: errorMessage(error),
+    });
     return undefined;
   }
 }
@@ -503,7 +654,9 @@ function sessionIdFromResource(resource: vscode.Uri): string | undefined {
   }
 }
 
-function sessionResourceFromChatContext(context: vscode.ChatContext): vscode.Uri | undefined {
+function sessionResourceFromChatContext(
+  context: vscode.ChatContext,
+): vscode.Uri | undefined {
   const proposed = (context as ProposedChatContext).chatSessionContext;
   if (proposed?.chatSessionType && proposed.chatSessionType !== sessionType) {
     return undefined;
@@ -528,13 +681,22 @@ function uriFromUnknown(value: unknown): vscode.Uri | undefined {
   });
 }
 
-function declaresChatSessionsProposal(context: vscode.ExtensionContext): boolean {
-  const proposals = (context.extension.packageJSON as { enabledApiProposals?: unknown }).enabledApiProposals;
+function declaresChatSessionsProposal(
+  context: vscode.ExtensionContext,
+): boolean {
+  const proposals = (
+    context.extension.packageJSON as { enabledApiProposals?: unknown }
+  ).enabledApiProposals;
   return Array.isArray(proposals) && proposals.includes("chatSessionsProvider");
 }
 
 function nativeAgentSessionsEnabled(): boolean {
-  return vscode.workspace.getConfiguration("contenox").get<boolean>("experimental.nativeAgentSessions", false);
+  if (process.env.CONTENOX_NATIVE_AGENT_SESSIONS === "1") {
+    return true;
+  }
+  return vscode.workspace
+    .getConfiguration("contenox")
+    .get<boolean>("experimental.nativeAgentSessions", false);
 }
 
 function isSessionNotFound(error: unknown): boolean {

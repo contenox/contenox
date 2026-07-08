@@ -191,4 +191,9 @@ const btnGhost = 'rounded-lg border border-neutral-200 px-4 py-2 text-sm font-se
     <a href="/docs/guide/quickstart/" class="rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition-all hover:scale-105 hover:shadow-indigo-500/40">{t.bottomCta}</a>
   </div>
   <p class="mt-6 text-sm text-neutral-500" set:html={t.bottomContact} />
+  
+  <div class="mt-20 flex justify-center pointer-events-none select-none overflow-hidden">
+    <img src="/logo-wide-colored-light.svg" alt="" aria-hidden="true" class="w-full max-w-5xl opacity-40 dark:hidden" />
+    <img src="/logo-wide-colored-dark.svg" alt="" aria-hidden="true" class="hidden w-full max-w-5xl opacity-40 dark:block" />
+  </div>
 </section>

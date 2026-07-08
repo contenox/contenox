@@ -43,6 +43,7 @@ const navSections = await buildNavSections();
     ))}
     {alternates && <link rel="alternate" hreflang="x-default" href={new URL(alternates.en ?? '/', Astro.site)} />}
     <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon-light.ico" media="(prefers-color-scheme: light)" />
     <link rel="icon" href="/favicon-dark.ico" media="(prefers-color-scheme: dark)" />

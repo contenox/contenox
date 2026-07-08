@@ -343,7 +343,7 @@ func convertToVertexContents(messages []modelrepo.Message) []vertexContent {
 		}
 
 		if m.Role == "tool" {
-			fnName := ""
+			fnName := "tool_response"
 			if m.ToolCallID != "" {
 				if n, ok := toolCallNameByID[m.ToolCallID]; ok {
 					fnName = n

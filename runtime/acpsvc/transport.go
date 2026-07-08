@@ -190,19 +190,18 @@ func (t *Transport) chainTemplateVars(sess *sessionEntry) map[string]string {
 		"model":    sess.modelOrDefault(t.model()),
 		"provider": sess.providerOrDefault(t.provider()),
 	}
-	defaultModel := t.model()
-	if defaultModel == "" {
-		defaultModel = vars["model"]
+	// default_model/default_provider are the recovery fallback for the seeded
+	// chains' {{var:alt_model|var:default_model}}. They must be the
+	// session-effective selection (vars["model"]/vars["provider"]), not the
+	// transport-configured default: Zed's model dropdown sets a session-only
+	// selection that never touches t.model(), so seeding from t.model() here
+	// makes recovery/summarise_failure resolve a stale provider that may have no
+	// models in runtime state while the main tasks use the working selection.
+	if vars["model"] != "" {
+		vars["default_model"] = vars["model"]
 	}
-	if defaultModel != "" {
-		vars["default_model"] = defaultModel
-	}
-	defaultProvider := t.provider()
-	if defaultProvider == "" {
-		defaultProvider = vars["provider"]
-	}
-	if defaultProvider != "" {
-		vars["default_provider"] = defaultProvider
+	if vars["provider"] != "" {
+		vars["default_provider"] = vars["provider"]
 	}
 	if altModel := t.altModel(); altModel != "" {
 		vars["alt_model"] = altModel

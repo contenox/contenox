@@ -319,6 +319,10 @@ Tool calls render as cards with the real command/path, HITL prompts route throug
 the editor's permission UI, and session history replays when you reopen the
 project.
 
+For VS Code, install the
+[Contenox extension from the Marketplace](https://marketplace.visualstudio.com/items?itemName=contenox.contenox-runtime)
+(`ext install contenox.contenox-runtime`).
+
 Full guides: [Zed](https://contenox.com/docs/integrations/editors/zed/),
 [JetBrains](https://contenox.com/docs/integrations/editors/jetbrains/),
 [AionUi](https://contenox.com/docs/integrations/editors/aionui/).

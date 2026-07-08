@@ -11,4 +11,4 @@ tsconfig.json
 package-lock.json
 dist/test/**
 **/*.map
-media/*.svg
+#media/*.svg

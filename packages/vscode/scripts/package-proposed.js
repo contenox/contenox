@@ -10,9 +10,20 @@ const extensionRoot = path.resolve(__dirname, "..");
 const packagePath = path.join(extensionRoot, "package.json");
 const pkg = readJson(packagePath);
 const target = targetFromEnv();
-const output = path.join(extensionRoot, "artifacts", `${pkg.name}-${target.name}-${pkg.version}-proposed.vsix`);
-const stageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "contenox-vscode-proposed-"));
-const vsce = path.join(extensionRoot, "node_modules", ".bin", process.platform === "win32" ? "vsce.cmd" : "vsce");
+const output = path.join(
+  extensionRoot,
+  "artifacts",
+  `${pkg.name}-${target.name}-${pkg.version}-proposed.vsix`,
+);
+const stageRoot = fs.mkdtempSync(
+  path.join(os.tmpdir(), "contenox-vscode-proposed-"),
+);
+const vsce = path.join(
+  extensionRoot,
+  "node_modules",
+  ".bin",
+  process.platform === "win32" ? "vsce.cmd" : "vsce",
+);
 const chatSessionType = "contenox-agent";
 
 for (const entry of [
@@ -50,12 +61,17 @@ staged.contributes.chatSessions = [
     type: chatSessionType,
     name: "contenox",
     displayName: "Contenox",
-    description: "Use the local Contenox runtime as a VS Code coding agent session.",
-    icon: "media/contenox-activity-dark.png",
+    description:
+      "Use the local Contenox runtime as a VS Code coding agent session.",
+    icon: {
+      light: "media/contenox.svg",
+      dark: "media/contenox.svg",
+    },
     canDelegate: true,
     inputPlaceholder: "Ask Contenox to work in this workspace",
     welcomeTitle: "Contenox",
-    welcomeMessage: "Local Contenox runtime session. Requests run through the bundled Contenox runtime process.",
+    welcomeMessage:
+      "Local Contenox runtime session. Requests run through the bundled Contenox runtime process.",
     commands: chatParticipantCommands(staged),
   },
 ];
@@ -75,7 +91,12 @@ const vsceArgs = [
   output,
 ];
 if (process.env.CONTENOX_VSCODE_SKIP_VSCE_SECRET_SCAN === "1") {
-  vsceArgs.splice(vsceArgs.indexOf("--out"), 0, "--allow-package-all-secrets", "--allow-package-env-file");
+  vsceArgs.splice(
+    vsceArgs.indexOf("--out"),
+    0,
+    "--allow-package-all-secrets",
+    "--allow-package-env-file",
+  );
 }
 
 const result = spawnSync(vsce, vsceArgs, {
@@ -89,7 +110,9 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1);
 }
 
-console.log(`Built proposed ${target.name} VS Code extension: ${path.relative(extensionRoot, output)}`);
+console.log(
+  `Built proposed ${target.name} VS Code extension: ${path.relative(extensionRoot, output)}`,
+);
 
 function copyRequired(entry) {
   const src = path.join(extensionRoot, entry);
@@ -108,7 +131,9 @@ function chatParticipantCommands(manifest) {
   if (!Array.isArray(participants)) {
     return [];
   }
-  const participant = participants.find((candidate) => candidate.id === "contenox") || participants[0];
+  const participant =
+    participants.find((candidate) => candidate.id === "contenox") ||
+    participants[0];
   return Array.isArray(participant?.commands) ? participant.commands : [];
 }
 

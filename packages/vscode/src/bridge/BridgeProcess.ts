@@ -26,7 +26,7 @@ export class BridgeProcess implements vscode.Disposable {
     private readonly output: ContenoxOutput,
     private readonly status: ContenoxStatusBar,
     private readonly extensionVersion: string,
-    private readonly extensionUri: vscode.Uri,
+    public readonly extensionUri: vscode.Uri,
     private readonly telemetry: TelemetryLogger,
   ) {}
 
@@ -39,7 +39,10 @@ export class BridgeProcess implements vscode.Disposable {
   }
 
   public commandBinaryPath(): string {
-    return resolveBinaryPath(readBridgeSettings().binaryPath, this.extensionUri);
+    return resolveBinaryPath(
+      readBridgeSettings().binaryPath,
+      this.extensionUri,
+    );
   }
 
   public commandCwd(): string | undefined {
@@ -88,13 +91,18 @@ export class BridgeProcess implements vscode.Disposable {
     this.child = undefined;
     this.stoppingChild = child;
     this.status.setStopped();
-    this.telemetry.event("runtime.stop", { hadChild: Boolean(child), hadClient: Boolean(client) });
+    this.telemetry.event("runtime.stop", {
+      hadChild: Boolean(child),
+      hadClient: Boolean(client),
+    });
 
     if (client) {
       try {
         await client.shutdown();
       } catch (error) {
-        this.output.warn(`Runtime shutdown request failed: ${errorMessage(error)}`);
+        this.output.warn(
+          `Runtime shutdown request failed: ${errorMessage(error)}`,
+        );
       }
       client.dispose();
     }
@@ -116,10 +124,15 @@ export class BridgeProcess implements vscode.Disposable {
     const settings = readBridgeSettings();
     const cwd = workspaceCwd();
     const args = bridgeArgs(settings.dataDir);
-    const binaryPath = resolveBinaryPath(settings.binaryPath, this.extensionUri);
+    const binaryPath = resolveBinaryPath(
+      settings.binaryPath,
+      this.extensionUri,
+    );
 
     this.status.setStarting();
-    this.output.info(`Starting Contenox runtime: ${binaryPath} ${args.join(" ")}`);
+    this.output.info(
+      `Starting Contenox runtime: ${binaryPath} ${args.join(" ")}`,
+    );
     this.telemetry.event("runtime.spawn.start", {
       binaryPath,
       args,
@@ -132,7 +145,9 @@ export class BridgeProcess implements vscode.Disposable {
       remoteName: vscode.env.remoteName,
     });
     if (vscode.env.remoteName) {
-      this.output.info(`VS Code remote environment: ${vscode.env.remoteName} (${process.platform}/${process.arch})`);
+      this.output.info(
+        `VS Code remote environment: ${vscode.env.remoteName} (${process.platform}/${process.arch})`,
+      );
     }
 
     const child = spawn(binaryPath, args, {
@@ -232,12 +247,17 @@ export class BridgeProcess implements vscode.Disposable {
       this.client = undefined;
       this.child = undefined;
       this.telemetry.error("runtime.spawn.failed", error, { binaryPath, cwd });
-      throw new Error(`Failed to start Contenox runtime: ${errorMessage(error)}`);
+      throw new Error(
+        `Failed to start Contenox runtime: ${errorMessage(error)}`,
+      );
     }
   }
 }
 
-function resolveBinaryPath(configured: string, extensionUri: vscode.Uri): string {
+function resolveBinaryPath(
+  configured: string,
+  extensionUri: vscode.Uri,
+): string {
   if (configured && configured !== "contenox") {
     return configured;
   }
@@ -249,7 +269,10 @@ function resolveBinaryPath(configured: string, extensionUri: vscode.Uri): string
   return configured || "contenox";
 }
 
-export function bridgeCommandArgs(dataDir: string | undefined, command: string): string[] {
+export function bridgeCommandArgs(
+  dataDir: string | undefined,
+  command: string,
+): string[] {
   const args: string[] = [];
   if (dataDir) {
     args.push("--data-dir", dataDir);
@@ -288,6 +311,8 @@ function errorMessage(error: unknown): string {
 }
 
 function runtimeLocation(): string {
-  const remote = vscode.env.remoteName ? ` in the ${vscode.env.remoteName} remote environment` : "";
+  const remote = vscode.env.remoteName
+    ? ` in the ${vscode.env.remoteName} remote environment`
+    : "";
   return `${remote} for ${process.platform}/${process.arch}`;
 }

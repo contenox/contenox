@@ -499,7 +499,7 @@ func RunInit(out, errOut io.Writer, force, update bool, provider string, conteno
 	case "llama", "openvino":
 		fmt.Fprintf(out, "  The %s backend is registered automatically.\n", provider)
 		fmt.Fprintf(out, "  To use it by default: contenox config set default-provider %s\n", provider)
-		printLocalModeldSourceBuildSteps(out, provider)
+		setupLocalModeld(out, provider)
 		chatStep = 2
 	case "openrouter":
 		backendRegistered := hasBackendOfType("openrouter")

@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 # install.sh — Contenox installer
-# Usage: curl -fsSL https://contenox.com/install.sh | sh
+# Usage:
+#   curl -fsSL https://contenox.com/install.sh | sh
+#   curl -fsSL https://contenox.com/install.sh | CONTENOX_WITH_MODELD=1 sh   # also preinstall the local inference daemon
 set -e
 
 REPO="contenox/runtime"
@@ -31,11 +33,14 @@ case "${ARCH}" in
 esac
 
 # ── Fetch latest release tag ──────────────────────────────────────────────────
+# Resolved from the releases/latest redirect (not the GitHub API, which is
+# rate-limited for unauthenticated callers).
 echo "Fetching latest Contenox release..."
+LATEST_URL="https://github.com/${REPO}/releases/latest"
 if command -v curl >/dev/null 2>&1; then
-  TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\(.*\)".*/\1/')"
+  TAG="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "${LATEST_URL}" | sed 's|.*/tag/||')"
 elif command -v wget >/dev/null 2>&1; then
-  TAG="$(wget -qO- "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"\(.*\)".*/\1/')"
+  TAG="$(wget --max-redirect=10 -qO /dev/null -S "${LATEST_URL}" 2>&1 | grep -i '^ *location:' | tail -1 | sed 's|.*/tag/||' | tr -d '\r')"
 else
   echo "Error: curl or wget is required to install contenox."
   exit 1
@@ -92,9 +97,19 @@ fi
 
 echo ""
 echo "✓ contenox ${TAG} installed to ${INSTALL_DIR}/${BIN}"
+
+# ── Optional: preinstall the local inference daemon (modeld) ──────────────────
+# Local GGUF/OpenVINO inference needs the modeld daemon (~600 MB download).
+# It also installs on demand when `contenox setup` selects a local provider.
+if [ -n "${CONTENOX_WITH_MODELD}" ]; then
+  echo ""
+  echo "Installing the local modeld inference daemon (CONTENOX_WITH_MODELD set)..."
+  "${INSTALL_DIR}/${BIN}" modeld install --backend "${CONTENOX_MODELD_BACKEND:-llama}"
+fi
+
 echo ""
 echo "Get started:"
-echo "  contenox init                         # scaffold a workspace + register the local backend"
-echo "  contenox model pull granite-3.2-2b    # first pull becomes the default model"
+echo "  contenox setup                        # pick a provider/model (local models or a hosted API)"
+echo "  contenox init                         # scaffold a workspace in your project directory"
 echo "  contenox \"say hello world in python\"   # run a prompt"
 echo "  contenox acp                          # speak ACP over stdio (Zed, JetBrains, AionUi)"

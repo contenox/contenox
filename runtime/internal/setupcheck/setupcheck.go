@@ -2,14 +2,19 @@
 package setupcheck
 
 import (
+	"context"
 	"fmt"
 	"net/url"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/contenox/runtime/runtime/internal/llmresolver"
+	"github.com/contenox/runtime/runtime/internal/modeldinstall"
+	"github.com/contenox/runtime/runtime/internal/modeldprobe"
 	"github.com/contenox/runtime/runtime/modelrepo"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/statetype"
 )
@@ -814,12 +819,29 @@ func noChatModelsCommand(provider string) string {
 	case "bedrock":
 		return "Enable the model in the AWS Bedrock console (Model access), then: contenox model list   # Bedrock returns AccessDeniedException until the model is enabled for your account"
 	case "llama":
-		return "contenox model pull qwen3-4b && contenox model local   # start modeld in llama mode, then 'contenox model list' shows loadable models"
+		return localModeldHint("llama", "contenox model pull qwen3-4b   # then 'contenox model list' shows loadable models")
 	case "openvino":
-		return "contenox model registry-list && contenox model pull <openvino-model> && contenox model local   # start modeld in openvino mode, then 'contenox model list' shows loadable models"
+		return localModeldHint("openvino", "contenox model registry-list && contenox model pull <openvino-model>   # then 'contenox model list' shows loadable models")
 	default:
 		return "contenox model list   # if empty, pull a chat model (e.g. ollama pull " + DefaultOllamaSuggestModel + ")"
 	}
+}
+
+// localModeldHint points at the step that is actually missing for a local
+// modeld provider: the daemon when it is not serving this backend, otherwise
+// the first model pull.
+func localModeldHint(backend, pullHint string) string {
+	if modeldconn.Backend() == backend {
+		return pullHint
+	}
+	root := modeldprobe.DefaultDataRoot()
+	if inst, err := modeldinstall.FindCompatibleInstall(context.Background(), root, runtime.GOOS, runtime.GOARCH, backend); err == nil {
+		if backend == "openvino" {
+			return "CONTENOX_MODELD_BACKEND=openvino " + inst.LauncherPath + " serve   # start the local modeld daemon, then retry"
+		}
+		return inst.LauncherPath + " serve   # start the local modeld daemon, then retry"
+	}
+	return "contenox modeld install   # download the local modeld daemon; it prints how to start it"
 }
 
 func primaryDiagnosticCommand(provider string) string {

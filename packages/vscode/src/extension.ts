@@ -1,11 +1,21 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
-import { diagnoseAgentSessions, openAgentSession, registerAgentSessions } from "./agentSessions/provider";
-import { registerAutocomplete, testAutocompleteAtCursor } from "./autocomplete/provider";
+import {
+  diagnoseAgentSessions,
+  openAgentSession,
+  registerAgentSessions,
+} from "./agentSessions/provider";
+import {
+  registerAutocomplete,
+  testAutocompleteAtCursor,
+} from "./autocomplete/provider";
 import { AutocompleteStatus } from "./autocomplete/status";
 import { bridgeCommandArgs, BridgeProcess } from "./bridge/BridgeProcess";
 import { ContenoxChatParticipant } from "./chat/participant";
-import { SessionDocumentProvider, sessionDocumentScheme } from "./chat/SessionDocumentProvider";
+import {
+  SessionDocumentProvider,
+  sessionDocumentScheme,
+} from "./chat/SessionDocumentProvider";
 import { SessionTreeProvider } from "./chat/SessionTreeProvider";
 import { registerDiagnosticCodeActions } from "./codeActions/diagnostics";
 import { registerApprovalTool } from "./approval/nativeTool";
@@ -20,28 +30,65 @@ import {
 } from "./config/selectors";
 import { readBridgeSettings } from "./config/settings";
 import { DiffStore, OpenDiffArgs, StoredDiff } from "./editor/diffStore";
-import { registerLanguageModelProvider, testLanguageModelProvider } from "./lm/provider";
+import {
+  registerLanguageModelProvider,
+  testLanguageModelProvider,
+} from "./lm/provider";
 import { ContenoxOutput } from "./logging/output";
 import { TelemetryLogger } from "./logging/telemetry";
-import { MCPServerProviderRegistration, registerMCPServerProvider, showMCPServers } from "./mcp/provider";
+import {
+  MCPServerProviderRegistration,
+  registerMCPServerProvider,
+  showMCPServers,
+} from "./mcp/provider";
 import { setDiagnosticsContext } from "./status/contextKeys";
 import { ContenoxStatusBar } from "./status/statusBar";
 
 export function activate(context: vscode.ExtensionContext): void {
+  if (process.env.CONTENOX_NATIVE_AGENT_SESSIONS === "1") {
+    const config = vscode.workspace.getConfiguration("contenox");
+    if (!config.get("experimental.nativeAgentSessions")) {
+      config.update(
+        "experimental.nativeAgentSessions",
+        true,
+        vscode.ConfigurationTarget.Global,
+      );
+    }
+  }
+
   const output = new ContenoxOutput();
   const telemetry = new TelemetryLogger(extensionVersion(context));
   const status = new ContenoxStatusBar();
   const autocompleteStatus = new AutocompleteStatus();
-  const bridge = new BridgeProcess(output, status, extensionVersion(context), context.extensionUri, telemetry);
+  const bridge = new BridgeProcess(
+    output,
+    status,
+    extensionVersion(context),
+    context.extensionUri,
+    telemetry,
+  );
   const sessions = new SessionTreeProvider(bridge);
-  const runtimeControls = new RuntimeControlsViewProvider(bridge, telemetry, () => {
-    sessions.refresh();
-  });
+  const runtimeControls = new RuntimeControlsViewProvider(
+    bridge,
+    telemetry,
+    () => {
+      sessions.refresh();
+    },
+  );
   const sessionDocuments = new SessionDocumentProvider(telemetry);
   const diffStore = new DiffStore(telemetry);
-  const chat = new ContenoxChatParticipant(context, bridge, diffStore, output, telemetry, () => sessions.refresh());
+  const chat = new ContenoxChatParticipant(
+    bridge,
+    diffStore,
+    output,
+    telemetry,
+    () => sessions.refresh(),
+  );
   const mcpProvider = registerMCPServerProvider(bridge, telemetry);
-  telemetry.event("extension.activated", collectExtensionRuntimeInfo(context, bridge, telemetry));
+  telemetry.event(
+    "extension.activated",
+    collectExtensionRuntimeInfo(context, bridge, telemetry),
+  );
 
   context.subscriptions.push(
     output,
@@ -54,87 +101,209 @@ export function activate(context: vscode.ExtensionContext): void {
     sessions,
     runtimeControls,
     sessionDocuments,
-    vscode.workspace.registerTextDocumentContentProvider("contenox-diff", diffStore),
-    vscode.workspace.registerTextDocumentContentProvider(sessionDocumentScheme(), sessionDocuments),
+    vscode.workspace.registerTextDocumentContentProvider(
+      "contenox-diff",
+      diffStore,
+    ),
+    vscode.workspace.registerTextDocumentContentProvider(
+      sessionDocumentScheme(),
+      sessionDocuments,
+    ),
     registerLanguageModelProvider(bridge, output, telemetry),
-    registerAgentSessions(context, bridge, chat, telemetry, () => sessions.refresh()),
+    registerAgentSessions(context, bridge, chat, telemetry, () =>
+      sessions.refresh(),
+    ),
     mcpProvider,
     registerAutocomplete(bridge, output, telemetry),
     registerDiagnosticCodeActions(telemetry),
     registerApprovalTool(telemetry),
   );
-  context.subscriptions.push(vscode.window.registerWebviewViewProvider("contenox.controls", runtimeControls));
-  context.subscriptions.push(vscode.window.registerTreeDataProvider("contenox.sessions", sessions));
-  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((event) => {
-    if (
-      event.affectsConfiguration("contenox.autocomplete") ||
-      event.affectsConfiguration("contenox.autocompleteProvider") ||
-      event.affectsConfiguration("contenox.autocompleteModel")
-    ) {
-      autocompleteStatus.update();
-    }
-  }));
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      "contenox.controls",
+      runtimeControls,
+    ),
+  );
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider("contenox.sessions", sessions),
+  );
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (
+        event.affectsConfiguration("contenox.autocomplete") ||
+        event.affectsConfiguration("contenox.autocompleteProvider") ||
+        event.affectsConfiguration("contenox.autocompleteModel")
+      ) {
+        autocompleteStatus.update();
+      }
+    }),
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand("contenox.openChat", () => chat.openChat()),
-    vscode.commands.registerCommand("contenox.openWalkthrough", () => openWalkthrough(telemetry)),
-    vscode.commands.registerCommand("contenox.internal.setupComplete", () => undefined),
-    vscode.commands.registerCommand("contenox.openAgentSession", () => openAgentSession(telemetry)),
-    vscode.commands.registerCommand("contenox.diagnoseAgentSessions", () => diagnoseAgentSessions(context, telemetry)),
-    vscode.commands.registerCommand("contenox.askSelection", () => chat.askSelection()),
-    vscode.commands.registerCommand("contenox.fixSelection", () => chat.fixSelection()),
-    vscode.commands.registerCommand("contenox.addSelectionToChat", () => chat.addSelectionToChat()),
-    vscode.commands.registerCommand("contenox.fixDiagnostics", (diagnostics?: readonly vscode.Diagnostic[]) => chat.fixDiagnostics(diagnostics)),
-    vscode.commands.registerCommand("contenox.explainDiagnostics", (diagnostics?: readonly vscode.Diagnostic[]) =>
-      chat.explainDiagnostics(diagnostics),
+    vscode.commands.registerCommand("contenox.openWalkthrough", () =>
+      openWalkthrough(telemetry),
     ),
-    vscode.commands.registerCommand("contenox.reviewChanges", () => chat.reviewChanges()),
-    vscode.commands.registerCommand("contenox.draftCommitMessage", () => chat.draftCommitMessage()),
-    vscode.commands.registerCommand("contenox.refreshSessions", () => sessions.refresh()),
+    vscode.commands.registerCommand(
+      "contenox.internal.setupComplete",
+      () => undefined,
+    ),
+    vscode.commands.registerCommand("contenox.openAgentSession", () =>
+      openAgentSession(telemetry),
+    ),
+    vscode.commands.registerCommand("contenox.diagnoseAgentSessions", () =>
+      diagnoseAgentSessions(context, telemetry),
+    ),
+    vscode.commands.registerCommand("contenox.askSelection", () =>
+      chat.askSelection(),
+    ),
+    vscode.commands.registerCommand("contenox.fixSelection", () =>
+      chat.fixSelection(),
+    ),
+    vscode.commands.registerCommand("contenox.addSelectionToChat", () =>
+      chat.addSelectionToChat(),
+    ),
+    vscode.commands.registerCommand(
+      "contenox.fixDiagnostics",
+      (diagnostics?: readonly vscode.Diagnostic[]) =>
+        chat.fixDiagnostics(diagnostics),
+    ),
+    vscode.commands.registerCommand(
+      "contenox.explainDiagnostics",
+      (diagnostics?: readonly vscode.Diagnostic[]) =>
+        chat.explainDiagnostics(diagnostics),
+    ),
+    vscode.commands.registerCommand("contenox.reviewChanges", () =>
+      chat.reviewChanges(),
+    ),
+    vscode.commands.registerCommand("contenox.draftCommitMessage", () =>
+      chat.draftCommitMessage(),
+    ),
+    vscode.commands.registerCommand("contenox.refreshSessions", () =>
+      sessions.refresh(),
+    ),
     vscode.commands.registerCommand("contenox.openSession", (arg?: unknown) =>
-      openSession(bridge, chat, sessionDocuments, sessions, output, telemetry, arg),
+      openSession(
+        bridge,
+        chat,
+        sessionDocuments,
+        sessions,
+        output,
+        telemetry,
+        arg,
+      ),
     ),
-    vscode.commands.registerCommand("contenox.deleteSession", (arg?: unknown) => deleteSession(bridge, chat, sessions, output, telemetry, arg)),
-    vscode.commands.registerCommand("contenox.showStatus", () => showStatus(bridge, output, telemetry)),
+    vscode.commands.registerCommand("contenox.deleteSession", (arg?: unknown) =>
+      deleteSession(bridge, chat, sessions, output, telemetry, arg),
+    ),
+    vscode.commands.registerCommand("contenox.showStatus", () =>
+      showStatus(bridge, output, telemetry),
+    ),
     vscode.commands.registerCommand("contenox.showExtensionRuntimeInfo", () =>
       showExtensionRuntimeInfo(context, bridge, output, telemetry),
     ),
-    vscode.commands.registerCommand("contenox.restartRuntime", () => restartRuntime(bridge, output, telemetry)),
-    vscode.commands.registerCommand("contenox.restartBridge", () => restartRuntime(bridge, output, telemetry)),
-    vscode.commands.registerCommand("contenox.runSetup", () => runSetup(bridge, output, telemetry)),
+    vscode.commands.registerCommand("contenox.restartRuntime", () =>
+      restartRuntime(bridge, output, telemetry),
+    ),
+    vscode.commands.registerCommand("contenox.restartBridge", () =>
+      restartRuntime(bridge, output, telemetry),
+    ),
+    vscode.commands.registerCommand("contenox.runSetup", () =>
+      runSetup(bridge, output, telemetry),
+    ),
     vscode.commands.registerCommand("contenox.selectProvider", () =>
-      runConfigSelector("select_provider", () => selectProvider(bridge), sessions, runtimeControls, output, telemetry),
+      runConfigSelector(
+        "select_provider",
+        () => selectProvider(bridge),
+        sessions,
+        runtimeControls,
+        output,
+        telemetry,
+      ),
     ),
     vscode.commands.registerCommand("contenox.selectChatModel", () =>
-      runConfigSelector("select_chat_model", () => selectChatModel(bridge), sessions, runtimeControls, output, telemetry),
+      runConfigSelector(
+        "select_chat_model",
+        () => selectChatModel(bridge),
+        sessions,
+        runtimeControls,
+        output,
+        telemetry,
+      ),
     ),
-    vscode.commands.registerCommand("contenox.selectAutocompleteProvider", () => selectAutocompleteProvider(bridge)),
-    vscode.commands.registerCommand("contenox.selectAutocompleteModel", () => selectAutocompleteModel(bridge)),
+    vscode.commands.registerCommand("contenox.selectAutocompleteProvider", () =>
+      selectAutocompleteProvider(bridge),
+    ),
+    vscode.commands.registerCommand("contenox.selectAutocompleteModel", () =>
+      selectAutocompleteModel(bridge),
+    ),
     vscode.commands.registerCommand("contenox.selectHitlPolicy", () =>
-      runConfigSelector("select_hitl_policy", () => selectHitlPolicy(bridge), sessions, runtimeControls, output, telemetry),
+      runConfigSelector(
+        "select_hitl_policy",
+        () => selectHitlPolicy(bridge),
+        sessions,
+        runtimeControls,
+        output,
+        telemetry,
+      ),
     ),
     vscode.commands.registerCommand("contenox.selectThinkLevel", () =>
-      runConfigSelector("select_think_level", () => selectThinkLevel(bridge), sessions, runtimeControls, output, telemetry),
+      runConfigSelector(
+        "select_think_level",
+        () => selectThinkLevel(bridge),
+        sessions,
+        runtimeControls,
+        output,
+        telemetry,
+      ),
     ),
-    vscode.commands.registerCommand("contenox.triggerAutocomplete", () => vscode.commands.executeCommand("editor.action.inlineSuggest.trigger")),
-    vscode.commands.registerCommand("contenox.testAutocompleteAtCursor", () => testAutocompleteAtCursor(bridge, output, telemetry)),
-    vscode.commands.registerCommand("contenox.enableAutocomplete", () => setAutocompleteEnabled(true, autocompleteStatus)),
-    vscode.commands.registerCommand("contenox.disableAutocomplete", () => setAutocompleteEnabled(false, autocompleteStatus)),
-    vscode.commands.registerCommand("contenox.toggleAutocomplete", () => toggleAutocomplete(autocompleteStatus)),
-    vscode.commands.registerCommand("contenox.acceptAutocomplete", () => output.info("Contenox autocomplete accepted")),
+    vscode.commands.registerCommand("contenox.triggerAutocomplete", () =>
+      vscode.commands.executeCommand("editor.action.inlineSuggest.trigger"),
+    ),
+    vscode.commands.registerCommand("contenox.testAutocompleteAtCursor", () =>
+      testAutocompleteAtCursor(bridge, output, telemetry),
+    ),
+    vscode.commands.registerCommand("contenox.enableAutocomplete", () =>
+      setAutocompleteEnabled(true, autocompleteStatus),
+    ),
+    vscode.commands.registerCommand("contenox.disableAutocomplete", () =>
+      setAutocompleteEnabled(false, autocompleteStatus),
+    ),
+    vscode.commands.registerCommand("contenox.toggleAutocomplete", () =>
+      toggleAutocomplete(autocompleteStatus),
+    ),
+    vscode.commands.registerCommand("contenox.acceptAutocomplete", () =>
+      output.info("Contenox autocomplete accepted"),
+    ),
     vscode.commands.registerCommand("contenox.showOutput", () => output.show()),
-    vscode.commands.registerCommand("contenox.showTelemetryLog", () => telemetry.show()),
-    vscode.commands.registerCommand("contenox.clearTelemetryLog", () => telemetry.clear()),
-    vscode.commands.registerCommand("contenox.testLanguageModelProvider", () => testLanguageModelProvider(output, telemetry)),
-    vscode.commands.registerCommand("contenox.showMCPServers", () => showMCPServers(bridge, output, telemetry)),
-    vscode.commands.registerCommand("contenox.refreshMCPServers", () => refreshMCPServers(mcpProvider)),
-    vscode.commands.registerCommand("contenox.openToolDiff", (arg?: OpenDiffArgs | StoredDiff) => openToolDiff(diffStore, arg)),
+    vscode.commands.registerCommand("contenox.showTelemetryLog", () =>
+      telemetry.show(),
+    ),
+    vscode.commands.registerCommand("contenox.clearTelemetryLog", () =>
+      telemetry.clear(),
+    ),
+    vscode.commands.registerCommand("contenox.testLanguageModelProvider", () =>
+      testLanguageModelProvider(output, telemetry),
+    ),
+    vscode.commands.registerCommand("contenox.showMCPServers", () =>
+      showMCPServers(bridge, output, telemetry),
+    ),
+    vscode.commands.registerCommand("contenox.refreshMCPServers", () =>
+      refreshMCPServers(mcpProvider),
+    ),
+    vscode.commands.registerCommand(
+      "contenox.openToolDiff",
+      (arg?: OpenDiffArgs | StoredDiff) => openToolDiff(diffStore, arg),
+    ),
   );
   updateDiagnosticsContext();
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => updateDiagnosticsContext()),
     vscode.languages.onDidChangeDiagnostics((event) => {
       const active = vscode.window.activeTextEditor?.document.uri;
-      if (!active || event.uris.some((uri) => uri.toString() === active.toString())) {
+      if (
+        !active ||
+        event.uris.some((uri) => uri.toString() === active.toString())
+      ) {
         updateDiagnosticsContext();
       }
     }),
@@ -149,20 +318,30 @@ export function activate(context: vscode.ExtensionContext): void {
 
 function updateDiagnosticsContext(): void {
   const active = vscode.window.activeTextEditor?.document.uri;
-  const hasDiagnostics = Boolean(active && vscode.languages.getDiagnostics(active).length > 0);
+  const hasDiagnostics = Boolean(
+    active && vscode.languages.getDiagnostics(active).length > 0,
+  );
   void setDiagnosticsContext(hasDiagnostics);
 }
 
 function openWalkthrough(telemetry: TelemetryLogger): Thenable<unknown> {
   telemetry.event("command.open_walkthrough");
-  return vscode.commands.executeCommand("workbench.action.openWalkthrough", "contenox.contenox-runtime#getStarted", false);
+  return vscode.commands.executeCommand(
+    "workbench.action.openWalkthrough",
+    "contenox.contenox-runtime#getStarted",
+    false,
+  );
 }
 
 export function deactivate(): void {
   // VS Code disposes extension subscriptions after deactivate returns.
 }
 
-async function showStatus(bridge: BridgeProcess, output: ContenoxOutput, telemetry: TelemetryLogger): Promise<void> {
+async function showStatus(
+  bridge: BridgeProcess,
+  output: ContenoxOutput,
+  telemetry: TelemetryLogger,
+): Promise<void> {
   try {
     await bridge.ensureStarted();
     const health = await bridge.refreshHealth();
@@ -174,7 +353,9 @@ async function showStatus(bridge: BridgeProcess, output: ContenoxOutput, telemet
       provider,
       model,
     });
-    vscode.window.showInformationMessage(`Contenox ${health.status}: ${provider} / ${model}`);
+    vscode.window.showInformationMessage(
+      `Contenox ${health.status}: ${provider} / ${model}`,
+    );
   } catch (error) {
     telemetry.error("command.show_status.failed", error);
     output.show();
@@ -197,13 +378,19 @@ async function showExtensionRuntimeInfo(
   );
 }
 
-async function restartRuntime(bridge: BridgeProcess, output: ContenoxOutput, telemetry: TelemetryLogger): Promise<void> {
+async function restartRuntime(
+  bridge: BridgeProcess,
+  output: ContenoxOutput,
+  telemetry: TelemetryLogger,
+): Promise<void> {
   try {
     telemetry.event("command.restart_runtime");
     const state = await bridge.restart();
     const provider = state.health.defaultProvider || "no provider";
     const model = state.health.defaultModel || "no model";
-    vscode.window.showInformationMessage(`Contenox runtime restarted: ${provider} / ${model}`);
+    vscode.window.showInformationMessage(
+      `Contenox runtime restarted: ${provider} / ${model}`,
+    );
   } catch (error) {
     telemetry.error("command.restart_runtime.failed", error);
     output.show();
@@ -211,7 +398,11 @@ async function restartRuntime(bridge: BridgeProcess, output: ContenoxOutput, tel
   }
 }
 
-function runSetup(bridge: BridgeProcess, output: ContenoxOutput, telemetry: TelemetryLogger): void {
+function runSetup(
+  bridge: BridgeProcess,
+  output: ContenoxOutput,
+  telemetry: TelemetryLogger,
+): void {
   const settings = readBridgeSettings();
   const binary = bridge.commandBinaryPath();
   const args = bridgeCommandArgs(settings.dataDir, "setup");
@@ -245,7 +436,9 @@ function runSetup(bridge: BridgeProcess, output: ContenoxOutput, telemetry: Tele
       .catch((error) => {
         telemetry.error("command.run_setup.refresh_failed", error);
         output.show();
-        vscode.window.showErrorMessage(`Contenox setup finished, but runtime refresh failed: ${errorMessage(error)}`);
+        vscode.window.showErrorMessage(
+          `Contenox setup finished, but runtime refresh failed: ${errorMessage(error)}`,
+        );
       });
   });
   terminal.show();
@@ -253,16 +446,27 @@ function runSetup(bridge: BridgeProcess, output: ContenoxOutput, telemetry: Tele
 }
 
 async function toggleAutocomplete(status: AutocompleteStatus): Promise<void> {
-  const enabled = !vscode.workspace.getConfiguration("contenox").get<boolean>("autocomplete.enabled", false);
+  const enabled = !vscode.workspace
+    .getConfiguration("contenox")
+    .get<boolean>("autocomplete.enabled", false);
   await setAutocompleteEnabled(enabled, status);
 }
 
-async function setAutocompleteEnabled(enabled: boolean, status: AutocompleteStatus): Promise<void> {
+async function setAutocompleteEnabled(
+  enabled: boolean,
+  status: AutocompleteStatus,
+): Promise<void> {
   await vscode.workspace
     .getConfiguration("contenox")
-    .update("autocomplete.enabled", enabled, vscode.ConfigurationTarget.Workspace);
+    .update(
+      "autocomplete.enabled",
+      enabled,
+      vscode.ConfigurationTarget.Workspace,
+    );
   status.update();
-  vscode.window.showInformationMessage(`Contenox autocomplete ${enabled ? "enabled" : "disabled"}`);
+  vscode.window.showInformationMessage(
+    `Contenox autocomplete ${enabled ? "enabled" : "disabled"}`,
+  );
 }
 
 async function openSession(
@@ -293,7 +497,9 @@ async function openSession(
     chat.setActiveSession(result.session.id);
     await sessionDocuments.open(result);
     sessions.refresh();
-    vscode.window.showInformationMessage(`Loaded Contenox session: ${result.session.name || result.session.id}`);
+    vscode.window.showInformationMessage(
+      `Loaded Contenox session: ${result.session.name || result.session.id}`,
+    );
   } catch (error) {
     telemetry.error("command.open_session.failed", error);
     output.show();
@@ -335,14 +541,20 @@ async function deleteSession(
     if (!sessionId) {
       return;
     }
-    const choice = await vscode.window.showWarningMessage("Delete this Contenox session?", { modal: true }, "Delete");
+    const choice = await vscode.window.showWarningMessage(
+      "Delete this Contenox session?",
+      { modal: true },
+      "Delete",
+    );
     if (choice !== "Delete") {
       return;
     }
     telemetry.event("command.delete_session", { sessionId });
     const state = await bridge.ensureStarted();
     if (!state.initialize.capabilities.sessionList) {
-      throw new Error("This Contenox runtime does not support session deletion");
+      throw new Error(
+        "This Contenox runtime does not support session deletion",
+      );
     }
     const client = bridge.currentClient;
     if (!client) {
@@ -358,7 +570,10 @@ async function deleteSession(
   }
 }
 
-async function openToolDiff(diffStore: DiffStore, arg: OpenDiffArgs | StoredDiff | undefined): Promise<void> {
+async function openToolDiff(
+  diffStore: DiffStore,
+  arg: OpenDiffArgs | StoredDiff | undefined,
+): Promise<void> {
   if (!arg) {
     vscode.window.showWarningMessage("No Contenox diff is available to open.");
     return;
@@ -368,7 +583,9 @@ async function openToolDiff(diffStore: DiffStore, arg: OpenDiffArgs | StoredDiff
 
 function refreshMCPServers(provider: MCPServerProviderRegistration): void {
   provider.refresh();
-  vscode.window.showInformationMessage("Contenox MCP server definitions refreshed.");
+  vscode.window.showInformationMessage(
+    "Contenox MCP server definitions refreshed.",
+  );
 }
 
 function sessionIdFromArg(arg: unknown): string | undefined {
@@ -388,7 +605,8 @@ function sessionIdFromArg(arg: unknown): string | undefined {
 }
 
 function extensionVersion(context: vscode.ExtensionContext): string {
-  const version = (context.extension.packageJSON as { version?: unknown }).version;
+  const version = (context.extension.packageJSON as { version?: unknown })
+    .version;
   return typeof version === "string" ? version : "0.0.0";
 }
 
@@ -397,7 +615,12 @@ function collectExtensionRuntimeInfo(
   bridge: BridgeProcess,
   telemetry: TelemetryLogger,
 ): ExtensionRuntimeInfo {
-  const sessionTreeProviderPath = vscode.Uri.joinPath(context.extensionUri, "dist", "chat", "SessionTreeProvider.js").fsPath;
+  const sessionTreeProviderPath = vscode.Uri.joinPath(
+    context.extensionUri,
+    "dist",
+    "chat",
+    "SessionTreeProvider.js",
+  ).fsPath;
   const markers = inspectSessionTreeMarkers(sessionTreeProviderPath);
   return {
     extensionId: context.extension.id,
@@ -436,8 +659,18 @@ interface ExtensionRuntimeInfo extends Record<string, unknown> {
   sessionTreeInspectionError?: string;
 }
 
-function inspectSessionTreeMarkers(file: string): { present: boolean; missing: string[]; error?: string } {
-  const markers = ["Provider", "Model", "Thinking", "HITL Policy", "contenox.selectHitlPolicy"];
+function inspectSessionTreeMarkers(file: string): {
+  present: boolean;
+  missing: string[];
+  error?: string;
+} {
+  const markers = [
+    "Provider",
+    "Model",
+    "Thinking",
+    "HITL Policy",
+    "contenox.selectHitlPolicy",
+  ];
   try {
     const content = fs.readFileSync(file, "utf8");
     const missing = markers.filter((marker) => !content.includes(marker));

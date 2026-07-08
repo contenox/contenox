@@ -36,7 +36,6 @@ export class ContenoxChatParticipant implements vscode.Disposable {
   private pendingContext: PendingContext | undefined;
 
   public constructor(
-    private readonly context: vscode.ExtensionContext,
     bridge: BridgeProcess,
     private readonly diffStore: DiffStore,
     private readonly output: ContenoxOutput,
@@ -44,12 +43,25 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     private readonly onSessionsChanged: () => void,
   ) {
     this.turns = new ChatTurnRunner(bridge, output, telemetry);
-    this.participant = vscode.chat.createChatParticipant("contenox", (request, chatContext, response, token) =>
-      this.handleRequest(request, chatContext, response, token, "native-chat"),
+    this.participant = vscode.chat.createChatParticipant(
+      "contenox",
+      (request, chatContext, response, token) =>
+        this.handleRequest(
+          request,
+          chatContext,
+          response,
+          token,
+          "native-chat",
+        ),
     );
-    this.participant.iconPath = vscode.Uri.joinPath(this.context.extensionUri, "media", "contenox-icon.png");
+    // A registered icon-font glyph (ThemeIcon), not a raster Uri: VS Code's chat
+    // UI renders participant/session avatars as themeable glyphs and falls back
+    // to an error icon for raster images.
+    this.participant.iconPath = new vscode.ThemeIcon("contenox");
     this.disposables.push(this.participant);
-    this.telemetry.event("chat.participant.registered", { id: this.participant.id });
+    this.telemetry.event("chat.participant.registered", {
+      id: this.participant.id,
+    });
   }
 
   public async openChat(): Promise<void> {
@@ -98,7 +110,9 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     await this.openNativeChat("@contenox /explain ", false);
   }
 
-  public async fixDiagnostics(diagnostics?: readonly vscode.Diagnostic[]): Promise<void> {
+  public async fixDiagnostics(
+    diagnostics?: readonly vscode.Diagnostic[],
+  ): Promise<void> {
     const editorContext = await collectEditorContext({
       includeSelection: true,
       includeActiveFile: true,
@@ -106,14 +120,18 @@ export class ContenoxChatParticipant implements vscode.Disposable {
       diagnostics,
     });
     if (!editorContext.some((item) => item.kind === "diagnostics")) {
-      vscode.window.showInformationMessage("No diagnostics are available for the active file.");
+      vscode.window.showInformationMessage(
+        "No diagnostics are available for the active file.",
+      );
       return;
     }
     this.setPendingContext(editorContext);
     await this.openNativeChat("@contenox /fix", true);
   }
 
-  public async explainDiagnostics(diagnostics?: readonly vscode.Diagnostic[]): Promise<void> {
+  public async explainDiagnostics(
+    diagnostics?: readonly vscode.Diagnostic[],
+  ): Promise<void> {
     const editorContext = await collectEditorContext({
       includeSelection: true,
       includeActiveFile: true,
@@ -121,17 +139,24 @@ export class ContenoxChatParticipant implements vscode.Disposable {
       diagnostics,
     });
     if (!editorContext.some((item) => item.kind === "diagnostics")) {
-      vscode.window.showInformationMessage("No diagnostics are available for the active file.");
+      vscode.window.showInformationMessage(
+        "No diagnostics are available for the active file.",
+      );
       return;
     }
     this.setPendingContext(editorContext);
-    await this.openNativeChat("@contenox /explain the active diagnostics", true);
+    await this.openNativeChat(
+      "@contenox /explain the active diagnostics",
+      true,
+    );
   }
 
   public async reviewChanges(): Promise<void> {
     const gitContext = await collectGitChangeContext();
     if (gitContext.length === 0) {
-      vscode.window.showInformationMessage("No git changes are available to review.");
+      vscode.window.showInformationMessage(
+        "No git changes are available to review.",
+      );
       return;
     }
     this.setPendingContext(gitContext);
@@ -141,7 +166,9 @@ export class ContenoxChatParticipant implements vscode.Disposable {
   public async draftCommitMessage(): Promise<void> {
     const gitContext = await collectGitChangeContext();
     if (gitContext.length === 0) {
-      vscode.window.showInformationMessage("No git changes are available for a commit message.");
+      vscode.window.showInformationMessage(
+        "No git changes are available for a commit message.",
+      );
       return;
     }
     this.setPendingContext(gitContext);
@@ -171,7 +198,14 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     response: vscode.ChatResponseStream,
     token: vscode.CancellationToken,
   ): Promise<vscode.ChatResult> {
-    return this.handleRequest(request, undefined, response, token, "agent-session", sessionId);
+    return this.handleRequest(
+      request,
+      undefined,
+      response,
+      token,
+      "agent-session",
+      sessionId,
+    );
   }
 
   public dispose(): void {
@@ -189,8 +223,12 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     sessionIdOverride?: string,
   ): Promise<vscode.ChatResult> {
     if (!vscode.workspace.isTrusted) {
-      this.telemetry.warn("chat.request.blocked_untrusted_workspace", { source });
-      response.markdown("Contenox runtime actions are disabled until this workspace is trusted.");
+      this.telemetry.warn("chat.request.blocked_untrusted_workspace", {
+        source,
+      });
+      response.markdown(
+        "Contenox runtime actions are disabled until this workspace is trusted.",
+      );
       return { errorDetails: { message: "Workspace is not trusted" } };
     }
 
@@ -198,9 +236,18 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     const command = request.command ?? "";
     const prompt = request.prompt.trim();
     const pendingContext = this.takePendingContext();
-    const referenceContext = await contextFromReferences(request.references, this.telemetry);
-    const explicitContext = mergeEditorContext([...(pendingContext ?? []), ...referenceContext]);
-    const editorContext = explicitContext.length > 0 ? explicitContext : await this.contextForRequest(command);
+    const referenceContext = await contextFromReferences(
+      request.references,
+      this.telemetry,
+    );
+    const explicitContext = mergeEditorContext([
+      ...(pendingContext ?? []),
+      ...referenceContext,
+    ]);
+    const editorContext =
+      explicitContext.length > 0
+        ? explicitContext
+        : await this.contextForRequest(command);
     const input = inputForRequest(command, prompt);
     pushEditorReferences(response, editorContext);
     this.telemetry.event("chat.request.start", {
@@ -214,7 +261,14 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     });
 
     try {
-      const result = await this.sendAndStream(input, editorContext, response, token, request.toolInvocationToken, sessionIdOverride);
+      const result = await this.sendAndStream(
+        input,
+        editorContext,
+        response,
+        token,
+        request.toolInvocationToken,
+        sessionIdOverride,
+      );
       this.telemetry.event("chat.request.end", {
         source,
         command,
@@ -225,9 +279,18 @@ export class ContenoxChatParticipant implements vscode.Disposable {
         stopReason: result.event.stopReason,
       });
       if (result.failed) {
-        return { errorDetails: { message: result.event.error || "Contenox request failed" } };
+        return {
+          errorDetails: {
+            message: result.event.error || "Contenox request failed",
+          },
+        };
       }
-      return { metadata: { sessionId: result.event.sessionId, turnId: result.event.turnId } };
+      return {
+        metadata: {
+          sessionId: result.event.sessionId,
+          turnId: result.event.turnId,
+        },
+      };
     } catch (error) {
       this.telemetry.error("chat.request.error", error, {
         source,
@@ -268,10 +331,24 @@ export class ContenoxChatParticipant implements vscode.Disposable {
             response.markdown(event.content);
           }
         },
-        onToolCall: (event: ToolCallEvent) => this.renderToolCall(event, response),
-        onPermissionRequested: (_client: BridgeClient, event: RequestPermissionParams, permissionToken: vscode.CancellationToken) =>
-          this.handlePermissionRequest(event, response, toolInvocationToken, token, permissionToken),
-        onCompletedWithoutDelta: (_event: ChatLifecycleEvent, content: string | undefined) => {
+        onToolCall: (event: ToolCallEvent) =>
+          this.renderToolCall(event, response),
+        onPermissionRequested: (
+          _client: BridgeClient,
+          event: RequestPermissionParams,
+          permissionToken: vscode.CancellationToken,
+        ) =>
+          this.handlePermissionRequest(
+            event,
+            response,
+            toolInvocationToken,
+            token,
+            permissionToken,
+          ),
+        onCompletedWithoutDelta: (
+          _event: ChatLifecycleEvent,
+          content: string | undefined,
+        ) => {
           if (content) {
             response.markdown(content);
           }
@@ -281,7 +358,11 @@ export class ContenoxChatParticipant implements vscode.Disposable {
       try {
         result = await this.turns.run(runOptions, handlers);
       } catch (error) {
-        if (!sessionIdOverride && runOptions.sessionId && isSessionNotFound(error)) {
+        if (
+          !sessionIdOverride &&
+          runOptions.sessionId &&
+          isSessionNotFound(error)
+        ) {
           this.telemetry.warn("chat.session.stale_cleared", {
             sessionId: runOptions.sessionId,
             error: errorMessage(error),
@@ -344,7 +425,12 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     const linkedToken = linkedCancellationToken(turnToken, permissionToken);
     let approved: boolean;
     try {
-      approved = await requestNativeApproval(approval, toolInvocationToken, linkedToken.token, this.telemetry);
+      approved = await requestNativeApproval(
+        approval,
+        toolInvocationToken,
+        linkedToken.token,
+        this.telemetry,
+      );
     } finally {
       linkedToken.dispose();
     }
@@ -372,12 +458,22 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     };
   }
 
-  private async contextForRequest(command: string): Promise<EditorContextAttachment[]> {
+  private async contextForRequest(
+    command: string,
+  ): Promise<EditorContextAttachment[]> {
     switch (command) {
       case "fix":
-        return collectEditorContext({ includeSelection: true, includeActiveFile: true, includeDiagnostics: true });
+        return collectEditorContext({
+          includeSelection: true,
+          includeActiveFile: true,
+          includeDiagnostics: true,
+        });
       case "explain":
-        return collectEditorContext({ includeSelection: true, includeActiveFile: false, includeDiagnostics: false });
+        return collectEditorContext({
+          includeSelection: true,
+          includeActiveFile: false,
+          includeDiagnostics: false,
+        });
       case "review":
       case "commit":
         return collectGitChangeContext();
@@ -386,7 +482,10 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     }
   }
 
-  private renderToolCall(event: ToolCallEvent, response: vscode.ChatResponseStream): void {
+  private renderToolCall(
+    event: ToolCallEvent,
+    response: vscode.ChatResponseStream,
+  ): void {
     response.progress(toolProgress(event));
     const diff = this.diffStore.registerToolDiff(event);
     if (!diff) {
@@ -411,7 +510,10 @@ export class ContenoxChatParticipant implements vscode.Disposable {
   }
 
   private async openNativeChat(query: string, submit: boolean): Promise<void> {
-    this.telemetry.event("chat.open_native", { submit, queryChars: query.length });
+    this.telemetry.event("chat.open_native", {
+      submit,
+      queryChars: query.length,
+    });
     try {
       await vscode.commands.executeCommand("workbench.action.chat.open", {
         query,
@@ -421,7 +523,9 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     } catch (error) {
       this.telemetry.error("chat.open_native.failed", error, { submit });
       await vscode.env.clipboard.writeText(query);
-      vscode.window.showInformationMessage("Open VS Code Chat and paste the Contenox prompt. It has been copied to the clipboard.");
+      vscode.window.showInformationMessage(
+        "Open VS Code Chat and paste the Contenox prompt. It has been copied to the clipboard.",
+      );
     }
   }
 
@@ -430,7 +534,9 @@ export class ContenoxChatParticipant implements vscode.Disposable {
       context,
       expiresAt: Date.now() + pendingContextTtlMs,
     };
-    this.telemetry.event("chat.pending_context.set", { context: contextSummary(context) });
+    this.telemetry.event("chat.pending_context.set", {
+      context: contextSummary(context),
+    });
   }
 
   private takePendingContext(): EditorContextAttachment[] | undefined {
@@ -439,46 +545,60 @@ export class ContenoxChatParticipant implements vscode.Disposable {
     if (!pending || pending.expiresAt < Date.now()) {
       return undefined;
     }
-    this.telemetry.event("chat.pending_context.used", { context: contextSummary(pending.context) });
+    this.telemetry.event("chat.pending_context.used", {
+      context: contextSummary(pending.context),
+    });
     return pending.context;
   }
 }
 
-export function approvalEventFromPermissionRequest(event: RequestPermissionParams): ApprovalRequestedEvent {
-	const toolCall = event.toolCall;
-	const meta = { ...(event._meta ?? {}), ...(toolCall._meta ?? {}) };
-	const diff = firstDiffContent(toolCall.content);
-	const args = objectRecord(toolCall.rawInput);
-	const rawDiffOld = stringValue(meta.diffOld) ?? stringValue(diff?.oldText);
-	const rawDiffNew = stringValue(meta.diffNew) ?? stringValue(diff?.newText);
-	const hasContentDiff = isNonBlank(rawDiffOld) || isNonBlank(rawDiffNew);
-	return {
-		approvalId: toolCall.toolCallId,
-		toolsName: stringValue(meta.toolsName),
-		toolName: stringValue(meta.toolName),
-		title: nonBlankString(toolCall.title) ?? toolCall.toolCallId,
-		policyName: stringValue(meta.policyName),
-		policyPath: stringValue(meta.policyPath),
-		args,
-		details: contentDetails(toolCall.content),
-		diff: nonBlankString(meta.diff),
-		diffOld: hasContentDiff ? rawDiffOld ?? "" : undefined,
-		diffNew: hasContentDiff ? rawDiffNew ?? "" : undefined,
-		options: event.options.map((option) => ({
-			id: option.optionId,
-			label: option.name,
+export function approvalEventFromPermissionRequest(
+  event: RequestPermissionParams,
+): ApprovalRequestedEvent {
+  const toolCall = event.toolCall;
+  const meta = { ...(event._meta ?? {}), ...(toolCall._meta ?? {}) };
+  const diff = firstDiffContent(toolCall.content);
+  const args = objectRecord(toolCall.rawInput);
+  const rawDiffOld = stringValue(meta.diffOld) ?? stringValue(diff?.oldText);
+  const rawDiffNew = stringValue(meta.diffNew) ?? stringValue(diff?.newText);
+  const hasContentDiff = isNonBlank(rawDiffOld) || isNonBlank(rawDiffNew);
+  return {
+    approvalId: toolCall.toolCallId,
+    toolsName: stringValue(meta.toolsName),
+    toolName: stringValue(meta.toolName),
+    title: nonBlankString(toolCall.title) ?? toolCall.toolCallId,
+    policyName: stringValue(meta.policyName),
+    policyPath: stringValue(meta.policyPath),
+    args,
+    details: contentDetails(toolCall.content),
+    diff: nonBlankString(meta.diff),
+    diffOld: hasContentDiff ? (rawDiffOld ?? "") : undefined,
+    diffNew: hasContentDiff ? (rawDiffNew ?? "") : undefined,
+    options: event.options.map((option) => ({
+      id: option.optionId,
+      label: option.name,
       kind: option.kind,
     })),
   };
 }
 
-function selectedPermissionOption(event: RequestPermissionParams, approved: boolean) {
+function selectedPermissionOption(
+  event: RequestPermissionParams,
+  approved: boolean,
+) {
   if (approved) {
-    return event.options.find((candidate) => candidate.optionId === "allow" || candidate.kind.startsWith("allow")) ?? event.options[0];
+    return (
+      event.options.find(
+        (candidate) =>
+          candidate.optionId === "allow" || candidate.kind.startsWith("allow"),
+      ) ?? event.options[0]
+    );
   }
   return (
-    event.options.find((candidate) => candidate.optionId === "deny" || candidate.kind.startsWith("reject")) ??
-    event.options[event.options.length - 1]
+    event.options.find(
+      (candidate) =>
+        candidate.optionId === "deny" || candidate.kind.startsWith("reject"),
+    ) ?? event.options[event.options.length - 1]
   );
 }
 
@@ -486,9 +606,13 @@ interface LinkedCancellationToken extends vscode.Disposable {
   token: vscode.CancellationToken;
 }
 
-function linkedCancellationToken(...tokens: vscode.CancellationToken[]): LinkedCancellationToken {
+function linkedCancellationToken(
+  ...tokens: vscode.CancellationToken[]
+): LinkedCancellationToken {
   const source = new vscode.CancellationTokenSource();
-  const disposables = tokens.map((token) => token.onCancellationRequested(() => source.cancel()));
+  const disposables = tokens.map((token) =>
+    token.onCancellationRequested(() => source.cancel()),
+  );
   if (tokens.some((token) => token.isCancellationRequested)) {
     source.cancel();
   }
@@ -503,71 +627,96 @@ function linkedCancellationToken(...tokens: vscode.CancellationToken[]): LinkedC
   };
 }
 
-function firstDiffContent(content: readonly ToolCallContent[] | undefined): ToolCallContent | undefined {
-	return content?.find((entry) => entry.type === "diff" && (isNonBlank(entry.oldText) || isNonBlank(entry.newText)));
+function firstDiffContent(
+  content: readonly ToolCallContent[] | undefined,
+): ToolCallContent | undefined {
+  return content?.find(
+    (entry) =>
+      entry.type === "diff" &&
+      (isNonBlank(entry.oldText) || isNonBlank(entry.newText)),
+  );
 }
 
-function contentDetails(content: readonly ToolCallContent[] | undefined): string | undefined {
-	const parts =
-		content
-			?.filter((entry) => entry.type !== "diff")
-			.map((entry) => {
-				const text = stringValue(entry.content?.text) ?? stringValue((entry as { text?: unknown }).text);
-				if (!isNonBlank(text)) {
-					return undefined;
-				}
-				return entry.path ? `${entry.path}\n${text}` : text;
-			})
-			.filter(isNonBlank) ?? [];
-	return parts.length > 0 ? parts.join("\n\n") : undefined;
+function contentDetails(
+  content: readonly ToolCallContent[] | undefined,
+): string | undefined {
+  const parts =
+    content
+      ?.filter((entry) => entry.type !== "diff")
+      .map((entry) => {
+        const text =
+          stringValue(entry.content?.text) ??
+          stringValue((entry as { text?: unknown }).text);
+        if (!isNonBlank(text)) {
+          return undefined;
+        }
+        return entry.path ? `${entry.path}\n${text}` : text;
+      })
+      .filter(isNonBlank) ?? [];
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | undefined {
-	if (typeof value === "string") {
-		try {
-			const parsed = JSON.parse(value) as unknown;
-			return objectRecord(parsed);
-		} catch {
-			return undefined;
-		}
-	}
-	if (!value || typeof value !== "object" || Array.isArray(value)) {
-		return undefined;
-	}
-	return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return objectRecord(parsed);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
 }
 
 function stringValue(value: unknown): string | undefined {
-	return typeof value === "string" ? value : undefined;
+  return typeof value === "string" ? value : undefined;
 }
 
 function nonBlankString(value: unknown): string | undefined {
-	const str = stringValue(value);
-	return isNonBlank(str) ? str : undefined;
+  const str = stringValue(value);
+  return isNonBlank(str) ? str : undefined;
 }
 
 function isNonBlank(value: unknown): value is string {
-	return typeof value === "string" && value.trim().length > 0;
+  return typeof value === "string" && value.trim().length > 0;
 }
 
-function renderApprovalSummary(event: ApprovalRequestedEvent, response: vscode.ChatResponseStream): void {
+function renderApprovalSummary(
+  event: ApprovalRequestedEvent,
+  response: vscode.ChatResponseStream,
+): void {
   response.markdown(approvalSummaryMarkdown(event));
 }
 
 function approvalSummaryMarkdown(event: ApprovalRequestedEvent): string {
-  const sections = [`**Approval required:** \`${escapeInlineCode(event.title)}\``];
+  const sections = [
+    `**Approval required:** \`${escapeInlineCode(event.title)}\``,
+  ];
   if (event.policyName || event.policyPath) {
     const policy = event.policyName ?? "active HITL policy";
-    sections.push(`**Policy:** \`${escapeInlineCode(policy)}\`${event.policyPath ? `\n\n\`${escapeInlineCode(event.policyPath)}\`` : ""}`);
+    sections.push(
+      `**Policy:** \`${escapeInlineCode(policy)}\`${event.policyPath ? `\n\n\`${escapeInlineCode(event.policyPath)}\`` : ""}`,
+    );
   }
   if (event.args && Object.keys(event.args).length > 0) {
-    sections.push(`**Input**\n\n${codeBlock(JSON.stringify(event.args, null, 2), "json", 4000)}`);
+    sections.push(
+      `**Input**\n\n${codeBlock(JSON.stringify(event.args, null, 2), "json", 4000)}`,
+    );
   }
   if (event.diff) {
-    sections.push(`**Proposed change**\n\n${codeBlock(event.diff, "diff", 12000)}`);
+    sections.push(
+      `**Proposed change**\n\n${codeBlock(event.diff, "diff", 12000)}`,
+    );
   } else if (event.diffOld || event.diffNew) {
-    sections.push(`**Current content**\n\n${codeBlock(event.diffOld ?? "", "", 6000)}`);
-    sections.push(`**Proposed content**\n\n${codeBlock(event.diffNew ?? "", "", 6000)}`);
+    sections.push(
+      `**Current content**\n\n${codeBlock(event.diffOld ?? "", "", 6000)}`,
+    );
+    sections.push(
+      `**Proposed content**\n\n${codeBlock(event.diffNew ?? "", "", 6000)}`,
+    );
   }
   return `${sections.join("\n\n")}\n\n`;
 }
@@ -616,12 +765,16 @@ async function contextFromReferences(
   return out;
 }
 
-async function contextFromReference(reference: vscode.ChatPromptReference): Promise<EditorContextAttachment | undefined> {
+async function contextFromReference(
+  reference: vscode.ChatPromptReference,
+): Promise<EditorContextAttachment | undefined> {
   const location = locationFromReferenceValue(reference.value);
   if (location) {
     const document = await vscode.workspace.openTextDocument(location.uri);
     const hasRange = !location.range.isEmpty;
-    const content = hasRange ? document.getText(location.range) : document.getText();
+    const content = hasRange
+      ? document.getText(location.range)
+      : document.getText();
     if (stringsIsBlank(content)) {
       return undefined;
     }
@@ -655,7 +808,10 @@ async function contextFromReference(reference: vscode.ChatPromptReference): Prom
     };
   }
 
-  if (typeof reference.modelDescription === "string" && !stringsIsBlank(reference.modelDescription)) {
+  if (
+    typeof reference.modelDescription === "string" &&
+    !stringsIsBlank(reference.modelDescription)
+  ) {
     return {
       kind: "reference",
       content: reference.modelDescription,
@@ -665,7 +821,9 @@ async function contextFromReference(reference: vscode.ChatPromptReference): Prom
   return undefined;
 }
 
-function locationFromReferenceValue(value: unknown): vscode.Location | undefined {
+function locationFromReferenceValue(
+  value: unknown,
+): vscode.Location | undefined {
   if (value instanceof vscode.Location) {
     return value;
   }
@@ -695,7 +853,13 @@ function uriFromReferenceValue(value: unknown): vscode.Uri | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
-  const maybe = value as { scheme?: unknown; path?: unknown; fsPath?: unknown; external?: unknown; toString?: unknown };
+  const maybe = value as {
+    scheme?: unknown;
+    path?: unknown;
+    fsPath?: unknown;
+    external?: unknown;
+    toString?: unknown;
+  };
   if (typeof maybe.scheme === "string" && typeof maybe.path === "string") {
     try {
       return vscode.Uri.from({
@@ -749,7 +913,9 @@ function positionFromUnknown(value: unknown): vscode.Position | undefined {
   return new vscode.Position(maybe.line, maybe.character);
 }
 
-function mergeEditorContext(context: EditorContextAttachment[]): EditorContextAttachment[] {
+function mergeEditorContext(
+  context: EditorContextAttachment[],
+): EditorContextAttachment[] {
   const seen = new Set<string>();
   const out: EditorContextAttachment[] = [];
   for (const item of context) {
@@ -789,9 +955,13 @@ function stringsIsBlank(value: string): boolean {
 function inputForRequest(command: string, prompt: string): string {
   switch (command) {
     case "fix":
-      return prompt ? `Fix this diagnostic: ${prompt}` : "Fix the diagnostics in the active file.";
+      return prompt
+        ? `Fix this diagnostic: ${prompt}`
+        : "Fix the diagnostics in the active file.";
     case "explain":
-      return prompt ? `Explain this code: ${prompt}` : "Explain the selected code.";
+      return prompt
+        ? `Explain this code: ${prompt}`
+        : "Explain the selected code.";
     case "compact":
     case "doctor":
     case "help":
@@ -799,9 +969,13 @@ function inputForRequest(command: string, prompt: string): string {
     case "websearch":
       return `/${command}${prompt ? ` ${prompt}` : ""}`;
     case "review":
-      return prompt ? `Review the current git changes with this focus: ${prompt}` : "Review the current git changes.";
+      return prompt
+        ? `Review the current git changes with this focus: ${prompt}`
+        : "Review the current git changes.";
     case "commit":
-      return prompt ? `Draft a commit message for the current git changes with this focus: ${prompt}` : "Draft a commit message for the current git changes.";
+      return prompt
+        ? `Draft a commit message for the current git changes with this focus: ${prompt}`
+        : "Draft a commit message for the current git changes.";
     default:
       return prompt || "/help";
   }
@@ -818,7 +992,10 @@ function toolProgress(event: ToolCallEvent): string {
   return `Tool ${event.status}: ${title}`;
 }
 
-function pushEditorReferences(response: vscode.ChatResponseStream, context: readonly EditorContextAttachment[]): void {
+function pushEditorReferences(
+  response: vscode.ChatResponseStream,
+  context: readonly EditorContextAttachment[],
+): void {
   const seen = new Set<string>();
   for (const item of context) {
     if (!item.uri || seen.has(item.uri)) {

@@ -4,14 +4,17 @@ const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const expectedID = process.env.CONTENOX_VSCODE_EXTENSION_ID || "contenox.contenox-runtime";
+const expectedID =
+  process.env.CONTENOX_VSCODE_EXTENSION_ID || "contenox.contenox-runtime";
 const expectedTarget = process.env.CONTENOX_VSCODE_TARGET || "";
 const allowProposed = process.env.CONTENOX_ALLOW_PROPOSED === "1";
 const allowUntargeted = process.env.CONTENOX_ALLOW_UNTARGETED === "1";
 const files = process.argv.slice(2);
 
 if (files.length === 0) {
-  console.error("usage: node scripts/assert-package-clean.js <file.vsix> [...]");
+  console.error(
+    "usage: node scripts/assert-package-clean.js <file.vsix> [...]",
+  );
   process.exit(2);
 }
 
@@ -54,9 +57,15 @@ function checkVSIX(file) {
     }
   }
 
-  const bins = entries.filter((entry) => entry === "extension/bin/contenox" || entry === "extension/bin/contenox.exe");
+  const bins = entries.filter(
+    (entry) =>
+      entry === "extension/bin/contenox" ||
+      entry === "extension/bin/contenox.exe",
+  );
   if (bins.length !== 1) {
-    throw new Error(`expected exactly one bundled binary, got ${bins.length}: ${bins.join(", ")}`);
+    throw new Error(
+      `expected exactly one bundled binary, got ${bins.length}: ${bins.join(", ")}`,
+    );
   }
 
   const forbidden = [
@@ -65,7 +74,7 @@ function checkVSIX(file) {
     /^extension\/scripts\//,
     /^extension\/\.github\//,
     /^extension\/.*\.map$/,
-    /^extension\/.*\.svg$/i,
+    // /^extension\/.*\.svg$/i,
     /^extension\/.*\.vsix$/i,
     /^extension\/.*\.env($|\.)/i,
   ];
@@ -77,7 +86,10 @@ function checkVSIX(file) {
   if (entrySet.has("extension/dist/chat/ChatPanel.js")) {
     throw new Error("stale ChatPanel.js must not be packaged");
   }
-  for (const entry of entries.filter((candidate) => candidate.startsWith("extension/dist/") && candidate.endsWith(".js"))) {
+  for (const entry of entries.filter(
+    (candidate) =>
+      candidate.startsWith("extension/dist/") && candidate.endsWith(".js"),
+  )) {
     const text = unzipText(file, entry);
     if (text.includes("Contenox requests permission:")) {
       throw new Error(`legacy notification approval path included: ${entry}`);
@@ -88,10 +100,14 @@ function checkVSIX(file) {
   const manifest = unzipText(file, "extension.vsixmanifest");
   const target = manifestTarget(manifest);
   if (expectedTarget && target !== expectedTarget) {
-    throw new Error(`VSIX target is ${JSON.stringify(target)}, expected ${JSON.stringify(expectedTarget)}`);
+    throw new Error(
+      `VSIX target is ${JSON.stringify(target)}, expected ${JSON.stringify(expectedTarget)}`,
+    );
   }
   if (!target && !allowUntargeted) {
-    throw new Error("VSIX is missing TargetPlatform; native Contenox packages must be built with vsce --target");
+    throw new Error(
+      "VSIX is missing TargetPlatform; native Contenox packages must be built with vsce --target",
+    );
   }
   if (target) {
     checkBinaryNameForTarget(target, bins[0]);
@@ -102,23 +118,45 @@ function checkVSIX(file) {
     throw new Error(`extension id is ${id}, expected ${expectedID}`);
   }
   if (pkg.private !== undefined) {
-    throw new Error("package.json must not include private for Marketplace packages");
+    throw new Error(
+      "package.json must not include private for Marketplace packages",
+    );
   }
   if (pkg.pricing !== "Free") {
-    throw new Error(`package.json pricing must be Free, got ${JSON.stringify(pkg.pricing)}`);
+    throw new Error(
+      `package.json pricing must be Free, got ${JSON.stringify(pkg.pricing)}`,
+    );
   }
-  if (!pkg.homepage || !String(pkg.homepage).startsWith("https://contenox.com")) {
-    throw new Error(`package.json homepage should point at https://contenox.com, got ${JSON.stringify(pkg.homepage)}`);
+  if (
+    !pkg.homepage ||
+    !String(pkg.homepage).startsWith("https://contenox.com")
+  ) {
+    throw new Error(
+      `package.json homepage should point at https://contenox.com, got ${JSON.stringify(pkg.homepage)}`,
+    );
   }
   if (!pkg.icon || !String(pkg.icon).endsWith(".png")) {
-    throw new Error(`package.json icon must be a PNG, got ${JSON.stringify(pkg.icon)}`);
+    throw new Error(
+      `package.json icon must be a PNG, got ${JSON.stringify(pkg.icon)}`,
+    );
   }
-  if (!allowProposed && Array.isArray(pkg.enabledApiProposals) && pkg.enabledApiProposals.length > 0) {
-    throw new Error("stable Marketplace package must not include enabledApiProposals");
+  if (
+    !allowProposed &&
+    Array.isArray(pkg.enabledApiProposals) &&
+    pkg.enabledApiProposals.length > 0
+  ) {
+    throw new Error(
+      "stable Marketplace package must not include enabledApiProposals",
+    );
   }
   const tools = pkg.contributes?.languageModelTools;
-  if (!Array.isArray(tools) || !tools.some((tool) => tool?.name === "approve_contenox_tool_call")) {
-    throw new Error("package must contribute the native Contenox approval language model tool");
+  if (
+    !Array.isArray(tools) ||
+    !tools.some((tool) => tool?.name === "approve_contenox_tool_call")
+  ) {
+    throw new Error(
+      "package must contribute the native Contenox approval language model tool",
+    );
   }
 }
 
@@ -130,10 +168,14 @@ function manifestTarget(manifest) {
 function checkBinaryNameForTarget(target, bin) {
   const wantsExe = target.startsWith("win32-");
   if (wantsExe && bin !== "extension/bin/contenox.exe") {
-    throw new Error(`target ${target} must include extension/bin/contenox.exe, got ${bin}`);
+    throw new Error(
+      `target ${target} must include extension/bin/contenox.exe, got ${bin}`,
+    );
   }
   if (!wantsExe && bin !== "extension/bin/contenox") {
-    throw new Error(`target ${target} must include extension/bin/contenox, got ${bin}`);
+    throw new Error(
+      `target ${target} must include extension/bin/contenox, got ${bin}`,
+    );
   }
 }
 

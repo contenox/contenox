@@ -8,6 +8,12 @@ import { TelemetryLogger } from "../logging/telemetry";
 interface ContenoxLanguageModel extends vscode.LanguageModelChatInformation {
   provider?: string;
   modelName: string;
+  // Present on current VS Code builds but not yet in @types/vscode. Without a
+  // user-selectable, default model the chat model picker stays empty and chat
+  // fails with VS Code's "Language model unavailable" on installs that have no
+  // other language-model provider (e.g. no GitHub Copilot).
+  isUserSelectable?: boolean;
+  isDefault?: boolean;
 }
 
 const vendor = "contenox";
@@ -90,10 +96,11 @@ class ContenoxLanguageModelProvider implements vscode.LanguageModelChatProvider<
         return [fallbackModel(state.health.defaultProvider, state.health.defaultModel)];
       }
       const models = await client.listModels();
-      const infos = models.models.map((model) => modelInfoToLanguageModel(model));
+      const infos = dedupeModels(models.models.map((model) => modelInfoToLanguageModel(model)));
       if (infos.length > 0) {
+        markDefaultModel(infos, state.health.defaultProvider, state.health.defaultModel);
         this.telemetry.event("lm.models.listed", { count: infos.length });
-        return dedupeModels(infos);
+        return infos;
       }
       return [fallbackModel(state.health.defaultProvider, state.health.defaultModel)];
     } catch (error) {
@@ -186,8 +193,9 @@ function modelInfoToLanguageModel(model: ModelInfo): ContenoxLanguageModel {
     maxOutputTokens: 8192,
     tooltip: provider ? `${provider}/${modelName}` : modelName,
     detail: model.source,
+    isUserSelectable: true,
     capabilities: {
-      toolCalling: false,
+      toolCalling: true,
       imageInput: false,
     },
   };
@@ -207,8 +215,10 @@ function fallbackModel(provider: string | undefined, model: string | undefined):
     maxOutputTokens: 8192,
     tooltip: "Contenox local runtime model",
     detail: "default",
+    isUserSelectable: true,
+    isDefault: true,
     capabilities: {
-      toolCalling: false,
+      toolCalling: true,
       imageInput: false,
     },
   };
@@ -225,6 +235,33 @@ function dedupeModels(models: readonly ContenoxLanguageModel[]): ContenoxLanguag
     out.push(model);
   }
   return out;
+}
+
+// markDefaultModel flags the model matching the runtime's configured default
+// as isDefault so VS Code can resolve a language model when the user has not
+// explicitly picked one. Falls back to the first model so the picker always has
+// a default and chat never fails with "Language model unavailable".
+function markDefaultModel(
+  models: ContenoxLanguageModel[],
+  defaultProvider: string | undefined,
+  defaultModel: string | undefined,
+): void {
+  if (models.length === 0) {
+    return;
+  }
+  for (const model of models) {
+    model.isDefault = false;
+  }
+  const wantProvider = defaultProvider?.trim() || undefined;
+  const wantModel = defaultModel?.trim() || undefined;
+  // Prefer an exact provider+name match, then name-only (the runtime's provider
+  // label does not always equal the model's provider field), then the first
+  // model so there is always a default.
+  const match = wantModel
+    ? models.find((m) => m.modelName === wantModel && wantProvider && m.provider === wantProvider) ??
+      models.find((m) => m.modelName === wantModel)
+    : undefined;
+  (match ?? models[0]).isDefault = true;
 }
 
 function modelId(provider: string | undefined, model: string): string {
