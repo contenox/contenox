@@ -14,6 +14,7 @@ import (
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/sessionservice"
 	"github.com/contenox/runtime/runtime/taskengine"
+	"github.com/google/uuid"
 )
 
 type Agent interface {
@@ -258,7 +259,7 @@ func (a *agent) buildChatInput(ctx context.Context, req PromptRequest) (any, tas
 		end()
 	}
 
-	userMsg := taskengine.Message{Role: "user", Content: req.Input, Timestamp: time.Now().UTC()}
+	userMsg := taskengine.Message{ID: uuid.NewString(), Role: "user", Content: req.Input, Timestamp: time.Now().UTC()}
 	chatInput := taskengine.ChatHistory{
 		Messages: append(history, userMsg),
 	}
@@ -300,6 +301,7 @@ func (a *agent) persistHistory(ctx context.Context, sessionID string, input any,
 
 func AgentsMDMessage(content, path string) taskengine.Message {
 	return taskengine.Message{
+		ID:        uuid.NewString(),
 		Role:      "system",
 		Content:   fmt.Sprintf("Project context loaded from %s (AGENTS.md, community standard from agents.md). Treat this as project-specific reference material and conventions, not unconditional rules. Loaded once at session start; if it changes, start a new session to pick up the update.\n\n%s", path, content),
 		Timestamp: time.Now().UTC(),

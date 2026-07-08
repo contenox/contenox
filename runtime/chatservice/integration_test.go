@@ -337,6 +337,9 @@ func TestIntegration_ChatRoundTrip_AssistantWithToolCall(t *testing.T) {
 	}
 	roundTrip(t, ctx, db, "s-tool", exec, chainInput)
 
+	// The chain ends without executing the call, so synthesis pairs it with a
+	// stub tool result: strict providers (OpenAI Responses, Bedrock) reject a
+	// transcript containing an unanswered tool call on every later turn.
 	roles := loadRoles(t, ctx, db, "s-tool")
-	require.Equal(t, []string{"user", "assistant"}, roles, "assistant with empty content + tool call still persists as one row")
+	require.Equal(t, []string{"user", "assistant", "tool"}, roles, "assistant tool call persists with a pairing stub result")
 }

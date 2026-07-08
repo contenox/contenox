@@ -320,3 +320,99 @@ func TestUnit_TaskExec_ChatCompletionRetriesWithoutToolsWhenToolsOverflowContext
 	require.True(t, ok)
 	require.Equal(t, "hello", hist.Messages[len(hist.Messages)-1].Content)
 }
+
+// Regression: an early break in the execute_tool_calls batch (invalid
+// arguments on the first call) must not leave the remaining calls without a
+// result — strict providers reject transcripts with unanswered tool calls.
+func TestUnit_TaskExec_ExecuteToolCallsAnswersWholeBatchOnEarlyBreak(t *testing.T) {
+	repo := &mockModelRepo{}
+	toolsRepo := tools.NewMockToolsRegistry().
+		WithResponse("echo", tools.ToolsResponse{Output: "ok"})
+	exec, err := taskengine.NewExec(context.Background(), repo, toolsRepo, libtracker.NoopTracker{})
+	require.NoError(t, err)
+
+	chainCtx := &taskengine.ChainContext{
+		Tools: map[string]taskengine.ToolWithResolution{
+			"echo.echo": {
+				Tool:      taskengine.Tool{Type: "function", Function: taskengine.FunctionTool{Name: "echo.echo"}},
+				ToolsName: "echo",
+			},
+		},
+	}
+	history := taskengine.ChatHistory{Messages: []taskengine.Message{
+		{Role: "user", Content: "do two things"},
+		{Role: "assistant", CallTools: []taskengine.ToolCall{
+			{ID: "call-1", Type: "function", Function: taskengine.FunctionCall{Name: "echo.echo", Arguments: `{not-json`}},
+			{ID: "call-2", Type: "function", Function: taskengine.FunctionCall{Name: "echo.echo", Arguments: `{}`}},
+		}},
+	}}
+	task := &taskengine.TaskDefinition{
+		ID:      "run_tools",
+		Handler: taskengine.HandleExecuteToolCalls,
+	}
+
+	out, _, _, taskErr := exec.TaskExec(
+		context.Background(), time.Now().UTC(), 4000,
+		chainCtx, task, history, taskengine.DataTypeChatHistory,
+	)
+	require.Error(t, taskErr)
+
+	hist, ok := out.(taskengine.ChatHistory)
+	require.True(t, ok)
+	answered := map[string]bool{}
+	for _, m := range hist.Messages {
+		if m.Role == "tool" {
+			answered[m.ToolCallID] = true
+		}
+	}
+	require.True(t, answered["call-1"], "failed call must carry an error result")
+	require.True(t, answered["call-2"], "call after the break must carry a stub result")
+}
+
+// Regression: recovery/summarise tasks receive an earlier task's output via
+// input_var, which can end mid tool-call protocol (unanswered call, orphaned
+// result). chat_completion must reconcile before the provider sees it.
+func TestUnit_TaskExec_ChatCompletionRepairsDanglingToolProtocol(t *testing.T) {
+	var seenMessages []libmodelprovider.Message
+	repo := &mockModelRepo{
+		chatFunc: func(_ context.Context, _ llmrepo.Request, messages []libmodelprovider.Message, _ ...libmodelprovider.ChatArgument) (libmodelprovider.ChatResult, llmrepo.Meta, error) {
+			seenMessages = append([]libmodelprovider.Message(nil), messages...)
+			return libmodelprovider.ChatResult{
+				Message: libmodelprovider.Message{Role: "assistant", Content: "recovered"},
+			}, llmrepo.Meta{ModelName: "test-model", ProviderType: "llama"}, nil
+		},
+	}
+	exec, err := taskengine.NewExec(context.Background(), repo, tools.NewMockToolsRegistry(), libtracker.NoopTracker{})
+	require.NoError(t, err)
+
+	history := taskengine.ChatHistory{Messages: []taskengine.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "tool", ToolCallID: "ghost", Content: "orphaned result"},
+		{Role: "assistant", CallTools: []taskengine.ToolCall{{
+			ID: "dangling", Type: "function", Function: taskengine.FunctionCall{Name: "list_dir", Arguments: `{}`},
+		}}},
+	}}
+	task := &taskengine.TaskDefinition{
+		ID:            "recovery_chat",
+		Handler:       taskengine.HandleChatCompletion,
+		ExecuteConfig: &taskengine.LLMExecutionConfig{Model: "test-model"},
+	}
+
+	_, _, _, err = exec.TaskExec(
+		context.Background(), time.Now().UTC(), 4000,
+		&taskengine.ChainContext{}, task, history, taskengine.DataTypeChatHistory,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, seenMessages)
+
+	var danglingAnswered bool
+	for _, m := range seenMessages {
+		if m.Role == "tool" {
+			require.NotEqual(t, "ghost", m.ToolCallID, "orphaned tool result must not reach the provider")
+			if m.ToolCallID == "dangling" {
+				danglingAnswered = true
+			}
+		}
+	}
+	require.True(t, danglingAnswered, "unanswered tool call must be paired with a stub result before the provider sees it")
+}

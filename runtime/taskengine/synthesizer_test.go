@@ -279,3 +279,92 @@ func TestUnit_SynthesizeHistory_ErrorDropsEmptyAssistantShell(t *testing.T) {
 	assert.Equal(t, "assistant", got[1].Role)
 	assert.Contains(t, got[1].Content, "peg-native format")
 }
+
+// Regression: task handlers prepend a system-instruction message, so a chat
+// unit's output is [system]+input+[assistant]. Index-based diffing re-emitted
+// the last input message on every turn (duplicate tool results in persisted
+// sessions) and leaked the ephemeral system instruction.
+func TestUnit_SynthesizeHistory_SystemPrependDoesNotReemitOrPersist(t *testing.T) {
+	prior := []taskengine.Message{
+		{ID: "u1", Role: "user", Content: "read the file"},
+		{ID: "a0", Role: "assistant", CallTools: []taskengine.ToolCall{{ID: "c0", Function: taskengine.FunctionCall{Name: "read_file"}}}},
+		{ID: "t0", Role: "tool", ToolCallID: "c0", Content: "contents"},
+	}
+	out := taskengine.ChatHistory{
+		Messages: append(
+			[]taskengine.Message{{ID: "sys1", Role: "system", Content: "task instruction"}},
+			append(append([]taskengine.Message{}, prior...),
+				taskengine.Message{ID: "a1", Role: "assistant", Content: "the file says: contents"})...),
+	}
+	units := []taskengine.CapturedStateUnit{
+		{TaskID: "chat", TaskHandler: "chat_completion", OutputType: taskengine.DataTypeChatHistory, Input: taskengine.ChatHistory{Messages: prior}, Output: out},
+	}
+
+	got := taskengine.SynthesizeHistory(prior, units, nil)
+
+	require.Len(t, got, 4)
+	ids := make([]string, 0, len(got))
+	for _, m := range got {
+		require.NotEqual(t, "system", m.Role)
+		ids = append(ids, m.ID)
+	}
+	assert.Equal(t, []string{"u1", "a0", "t0", "a1"}, ids)
+}
+
+// Regression: a chain that dies between the assistant tool call and its
+// execution must not persist an unanswered call — strict providers (OpenAI
+// Responses, Bedrock) reject the transcript on every later turn, permanently
+// bricking the session.
+func TestUnit_SynthesizeHistory_InterruptedToolCallGetsStubResult(t *testing.T) {
+	prior := []taskengine.Message{{ID: "u1", Role: "user", Content: "list files"}}
+	chatOut := taskengine.ChatHistory{
+		Messages: []taskengine.Message{
+			prior[0],
+			{ID: "a1", Role: "assistant", CallTools: []taskengine.ToolCall{{ID: "c1", Function: taskengine.FunctionCall{Name: "list_dir"}}}},
+		},
+	}
+	units := []taskengine.CapturedStateUnit{
+		{TaskID: "chat", TaskHandler: "chat_completion", OutputType: taskengine.DataTypeChatHistory, Input: taskengine.ChatHistory{Messages: prior}, Output: chatOut},
+	}
+
+	got := taskengine.SynthesizeHistory(prior, units, errors.New("stream interrupted"))
+
+	require.Len(t, got, 4)
+	assert.Equal(t, "a1", got[1].ID)
+	assert.Equal(t, "tool", got[2].Role)
+	assert.Equal(t, "c1", got[2].ToolCallID)
+	assert.Contains(t, got[2].Content, "interrupted")
+	assert.Contains(t, got[3].Content, "chain failed")
+}
+
+// Regression: sessions poisoned before the pairing invariant existed contain
+// tool results whose call is gone. Synthesis must not carry them forward.
+func TestUnit_SynthesizeHistory_OrphanToolResultDropped(t *testing.T) {
+	prior := []taskengine.Message{
+		{ID: "u1", Role: "user", Content: "hi"},
+		{ID: "t-ghost", Role: "tool", ToolCallID: "ghost", Content: "orphan"},
+		{ID: "a1", Role: "assistant", Content: "hello"},
+	}
+
+	got := taskengine.SynthesizeHistory(prior, nil, nil)
+
+	require.Len(t, got, 2)
+	assert.Equal(t, "u1", got[0].ID)
+	assert.Equal(t, "a1", got[1].ID)
+}
+
+// Regression: duplicate tool results for one call ID accumulated in persisted
+// sessions (index-diff re-emission); only the first must survive.
+func TestUnit_SynthesizeHistory_DuplicateToolResultsDropped(t *testing.T) {
+	prior := []taskengine.Message{
+		{ID: "u1", Role: "user", Content: "read it"},
+		{ID: "a1", Role: "assistant", CallTools: []taskengine.ToolCall{{ID: "c1", Function: taskengine.FunctionCall{Name: "read_file"}}}},
+		{ID: "t1", Role: "tool", ToolCallID: "c1", Content: "contents"},
+		{ID: "t1-dup", Role: "tool", ToolCallID: "c1", Content: "contents"},
+	}
+
+	got := taskengine.SynthesizeHistory(prior, nil, nil)
+
+	require.Len(t, got, 3)
+	assert.Equal(t, "t1", got[2].ID)
+}

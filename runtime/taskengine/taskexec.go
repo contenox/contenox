@@ -164,48 +164,6 @@ func requestedContextRequirement(ctx context.Context, actualTokens int) int {
 	return actualTokens
 }
 
-func pruneDanglingToolLinks(msgs []Message) []Message {
-	resultIDs := map[string]bool{}
-	callIDs := map[string]bool{}
-	for _, m := range msgs {
-		if m.Role == "tool" && m.ToolCallID != "" {
-			resultIDs[m.ToolCallID] = true
-		}
-		if m.Role == "assistant" {
-			for _, tc := range m.CallTools {
-				if tc.ID != "" {
-					callIDs[tc.ID] = true
-				}
-			}
-		}
-	}
-	out := make([]Message, 0, len(msgs))
-	for _, m := range msgs {
-		switch {
-		case m.Role == "tool":
-			if m.ToolCallID == "" || !callIDs[m.ToolCallID] {
-				continue
-			}
-			out = append(out, m)
-		case m.Role == "assistant" && len(m.CallTools) > 0:
-			answered := make([]ToolCall, 0, len(m.CallTools))
-			for _, tc := range m.CallTools {
-				if tc.ID != "" && resultIDs[tc.ID] {
-					answered = append(answered, tc)
-				}
-			}
-			if len(answered) == 0 && strings.TrimSpace(m.Content) == "" {
-				continue
-			}
-			m.CallTools = answered
-			out = append(out, m)
-		default:
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
 func (exe *SimpleExec) shiftMessagesToFit(ctx context.Context, modelName string, msgs []Message, budget int) ([]Message, int, error) {
 	toks := make([]int, len(msgs))
 	for i, m := range msgs {
@@ -283,7 +241,7 @@ func (exe *SimpleExec) shiftMessagesToFit(ctx context.Context, modelName string,
 		}
 	}
 
-	out = pruneDanglingToolLinks(out)
+	out = repairToolCallPairing(out)
 	if len(out) == 0 {
 		return nil, 0, ErrContextLengthExceeded
 	}
@@ -711,7 +669,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				}
 			}
 			if !alreadyPresent {
-				messages := []Message{{Role: "system", Content: currentTask.SystemInstruction, Timestamp: time.Now().UTC()}}
+				messages := []Message{{ID: uuid.NewString(), Role: "system", Content: currentTask.SystemInstruction, Timestamp: time.Now().UTC()}}
 				chatHistory.Messages = append(messages, chatHistory.Messages...)
 				// Fix 9: force recount — the system instruction tokens are not in
 				// the old InputTokens value, so executeLLM would skip counting.
@@ -762,6 +720,11 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 		executedAny := false
 		priorToolMessages := append([]Message(nil), chatHistory.Messages[:len(chatHistory.Messages)-1]...)
 		batchRepeatCounts := make(map[string]int)
+		// Tracks which calls in this batch received a result message. Any call
+		// left unanswered (early break on error/cancellation) gets a stub result
+		// after the loop — strict providers reject a transcript in which an
+		// assistant tool call has no result.
+		answeredBatch := make(map[string]bool)
 
 		for _, toolCall := range lastMessage.CallTools {
 			argsStr := normalizedToolArguments(toolCall.Function.Arguments)
@@ -773,6 +736,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				errStr := fmt.Sprintf("tool %s not found", toolCall.Function.Name)
 				exe.reportInvalidToolCall(taskCtx, toolCall, "not_found", errStr, repeatIndex)
 				exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
+				answeredBatch[toolCall.ID] = true
 				continue
 			}
 			if resolutionInfo.Function.Name != "" && resolutionInfo.Function.Name != toolCall.Function.Name {
@@ -783,6 +747,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				errStr := fmt.Sprintf("tool %s is hidden for task %s", toolCall.Function.Name, currentTask.ID)
 				exe.reportInvalidToolCall(taskCtx, toolCall, "hidden", errStr, repeatIndex)
 				exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
+				answeredBatch[toolCall.ID] = true
 				continue
 			}
 			if explicitToolsScope {
@@ -790,6 +755,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 					errStr := fmt.Sprintf("tool %s from tools %q is not allowed for task %s", toolCall.Function.Name, resolutionInfo.ToolsName, currentTask.ID)
 					exe.reportInvalidToolCall(taskCtx, toolCall, "not_allowed", errStr, repeatIndex, "tools_name", resolutionInfo.ToolsName)
 					exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, nil)
+					answeredBatch[toolCall.ID] = true
 					continue
 				}
 			}
@@ -802,6 +768,7 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 				errStr := taskErr.Error()
 				exe.reportInvalidToolCall(taskCtx, toolCall, "invalid_arguments", errStr, repeatIndex, "tools_name", resolutionInfo.ToolsName)
 				exe.appendToolErrorResult(taskCtx, &chatHistory, toolCall, errStr, args)
+				answeredBatch[toolCall.ID] = true
 				break
 			}
 
@@ -888,12 +855,14 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			toolEnd()
 
 			toolResultMessage := Message{
+				ID:         uuid.NewString(),
 				Role:       "tool",
 				Content:    content,
 				ToolCallID: toolCall.ID,
 				Timestamp:  time.Now().UTC(),
 			}
 			chatHistory.Messages = append(chatHistory.Messages, toolResultMessage)
+			answeredBatch[toolCall.ID] = true
 
 			if exe.eventSink.Enabled() {
 				toolEvent := NewTaskEvent(callCtx, TaskEventToolCall)
@@ -915,6 +884,14 @@ func (exe *SimpleExec) TaskExec(taskCtx context.Context, startingTime time.Time,
 			if taskErr != nil {
 				break
 			}
+		}
+
+		for _, tc := range lastMessage.CallTools {
+			if tc.ID == "" || answeredBatch[tc.ID] {
+				continue
+			}
+			answeredBatch[tc.ID] = true
+			exe.appendToolErrorResult(taskCtx, &chatHistory, tc, interruptedToolCallResult, nil)
 		}
 
 		output = chatHistory
@@ -1031,6 +1008,12 @@ func (exe *SimpleExec) executeLLM(
 		"provider_types", llmCall.Providers,
 		"provider_type", llmCall.Provider)
 	defer end()
+
+	// Chains legitimately route histories out of failure states (recovery and
+	// summarise tasks receive an earlier task's output via input_var), so the
+	// incoming history may end mid tool-call protocol. Reconcile before the
+	// provider sees it.
+	input.Messages = repairToolCallPairing(input.Messages)
 
 	// Build the full list of tools
 	tools := []libmodelprovider.Tool{}
@@ -1256,6 +1239,7 @@ func (exe *SimpleExec) executeLLM(
 				exe.publishStepChunk(ctx, meta, parcel.Data, parcel.Thinking)
 			}
 			input.Messages = append(input.Messages, Message{
+				ID:        uuid.NewString(),
 				Role:      "assistant",
 				Content:   streamedContent.String(),
 				Thinking:  streamedThinking.String(),
@@ -1308,6 +1292,7 @@ func (exe *SimpleExec) executeLLM(
 	}
 	respMessage := resp.Message
 	input.Messages = append(input.Messages, Message{
+		ID:        uuid.NewString(),
 		Role:      respMessage.Role,
 		Content:   respMessage.Content,
 		Thinking:  respMessage.Thinking,
@@ -1728,6 +1713,7 @@ func (exe *SimpleExec) appendToolErrorResult(ctx context.Context, chatHistory *C
 		return
 	}
 	toolResultMessage := Message{
+		ID:         uuid.NewString(),
 		Role:       "tool",
 		Content:    toolErrorContent(errStr),
 		ToolCallID: toolCall.ID,
