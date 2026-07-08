@@ -61,7 +61,7 @@ func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedM
 func (p *catalogProvider) ProviderFor(model modelrepo.ObservedModel) modelrepo.Provider {
 	return NewBedrockProvider(
 		regionFromURL(p.spec.BaseURL),
-		p.spec.APIKey, // optional stored static-credentials JSON; empty → ambient chain
+		p.spec.APIKey,
 		model.Name,
 		model.CapabilityConfig,
 		p.httpClient,
