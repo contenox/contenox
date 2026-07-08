@@ -21,6 +21,21 @@ func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *mod
 	in := &bedrockruntime.ConverseInput{ModelId: aws.String(modelName)}
 	toOriginal := map[string]string{}
 
+	// Bedrock rejects toolUse/toolResult content blocks unless the request also
+	// carries toolConfig. Tasks without tools (recovery/summarise steps) still
+	// receive histories from tool-using turns, so those blocks are rendered as
+	// plain text instead — a synthetic toolConfig would invite the model to
+	// call tools this task cannot execute.
+	hasTools := false
+	if cfg != nil {
+		for _, t := range cfg.Tools {
+			if strings.ToLower(t.Type) == "function" && t.Function != nil {
+				hasTools = true
+				break
+			}
+		}
+	}
+
 	var system []types.SystemContentBlock
 	var msgs []types.Message
 
@@ -42,6 +57,12 @@ func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *mod
 				system = append(system, &types.SystemContentBlockMemberText{Value: m.Content})
 			}
 		case "tool":
+			if !hasTools {
+				appendBlocks(types.ConversationRoleUser, []types.ContentBlock{
+					&types.ContentBlockMemberText{Value: fmt.Sprintf("[tool result %s]\n%s", m.ToolCallID, m.Content)},
+				})
+				continue
+			}
 			appendBlocks(types.ConversationRoleUser, []types.ContentBlock{
 				&types.ContentBlockMemberToolResult{Value: types.ToolResultBlock{
 					ToolUseId: aws.String(m.ToolCallID),
@@ -54,6 +75,12 @@ func buildConverseInput(modelName string, messages []modelrepo.Message, cfg *mod
 				blocks = append(blocks, &types.ContentBlockMemberText{Value: m.Content})
 			}
 			for _, tc := range m.ToolCalls {
+				if !hasTools {
+					blocks = append(blocks, &types.ContentBlockMemberText{
+						Value: fmt.Sprintf("[tool call %s: %s(%s)]", tc.ID, tc.Function.Name, tc.Function.Arguments),
+					})
+					continue
+				}
 				safeName := sanitizeToolName(tc.Function.Name)
 				toOriginal[safeName] = tc.Function.Name
 				blocks = append(blocks, &types.ContentBlockMemberToolUse{Value: types.ToolUseBlock{

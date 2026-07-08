@@ -174,6 +174,7 @@ func anthropicUsesAdaptiveThinking(modelName string) bool {
 		strings.Contains(m, "claude-opus-4-6") ||
 		strings.Contains(m, "claude-sonnet-4-6") ||
 		strings.Contains(m, "claude-fable-5") ||
+		strings.Contains(m, "claude-sonnet-5") ||
 		anthropicMythos(m)
 }
 
@@ -182,6 +183,7 @@ func anthropicRequiresAdaptiveThinking(modelName string) bool {
 	return strings.Contains(m, "claude-opus-4-8") ||
 		strings.Contains(m, "claude-opus-4-7") ||
 		strings.Contains(m, "claude-fable-5") ||
+		strings.Contains(m, "claude-sonnet-5") ||
 		anthropicMythos(m)
 }
 
@@ -197,6 +199,7 @@ func anthropicStripsTemperatureParams(modelName string) bool {
 	return strings.Contains(m, "claude-opus-4-7") ||
 		strings.Contains(m, "claude-opus-4-8") ||
 		strings.Contains(m, "claude-fable-5") ||
+		strings.Contains(m, "claude-sonnet-5") ||
 		anthropicMythos(m)
 }
 

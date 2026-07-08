@@ -282,3 +282,24 @@ func TestUnit_AnthropicCatalog_PaginatesListModels(t *testing.T) {
 	require.Contains(t, names, "claude-fable-5")
 	require.Contains(t, names, "claude-sonnet-4-6")
 }
+
+// Regression: claude-sonnet-5 rejects thinking.type=enabled ("Use
+// thinking.type.adaptive and output_config.effort") and deprecates
+// temperature — same contract as fable-5.
+func TestUnit_AnthropicSonnet5_UsesAdaptiveThinkingAndStripsTemperature(t *testing.T) {
+	cfg := &modelrepo.ChatConfig{}
+	modelrepo.WithThink("high").Apply(cfg)
+	req := msgcodec.Request{MaxTokens: 4096}
+	applyAnthropicThinking(&req, "claude-sonnet-5", cfg)
+	require.NotNil(t, req.Thinking)
+	require.Equal(t, "adaptive", req.Thinking.Type, "sonnet-5 must use adaptive thinking")
+
+	offCfg := &modelrepo.ChatConfig{}
+	modelrepo.WithThink("off").Apply(offCfg)
+	offReq := msgcodec.Request{MaxTokens: 4096}
+	applyAnthropicThinking(&offReq, "claude-sonnet-5", offCfg)
+	require.Nil(t, offReq.Thinking, "sonnet-5 with Think=off must omit the thinking param")
+
+	require.True(t, anthropicStripsTemperatureParams("claude-sonnet-5"), "sonnet-5 deprecates temperature")
+	require.False(t, anthropicStripsTemperatureParams("claude-sonnet-4-5-20250929"), "sonnet-4.5 still accepts temperature")
+}

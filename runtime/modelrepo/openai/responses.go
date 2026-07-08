@@ -55,6 +55,11 @@ type openAIResponse struct {
 		Effort  string `json:"effort"`
 		Summary string `json:"summary"`
 	} `json:"reasoning"`
+	// Error is set on response.failed / response.incomplete stream events.
+	Error *struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 type openAIResponseOutputItem struct {

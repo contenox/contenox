@@ -204,9 +204,40 @@ type responsesSSEEvent struct {
 	Item *openAIResponseOutputItem `json:"item"`
 	// response.completed — the full response (reasoning summary lives here)
 	Response *openAIResponse `json:"response"`
-	// error
+	// error — code/message are top-level per the Responses API spec, but some
+	// gateways nest them under an "error" object instead.
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Error   *struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// errorText resolves the error detail from either encoding, falling back to
+// the raw payload so a stream failure never surfaces as an empty error.
+func (ev responsesSSEEvent) errorText(rawPayload string) string {
+	code, msg := ev.Code, ev.Message
+	if ev.Error != nil {
+		if code == "" {
+			code = ev.Error.Code
+		}
+		if msg == "" {
+			msg = ev.Error.Message
+		}
+	}
+	if ev.Response != nil && ev.Response.Error != nil {
+		if code == "" {
+			code = ev.Response.Error.Code
+		}
+		if msg == "" {
+			msg = ev.Response.Error.Message
+		}
+	}
+	if code == "" && msg == "" {
+		return truncateString(rawPayload, 512)
+	}
+	return code + ": " + msg
 }
 
 // streamResponsesSSE reads a Responses API SSE stream and forwards text parcels
@@ -267,7 +298,18 @@ func streamResponsesSSE(
 			}
 
 		case "error":
-			err := fmt.Errorf("responses stream error %s: %s", ev.Code, ev.Message)
+			err := fmt.Errorf("responses stream error %s", ev.errorText(payload))
+			reportErr(err)
+			select {
+			case out <- &modelrepo.StreamParcel{Error: err}:
+			case <-ctx.Done():
+			}
+			return
+
+		case "response.failed", "response.incomplete":
+			// Terminal non-success events: without this the stream would end
+			// silently and the caller would see an empty completion.
+			err := fmt.Errorf("responses stream %s %s", ev.Type, ev.errorText(payload))
 			reportErr(err)
 			select {
 			case out <- &modelrepo.StreamParcel{Error: err}:

@@ -162,3 +162,37 @@ func tc(id, name, args string) modelrepo.ToolCall {
 	t.Function.Arguments = args
 	return t
 }
+
+// Regression: Bedrock rejects toolUse/toolResult blocks unless toolConfig is
+// set ("The toolConfig field must be defined when using toolUse and toolResult
+// content blocks"). Tasks without tools (recovery/summarise steps) still
+// receive tool-bearing histories; those blocks must degrade to text.
+func TestUnit_BuildConverseInput_NoToolsDegradesToolBlocksToText(t *testing.T) {
+	msgs := []modelrepo.Message{
+		{Role: "user", Content: "list /tmp"},
+		{Role: "assistant", ToolCalls: []modelrepo.ToolCall{tc("t1", "fs.list", `{"path":"/tmp"}`)}},
+		{Role: "tool", ToolCallID: "t1", Content: `{"files":["a"]}`},
+		{Role: "user", Content: "summarise what happened"},
+	}
+
+	in, _ := buildConverseInput("deepseek.v3.2", msgs, &modelrepo.ChatConfig{}, 0)
+
+	require.Nil(t, in.ToolConfig)
+	for _, m := range in.Messages {
+		for _, cb := range m.Content {
+			switch cb.(type) {
+			case *types.ContentBlockMemberToolUse, *types.ContentBlockMemberToolResult:
+				t.Fatalf("tool content block %T sent without toolConfig", cb)
+			}
+		}
+	}
+
+	// The tool exchange must survive as text so the model keeps the context.
+	require.Len(t, in.Messages, 3) // user, assistant(text), user(result text + question merged)
+	assistantText := in.Messages[1].Content[0].(*types.ContentBlockMemberText).Value
+	require.Contains(t, assistantText, "fs.list")
+	require.Contains(t, assistantText, `{"path":"/tmp"}`)
+	resultText := in.Messages[2].Content[0].(*types.ContentBlockMemberText).Value
+	require.Contains(t, resultText, "t1")
+	require.Contains(t, resultText, `{"files":["a"]}`)
+}
