@@ -1,17 +1,12 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
 import {
-  diagnoseAgentSessions,
-  openAgentSession,
-  registerAgentSessions,
-} from "./agentSessions/provider";
-import {
   registerAutocomplete,
   testAutocompleteAtCursor,
 } from "./autocomplete/provider";
 import { AutocompleteStatus } from "./autocomplete/status";
 import { bridgeCommandArgs, BridgeProcess } from "./bridge/BridgeProcess";
-import { ContenoxChatParticipant } from "./chat/participant";
+import { ChatWebviewViewProvider } from "./chat/ChatWebviewViewProvider";
 import {
   SessionDocumentProvider,
   sessionDocumentScheme,
@@ -45,17 +40,6 @@ import { setDiagnosticsContext } from "./status/contextKeys";
 import { ContenoxStatusBar } from "./status/statusBar";
 
 export function activate(context: vscode.ExtensionContext): void {
-  if (process.env.CONTENOX_NATIVE_AGENT_SESSIONS === "1") {
-    const config = vscode.workspace.getConfiguration("contenox");
-    if (!config.get("experimental.nativeAgentSessions")) {
-      config.update(
-        "experimental.nativeAgentSessions",
-        true,
-        vscode.ConfigurationTarget.Global,
-      );
-    }
-  }
-
   const output = new ContenoxOutput();
   const telemetry = new TelemetryLogger(extensionVersion(context));
   const status = new ContenoxStatusBar();
@@ -77,9 +61,10 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   const sessionDocuments = new SessionDocumentProvider(telemetry);
   const diffStore = new DiffStore(telemetry);
-  const chat = new ContenoxChatParticipant(
+  const chatWebview = new ChatWebviewViewProvider(
     bridge,
     diffStore,
+    context.extensionUri,
     output,
     telemetry,
     () => sessions.refresh(),
@@ -96,7 +81,7 @@ export function activate(context: vscode.ExtensionContext): void {
     status,
     autocompleteStatus,
     bridge,
-    chat,
+    chatWebview,
     diffStore,
     sessions,
     runtimeControls,
@@ -110,9 +95,6 @@ export function activate(context: vscode.ExtensionContext): void {
       sessionDocuments,
     ),
     registerLanguageModelProvider(bridge, output, telemetry),
-    registerAgentSessions(context, bridge, chat, telemetry, () =>
-      sessions.refresh(),
-    ),
     mcpProvider,
     registerAutocomplete(bridge, output, telemetry),
     registerDiagnosticCodeActions(telemetry),
@@ -123,6 +105,9 @@ export function activate(context: vscode.ExtensionContext): void {
       "contenox.controls",
       runtimeControls,
     ),
+  );
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider("contenox.chat", chatWebview),
   );
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider("contenox.sessions", sessions),
@@ -139,7 +124,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand("contenox.openChat", () => chat.openChat()),
+    vscode.commands.registerCommand("contenox.openChat", () =>
+      chatWebview.openChat(),
+    ),
     vscode.commands.registerCommand("contenox.openWalkthrough", () =>
       openWalkthrough(telemetry),
     ),
@@ -147,36 +134,30 @@ export function activate(context: vscode.ExtensionContext): void {
       "contenox.internal.setupComplete",
       () => undefined,
     ),
-    vscode.commands.registerCommand("contenox.openAgentSession", () =>
-      openAgentSession(telemetry),
-    ),
-    vscode.commands.registerCommand("contenox.diagnoseAgentSessions", () =>
-      diagnoseAgentSessions(context, telemetry),
-    ),
     vscode.commands.registerCommand("contenox.askSelection", () =>
-      chat.askSelection(),
+      chatWebview.askSelection(),
     ),
     vscode.commands.registerCommand("contenox.fixSelection", () =>
-      chat.fixSelection(),
+      chatWebview.fixSelection(),
     ),
     vscode.commands.registerCommand("contenox.addSelectionToChat", () =>
-      chat.addSelectionToChat(),
+      chatWebview.addSelectionToChat(),
     ),
     vscode.commands.registerCommand(
       "contenox.fixDiagnostics",
       (diagnostics?: readonly vscode.Diagnostic[]) =>
-        chat.fixDiagnostics(diagnostics),
+        chatWebview.fixDiagnostics(diagnostics),
     ),
     vscode.commands.registerCommand(
       "contenox.explainDiagnostics",
       (diagnostics?: readonly vscode.Diagnostic[]) =>
-        chat.explainDiagnostics(diagnostics),
+        chatWebview.explainDiagnostics(diagnostics),
     ),
     vscode.commands.registerCommand("contenox.reviewChanges", () =>
-      chat.reviewChanges(),
+      chatWebview.reviewChanges(),
     ),
     vscode.commands.registerCommand("contenox.draftCommitMessage", () =>
-      chat.draftCommitMessage(),
+      chatWebview.draftCommitMessage(),
     ),
     vscode.commands.registerCommand("contenox.refreshSessions", () =>
       sessions.refresh(),
@@ -184,7 +165,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("contenox.openSession", (arg?: unknown) =>
       openSession(
         bridge,
-        chat,
+        chatWebview,
         sessionDocuments,
         sessions,
         output,
@@ -193,7 +174,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ),
     ),
     vscode.commands.registerCommand("contenox.deleteSession", (arg?: unknown) =>
-      deleteSession(bridge, chat, sessions, output, telemetry, arg),
+      deleteSession(bridge, chatWebview, sessions, output, telemetry, arg),
     ),
     vscode.commands.registerCommand("contenox.showStatus", () =>
       showStatus(bridge, output, telemetry),
@@ -471,7 +452,7 @@ async function setAutocompleteEnabled(
 
 async function openSession(
   bridge: BridgeProcess,
-  chat: ContenoxChatParticipant,
+  chatWebview: ChatWebviewViewProvider,
   sessionDocuments: SessionDocumentProvider,
   sessions: SessionTreeProvider,
   output: ContenoxOutput,
@@ -481,7 +462,7 @@ async function openSession(
   try {
     const sessionId = sessionIdFromArg(arg);
     if (!sessionId) {
-      await chat.openSession();
+      await chatWebview.openChat();
       return;
     }
     telemetry.event("command.open_session", { sessionId });
@@ -494,7 +475,7 @@ async function openSession(
       throw new Error("Contenox runtime connection is not available");
     }
     const result = await client.sessionLoad({ sessionId });
-    chat.setActiveSession(result.session.id);
+    await chatWebview.openSession(result.session.id);
     await sessionDocuments.open(result);
     sessions.refresh();
     vscode.window.showInformationMessage(
@@ -530,7 +511,7 @@ async function runConfigSelector(
 
 async function deleteSession(
   bridge: BridgeProcess,
-  chat: ContenoxChatParticipant,
+  chatWebview: ChatWebviewViewProvider,
   sessions: SessionTreeProvider,
   output: ContenoxOutput,
   telemetry: TelemetryLogger,
@@ -561,7 +542,7 @@ async function deleteSession(
       throw new Error("Contenox runtime connection is not available");
     }
     await client.sessionDelete({ sessionId });
-    chat.clearActiveSession(sessionId);
+    chatWebview.clearActiveSession(sessionId);
     sessions.refresh();
   } catch (error) {
     telemetry.error("command.delete_session.failed", error);

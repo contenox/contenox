@@ -8,7 +8,7 @@ import { BridgeClient } from "../bridge/BridgeClient";
 import type { BridgeProcess } from "../bridge/BridgeProcess";
 import { JsonRpcFramer } from "../bridge/JsonRpcFramer";
 import type { RequestPermissionParams } from "../bridge/protocol";
-import { approvalEventFromPermissionRequest } from "../chat/participant";
+import { approvalEventFromPermissionRequest } from "../chat/permissionOutcome";
 import { SessionTreeProvider } from "../chat/SessionTreeProvider";
 import { ContenoxOutput } from "../logging/output";
 import { TelemetryLogger } from "../logging/telemetry";
@@ -53,8 +53,8 @@ suite("Contenox VS Code extension", () => {
     assert.equal(commandTitles.get("contenox.showExtensionRuntimeInfo"), "Show Runtime Info");
     assert.equal(commandTitles.get("contenox.restartRuntime"), "Restart Runtime");
     assert.equal(commandTitles.has("contenox.restartBridge"), false);
-    assert.equal(commandTitles.get("contenox.openAgentSession"), "Open Native Agent Session (Proposed)");
-    assert.equal(commandTitles.get("contenox.diagnoseAgentSessions"), "Diagnose Native Agent Sessions");
+    assert.equal(commandTitles.has("contenox.openAgentSession"), false);
+    assert.equal(commandTitles.has("contenox.diagnoseAgentSessions"), false);
     assert.equal(commandTitles.has("contenox.selectModel"), false);
     for (const [command, title] of commandTitles) {
       assert.ok(!title.startsWith("Contenox:"), `${command} should not duplicate the Contenox category prefix`);

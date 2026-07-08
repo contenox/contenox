@@ -89,13 +89,12 @@ function updateReadme(pkg) {
 
 function removeStaleVsix(pkg) {
   const expected = `${pkg.name}-${pkg.version}.vsix`;
-  const expectedProposed = `${pkg.name}-${pkg.version}-proposed.vsix`;
-  const currentTargetPackage = new RegExp(`^${escapeRegExp(pkg.name)}-[a-z0-9]+-[a-z0-9]+-${escapeRegExp(pkg.version)}(?:-proposed)?\\.vsix$`);
+  const currentTargetPackage = new RegExp(`^${escapeRegExp(pkg.name)}-[a-z0-9]+-[a-z0-9]+-${escapeRegExp(pkg.version)}\\.vsix$`);
   for (const entry of fs.readdirSync(extensionRoot)) {
     if (!/^(?:contenox|runtime).*\.vsix$/.test(entry)) {
       continue;
     }
-    if (entry === expected || entry === expectedProposed || currentTargetPackage.test(entry)) {
+    if (entry === expected || currentTargetPackage.test(entry)) {
       continue;
     }
     fs.unlinkSync(path.join(extensionRoot, entry));

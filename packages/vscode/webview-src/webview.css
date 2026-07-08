@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@source '../../beam/src';
+@source '../../ui/src';
+
+/* VS Code theme bridge: remap Beam tokens to VS Code semantic variables.
+   This runs after @contenox/ui/dist/index.css in build-webview.js, so these
+   @theme values override the defaults and make the chat adapt to the user's
+   editor theme (path 1). */
+@theme {
+  /* Typography */
+  --font-body: var(--vscode-font-family);
+  --font-display: var(--vscode-font-family);
+  --font-mono: var(--vscode-editor-font-family, ui-monospace, monospace);
+
+  /* Text */
+  --color-text: var(--vscode-foreground);
+  /* Use VS Code foreground for muted too, to avoid low-contrast in some themes */
+  --color-text-muted: var(--vscode-foreground);
+  --color-text-inverted: var(--vscode-button-foreground, #ffffff);
+
+  /* Brand / Primary */
+  --color-primary-500: var(--vscode-button-background);
+  --color-primary-600: var(
+    --vscode-button-hoverBackground,
+    var(--vscode-button-background)
+  );
+  --color-primary: var(--color-primary-500);
+  --color-brand: var(--color-primary-500);
+
+  /* Links / Accent */
+  --color-accent-500: var(--vscode-textLink-foreground);
+  --color-accent: var(--color-accent-500);
+
+  /* Surfaces (representative VS Code layers for separation) */
+  /* Card/panel/bubble base */
+  --color-surface-50: var(--vscode-editorWidget-background);
+  /* Slightly stronger surface */
+  --color-surface-100: var(--vscode-editorWidget-background);
+  /* Border/divider hues */
+  --color-surface-200: var(
+    --vscode-widget-border,
+    var(--vscode-panel-border, #3a3a3a)
+  );
+  /* Fallbacks for higher indexes (rarely used as fills) */
+  --color-surface-300: var(--vscode-editor-background);
+  --color-surface-400: var(--vscode-panel-border, #3a3a3a);
+  --color-surface-500: var(--vscode-panel-border, #3a3a3a);
+  --color-surface-600: var(--vscode-panel-border, #3a3a3a);
+  --color-surface-700: var(--vscode-panel-border, #3a3a3a);
+  --color-surface-800: var(--vscode-panel-border, #3a3a3a);
+  --color-surface-900: var(--vscode-panel-border, #3a3a3a);
+  --color-surface: var(--color-surface-50);
+
+  /* Status / semantic helpers */
+  --color-info-500: var(--vscode-editorInfo-foreground, #525252);
+  --color-error-500: var(--vscode-errorForeground, #dc2626);
+  --color-warning-500: var(--vscode-inputValidation-warningBackground, #eab308);
+  --color-success-500: var(--vscode-testing-iconPassed, #22c55e);
+
+  /* Background system aliases expected by our base CSS */
+  --color-background-light: var(--vscode-editor-background);
+  --color-background-dark: var(--color-surface-50);
+  --color-background: var(--color-background-light);
+
+  /* Gradients follow primary/accent */
+  --color-gradientStart: var(--color-primary-500);
+  --color-gradientEnd: var(--color-accent-500);
+}
+
+/* Align base typography to the editor's configured font size for parity
+   with surrounding VS Code UI (avoids oversized text in the sidebar).
+   Tailwind rem-based text utilities scale from this root. */
+:root,
+body {
+  font-size: calc(var(--vscode-font-size, 13px) - 1px);
+  line-height: 1.4;
+}
+
+/* Ensure markdown/prose text uses theme foreground and slightly smaller scale */
+.prose,
+.prose-compact {
+  color: var(--vscode-foreground);
+  font-size: 0.95em;
+}
+.prose a,
+.prose-compact a {
+  color: var(--vscode-textLink-foreground);
+}
+
+body {
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-font-family);
+}
+
+/* The sidebar webview must never scroll horizontally. Long/unbreakable content
+   wraps or scrolls inside its own box (code blocks) instead of widening the pane.) */
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#root pre {
+  max-width: 100%;
+  overflow-x: auto;
+}

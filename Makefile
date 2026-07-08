@@ -130,7 +130,6 @@ VSCODE_CLI_EXTENSION_ARGS = $(if $(strip $(VSCODE_EXTENSIONS_DIR)),--extensions-
 VSCODE_DEFAULT_EXTENSIONS_DIR := $(if $(findstring insiders,$(notdir $(VSCODE_CLI))),$(HOME)/.vscode-insiders/extensions,$(HOME)/.vscode/extensions)
 VSCODE_INSTALL_EXTENSIONS_DIR := $(if $(strip $(VSCODE_EXTENSIONS_DIR)),$(VSCODE_EXTENSIONS_DIR),$(VSCODE_DEFAULT_EXTENSIONS_DIR))
 VSCODE_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix
-VSCODE_PROPOSED_VSIX := $(VSCODE_DIR)/artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix
 UI_DIR := $(PROJECT_ROOT)/packages/ui
 BEAM_DIR := $(PROJECT_ROOT)/packages/beam
 BEAM_DEV_HOST ?= 127.0.0.1
@@ -143,25 +142,25 @@ CONTENOX_DEV_URL ?= http://$(CONTENOX_DEV_ADDR):$(CONTENOX_DEV_PORT)
 .PHONY: help \
 	deps-website dev-website build-website preview-website \
 	openapi \
-	build-contenox build-contenox-windows build-ui build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-prebuilt build-vscode package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev \
+	build-contenox build-contenox-windows build-ui build-llamacpp-runtime build-modeld bundle-modeld-libs bundle-llama-libs package-modeld package-modeld-prebuilt build-vscode package-vscode package-vscode-dev \
 	bundle-modeld-deps bundle-modeld-deps-linux bundle-modeld-deps-darwin bundle-modeld-deps-windows \
 	push-modeld-deps pull-modeld-deps push-modeld-release push-modeld-index modeld-release-metadata modeld-deps-fingerprint modeld-deps-profile modeld-deps-pull-dir check-modeld-deps-store check-modeld-deps-bundle deps-modeld-prebuilt \
 	package-modeld-release package-modeld-release-linux package-modeld-release-darwin package-modeld-release-windows \
 	check-modeld-llama-deps \
 	clean clean-vscode \
 	deps-modeld deps-llamacpp-ref deps-openvino deps-ui deps-vscode \
-	dev-beam dev-web-proxy dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink vscode-dev-install \
+	dev-beam dev-web-proxy dev-install dev-install-vscode dev-link dev-unlink vscode-dev-install \
 	run-modeld \
 	test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help \
 	verify-ui-embed
 
 help:
 	@echo "build-*    build-contenox build-contenox-windows build-ui build-llamacpp-runtime build-modeld build-vscode"
-	@echo "package-*  package-modeld package-modeld-prebuilt package-modeld-release package-vscode package-vscode-dev package-vscode-proposed package-vscode-proposed-dev"
+	@echo "package-*  package-modeld package-modeld-prebuilt package-modeld-release package-vscode package-vscode-dev"
 	@echo "release-*  bundle-modeld-deps[-linux|-darwin|-windows] push/pull-modeld-deps package-modeld-release[-<os>] modeld-release-metadata push-modeld-release push-modeld-index"
 	@echo "           (devices publish native dep bundles; release assembly later pulls a bundle and packages modeld; see docs/development/modeld-release-runbook.md)"
 	@echo "test-*     test test-unit test-api test-ui test-llamacpp-direct test-vllm test-system test-contenox-verbose test-contenox-help"
-	@echo "dev-*      dev-beam dev-web-proxy dev-install dev-install-vscode dev-install-vscode-proposed dev-link dev-unlink run-modeld"
+	@echo "dev-*      dev-beam dev-web-proxy dev-install dev-install-vscode dev-link dev-unlink run-modeld"
 	@echo "           (modeld includes llama.cpp, adds OpenVINO/CUDA when available, and selects backend at runtime)"
 	@echo "deps-*     deps-modeld deps-modeld-prebuilt deps-llamacpp-ref deps-openvino deps-ui deps-vscode"
 	@echo "           (deps-modeld-prebuilt checks/pulls the expected native dep bundle from the store)"
@@ -614,20 +613,6 @@ package-vscode-dev: build-ui deps-vscode
 	cd $(VSCODE_DIR) && npm run package:check -- "artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION).vsix"
 	@echo "Built dev VS Code extension: $(VSCODE_VSIX)"
 
-package-vscode-proposed: build-ui deps-vscode
-	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
-	cd $(VSCODE_DIR) && npm run package:proposed
-	@test -f "$(VSCODE_PROPOSED_VSIX)" || { echo "expected proposed VSIX was not created: $(VSCODE_PROPOSED_VSIX)"; exit 1; }
-	cd $(VSCODE_DIR) && CONTENOX_ALLOW_PROPOSED=1 npm run package:check -- "artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix"
-	@echo "Built proposed VS Code extension: $(VSCODE_PROPOSED_VSIX)"
-
-package-vscode-proposed-dev: build-ui deps-vscode
-	rm -rf $(VSCODE_DIR)/artifacts $(VSCODE_DIR)/dist $(VSCODE_DIR)/bin
-	cd $(VSCODE_DIR) && CONTENOX_VSCODE_SKIP_VSCE_SECRET_SCAN=1 npm run package:proposed
-	@test -f "$(VSCODE_PROPOSED_VSIX)" || { echo "expected proposed VSIX was not created: $(VSCODE_PROPOSED_VSIX)"; exit 1; }
-	cd $(VSCODE_DIR) && CONTENOX_ALLOW_PROPOSED=1 npm run package:check -- "artifacts/contenox-runtime-$(VSCODE_TARGET)-$(VSCODE_VERSION)-proposed.vsix"
-	@echo "Built proposed dev VS Code extension: $(VSCODE_PROPOSED_VSIX)"
-
 # test
 test:
 	GOMAXPROCS=1 go test -C $(PROJECT_ROOT) ./...
@@ -692,22 +677,6 @@ dev-install-vscode: package-vscode-dev
 	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --list-extensions --show-versions | grep -E '^contenox\.contenox-runtime@$(VSCODE_VERSION)$$'
 	@echo "Installed Contenox VS Code extension from $(VSCODE_VSIX)"
 	@echo "Reload Window required before VS Code uses the new extension code."
-	@echo "Then run: Contenox: Show Runtime Info"
-
-dev-install-vscode-proposed: package-vscode-proposed-dev
-	@command -v "$(VSCODE_CLI)" >/dev/null 2>&1 || { echo "missing VS Code CLI '$(VSCODE_CLI)' on PATH"; exit 1; }
-	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.contenox-runtime >/dev/null 2>&1 || true
-	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.runtime >/dev/null 2>&1 || true
-	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.contenox-vscode >/dev/null 2>&1 || true
-	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --uninstall-extension contenox.contenox >/dev/null 2>&1 || true
-	@EXT_ROOT="$(VSCODE_INSTALL_EXTENSIONS_DIR)"; rm -rf "$$EXT_ROOT"/contenox.contenox-runtime-* "$$EXT_ROOT"/contenox.runtime-*
-	"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --install-extension "$(VSCODE_PROPOSED_VSIX)" --force
-	cd $(VSCODE_DIR) && VSCODE_CLI="$(VSCODE_CLI)" VSCODE_EXTENSIONS_DIR="$(VSCODE_EXTENSIONS_DIR)" node scripts/assert-installed-dev.js "$(VSCODE_VERSION)"
-	@"$(VSCODE_CLI)" $(VSCODE_CLI_EXTENSION_ARGS) --list-extensions --show-versions | grep -E '^contenox\.contenox-runtime@$(VSCODE_VERSION)$$'
-	@echo "Installed proposed Contenox VS Code extension from $(VSCODE_PROPOSED_VSIX)"
-	@echo "Reload Window required before VS Code uses the new extension code."
-	@echo "Launch VS Code with proposed APIs enabled:"
-	@echo "  $(VSCODE_CLI) --enable-proposed-api contenox.contenox-runtime $(PROJECT_ROOT)"
 	@echo "Then run: Contenox: Show Runtime Info"
 
 vscode-dev-install: dev-install-vscode

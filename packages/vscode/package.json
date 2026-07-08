@@ -49,8 +49,6 @@
     "onStartupFinished",
     "onCommand:contenox.openChat",
     "onCommand:contenox.openWalkthrough",
-    "onCommand:contenox.openAgentSession",
-    "onCommand:contenox.diagnoseAgentSessions",
     "onCommand:contenox.askSelection",
     "onCommand:contenox.fixSelection",
     "onCommand:contenox.addSelectionToChat",
@@ -83,7 +81,6 @@
     "onCommand:contenox.showMCPServers",
     "onCommand:contenox.refreshMCPServers",
     "onCommand:contenox.openToolDiff",
-    "onChatParticipant:contenox",
     "onLanguageModelTool:approve_contenox_tool_call"
   ],
   "capabilities": {
@@ -109,6 +106,12 @@
     },
     "views": {
       "contenox": [
+        {
+          "id": "contenox.chat",
+          "name": "Chat",
+          "type": "webview",
+          "contextualTitle": "Contenox Chat"
+        },
         {
           "id": "contenox.controls",
           "name": "Runtime",
@@ -207,16 +210,6 @@
       {
         "command": "contenox.openWalkthrough",
         "title": "Open Walkthrough",
-        "category": "Contenox"
-      },
-      {
-        "command": "contenox.openAgentSession",
-        "title": "Open Native Agent Session (Proposed)",
-        "category": "Contenox"
-      },
-      {
-        "command": "contenox.diagnoseAgentSessions",
-        "title": "Diagnose Native Agent Sessions",
         "category": "Contenox"
       },
       {
@@ -380,51 +373,6 @@
         "command": "contenox.openToolDiff",
         "title": "Open Tool Diff",
         "category": "Contenox"
-      }
-    ],
-    "chatParticipants": [
-      {
-        "id": "contenox",
-        "name": "contenox",
-        "fullName": "Contenox",
-        "description": "Use the local Contenox runtime for codebase chat, fixes, and automation.",
-        "isSticky": true,
-        "sampleRequest": "Summarize this workspace",
-        "commands": [
-          {
-            "name": "fix",
-            "description": "Fix active diagnostics or selected code with Contenox",
-            "sampleRequest": "Type 'undefined' is not assignable to type 'string'."
-          },
-          {
-            "name": "explain",
-            "description": "Explain selected code or active diagnostics"
-          },
-          {
-            "name": "doctor",
-            "description": "Check Contenox provider and model readiness"
-          },
-          {
-            "name": "review",
-            "description": "Review current git changes"
-          },
-          {
-            "name": "commit",
-            "description": "Draft a commit message for current git changes"
-          },
-          {
-            "name": "compact",
-            "description": "Compact older session history"
-          },
-          {
-            "name": "policy",
-            "description": "Show or set the active Contenox HITL policy"
-          },
-          {
-            "name": "websearch",
-            "description": "Search the web through the Contenox runtime"
-          }
-        ]
       }
     ],
     "languageModelChatProviders": [
@@ -596,11 +544,6 @@
           "default": 180,
           "minimum": 0,
           "description": "Debounce delay for automatic inline autocomplete requests."
-        },
-        "contenox.experimental.nativeAgentSessions": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable the proposed VS Code native chat session provider. Disabled by default so the Contenox sidebar remains the authoritative session list."
         }
       }
     },
@@ -617,12 +560,6 @@
         },
         {
           "command": "contenox.openWalkthrough"
-        },
-        {
-          "command": "contenox.openAgentSession"
-        },
-        {
-          "command": "contenox.diagnoseAgentSessions"
         },
         {
           "command": "contenox.askSelection"
@@ -745,33 +682,6 @@
           "group": "contenox@5"
         }
       ],
-      "editor/context/chat": [
-        {
-          "command": "contenox.fixSelection",
-          "when": "editorHasSelection && !editorReadonly && isWorkspaceTrusted",
-          "group": "contenoxAction@1"
-        },
-        {
-          "command": "contenox.askSelection",
-          "when": "editorHasSelection && isWorkspaceTrusted",
-          "group": "contenoxAction@2"
-        },
-        {
-          "command": "contenox.addSelectionToChat",
-          "when": "editorHasSelection && isWorkspaceTrusted",
-          "group": "contenoxAction@3"
-        },
-        {
-          "command": "contenox.fixDiagnostics",
-          "when": "!editorReadonly && contenox.hasDiagnostics && isWorkspaceTrusted",
-          "group": "contenoxAction@4"
-        },
-        {
-          "command": "contenox.explainDiagnostics",
-          "when": "contenox.hasDiagnostics && isWorkspaceTrusted",
-          "group": "contenoxAction@5"
-        }
-      ],
       "view/title": [
         {
           "command": "contenox.openChat",
@@ -796,25 +706,33 @@
   "scripts": {
     "sync:metadata": "node scripts/sync-package-metadata.js",
     "vscode:prepublish": "npm run sync:metadata && npm run compile",
-    "build": "npm run sync:metadata && npm run compile && npm run bundle:binary",
+    "build": "npm run sync:metadata && npm run compile && npm run build:webview && npm run bundle:binary",
     "bundle:binary": "node scripts/build-binary.js",
     "compile": "node scripts/clean-dist.js && tsc -p .",
+    "build:webview": "node scripts/build-webview.js",
     "check": "tsc -p . --noEmit",
     "test": "npm run compile && vscode-test",
     "test:integration": "npm run test",
     "watch": "tsc -watch -p .",
     "package": "node scripts/package-target.js",
     "package:target": "node scripts/package-target.js",
-    "package:check": "node scripts/assert-package-clean.js",
-    "package:proposed": "npm run sync:metadata && npm run compile && npm run bundle:binary && node scripts/package-proposed.js"
+    "package:check": "node scripts/assert-package-clean.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.13.10",
+    "@types/react": "^19.1.1",
+    "@types/react-dom": "^19.1.2",
     "@types/vscode": "^1.96.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^3.0.0",
     "@vscode/vsce": "^3.9.2",
+    "@tailwindcss/postcss": "^4.3.0",
+    "esbuild": "^0.24.0",
+    "postcss": "^8.5.14",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwindcss": "^4.3.0",
     "typescript": "~5.7.3"
   }
 }

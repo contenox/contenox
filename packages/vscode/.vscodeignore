@@ -4,9 +4,11 @@
 .vscode-test/**
 src/**
 test/**
+webview-src/**
 node_modules/**
 scripts/**
 *.ts
+*.tsx
 tsconfig.json
 package-lock.json
 dist/test/**

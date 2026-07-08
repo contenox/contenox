@@ -1,8 +1,11 @@
 import {
   AlertTriangle,
   Bot,
+  Check,
   Database,
+  FileDiff,
   FileText,
+  Loader2,
   MessageSquarePlus,
   Package,
   Pencil,
@@ -11,8 +14,9 @@ import {
   SlidersHorizontal,
   Trash2,
   Wrench,
+  X,
 } from 'lucide-react';
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -55,6 +59,7 @@ export type BeamChatMessage = {
   content: string;
   createdAt: string;
   citations?: BeamChatCitation[];
+  toolCalls?: BeamChatToolCall[];
   error?: string;
 };
 
@@ -63,6 +68,43 @@ export type BeamChatTool = {
   label: string;
   mode: 'read' | 'mutate' | string;
   enabled: boolean;
+};
+
+export type BeamChatToolCallDiff = {
+  path?: string;
+  before?: string;
+  after?: string;
+};
+
+export type BeamChatToolCall = {
+  id: string;
+  title?: string;
+  status: 'running' | 'completed' | 'error' | string;
+  toolName?: string;
+  output?: string;
+  error?: string;
+  diff?: BeamChatToolCallDiff;
+};
+
+export type BeamChatApprovalOption = {
+  id: string;
+  label: string;
+  kind: string;
+};
+
+export type BeamChatApprovalRequest = {
+  approvalId: string;
+  title: string;
+  toolName?: string;
+  details?: string;
+  diff?: BeamChatToolCallDiff;
+  options: BeamChatApprovalOption[];
+};
+
+export type BeamChatTurnHandlers = {
+  onDelta?: (chunk: { content?: string; thinking?: string }) => void;
+  onToolCall?: (call: BeamChatToolCall) => void;
+  onApprovalRequest?: (request: BeamChatApprovalRequest) => Promise<string | undefined>;
 };
 
 export type BeamChatReadiness = {
@@ -91,8 +133,20 @@ export type BeamChatClient = {
   getSession: (id: string) => Promise<BeamChatSessionResponse>;
   renameSession?: (id: string, input: { title: string }) => Promise<BeamChatSessionResponse>;
   deleteSession?: (id: string) => Promise<void>;
-  sendMessage: (id: string, input: { content: string }) => Promise<BeamChatMessageResponse>;
+  sendMessage: (
+    id: string,
+    input: { content: string },
+    handlers?: BeamChatTurnHandlers,
+  ) => Promise<BeamChatMessageResponse>;
+  cancelTurn?: (id: string) => void;
   listTools: () => Promise<BeamChatTool[]>;
+  openDiff?: (call: BeamChatToolCall) => void;
+};
+
+export type BeamChatComposerAction = {
+  nonce: string;
+  content: string;
+  submit: boolean;
 };
 
 export type BeamChatLinks = {
@@ -137,6 +191,20 @@ function formatDateLabel(value: string): string {
   return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+function attachToolCallsToLastAssistantMessage(
+  messages: BeamChatMessage[],
+  toolCalls: BeamChatToolCall[],
+): BeamChatMessage[] {
+  const lastAssistantIndex = [...messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find(({ message }) => message.role === 'assistant')?.index;
+  if (lastAssistantIndex === undefined) return messages;
+  return messages.map((message, index) =>
+    index === lastAssistantIndex ? { ...message, toolCalls } : message,
+  );
+}
+
 function sessionTitle(session: BeamChatSession): string {
   return session.title?.trim() || 'New session';
 }
@@ -151,14 +219,26 @@ function upsertSession(sessions: BeamChatSession[], session?: BeamChatSession): 
   });
 }
 
+type PendingApproval = BeamChatApprovalRequest & {
+  resolve: (optionId: string | undefined) => void;
+};
+
 export function BeamChat({
   client,
   links = defaultLinks,
   readiness,
+  embedded = false,
+  composerAction,
+  onComposerActionHandled,
+  selectSessionId,
 }: {
   client: BeamChatClient;
   links?: BeamChatLinks;
   readiness: BeamChatReadiness;
+  embedded?: boolean;
+  composerAction?: BeamChatComposerAction | null;
+  onComposerActionHandled?: () => void;
+  selectSessionId?: string | null;
 }) {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [sessions, setSessions] = useState<BeamChatSession[]>([]);
@@ -168,6 +248,10 @@ export function BeamChat({
   const [input, setInput] = useState('');
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [streaming, setStreaming] = useState<{ content: string; thinking: string } | null>(null);
+  const [liveToolCalls, setLiveToolCalls] = useState<BeamChatToolCall[]>([]);
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const activeSessionRef = useRef<string | null>(null);
 
   const selected = useMemo(
     () => sessions.find(session => session.id === selectedId) ?? null,
@@ -195,6 +279,19 @@ export function BeamChat({
     },
     [client],
   );
+
+  const lastRequestedSessionId = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !selectSessionId ||
+      selectSessionId === lastRequestedSessionId.current ||
+      selectSessionId === selectedId
+    ) {
+      return;
+    }
+    lastRequestedSessionId.current = selectSessionId;
+    void selectSession(selectSessionId);
+  }, [selectSessionId, selectedId, selectSession]);
 
   const loadInitial = useCallback(async () => {
     setLoadState('loading');
@@ -301,40 +398,117 @@ export function BeamChat({
   );
 
   const sendMessage = useCallback(
-    async (event?: FormEvent) => {
+    async (event?: FormEvent, overrideContent?: string, overrideSessionId?: string) => {
       event?.preventDefault();
-      const content = input.trim();
-      if (!aiReady || !selected || !content) return;
+      const content = (overrideContent ?? input).trim();
+      const sessionId = overrideSessionId ?? selected?.id;
+      if (!aiReady || !sessionId || !content) return;
 
+      activeSessionRef.current = sessionId;
       setPending(true);
       setErr(null);
+      setStreaming({ content: '', thinking: '' });
+      setLiveToolCalls([]);
+      const collectedToolCalls: BeamChatToolCall[] = [];
+
+      const handlers: BeamChatTurnHandlers = {
+        onDelta: chunk => {
+          setStreaming(current => ({
+            content: (current?.content ?? '') + (chunk.content ?? ''),
+            thinking: (current?.thinking ?? '') + (chunk.thinking ?? ''),
+          }));
+        },
+        onToolCall: call => {
+          const index = collectedToolCalls.findIndex(item => item.id === call.id);
+          if (index >= 0) {
+            collectedToolCalls[index] = call;
+          } else {
+            collectedToolCalls.push(call);
+          }
+          setLiveToolCalls([...collectedToolCalls]);
+        },
+        onApprovalRequest: request =>
+          new Promise<string | undefined>(resolve => {
+            setPendingApproval({ ...request, resolve });
+          }),
+      };
+
       try {
-        const result = await client.sendMessage(selected.id, { content });
+        const result = await client.sendMessage(sessionId, { content }, handlers);
         setInput('');
         if (result.session) {
           setSessions(current => upsertSession(current, result.session));
         }
         if (result.messages) {
-          setMessages(result.messages);
+          const withToolCalls = collectedToolCalls.length
+            ? attachToolCallsToLastAssistantMessage(result.messages, collectedToolCalls)
+            : result.messages;
+          setMessages(withToolCalls);
         } else {
-          await selectSession(selected.id);
+          await selectSession(sessionId);
         }
       } catch (error) {
         setErr(error instanceof Error ? error.message : String(error));
       } finally {
         setPending(false);
+        setStreaming(null);
+        setLiveToolCalls([]);
+        setPendingApproval(null);
+        activeSessionRef.current = null;
       }
     },
     [aiReady, client, input, selectSession, selected],
+  );
+
+  const cancelTurn = useCallback(() => {
+    if (!client.cancelTurn || !activeSessionRef.current) return;
+    client.cancelTurn(activeSessionRef.current);
+  }, [client]);
+
+  const resolveApproval = useCallback(
+    (optionId: string | undefined) => {
+      setPendingApproval(current => {
+        current?.resolve(optionId);
+        return null;
+      });
+    },
+    [],
   );
 
   useEffect(() => {
     void loadInitial();
   }, [loadInitial]);
 
+  const lastComposerActionNonce = useRef<string | null>(null);
+  useEffect(() => {
+    if (!composerAction || composerAction.nonce === lastComposerActionNonce.current) return;
+    lastComposerActionNonce.current = composerAction.nonce;
+    if (!composerAction.submit) {
+      setInput(composerAction.content);
+      onComposerActionHandled?.();
+      return;
+    }
+    void (async () => {
+      let sessionId = selected?.id;
+      if (!sessionId && aiReady) {
+        const result = await client.createSession({ title: 'New session' }).catch(() => undefined);
+        if (result?.session) {
+          setSessions(current => upsertSession(current, result.session));
+          setSelectedId(result.session.id);
+          setMessages(result.messages ?? []);
+          sessionId = result.session.id;
+        }
+      }
+      if (sessionId) {
+        await sendMessage(undefined, composerAction.content, sessionId);
+      }
+      onComposerActionHandled?.();
+    })();
+  }, [aiReady, client, composerAction, onComposerActionHandled, selected, sendMessage]);
+
   return (
-    <div className="grid min-h-[42rem] gap-4 lg:grid-cols-[19rem_1fr]">
-      <Panel variant="surface" className="flex min-h-0 flex-col p-0">
+    <div className="grid min-h-[42rem] min-w-0 grid-cols-1 gap-4 lg:grid-cols-[19rem_1fr]">
+      <Panel variant="surface" className="flex min-h-0 min-w-0 flex-col p-0">
         <div className="border-surface-200 dark:border-dark-surface-700 flex items-center justify-between border-b p-3">
           <div>
             <h2 className="text-sm font-semibold">Sessions</h2>
@@ -410,13 +584,15 @@ export function BeamChat({
           ))}
         </nav>
 
-        <div className="border-surface-200 dark:border-dark-surface-700 border-t p-3">
-          <ContextReadiness links={links} readiness={readiness} />
-          <ToolSummary tools={tools} unavailable={loadState === 'unavailable'} />
-        </div>
+        {embedded ? null : (
+          <div className="border-surface-200 dark:border-dark-surface-700 border-t p-3">
+            <ContextReadiness links={links} readiness={readiness} />
+            <ToolSummary tools={tools} unavailable={loadState === 'unavailable'} />
+          </div>
+        )}
       </Panel>
 
-      <Panel variant="surface" className="flex min-h-0 flex-col p-0">
+      <Panel variant="surface" className="flex min-h-0 min-w-0 flex-col p-0">
         <div className="border-surface-200 dark:border-dark-surface-700 flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -469,6 +645,11 @@ export function BeamChat({
           readiness={readiness}
           selected={selected}
           links={links}
+          streaming={streaming}
+          liveToolCalls={liveToolCalls}
+          pendingApproval={pendingApproval}
+          onResolveApproval={resolveApproval}
+          onOpenDiff={client.openDiff}
         />
 
         <div className="border-surface-200 dark:border-dark-surface-700 border-t">
@@ -494,6 +675,14 @@ export function BeamChat({
             pendingLabel="Sending"
             textareaProps={{ 'aria-label': 'Message' }}
           />
+          {pending && client.cancelTurn ? (
+            <div className="flex justify-end px-4 pb-3">
+              <Button onClick={cancelTurn} size="sm" type="button" variant="outline">
+                <X className="mr-2 h-4 w-4" />
+                Cancel
+              </Button>
+            </div>
+          ) : null}
         </div>
       </Panel>
     </div>
@@ -507,6 +696,11 @@ function ConversationPane({
   onCreate,
   readiness,
   selected,
+  streaming,
+  liveToolCalls,
+  pendingApproval,
+  onResolveApproval,
+  onOpenDiff,
 }: {
   links: BeamChatLinks;
   loadState: LoadState;
@@ -514,9 +708,14 @@ function ConversationPane({
   onCreate: () => Promise<void>;
   readiness: BeamChatReadiness;
   selected: BeamChatSession | null;
+  streaming: { content: string; thinking: string } | null;
+  liveToolCalls: BeamChatToolCall[];
+  pendingApproval: PendingApproval | null;
+  onResolveApproval: (optionId: string | undefined) => void;
+  onOpenDiff?: (call: BeamChatToolCall) => void;
 }) {
   const { containerRef, endRef, scrollToEnd, isNearBottom } = useChatScroll({
-    deps: [messages, loadState],
+    deps: [messages, loadState, streaming, liveToolCalls, pendingApproval],
   });
 
   if (loadState === 'loading') {
@@ -584,18 +783,36 @@ function ConversationPane({
                 {showSeparator ? (
                   <ChatDateSeparator label={formatDateLabel(message.createdAt)} />
                 ) : null}
-                <ChatMessageView message={message} isLatest={index === messages.length - 1} />
+                <ChatMessageView
+                  message={message}
+                  isLatest={index === messages.length - 1 && !streaming}
+                  onOpenDiff={onOpenDiff}
+                />
               </div>
             );
           })
         )}
+        {streaming ? (
+          <StreamingMessageView streaming={streaming} toolCalls={liveToolCalls} />
+        ) : null}
+        {pendingApproval ? (
+          <ApprovalCard request={pendingApproval} onResolve={onResolveApproval} />
+        ) : null}
       </ChatThread>
       <ChatScrollToLatest visible={!isNearBottom} onClick={scrollToEnd} label="Scroll to latest" />
     </div>
   );
 }
 
-function ChatMessageView({ message, isLatest }: { message: BeamChatMessage; isLatest: boolean }) {
+function ChatMessageView({
+  message,
+  isLatest,
+  onOpenDiff,
+}: {
+  message: BeamChatMessage;
+  isLatest: boolean;
+  onOpenDiff?: (call: BeamChatToolCall) => void;
+}) {
   const roleLabel =
     message.role === 'user'
       ? 'You'
@@ -638,7 +855,150 @@ function ChatMessageView({ message, isLatest }: { message: BeamChatMessage; isLa
           ))}
         </div>
       ) : null}
+      {message.toolCalls?.length ? (
+        <div className="mt-3 space-y-2">
+          {message.toolCalls.map(call => (
+            <ToolCallCard call={call} key={call.id} onOpenDiff={onOpenDiff} />
+          ))}
+        </div>
+      ) : null}
     </ChatMessageUI>
+  );
+}
+
+function StreamingMessageView({
+  streaming,
+  toolCalls,
+}: {
+  streaming: { content: string; thinking: string };
+  toolCalls: BeamChatToolCall[];
+}) {
+  return (
+    <ChatMessageUI
+      appearance="transcript"
+      role="assistant"
+      roleLabel="Beam"
+      isLatest
+      latestLabel="Latest"
+      collapseToggleLabel={{ open: 'Hide', closed: 'Show' }}>
+      {streaming.content ? (
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatTranscriptMarkdownComponents}>
+          {streaming.content}
+        </ReactMarkdown>
+      ) : (
+        <span className="text-text-muted dark:text-dark-text-muted flex items-center gap-2 text-sm">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {streaming.thinking ? 'Thinking…' : 'Working…'}
+        </span>
+      )}
+      {toolCalls.length ? (
+        <div className="mt-3 space-y-2">
+          {toolCalls.map(call => (
+            <ToolCallCard call={call} key={call.id} />
+          ))}
+        </div>
+      ) : null}
+    </ChatMessageUI>
+  );
+}
+
+function ToolCallCard({
+  call,
+  onOpenDiff,
+}: {
+  call: BeamChatToolCall;
+  onOpenDiff?: (call: BeamChatToolCall) => void;
+}) {
+  return (
+    <div className="border-surface-200 dark:border-dark-surface-700 rounded-md border px-3 py-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          {call.status === 'running' ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin opacity-70" />
+          ) : call.status === 'error' ? (
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+          ) : (
+            <Wrench className="h-3.5 w-3.5 shrink-0 opacity-70" />
+          )}
+          <span className="truncate font-medium">
+            {call.title ?? call.toolName ?? 'Tool call'}
+          </span>
+        </span>
+        <Badge variant={call.status === 'error' ? 'secondary' : 'outline'} size="sm">
+          {call.status}
+        </Badge>
+      </div>
+      {call.output ? (
+        <pre className="bg-surface-100 dark:bg-dark-surface-200 mt-2 max-h-40 overflow-auto rounded p-2 text-xs whitespace-pre-wrap">
+          {call.output}
+        </pre>
+      ) : null}
+      {call.error ? <p className="mt-2 text-xs text-red-500">{call.error}</p> : null}
+      {call.diff && onOpenDiff ? (
+        <Button
+          className="mt-2"
+          onClick={() => onOpenDiff(call)}
+          size="sm"
+          type="button"
+          variant="outline">
+          <FileDiff className="mr-2 h-3.5 w-3.5" />
+          Open Diff
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function ApprovalCard({
+  request,
+  onResolve,
+}: {
+  request: BeamChatApprovalRequest;
+  onResolve: (optionId: string | undefined) => void;
+}) {
+  return (
+    <div className="border-amber-400/60 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-950/30 rounded-md border p-3 text-sm">
+      <div className="flex items-center gap-2 font-medium">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        {request.title}
+      </div>
+      {request.details ? (
+        <p className="text-text-muted dark:text-dark-text-muted mt-1 text-xs">
+          {request.details}
+        </p>
+      ) : null}
+      {request.diff ? (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {request.diff.before ? (
+            <pre className="bg-surface-100 dark:bg-dark-surface-200 max-h-32 overflow-auto rounded p-2 text-xs whitespace-pre-wrap">
+              {request.diff.before}
+            </pre>
+          ) : null}
+          {request.diff.after ? (
+            <pre className="bg-surface-100 dark:bg-dark-surface-200 max-h-32 overflow-auto rounded p-2 text-xs whitespace-pre-wrap">
+              {request.diff.after}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {request.options.map(option => (
+          <Button
+            key={option.id}
+            onClick={() => onResolve(option.id)}
+            size="sm"
+            type="button"
+            variant={option.kind.startsWith('allow') ? 'primary' : 'outline'}>
+            {option.kind.startsWith('allow') ? (
+              <Check className="mr-2 h-3.5 w-3.5" />
+            ) : (
+              <X className="mr-2 h-3.5 w-3.5" />
+            )}
+            {option.label}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 
