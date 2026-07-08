@@ -2,9 +2,12 @@ package bedrock
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/modelrepo"
 )
@@ -23,39 +26,35 @@ func init() {
 
 func (p *catalogProvider) Type() string { return "bedrock" }
 
-// commonConverseModels is a curated discovery list of widely-available
-// Converse-capable Bedrock model IDs. It is a hint, not a limit: ProviderFor
-// builds a working provider for ANY model id / inference-profile id the user
-// sets as default-model, so region-specific profile ids (e.g. "us.anthropic...")
-// work even when not listed here.
-//
-// NOTE: Bedrock requires per-account model enablement in the console. Until a
-// model is enabled, invoking it returns AccessDeniedException even though it
-// lists here. (A future enhancement can replace this static list with
-// bedrock.ListFoundationModels for live, account-aware discovery.)
-var commonConverseModels = []string{
-	"anthropic.claude-3-5-sonnet-20241022-v2:0",
-	"anthropic.claude-3-5-haiku-20241022-v1:0",
-	"meta.llama3-1-70b-instruct-v1:0",
-	"mistral.mistral-large-2407-v1:0",
-	"amazon.nova-pro-v1:0",
-	"amazon.nova-lite-v1:0",
-}
-
-func (p *catalogProvider) ListModels(_ context.Context) ([]modelrepo.ObservedModel, error) {
-	models := make([]modelrepo.ObservedModel, 0, len(commonConverseModels))
-	for _, id := range commonConverseModels {
-		om := modelrepo.ObservedModel{
-			Name: id,
-			CapabilityConfig: modelrepo.CapabilityConfig{
-				CanChat:   true,
-				CanStream: true,
-				CanPrompt: true,
-				CanEmbed:  strings.Contains(strings.ToLower(id), "embed"),
-			},
-		}
-		models = append(models, om)
+func (p *catalogProvider) ListModels(ctx context.Context) ([]modelrepo.ObservedModel, error) {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(regionFromURL(p.spec.BaseURL)))
+	if err != nil {
+		return nil, err
 	}
+
+	client := bedrock.NewFromConfig(cfg)
+
+	output, err := client.ListFoundationModels(ctx, &bedrock.ListFoundationModelsInput{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list foundation models: %w", err)
+	}
+
+	var models []modelrepo.ObservedModel
+	for _, summary := range output.ModelSummaries {
+		modelID := *summary.ModelId
+		isEmbed := strings.Contains(strings.ToLower(modelID), "embed")
+
+		models = append(models, modelrepo.ObservedModel{
+			Name: modelID,
+			CapabilityConfig: modelrepo.CapabilityConfig{
+				CanChat:   !isEmbed,
+				CanStream: !isEmbed,
+				CanPrompt: !isEmbed,
+				CanEmbed:  isEmbed,
+			},
+		})
+	}
+
 	return models, nil
 }
 
