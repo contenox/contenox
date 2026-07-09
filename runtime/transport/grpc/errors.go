@@ -38,6 +38,9 @@ var sentinels = []struct {
 	{"backend_mismatch", codes.FailedPrecondition, transport.ErrBackendMismatch},
 	{"unsupported_feature", codes.Unimplemented, transport.ErrUnsupportedFeature},
 	{"manifest_mismatch", codes.FailedPrecondition, contextasm.ErrManifestMismatch},
+	{"model_not_found", codes.NotFound, transport.ErrModelNotFound},
+	{"digest_mismatch", codes.FailedPrecondition, transport.ErrDigestMismatch},
+	{"unsupported_model_type", codes.InvalidArgument, transport.ErrUnsupportedModelType},
 }
 
 // encodeError turns a contract error into a gRPC status carrying a sentinel

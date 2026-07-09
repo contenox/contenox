@@ -100,7 +100,7 @@
         {
           "id": "contenox",
           "title": "Contenox",
-          "icon": "media/contenox-icon.png"
+          "icon": "media/contenox.svg"
         }
       ]
     },
@@ -113,25 +113,26 @@
           "contextualTitle": "Contenox Chat"
         },
         {
-          "id": "contenox.controls",
-          "name": "Runtime",
-          "contextualTitle": "Contenox Runtime"
+          "id": "contenox.sessions",
+          "name": "History",
+          "contextualTitle": "Contenox History"
         },
         {
-          "id": "contenox.sessions",
-          "name": "Sessions",
-          "contextualTitle": "Contenox Sessions"
+          "id": "contenox.controls",
+          "name": "Runtime",
+          "type": "webview",
+          "contextualTitle": "Contenox Runtime"
         }
       ]
     },
     "viewsWelcome": [
       {
         "view": "contenox.controls",
-        "contents": "Runtime controls are available after the Contenox runtime starts.\n[Run Setup](command:contenox.runSetup)\n[Show Status](command:contenox.showStatus)"
+        "contents": "Full runtime configuration (provider, model, thinking, HITL policy).\nDay-to-day changes are also available by clicking the runtime info in the Chat header.\n[Run Setup](command:contenox.runSetup)\n[Show Status](command:contenox.showStatus)"
       },
       {
         "view": "contenox.sessions",
-        "contents": "Run setup once, then use Contenox chat and sessions from this view.\n[Run Setup](command:contenox.runSetup)\n[Open the walkthrough](command:contenox.openWalkthrough) or [open chat](command:contenox.openChat)."
+        "contents": "Browse prior chats and resume them in Chat.\n[Open Chat](command:contenox.openChat)\n[Run Setup](command:contenox.runSetup)"
       }
     ],
     "walkthroughs": [
@@ -255,8 +256,19 @@
       },
       {
         "command": "contenox.openSession",
-        "title": "Open Session",
+        "title": "Resume Session in Chat",
         "category": "Contenox"
+      },
+      {
+        "command": "contenox.openSessionTranscript",
+        "title": "Open Session Transcript",
+        "category": "Contenox"
+      },
+      {
+        "command": "contenox.openRuntimeSettings",
+        "title": "Runtime Settings",
+        "category": "Contenox",
+        "icon": "$(gear)"
       },
       {
         "command": "contenox.deleteSession",
@@ -559,6 +571,9 @@
           "command": "contenox.openChat"
         },
         {
+          "command": "contenox.openRuntimeSettings"
+        },
+        {
           "command": "contenox.openWalkthrough"
         },
         {
@@ -695,6 +710,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "contenox.openSessionTranscript",
+          "when": "view == contenox.sessions && viewItem == contenoxSession",
+          "group": "1_open@1"
+        },
         {
           "command": "contenox.deleteSession",
           "when": "view == contenox.sessions && viewItem == contenoxSession",

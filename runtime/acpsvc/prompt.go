@@ -78,12 +78,47 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		}
 	}
 
+	// Use the session's effective token budget (chain token_limit or override set via config)
+	// as the context window for this prompt. This is clamped to model cap (if known).
+	// This makes indicators (which now use the session budget as "size") and engine shifting
+	// consistent with the value the user sees and switches.
+	contextLen := sess.effectiveTokenLimit()
+	if contextLen == 0 {
+		// fallback to model cap (for indicator size) if no explicit session budget
+		currentModel := sess.modelOrDefault(t.model())
+		for _, state := range t.runtimeStates(promptCtx) {
+			for _, pulled := range state.PulledModels {
+				if pulled.Model == currentModel && pulled.ContextLength > 0 {
+					contextLen = pulled.ContextLength
+					break
+				}
+			}
+			if contextLen > 0 {
+				break
+			}
+		}
+		if contextLen == 0 {
+			for _, state := range t.runtimeStates(promptCtx) {
+				for _, pulled := range state.PulledModels {
+					if pulled.ContextLength > 0 && (pulled.CanChat || pulled.CanPrompt) {
+						contextLen = pulled.ContextLength
+						break
+					}
+				}
+				if contextLen > 0 {
+					break
+				}
+			}
+		}
+	}
+
 	resp, err := sess.Agent.Prompt(promptCtx, agentservice.PromptRequest{
 		SessionID:      sess.InternalSessionID,
 		Input:          input,
 		Chain:          t.deps.ChainRegistry.Default(),
 		TemplateVars:   templateVars,
 		ToolsAllowlist: toolsAllowlist,
+		ContextLength:  contextLen,
 	})
 	if err != nil {
 		cancelled := (resp != nil && resp.StopReason == agentservice.StopCancelled) ||

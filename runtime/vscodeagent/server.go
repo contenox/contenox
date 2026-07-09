@@ -669,27 +669,25 @@ func (s *Server) listModels(ctx context.Context, params listModelsParams) (listM
 	}
 	out := make([]modelInfo, 0, len(models)+1)
 	seen := map[string]bool{}
-	if provider == "" {
-		for _, model := range models {
-			name := strings.TrimSpace(model.Model)
-			if name == "" || seen[name] {
-				continue
-			}
-			seen[name] = true
-			out = append(out, modelInfo{
-				ID:            name,
-				Name:          name,
-				DisplayName:   displayModelName(name),
-				ContextLength: model.ContextLength,
-				Capabilities: map[string]bool{
-					"chat":   model.CanChat,
-					"embed":  model.CanEmbed,
-					"prompt": model.CanPrompt,
-					"stream": model.CanStream,
-				},
-				Source: "observed",
-			})
+	for _, model := range models {
+		name := strings.TrimSpace(model.Model)
+		if name == "" || seen[name] {
+			continue
 		}
+		seen[name] = true
+		out = append(out, modelInfo{
+			ID:            name,
+			Name:          name,
+			DisplayName:   displayModelName(name),
+			ContextLength: model.ContextLength,
+			Capabilities: map[string]bool{
+				"chat":   model.CanChat,
+				"embed":  model.CanEmbed,
+				"prompt": model.CanPrompt,
+				"stream": model.CanStream,
+			},
+			Source: "observed",
+		})
 	}
 
 	if cfg.DefaultModel != "" && !seen[cfg.DefaultModel] && (provider == "" || provider == cfg.DefaultProvider) {

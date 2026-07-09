@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/contenox/runtime/runtime/transport"
@@ -209,6 +210,81 @@ func (c *Client) Embed(ctx context.Context, req transport.EmbedRequest) (transpo
 		return transport.EmbedResult{}, err
 	}
 	return transport.EmbedResult{Vector: out.Vector}, nil
+}
+
+// ListModels enumerates every model on the node's models directory.
+func (c *Client) ListModels(ctx context.Context) ([]transport.NodeModel, error) {
+	out := new(listModelsResp)
+	if err := c.invoke(ctx, "ListModels", &listModelsReq{OwnerInstanceID: c.owner}, out); err != nil {
+		return nil, err
+	}
+	return out.Models, nil
+}
+
+// RemoveModel deletes a model from the node's models directory.
+func (c *Client) RemoveModel(ctx context.Context, name string) error {
+	return c.invoke(ctx, "RemoveModel", &removeModelReq{OwnerInstanceID: c.owner, Name: name}, new(removeModelResp))
+}
+
+// DiskStats reports free/used/total bytes on the filesystem backing the
+// node's models directory.
+func (c *Client) DiskStats(ctx context.Context) (transport.NodeDiskStats, error) {
+	out := new(transport.NodeDiskStats)
+	if err := c.invoke(ctx, "DiskStats", &diskStatsReq{OwnerInstanceID: c.owner}, out); err != nil {
+		return transport.NodeDiskStats{}, err
+	}
+	return *out, nil
+}
+
+// pushChunkBytes bounds each PushModel wire frame. The JSON codec base64s
+// []byte fields (~33% overhead), so this stays well under
+// maxTransportMessageBytes while keeping memory use on both ends bounded
+// regardless of how large the model is.
+const pushChunkBytes = 4 << 20
+
+// PushModel streams a model's bytes to the node from r, which manifest
+// describes. The node verifies the stream against manifest.Digest as it
+// arrives and installs the model atomically; see transport.NodeAdmin.
+func (c *Client) PushModel(ctx context.Context, manifest transport.PushManifest, r io.Reader) (transport.PushResult, error) {
+	stream, err := c.cc.NewStream(withOwner(ctx, c.owner), &pushModelStreamDesc, method("PushModel"), grpclib.CallContentSubtype(codecName))
+	if err != nil {
+		return transport.PushResult{}, decodeError(err)
+	}
+
+	buf := make([]byte, pushChunkBytes)
+	sentManifest := false
+	for {
+		n, readErr := r.Read(buf)
+		if n > 0 || !sentManifest {
+			chunk := &pushModelChunk{}
+			if !sentManifest {
+				chunk.OwnerInstanceID = c.owner
+				chunk.Manifest = &manifest
+				sentManifest = true
+			}
+			if n > 0 {
+				chunk.Data = buf[:n]
+			}
+			if sendErr := stream.SendMsg(chunk); sendErr != nil {
+				return transport.PushResult{}, decodeError(sendErr)
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return transport.PushResult{}, fmt.Errorf("modeld transport: read model content: %w", readErr)
+		}
+	}
+	if err := stream.CloseSend(); err != nil {
+		return transport.PushResult{}, decodeError(err)
+	}
+
+	out := new(pushModelResp)
+	if err := stream.RecvMsg(out); err != nil {
+		return transport.PushResult{}, decodeError(err)
+	}
+	return transport.PushResult{AlreadyPresent: out.AlreadyPresent, BytesWritten: out.BytesWritten}, nil
 }
 
 // grpcSession is the client handle to a session resident in the owner; each

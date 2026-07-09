@@ -30,6 +30,12 @@ interface ChatToolbarProps {
   policyChangePending: boolean;
   policyChangeError: string | null;
   statsLabel: string;
+  /** Conversation context usage: tokens used vs the session's effective token limit (chain token_limit or override).
+   * Size is the budget the engine uses for shifting this session (clamped to model cap if known and >0).
+   * This is the value users switch (via chain or future per-session control).
+   */
+  contextUsed?: number;
+  contextSize?: number;
   /** When provided, shows a button to open the selected chain in the editor.
    * Omitted while the chain editor route is unwired. */
   onEditChain?: () => void;
@@ -51,6 +57,8 @@ export function ChatToolbar({
   policyChangePending,
   policyChangeError,
   statsLabel,
+  contextUsed,
+  contextSize,
   onEditChain,
 }: ChatToolbarProps) {
 
@@ -127,6 +135,26 @@ export function ChatToolbar({
           title={statsLabel}>
           {statsLabel}
         </Span>
+        {contextSize && contextSize > 0 ? (() => {
+          const used = Math.max(0, contextUsed || 0);
+          const size = contextSize;
+          const pct = Math.round((used / size) * 100);
+          const cls = pct > 90 ? 'text-red-500' : pct > 70 ? 'text-yellow-500' : 'text-text-muted dark:text-dark-text-muted';
+          const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-primary-500';
+          const usedLabel = used > 0 ? `${used.toLocaleString()}/` : '';
+          const title = used > 0
+            ? `Context: ${used.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`
+            : `Context window: ${size.toLocaleString()} tokens`;
+          return (
+            <div className="ml-3 flex shrink-0 items-center gap-1.5 text-[10px] tabular-nums" title={title}>
+              <span className={cls}>{usedLabel}{size.toLocaleString()}</span>
+              <div className="w-12 h-1.5 rounded bg-surface-200 dark:bg-dark-surface-300 overflow-hidden" aria-hidden>
+                <div className={`h-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+              </div>
+              <span className={cls}>{pct}%</span>
+            </div>
+          );
+        })() : null}
       </ToolbarActions>
     </Toolbar>
   );

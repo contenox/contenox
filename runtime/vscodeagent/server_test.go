@@ -188,6 +188,18 @@ func TestSessionTitleFromInput(t *testing.T) {
 			want:     "New Contenox session",
 		},
 		{
+			name:  "new session from UI treated as generic",
+			input: "New session",
+			fallback: "New Contenox session",
+			want:  "New Contenox session",
+		},
+		{
+			name:  "new session (2) from prior collision is generic",
+			input: "New session (3)",
+			fallback: "New Contenox session",
+			want:  "New Contenox session",
+		},
+		{
 			name:  "empty command gets command title",
 			input: "/doctor",
 			want:  "Check Contenox setup",
@@ -235,6 +247,16 @@ func TestChatSendRenamesGenericSessionTitle(t *testing.T) {
 	still, err := server.resolveSession(ctx, id, "")
 	require.NoError(t, err)
 	require.Equal(t, "Explain how Contenox session titles work", still.Name)
+
+	// Simulate creation from Beam/VSCode webview that sends the transient "New session"
+	newID, err := server.sessionCreate(ctx, sessionCreateParams{Name: "New session"})
+	require.NoError(t, err)
+	require.Equal(t, "New Contenox session", newID.Session.Name, "creation with UI default should normalize to generic")
+
+	require.NoError(t, server.ensureMeaningfulSessionTitle(ctx, newID.Session.ID, "How do I implement a rate limiter?"))
+	renamed, err := server.resolveSession(ctx, newID.Session.ID, "")
+	require.NoError(t, err)
+	require.Equal(t, "How do I implement a rate limiter?", renamed.Name)
 }
 
 func TestSessionListOrdersByLatestMessageActivity(t *testing.T) {
@@ -573,7 +595,8 @@ func TestListModelsDoesNotInventProviderForObservedModels(t *testing.T) {
 	require.Len(t, filteredResponses, 1)
 	var filtered listModelsResult
 	require.NoError(t, json.Unmarshal(filteredResponses[0].Result, &filtered))
-	require.Len(t, filtered.Models, 1)
+	require.Len(t, filtered.Models, 2)
+	requireModel(t, filtered.Models, "qwen2.5:7b", "", "observed")
 	requireModel(t, filtered.Models, "gpt-5-mini", "openai", "config")
 }
 

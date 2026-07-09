@@ -537,6 +537,19 @@ var (
 	// ErrUnsupportedFeature means the backend is healthy but does not implement
 	// the requested product surface for this model or backend mode.
 	ErrUnsupportedFeature = errors.New("unsupported transport feature")
+	// ErrModelNotFound means the request omitted an explicit Path and the
+	// daemon could not resolve ModelName+Type against its own models
+	// directory (see modeld/modelstore). Remote nodes cannot use a
+	// caller-supplied filesystem path, so they always resolve locally.
+	ErrModelNotFound = errors.New("model not found in modeld's local store")
+	// ErrDigestMismatch means content resolved or received by the daemon
+	// (an on-disk model file, or a pushed model stream) does not hash to a
+	// digest the caller asserted.
+	ErrDigestMismatch = errors.New("model content digest mismatch")
+	// ErrUnsupportedModelType means the daemon does not know how to resolve,
+	// store, or push a model of the given backend type (only "llama" and
+	// "openvino" are recognized).
+	ErrUnsupportedModelType = errors.New("unsupported model backend type")
 )
 
 // ContextOverflowDetail carries the structured token counts for a context-window

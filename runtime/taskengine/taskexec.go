@@ -98,6 +98,9 @@ func (exe *SimpleExec) publishStepChunk(ctx context.Context, meta llmrepo.Meta, 
 }
 
 // countTokensAndCheckLimit counts tokens for text and checks against context limit.
+// If ctxLength <= 0 (chain token_limit not set and no per-request/session override),
+// no limit is enforced at this layer. The prompt proceeds; the underlying model/provider
+// is responsible for any limits. Usage indicators will use model ContextLength as fallback size.
 func (exe *SimpleExec) countTokensAndCheckLimit(ctx context.Context, modelName string, text string, ctxLength int) (int, error) {
 	if ctxLength <= 0 {
 		return 0, nil // No limit enforced
@@ -115,7 +118,10 @@ func (exe *SimpleExec) countTokensAndCheckLimit(ctx context.Context, modelName s
 	return tokenCount, nil
 }
 
-// countChatHistoryTokens counts total tokens in chat history
+// countChatHistoryTokens counts total tokens in chat history.
+// If ctxLength <= 0 (no effective session token budget set on the chain or override),
+// we do not enforce or slide here. See main check in executeLLM for Shift behavior when a
+// positive budget is present. Indicators fall back to model-reported context window.
 func (exe *SimpleExec) countChatHistoryTokens(ctx context.Context, modelName string, history ChatHistory, ctxLength int) (int, error) {
 	if ctxLength <= 0 {
 		return 0, nil // No limit to enforce
@@ -1124,8 +1130,26 @@ func (exe *SimpleExec) executeLLM(
 		"total_tokens":    totalTokens,
 		"limit":           ctxLength,
 	})
+	// Also publish as TaskEvent for ACP etc. to pick up (used ~ total input, size = ctx)
+	if exe.eventSink.Enabled() {
+		ev := NewTaskEvent(ctx, TaskEventTokenUsage)
+		ev.ModelName = modelName
+		ev.TokenUsed = totalTokens
+		ev.TokenSize = ctxLength
+		publishTaskEventBestEffort(ctx, nil, exe.eventSink, ev)
+	}
 
-	// Check limit
+	// Check limit and decide on sliding.
+	// - If ctxLength (the effective session token budget from chain.TokenLimit or per-session override)
+	//   is 0 or unset: no limit is enforced here. We pass the (potentially large) prompt to the provider.
+	//   The model/provider may still reject it. Indicators should fall back to model ContextLength if known.
+	// - If ctxLength > 0 but totalTokens > ctxLength:
+	//     - If Shift == false (the default for LLMExecutionConfig, or explicitly set on the task):
+	//       We return ErrContextLengthExceeded. No history is dropped. The turn fails.
+	//       A pre-check token_usage event has already been emitted, so usage indicators can still
+	//       show the state that hit the hard limit.
+	//     - If Shift == true (common on chat_completion tasks in default chains):
+	//       We slide (drop oldest non-system units) and continue. A post_shift event is emitted.
 	if ctxLength > 0 && totalTokens > ctxLength {
 		if !llmCall.Shift {
 			err := fmt.Errorf("%w: total token count %d (messages: %d, tools: %d) > %d", ErrContextLengthExceeded,
@@ -1152,6 +1176,13 @@ func (exe *SimpleExec) executeLLM(
 			"limit":           ctxLength,
 			"kept_messages":   len(slid),
 		})
+		if exe.eventSink.Enabled() {
+			ev := NewTaskEvent(ctx, TaskEventTokenUsage)
+			ev.ModelName = modelName
+			ev.TokenUsed = totalTokens
+			ev.TokenSize = ctxLength
+			publishTaskEventBestEffort(ctx, nil, exe.eventSink, ev)
+		}
 	}
 
 	messagesC := make([]libmodelprovider.Message, 0, len(prelude)+len(input.Messages))

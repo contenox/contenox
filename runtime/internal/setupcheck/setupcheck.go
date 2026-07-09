@@ -681,6 +681,11 @@ func backendHint(backend runtimetypes.Backend, kind backendErrorKind) string {
 			return fmt.Sprintf("Verify modeld is running in llama mode and the model directory contains GGUF artifacts. Installed files: contenox model local; live/loadable models: contenox model list. Directory: %s", backend.BaseURL)
 		case "openvino":
 			return fmt.Sprintf("Verify modeld is running in openvino mode and the model directory contains OpenVINO IR artifacts. Installed files: contenox model local; live/loadable models: contenox model list. Directory: %s", backend.BaseURL)
+		case "modeld":
+			if backend.BaseURL == modeldconn.LocalSentinel {
+				return fmt.Sprintf("Verify the local modeld daemon is running: contenox model status. Backend %q reaches it via the lease, not a stored address.", backend.Name)
+			}
+			return fmt.Sprintf("Verify a modeld daemon is running and reachable at %s (check network/firewall/tailnet). Backend %q dials it directly over gRPC.", backend.BaseURL, backend.Name)
 		default:
 			return fmt.Sprintf("Check connectivity and base URL for backend %q (%s).", backend.Name, backend.BaseURL)
 		}
@@ -935,6 +940,10 @@ func providerDisplayName(provider string) string {
 		return "vLLM"
 	case "llama":
 		return "Llama.cpp (GGUF)"
+	case "openvino":
+		return "OpenVINO (IR)"
+	case "modeld":
+		return "modeld Node"
 	case "vertex-google":
 		return "Vertex AI (Google)"
 	default:

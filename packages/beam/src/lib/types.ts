@@ -219,7 +219,8 @@ export type TaskEventKind =
   | 'step_failed'
   | 'chain_completed'
   | 'chain_failed'
-  | 'approval_requested';
+  | 'approval_requested'
+  | 'token_usage';
 
 export type TaskEvent = {
   kind: TaskEventKind;
@@ -251,6 +252,10 @@ export type TaskEvent = {
   tool_name?: string;
   approval_args?: Record<string, unknown>;
   approval_diff?: string;
+
+  // token_usage event fields (from taskengine for context window usage vs model ctx)
+  token_used?: number;
+  token_size?: number;
 };
 
 export type SetupIssue = {

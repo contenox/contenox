@@ -19,6 +19,7 @@ const (
 	configIDModel      = "model"
 	configIDHITLPolicy = "hitl-policy"
 	configIDThink      = "think"
+	configIDTokenLimit = "token-limit"
 
 	configCategoryModel      = "model"
 	configCategoryHITLPolicy = "_hitl_policy"
@@ -34,6 +35,7 @@ func (t *Transport) sessionConfigOptions(ctx context.Context, sess *sessionEntry
 		t.modelConfigOption(ctx, sess),
 		t.hitlPolicyConfigOption(ctx),
 		t.thinkConfigOption(sess),
+		t.tokenLimitConfigOption(ctx, sess),
 	}
 }
 
@@ -81,6 +83,57 @@ func (t *Transport) thinkConfigOption(sess *sessionEntry) libacp.SessionConfigOp
 			{Value: reasoning.XHigh, Name: "XHigh"},
 		}),
 	}
+}
+
+func (t *Transport) tokenLimitConfigOption(ctx context.Context, sess *sessionEntry) libacp.SessionConfigOption {
+	limit := sess.effectiveTokenLimit()
+	current := "0"
+	if limit > 0 {
+		current = strconv.Itoa(limit)
+	}
+	cap := t.modelContextCap(ctx, sess)
+	desc := "Session context budget (token limit for history). Controls shifting and usage indicator size. 0 = chain default / unlimited."
+	if cap > 0 {
+		desc += fmt.Sprintf(" Capped to model max %d if larger.", cap)
+	}
+	return libacp.SessionConfigOption{
+		ID:           configIDTokenLimit,
+		Name:         "Token Limit",
+		Description:  desc,
+		Category:     "context",
+		Type:         "text",
+		CurrentValue: current,
+	}
+}
+
+// modelContextCap returns the hard cap for the session's current model (0 if unknown/unreported).
+// Prefers declared/observed ContextLength from runtime pulled models.
+func (t *Transport) modelContextCap(ctx context.Context, sess *sessionEntry) int {
+	if sess == nil {
+		return 0
+	}
+	prov := sess.providerOrDefault(t.provider())
+	mod := sess.modelOrDefault(t.model())
+	for _, st := range t.runtimeStates(ctx) {
+		for _, pm := range st.PulledModels {
+			if (pm.Model == mod || pm.Name == mod) && (prov == "" || strings.Contains(strings.ToLower(st.Backend.Type), strings.ToLower(prov)) || prov == "") {
+				if pm.ContextLength > 0 {
+					return pm.ContextLength
+				}
+			}
+		}
+	}
+	// Fallback: any matching model name
+	for _, st := range t.runtimeStates(ctx) {
+		for _, pm := range st.PulledModels {
+			if pm.Model == mod || pm.Name == mod {
+				if pm.ContextLength > 0 {
+					return pm.ContextLength
+				}
+			}
+		}
+	}
+	return 0
 }
 
 func (t *Transport) modelConfigValues(ctx context.Context, currentProvider, currentModel string) libacp.SessionConfigValues {
@@ -321,6 +374,23 @@ func (t *Transport) setSessionConfigOption(ctx context.Context, sess *sessionEnt
 			return libacp.NewErrorf(libacp.ErrInvalidParams, "unknown think option %q", value)
 		}
 		sess.setThink(level)
+		return nil
+
+	case configIDTokenLimit:
+		requested := 0
+		if strings.TrimSpace(value) != "" && value != "0" {
+			n, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil || n < 0 {
+				return libacp.NewErrorf(libacp.ErrInvalidParams, "token-limit must be a non-negative integer, got %q", value)
+			}
+			requested = n
+		}
+		cap := t.modelContextCap(ctx, sess)
+		eff := requested
+		if cap > 0 && (eff == 0 || eff > cap) {
+			eff = cap
+		}
+		sess.setEffectiveTokenLimit(eff)
 		return nil
 
 	default:

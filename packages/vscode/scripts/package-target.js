@@ -11,6 +11,7 @@ const target = targetFromEnv();
 
 run(process.execPath, [path.join("scripts", "sync-package-metadata.js")]);
 run(npx(), ["tsc", "-p", "."]);
+run(process.execPath, [path.join("scripts", "build-webview.js")]);
 run(process.execPath, [path.join("scripts", "build-binary.js")], {
   CONTENOX_VSCODE_TARGET: target.name,
 });

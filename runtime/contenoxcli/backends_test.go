@@ -9,6 +9,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/runtime/backendservice"
 	"github.com/contenox/runtime/runtime/internal/clikv"
+	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/google/uuid"
@@ -202,5 +203,26 @@ func TestUnit_getConfigKV_multipleKeys(t *testing.T) {
 		got, err := getConfigKV(ctx, store, k)
 		require.NoError(t, err, "key=%s", k)
 		require.Equal(t, want, got, "key=%s", k)
+	}
+}
+
+func TestUnit_DefaultBaseURLForType_ModeldDefaultsToLocalSentinel(t *testing.T) {
+	got, err := defaultBaseURLForType("modeld")
+	require.NoError(t, err)
+	require.Equal(t, modeldconn.LocalSentinel, got)
+}
+
+func TestUnit_DefaultBaseURLForType_UnknownTypesReturnEmptyRequiringExplicitURL(t *testing.T) {
+	for _, typ := range []string{"llama", "openvino", "vllm", "myvllm"} {
+		got, err := defaultBaseURLForType(typ)
+		require.NoError(t, err, "type=%s", typ)
+		require.Empty(t, got, "type=%s must require an explicit --url", typ)
+	}
+}
+
+func TestUnit_DefaultBaseURLForType_VertexGoogleAndBedrockRequireURL(t *testing.T) {
+	for _, typ := range []string{"vertex-google", "bedrock"} {
+		_, err := defaultBaseURLForType(typ)
+		require.Error(t, err, "type=%s", typ)
 	}
 }

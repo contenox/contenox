@@ -70,6 +70,13 @@ func (s *Server) publishTaskEvent(ctx context.Context, ev taskengine.TaskEvent) 
 		if !isToolBearingHandler(ev.TaskHandler) {
 			_ = s.notify("toolCall", toolCallEventFromTaskEvent(turn, ev, "failed"))
 		}
+	case taskengine.TaskEventTokenUsage:
+		_ = s.notify("contextUsage", contextUsageEvent{
+			SessionID: turn.SessionID,
+			TurnID:    turn.TurnID,
+			Used:      ev.TokenUsed,
+			Size:      ev.TokenSize,
+		})
 	}
 }
 

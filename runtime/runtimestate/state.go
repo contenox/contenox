@@ -26,6 +26,7 @@ import (
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/statetype"
+	"github.com/contenox/runtime/runtime/transport"
 )
 
 // ProviderCacheDuration defines how long the state of models from an external
@@ -350,6 +351,14 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 		// catalog provider (GGUF for llama, OpenVINO IR for openvino); the handler is
 		// generic over the backend type.
 		s.processLocalBackend(ctx, backend, declaredModels)
+	case "modeld":
+		// A modeld node — local (BaseURL == modeldconn.LocalSentinel, reached via
+		// the lease like the llama/openvino rows above) or remote (BaseURL is a
+		// host:port the runtime dials directly). Observe-only: lists what the
+		// node already has. Declared models are not yet used to trigger pushes
+		// (see the auto-ensure reconcile phase); providers are not yet
+		// constructed from this state (see the provider-bridge phase).
+		s.processModeldBackend(ctx, backend, declaredModels)
 	case "vertex-google":
 		s.processVertexBackend(ctx, backend, declaredModels)
 	case "bedrock":
@@ -494,6 +503,76 @@ func (s *State) processLocalBackend(ctx context.Context, backend *runtimetypes.B
 		stateservice.Models = observedModelNames(observedModels)
 	}
 	s.state.Store(backend.ID, stateservice)
+}
+
+// processModeldBackend reconciles a single modeld node — local or remote —
+// by dialing it and listing its models. This is observe-only: it does not
+// yet trigger a push for a declared-but-missing model (see the auto-ensure
+// reconcile phase) and its output is not yet consumed by provider
+// construction (see the provider-bridge phase); it exists so a registered
+// modeld backend is visible and health-checked the same way every other
+// backend type is.
+//
+// backend.BaseURL == modeldconn.LocalSentinel means "this row is the local
+// daemon" — its address is resolved via the lease (the same daemon the hot
+// chat-serving path already talks to through modeldconn's dedicated
+// single-slot cache), not stored. Any other BaseURL is dialed directly as a
+// remote node's host:port. Either way, reconcile traffic goes through
+// modeldconn.Endpoint's separate per-backend connection cache, so it can
+// never disturb that hot path's cached connection.
+func (s *State) processModeldBackend(ctx context.Context, backend *runtimetypes.Backend, _ []*runtimetypes.Model) {
+	addr := backend.BaseURL
+	if addr == "" || addr == modeldconn.LocalSentinel {
+		resolved, err := modeldconn.LocalEndpointAddr(ctx)
+		if err != nil {
+			storeBackendError(s, backend, "", err, nil)
+			return
+		}
+		addr = resolved
+	}
+
+	ep, err := modeldconn.Endpoint(ctx, backend.ID, addr)
+	if err != nil {
+		storeBackendError(s, backend, "", err, nil)
+		return
+	}
+	nodeModels, err := ep.ListModels(ctx)
+	if err != nil {
+		storeBackendError(s, backend, "", err, nil)
+		return
+	}
+
+	stateservice := &statetype.BackendRuntimeState{
+		ID:      backend.ID,
+		Name:    backend.Name,
+		Backend: *backend,
+		Models:  make([]string, 0, len(nodeModels)),
+	}
+	pulledModels := make([]statetype.ModelPullStatus, 0, len(nodeModels))
+	for _, m := range nodeModels {
+		pulledModels = append(pulledModels, s.applyCapabilityOverrides(ctx, backend.Type, modelPullStatusFromNodeModel(m)))
+	}
+	stateservice.PulledModels = pulledModels
+	if s.autoDiscoverModels {
+		for _, m := range nodeModels {
+			stateservice.Models = append(stateservice.Models, m.Name)
+		}
+	}
+	s.state.Store(backend.ID, stateservice)
+}
+
+// modelPullStatusFromNodeModel converts a node's raw model inventory entry
+// into the state's pull-status shape. A modeld node's ListModels reports
+// only identity (name/type/digest/size) — capability fields (context length,
+// CanChat, …) are zero here; enriching them requires a per-model Describe
+// call, added when provider construction actually needs them.
+func modelPullStatusFromNodeModel(m transport.NodeModel) statetype.ModelPullStatus {
+	return statetype.ModelPullStatus{
+		Name:   m.Name,
+		Model:  m.Name,
+		Size:   m.SizeBytes,
+		Digest: m.Digest,
+	}
 }
 
 // processVLLMBackend handles the state reconciliation for a single vLLM backend.

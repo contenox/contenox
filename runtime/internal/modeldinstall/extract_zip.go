@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/contenox/runtime/runtime/archiveutil"
 )
 
 // extractZip unpacks a .zip archive into dest with the same escape protections as
@@ -19,7 +21,7 @@ func extractZip(archivePath, dest string) error {
 	defer zr.Close()
 
 	for _, zf := range zr.File {
-		target, err := safeJoin(dest, zf.Name)
+		target, err := archiveutil.SafeJoin(dest, zf.Name)
 		if err != nil {
 			return err
 		}
@@ -52,7 +54,7 @@ func extractZipSymlink(zf *zip.File, dest, target string) error {
 	if err != nil {
 		return err
 	}
-	if err := safeLinkTarget(dest, filepath.Dir(target), string(link)); err != nil {
+	if err := archiveutil.SafeLinkTarget(dest, filepath.Dir(target), string(link)); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -71,5 +73,5 @@ func copyZipFile(zf *zip.File, target string, mode fs.FileMode) error {
 	if mode == 0 {
 		mode = 0o644
 	}
-	return writeFileFromReader(target, rc, mode)
+	return archiveutil.WriteFileFromReader(target, rc, mode)
 }

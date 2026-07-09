@@ -358,7 +358,19 @@ func (env SimpleEnv) ExecEnv(ctx context.Context, chain *TaskChainDefinition, in
 			stepTask.Print = expandStepMacros(currentTask.Print, edgeCounts)
 			taskCtx = WithEdgeCounts(taskCtx, edgeCounts)
 
-			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, int(chain.TokenLimit), chainContext, &stepTask, taskInput, taskInputType)
+			// Use the chain's TokenLimit as the base context window budget.
+			// If a per-request context length was attached (e.g. from PromptRequest.ContextLength
+			// populated from the model's declared ContextLength via model set-context or
+			// observed model data), prefer it so that indicators (Beam, VSCode, Zed/ACP usage_update)
+			// report the correct model context window size instead of 0 or a chain default.
+			tokenLimit := int(chain.TokenLimit)
+			if requested := RequestedContextLengthFromContext(taskCtx); requested > 0 {
+				if tokenLimit <= 0 || requested < tokenLimit {
+					tokenLimit = requested
+				}
+			}
+
+			output, outputType, transitionEval, taskErr = env.exec.TaskExec(taskCtx, startingTime, tokenLimit, chainContext, &stepTask, taskInput, taskInputType)
 			if taskErr != nil {
 				taskErr = fmt.Errorf("task %s: %w", currentTask.ID, taskErr)
 				reportErrAttempt(taskErr)

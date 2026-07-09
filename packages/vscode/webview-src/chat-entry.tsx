@@ -1,15 +1,47 @@
 import { createRoot } from "react-dom/client";
-import { useEffect, useState } from "react";
-import { BeamChat, BeamChatClient, BeamChatComposerAction, BeamChatReadiness } from "../../beam/src/chat";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  BeamChat,
+  BeamChatClient,
+  BeamChatComposerAction,
+  BeamChatReadiness,
+  BeamChatRuntimeSummary,
+  BeamChatSession,
+} from "../../beam/src/chat";
 import type {
   ChatHostToWebviewMessage,
   ChatWebviewToHostMessage,
+  WireRuntimeSummary,
   WireToolCall,
 } from "../src/chat/webviewProtocol";
 
 declare function acquireVsCodeApi(): { postMessage: (message: unknown) => void };
 
 const vscode = acquireVsCodeApi();
+const PRODUCT_NAME = "Contenox";
+
+// Branded Contenox icon for empty states and assistant avatar contexts.
+const ContenoxIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 500 500"
+    className={className}
+    aria-hidden="true"
+  >
+    <path
+      fill="#6366f1"
+      d="M207.28 164.77h170.47V79.81c-54.58 0-106.94 21.64-145.6 60.17l-24.87 24.79Z"
+    />
+    <path
+      fill="#7c3aed"
+      d="M207.21 164.77v170.47h-84.96c0-54.58 21.64-106.94 60.17-145.6l24.79-24.87Z"
+    />
+    <path
+      fill="#8b5cf6"
+      d="M207.21 335.23h170.47v84.96c-54.58 0-106.94-21.64-145.6-60.17l-24.87-24.79Z"
+    />
+  </svg>
+);
 
 let requestSeq = 0;
 function nextRequestId(): string {
@@ -41,9 +73,22 @@ function request<T>(message: Extract<ChatWebviewToHostMessage, { requestId: stri
 type ExternalHandlers = {
   onSelectSession?: (id: string) => void;
   onComposerAction?: (action: BeamChatComposerAction) => void;
+  onRuntimeConfig?: (summary: BeamChatRuntimeSummary) => void;
 };
 
 const externalHandlers: ExternalHandlers = {};
+
+function toRuntimeSummary(summary: WireRuntimeSummary): BeamChatRuntimeSummary {
+  return {
+    provider: summary.provider,
+    model: summary.model,
+    think: summary.think,
+    hitlPolicy: summary.hitlPolicy,
+    connected: summary.connected,
+    contextUsed: summary.contextUsed,
+    contextSize: summary.contextSize,
+  };
+}
 
 window.addEventListener("message", (event: MessageEvent<ChatHostToWebviewMessage>) => {
   const message = event.data;
@@ -81,6 +126,10 @@ window.addEventListener("message", (event: MessageEvent<ChatHostToWebviewMessage
     }
     case "selectSession": {
       externalHandlers.onSelectSession?.(message.id);
+      return;
+    }
+    case "runtimeConfig": {
+      externalHandlers.onRuntimeConfig?.(toRuntimeSummary(message.summary));
       return;
     }
   }
@@ -124,11 +173,38 @@ const readiness: BeamChatReadiness = {
 function App() {
   const [composerAction, setComposerAction] = useState<BeamChatComposerAction | null>(null);
   const [selectSessionId, setSelectSessionId] = useState<string | null>(null);
+  const [runtimeSummary, setRuntimeSummary] = useState<BeamChatRuntimeSummary | null>(null);
 
   useEffect(() => {
     externalHandlers.onComposerAction = setComposerAction;
     externalHandlers.onSelectSession = setSelectSessionId;
+    externalHandlers.onRuntimeConfig = setRuntimeSummary;
     send({ type: "ready" });
+    void request<WireRuntimeSummary>({ type: "getRuntimeSummary", requestId: nextRequestId() })
+      .then((summary) => setRuntimeSummary(toRuntimeSummary(summary)))
+      .catch(() => undefined);
+  }, []);
+
+  const confirmDeleteSession = useCallback(async (session: BeamChatSession) => {
+    return request<boolean>({
+      type: "confirmDelete",
+      requestId: nextRequestId(),
+      id: session.id,
+      title: session.title,
+    });
+  }, []);
+
+  const promptRenameSession = useCallback(async (session: BeamChatSession, currentTitle: string) => {
+    return request<string | undefined>({
+      type: "promptRename",
+      requestId: nextRequestId(),
+      id: session.id,
+      title: currentTitle,
+    });
+  }, []);
+
+  const openRuntimeSettings = useCallback(() => {
+    send({ type: "openRuntimeSettings" });
   }, []);
 
   return (
@@ -136,9 +212,15 @@ function App() {
       client={client}
       readiness={readiness}
       embedded
+      productName={PRODUCT_NAME}
+      productIcon={<ContenoxIcon className="h-8 w-8 opacity-70" />}
       composerAction={composerAction}
       onComposerActionHandled={() => setComposerAction(null)}
       selectSessionId={selectSessionId}
+      confirmDeleteSession={confirmDeleteSession}
+      promptRenameSession={promptRenameSession}
+      runtimeSummary={runtimeSummary}
+      onOpenRuntimeSettings={openRuntimeSettings}
     />
   );
 }

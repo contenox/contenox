@@ -27,6 +27,9 @@ export type TaskEventViewState = {
   attachments: InlineAttachment[];
   /** Non-null when execution is paused waiting for HITL approval. */
   pendingApproval: PendingApproval | null;
+  /** Latest context usage from token_usage events (prompt tokens used vs model context length). */
+  contextUsed?: number;
+  contextSize?: number;
 };
 
 export function createEmptyTaskEventState(): TaskEventViewState {
@@ -40,6 +43,8 @@ export function createEmptyTaskEventState(): TaskEventViewState {
     activeChainId: null,
     attachments: [],
     pendingApproval: null,
+    contextUsed: undefined,
+    contextSize: undefined,
   };
 }
 
@@ -114,6 +119,14 @@ export function reduceTaskEventState(
         args: event.approval_args ?? {},
         diff: event.approval_diff ?? '',
       };
+      break;
+    case 'token_usage':
+      if (typeof event.token_used === 'number') {
+        next.contextUsed = event.token_used;
+      }
+      if (typeof event.token_size === 'number' && event.token_size > 0) {
+        next.contextSize = event.token_size;
+      }
       break;
   }
 

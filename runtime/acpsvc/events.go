@@ -60,6 +60,29 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 		t.sendToolCallUpdateGuarded(ctx, sid, toolCallID(ev), toolCallPendingNotification(sid, ev))
 	case taskengine.TaskEventToolCall:
 		t.sendToolCallUpdateGuarded(ctx, sid, toolCallID(ev), toolCallUpdateNotification(sid, ev))
+	case taskengine.TaskEventTokenUsage:
+		used := ev.TokenUsed
+		size := ev.TokenSize
+		// If the execution didn't have a ctxLength budget set (chain token_limit 0 and no override),
+		// fall back to the session's effective token limit (if set) or leave as-is.
+		// This keeps indicators based on the session budget the user configured.
+		if size <= 0 {
+			if s, ok := t.sessionFor(sid); ok && s != nil {
+				if eff := s.effectiveTokenLimit(); eff > 0 {
+					size = eff
+				}
+			}
+		}
+		if size > 0 || used > 0 {
+			t.sendUpdate(ctx, libacp.SessionNotification{
+				SessionID: sid,
+				Update: libacp.SessionUpdate{
+					SessionUpdate: libacp.SessionUpdateUsageUpdate,
+					Used:          used,
+					Size:          size,
+				},
+			})
+		}
 	}
 }
 

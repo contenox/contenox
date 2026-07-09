@@ -1,14 +1,10 @@
 import * as vscode from "vscode";
 import { BridgeProcess } from "../bridge/BridgeProcess";
-import { ConfigSnapshot, SessionInfo, SessionMessage } from "../bridge/protocol";
+import { SessionInfo } from "../bridge/protocol";
 
 type SessionTreeNode =
-  | { kind: "config"; id: "provider" | "model" | "think" | "hitl"; label: string; description: string; command: string; icon: string }
   | { kind: "session"; session: SessionInfo }
-  | { kind: "sessionMessage"; sessionId: string; message: SessionMessage; index: number }
   | { kind: "message"; label: string; description?: string };
-
-const maxPreviewMessages = 8;
 
 export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeNode>, vscode.Disposable {
   private readonly changeEmitter = new vscode.EventEmitter<SessionTreeNode | undefined | null | void>();
@@ -21,9 +17,6 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
   }
 
   public async getChildren(element?: SessionTreeNode): Promise<SessionTreeNode[]> {
-    if (element?.kind === "session") {
-      return this.sessionPreviewChildren(element.session);
-    }
     if (element) {
       return [];
     }
@@ -36,14 +29,11 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
       if (!client) {
         return [{ kind: "message", label: "Contenox runtime connection is not available" }];
       }
-      const [config, result] = await Promise.all([client.getConfig(), client.sessionList()]);
-      const nodes: SessionTreeNode[] = [...configNodes(config)];
+      const result = await client.sessionList();
       if (result.sessions.length === 0) {
-        nodes.push({ kind: "message", label: "No sessions yet" });
-        return nodes;
+        return [{ kind: "message", label: "No sessions yet. Start chatting in the Chat view." }];
       }
-      nodes.push(...result.sessions.map((session) => ({ kind: "session" as const, session })));
-      return nodes;
+      return result.sessions.map((session) => ({ kind: "session" as const, session }));
     } catch (error) {
       return [{ kind: "message", label: "Contenox runtime unavailable", description: errorMessage(error) }];
     }
@@ -56,42 +46,16 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
       return item;
     }
 
-    if (element.kind === "config") {
-      const item = new vscode.TreeItem(element.label, vscode.TreeItemCollapsibleState.None);
-      item.description = element.description;
-      item.tooltip = `${element.label}: ${element.description}`;
-      item.contextValue = "contenoxConfig";
-      item.iconPath = new vscode.ThemeIcon(element.icon);
-      item.command = {
-        command: element.command,
-        title: element.label,
-      };
-      return item;
-    }
-
-    if (element.kind === "sessionMessage") {
-      const role = roleLabel(element.message.role);
-      const item = new vscode.TreeItem(previewText(element.message), vscode.TreeItemCollapsibleState.None);
-      item.description = role;
-      item.tooltip = messageTooltip(element.message);
-      item.contextValue = "contenoxSessionMessage";
-      item.iconPath = new vscode.ThemeIcon(iconForRole(element.message.role));
-      return item;
-    }
-
     const { session } = element;
-    const item = new vscode.TreeItem(
-      session.name || session.id,
-      session.messageCount > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
-    );
+    const item = new vscode.TreeItem(session.name || session.id, vscode.TreeItemCollapsibleState.None);
     item.id = session.id;
     item.description = sessionDescription(session);
-    item.tooltip = sessionTooltip(session);
+    item.tooltip = `${sessionTooltip(session)}\n\nClick to resume in Chat.`;
     item.contextValue = "contenoxSession";
     item.iconPath = new vscode.ThemeIcon(session.isActive ? "comment-discussion" : "comment");
     item.command = {
       command: "contenox.openSession",
-      title: "Open Contenox Session",
+      title: "Resume in Chat",
       arguments: [session.id],
     };
     return item;
@@ -100,65 +64,6 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeN
   public dispose(): void {
     this.changeEmitter.dispose();
   }
-
-  private async sessionPreviewChildren(session: SessionInfo): Promise<SessionTreeNode[]> {
-    try {
-      const client = this.bridge.currentClient;
-      if (!client) {
-        return [{ kind: "message", label: "Contenox runtime connection is not available" }];
-      }
-      const result = await client.sessionRead({ sessionId: session.id });
-      const messages = result.messages.filter((message) => Boolean(message.content?.trim() || message.toolCalls?.length));
-      if (messages.length === 0) {
-        return [{ kind: "message", label: "No messages in this session" }];
-      }
-      return messages.slice(-maxPreviewMessages).map((message, index) => ({
-        kind: "sessionMessage" as const,
-        sessionId: session.id,
-        message,
-        index,
-      }));
-    } catch (error) {
-      return [{ kind: "message", label: "Could not load session", description: errorMessage(error) }];
-    }
-  }
-}
-
-function configNodes(config: ConfigSnapshot): SessionTreeNode[] {
-  return [
-    {
-      kind: "config",
-      id: "provider",
-      label: "Provider",
-      description: config.defaultProvider || "not set",
-      command: "contenox.selectProvider",
-      icon: "plug",
-    },
-    {
-      kind: "config",
-      id: "model",
-      label: "Model",
-      description: config.defaultModel || "not set",
-      command: "contenox.selectChatModel",
-      icon: "symbol-method",
-    },
-    {
-      kind: "config",
-      id: "think",
-      label: "Thinking",
-      description: config.defaultThink || "auto",
-      command: "contenox.selectThinkLevel",
-      icon: "lightbulb",
-    },
-    {
-      kind: "config",
-      id: "hitl",
-      label: "HITL Policy",
-      description: config.hitlPolicyName || "default",
-      command: "contenox.selectHitlPolicy",
-      icon: "shield",
-    },
-  ];
 }
 
 function errorMessage(error: unknown): string {
@@ -187,63 +92,6 @@ function sessionTooltip(session: SessionInfo): string {
     lines.push("Active Contenox session");
   }
   return lines.join("\n");
-}
-
-function previewText(message: SessionMessage): string {
-  const content = message.content?.trim();
-  if (content) {
-    return compact(content);
-  }
-  if (message.toolCalls?.length) {
-    return compact(message.toolCalls.map((call) => call.name || call.id || "tool").join(", "));
-  }
-  return "Message";
-}
-
-function messageTooltip(message: SessionMessage): string {
-  const parts = [roleLabel(message.role)];
-  if (message.timestamp) {
-    parts.push(message.timestamp);
-  }
-  if (message.content?.trim()) {
-    parts.push("", message.content.trim());
-  }
-  return parts.join("\n");
-}
-
-function roleLabel(role: string): string {
-  switch (role) {
-    case "assistant":
-      return "assistant";
-    case "user":
-      return "user";
-    case "tool":
-      return "tool";
-    case "system":
-      return "system";
-    default:
-      return role || "message";
-  }
-}
-
-function iconForRole(role: string): string {
-  switch (role) {
-    case "assistant":
-      return "sparkle";
-    case "user":
-      return "account";
-    case "tool":
-      return "tools";
-    case "system":
-      return "gear";
-    default:
-      return "comment";
-  }
-}
-
-function compact(value: string): string {
-  const clean = value.replace(/\s+/g, " ").trim();
-  return clean.length > 96 ? `${clean.slice(0, 93)}...` : clean;
 }
 
 function relativeTime(value: string | undefined): string | undefined {

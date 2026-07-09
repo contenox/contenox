@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/contenox/runtime/modeld/modelstore"
 	"github.com/contenox/runtime/runtime/contextasm"
 	"github.com/contenox/runtime/runtime/transport"
 )
@@ -43,6 +45,13 @@ type Service struct {
 	lastActivity time.Time
 	now          func() time.Time
 	dataRoot     string
+	// modelsDir overrides where resolveModelPath looks for models when a
+	// request omits Path. Empty means <dataRoot>/<modelstore.DefaultSubdir>.
+	modelsDir string
+	// admin implements transport.NodeAdmin over the same models directory
+	// resolveModelPath resolves against. Constructed once in New so its
+	// per-model in-flight push guard is shared across every admin call.
+	admin *modelstore.Admin
 }
 
 type activeSlot struct {
@@ -79,6 +88,12 @@ func WithDataRoot(root string) Option {
 	return func(s *Service) { s.dataRoot = root }
 }
 
+// WithModelsDir overrides the models directory a request with an empty Path
+// resolves against. Unset falls back to <dataRoot>/<modelstore.DefaultSubdir>.
+func WithModelsDir(dir string) Option {
+	return func(s *Service) { s.modelsDir = dir }
+}
+
 // WithIdleTTL sets how long a resident model may sit idle before the background
 // reaper releases it (freeing device memory so the GPU can return to idle).
 // Zero (the default) disables idle reaping. Reaping requires StartReaper.
@@ -102,11 +117,13 @@ func New(backend transport.Service, opts ...Option) *Service {
 		opt(s)
 	}
 	s.lastActivity = s.now()
+	s.admin = modelstore.NewAdmin(s.resolveModelsDir())
 	return s
 }
 
 var _ transport.Service = (*Service)(nil)
 var _ transport.ModelController = (*Service)(nil)
+var _ transport.NodeAdmin = (*Service)(nil)
 
 func (s *Service) Status(ctx context.Context) (transport.DaemonStatus, error) {
 	if err := ctxErr(ctx); err != nil {
@@ -132,6 +149,10 @@ func (s *Service) LoadModel(ctx context.Context, req transport.LoadModelRequest)
 		Path:      req.Path,
 		Config:    req.Config,
 		Adapters:  req.Adapters,
+	}
+	openReq, err := s.resolveModelPath(openReq)
+	if err != nil {
+		return transport.ActiveModel{}, err
 	}
 
 	unlock, err := s.lockOperation(ctx)
@@ -267,6 +288,10 @@ func (s *Service) OpenSession(ctx context.Context, req transport.OpenSessionRequ
 	if err := s.checkFence(req.Fence.OwnerInstanceID); err != nil {
 		return nil, err
 	}
+	req, err := s.resolveModelPath(req)
+	if err != nil {
+		return nil, err
+	}
 
 	unlock, err := s.lockOperation(ctx)
 	if err != nil {
@@ -357,6 +382,10 @@ func (s *Service) Describe(ctx context.Context, req transport.OpenSessionRequest
 	if err := s.checkFence(req.Fence.OwnerInstanceID); err != nil {
 		return transport.ModelInfo{}, err
 	}
+	req, err := s.resolveModelPath(req)
+	if err != nil {
+		return transport.ModelInfo{}, err
+	}
 	// ReclaimableBytes is owner-set by contract; never trust an inbound value.
 	req.ReclaimableBytes = 0
 	s.mu.Lock()
@@ -379,6 +408,10 @@ func (s *Service) Embed(ctx context.Context, req transport.EmbedRequest) (transp
 		return transport.EmbedResult{}, err
 	}
 	if err := s.checkFence(req.Fence.OwnerInstanceID); err != nil {
+		return transport.EmbedResult{}, err
+	}
+	req, err := s.resolveEmbedPath(req)
+	if err != nil {
 		return transport.EmbedResult{}, err
 	}
 	unlock, err := s.lockOperation(ctx)
@@ -761,6 +794,96 @@ func operationErrorClass(err error) string {
 	default:
 		return "session_error"
 	}
+}
+
+// resolveModelsDir returns the models directory used for path resolution and
+// admin operations: the explicit override, or <dataRoot>/<modelstore.DefaultSubdir>.
+func (s *Service) resolveModelsDir() string {
+	return modelstore.Dir(s.dataRoot, s.modelsDir)
+}
+
+// resolvePath fills in a model's on-disk path from the node's local models
+// directory when the caller left path empty. A remote runtime has no way to
+// name a path on the node's filesystem, so this is how a request identifies a
+// model deterministically by name+backendType(+digest) instead. An explicit,
+// non-empty path is returned unchanged — this keeps the legacy
+// runtime-resolved-path flow working during the local/remote transition.
+func (s *Service) resolvePath(path, name, backendType, digest string) (string, error) {
+	if path != "" {
+		return path, nil
+	}
+	return modelstore.Resolve(s.resolveModelsDir(), name, backendType, digest)
+}
+
+// ListModels implements transport.NodeAdmin by delegating to the node's model
+// store admin.
+func (s *Service) ListModels(ctx context.Context) ([]transport.NodeModel, error) {
+	models, err := s.admin.ListModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]transport.NodeModel, len(models))
+	for i, m := range models {
+		out[i] = transport.NodeModel{Name: m.Name, Type: m.Type, Digest: m.Digest, SizeBytes: m.SizeBytes}
+	}
+	return out, nil
+}
+
+// RemoveModel implements transport.NodeAdmin. It rejects the deletion if the
+// target model is currently resident in the slot, avoiding underneath-the-GPU
+// file removal.
+func (s *Service) RemoveModel(ctx context.Context, name string) error {
+	s.mu.Lock()
+	if s.active != nil && s.active.req.ModelName == name {
+		s.mu.Unlock()
+		return fmt.Errorf("cannot remove model %q: %w", name, transport.ErrModelBusy)
+	}
+	s.mu.Unlock()
+	return s.admin.RemoveModel(ctx, name)
+}
+
+// DiskStats implements transport.NodeAdmin.
+func (s *Service) DiskStats(ctx context.Context) (transport.NodeDiskStats, error) {
+	st, err := s.admin.DiskStats(ctx)
+	if err != nil {
+		return transport.NodeDiskStats{}, err
+	}
+	return transport.NodeDiskStats{FreeBytes: st.FreeBytes, UsedBytes: st.UsedBytes, TotalBytes: st.TotalBytes}, nil
+}
+
+// ReceiveModel implements transport.NodeAdmin.
+func (s *Service) ReceiveModel(ctx context.Context, manifest transport.PushManifest, r io.Reader) (transport.PushResult, error) {
+	res, err := s.admin.ReceiveModel(ctx, modelstore.PushManifest{
+		Name:       manifest.Name,
+		Type:       manifest.Type,
+		Digest:     manifest.Digest,
+		TotalBytes: manifest.TotalBytes,
+		Format:     modelstore.PushFormat(manifest.Format),
+	}, r)
+	if err != nil {
+		return transport.PushResult{}, err
+	}
+	return transport.PushResult{AlreadyPresent: res.AlreadyPresent, BytesWritten: res.BytesWritten}, nil
+}
+
+// resolveModelPath is resolvePath specialized for OpenSessionRequest/LoadModelRequest callers.
+func (s *Service) resolveModelPath(req transport.OpenSessionRequest) (transport.OpenSessionRequest, error) {
+	path, err := s.resolvePath(req.Path, req.ModelName, req.Type, req.Digest)
+	if err != nil {
+		return req, err
+	}
+	req.Path = path
+	return req, nil
+}
+
+// resolveEmbedPath is resolvePath specialized for EmbedRequest callers.
+func (s *Service) resolveEmbedPath(req transport.EmbedRequest) (transport.EmbedRequest, error) {
+	path, err := s.resolvePath(req.Path, req.ModelName, req.Type, req.Digest)
+	if err != nil {
+		return req, err
+	}
+	req.Path = path
+	return req, nil
 }
 
 func sameIdentity(a, b transport.OpenSessionRequest) bool {

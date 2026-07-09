@@ -20,7 +20,14 @@ type PromptRequest struct {
 
 type PromptResponse struct {
 	StopReason StopReason      `json:"stopReason"`
+	Usage      *TokenUsage     `json:"usage,omitempty"`
 	Meta       json.RawMessage `json:"_meta,omitempty"`
+}
+
+type TokenUsage struct {
+	InputTokens  int `json:"inputTokens,omitempty"`
+	OutputTokens int `json:"outputTokens,omitempty"`
+	TotalTokens  int `json:"totalTokens,omitempty"`
 }
 
 type SessionUpdateKind string
@@ -35,6 +42,7 @@ const (
 	SessionUpdateAvailableCommands SessionUpdateKind = "available_commands_update"
 	SessionUpdateCurrentMode       SessionUpdateKind = "current_mode_update"
 	SessionUpdateConfigOption      SessionUpdateKind = "config_option_update"
+	SessionUpdateUsageUpdate       SessionUpdateKind = "usage_update"
 )
 
 type SessionUpdate struct {
@@ -58,6 +66,11 @@ type SessionUpdate struct {
 	CurrentModeID string `json:"currentModeId,omitempty"`
 
 	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
+
+	// For usage_update (ACP session context indicator)
+	Used int       `json:"used,omitempty"`
+	Size int       `json:"size,omitempty"`
+	Cost *UsageCost `json:"cost,omitempty"`
 
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }
@@ -83,7 +96,17 @@ type sessionUpdateWire struct {
 
 	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
 
+	// For usage_update (ACP session context indicator)
+	Used int       `json:"used,omitempty"`
+	Size int       `json:"size,omitempty"`
+	Cost *UsageCost `json:"cost,omitempty"`
+
 	Meta json.RawMessage `json:"_meta,omitempty"`
+}
+
+type UsageCost struct {
+	Amount   float64 `json:"amount"`
+	Currency string  `json:"currency"`
 }
 
 func (u SessionUpdate) MarshalJSON() ([]byte, error) {
@@ -100,6 +123,9 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		AvailableCommands: u.AvailableCommands,
 		CurrentModeID:     u.CurrentModeID,
 		ConfigOptions:     u.ConfigOptions,
+		Used:              u.Used,
+		Size:              u.Size,
+		Cost:              u.Cost,
 		Meta:              u.Meta,
 	}
 	switch u.SessionUpdate {
@@ -141,6 +167,9 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 		AvailableCommands: w.AvailableCommands,
 		CurrentModeID:     w.CurrentModeID,
 		ConfigOptions:     w.ConfigOptions,
+		Used:              w.Used,
+		Size:              w.Size,
+		Cost:              w.Cost,
 		Meta:              w.Meta,
 	}
 	if len(w.Content) == 0 {

@@ -14,6 +14,7 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/chatservice"
+	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
 	"github.com/contenox/runtime/runtime/taskengine"
@@ -342,11 +343,32 @@ func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {
 	defaults.Think = think
 	templateVars := defaults.TemplateVars()
 
+	// Pass the chain's token_limit as the session context budget (the "size" for usage indicators).
+	// This is the value users control by choosing chains (or future per-chat overrides).
+	// Clamp to model cap if the model reports ContextLength >0.
+	// Note: default-max-tokens is output-only.
+	contextLen := int(chain.TokenLimit)
+	if contextLen == 0 && h.deps.DB != nil {
+		store := runtimetypes.New(h.deps.DB.WithoutTransaction())
+		if m, err := store.GetModelByName(ctx, model); err == nil && m != nil && m.ContextLength > 0 {
+			contextLen = m.ContextLength
+		}
+	}
+	if contextLen > 0 {
+		if h.deps.DB != nil {
+			store := runtimetypes.New(h.deps.DB.WithoutTransaction())
+			if m, err := store.GetModelByName(ctx, model); err == nil && m != nil && m.ContextLength > 0 && contextLen > m.ContextLength {
+				contextLen = m.ContextLength
+			}
+		}
+	}
+
 	resp, err := h.deps.Agent.Prompt(ctx, agentservice.PromptRequest{
-		SessionID:    id,
-		Input:        message,
-		Chain:        chain,
-		TemplateVars: templateVars,
+		SessionID:     id,
+		Input:         message,
+		Chain:         chain,
+		TemplateVars:  templateVars,
+		ContextLength: contextLen,
 	})
 	if err != nil {
 		if isMissingModelProvider(err) {

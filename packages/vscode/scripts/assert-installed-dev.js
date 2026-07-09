@@ -39,16 +39,28 @@ if (pkg.version !== version) {
   fail(`installed extension version is ${pkg.version}, expected ${version}`);
 }
 if (!pkg.contributes?.views?.contenox?.some((view) => view.id === "contenox.controls")) {
-  fail("installed package does not contribute the Contenox Runtime controls view");
+  fail("installed package does not contribute the Contenox Runtime view");
 }
 if (!pkg.contributes?.views?.contenox?.some((view) => view.id === "contenox.sessions")) {
   fail("installed package does not contribute the Contenox Sessions view");
 }
 
+// Verify key feature strings. Runtime config is accessible via chat header picker
+// (ChatWebviewViewProvider) and the sidebar Runtime panel (RuntimeControlsView).
 const sessionTree = readText(path.join(extensionDir, "dist/chat/SessionTreeProvider.js"));
-for (const marker of ["Provider", "Model", "Thinking", "HITL Policy", "contenox.selectHitlPolicy"]) {
-  if (!sessionTree.includes(marker)) {
-    fail(`installed SessionTreeProvider.js is missing marker ${JSON.stringify(marker)}`);
+if (!sessionTree.includes("SessionTreeProvider") || !sessionTree.includes("No sessions yet. Start chatting")) {
+  fail("installed SessionTreeProvider.js appears to be missing or stale");
+}
+const chatWebview = readText(path.join(extensionDir, "dist/chat/ChatWebviewViewProvider.js"));
+for (const marker of ["Provider", "Model", "Thinking level", "HITL policy", "contenox.selectHitlPolicy"]) {
+  if (!chatWebview.includes(marker)) {
+    fail(`installed ChatWebviewViewProvider.js is missing marker ${JSON.stringify(marker)}`);
+  }
+}
+const controls = readText(path.join(extensionDir, "dist/config/RuntimeControlsView.js"));
+for (const marker of ["Provider", "Model", "Thinking", "HITL Policy"]) {
+  if (!controls.includes(marker)) {
+    fail(`installed RuntimeControlsView.js is missing marker ${JSON.stringify(marker)}`);
   }
 }
 if (fs.existsSync(path.join(extensionDir, "dist/chat/ChatPanel.js"))) {

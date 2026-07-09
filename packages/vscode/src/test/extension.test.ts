@@ -23,6 +23,7 @@ suite("Contenox VS Code extension", () => {
     for (const command of [
       "contenox.openWalkthrough",
       "contenox.openChat",
+      "contenox.openRuntimeSettings",
       "contenox.runSetup",
       "contenox.showStatus",
       "contenox.showExtensionRuntimeInfo",
@@ -40,7 +41,11 @@ suite("Contenox VS Code extension", () => {
     const contributes = manifest.contributes;
 
     assert.deepEqual(manifest.extensionKind, ["workspace"]);
-    assert.ok(contributes.views?.contenox?.some((entry) => entry.id === "contenox.controls"));
+    const controlsView = contributes.views?.contenox?.find((entry) => entry.id === "contenox.controls");
+    assert.ok(controlsView, "contenox.controls view should be contributed");
+    assert.equal((controlsView as { type?: string; name?: string }).type, "webview");
+    assert.equal((controlsView as { name?: string }).name, "Runtime");
+    assert.equal(contributes.views?.contenox?.[0]?.id, "contenox.chat");
     assert.ok(contributes.viewsWelcome?.some((entry) => entry.view === "contenox.controls"));
     assert.ok(contributes.viewsWelcome?.some((entry) => entry.view === "contenox.sessions"));
 
@@ -75,7 +80,7 @@ suite("Contenox VS Code extension", () => {
     }
   });
 
-  test("sessions tree keeps runtime config rows before sessions", async () => {
+  test("sessions tree lists sessions without duplicating runtime config rows", async () => {
     const bridge = {
       ensureStarted: async () => ({
         initialize: {
@@ -85,12 +90,6 @@ suite("Contenox VS Code extension", () => {
         },
       }),
       currentClient: {
-        getConfig: async () => ({
-          defaultProvider: "ollama",
-          defaultModel: "qwen",
-          defaultThink: "medium",
-          hitlPolicyName: "hitl-policy-strict.json",
-        }),
         sessionList: async () => ({
           sessions: [
             {
@@ -106,12 +105,8 @@ suite("Contenox VS Code extension", () => {
     const provider = new SessionTreeProvider(bridge);
     try {
       const children = (await provider.getChildren()) as Array<{ kind: string; label?: string }>;
-      assert.equal(children.length, 5);
-      assert.deepEqual(
-        children.slice(0, 4).map((node) => node.label ?? ""),
-        ["Provider", "Model", "Thinking", "HITL Policy"],
-      );
-      assert.equal(children[4].kind, "session");
+      assert.equal(children.length, 1);
+      assert.equal(children[0].kind, "session");
     } finally {
       provider.dispose();
     }

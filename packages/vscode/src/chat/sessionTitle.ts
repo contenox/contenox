@@ -1,6 +1,6 @@
 const maxSessionTitleLength = 64;
 
-const genericSessionTitlePattern = /^(default|new contenox session|contenox chat|vscode-chat|vscode-agent-session|session-[0-9a-f-]+)$/i;
+const genericSessionTitlePattern = /^(default|new contenox session|new session|new chat|contenox chat|vscode-chat|vscode-lm|vscode-agent-session|untitled|untitled chat|session-[0-9a-f-]+)$/i;
 
 export function sessionTitleFromChatInput(command: string | undefined, prompt: string): string {
   const cleanPrompt = normalizeTitle(prompt);

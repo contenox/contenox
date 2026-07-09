@@ -231,6 +231,10 @@ export class BridgeClient implements Disposable {
     return this.onNotification("configChanged", listener);
   }
 
+  public onContextUsage(listener: (params: { sessionId: string; turnId?: string; used: number; size: number }) => void): Disposable {
+    return this.onNotification("contextUsage", listener);
+  }
+
   public request<T>(method: string, params?: unknown, timeoutMs = this.requestTimeoutMs, token?: CancellationToken): Promise<T> {
     if (this.disposed) {
       return Promise.reject(new Error("Contenox runtime connection is closed"));

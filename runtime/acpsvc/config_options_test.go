@@ -39,7 +39,7 @@ func TestUnit_SessionConfigOptionsExposeModelPolicyAndThink(t *testing.T) {
 	sess := &sessionEntry{Think: "medium"}
 
 	options := tr.sessionConfigOptions(ctx, sess)
-	require.Len(t, options, 3)
+	require.Len(t, options, 4)
 
 	model := optionByID(t, options, configIDModel)
 	require.Equal(t, configCategoryModel, model.Category)
@@ -65,6 +65,11 @@ func TestUnit_SessionConfigOptionsExposeModelPolicyAndThink(t *testing.T) {
 	require.True(t, configOptionHasValue(think, "auto"))
 	require.True(t, configOptionHasValue(think, "off"))
 	require.True(t, configOptionHasValue(think, "xhigh"))
+
+	limit := optionByID(t, options, configIDTokenLimit)
+	require.Equal(t, "context", limit.Category)
+	require.Equal(t, "0", limit.CurrentValue) // default
+	require.Contains(t, limit.Description, "token limit")
 }
 
 func TestUnit_HITLPolicyDisplayNameShortensPresetFilenames(t *testing.T) {

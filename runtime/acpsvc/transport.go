@@ -51,6 +51,10 @@ type sessionEntry struct {
 	Provider          string
 	Model             string
 	Think             string
+	// EffectiveTokenLimit is the user-chosen (or chain default) context budget for this session.
+	// It is clamped at set time (and on use) to the model's ContextLength when the model reports >0.
+	// 0 means "use chain default / unlimited". This is the value shown in usage indicators as "size".
+	EffectiveTokenLimit int
 }
 
 type Transport struct {
@@ -284,6 +288,24 @@ func (s *sessionEntry) modelOrDefault(defaultModel string) string {
 	return s.Model
 }
 
+func (s *sessionEntry) effectiveTokenLimit() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.EffectiveTokenLimit
+}
+
+func (s *sessionEntry) setEffectiveTokenLimit(v int) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.EffectiveTokenLimit = v
+}
+
 func (s *sessionEntry) setModelSelection(provider, model string) {
 	if s == nil {
 		return
@@ -423,4 +445,65 @@ func resolveACPSessionID(ctx context.Context, t *Transport) libacp.SessionID {
 func sessionIDFromCtx(ctx context.Context) string {
 	v, _ := ctx.Value(runtimetypes.SessionIDContextKey).(string)
 	return v
+}
+
+// sendInitialUsageUpdate sends a usage_update with the session's effective token budget as size
+// (the chain token_limit or per-session override, clamped to model cap).
+// Used falls back to 0 until token events arrive. This makes indicators based on the
+// user-visible/controllable session budget, not raw model cap or default-max-tokens.
+func (t *Transport) sendInitialUsageUpdate(ctx context.Context, sid libacp.SessionID) {
+	// Prefer session's effective token limit (the "chain token-limit" the user switches)
+	t.sessionMu.Lock()
+	sess, hasSess := t.sessions[sid]
+	t.sessionMu.Unlock()
+
+	if hasSess && sess != nil {
+		if eff := sess.effectiveTokenLimit(); eff > 0 {
+			t.sendUpdate(ctx, libacp.SessionNotification{
+				SessionID: sid,
+				Update: libacp.SessionUpdate{
+					SessionUpdate: libacp.SessionUpdateUsageUpdate,
+					Size:          eff,
+				},
+			})
+			return
+		}
+	}
+
+	// Fallback to model cap (for cases where no explicit budget set yet)
+	preferredModel := t.model()
+	t.sessionMu.Lock()
+	if entry, ok := t.sessions[sid]; ok && entry != nil {
+		preferredModel = entry.modelOrDefault(t.model())
+	}
+	t.sessionMu.Unlock()
+
+	for _, state := range t.runtimeStates(ctx) {
+		for _, pulled := range state.PulledModels {
+			if preferredModel != "" && pulled.Model == preferredModel && pulled.ContextLength > 0 {
+				t.sendUpdate(ctx, libacp.SessionNotification{
+					SessionID: sid,
+					Update: libacp.SessionUpdate{
+						SessionUpdate: libacp.SessionUpdateUsageUpdate,
+						Size:          pulled.ContextLength,
+					},
+				})
+				return
+			}
+		}
+	}
+	for _, state := range t.runtimeStates(ctx) {
+		for _, pulled := range state.PulledModels {
+			if pulled.ContextLength > 0 && (pulled.CanChat || pulled.CanPrompt) {
+				t.sendUpdate(ctx, libacp.SessionNotification{
+					SessionID: sid,
+					Update: libacp.SessionUpdate{
+						SessionUpdate: libacp.SessionUpdateUsageUpdate,
+						Size:          pulled.ContextLength,
+					},
+				})
+				return
+			}
+		}
+	}
 }

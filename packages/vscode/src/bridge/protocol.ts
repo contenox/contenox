@@ -249,6 +249,7 @@ export interface ChatSendParams {
 export interface ChatSendResult {
   sessionId: string;
   turnId: string;
+  title?: string;
 }
 
 export interface ChatCancelParams {

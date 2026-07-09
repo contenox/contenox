@@ -3,8 +3,12 @@ package grpc_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -788,5 +792,260 @@ func TestStreamChunkSentinelErrorOverWire(t *testing.T) {
 	}
 	if !errors.Is(chunk.Error, transport.ErrSlotGenerationStale) {
 		t.Fatalf("stream chunk error = %v, want ErrSlotGenerationStale", chunk.Error)
+	}
+}
+
+// --- Node admin RPCs (ListModels/RemoveModel/DiskStats/PushModel) ---
+
+func sha256Hex(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
+}
+
+// startAdminServer wires a real slot.Service (which implements
+// transport.NodeAdmin) over the wire, rooted at modelsDir. Unlike startServer
+// (a bare MemoryService), the admin RPCs need slot.Service's NodeAdmin
+// delegation to be reachable at all.
+func startAdminServer(t *testing.T, modelsDir, owner string) *transportgrpc.Client {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := slot.New(
+		transport.NewMemoryService(transport.WithOwnerFence(owner)),
+		slot.WithOwner(owner),
+		slot.WithBackend("llama"),
+		slot.WithModelsDir(modelsDir),
+	)
+	return startServerWithService(t, svc, lis, owner, owner)
+}
+
+func writeAdminTestModel(t *testing.T, modelsDir, name string, content []byte) {
+	t.Helper()
+	dir := filepath.Join(modelsDir, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "model.gguf"), content, 0o644); err != nil {
+		t.Fatalf("write model file: %v", err)
+	}
+}
+
+func TestListModelsRoundTripOverWire(t *testing.T) {
+	dir := t.TempDir()
+	writeAdminTestModel(t, dir, "a", []byte("weights-a"))
+	client := startAdminServer(t, dir, "owner-1")
+
+	models, err := client.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "a" || models[0].Type != "llama" {
+		t.Fatalf("ListModels = %+v, want one llama model named a", models)
+	}
+	if models[0].Digest == "" {
+		t.Fatal("ListModels model missing digest")
+	}
+	if models[0].SizeBytes != int64(len("weights-a")) {
+		t.Fatalf("ListModels size = %d, want %d", models[0].SizeBytes, len("weights-a"))
+	}
+}
+
+func TestListModelsEmptyDirRoundTripOverWire(t *testing.T) {
+	client := startAdminServer(t, t.TempDir(), "owner-1")
+	models, err := client.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("ListModels = %+v, want empty", models)
+	}
+}
+
+func TestRemoveModelRoundTripOverWire(t *testing.T) {
+	dir := t.TempDir()
+	writeAdminTestModel(t, dir, "a", []byte("weights-a"))
+	client := startAdminServer(t, dir, "owner-1")
+
+	if err := client.RemoveModel(context.Background(), "a"); err != nil {
+		t.Fatalf("RemoveModel: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a")); !os.IsNotExist(err) {
+		t.Fatalf("model dir still exists after RemoveModel: err=%v", err)
+	}
+}
+
+func TestRemoveModelUnknownReturnsErrModelNotFoundOverWire(t *testing.T) {
+	client := startAdminServer(t, t.TempDir(), "owner-1")
+	err := client.RemoveModel(context.Background(), "missing")
+	if !errors.Is(err, transport.ErrModelNotFound) {
+		t.Fatalf("RemoveModel(missing) = %v, want ErrModelNotFound", err)
+	}
+}
+
+func TestDiskStatsRoundTripOverWire(t *testing.T) {
+	client := startAdminServer(t, t.TempDir(), "owner-1")
+	st, err := client.DiskStats(context.Background())
+	if err != nil {
+		t.Fatalf("DiskStats: %v", err)
+	}
+	if st.TotalBytes <= 0 {
+		t.Fatalf("DiskStats.TotalBytes = %d, want > 0", st.TotalBytes)
+	}
+}
+
+func TestNodeAdminStaleFenceRejectedOverWire(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	svc := slot.New(
+		transport.NewMemoryService(transport.WithOwnerFence("owner-1")),
+		slot.WithOwner("owner-1"),
+		slot.WithBackend("llama"),
+		slot.WithModelsDir(t.TempDir()),
+	)
+	// Dial with an owner the server does NOT hold the lease under: every
+	// admin RPC must reject this the same way OpenSession does.
+	client := startServerWithService(t, svc, lis, "owner-1", "wrong-owner")
+
+	if _, err := client.ListModels(context.Background()); !errors.Is(err, transport.ErrStaleFence) {
+		t.Fatalf("ListModels with wrong owner = %v, want ErrStaleFence", err)
+	}
+	if err := client.RemoveModel(context.Background(), "a"); !errors.Is(err, transport.ErrStaleFence) {
+		t.Fatalf("RemoveModel with wrong owner = %v, want ErrStaleFence", err)
+	}
+	if _, err := client.DiskStats(context.Background()); !errors.Is(err, transport.ErrStaleFence) {
+		t.Fatalf("DiskStats with wrong owner = %v, want ErrStaleFence", err)
+	}
+	_, err = client.PushModel(context.Background(), transport.PushManifest{
+		Name: "a", Type: "llama", Format: transport.PushFormatFile,
+	}, bytes.NewReader([]byte("x")))
+	if !errors.Is(err, transport.ErrStaleFence) {
+		t.Fatalf("PushModel with wrong owner = %v, want ErrStaleFence", err)
+	}
+}
+
+func TestPushModelRoundTripOverWire_File(t *testing.T) {
+	dir := t.TempDir()
+	client := startAdminServer(t, dir, "owner-1")
+	content := []byte("gguf-weights-content")
+	digest := sha256Hex(content)
+
+	res, err := client.PushModel(context.Background(), transport.PushManifest{
+		Name:       "pushed",
+		Type:       "llama",
+		Digest:     digest,
+		TotalBytes: int64(len(content)),
+		Format:     transport.PushFormatFile,
+	}, bytes.NewReader(content))
+	if err != nil {
+		t.Fatalf("PushModel: %v", err)
+	}
+	if res.AlreadyPresent {
+		t.Fatal("first push reported AlreadyPresent")
+	}
+	if res.BytesWritten != int64(len(content)) {
+		t.Fatalf("BytesWritten = %d, want %d", res.BytesWritten, len(content))
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "pushed", "model.gguf"))
+	if err != nil {
+		t.Fatalf("read pushed model: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("pushed content = %q, want %q", got, content)
+	}
+}
+
+func TestPushModelRoundTripOverWire_AlreadyPresentIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	client := startAdminServer(t, dir, "owner-1")
+	content := []byte("gguf-weights-content")
+	digest := sha256Hex(content)
+	manifest := transport.PushManifest{Name: "pushed", Type: "llama", Digest: digest, Format: transport.PushFormatFile}
+
+	if _, err := client.PushModel(context.Background(), manifest, bytes.NewReader(content)); err != nil {
+		t.Fatalf("first PushModel: %v", err)
+	}
+	res, err := client.PushModel(context.Background(), manifest, bytes.NewReader(content))
+	if err != nil {
+		t.Fatalf("second PushModel: %v", err)
+	}
+	if !res.AlreadyPresent {
+		t.Fatal("repeat push with matching digest did not report AlreadyPresent")
+	}
+}
+
+func TestPushModelRoundTripOverWire_DigestMismatchRejected(t *testing.T) {
+	client := startAdminServer(t, t.TempDir(), "owner-1")
+	content := []byte("gguf-weights-content")
+
+	_, err := client.PushModel(context.Background(), transport.PushManifest{
+		Name:   "pushed",
+		Type:   "llama",
+		Digest: "not-the-real-digest",
+		Format: transport.PushFormatFile,
+	}, bytes.NewReader(content))
+	if !errors.Is(err, transport.ErrDigestMismatch) {
+		t.Fatalf("PushModel with wrong digest = %v, want ErrDigestMismatch", err)
+	}
+}
+
+func TestPushModelRoundTripOverWire_LargeContentSpansMultipleChunks(t *testing.T) {
+	dir := t.TempDir()
+	client := startAdminServer(t, dir, "owner-1")
+	// Several times the wire chunk size, to force the client to split the
+	// stream across many PushModel frames and the server to reassemble them.
+	content := bytes.Repeat([]byte("0123456789abcdef"), 1<<20) // 16MiB
+	digest := sha256Hex(content)
+
+	res, err := client.PushModel(context.Background(), transport.PushManifest{
+		Name:       "large",
+		Type:       "llama",
+		Digest:     digest,
+		TotalBytes: int64(len(content)),
+		Format:     transport.PushFormatFile,
+	}, bytes.NewReader(content))
+	if err != nil {
+		t.Fatalf("PushModel: %v", err)
+	}
+	if res.BytesWritten != int64(len(content)) {
+		t.Fatalf("BytesWritten = %d, want %d", res.BytesWritten, len(content))
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "large", "model.gguf"))
+	if err != nil {
+		t.Fatalf("read pushed model: %v", err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatal("large pushed content mismatch")
+	}
+}
+
+func TestPushModelRoundTripOverWire_UnsupportedTypeRejectedWithoutDeadlock(t *testing.T) {
+	// Regression: the server must not hang when ReceiveModel rejects a
+	// manifest before consuming the stream (see pushModel's io.Pipe doc
+	// comment on defer pr.Close()).
+	client := startAdminServer(t, t.TempDir(), "owner-1")
+	content := bytes.Repeat([]byte("x"), 1<<20)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.PushModel(context.Background(), transport.PushManifest{
+			Name:   "bad",
+			Type:   "ollama",
+			Format: transport.PushFormatFile,
+		}, bytes.NewReader(content))
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("PushModel with unsupported type = nil error, want rejection")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("PushModel did not return within timeout — server deadlocked")
 	}
 }

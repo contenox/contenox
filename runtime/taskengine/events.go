@@ -29,6 +29,7 @@ const (
 	TaskEventToolCallPending   TaskEventKind = "tool_call_pending"
 	TaskEventToolCall          TaskEventKind = "tool_call"
 	TaskEventPrint             TaskEventKind = "print"
+	TaskEventTokenUsage        TaskEventKind = "token_usage"
 )
 
 type TaskEvent struct {
@@ -66,6 +67,10 @@ type TaskEvent struct {
 	ToolDiffPath    string `json:"tool_diff_path,omitempty"`
 	ToolDiffOldText string `json:"tool_diff_old_text,omitempty"`
 	ToolDiffNewText string `json:"tool_diff_new_text,omitempty"`
+
+	// For token_usage
+	TokenUsed  int `json:"token_used,omitempty"`
+	TokenSize  int `json:"token_size,omitempty"`
 }
 
 type TaskEventScope struct {

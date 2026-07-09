@@ -3,10 +3,13 @@ package slot
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/contenox/runtime/modeld/modelstore"
 	"github.com/contenox/runtime/runtime/transport"
 )
 
@@ -674,7 +677,7 @@ func TestUnit_Slot_EmbedEvictsIdleImplicitResidentModel(t *testing.T) {
 
 	// The next embed must not wait out the idle TTL: the idle implicit model is
 	// evicted and the embed proceeds.
-	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Text: "hello"}); err != nil {
+	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Path: "/models/embed", Text: "hello"}); err != nil {
 		t.Fatalf("Embed after released chat turn = %v, want success", err)
 	}
 	if len(backend.embeds) != 1 {
@@ -699,7 +702,7 @@ func TestUnit_Slot_EmbedBusyWhileSessionHeld(t *testing.T) {
 		t.Fatalf("OpenSession: %v", err)
 	}
 	defer sess.Close()
-	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Text: "hello"}); !errors.Is(err, transport.ErrModelBusy) {
+	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Path: "/models/embed", Text: "hello"}); !errors.Is(err, transport.ErrModelBusy) {
 		t.Fatalf("Embed while session held = %v, want ErrModelBusy", err)
 	}
 	if backend.sessions[0].closed {
@@ -715,11 +718,214 @@ func TestUnit_Slot_EmbedBusyWithExplicitModel(t *testing.T) {
 	if _, err := svc.LoadModel(ctx, loadReq("a")); err != nil {
 		t.Fatalf("LoadModel: %v", err)
 	}
-	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Text: "hello"}); !errors.Is(err, transport.ErrModelBusy) {
+	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed", Type: "llama", Path: "/models/embed", Text: "hello"}); !errors.Is(err, transport.ErrModelBusy) {
 		t.Fatalf("Embed with explicit model = %v, want ErrModelBusy", err)
 	}
 	st, _ := svc.Status(ctx)
 	if st.Active == nil || st.Active.ModelName != "a" {
 		t.Fatalf("explicit model evicted by embed: %+v", st)
 	}
+}
+
+// --- Model path resolution (remote-node model identification) ---
+
+func writeTestModelFile(t *testing.T, dir, name string) {
+	t.Helper()
+	modelDir := filepath.Join(dir, name)
+	if err := os.MkdirAll(modelDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", modelDir, err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "model.gguf"), []byte("weights-"+name), 0o644); err != nil {
+		t.Fatalf("write model file: %v", err)
+	}
+}
+
+// emptyPathReq mirrors req(name) but leaves Path (and the caller-asserted
+// Digest, which a real caller in this state has no way to know either) empty,
+// as a remote runtime must: it cannot name a path on the node's filesystem.
+func emptyPathReq(name string) transport.OpenSessionRequest {
+	r := req(name)
+	r.Path = ""
+	r.Digest = ""
+	return r
+}
+
+func TestUnit_Slot_OpenSessionResolvesPathFromModelsDir(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	writeTestModelFile(t, dir, "a")
+
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithModelsDir(dir))
+
+	sess, err := svc.OpenSession(ctx, emptyPathReq("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	defer sess.Close()
+
+	if len(backend.opened) != 1 {
+		t.Fatalf("backend.opened = %v, want 1 entry", backend.opened)
+	}
+	st, _ := svc.Status(ctx)
+	wantPath := filepath.Join(dir, "a", "model.gguf")
+	if st.Active == nil || st.Active.Path != wantPath {
+		t.Fatalf("status.Active = %+v, want Path=%q", st.Active, wantPath)
+	}
+}
+
+func TestUnit_Slot_OpenSessionUnresolvedModelReturnsErrModelNotFound(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithModelsDir(dir))
+
+	_, err := svc.OpenSession(ctx, emptyPathReq("missing"))
+	if !errors.Is(err, modelstore.ErrModelNotFound) {
+		t.Fatalf("OpenSession = %v, want ErrModelNotFound", err)
+	}
+	if len(backend.opened) != 0 {
+		t.Fatalf("backend must not be reached for an unresolved model, opened=%v", backend.opened)
+	}
+}
+
+func TestUnit_Slot_OpenSessionExplicitPathBypassesResolution(t *testing.T) {
+	// Regression: a request that already carries a Path (the legacy
+	// runtime-resolved-path flow) must not be rewritten, even when
+	// WithModelsDir points somewhere that doesn't contain the model.
+	ctx := context.Background()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithModelsDir(t.TempDir()))
+
+	sess, err := svc.OpenSession(ctx, req("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	defer sess.Close()
+
+	st, _ := svc.Status(ctx)
+	if st.Active == nil || st.Active.Path != "/models/a" {
+		t.Fatalf("status.Active = %+v, want explicit Path unchanged", st.Active)
+	}
+}
+
+func TestUnit_Slot_DescribeResolvesPathAndMatchesResidentSameIdentity(t *testing.T) {
+	// Regression: Describe must resolve Path before the same-identity
+	// comparison against the resident session, or a resident model opened via
+	// resolution would never match a later Describe call with an empty Path,
+	// permanently disabling the openInfo shortcut for that model.
+	ctx := context.Background()
+	dir := t.TempDir()
+	writeTestModelFile(t, dir, "a")
+
+	backend := &fakeBackend{requiredBytes: 42}
+	svc := New(backend, WithBackend("llama"), WithModelsDir(dir))
+
+	sess, err := svc.OpenSession(ctx, emptyPathReq("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	defer sess.Close()
+
+	info, err := svc.Describe(ctx, emptyPathReq("a"))
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if info.EffectiveContext == 0 {
+		t.Fatalf("Describe returned zero EffectiveContext, resident openInfo shortcut did not match")
+	}
+	// The backend must have been asked to describe with the resolved path, not
+	// invoked a second time for this same-identity Describe (that's the whole
+	// point of the shortcut) — but the earlier describeForOpen call did reach
+	// it with the resolved path.
+	last := backend.lastDescribe()
+	if last.Path != filepath.Join(dir, "a", "model.gguf") {
+		t.Fatalf("backend describe request Path = %q, want resolved path", last.Path)
+	}
+}
+
+func TestUnit_Slot_LoadModelResolvesPathFromModelsDir(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	writeTestModelFile(t, dir, "a")
+
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithModelsDir(dir))
+
+	lr := loadReq("a")
+	lr.Path = ""
+	lr.Digest = ""
+	active, err := svc.LoadModel(ctx, lr)
+	if err != nil {
+		t.Fatalf("LoadModel: %v", err)
+	}
+	wantPath := filepath.Join(dir, "a", "model.gguf")
+	if active.Path != wantPath {
+		t.Fatalf("LoadModel active.Path = %q, want %q", active.Path, wantPath)
+	}
+}
+
+func TestUnit_Slot_LoadModelUnresolvedModelReturnsErrModelNotFound(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithModelsDir(dir))
+
+	lr := loadReq("missing")
+	lr.Path = ""
+	if _, err := svc.LoadModel(ctx, lr); !errors.Is(err, modelstore.ErrModelNotFound) {
+		t.Fatalf("LoadModel = %v, want ErrModelNotFound", err)
+	}
+}
+
+func TestUnit_Slot_EmbedResolvesPathFromModelsDir(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	writeTestModelFile(t, dir, "embed-model")
+
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"))
+	svc.modelsDir = dir
+
+	if _, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "embed-model", Type: "llama", Text: "hello"}); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(backend.embeds) != 1 {
+		t.Fatalf("backend.embeds = %d, want 1", len(backend.embeds))
+	}
+	wantPath := filepath.Join(dir, "embed-model", "model.gguf")
+	if backend.embeds[0].Path != wantPath {
+		t.Fatalf("embed request Path = %q, want %q", backend.embeds[0].Path, wantPath)
+	}
+}
+
+func TestUnit_Slot_EmbedUnresolvedModelReturnsErrModelNotFound(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	backend := &fakeBackend{}
+	svc := New(backend, WithBackend("llama"), WithModelsDir(dir))
+
+	_, err := svc.Embed(ctx, transport.EmbedRequest{ModelName: "missing", Type: "llama", Text: "hello"})
+	if !errors.Is(err, modelstore.ErrModelNotFound) {
+		t.Fatalf("Embed = %v, want ErrModelNotFound", err)
+	}
+	if len(backend.embeds) != 0 {
+		t.Fatalf("backend must not be reached for an unresolved model, embeds=%v", backend.embeds)
+	}
+}
+
+func TestUnit_Slot_ModelsDirDefaultsToDataRootSubdir(t *testing.T) {
+	ctx := context.Background()
+	dataRoot := t.TempDir()
+	writeTestModelFile(t, filepath.Join(dataRoot, "models"), "a")
+
+	backend := &fakeBackend{}
+	// No WithModelsDir: must fall back to <dataRoot>/models.
+	svc := New(backend, WithBackend("llama"), WithDataRoot(dataRoot))
+
+	sess, err := svc.OpenSession(ctx, emptyPathReq("a"))
+	if err != nil {
+		t.Fatalf("OpenSession: %v", err)
+	}
+	defer sess.Close()
 }

@@ -13,9 +13,20 @@ const getPreviewText = (content: string): string => {
 };
 
 // Sessions created without an explicit name get an auto-generated "session-<8hex>"
-// placeholder (see sessionservice.go). That carries no more meaning than the raw id,
-// so we treat it as unnamed and fall back to the conversation content for a title.
-const isPlaceholderName = (name: string): boolean => /^session-[0-9a-f]{8}$/i.test(name.trim());
+// placeholder (see sessionservice.go) or a transient "New session" name from the UI.
+// We treat these as unnamed so the sidebar falls back to the first user message (subject),
+// last message preview, model name, or "Untitled chat".
+const isPlaceholderName = (name: string): boolean => {
+	const n = name.trim();
+	if (/^session-[0-9a-f]{8}$/i.test(n)) return true;
+	const lower = n.toLowerCase();
+	if (lower === 'new session' || lower === 'new chat' || lower === 'untitled' || lower === 'untitled chat') {
+		return true;
+	}
+	// Numbered variants like "New session (2)" before the server has renamed them.
+	if (/^new (session|chat) \(\d+\)$/i.test(n)) return true;
+	return false;
+};
 
 export function ChatSessionSidebar({ setIsOpen }: { setIsOpen: (open: boolean) => void }) {
   const navigate = useNavigate();

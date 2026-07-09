@@ -11,12 +11,13 @@ import {
   Pencil,
   RefreshCw,
   Search,
+  Settings2,
   SlidersHorizontal,
   Trash2,
   Wrench,
   X,
 } from 'lucide-react';
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -149,6 +150,17 @@ export type BeamChatComposerAction = {
   submit: boolean;
 };
 
+export type BeamChatRuntimeSummary = {
+  provider?: string;
+  model?: string;
+  think?: string;
+  hitlPolicy?: string;
+  connected?: boolean;
+  // Used context indicator (ACP usage_update / engine tokens vs model ctx len)
+  contextUsed?: number;
+  contextSize?: number;
+};
+
 export type BeamChatLinks = {
   ai?: string;
   apps: string;
@@ -206,7 +218,56 @@ function attachToolCallsToLastAssistantMessage(
 }
 
 function sessionTitle(session: BeamChatSession): string {
-  return session.title?.trim() || 'New session';
+  return session.title?.trim() || 'Untitled chat';
+}
+
+function composerPlaceholder(
+  loadState: LoadState,
+  aiReady: boolean,
+  selected: BeamChatSession | null,
+  productName: string,
+  embedded: boolean,
+): string {
+  if (loadState === 'unavailable') {
+    return embedded
+      ? `${productName} runtime is not connected.`
+      : `${productName} is not connected yet.`;
+  }
+  if (!aiReady) {
+    return embedded
+      ? `Run ${productName} setup to start`
+      : `Complete ${productName} setup to start`;
+  }
+  if (selected) {
+    return embedded ? 'Ask about this workspace…' : 'Ask about this workspace';
+  }
+  return 'Create a session to start';
+}
+
+function runtimeChipLabel(summary: BeamChatRuntimeSummary | null | undefined): string {
+  if (!summary?.provider && !summary?.model) {
+    return 'Runtime not configured';
+  }
+  const provider = summary.provider || 'no provider';
+  const model = summary.model || 'no model';
+  return `${provider} · ${model}`;
+}
+
+function statusSubtitle(
+  readiness: BeamChatReadiness,
+  productName: string,
+  embedded: boolean,
+): string {
+  if (embedded) {
+    return readiness.aiReady ? 'Ready' : 'Setup required';
+  }
+  if (readiness.aiReady && readiness.searchReady) {
+    return `Workspace search is ready for ${productName}.`;
+  }
+  if (readiness.aiReady) {
+    return `${productName} is ready. Workspace search is not prepared yet.`;
+  }
+  return `${productName} setup is not complete yet.`;
 }
 
 function upsertSession(sessions: BeamChatSession[], session?: BeamChatSession): BeamChatSession[] {
@@ -228,17 +289,33 @@ export function BeamChat({
   links = defaultLinks,
   readiness,
   embedded = false,
+  productName = 'Beam',
+  productIcon,
   composerAction,
   onComposerActionHandled,
   selectSessionId,
+  confirmDeleteSession,
+  promptRenameSession,
+  runtimeSummary,
+  onOpenRuntimeSettings,
 }: {
   client: BeamChatClient;
   links?: BeamChatLinks;
   readiness: BeamChatReadiness;
   embedded?: boolean;
+  productName?: string;
+  /** Custom icon to use for product/assistant branding (e.g. Contenox logo). Falls back to generic Bot. */
+  productIcon?: React.ReactNode;
   composerAction?: BeamChatComposerAction | null;
   onComposerActionHandled?: () => void;
   selectSessionId?: string | null;
+  confirmDeleteSession?: (session: BeamChatSession) => Promise<boolean>;
+  promptRenameSession?: (
+    session: BeamChatSession,
+    currentTitle: string,
+  ) => Promise<string | undefined>;
+  runtimeSummary?: BeamChatRuntimeSummary | null;
+  onOpenRuntimeSettings?: () => void;
 }) {
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [sessions, setSessions] = useState<BeamChatSession[]>([]);
@@ -327,7 +404,7 @@ export function BeamChat({
     setPending(true);
     setErr(null);
     try {
-      const result = await client.createSession({ title: 'New session' });
+      const result = await client.createSession({ title: '' });
       if (!result.session) {
         await loadInitial();
         return;
@@ -345,7 +422,10 @@ export function BeamChat({
   const deleteSession = useCallback(
     async (session: BeamChatSession) => {
       if (!client.deleteSession) return;
-      if (!window.confirm(`Delete "${sessionTitle(session)}"?`)) return;
+      const confirmed = confirmDeleteSession
+        ? await confirmDeleteSession(session)
+        : window.confirm(`Delete "${sessionTitle(session)}"?`);
+      if (!confirmed) return;
       setPending(true);
       setErr(null);
       try {
@@ -367,14 +447,18 @@ export function BeamChat({
         setPending(false);
       }
     },
-    [client, selectedId, selectSession, sessions],
+    [client, confirmDeleteSession, selectedId, selectSession, sessions],
   );
 
   const renameSession = useCallback(
     async (session: BeamChatSession) => {
       if (!client.renameSession) return;
       const current = sessionTitle(session);
-      const title = window.prompt('Session name', current)?.trim();
+      const title = (
+        promptRenameSession
+          ? await promptRenameSession(session, current)
+          : window.prompt('Session name', current)
+      )?.trim();
       if (!title || title === current) return;
       setPending(true);
       setErr(null);
@@ -394,7 +478,7 @@ export function BeamChat({
         setPending(false);
       }
     },
-    [client, loadInitial, selectedId],
+    [client, loadInitial, promptRenameSession, selectedId],
   );
 
   const sendMessage = useCallback(
@@ -491,7 +575,7 @@ export function BeamChat({
     void (async () => {
       let sessionId = selected?.id;
       if (!sessionId && aiReady) {
-        const result = await client.createSession({ title: 'New session' }).catch(() => undefined);
+        const result = await client.createSession({ title: '' }).catch(() => undefined);
         if (result?.session) {
           setSessions(current => upsertSession(current, result.session));
           setSelectedId(result.session.id);
@@ -506,6 +590,170 @@ export function BeamChat({
     })();
   }, [aiReady, client, composerAction, onComposerActionHandled, selected, sendMessage]);
 
+  const statusBadge =
+    loadState === 'ready' ? 'Ready' : loadState === 'loading' ? 'Loading' : 'Not connected';
+  const composerPlaceholderText = composerPlaceholder(
+    loadState,
+    aiReady,
+    selected,
+    productName,
+    embedded,
+  );
+  const subtitle = statusSubtitle(readiness, productName, embedded);
+
+  const errorNotice = err ? (
+    <InlineNotice
+      variant={loadState === 'unavailable' ? 'warning' : 'error'}
+      className={embedded ? 'shrink-0' : 'm-4 mb-0'}>
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>{err}</span>
+      </div>
+    </InlineNotice>
+  ) : null;
+
+  const conversation = (
+    <ConversationPane
+      loadState={loadState}
+      messages={messages}
+      onCreate={createSession}
+      readiness={readiness}
+      selected={selected}
+      links={links}
+      streaming={streaming}
+      liveToolCalls={liveToolCalls}
+      pendingApproval={pendingApproval}
+      onResolveApproval={resolveApproval}
+      onOpenDiff={client.openDiff}
+      productName={productName}
+      embedded={embedded}
+    />
+  );
+
+  const composerBlock = (
+    <div className="border-surface-200 dark:border-dark-surface-700 shrink-0 border-t">
+      <ChatComposer
+        value={input}
+        onChange={setInput}
+        onSubmit={sendMessage}
+        disabled={composerDisabled}
+        isPending={pending}
+        shell="plain"
+        variant={embedded ? 'compact' : 'default'}
+        title=""
+        placeholder={composerPlaceholderText}
+        submitLabel="Send"
+        pendingLabel="Sending"
+        showCharCount={!embedded}
+        className={embedded ? 'px-3 py-2' : undefined}
+        textareaProps={{ 'aria-label': 'Message' }}
+      />
+      {pending && client.cancelTurn ? (
+        <div className={embedded ? 'flex justify-end px-3 pb-2' : 'flex justify-end px-4 pb-3'}>
+          <Button onClick={cancelTurn} size="sm" type="button" variant="outline">
+            <X className="mr-2 h-4 w-4" />
+            Cancel
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (embedded) {
+    const runtimeLabel = runtimeChipLabel(runtimeSummary);
+    const runtimeTitle = runtimeSummary
+      ? [
+          runtimeSummary.provider ? `Provider: ${runtimeSummary.provider}` : undefined,
+          runtimeSummary.model ? `Model: ${runtimeSummary.model}` : undefined,
+          runtimeSummary.think ? `Thinking: ${runtimeSummary.think}` : undefined,
+          runtimeSummary.hitlPolicy ? `HITL: ${runtimeSummary.hitlPolicy}` : undefined,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : 'Runtime settings';
+
+    return (
+      <div className="flex h-full min-h-0 min-w-0 flex-col">
+        <header className="border-surface-200 dark:border-dark-surface-700 shrink-0 space-y-1.5 border-b px-3 py-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <label className="sr-only" htmlFor="beam-embedded-session">
+              Active session
+            </label>
+            <select
+              className="border-surface-200 bg-surface-50 text-text hover:border-primary-500/40 focus:border-primary-500 focus:ring-primary-500/30 dark:border-dark-surface-700 dark:bg-dark-surface-200 dark:text-dark-text min-w-0 flex-1 truncate rounded-md border px-2 py-1.5 text-sm focus:ring-2 focus:outline-none"
+              disabled={pending || loadState !== 'ready' || sessions.length === 0}
+              id="beam-embedded-session"
+              onChange={event => void selectSession(event.target.value)}
+              value={selectedId ?? ''}>
+              {sessions.length === 0 ? (
+                <option value="">No sessions yet</option>
+              ) : (
+                sessions.map(session => (
+                  <option key={session.id} value={session.id}>
+                    {sessionTitle(session)}
+                  </option>
+                ))
+              )}
+            </select>
+            <Button
+              aria-label={`New ${productName} session`}
+              disabled={loadState !== 'ready' || pending || !aiReady}
+              onClick={() => void createSession()}
+              size="icon"
+              type="button"
+              variant="outline">
+              <MessageSquarePlus className="h-4 w-4" />
+            </Button>
+            {selected && client.deleteSession ? (
+              <Button
+                aria-label={`Delete ${sessionTitle(selected)}`}
+                disabled={pending}
+                onClick={() => void deleteSession(selected)}
+                size="icon"
+                type="button"
+                variant="ghost">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            {onOpenRuntimeSettings ? (
+              <button
+                className="border-surface-200 bg-surface-50 text-text hover:bg-surface-100 dark:border-dark-surface-700 dark:bg-dark-surface-200 dark:hover:bg-dark-surface-300 dark:text-dark-text min-w-0 flex-1 truncate rounded-md border px-2 py-1 text-left text-xs"
+                onClick={onOpenRuntimeSettings}
+                title={runtimeTitle}
+                type="button">
+                {runtimeLabel}
+              </button>
+            ) : (
+              <Span variant="muted" className="min-w-0 flex-1 truncate text-xs">
+                {productName}
+              </Span>
+            )}
+            {runtimeSummary && runtimeSummary.contextSize && runtimeSummary.contextSize > 0 ? (() => {
+              const used = runtimeSummary.contextUsed || 0;
+              const size = runtimeSummary.contextSize;
+              const pct = Math.round((used / size) * 100);
+              const cls = pct > 90 ? 'text-red-500' : pct > 70 ? 'text-yellow-500' : 'text-text-muted dark:text-dark-text-muted';
+              return (
+                <span className={`ml-1 text-[10px] tabular-nums ${cls}`} title={`Context: ${used.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`}>
+                  {used.toLocaleString()}/{size.toLocaleString()} ({pct}%)
+                </span>
+              );
+            })() : null}
+            <Badge variant={loadState === 'ready' ? 'outline' : 'secondary'} size="sm">
+              {subtitle}
+            </Badge>
+          </div>
+        </header>
+
+        {errorNotice}
+        {conversation}
+        {composerBlock}
+      </div>
+    );
+  }
+
   return (
     <div className="grid min-h-[42rem] min-w-0 grid-cols-1 gap-4 lg:grid-cols-[19rem_1fr]">
       <Panel variant="surface" className="flex min-h-0 min-w-0 flex-col p-0">
@@ -517,7 +765,7 @@ export function BeamChat({
             </Span>
           </div>
           <Button
-            aria-label="New Beam session"
+            aria-label={`New ${productName} session`}
             disabled={loadState !== 'ready' || pending || !aiReady}
             onClick={() => void createSession()}
             size="icon"
@@ -526,7 +774,7 @@ export function BeamChat({
           </Button>
         </div>
 
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2" aria-label="Beam sessions">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2" aria-label={`${productName} sessions`}>
           {loadState === 'loading' ? <ChatThreadSkeleton rows={3} /> : null}
           {loadState === 'ready' && sessions.length === 0 ? (
             <Panel
@@ -559,7 +807,7 @@ export function BeamChat({
               {client.renameSession ? (
                 <Button
                   aria-label={`Rename ${sessionTitle(session)}`}
-                  className="opacity-0 group-hover:opacity-100"
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                   disabled={pending}
                   onClick={() => void renameSession(session)}
                   size="icon"
@@ -571,7 +819,7 @@ export function BeamChat({
               {client.deleteSession ? (
                 <Button
                   aria-label={`Delete ${sessionTitle(session)}`}
-                  className="opacity-0 group-hover:opacity-100"
+                  className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                   disabled={pending}
                   onClick={() => void deleteSession(session)}
                   size="icon"
@@ -584,36 +832,37 @@ export function BeamChat({
           ))}
         </nav>
 
-        {embedded ? null : (
-          <div className="border-surface-200 dark:border-dark-surface-700 border-t p-3">
-            <ContextReadiness links={links} readiness={readiness} />
-            <ToolSummary tools={tools} unavailable={loadState === 'unavailable'} />
-          </div>
-        )}
+        <div className="border-surface-200 dark:border-dark-surface-700 border-t p-3">
+          <ContextReadiness links={links} readiness={readiness} productName={productName} runtimeSummary={runtimeSummary} />
+          <ToolSummary tools={tools} unavailable={loadState === 'unavailable'} />
+        </div>
       </Panel>
 
       <Panel variant="surface" className="flex min-h-0 min-w-0 flex-col p-0">
         <div className="border-surface-200 dark:border-dark-surface-700 flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 opacity-70" />
+              {productIcon ?? <Bot className="h-5 w-5 opacity-70" />}
               <h2 className="truncate text-base font-semibold">
-                {selected ? sessionTitle(selected) : 'Beam'}
+                {selected ? sessionTitle(selected) : productName}
               </h2>
               <Badge variant={loadState === 'ready' ? 'outline' : 'secondary'} size="sm">
-                {loadState === 'ready'
-                  ? 'Ready'
-                  : loadState === 'loading'
-                    ? 'Loading'
-                    : 'Not connected'}
+                {statusBadge}
               </Badge>
+              {runtimeSummary && runtimeSummary.contextSize && runtimeSummary.contextSize > 0 ? (() => {
+                const used = runtimeSummary.contextUsed || 0;
+                const size = runtimeSummary.contextSize;
+                const pct = Math.round((used / size) * 100);
+                const cls = pct > 90 ? 'text-red-500' : pct > 70 ? 'text-yellow-500' : 'text-text-muted dark:text-dark-text-muted';
+                return (
+                  <span className={`ml-1 text-[10px] tabular-nums ${cls}`} title={`Context: ${used.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`}>
+                    {used.toLocaleString()}/{size.toLocaleString()} ({pct}%)
+                  </span>
+                );
+              })() : null}
             </div>
             <Span variant="muted" className="mt-1 block text-sm">
-              {readiness.aiReady && readiness.searchReady
-                ? 'Workspace search is ready for Beam.'
-                : readiness.aiReady
-                  ? 'Beam is ready. Workspace search is not prepared yet.'
-                  : 'Beam setup is not complete yet.'}
+              {subtitle}
             </Span>
           </div>
           <Button
@@ -627,63 +876,9 @@ export function BeamChat({
           </Button>
         </div>
 
-        {err ? (
-          <InlineNotice
-            variant={loadState === 'unavailable' ? 'warning' : 'error'}
-            className="m-4 mb-0">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{err}</span>
-            </div>
-          </InlineNotice>
-        ) : null}
-
-        <ConversationPane
-          loadState={loadState}
-          messages={messages}
-          onCreate={createSession}
-          readiness={readiness}
-          selected={selected}
-          links={links}
-          streaming={streaming}
-          liveToolCalls={liveToolCalls}
-          pendingApproval={pendingApproval}
-          onResolveApproval={resolveApproval}
-          onOpenDiff={client.openDiff}
-        />
-
-        <div className="border-surface-200 dark:border-dark-surface-700 border-t">
-          <ChatComposer
-            value={input}
-            onChange={setInput}
-            onSubmit={sendMessage}
-            disabled={composerDisabled}
-            isPending={pending}
-            shell="plain"
-            variant="default"
-            title=""
-            placeholder={
-              loadState === 'unavailable'
-                ? 'Beam is not connected yet.'
-                : !aiReady
-                  ? 'Complete Beam setup to start'
-                  : selected
-                    ? 'Ask about this workspace'
-                    : 'Create a session to start'
-            }
-            submitLabel="Send"
-            pendingLabel="Sending"
-            textareaProps={{ 'aria-label': 'Message' }}
-          />
-          {pending && client.cancelTurn ? (
-            <div className="flex justify-end px-4 pb-3">
-              <Button onClick={cancelTurn} size="sm" type="button" variant="outline">
-                <X className="mr-2 h-4 w-4" />
-                Cancel
-              </Button>
-            </div>
-          ) : null}
-        </div>
+        {errorNotice}
+        {conversation}
+        {composerBlock}
       </Panel>
     </div>
   );
@@ -701,6 +896,8 @@ function ConversationPane({
   pendingApproval,
   onResolveApproval,
   onOpenDiff,
+  productName,
+  embedded = false,
 }: {
   links: BeamChatLinks;
   loadState: LoadState;
@@ -713,6 +910,8 @@ function ConversationPane({
   pendingApproval: PendingApproval | null;
   onResolveApproval: (optionId: string | undefined) => void;
   onOpenDiff?: (call: BeamChatToolCall) => void;
+  productName: string;
+  embedded?: boolean;
 }) {
   const { containerRef, endRef, scrollToEnd, isNearBottom } = useChatScroll({
     deps: [messages, loadState, streaming, liveToolCalls, pendingApproval],
@@ -720,7 +919,7 @@ function ConversationPane({
 
   if (loadState === 'loading') {
     return (
-      <div className="min-h-0 flex-1 p-4">
+      <div className="min-h-0 flex-1 p-3 sm:p-4">
         <ChatThreadSkeleton />
       </div>
     );
@@ -728,20 +927,28 @@ function ConversationPane({
 
   if (loadState === 'unavailable') {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-        <UnavailableState links={links} readiness={readiness} />
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 sm:p-6">
+        <UnavailableState
+          links={links}
+          readiness={readiness}
+          productName={productName}
+          embedded={embedded}
+        />
       </div>
     );
   }
 
   if (!selected) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 sm:p-6">
         <Panel variant="empty" className="max-w-lg text-center">
           <div className="bg-surface-100 dark:bg-dark-surface-200 mx-auto mb-4 w-fit rounded-full p-4">
             <MessageSquarePlus className="h-8 w-8 opacity-70" />
           </div>
           <h3 className="text-lg font-semibold">No session selected</h3>
+          <Span variant="muted" className="mt-2 block text-sm">
+            Start a new session to chat with {productName}.
+          </Span>
           <Button
             className="mt-5"
             disabled={!readiness.aiReady}
@@ -761,39 +968,34 @@ function ConversationPane({
         containerRef={containerRef}
         endRef={endRef}
         className="h-full"
-        scrollClassName="flex-1 space-y-4 overflow-auto px-4 py-4 sm:px-5">
-        {messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
-            <Panel variant="empty" className="max-w-lg text-center">
-              <div className="bg-surface-100 dark:bg-dark-surface-200 mx-auto mb-4 w-fit rounded-full p-4">
-                <Bot className="h-8 w-8 opacity-70" />
-              </div>
-              <h3 className="text-lg font-semibold">New session</h3>
-              <Span variant="muted" className="mt-2 block text-sm">
-                Ask a question to start the conversation.
-              </Span>
-            </Panel>
-          </div>
-        ) : (
-          messages.map((message, index) => {
-            const prev = index > 0 ? messages[index - 1] : null;
-            const showSeparator = !prev || dateKey(prev.createdAt) !== dateKey(message.createdAt);
-            return (
-              <div key={message.id} className="animate-in fade-in-0 space-y-4 duration-150">
-                {showSeparator ? (
-                  <ChatDateSeparator label={formatDateLabel(message.createdAt)} />
-                ) : null}
-                <ChatMessageView
-                  message={message}
-                  isLatest={index === messages.length - 1 && !streaming}
-                  onOpenDiff={onOpenDiff}
-                />
-              </div>
-            );
-          })
-        )}
+        scrollClassName={
+          embedded
+            ? 'flex-1 space-y-3 overflow-auto px-3 py-3'
+            : 'flex-1 space-y-4 overflow-auto px-4 py-4 sm:px-5'
+        }>
+        {messages.map((message, index) => {
+          const prev = index > 0 ? messages[index - 1] : null;
+          const showSeparator = !prev || dateKey(prev.createdAt) !== dateKey(message.createdAt);
+          return (
+            <div key={message.id} className="animate-in fade-in-0 space-y-4 duration-150">
+              {showSeparator ? (
+                <ChatDateSeparator label={formatDateLabel(message.createdAt)} />
+              ) : null}
+              <ChatMessageView
+                message={message}
+                isLatest={index === messages.length - 1 && !streaming}
+                onOpenDiff={onOpenDiff}
+                productName={productName}
+              />
+            </div>
+          );
+        })}
         {streaming ? (
-          <StreamingMessageView streaming={streaming} toolCalls={liveToolCalls} />
+          <StreamingMessageView
+            streaming={streaming}
+            toolCalls={liveToolCalls}
+            productName={productName}
+          />
         ) : null}
         {pendingApproval ? (
           <ApprovalCard request={pendingApproval} onResolve={onResolveApproval} />
@@ -808,10 +1010,12 @@ function ChatMessageView({
   message,
   isLatest,
   onOpenDiff,
+  productName,
 }: {
   message: BeamChatMessage;
   isLatest: boolean;
   onOpenDiff?: (call: BeamChatToolCall) => void;
+  productName: string;
 }) {
   const roleLabel =
     message.role === 'user'
@@ -820,7 +1024,7 @@ function ChatMessageView({
         ? 'System'
         : message.role === 'tool'
           ? 'Tool'
-          : 'Beam';
+          : productName;
 
   return (
     <ChatMessageUI
@@ -869,15 +1073,17 @@ function ChatMessageView({
 function StreamingMessageView({
   streaming,
   toolCalls,
+  productName,
 }: {
   streaming: { content: string; thinking: string };
   toolCalls: BeamChatToolCall[];
+  productName: string;
 }) {
   return (
     <ChatMessageUI
       appearance="transcript"
       role="assistant"
-      roleLabel="Beam"
+      roleLabel={productName}
       isLatest
       latestLabel="Latest"
       collapseToggleLabel={{ open: 'Hide', closed: 'Show' }}>
@@ -916,7 +1122,7 @@ function ToolCallCard({
           {call.status === 'running' ? (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin opacity-70" />
           ) : call.status === 'error' ? (
-            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+            <AlertTriangle className="text-error-500 h-3.5 w-3.5 shrink-0" />
           ) : (
             <Wrench className="h-3.5 w-3.5 shrink-0 opacity-70" />
           )}
@@ -933,7 +1139,7 @@ function ToolCallCard({
           {call.output}
         </pre>
       ) : null}
-      {call.error ? <p className="mt-2 text-xs text-red-500">{call.error}</p> : null}
+      {call.error ? <p className="text-error-500 mt-2 text-xs">{call.error}</p> : null}
       {call.diff && onOpenDiff ? (
         <Button
           className="mt-2"
@@ -957,9 +1163,9 @@ function ApprovalCard({
   onResolve: (optionId: string | undefined) => void;
 }) {
   return (
-    <div className="border-amber-400/60 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-950/30 rounded-md border p-3 text-sm">
+    <div className="border-warning-200 bg-warning-50 text-warning-900 dark:border-dark-surface-500 dark:bg-dark-surface-300/40 dark:text-dark-text rounded-md border p-3 text-sm">
       <div className="flex items-center gap-2 font-medium">
-        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+        <AlertTriangle className="text-warning-900 dark:text-dark-text h-4 w-4 shrink-0" />
         {request.title}
       </div>
       {request.details ? (
@@ -1005,14 +1211,18 @@ function ApprovalCard({
 function ContextReadiness({
   links,
   readiness,
+  productName,
+  runtimeSummary,
 }: {
   links: BeamChatLinks;
   readiness: BeamChatReadiness;
+  productName: string;
+  runtimeSummary?: BeamChatRuntimeSummary | null;
 }) {
   const items = [
     {
       icon: SlidersHorizontal,
-      label: 'Beam setup',
+      label: `${productName} setup`,
       ready: Boolean(readiness.aiReady),
       value: readiness.aiReady ? 'Ready' : 'Needs setup',
       href: links.ai ?? defaultLinks.ai,
@@ -1044,6 +1254,19 @@ function ContextReadiness({
       href: links.apps,
     },
   ];
+  if (runtimeSummary && runtimeSummary.contextSize && runtimeSummary.contextSize > 0) {
+    const used = runtimeSummary.contextUsed || 0;
+    const size = runtimeSummary.contextSize;
+    const pct = Math.round((used / size) * 100);
+    items.push({
+      icon: SlidersHorizontal, // reuse or import a new
+      label: 'Context',
+      ready: pct < 90,
+      value: `${used.toLocaleString()}/${size.toLocaleString()} (${pct}%)`,
+      href: '#',
+      disabled: true,
+    } as any);
+  }
 
   return (
     <div className="space-y-2">
@@ -1131,37 +1354,45 @@ function ToolSummary({ tools, unavailable }: { tools: BeamChatTool[]; unavailabl
 function UnavailableState({
   links,
   readiness,
+  productName,
+  embedded = false,
 }: {
   links: BeamChatLinks;
   readiness: BeamChatReadiness;
+  productName: string;
+  embedded?: boolean;
 }) {
   return (
     <Panel variant="empty" className="max-w-xl text-center">
       <div className="bg-surface-100 dark:bg-dark-surface-200 mx-auto mb-4 w-fit rounded-full p-4">
-        <Bot className="h-8 w-8 opacity-70" />
+        {productIcon ?? <Bot className="h-8 w-8 opacity-70" />}
       </div>
-      <h3 className="text-lg font-semibold">Beam is not connected yet</h3>
+      <h3 className="text-lg font-semibold">{productName} is not connected yet</h3>
       <Span variant="muted" className="mt-2 block text-sm">
-        The Beam API is not responding. Refresh the page or check the workspace setup.
+        {embedded
+          ? `The ${productName} runtime is not responding. Use the Runtime view or run setup, then refresh.`
+          : `The ${productName} API is not responding. Refresh the page or check the workspace setup.`}
       </Span>
-      <div className="mt-6 flex flex-wrap justify-center gap-2">
-        {readiness.canManage ? (
-          <a className="text-primary hover:underline" href={links.ai ?? defaultLinks.ai}>
-            Beam setup
+      {embedded ? null : (
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          {readiness.canManage ? (
+            <a className="text-primary hover:underline" href={links.ai ?? defaultLinks.ai}>
+              {productName} setup
+            </a>
+          ) : null}
+          <a className="text-primary hover:underline" href={links.search}>
+            {readiness.searchReady ? 'Open search' : 'Prepare search'}
           </a>
-        ) : null}
-        <a className="text-primary hover:underline" href={links.search}>
-          {readiness.searchReady ? 'Open search' : 'Prepare search'}
-        </a>
-        {readiness.canManage ? (
-          <a className="text-primary hover:underline" href={links.sources}>
-            Sources
+          {readiness.canManage ? (
+            <a className="text-primary hover:underline" href={links.sources}>
+              Sources
+            </a>
+          ) : null}
+          <a className="text-primary hover:underline" href={links.apps}>
+            Apps
           </a>
-        ) : null}
-        <a className="text-primary hover:underline" href={links.apps}>
-          Apps
-        </a>
-      </div>
+        </div>
+      )}
     </Panel>
   );
 }

@@ -8,7 +8,7 @@
 //
 // Usage:
 //
-//	modeld serve   [--data-root DIR] [--ttl DURATION] [--mem-max 8GiB] [--mem-reserve 2GiB] [--mem-cold 16GiB] [--min-hot-context 4096]
+//	modeld serve   [--data-root DIR] [--ttl DURATION] [--listen ADDR] [--models-dir DIR] [--mem-max 8GiB] [--mem-reserve 2GiB] [--mem-cold 16GiB] [--min-hot-context 4096]
 //	modeld status  [--data-root DIR] [--json]
 //	modeld version [--json]
 package main
@@ -52,6 +52,7 @@ func run(args []string) error {
 	dataRoot := fs.String("data-root", "", "contenox data root (default ~/.contenox)")
 	ttl := fs.Duration("ttl", 30*time.Second, "lease duration; renewed at ttl/3")
 	listen := fs.String("listen", "127.0.0.1:0", "gRPC listen address for serve")
+	modelsDir := fs.String("models-dir", "", "directory of on-disk models (default <data-root>/models); resolves a session request's model when it omits an explicit path — the only way a remote node can locate a model, since a caller-supplied filesystem path is meaningless off the local machine")
 	memMax := fs.String("mem-max", "", "maximum modeld resident memory budget (bytes or e.g. 8GiB)")
 	memReserve := fs.String("mem-reserve", "", "memory to leave free for desktop/other workloads (bytes or e.g. 2GiB)")
 	memCold := fs.String("mem-cold", "", "host-RAM KV cold-store budget (bytes or e.g. 16GiB)")
@@ -83,7 +84,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		return serve(resolvedRoot, leasePath, *ttl, *listen, policy, idle)
+		return serve(resolvedRoot, leasePath, *ttl, *listen, *modelsDir, policy, idle)
 	case "status":
 		return status(leasePath, *asJSON)
 	default:
@@ -174,6 +175,23 @@ func idleTTLFromJSON(dataRoot string) string {
 	return strings.TrimSpace(raw.Idle.TTL)
 }
 
+// isLoopbackEndpoint reports whether host is a loopback address or "localhost".
+// An empty host (e.g. ":8080", meaning "all interfaces") is NOT loopback.
+func isLoopbackEndpoint(endpoint string) bool {
+	host, _, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		host = endpoint
+	}
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func resolvePaths(dataRoot string) (string, string, error) {
 	if dataRoot == "" {
 		home, err := os.UserHomeDir()
@@ -188,7 +206,7 @@ func resolvePaths(dataRoot string) (string, string, error) {
 	return dataRoot, filepath.Join(dataRoot, "modeld.lease"), nil
 }
 
-func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy capacity.Policy, idleTTL time.Duration) error {
+func serve(dataRoot, leasePath string, ttl time.Duration, listen, modelsDir string, policy capacity.Policy, idleTTL time.Duration) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -202,6 +220,9 @@ func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy 
 	}
 	endpoint := lis.Addr().String()
 	fmt.Fprintf(os.Stderr, "modeld listener ready: requested=%q endpoint=%q\n", listen, endpoint)
+	if !isLoopbackEndpoint(endpoint) {
+		fmt.Fprintf(os.Stderr, "modeld WARNING: listening on a non-loopback endpoint (%s) with no authentication or transport encryption. Anyone who can reach this address can open sessions and run inference. Only bind non-loopback on a trusted network (tailnet/VPN/VPC).\n", endpoint)
+	}
 
 	// Resolve the served backend before joining so the lease advertises the mode
 	// (llama / openvino / none); the runtime's detector reads it without a
@@ -242,7 +263,7 @@ func serve(dataRoot, leasePath string, ttl time.Duration, listen string, policy 
 
 	// Serve the runtime/transport.Service contract over gRPC, fenced by the owner
 	// instance id, while we hold the lease.
-	slotSvc := slot.New(svc, slot.WithOwner(o.InstanceID()), slot.WithBackend(backend), slot.WithIdleTTL(idleTTL), slot.WithDataRoot(dataRoot))
+	slotSvc := slot.New(svc, slot.WithOwner(o.InstanceID()), slot.WithBackend(backend), slot.WithIdleTTL(idleTTL), slot.WithDataRoot(dataRoot), slot.WithModelsDir(modelsDir))
 	svc = slotSvc
 	fmt.Printf("modeld transport serving: instance=%s endpoint=%s backend=%s idle_ttl=%s\n", o.InstanceID(), endpoint, backend, formatIdleTTL(idleTTL))
 	serveCtx, serveCancel := context.WithCancel(ctx)

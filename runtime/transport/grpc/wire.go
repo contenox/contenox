@@ -34,6 +34,10 @@ type computeServer interface {
 	restore(context.Context, *restoreReq) (*restoreResp, error)
 	closeSession(context.Context, *closeReq) (*closeResp, error)
 	decode(context.Context, *decodeReq, grpclib.ServerStream) error
+	listModels(context.Context, *listModelsReq) (*listModelsResp, error)
+	removeModel(context.Context, *removeModelReq) (*removeModelResp, error)
+	diskStats(context.Context, *diskStatsReq) (*transport.NodeDiskStats, error)
+	pushModel(context.Context, *pushModelChunk, grpclib.ServerStream) error
 }
 
 // Wire request/response payloads. Status/report responses reuse the transport.*
@@ -169,6 +173,45 @@ type closeReq struct {
 
 type closeResp struct{}
 
+// Node admin RPCs (ListModels/RemoveModel/DiskStats/PushModel) manage the
+// node's model store — see transport.NodeAdmin. They are fenced the same as
+// every other RPC.
+
+type listModelsReq struct {
+	OwnerInstanceID string `json:"owner_instance_id,omitempty"`
+}
+
+type listModelsResp struct {
+	Models []transport.NodeModel `json:"models,omitempty"`
+}
+
+type removeModelReq struct {
+	OwnerInstanceID string `json:"owner_instance_id,omitempty"`
+	Name            string `json:"name"`
+}
+
+type removeModelResp struct{}
+
+type diskStatsReq struct {
+	OwnerInstanceID string `json:"owner_instance_id,omitempty"`
+}
+
+// pushModelChunk is one frame of the PushModel client stream. Manifest is set
+// only on the first frame the client sends; every frame (including the
+// first, if it carries an initial slice of bytes) may carry Data. The server
+// treats the byte stream as the concatenation of every frame's Data in
+// arrival order.
+type pushModelChunk struct {
+	OwnerInstanceID string                  `json:"owner_instance_id,omitempty"`
+	Manifest        *transport.PushManifest `json:"manifest,omitempty"`
+	Data            []byte                  `json:"data,omitempty"`
+}
+
+type pushModelResp struct {
+	AlreadyPresent bool  `json:"already_present,omitempty"`
+	BytesWritten   int64 `json:"bytes_written,omitempty"`
+}
+
 // healthReq/healthResp back the unfenced liveness probe: it reports which owner
 // instance is actually serving so a caller can confirm the lease holder is the
 // process answering (and is ready), distinguishing a live owner from a wedged
@@ -193,6 +236,9 @@ type wireChunk struct {
 
 // decodeStreamDesc is the client-side stream descriptor for Decode.
 var decodeStreamDesc = grpclib.StreamDesc{StreamName: "Decode", ServerStreams: true}
+
+// pushModelStreamDesc is the client-side stream descriptor for PushModel.
+var pushModelStreamDesc = grpclib.StreamDesc{StreamName: "PushModel", ClientStreams: true}
 
 // serviceDesc registers the unary methods plus the Decode server stream against
 // a *Server.
@@ -291,6 +337,27 @@ var serviceDesc = grpclib.ServiceDesc{
 			}
 			return s.closeSession(ctx, in)
 		})},
+		{MethodName: "ListModels", Handler: unaryHandler("ListModels", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(listModelsReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.listModels(ctx, in)
+		})},
+		{MethodName: "RemoveModel", Handler: unaryHandler("RemoveModel", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(removeModelReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.removeModel(ctx, in)
+		})},
+		{MethodName: "DiskStats", Handler: unaryHandler("DiskStats", func(s *Server, ctx context.Context, dec func(any) error) (any, error) {
+			in := new(diskStatsReq)
+			if err := dec(in); err != nil {
+				return nil, err
+			}
+			return s.diskStats(ctx, in)
+		})},
 	},
 	Streams: []grpclib.StreamDesc{
 		{
@@ -307,6 +374,22 @@ var serviceDesc = grpclib.ServiceDesc{
 					return err
 				}
 				return srv.(*Server).decode(stream.Context(), in, stream)
+			},
+		},
+		{
+			StreamName:    "PushModel",
+			ClientStreams: true,
+			Handler: func(srv any, stream grpclib.ServerStream) (err error) {
+				defer func() {
+					if r := recover(); r != nil {
+						err = recoveredHandlerPanic("PushModel", r)
+					}
+				}()
+				in := new(pushModelChunk)
+				if err := stream.RecvMsg(in); err != nil {
+					return err
+				}
+				return srv.(*Server).pushModel(stream.Context(), in, stream)
 			},
 		},
 	},

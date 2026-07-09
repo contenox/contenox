@@ -52,23 +52,22 @@ export function activate(context: vscode.ExtensionContext): void {
     telemetry,
   );
   const sessions = new SessionTreeProvider(bridge);
-  const runtimeControls = new RuntimeControlsViewProvider(
-    bridge,
-    telemetry,
-    () => {
-      sessions.refresh();
-    },
-  );
   const sessionDocuments = new SessionDocumentProvider(telemetry);
   const diffStore = new DiffStore(telemetry);
-  const chatWebview = new ChatWebviewViewProvider(
+  let chatWebview!: ChatWebviewViewProvider;
+  const onWorkspaceDataChanged = () => {
+    sessions.refresh();
+    void chatWebview.refreshRuntimeSummary();
+  };
+  chatWebview = new ChatWebviewViewProvider(
     bridge,
     diffStore,
     context.extensionUri,
     output,
     telemetry,
-    () => sessions.refresh(),
+    onWorkspaceDataChanged,
   );
+  const runtimeControls = new RuntimeControlsViewProvider(bridge, telemetry, onWorkspaceDataChanged);
   const mcpProvider = registerMCPServerProvider(bridge, telemetry);
   telemetry.event(
     "extension.activated",
@@ -127,6 +126,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("contenox.openChat", () =>
       chatWebview.openChat(),
     ),
+    // Opens the quick runtime settings picker (also triggered from the chat header chip).
+    vscode.commands.registerCommand("contenox.openRuntimeSettings", () =>
+      chatWebview.showRuntimeSettingsPicker(),
+    ),
     vscode.commands.registerCommand("contenox.openWalkthrough", () =>
       openWalkthrough(telemetry),
     ),
@@ -163,15 +166,10 @@ export function activate(context: vscode.ExtensionContext): void {
       sessions.refresh(),
     ),
     vscode.commands.registerCommand("contenox.openSession", (arg?: unknown) =>
-      openSession(
-        bridge,
-        chatWebview,
-        sessionDocuments,
-        sessions,
-        output,
-        telemetry,
-        arg,
-      ),
+      openSession(bridge, chatWebview, sessions, output, telemetry, arg),
+    ),
+    vscode.commands.registerCommand("contenox.openSessionTranscript", (arg?: unknown) =>
+      openSessionTranscript(bridge, sessionDocuments, output, telemetry, arg),
     ),
     vscode.commands.registerCommand("contenox.deleteSession", (arg?: unknown) =>
       deleteSession(bridge, chatWebview, sessions, output, telemetry, arg),
@@ -183,33 +181,19 @@ export function activate(context: vscode.ExtensionContext): void {
       showExtensionRuntimeInfo(context, bridge, output, telemetry),
     ),
     vscode.commands.registerCommand("contenox.restartRuntime", () =>
-      restartRuntime(bridge, output, telemetry),
+      restartRuntime(bridge, chatWebview, output, telemetry),
     ),
     vscode.commands.registerCommand("contenox.restartBridge", () =>
-      restartRuntime(bridge, output, telemetry),
+      restartRuntime(bridge, chatWebview, output, telemetry),
     ),
     vscode.commands.registerCommand("contenox.runSetup", () =>
-      runSetup(bridge, output, telemetry),
+      runSetup(bridge, chatWebview, output, telemetry),
     ),
     vscode.commands.registerCommand("contenox.selectProvider", () =>
-      runConfigSelector(
-        "select_provider",
-        () => selectProvider(bridge),
-        sessions,
-        runtimeControls,
-        output,
-        telemetry,
-      ),
+      runConfigSelector("select_provider", () => selectProvider(bridge), sessions, chatWebview, output, telemetry),
     ),
     vscode.commands.registerCommand("contenox.selectChatModel", () =>
-      runConfigSelector(
-        "select_chat_model",
-        () => selectChatModel(bridge),
-        sessions,
-        runtimeControls,
-        output,
-        telemetry,
-      ),
+      runConfigSelector("select_chat_model", () => selectChatModel(bridge), sessions, chatWebview, output, telemetry),
     ),
     vscode.commands.registerCommand("contenox.selectAutocompleteProvider", () =>
       selectAutocompleteProvider(bridge),
@@ -218,24 +202,10 @@ export function activate(context: vscode.ExtensionContext): void {
       selectAutocompleteModel(bridge),
     ),
     vscode.commands.registerCommand("contenox.selectHitlPolicy", () =>
-      runConfigSelector(
-        "select_hitl_policy",
-        () => selectHitlPolicy(bridge),
-        sessions,
-        runtimeControls,
-        output,
-        telemetry,
-      ),
+      runConfigSelector("select_hitl_policy", () => selectHitlPolicy(bridge), sessions, chatWebview, output, telemetry),
     ),
     vscode.commands.registerCommand("contenox.selectThinkLevel", () =>
-      runConfigSelector(
-        "select_think_level",
-        () => selectThinkLevel(bridge),
-        sessions,
-        runtimeControls,
-        output,
-        telemetry,
-      ),
+      runConfigSelector("select_think_level", () => selectThinkLevel(bridge), sessions, chatWebview, output, telemetry),
     ),
     vscode.commands.registerCommand("contenox.triggerAutocomplete", () =>
       vscode.commands.executeCommand("editor.action.inlineSuggest.trigger"),
@@ -291,9 +261,12 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   if (readBridgeSettings().startOnActivation) {
-    void bridge.ensureStarted().catch((error) => {
-      output.warn(errorMessage(error));
-    });
+    void bridge
+      .ensureStarted()
+      .then(() => chatWebview.refreshRuntimeSummary())
+      .catch((error) => {
+        output.warn(errorMessage(error));
+      });
   }
 }
 
@@ -361,12 +334,14 @@ async function showExtensionRuntimeInfo(
 
 async function restartRuntime(
   bridge: BridgeProcess,
+  chatWebview: ChatWebviewViewProvider,
   output: ContenoxOutput,
   telemetry: TelemetryLogger,
 ): Promise<void> {
   try {
     telemetry.event("command.restart_runtime");
     const state = await bridge.restart();
+    await chatWebview.refreshRuntimeSummary();
     const provider = state.health.defaultProvider || "no provider";
     const model = state.health.defaultModel || "no model";
     vscode.window.showInformationMessage(
@@ -381,6 +356,7 @@ async function restartRuntime(
 
 function runSetup(
   bridge: BridgeProcess,
+  chatWebview: ChatWebviewViewProvider,
   output: ContenoxOutput,
   telemetry: TelemetryLogger,
 ): void {
@@ -409,7 +385,8 @@ function runSetup(
     void vscode.commands.executeCommand("contenox.internal.setupComplete");
     void bridge
       .restart()
-      .then((state) => {
+      .then(async (state) => {
+        await chatWebview.refreshRuntimeSummary();
         vscode.window.showInformationMessage(
           `Contenox setup finished. Runtime refreshed: ${state.health.defaultProvider || "no provider"} / ${state.health.defaultModel || "no model"}`,
         );
@@ -453,7 +430,6 @@ async function setAutocompleteEnabled(
 async function openSession(
   bridge: BridgeProcess,
   chatWebview: ChatWebviewViewProvider,
-  sessionDocuments: SessionDocumentProvider,
   sessions: SessionTreeProvider,
   output: ContenoxOutput,
   telemetry: TelemetryLogger,
@@ -476,13 +452,40 @@ async function openSession(
     }
     const result = await client.sessionLoad({ sessionId });
     await chatWebview.openSession(result.session.id);
-    await sessionDocuments.open(result);
     sessions.refresh();
-    vscode.window.showInformationMessage(
-      `Loaded Contenox session: ${result.session.name || result.session.id}`,
-    );
   } catch (error) {
     telemetry.error("command.open_session.failed", error);
+    output.show();
+    vscode.window.showErrorMessage(errorMessage(error));
+  }
+}
+
+async function openSessionTranscript(
+  bridge: BridgeProcess,
+  sessionDocuments: SessionDocumentProvider,
+  output: ContenoxOutput,
+  telemetry: TelemetryLogger,
+  arg: unknown,
+): Promise<void> {
+  try {
+    const sessionId = sessionIdFromArg(arg);
+    if (!sessionId) {
+      vscode.window.showWarningMessage("No Contenox session is selected for a transcript.");
+      return;
+    }
+    telemetry.event("command.open_session_transcript", { sessionId });
+    const state = await bridge.ensureStarted();
+    if (!state.initialize.capabilities.sessionList) {
+      throw new Error("This Contenox runtime does not support session loading");
+    }
+    const client = bridge.currentClient;
+    if (!client) {
+      throw new Error("Contenox runtime connection is not available");
+    }
+    const result = await client.sessionLoad({ sessionId });
+    await sessionDocuments.open(result);
+  } catch (error) {
+    telemetry.error("command.open_session_transcript.failed", error);
     output.show();
     vscode.window.showErrorMessage(errorMessage(error));
   }
@@ -492,7 +495,7 @@ async function runConfigSelector(
   name: string,
   action: () => Promise<string | undefined>,
   sessions: SessionTreeProvider,
-  runtimeControls: RuntimeControlsViewProvider,
+  chatWebview: ChatWebviewViewProvider,
   output: ContenoxOutput,
   telemetry: TelemetryLogger,
 ): Promise<void> {
@@ -500,7 +503,7 @@ async function runConfigSelector(
     const selected = await action();
     if (selected !== undefined) {
       sessions.refresh();
-      await runtimeControls.refresh();
+      await chatWebview.refreshRuntimeSummary();
     }
   } catch (error) {
     telemetry.error(`command.${name}.failed`, error);
@@ -645,13 +648,7 @@ function inspectSessionTreeMarkers(file: string): {
   missing: string[];
   error?: string;
 } {
-  const markers = [
-    "Provider",
-    "Model",
-    "Thinking",
-    "HITL Policy",
-    "contenox.selectHitlPolicy",
-  ];
+  const markers = ["contenoxSession", "sessionList", "openSession"];
   try {
     const content = fs.readFileSync(file, "utf8");
     const missing = markers.filter((marker) => !content.includes(marker));

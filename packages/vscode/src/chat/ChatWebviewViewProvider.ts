@@ -18,6 +18,7 @@ import {
   ChatHostToWebviewMessage,
   ChatWebviewToHostMessage,
   WireMessage,
+  WireRuntimeSummary,
   WireSession,
   WireSessionResponse,
 } from "./webviewProtocol";
@@ -42,6 +43,9 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
   private readonly queued: ChatHostToWebviewMessage[] = [];
   private readonly activeTurns = new Map<string, vscode.CancellationTokenSource>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private lastContextUsed: number | undefined;
+  private lastContextSize: number | undefined;
+  private contextUsageSub: vscode.Disposable | undefined;
 
   public constructor(
     private readonly bridge: BridgeProcess,
@@ -73,6 +77,19 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
       tokenSource.dispose();
     }
     this.activeTurns.clear();
+    this.contextUsageSub?.dispose();
+  }
+
+  private ensureContextUsageSubscription() {
+    if (this.contextUsageSub) return;
+    const client = this.bridge.currentClient;
+    if (client) {
+      this.contextUsageSub = client.onContextUsage((ev) => {
+        this.lastContextUsed = ev.used;
+        this.lastContextSize = ev.size;
+        void this.pushRuntimeSummary();
+      });
+    }
   }
 
   public reveal(): void {
@@ -81,6 +98,14 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
 
   public async openChat(): Promise<void> {
     this.reveal();
+  }
+
+  public async refreshRuntimeSummary(): Promise<void> {
+    await this.pushRuntimeSummary();
+  }
+
+  public async showRuntimeSettingsPicker(): Promise<void> {
+    await this.handleOpenRuntimeSettings();
   }
 
   public async openSession(sessionId?: string): Promise<void> {
@@ -224,7 +249,12 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
         for (const queued of this.queued.splice(0)) {
           void this.postToWebview(queued);
         }
+        void this.pushRuntimeSummary();
         return;
+      case "getRuntimeSummary":
+        return this.handleGetRuntimeSummary(message.requestId);
+      case "openRuntimeSettings":
+        return this.handleOpenRuntimeSettings();
       case "listSessions":
         return this.handleListSessions(message.requestId);
       case "createSession":
@@ -252,7 +282,135 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
           filePath: message.call.diff?.path,
         });
         return;
+      case "confirmDelete":
+        return this.handleConfirmDelete(message.requestId, message.title);
+      case "promptRename":
+        return this.handlePromptRename(message.requestId, message.title);
     }
+  }
+
+  private async handleConfirmDelete(requestId: string, title: string): Promise<void> {
+    const choice = await vscode.window.showWarningMessage(
+      `Delete "${title}"?`,
+      { modal: true },
+      "Delete",
+    );
+    this.postResult(requestId, true, choice === "Delete");
+  }
+
+  private async handleGetRuntimeSummary(requestId: string): Promise<void> {
+    try {
+      const summary = await this.loadRuntimeSummary();
+      this.postResult(requestId, true, summary);
+    } catch (error) {
+      this.postResult(requestId, false, errorMessage(error));
+    }
+  }
+
+  private async handleOpenRuntimeSettings(): Promise<void> {
+    const summary: WireRuntimeSummary = await this.loadRuntimeSummary().catch(() => ({
+      connected: false,
+    }));
+    const provider = summary.provider || "not set";
+    const model = summary.model || "not set";
+    const choice = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Provider",
+          description: provider,
+          command: "contenox.selectProvider",
+        },
+        {
+          label: "Model",
+          description: model,
+          command: "contenox.selectChatModel",
+        },
+        {
+          label: "Thinking level",
+          description: summary.think || "auto",
+          command: "contenox.selectThinkLevel",
+        },
+        {
+          label: "HITL policy",
+          description: summary.hitlPolicy || "default",
+          command: "contenox.selectHitlPolicy",
+        },
+        {
+          label: "Open full Runtime panel",
+          description: "Detailed configuration in sidebar",
+          focusSettings: true,
+        },
+      ],
+      {
+        title: "Contenox runtime",
+        placeHolder: "Choose a runtime setting to change",
+      },
+    );
+    if (!choice) {
+      return;
+    }
+    if ("focusSettings" in choice && choice.focusSettings) {
+      await vscode.commands.executeCommand("contenox.controls.focus");
+      return;
+    }
+    if (!("command" in choice) || !choice.command) {
+      return;
+    }
+    await vscode.commands.executeCommand(choice.command);
+    await this.pushRuntimeSummary();
+  }
+
+  private async pushRuntimeSummary(): Promise<void> {
+    this.ensureContextUsageSubscription();
+    try {
+      const summary = await this.loadRuntimeSummary();
+      await this.postToWebview({ type: "runtimeConfig", summary });
+    } catch {
+      await this.postToWebview({
+        type: "runtimeConfig",
+        summary: { connected: false },
+      });
+    }
+  }
+
+  private async loadRuntimeSummary(): Promise<WireRuntimeSummary> {
+    const state = await this.bridge.ensureStarted();
+    const client = this.bridge.currentClient;
+    if (!client) {
+      throw new Error("Contenox runtime connection is not available");
+    }
+    const config = await client.getConfig();
+    this.ensureContextUsageSubscription();
+    let contextSize: number | undefined;
+    try {
+      // list without provider to ensure we get observed models which carry contextLength
+      const ml = await client.listModels(undefined);
+      const m = ml.models.find((mm) => mm.name === config.defaultModel);
+      if (m) {
+        contextSize = (m.contextLength && m.contextLength > 0) ? m.contextLength : 4096; // fallback
+      }
+    } catch {}
+    const used = this.lastContextUsed;
+    const size = this.lastContextSize ?? contextSize;
+    return {
+      provider: config.defaultProvider,
+      model: config.defaultModel,
+      think: config.defaultThink,
+      hitlPolicy: config.hitlPolicyName,
+      connected: state.health.status === "ok",
+      contextUsed: used,
+      contextSize: size,
+    };
+  }
+
+  private async handlePromptRename(requestId: string, currentTitle: string): Promise<void> {
+    const title = await vscode.window.showInputBox({
+      title: "Rename session",
+      value: currentTitle,
+      prompt: "Enter a new session name",
+      validateInput: (value) => (value.trim() ? undefined : "Session name cannot be empty"),
+    });
+    this.postResult(requestId, true, title?.trim() || undefined);
   }
 
   private async handleListSessions(requestId: string): Promise<void> {
@@ -369,6 +527,7 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
         messages: (result.event.messages ?? []).map((message) => toWireMessage(message, sessionId)),
       } satisfies WireSessionResponse);
       this.onSessionsChanged();
+      void this.pushRuntimeSummary();
     } catch (error) {
       this.postResult(requestId, false, errorMessage(error));
     } finally {
@@ -432,7 +591,7 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src ${webview.cspSource} 'unsafe-inline'; font-src ${webview.cspSource}; script-src ${webview.cspSource};">
   <link rel="stylesheet" href="${styleUri.toString()}">
 </head>
-<body>
+<body class="vscode-chat-shell">
   <div id="root"></div>
   <script src="${scriptUri.toString()}"></script>
 </body>

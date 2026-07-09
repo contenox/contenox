@@ -39,7 +39,7 @@ class FakeBridgeClient {
     this.permissionHandlers.set(sessionId, handler);
     return { dispose: () => this.permissionHandlers.delete(sessionId) };
   }
-  public async chatSend(params: { sessionId?: string; input: string }): Promise<{ sessionId: string; turnId: string }> {
+  public async chatSend(params: { sessionId?: string; input: string }): Promise<{ sessionId: string; turnId: string; title?: string }> {
     return { sessionId: params.sessionId ?? "session-1", turnId: "turn-1" };
   }
   public async chatCancel(params: { turnId: string }): Promise<{ cancelled: boolean }> {

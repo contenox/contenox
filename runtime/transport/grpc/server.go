@@ -2,6 +2,9 @@ package grpc
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -171,6 +174,14 @@ func (s *Server) controller() (transport.ModelController, error) {
 		return nil, transport.ErrUnsupportedFeature
 	}
 	return ctrl, nil
+}
+
+func (s *Server) nodeAdmin() (transport.NodeAdmin, error) {
+	admin, ok := s.svc.(transport.NodeAdmin)
+	if !ok {
+		return nil, transport.ErrUnsupportedFeature
+	}
+	return admin, nil
 }
 
 func (s *Server) status(ctx context.Context, _ *statusReq) (*transport.DaemonStatus, error) {
@@ -429,6 +440,114 @@ func (s *Server) closeSession(ctx context.Context, in *closeReq) (*closeResp, er
 		}
 	}
 	return &closeResp{}, nil
+}
+
+func (s *Server) listModels(ctx context.Context, _ *listModelsReq) (*listModelsResp, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	admin, err := s.nodeAdmin()
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	models, err := admin.ListModels(ctx)
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	return &listModelsResp{Models: models}, nil
+}
+
+func (s *Server) removeModel(ctx context.Context, in *removeModelReq) (*removeModelResp, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	admin, err := s.nodeAdmin()
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	if err := admin.RemoveModel(ctx, in.Name); err != nil {
+		return nil, encodeError(err)
+	}
+	return &removeModelResp{}, nil
+}
+
+func (s *Server) diskStats(ctx context.Context, _ *diskStatsReq) (*transport.NodeDiskStats, error) {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return nil, encodeError(err)
+	}
+	admin, err := s.nodeAdmin()
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	st, err := admin.DiskStats(ctx)
+	if err != nil {
+		return nil, encodeError(err)
+	}
+	return &st, nil
+}
+
+// pushModel receives a model's byte stream from the client and hands it to
+// the node admin's ReceiveModel as a plain io.Reader, decoupling the wire
+// framing (many small chunked messages, because a multi-gigabyte model
+// cannot fit one gRPC message) from the actual write/verify/install logic.
+//
+// An io.Pipe bridges the two: a goroutine keeps calling stream.RecvMsg and
+// writing each frame's Data into the pipe; ReceiveModel reads the pipe like
+// any other io.Reader until it sees EOF. pr is always closed before this
+// method returns (including when ReceiveModel errors before consuming the
+// whole stream, e.g. an unsupported model type) so the feeder goroutine is
+// never left blocked on a write nobody will read.
+func (s *Server) pushModel(ctx context.Context, first *pushModelChunk, stream grpclib.ServerStream) error {
+	if err := checkFence(ctx, s.instanceID); err != nil {
+		return encodeError(err)
+	}
+	admin, err := s.nodeAdmin()
+	if err != nil {
+		return encodeError(err)
+	}
+	if first.Manifest == nil {
+		return encodeError(fmt.Errorf("modeld transport: PushModel stream missing manifest on first frame"))
+	}
+
+	pr, pw := io.Pipe()
+	defer pr.Close()
+
+	feedDone := make(chan error, 1)
+	go func() {
+		defer pw.Close()
+		if len(first.Data) > 0 {
+			if _, err := pw.Write(first.Data); err != nil {
+				feedDone <- err
+				return
+			}
+		}
+		for {
+			var chunk pushModelChunk
+			recvErr := stream.RecvMsg(&chunk)
+			if errors.Is(recvErr, io.EOF) {
+				feedDone <- nil
+				return
+			}
+			if recvErr != nil {
+				feedDone <- recvErr
+				return
+			}
+			if len(chunk.Data) > 0 {
+				if _, err := pw.Write(chunk.Data); err != nil {
+					feedDone <- err
+					return
+				}
+			}
+		}
+	}()
+
+	result, recvModelErr := admin.ReceiveModel(ctx, *first.Manifest, pr)
+	pr.Close()
+	<-feedDone
+	if recvModelErr != nil {
+		return encodeError(recvModelErr)
+	}
+	return stream.SendMsg(&pushModelResp{AlreadyPresent: result.AlreadyPresent, BytesWritten: result.BytesWritten})
 }
 
 func (s *Server) decode(ctx context.Context, in *decodeReq, stream grpclib.ServerStream) error {

@@ -52,6 +52,18 @@ export type WireTool = {
   enabled: boolean;
 };
 
+export type WireRuntimeSummary = {
+  provider?: string;
+  model?: string;
+  think?: string;
+  hitlPolicy?: string;
+  connected: boolean;
+  // context usage indicator (from engine token events + session effective token_limit / chain budget)
+  // size = the controllable session context budget (capped by model if reported >0)
+  contextUsed?: number;
+  contextSize?: number;
+};
+
 export type WireApprovalOption = {
   id: string;
   label: string;
@@ -78,7 +90,11 @@ export type ChatWebviewToHostMessage =
   | { type: "cancelTurn"; id: string }
   | { type: "listTools"; requestId: string }
   | { type: "approvalResponse"; requestId: string; optionId?: string }
-  | { type: "openDiff"; call: WireToolCall };
+  | { type: "openDiff"; call: WireToolCall }
+  | { type: "confirmDelete"; requestId: string; id: string; title: string }
+  | { type: "promptRename"; requestId: string; id: string; title: string }
+  | { type: "getRuntimeSummary"; requestId: string }
+  | { type: "openRuntimeSettings" };
 
 export type ChatHostToWebviewMessage =
   | { type: "result"; requestId: string; ok: true; value: unknown }
@@ -87,4 +103,5 @@ export type ChatHostToWebviewMessage =
   | { type: "toolCall"; requestId: string; call: WireToolCall }
   | { type: "approvalRequest"; requestId: string; request: WireApprovalRequest }
   | { type: "composerAction"; nonce: string; content: string; submit: boolean }
-  | { type: "selectSession"; id: string };
+  | { type: "selectSession"; id: string }
+  | { type: "runtimeConfig"; summary: WireRuntimeSummary };

@@ -8,6 +8,7 @@ import { useListPolicies, useSetActivePolicy } from '../../../hooks/usePolicies'
 import { useRefreshSetupStatus } from '../../../hooks/useRefreshSetupStatus';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { useTaskEvents } from '../../../hooks/useTaskEvents';
+import { useRuntimeBackendState } from '../../../hooks/useRuntimeBackendState';
 import { api } from '../../../lib/api';
 import { ArtifactRegistryProvider, useArtifactRegistry } from '../../../lib/artifacts';
 import { ApiError } from '../../../lib/fetch';
@@ -157,6 +158,8 @@ function ChatPageImpl() {
   const [selectedChainId, setSelectedChainId] = useState('');
   const [selectedMode, setSelectedMode] = useState<ChatModeId>('chat');
   const [latestState, setLatestState] = useState<CapturedStateUnit[]>([]);
+  const [contextUsed, setContextUsed] = useState<number>(0);
+  const [contextSize, setContextSize] = useState<number>(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   /** True after POST /api/chats/:id/chat has been dispatched for the current run. */
@@ -176,6 +179,10 @@ function ChatPageImpl() {
     context?: ChatContextPayload;
   } | null>(null);
   const sendDispatchedRef = useRef(false);
+
+  /** Last known good context window usage reported by token_usage events during a run.
+   * Used to persist the value after the live task stream is torn down on completion. */
+  const lastKnownContextRef = useRef<{ used: number; size: number }>({ used: 0, size: 0 });
   const landingInitialSendKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -215,6 +222,7 @@ function ChatPageImpl() {
   const { mutate: sendMessage, error: sendError } = useSendMessage(chatId || '');
   const { data: policyNames = [] } = useListPolicies();
   const { data: setupStatus } = useSetupStatus(true);
+  const { data: runtimeState } = useRuntimeBackendState();
   const blockingSetupIssue = getBlockingSetupIssue(setupStatus);
   const refreshSetupStatus = useRefreshSetupStatus();
   const activePolicyName = setupStatus?.hitlPolicyName ?? '';
@@ -249,6 +257,22 @@ function ChatPageImpl() {
       {
         onSuccess: response => {
           setLatestState(response.state || []);
+
+          // The live token_usage events are the source of truth for context window usage.
+          // inputTokenCount from the response may be 0 for complex chains / tool runs
+          // (tokens are often only reported inside steps or via the events).
+          // Only use the response value as a last-resort fallback.
+          const last = lastKnownContextRef.current;
+          if (last.used > 0) {
+            setContextUsed(last.used);
+          } else if (typeof response.inputTokenCount === 'number' && response.inputTokenCount > 0) {
+            setContextUsed(response.inputTokenCount);
+            lastKnownContextRef.current.used = response.inputTokenCount;
+          }
+          if (last.size > 0) {
+            setContextSize(last.size);
+          }
+
           if (response.error) {
             lastFailedSendRef.current = pendingSendRef.current
               ? {
@@ -271,6 +295,12 @@ function ChatPageImpl() {
         },
         onError: (_, variables) => {
           abortRef.current = null;
+
+          // Persist last known context even on error (we may have received token_usage before the failure).
+          const last = lastKnownContextRef.current;
+          if (last.used > 0) setContextUsed(last.used);
+          if (last.size > 0) setContextSize(last.size);
+
           if (variables.signal?.aborted) {
             lastFailedSendRef.current = null;
             setOperationError(t('common.cancel', 'Cancel'));
@@ -300,6 +330,20 @@ function ChatPageImpl() {
       tryDispatchSend();
     },
   });
+
+  // Sync live context usage (from token_usage task events) into persistent session state.
+  // We only take positive values. The ref lets us reliably persist the value after
+  // the live stream is reset (activeRequestId cleared on completion).
+  useEffect(() => {
+    if (liveTask.contextUsed != null && liveTask.contextUsed > 0) {
+      lastKnownContextRef.current.used = liveTask.contextUsed;
+      setContextUsed(liveTask.contextUsed);
+    }
+    if (liveTask.contextSize != null && liveTask.contextSize > 0) {
+      lastKnownContextRef.current.size = liveTask.contextSize;
+      setContextSize(liveTask.contextSize);
+    }
+  }, [liveTask.contextUsed, liveTask.contextSize]);
 
   /** If the event stream never reaches open, still send the chat request so the run can complete. */
   useEffect(() => {
@@ -425,6 +469,10 @@ function ChatPageImpl() {
     pendingSendRef.current = null;
     sendDispatchedRef.current = false;
     activeRequestIdRef.current = null;
+    // Persist whatever the stream reported before tearing down the live events connection.
+    const last = lastKnownContextRef.current;
+    if (last.used > 0) setContextUsed(last.used);
+    if (last.size > 0) setContextSize(last.size);
     setActiveRequestId(null);
     setIsProcessing(false);
     setHttpDispatched(false);
@@ -436,6 +484,36 @@ function ChatPageImpl() {
     { value: '', label: t('chat.no_chain') },
     ...sortedChainPaths.map(p => ({ value: p, label: formatChainLabel(p) })),
   ];
+
+  // Derive a fallback context size from observed runtime pulled models (best effort).
+  // Prefer the default model (or session model) so we report the configured context
+  // window (from `contenox model set-context` / model metadata) rather than an
+  // arbitrary pulled model or default-max-tokens (which is only the output cap).
+  // Live token_usage events are authoritative once a turn runs.
+  const fallbackContextSize = useMemo(() => {
+    if (contextSize > 0) return contextSize;
+    const preferred = setupStatus?.defaultModel || '';
+    const states: any[] = Array.isArray(runtimeState) ? runtimeState : [];
+    // prefer match on default model
+    if (preferred) {
+      for (const s of states) {
+        const pulled = s?.pulledModels ?? [];
+        for (const m of pulled) {
+          if (m && (m.model === preferred || m.name === preferred) && m.contextLength && m.contextLength > 0) {
+            return m.contextLength;
+          }
+        }
+      }
+    }
+    // otherwise first usable
+    for (const s of states) {
+      const pulled = s?.pulledModels ?? [];
+      for (const m of pulled) {
+        if (m && m.contextLength && m.contextLength > 0) return m.contextLength;
+      }
+    }
+    return 0;
+  }, [contextSize, runtimeState, setupStatus?.defaultModel]);
   const modeOptions: { value: ChatModeId; label: string }[] = [
     { value: 'chat', label: t('chat.mode_chat') },
     { value: 'prompt', label: t('chat.mode_prompt') },
@@ -564,6 +642,9 @@ function ChatPageImpl() {
   useEffect(() => {
     setAgentAttachments({});
     setOptimisticOutgoing(null);
+    setContextUsed(0);
+    setContextSize(0);
+    lastKnownContextRef.current = { used: 0, size: 0 };
   }, [chatId]);
 
   const threadItems = useMemo(
@@ -613,6 +694,8 @@ function ChatPageImpl() {
               messages: chatHistory?.length ?? 0,
               state: latestState.length,
             })}
+            contextUsed={contextUsed}
+            contextSize={contextSize > 0 ? contextSize : fallbackContextSize}
           />
 
           <Fill className="flex flex-col">

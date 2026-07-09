@@ -185,6 +185,8 @@ func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.Session
 		"tool_calls":   toolCalls,
 		"tool_results": toolResults,
 	})
+
+	t.sendInitialUsageUpdate(ctx, sessionID)
 }
 
 func toolCallUpdateFromCall(tc taskengine.ToolCall) libacp.SessionUpdate {
@@ -303,6 +305,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 				Update:    libacp.NewAgentMessageChunk(banner),
 			})
 		}
+		t.sendInitialUsageUpdate(ctx, sessionID)
 	})
 
 	reportChange(string(sessionID), map[string]any{

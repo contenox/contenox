@@ -104,6 +104,8 @@ type editorContext struct {
 type chatSendResult struct {
 	SessionID string `json:"sessionId"`
 	TurnID    string `json:"turnId"`
+	// Title may be the (possibly newly derived) session name after ensureMeaningfulSessionTitle.
+	Title string `json:"title,omitempty"`
 }
 
 type chatCancelParams struct {
@@ -158,6 +160,13 @@ type hitlDecisionEvent struct {
 	MatchedRule       *int   `json:"matchedRule,omitempty"`
 	TimeoutS          int    `json:"timeoutS,omitempty"`
 	ApprovalRequested bool   `json:"approvalRequested"`
+}
+
+type contextUsageEvent struct {
+	SessionID string `json:"sessionId"`
+	TurnID    string `json:"turnId,omitempty"`
+	Used      int    `json:"used"`
+	Size      int    `json:"size"`
 }
 
 type autocompleteParams struct {
@@ -334,6 +343,12 @@ func (s *Server) chatSend(ctx context.Context, params chatSendParams) (chatSendR
 		return chatSendResult{}, err
 	}
 
+	// Fetch the (possibly updated) title so the client can reflect a nice name immediately.
+	var derivedTitle string
+	if sess, err := s.resolveSession(ctx, sessionID, ""); err == nil {
+		derivedTitle = sess.Name
+	}
+
 	turnID := uuid.NewString()
 	execCtx := libtracker.WithNewRequestID(context.Background())
 	execCtx, cancel := context.WithCancel(execCtx)
@@ -350,11 +365,11 @@ func (s *Server) chatSend(ctx context.Context, params chatSendParams) (chatSendR
 
 	if name, args, ok := parseSlashCommand(input); ok {
 		go s.runCommandTurn(execCtx, sessionID, turnID, name, args)
-		return chatSendResult{SessionID: sessionID, TurnID: turnID}, nil
+		return chatSendResult{SessionID: sessionID, TurnID: turnID, Title: derivedTitle}, nil
 	}
 
 	go s.runChatTurn(execCtx, sessionID, turnID, fullInput, vars)
-	return chatSendResult{SessionID: sessionID, TurnID: turnID}, nil
+	return chatSendResult{SessionID: sessionID, TurnID: turnID, Title: derivedTitle}, nil
 }
 
 func (s *Server) runChatTurn(ctx context.Context, sessionID, turnID, input string, vars map[string]string) {
@@ -1020,15 +1035,32 @@ func truncateSessionTitle(value, suffix string) string {
 }
 
 func isGenericSessionTitle(title string) bool {
-	title = strings.ToLower(strings.TrimSpace(title))
-	if title == "" {
+	t := strings.ToLower(strings.TrimSpace(title))
+	if t == "" {
 		return true
 	}
-	switch title {
-	case "default", "new contenox session", "contenox chat", "vscode-chat", "vscode-agent-session", "untitled":
+	switch t {
+	case "default",
+		"new contenox session",
+		"new session",
+		"new chat",
+		"contenox chat",
+		"vscode-chat",
+		"vscode-lm",
+		"vscode-agent-session",
+		"untitled",
+		"untitled chat":
 		return true
 	}
-	return strings.HasPrefix(title, "session-")
+	if strings.HasPrefix(t, "session-") {
+		return true
+	}
+	// Catch "New session (2)", "new session (3)", etc. produced by uniqueSessionTitle
+	// when a generic starter was not renamed.
+	if strings.HasPrefix(t, "new session (") || strings.HasPrefix(t, "new chat (") {
+		return true
+	}
+	return false
 }
 
 func stripCaseInsensitivePrefix(value, prefix string) string {
