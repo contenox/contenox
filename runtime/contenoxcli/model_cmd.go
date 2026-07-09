@@ -244,6 +244,18 @@ func hideInactiveLocalBackend(backendType, activeModeldBackend, backendErr strin
 	return activeModeldBackend == "" || activeModeldBackend != typ
 }
 
+// resolveModeldAddr turns a backend's BaseURL (which may be the LocalSentinel)
+// into a concrete dialable address using the lease if necessary. Cheap for local.
+func resolveModeldAddr(ctx context.Context, baseURL string) string {
+	if baseURL == "" || baseURL == modeldconn.LocalSentinel {
+		if r, err := modeldconn.LocalEndpointAddr(ctx); err == nil {
+			return r
+		}
+		return ""
+	}
+	return baseURL
+}
+
 type localModelInventoryEntry struct {
 	BackendName string
 	Type        string
@@ -608,13 +620,9 @@ tar-stream support that hasn't landed yet, anywhere.`,
 			return fmt.Errorf("backend %q is not a modeld (or llama/openvino) backend", backendName)
 		}
 
-		addr := bs.BaseURL
-		if addr == "" || addr == modeldconn.LocalSentinel {
-			if r, rerr := modeldconn.LocalEndpointAddr(ctx); rerr == nil {
-				addr = r
-			} else {
-				return fmt.Errorf("resolve local modeld: %w", rerr)
-			}
+		addr := resolveModeldAddr(ctx, bs.BaseURL)
+		if addr == "" {
+			return fmt.Errorf("could not resolve address for backend %s", backendName)
 		}
 		// Use the good per-backendID cached client (self-healing, redials on restart).
 		// This goes through modeldconn.Endpoint (the supported path).

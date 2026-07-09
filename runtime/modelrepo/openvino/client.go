@@ -57,7 +57,11 @@ func init() {
 func (c *client) acquire() (*modelrepo.WarmEntry[Session], error) {
 	ref := c.ref()
 	cfg := normalizeConfig(c.cfg)
-	return warm.Acquire(sessionCacheKey(ref, cfg), func() (Session, error) {
+	key := sessionCacheKey(ref, cfg)
+	if c.target.BackendID != "" {
+		key = c.target.BackendID + ":" + key
+	}
+	return warm.Acquire(key, func() (Session, error) {
 		return newSession(ref, cfg, c.target)
 	})
 }

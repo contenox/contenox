@@ -55,6 +55,8 @@ contenox doctor
 Keep the printed `modeld serve` command running in another terminal — it is
 the process that loads models and serves inference.
 
+See the [modeld guide](/docs/integrations/providers/modeld/) (and [Architecture](/docs/integrations/providers/modeld-architecture/)) for how the daemon works, capacity planning, remote nodes, and the lease/slot model.
+
 Local models are served by the bundled `modeld` daemon. With `contenox serve`
 running, the Beam UI's modeld console shows the daemon and lets you load or
 unload the resident model:

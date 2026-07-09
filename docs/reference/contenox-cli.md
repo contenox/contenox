@@ -215,6 +215,8 @@ contenox model set-context gemini-3.1-pro-preview --context 1m
 
 Manage the local `modeld` inference daemon that serves GGUF (llama) and OpenVINO models.
 
+See the dedicated [modeld guide](/docs/integrations/providers/modeld/) for architecture and concepts.
+
 ```bash
 contenox modeld install                       # download + verify the prebuilt daemon
 contenox modeld install --backend openvino    # require the openvino backend

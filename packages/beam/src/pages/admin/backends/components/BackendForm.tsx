@@ -87,7 +87,7 @@ export default function BackendForm({
                 : configType === 'vllm'
                   ? 'http://gpu-host:8000'
                   : configType === 'modeld'
-                    ? 'local'
+                    ? 'local or host:port (e.g. 100.64.0.5:1234)'
                     : configType === 'openvino'
                       ? '~/.contenox/models-ov/'
                       : 'http://localhost:11434'

@@ -352,12 +352,12 @@ func (s *State) processBackend(ctx context.Context, backend *runtimetypes.Backen
 		// generic over the backend type.
 		s.processLocalBackend(ctx, backend, declaredModels)
 	case "modeld":
-		// A modeld node — local (BaseURL == modeldconn.LocalSentinel, reached via
-		// the lease like the llama/openvino rows above) or remote (BaseURL is a
-		// host:port the runtime dials directly). Observe-only: lists what the
-		// node already has. Declared models are not yet used to trigger pushes
-		// (see the auto-ensure reconcile phase); providers are not yet
-		// constructed from this state (see the provider-bridge phase).
+		// A modeld node — local (BaseURL == modeldconn.LocalSentinel) or remote
+		// (explicit host:port). We resolve the live endpoint/instance/engine here
+		// (via the good Endpoint cache) and store them so that LocalProviderAdapter
+		// can build targeted providers without any per-request network I/O.
+		// Model push to the node is a separate explicit operation (see push routes
+		// and `model push --backend`).
 		s.processModeldBackend(ctx, backend, declaredModels)
 	case "vertex-google":
 		s.processVertexBackend(ctx, backend, declaredModels)
@@ -506,14 +506,12 @@ func (s *State) processLocalBackend(ctx context.Context, backend *runtimetypes.B
 }
 
 // processModeldBackend reconciles a single modeld node — local or remote —
-// by dialing it and listing its models. It does not yet trigger a push for a
-// declared-but-missing model (see the auto-ensure reconcile phase). Its
-// output — ResolvedEndpoint/ResolvedInstance/LiveEngine on the stored
-// BackendRuntimeState — is what LocalProviderAdapter reads to build targeted
-// llama/openvino providers for this backend without any per-request network
-// I/O, so a registered modeld backend is both visible/health-checked and
-// actually reachable for chat/prompt/embed the same way every other backend
-// type is.
+// by dialing it (via the cached Endpoint path) and listing its models.
+// It stores ResolvedEndpoint/ResolvedInstance/LiveEngine so that
+// LocalProviderAdapter can construct targeted providers at request time
+// with zero extra network I/O on the hot path. Push of new models to the
+// node is an explicit operation (CLI `model push --backend` or the
+// /backends/{id}/models/push API).
 //
 // backend.BaseURL == modeldconn.LocalSentinel means "this row is the local
 // daemon" — its address is resolved via the lease (the same daemon the hot

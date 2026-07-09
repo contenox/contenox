@@ -1,6 +1,12 @@
 # Local Models (GGUF)
 
-Run inference entirely on your own hardware — no Ollama, no API key. Contenox can download GGUF model files directly from HuggingFace and serve them via a built-in llama.cpp backend.
+Run inference entirely on your own hardware — no Ollama, no API key. Contenox downloads GGUF (and OpenVINO IR) artifacts and serves them via the `modeld` daemon.
+
+See the dedicated [modeld page](/docs/integrations/providers/modeld/) for architecture, capacity planning, remote nodes, and the daemon lifecycle.
+
+For a deeper technical look at the lease system, capacity planner, slot model, and residency, read the [modeld Architecture page](/docs/integrations/providers/modeld-architecture/).
+
+Contenox can download GGUF model files directly from HuggingFace and serve them via the built-in llama.cpp backend (powered by modeld).
 
 ## Curated models
 

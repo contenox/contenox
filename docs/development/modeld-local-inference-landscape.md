@@ -12,6 +12,11 @@ Related technical blueprint:
 
 ## Short Position
 
+See the user-facing pages for everyday use:
+
+- [modeld](/docs/integrations/providers/modeld/)
+- [modeld Architecture](/docs/integrations/providers/modeld-architecture/)
+
 `modeld` is best described as a local coding-agent memory/runtime daemon:
 
 - one local owner
