@@ -86,6 +86,12 @@ cp -a "$LLAMA_REF/vendor"  "$BUNDLE/llama/ref/vendor"
 cp -a "$LLAMA_RUNTIME/include" "$BUNDLE/llama/runtime/include"
 cp -a "$LLAMA_RUNTIME/lib"     "$BUNDLE/llama/runtime/lib"
 [ -f "$STAMP" ] && cp -a "$STAMP" "$BUNDLE/llama/runtime/"
+
+# CUDA hosts need libcudart/libcublas/libcublasLt to actually use the bundled
+# libggml-cuda.so plugin — the NVIDIA driver package (what nvidia-smi needs)
+# does not provide them, only a full CUDA Toolkit install does. Vendor them
+# from this build host so the bundle is self-contained on a driver-only target.
+$cuda && bash "$(dirname -- "$0")/modeld-vendor-cuda-libs.sh" "$BUNDLE/llama/runtime/lib"
 for lic in LICENSE LICENSE-* COPYING; do
   [ -f "$LLAMA_REF/$lic" ] && cp -a "$LLAMA_REF/$lic" "$BUNDLE/licenses/llama.cpp/" || true
 done

@@ -20,28 +20,45 @@ type embedClient struct {
 	modelPath   string
 	modelDigest string
 	cfg         Config
+	target      modeldconn.ModeldTarget
 }
 
 func (c *embedClient) Embed(ctx context.Context, prompt string) ([]float64, error) {
-	if embedFunc != nil {
-		return newEmbed(ctx, c.modelPath, c.cfg, prompt)
-	}
-	res, err := modeldconn.Embed(ctx, modeldconn.ModelRef{
+	ref := modeldconn.ModelRef{
 		Name:   c.modelName,
 		Type:   "llama",
 		Digest: c.modelDigest,
 		Path:   c.modelPath,
-	}, transport.Config(c.cfg), prompt)
+	}
+	// An explicit target (remote or otherwise specific modeld node) always wins:
+	// the whole point of a target is to run on that node, not whatever the local
+	// process happens to have compiled in or leased. Only the untargeted case
+	// falls back to the dual-mode local-CGO/local-lease behavior below.
+	if c.target.Endpoint != "" {
+		res, err := modeldconn.EmbedTarget(ctx, c.target, ref, transport.Config(c.cfg), prompt)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrSessionUnavailable, err)
+		}
+		return toFloat64Vector(res.Vector), nil
+	}
+	if embedFunc != nil {
+		return newEmbed(ctx, c.modelPath, c.cfg, prompt)
+	}
+	res, err := modeldconn.Embed(ctx, ref, transport.Config(c.cfg), prompt)
 	if err != nil {
 		// Preserve the ErrSessionUnavailable contract callers branch on, while
 		// keeping the actionable modeld detail (not installed / unreachable / ...).
 		return nil, fmt.Errorf("%w: %v", ErrSessionUnavailable, err)
 	}
-	out := make([]float64, len(res.Vector))
-	for i, v := range res.Vector {
-		out[i] = float64(v)
+	return toFloat64Vector(res.Vector), nil
+}
+
+func toFloat64Vector(v []float32) []float64 {
+	out := make([]float64, len(v))
+	for i, x := range v {
+		out[i] = float64(x)
 	}
-	return out, nil
+	return out
 }
 
 var _ modelrepo.LLMEmbedClient = (*embedClient)(nil)

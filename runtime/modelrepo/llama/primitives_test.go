@@ -50,7 +50,7 @@ func TestUnit_LocalNodeNewSession_ReportsUnavailableWhenNoBackendRegistered(t *t
 	sessionFactory = nil
 	t.Cleanup(func() { sessionFactory = old })
 
-	_, err := newSession(modeldconn.ModelRef{Name: "m", Type: "llama", Path: "/tmp/model.gguf"}, Config{})
+	_, err := newSession(modeldconn.ModelRef{Name: "m", Type: "llama", Path: "/tmp/model.gguf"}, Config{}, modeldconn.ModeldTarget{})
 	if !errors.Is(err, ErrSessionUnavailable) {
 		t.Fatalf("newSession error = %v, want ErrSessionUnavailable", err)
 	}

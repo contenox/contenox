@@ -13,6 +13,7 @@ import (
 	"github.com/contenox/runtime/liblease"
 	"github.com/contenox/runtime/modeld/slot"
 	"github.com/contenox/runtime/runtime/modelcapability"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/transport"
@@ -67,6 +68,13 @@ func TestUnit_ProcessModeldBackend_RemoteAddrDialsDirectlyAndListsModels(t *test
 	require.Equal(t, "qwen", st.PulledModels[0].Model)
 	require.NotEmpty(t, st.PulledModels[0].Digest)
 	require.Equal(t, int64(len("weights")), st.PulledModels[0].Size)
+	// `contenox model list` reads these fields directly (not the constructed
+	// llmresolver Provider) — they must reflect that this node is actually
+	// servable, not silently disagree with what LocalProviderAdapter reports.
+	require.True(t, st.PulledModels[0].CanChat, "modeld-listed model must display as chat-capable")
+	require.True(t, st.PulledModels[0].CanPrompt)
+	require.True(t, st.PulledModels[0].CanStream)
+	require.True(t, st.PulledModels[0].CanEmbed)
 }
 
 func TestUnit_ProcessModeldBackend_UnreachableRemoteStoresError(t *testing.T) {
@@ -196,4 +204,39 @@ func TestUnit_RunBackendCycle_ReconcilesModeldBackend(t *testing.T) {
 	require.Empty(t, rt["modeld-node-1"].Error)
 	require.Len(t, rt["modeld-node-1"].PulledModels, 1)
 	require.Equal(t, "qwen", rt["modeld-node-1"].PulledModels[0].Model)
+
+	// Verify that the adapter produces targeted providers for the remote modeld backend.
+	adapter := LocalProviderAdapter(ctx, nil, rt)
+	provs, err := adapter(ctx, "remote-node")
+	require.NoError(t, err)
+	require.NotEmpty(t, provs)
+	// The provider should report the specific backend name in its backend IDs (for selection).
+	var target modelrepo.Provider
+	for _, pr := range provs {
+		for _, bid := range pr.GetBackendIDs() {
+			if bid == "remote-node" {
+				target = pr
+			}
+		}
+	}
+	require.NotNil(t, target, "expected provider reporting 'remote-node' backend ID for targeted execution")
+
+	// This is the check that would have caught the bug where a targeted
+	// provider's Can* methods consulted this test process's own (nonexistent)
+	// local modeld lease instead of the fact that the target node was already
+	// proven live by the reconcile above: CanChat() etc. must not depend on
+	// whether SOMETHING happens to be running locally on the test machine.
+	require.True(t, target.CanChat(), "targeted provider must report CanChat from the reconciled target, not local machine state")
+	require.True(t, target.CanPrompt())
+	require.True(t, target.CanStream())
+	require.True(t, target.CanEmbed())
+
+	// Drive an actual chat call through GetChatConnection — the same gate a
+	// real llmresolver-selected request would go through — proving the
+	// targeted provider is not just advertised as usable but actually is.
+	chatClient, err := target.GetChatConnection(ctx, "")
+	require.NoError(t, err)
+	resp, err := chatClient.Chat(ctx, []modelrepo.Message{{Role: "user", Content: "hello"}})
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.Message.Content)
 }

@@ -31,6 +31,13 @@ export type Backend = {
   updatedAt?: string;
 };
 
+/** POST /api/backends/{id}/models/push response (see backendapi.pushModelResponse). */
+export type PushModelResult = {
+  name: string;
+  alreadyPresent?: boolean;
+  bytesWritten?: number;
+};
+
 /** GET /api/state — runtime-observed backend state (same shape as statetype.BackendRuntimeState JSON). */
 export type BackendRuntimeState = {
   id: string;

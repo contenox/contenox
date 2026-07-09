@@ -409,6 +409,19 @@ func openvinoModelParams(modelDir string) (openvinoParams, error) {
 	}, nil
 }
 
+// ContextLength returns an OpenVINO IR model's trained context ceiling
+// (max_position_embeddings) via the same header-only native inspect
+// openvinoModelParams uses — no GenAI pipeline load, no device query.
+// Callers (e.g. modelstore.Admin.ListModels) should treat an error as
+// "unknown" and skip enrichment for that one model, not fail the scan.
+func ContextLength(modelDir string) (int, error) {
+	p, err := openvinoModelParams(modelDir)
+	if err != nil {
+		return 0, err
+	}
+	return p.MaxPositionEmbeddings, nil
+}
+
 func (s *Service) resolveConfig(req transport.OpenSessionRequest) (transport.Config, error) {
 	info, err := s.describe(req)
 	if err != nil {

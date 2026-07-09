@@ -3,6 +3,11 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Backend } from '../../../../lib/types';
 import { ModelStatusDisplay } from './ModelStatusDisplay';
+import { PushModelPanel } from './PushModelPanel';
+
+// Matches the runtime's own accepted types for POST /backends/{id}/models/push
+// (see runtime/internal/backendapi/pushroutes.go).
+const PUSHABLE_TYPES = new Set(['modeld', 'llama', 'openvino']);
 
 type BackendCardProps = {
   backend: Backend;
@@ -18,6 +23,15 @@ function uniqueObservedModels(models: Backend['pulledModels']): Backend['pulledM
     seen.add(key);
     return true;
   });
+}
+
+// Mirrors the CLI's `backend list` annotation (modeldconn.LocalSentinel = "local"):
+// a modeld backend row's URL of "local" (or empty) means the local daemon, anything
+// else is a remote node's host:port.
+function backendTypeLabel(backend: Backend): string {
+  if (backend.type !== 'modeld') return backend.type;
+  const isLocal = backend.baseUrl === 'local' || backend.baseUrl === '';
+  return isLocal ? 'modeld (local)' : 'modeld (remote)';
 }
 
 export function BackendCard({ backend, onEdit, onDelete }: BackendCardProps) {
@@ -46,7 +60,7 @@ export function BackendCard({ backend, onEdit, onDelete }: BackendCardProps) {
       isLoading={deletingBackendId === backend.id}>
       <div className="flex items-center gap-2">
         <Badge variant={backend.error ? 'error' : 'default'} size="sm">
-          {backend.type}
+          {backendTypeLabel(backend)}
         </Badge>
         {backend.error && (
           <Badge variant="error" size="sm">
@@ -73,6 +87,8 @@ export function BackendCard({ backend, onEdit, onDelete }: BackendCardProps) {
           </div>
         </div>
       )}
+
+      {PUSHABLE_TYPES.has(backend.type) && <PushModelPanel backendId={backend.id} />}
     </ResourceCard>
   );
 }

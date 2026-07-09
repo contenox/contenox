@@ -36,6 +36,25 @@ func TestUnit_BackendService_ValidateAcceptsLlama(t *testing.T) {
 	}
 }
 
+// TestUnit_BackendService_ValidateAcceptsModeld locks in that "modeld" (local
+// sentinel or remote host:port) is an accepted backend type. It regressed
+// silently — the CLI's `backend add --type modeld` help text and examples
+// documented this as first-class, but this switch was never updated when the
+// modeld backend type was introduced, so every real "backend add --type
+// modeld" invocation failed validation until this fix.
+func TestUnit_BackendService_ValidateAcceptsModeld(t *testing.T) {
+	for _, baseURL := range []string{"local", "192.168.1.50:9090"} {
+		err := validate(&runtimetypes.Backend{
+			Name:    "gpu-box",
+			BaseURL: baseURL,
+			Type:    "modeld",
+		})
+		if err != nil {
+			t.Fatalf("expected modeld backend type (BaseURL=%q) to be accepted, got: %v", baseURL, err)
+		}
+	}
+}
+
 func TestUnit_BackendService_ValidateAcceptsLocalAsLlamaAlias(t *testing.T) {
 	err := validate(&runtimetypes.Backend{
 		Name:    "local",

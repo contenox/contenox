@@ -60,7 +60,7 @@ func (c *client) acquire() (*modelrepo.WarmEntry[Session], error) {
 	ref := c.ref()
 	cfg := normalizeConfig(c.cfg)
 	return warm.Acquire(sessionCacheKey(ref, cfg), func() (Session, error) {
-		return newSession(ref, cfg)
+		return newSession(ref, cfg, c.target)
 	})
 }
 
@@ -120,6 +120,8 @@ type client struct {
 	describedEffectiveContext int
 	describedPlannerContext   int
 	describedModelMaxContext  int
+
+	target modeldconn.ModeldTarget // if set, use targeted modeld conn (remote or explicit node)
 }
 
 // explainOverflow enriches a context-overflow error with the capacity facts this

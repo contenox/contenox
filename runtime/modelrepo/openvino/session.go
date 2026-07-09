@@ -53,11 +53,20 @@ func SessionAvailable() bool {
 // newSession opens an openvino session on the modeld daemon over the transport.
 // ref.Path is the OpenVINO IR directory; modeld makes it resident after checking
 // the model type matches the served backend.
-func newSession(ref modeldconn.ModelRef, cfg Config) (Session, error) {
+//
+// If target.Endpoint != "", the open is routed to that specific modeld node
+// (supports remote specialist GPU boxes registered via `backend add ... --type modeld`).
+func newSession(ref modeldconn.ModelRef, cfg Config, target modeldconn.ModeldTarget) (Session, error) {
 	if sessionFactory != nil {
 		return sessionFactory(ref, cfg)
 	}
-	s, err := modeldconn.OpenSession(context.Background(), ref, cfg)
+	var s Session
+	var err error
+	if target.Endpoint != "" {
+		s, err = modeldconn.OpenSessionTarget(context.Background(), target, ref, cfg)
+	} else {
+		s, err = modeldconn.OpenSession(context.Background(), ref, cfg)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrSessionUnavailable, err)
 	}

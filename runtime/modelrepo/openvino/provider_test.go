@@ -421,6 +421,47 @@ func TestUnit_OpenVINOProfile_ToolProtocolMustBeNativeOpenVINOProtocol(t *testin
 	}
 }
 
+// TestUnit_OpenVINOProvider_TargetedProviderSendsEmptyPathNotBogusLocalDir is
+// the regression test for a bug where newClient/newEmbedClient computed
+// dir := filepath.Join(p.modelDir, p.name) unconditionally. For a targeted
+// provider (built via NewProviderForTarget, modelDir == "") that made dir ==
+// p.name — a bogus non-empty relative path, never "" — which then flowed
+// into ModelRef.Path and reached modeld's resolvePath, which uses a non-empty
+// incoming Path as-is instead of resolving by name in its own models
+// directory (see modeld/slot/service.go resolvePath). A targeted provider
+// must send Path == "" so the remote node resolves by name/digest itself.
+func TestUnit_OpenVINOProvider_TargetedProviderSendsEmptyPathNotBogusLocalDir(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	endpoint := lis.Addr().String()
+	svc := &recordingService{base: transport.NewMemoryService(), info: transport.ModelInfo{ModelMaxContext: 4096}}
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = transportgrpc.Serve(ctx, lis, svc, "instance-remote", "openvino") }()
+
+	p := &openvinoProvider{name: "coder", target: modeldconn.ModeldTarget{BackendID: "remote-1", Endpoint: endpoint}}
+	c, err := p.newClient(context.Background())
+	if err != nil {
+		t.Fatalf("newClient: %v", err)
+	}
+	if c.modelPath != "" {
+		t.Fatalf("client.modelPath = %q, want empty for a targeted provider with no local modelDir", c.modelPath)
+	}
+	if req := svc.lastRequest(); req.Path != "" {
+		t.Fatalf("Describe request Path = %q, want empty so the remote node resolves by name/digest", req.Path)
+	}
+
+	ec, err := p.newEmbedClient()
+	if err != nil {
+		t.Fatalf("newEmbedClient: %v", err)
+	}
+	if ec.modelPath != "" {
+		t.Fatalf("embedClient.modelPath = %q, want empty for a targeted provider with no local modelDir", ec.modelPath)
+	}
+}
+
 func serveModeldForProviderTest(t *testing.T, svc transport.Service) {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")

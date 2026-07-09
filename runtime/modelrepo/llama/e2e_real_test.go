@@ -108,6 +108,66 @@ func TestSystem_RuntimeLlamaReasoningEndToEnd(t *testing.T) {
 	t.Logf("visible=%q thinking=%q", res.Message.Content, res.Message.Thinking)
 }
 
+// TestSystem_RuntimeLlamaTargetedProviderEndToEnd is the real-hardware
+// validation for the modeld remote-backend fix set: it drives
+// NewProviderForTarget (not a bare *client, unlike the untargeted tests above)
+// through CanChat/GetChatConnection/Chat against a real GGUF on the real
+// llama.cpp backend, fenced to a specific endpoint/instance the way a
+// registered remote "modeld" backend row is. Before the fix, CanChat/
+// GetChatConnection consulted this process's own (nonexistent, in a test
+// binary) local modeld lease via SessionAvailable() and would have refused
+// before ever reaching real inference.
+func TestSystem_RuntimeLlamaTargetedProviderEndToEnd(t *testing.T) {
+	gguf := os.Getenv("CONTENOX_LLAMA_TINY_GGUF")
+	if gguf == "" {
+		t.Skip("set CONTENOX_LLAMA_TINY_GGUF to a small instruct GGUF")
+	}
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	endpoint := lis.Addr().String()
+	instance := "instance-targeted-e2e"
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = transportgrpc.Serve(ctx, lis, modeldllama.NewService(), instance, "llama") }()
+	t.Cleanup(closeCachedSessionsForTest)
+
+	// Deliberately NOT calling modeldconn.SetDataRoot / acquiring a local
+	// lease: this process has no local modeld, proving CanChat/GetChatConnection
+	// do not depend on one for a targeted provider.
+	target := modeldconn.ModeldTarget{BackendID: "remote-box", Endpoint: endpoint, Instance: instance}
+	p := &provider{
+		name:   "targeted-e2e",
+		caps:   modelrepo.CapabilityConfig{CanChat: true, CanPrompt: true, CanStream: true, CanEmbed: true},
+		target: target,
+	}
+
+	if !p.CanChat() {
+		t.Fatal("targeted provider CanChat() = false, want true from caps regardless of local machine state")
+	}
+	chatClient, err := p.GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := chatClient.(*client)
+	c.modelPath = gguf
+	c.modelDigest = "test-targeted-e2e"
+
+	res, err := c.Chat(context.Background(), []modelrepo.Message{
+		{Role: "system", Content: "You are a precise Go coding assistant."},
+		{Role: "user", Content: "Write one short line of Go that prints hello."},
+	})
+	if err != nil {
+		t.Fatalf("Chat end-to-end (targeted provider): %v", err)
+	}
+	if strings.TrimSpace(res.Message.Content) == "" {
+		t.Fatal("end-to-end targeted chat produced no tokens")
+	}
+	t.Logf("targeted provider chat -> %q", res.Message.Content)
+}
+
 func serveRealLlamaModeld(t *testing.T) {
 	t.Helper()
 

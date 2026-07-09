@@ -19,6 +19,12 @@ type BackendRuntimeState struct {
 	// Error stores a description of the last encountered error when
 	// interacting with or reconciling this backend's state, if any.
 	Error string `json:"error,omitempty" example:"connection timeout: context deadline exceeded"`
+	// ResolvedEndpoint and ResolvedInstance are the live values for modeld backends
+	// (after resolving LocalSentinel and health probe). Stored so the hot path
+	// (LocalProviderAdapter) can create targeted providers without new network I/O.
+	ResolvedEndpoint string `json:"resolvedEndpoint,omitempty"`
+	ResolvedInstance string `json:"resolvedInstance,omitempty"`
+	LiveEngine       string `json:"liveEngine,omitempty"` // "llama" or "openvino"
 	// APIKey stores the API key used for authentication with the backend.
 	apiKey string
 }

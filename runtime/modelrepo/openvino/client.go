@@ -58,7 +58,7 @@ func (c *client) acquire() (*modelrepo.WarmEntry[Session], error) {
 	ref := c.ref()
 	cfg := normalizeConfig(c.cfg)
 	return warm.Acquire(sessionCacheKey(ref, cfg), func() (Session, error) {
-		return newSession(ref, cfg)
+		return newSession(ref, cfg, c.target)
 	})
 }
 
@@ -100,6 +100,8 @@ type client struct {
 	describedEffectiveContext int
 	describedPlannerContext   int
 	describedModelMaxContext  int
+
+	target modeldconn.ModeldTarget // if set, use targeted modeld conn (remote or explicit node)
 }
 
 // explainOverflow enriches a context-overflow error with the capacity facts this
@@ -481,15 +483,23 @@ type embedClient struct {
 	modelName   string
 	modelPath   string
 	modelDigest string
+	target      modeldconn.ModeldTarget
 }
 
 func (c *embedClient) Embed(ctx context.Context, prompt string) ([]float64, error) {
-	res, err := modeldconn.Embed(ctx, modeldconn.ModelRef{
+	ref := modeldconn.ModelRef{
 		Name:   c.modelName,
 		Type:   "openvino",
 		Digest: c.modelDigest,
 		Path:   c.modelPath,
-	}, transport.Config{}, prompt)
+	}
+	var res transport.EmbedResult
+	var err error
+	if c.target.Endpoint != "" {
+		res, err = modeldconn.EmbedTarget(ctx, c.target, ref, transport.Config{}, prompt)
+	} else {
+		res, err = modeldconn.Embed(ctx, ref, transport.Config{}, prompt)
+	}
 	if err != nil {
 		return nil, err
 	}

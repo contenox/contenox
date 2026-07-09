@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	libdb "github.com/contenox/runtime/libdbexec"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/backendservice"
+	"github.com/contenox/runtime/runtime/modelregistry"
 	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/modelservice"
@@ -492,4 +494,170 @@ func init() {
 	modelCmd.AddCommand(modelListCmd)
 	modelCmd.AddCommand(modelLocalCmd)
 	modelCmd.AddCommand(modelSetContextCmd)
+
+	// Add push support for sending local artifacts to (remote) modeld backends.
+	modelPushCmd.Flags().String("backend", "", "Target modeld backend name (required for remote modeld; supports 'local' sentinel)")
+	modelPushCmd.Flags().String("file", "", "Path to local GGUF file or directory (for IR)")
+	_ = modelPushCmd.MarkFlagRequired("backend")
+	modelCmd.AddCommand(modelPushCmd)
+}
+
+var modelPushCmd = &cobra.Command{
+	Use:   "push <name>",
+	Short: "Push a local model artifact to a modeld backend (local or remote).",
+	Long: `Push a local GGUF file, or a curated registry model, to the models store of
+a specific modeld backend. This is the way to deploy models to a remote
+specialist modeld node (e.g. a GPU box).
+
+Examples:
+  contenox model push my-qwen --backend gpu-box --file /path/to/model.gguf
+  contenox model push qwen3-8b --backend gpu-box
+
+The second form (no --file) first checks locally-installed artifacts by name,
+then falls back to the curated registry ('contenox model registry-list') and
+streams the model straight from its source URL to the target backend — it
+is never written to local disk first, so pushing a large curated model to a
+remote box does not cost a local download plus a re-upload over your LAN.
+
+The backend must be of type "modeld" (or the implicit local one).
+
+Same capability is also available as POST /backends/{id}/models/push (raw file
+body, ?name=<model-name>) and from Beam's Backends page. All three interfaces
+support single-file GGUF push only — OpenVINO IR (directory) push needs
+tar-stream support that hasn't landed yet, anywhere.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := libtracker.WithNewRequestID(context.Background())
+		name := args[0]
+		backendName, _ := cmd.Flags().GetString("backend")
+		filePath, _ := cmd.Flags().GetString("file")
+
+		db, _, err := openBackendDB(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		// remoteSource, when set, streams directly from a curated registry URL
+		// instead of a local file — closed explicitly wherever this function
+		// returns after it is opened.
+		var remoteSource io.ReadCloser
+		var remoteTotalBytes int64 = -1
+		defer func() {
+			if remoteSource != nil {
+				_ = remoteSource.Close()
+			}
+		}()
+
+		if filePath == "" {
+			// Try to resolve from local model inventory by name.
+			entries, _ := localModelInventory(ctx, db)
+			for _, e := range entries {
+				if e.Model == name || strings.HasSuffix(e.Path, name) || strings.Contains(e.Path, name) {
+					filePath = e.Path
+					break
+				}
+			}
+			if filePath != "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "resolved local artifact for %s: %s\n", name, filePath)
+			} else {
+				// Fall back to the curated registry: stream straight from its
+				// source URL to the target backend rather than downloading
+				// locally first and re-uploading a possibly multi-GB file.
+				reg := modelregistry.New(nil)
+				d, regErr := reg.Resolve(ctx, name)
+				if regErr != nil {
+					return fmt.Errorf("--file is required (model %q not found in local artifacts or the curated registry; run 'contenox model local' or 'contenox model registry-list')", name)
+				}
+				if d.BackendType() != "llama" {
+					return fmt.Errorf("curated model %q is an OpenVINO IR (multi-file) entry; push doesn't support that yet (same tar-stream gap as local directory push) — run 'contenox model pull %s' on the target machine instead", name, name)
+				}
+				if d.SourceURL == "" {
+					return fmt.Errorf("curated model %q has no source URL to stream from", name)
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "streaming %s from registry source -> backend %s\n  %s\n", name, backendName, d.SourceURL)
+				resp, httpErr := http.Get(d.SourceURL) //nolint:gosec
+				if httpErr != nil {
+					return fmt.Errorf("download %s: %w", d.SourceURL, httpErr)
+				}
+				if resp.StatusCode != http.StatusOK {
+					resp.Body.Close()
+					return fmt.Errorf("download %s: HTTP %s", d.SourceURL, resp.Status)
+				}
+				remoteSource = resp.Body
+				remoteTotalBytes = resp.ContentLength
+			}
+		}
+
+		allBackends, err := backendservice.New(db).List(ctx, nil, 1000)
+		if err != nil {
+			return fmt.Errorf("list backends: %w", err)
+		}
+		var bs *runtimetypes.Backend
+		for _, b := range allBackends {
+			if b.Name == backendName {
+				bs = b
+				break
+			}
+		}
+		if bs == nil {
+			return fmt.Errorf("backend %q not found", backendName)
+		}
+		typ := modelrepo.CanonicalBackendType(bs.Type)
+		if typ != "modeld" && typ != "llama" && typ != "openvino" {
+			return fmt.Errorf("backend %q is not a modeld (or llama/openvino) backend", backendName)
+		}
+
+		addr := bs.BaseURL
+		if addr == "" || addr == modeldconn.LocalSentinel {
+			if r, rerr := modeldconn.LocalEndpointAddr(ctx); rerr == nil {
+				addr = r
+			} else {
+				return fmt.Errorf("resolve local modeld: %w", rerr)
+			}
+		}
+		// Use the good per-backendID cached client (self-healing, redials on restart).
+		// This goes through modeldconn.Endpoint (the supported path).
+		ec, ecErr := modeldconn.Endpoint(ctx, bs.ID, addr)
+		if ecErr != nil {
+			return fmt.Errorf("connect to modeld backend %s: %w", backendName, ecErr)
+		}
+
+		var manifest transport.PushManifest
+		manifest.Name = name
+		manifest.Type = "llama"
+		if ec.Backend != "" {
+			manifest.Type = ec.Backend
+		}
+		manifest.Format = transport.PushFormatFile
+
+		var source io.Reader
+		if remoteSource != nil {
+			manifest.TotalBytes = remoteTotalBytes
+			source = remoteSource
+		} else {
+			info, statErr := os.Stat(filePath)
+			if statErr != nil {
+				return fmt.Errorf("stat %s: %w", filePath, statErr)
+			}
+			if info.IsDir() {
+				return fmt.Errorf("directory push (IR) requires tar streaming support; use a GGUF file for now or implement tar in this flow")
+			}
+			f, ferr := os.Open(filePath)
+			if ferr != nil {
+				return ferr
+			}
+			defer f.Close()
+			fi, _ := f.Stat()
+			manifest.TotalBytes = fi.Size()
+			source = f
+		}
+
+		res, perr := ec.PushModel(ctx, manifest, source)
+		if perr != nil {
+			return perr
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Pushed %s to backend %s (already present=%v, bytes=%d)\n", name, backendName, res.AlreadyPresent, res.BytesWritten)
+		return nil
+	},
 }

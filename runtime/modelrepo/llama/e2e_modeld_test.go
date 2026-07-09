@@ -51,7 +51,7 @@ func TestE2E_RuntimeLlamaDialsModeld(t *testing.T) {
 
 	// Runtime side: open a session purely through the package API. newSession
 	// dials modeld; the returned Session is resident in the daemon.
-	sess, err := newSession(modeldconn.ModelRef{Name: "foo", Type: "llama", Path: "/models/foo/model.gguf"}, Config{NumCtx: 100})
+	sess, err := newSession(modeldconn.ModelRef{Name: "foo", Type: "llama", Path: "/models/foo/model.gguf"}, Config{NumCtx: 100}, modeldconn.ModeldTarget{})
 	if err != nil {
 		t.Fatalf("newSession (dial modeld): %v", err)
 	}

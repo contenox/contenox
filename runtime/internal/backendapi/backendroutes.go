@@ -22,6 +22,7 @@ func AddBackendRoutes(mux *http.ServeMux, backendService backendservice.Service,
 	mux.HandleFunc("GET /backends/{id}", b.getBackend)
 	mux.HandleFunc("PUT /backends/{id}", b.updateBackend)
 	mux.HandleFunc("DELETE /backends/{id}", b.deleteBackend)
+	mux.HandleFunc("POST /backends/{id}/models/push", b.pushModel)
 }
 
 type backendSummary struct {

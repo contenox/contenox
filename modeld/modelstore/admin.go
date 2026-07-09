@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/contenox/runtime/modeld/llama"
+	"github.com/contenox/runtime/modeld/openvino"
 	"github.com/contenox/runtime/runtime/archiveutil"
 	"github.com/shirou/gopsutil/v4/disk"
 )
@@ -21,6 +23,10 @@ type NodeModel struct {
 	Type      string // "llama" | "openvino"
 	Digest    string // sha256 hex; empty for openvino (see Resolve doc)
 	SizeBytes int64
+	// ContextLength is the model's trained context ceiling, from a header-only
+	// metadata parse (no device query, no capacity planner) — 0 if that parse
+	// failed or was skipped; see ListModels.
+	ContextLength int
 }
 
 // DiskStats reports free/used space on the filesystem backing the models
@@ -122,12 +128,22 @@ func (a *Admin) ListModels(_ context.Context) ([]NodeModel, error) {
 			if digest, digestErr := FileDigest(path); digestErr == nil {
 				m.Digest = digest
 			}
+			// Header-only parse (no tensor data, no device query); a failure
+			// here must not hide this model from the inventory — it just
+			// leaves ContextLength at 0 ("unknown").
+			if cl, clErr := llama.ContextLength(path); clErr == nil {
+				m.ContextLength = cl
+			}
 			out = append(out, m)
 			continue
 		}
-		if _, err := Resolve(a.dir, name, "openvino", ""); err == nil {
-			size, _ := dirSize(filepath.Join(a.dir, name))
-			out = append(out, NodeModel{Name: name, Type: "openvino", SizeBytes: size})
+		if dir, err := Resolve(a.dir, name, "openvino", ""); err == nil {
+			size, _ := dirSize(dir)
+			m := NodeModel{Name: name, Type: "openvino", SizeBytes: size}
+			if cl, clErr := openvino.ContextLength(dir); clErr == nil {
+				m.ContextLength = cl
+			}
+			out = append(out, m)
 		}
 	}
 	return out, nil

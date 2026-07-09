@@ -8,6 +8,8 @@ package modeldconn
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -149,6 +151,116 @@ func dial(endpoint, instance string) (*transportgrpc.Client, error) {
 	}
 	client, key = c, k
 	return c, nil
+}
+
+// ModeldTarget describes a specific modeld to talk to (local lease or remote).
+// BackendID is the registered backend row ID (for caching / logging).
+// When Endpoint == "" the target is resolved via the local lease (default local modeld).
+type ModeldTarget struct {
+	BackendID string
+	Endpoint  string // host:port or empty for lease-resolved local
+	Instance  string // owner instance for fencing (empty when using lease path)
+}
+
+// OpenSessionTarget opens using the target. If target.Endpoint == "", falls back
+// to the lease-based local path (preserves all existing behavior for implicit
+// "local" modeld usage).
+func OpenSessionTarget(ctx context.Context, target ModeldTarget, ref ModelRef, cfg transport.Config) (transport.Session, error) {
+	if target.Endpoint == "" {
+		return OpenSession(ctx, ref, cfg)
+	}
+	ec, err := Endpoint(ctx, target.BackendID, target.Endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("modeld target %s: %w", target.BackendID, err)
+	}
+	req := openRequest(ec.InstanceID, ref, cfg)
+	sess, err := ec.OpenSession(ctx, req)
+	if errors.Is(err, transport.ErrModelSwitchRequired) || errors.Is(err, transport.ErrModelNotActive) {
+		if _, loadErr := ec.LoadModel(ctx, loadRequest(ec.InstanceID, ref, cfg)); loadErr != nil {
+			return nil, loadErr
+		}
+		return ec.OpenSession(ctx, req)
+	}
+	return sess, err
+}
+
+// DescribeTarget is the targeted equivalent of Describe.
+func DescribeTarget(ctx context.Context, target ModeldTarget, ref ModelRef, cfg transport.Config) (transport.ModelInfo, error) {
+	if target.Endpoint == "" {
+		return Describe(ctx, ref, cfg)
+	}
+	ec, err := Endpoint(ctx, target.BackendID, target.Endpoint)
+	if err != nil {
+		return transport.ModelInfo{}, fmt.Errorf("modeld target %s: %w", target.BackendID, err)
+	}
+	return ec.Describe(ctx, transport.OpenSessionRequest{
+		Fence:     transport.Fence{OwnerInstanceID: ec.InstanceID},
+		ModelName: ref.Name,
+		Type:      ref.Type,
+		Digest:    ref.Digest,
+		Path:      ref.Path,
+		Config:    cfg,
+		Adapters:  ref.Adapters,
+	})
+}
+
+// EmbedTarget is the targeted equivalent of Embed.
+func EmbedTarget(ctx context.Context, target ModeldTarget, ref ModelRef, cfg transport.Config, text string) (transport.EmbedResult, error) {
+	if target.Endpoint == "" {
+		return Embed(ctx, ref, cfg, text)
+	}
+	ec, err := Endpoint(ctx, target.BackendID, target.Endpoint)
+	if err != nil {
+		return transport.EmbedResult{}, fmt.Errorf("modeld target %s: %w", target.BackendID, err)
+	}
+	return ec.Embed(ctx, transport.EmbedRequest{
+		Fence:     transport.Fence{OwnerInstanceID: ec.InstanceID},
+		ModelName: ref.Name,
+		Type:      ref.Type,
+		Digest:    ref.Digest,
+		Path:      ref.Path,
+		Config:    cfg,
+		Text:      text,
+	})
+}
+
+// ListModelsTarget, PushModelTarget etc. for the ModeldTarget wrapper.
+func ListModelsTarget(ctx context.Context, target ModeldTarget) ([]transport.NodeModel, error) {
+	if target.Endpoint == "" {
+		st := detector().Probe(ctx)
+		if st.State != modeldprobe.StateRunning {
+			return nil, st.Err()
+		}
+		ec, err := Endpoint(ctx, "local", st.Endpoint)
+		if err != nil {
+			return nil, err
+		}
+		return ec.ListModels(ctx)
+	}
+	ec, err := Endpoint(ctx, target.BackendID, target.Endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("modeld target %s: %w", target.BackendID, err)
+	}
+	return ec.ListModels(ctx)
+}
+
+func PushModelTarget(ctx context.Context, target ModeldTarget, manifest transport.PushManifest, r io.Reader) (transport.PushResult, error) {
+	if target.Endpoint == "" {
+		st := detector().Probe(ctx)
+		if st.State != modeldprobe.StateRunning {
+			return transport.PushResult{}, st.Err()
+		}
+		ec, err := Endpoint(ctx, "local", st.Endpoint) // synthetic for local lease case
+		if err != nil {
+			return transport.PushResult{}, err
+		}
+		return ec.PushModel(ctx, manifest, r)
+	}
+	ec, err := Endpoint(ctx, target.BackendID, target.Endpoint)
+	if err != nil {
+		return transport.PushResult{}, fmt.Errorf("modeld target %s: %w", target.BackendID, err)
+	}
+	return ec.PushModel(ctx, manifest, r)
 }
 
 // ModelRef is the typed model handle the runtime passes to modeld: a logical

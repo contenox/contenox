@@ -479,6 +479,7 @@ const resources = {
         loadmore: 'load more',
         updating: 'Updating...',
         creating: 'Creating...',
+        uploading: 'Uploading...',
         cancel: 'Cancel',
         last_error: 'last error',
         inactive: 'inactive',
@@ -1151,6 +1152,18 @@ const resources = {
           'Point to a running vLLM server. The URL must include the full base path (e.g. http://gpu-host:8000).',
         hint_local:
           'Path to a directory containing .gguf model files. Contenox scans this directory at startup and registers discovered models automatically.',
+        hint_openvino:
+          'Path to a directory containing OpenVINO IR model folders. Served by the same modeld daemon as GGUF; only one engine is live on a machine at a time.',
+        hint_modeld:
+          'A modeld daemon, local or remote. Leave the URL as "local" for the machine contenox is running on, or enter host:port to reach a modeld instance on another machine (e.g. a GPU box). Once registered, push a GGUF file to it below or with `contenox model push`.',
+        push_toggle: 'Push model',
+        push_name_label: 'Model name',
+        push_name_placeholder: 'my-qwen',
+        push_file_label: 'GGUF file',
+        push_action: 'Push',
+        push_success: 'Pushed "{{name}}" ({{bytes}}).',
+        push_already_present: 'Already present on this node — verified and left as is.',
+        push_error: 'Push failed',
         status: {
           available: 'Available',
           unavailable: 'Unavailable',
@@ -2145,6 +2158,7 @@ const resources = {
         deleting: 'Löschen',
         updating: 'Aktualisieren',
         creating: 'Erstellen',
+        uploading: 'Wird hochgeladen...',
         cancel: 'Abbrechen',
         last_error: 'Letzter Fehler',
         inactive: 'inaktiv',
@@ -2459,6 +2473,18 @@ const resources = {
           'Zeigt auf einen laufenden vLLM-Server. Die URL muss den vollständigen Basispfad enthalten (z. B. http://gpu-host:8000).',
         hint_local:
           'Pfad zu einem Verzeichnis mit .gguf-Modelldateien. Contenox durchsucht dieses Verzeichnis beim Start und registriert gefundene Modelle automatisch.',
+        hint_openvino:
+          'Pfad zu einem Verzeichnis mit OpenVINO-IR-Modellordnern. Wird vom selben modeld-Daemon wie GGUF bedient; auf einer Maschine ist jeweils nur eine Engine aktiv.',
+        hint_modeld:
+          'Ein modeld-Daemon, lokal oder remote. Lassen Sie die URL auf "local" für diese Maschine, oder geben Sie host:port ein, um einen modeld-Daemon auf einer anderen Maschine zu erreichen (z. B. einen GPU-Rechner). Nach der Registrierung können Sie unten eine GGUF-Datei dorthin übertragen oder `contenox model push` verwenden.',
+        push_toggle: 'Modell übertragen',
+        push_name_label: 'Modellname',
+        push_name_placeholder: 'my-qwen',
+        push_file_label: 'GGUF-Datei',
+        push_action: 'Übertragen',
+        push_success: '"{{name}}" übertragen ({{bytes}}).',
+        push_already_present: 'Bereits auf diesem Knoten vorhanden — geprüft und unverändert gelassen.',
+        push_error: 'Übertragung fehlgeschlagen',
         empty_description:
           'Keine Backends konfiguriert. Erstellen Sie Ihr erstes Backend, um zu beginnen.',
         loading: 'Lade Backends...',

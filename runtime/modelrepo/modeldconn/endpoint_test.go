@@ -3,6 +3,7 @@ package modeldconn
 import (
 	"context"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -193,6 +194,108 @@ func TestUnit_LocalEndpointAddr_FromLiveLease(t *testing.T) {
 		t.Fatalf("Endpoint(local).InstanceID = %q, want instance-local", ec.InstanceID)
 	}
 	CloseEndpoint("local-backend-row")
+}
+
+// recordingEmbedService wraps a MemoryService, overriding only Embed so a
+// test can prove which node actually received a call and what it returned,
+// distinguishing it from a sibling node serving the same test.
+type recordingEmbedService struct {
+	*transport.MemoryService
+	vector []float32
+	calls  int
+}
+
+func (s *recordingEmbedService) Embed(_ context.Context, _ transport.EmbedRequest) (transport.EmbedResult, error) {
+	s.calls++
+	return transport.EmbedResult{Vector: s.vector}, nil
+}
+
+func startFakeEmbedNode(t *testing.T, addr, instance string, svc *recordingEmbedService) *fakeNode {
+	t.Helper()
+	lis, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("listen %s: %v", addr, err)
+	}
+	// slot.Service resolves an empty ModelRef.Path by name in its models dir
+	// before ever reaching svc.Embed, so a real (if empty) "m/model.gguf" must
+	// exist for resolution to succeed — the test is about routing, not resolution.
+	modelsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(modelsDir, "m"), 0o755); err != nil {
+		t.Fatalf("mkdir model dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(modelsDir, "m", "model.gguf"), []byte("fake"), 0o644); err != nil {
+		t.Fatalf("write fake model: %v", err)
+	}
+	wrapped := slot.New(svc, slot.WithOwner(instance), slot.WithBackend("llama"), slot.WithModelsDir(modelsDir))
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { _ = transportgrpc.Serve(ctx, lis, wrapped, instance, "llama") }()
+	t.Cleanup(cancel)
+	return &fakeNode{addr: lis.Addr().String(), instance: instance, cancel: cancel}
+}
+
+// TestUnit_EmbedTarget_RoutesToTheSpecifiedNodeNotAnySibling is the regression
+// test for the gap where llama/openvino embedClient always called the
+// ambient local-lease modeldconn.Embed, never a specific target — meaning an
+// embed request against a remote/explicit modeld backend could silently run
+// on the wrong (local) daemon instead of the one actually registered under
+// that BackendID. Two live nodes are served; EmbedTarget must reach exactly
+// the one named by BackendID/Endpoint, never the other.
+func TestUnit_EmbedTarget_RoutesToTheSpecifiedNodeNotAnySibling(t *testing.T) {
+	svcA := &recordingEmbedService{MemoryService: transport.NewMemoryService(transport.WithOwnerFence("instance-a")), vector: []float32{1, 0, 0}}
+	svcB := &recordingEmbedService{MemoryService: transport.NewMemoryService(transport.WithOwnerFence("instance-b")), vector: []float32{0, 1, 0}}
+	startFakeEmbedNode(t, "127.0.0.1:0", "instance-a", svcA)
+	nodeB := startFakeEmbedNode(t, "127.0.0.1:0", "instance-b", svcB)
+	t.Cleanup(func() { CloseEndpoint("backend-a"); CloseEndpoint("backend-b") })
+
+	res, err := EmbedTarget(context.Background(),
+		ModeldTarget{BackendID: "backend-b", Endpoint: nodeB.addr},
+		ModelRef{Name: "m", Type: "llama"}, transport.Config{}, "hello")
+	if err != nil {
+		t.Fatalf("EmbedTarget: %v", err)
+	}
+	if len(res.Vector) != 3 || res.Vector[1] != 1 {
+		t.Fatalf("EmbedTarget result = %+v, want node B's vector", res)
+	}
+	if svcB.calls != 1 {
+		t.Fatalf("node B calls = %d, want 1", svcB.calls)
+	}
+	if svcA.calls != 0 {
+		t.Fatalf("node A calls = %d, want 0 (request must not reach the sibling node)", svcA.calls)
+	}
+}
+
+// TestUnit_EmbedTarget_EmptyEndpointFallsBackToLocalLease proves the
+// zero-value ModeldTarget (untargeted case) preserves prior behavior by
+// routing through the ambient local lease, exactly like OpenSessionTarget
+// and DescribeTarget already do for their own empty-Endpoint case.
+func TestUnit_EmbedTarget_EmptyEndpointFallsBackToLocalLease(t *testing.T) {
+	dir := t.TempDir()
+	SetDataRoot(dir)
+	t.Cleanup(func() { SetDataRoot("") })
+
+	svc := &recordingEmbedService{MemoryService: transport.NewMemoryService(transport.WithOwnerFence("instance-local")), vector: []float32{2, 4}}
+	node := startFakeEmbedNode(t, "127.0.0.1:0", "instance-local", svc)
+
+	lease, err := liblease.Acquire(
+		filepath.Join(dir, "modeld.lease"), 30*time.Second,
+		liblease.WithMeta(map[string]string{"backend": "llama", "endpoint": node.addr}),
+		func(r *liblease.Record) { r.InstanceID = "instance-local" },
+	)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	t.Cleanup(func() { _ = lease.Release() })
+
+	res, err := EmbedTarget(context.Background(), ModeldTarget{}, ModelRef{Name: "m", Type: "llama"}, transport.Config{}, "hello")
+	if err != nil {
+		t.Fatalf("EmbedTarget (empty target): %v", err)
+	}
+	if len(res.Vector) != 2 || res.Vector[0] != 2 {
+		t.Fatalf("EmbedTarget result = %+v, want the local lease node's vector", res)
+	}
+	if svc.calls != 1 {
+		t.Fatalf("local node calls = %d, want 1", svc.calls)
+	}
 }
 
 func waitForPortFree(t *testing.T, addr string) {

@@ -136,11 +136,20 @@ func SessionAvailable() bool {
 // newSession opens a session. A registered factory (tests) wins; otherwise the
 // session is opened on the modeld daemon over runtime/transport and adapted to
 // the package-local Session contract. The CGO llama.cpp backend lives in modeld.
-func newSession(ref modeldconn.ModelRef, cfg Config) (Session, error) {
+//
+// If target.Endpoint != "", the open is routed to that specific modeld node
+// (supports remote specialist GPU boxes registered via `backend add ... --type modeld`).
+func newSession(ref modeldconn.ModelRef, cfg Config, target modeldconn.ModeldTarget) (Session, error) {
 	if sessionFactory != nil {
 		return sessionFactory(ref.Path, cfg)
 	}
-	s, err := modeldconn.OpenSession(context.Background(), ref, transport.Config(cfg))
+	var s transport.Session
+	var err error
+	if target.Endpoint != "" {
+		s, err = modeldconn.OpenSessionTarget(context.Background(), target, ref, transport.Config(cfg))
+	} else {
+		s, err = modeldconn.OpenSession(context.Background(), ref, transport.Config(cfg))
+	}
 	if err != nil {
 		// Preserve the ErrSessionUnavailable contract callers branch on, while
 		// keeping the actionable modeld detail (not installed / unreachable / ...).

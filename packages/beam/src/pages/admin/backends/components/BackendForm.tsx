@@ -86,7 +86,11 @@ export default function BackendForm({
                 ? '~/.contenox/models/'
                 : configType === 'vllm'
                   ? 'http://gpu-host:8000'
-                  : 'http://localhost:11434'
+                  : configType === 'modeld'
+                    ? 'local'
+                    : configType === 'openvino'
+                      ? '~/.contenox/models-ov/'
+                      : 'http://localhost:11434'
             }
             disabled={isPending}
           />
@@ -100,6 +104,8 @@ export default function BackendForm({
               { value: 'ollama', label: 'Ollama (local)' },
               { value: 'vllm', label: 'vLLM' },
               { value: 'local', label: 'Local (GGUF / llama.cpp)' },
+              { value: 'openvino', label: 'OpenVINO (local IR)' },
+              { value: 'modeld', label: 'modeld node (local or remote)' },
             ]}
             disabled={isPending}
           />
@@ -113,6 +119,12 @@ export default function BackendForm({
         )}
         {configType === 'local' && (
           <Panel variant="flat">{t('backends.hint_local')}</Panel>
+        )}
+        {configType === 'openvino' && (
+          <Panel variant="flat">{t('backends.hint_openvino')}</Panel>
+        )}
+        {configType === 'modeld' && (
+          <Panel variant="flat">{t('backends.hint_modeld')}</Panel>
         )}
       </Form>
     </Section>

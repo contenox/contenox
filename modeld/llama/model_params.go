@@ -44,6 +44,19 @@ func inspectLlamaModelParams(path string) (ggufParams, error) {
 	}, nil
 }
 
+// ContextLength returns a llama GGUF model's trained context ceiling by
+// reading only file metadata (no tensor data, no device query) — the cheap
+// header-only part of what Describe's capacity planner already computes.
+// Callers (e.g. modelstore.Admin.ListModels) should treat an error as
+// "unknown" and skip enrichment for that one model, not fail the scan.
+func ContextLength(ggufPath string) (int, error) {
+	p, err := inspectLlamaModel(ggufPath)
+	if err != nil {
+		return 0, err
+	}
+	return p.ContextLength, nil
+}
+
 // headDim is the per-head KV dimension: the declared key_length, else
 // embedding_length / head_count.
 func (p ggufParams) headDim() int {

@@ -14,61 +14,125 @@ import (
 // provider implements modelrepo.Provider for the llama.cpp GGUF compatibility node.
 // A model lives at <modelDir>/<name>/model.gguf with an optional
 // contenox-llama.json runtime profile beside it.
+//
+// When target.Endpoint != "", sessions and Describe are routed to that specific
+// modeld node (supports remote specialist GPU nodes registered as "modeld" backends).
 type provider struct {
 	name     string
 	modelDir string
 	caps     modelrepo.CapabilityConfig
+	target   modeldconn.ModeldTarget // if set, use targeted conn instead of implicit local lease
 }
 
 func newProvider(name, modelDir string, caps modelrepo.CapabilityConfig) modelrepo.Provider {
 	return &provider{name: name, modelDir: modelDir, caps: caps}
 }
 
-func (p *provider) GetBackendIDs() []string { return []string{"llama"} }
+// NewProviderForTarget is used when constructing providers backed by a specific
+// (possibly remote) modeld node. modelDir may be empty (remote resolves by name/digest).
+func NewProviderForTarget(name, modelDir string, caps modelrepo.CapabilityConfig, target modeldconn.ModeldTarget) modelrepo.Provider {
+	return &provider{name: name, modelDir: modelDir, caps: caps, target: target}
+}
+
+func (p *provider) GetBackendIDs() []string {
+	if p.target.BackendID != "" {
+		return []string{p.target.BackendID}
+	}
+	return []string{"llama"}
+}
+
+// isTargeted reports whether this provider is bound to a specific (possibly
+// remote) modeld node rather than the implicit local lease. SessionAvailable/
+// EmbedAvailable only reflect THIS machine's own modeld lease state
+// (modeldconn.ServeableBackend()) — meaningless for a remote or otherwise
+// explicit target, whose actual availability was already proven at reconcile
+// time (see runtime/runtimestate/adapter.go, which only constructs a targeted
+// provider once ListModels succeeded against that live node) and is carried
+// here via p.caps.
+func (p *provider) isTargeted() bool {
+	return p.target.BackendID != "" || p.target.Endpoint != ""
+}
+
 func (p *provider) ModelName() string       { return p.name }
 func (p *provider) GetID() string           { return "llama:" + p.name }
 func (p *provider) GetType() string         { return "llama" }
 func (p *provider) GetContextLength() int   { return p.caps.ContextLength }
 func (p *provider) GetMaxOutputTokens() int { return p.caps.MaxOutputTokens }
-func (p *provider) CanChat() bool           { return SessionAvailable() }
-func (p *provider) CanEmbed() bool          { return EmbedAvailable() }
-func (p *provider) CanStream() bool         { return SessionAvailable() }
-func (p *provider) CanPrompt() bool         { return SessionAvailable() }
-func (p *provider) CanThink() bool          { return p.caps.CanThink }
+
+func (p *provider) CanChat() bool {
+	if p.isTargeted() {
+		return p.caps.CanChat
+	}
+	return SessionAvailable()
+}
+
+func (p *provider) CanEmbed() bool {
+	if p.isTargeted() {
+		return p.caps.CanEmbed
+	}
+	return EmbedAvailable()
+}
+
+func (p *provider) CanStream() bool {
+	if p.isTargeted() {
+		return p.caps.CanStream
+	}
+	return SessionAvailable()
+}
+
+func (p *provider) CanPrompt() bool {
+	if p.isTargeted() {
+		return p.caps.CanPrompt
+	}
+	return SessionAvailable()
+}
+
+func (p *provider) CanThink() bool { return p.caps.CanThink }
 
 func (p *provider) GetChatConnection(ctx context.Context, _ string) (modelrepo.LLMChatClient, error) {
-	if !SessionAvailable() {
+	if !p.isTargeted() && !SessionAvailable() {
 		return nil, p.notWired("chat")
 	}
 	return p.newClient(ctx)
 }
 
 func (p *provider) GetStreamConnection(ctx context.Context, _ string) (modelrepo.LLMStreamClient, error) {
-	if !SessionAvailable() {
+	if !p.isTargeted() && !SessionAvailable() {
 		return nil, p.notWired("stream")
 	}
 	return p.newClient(ctx)
 }
 
 func (p *provider) GetPromptConnection(ctx context.Context, _ string) (modelrepo.LLMPromptExecClient, error) {
-	if !SessionAvailable() {
+	if !p.isTargeted() && !SessionAvailable() {
 		return nil, p.notWired("prompt")
 	}
 	return p.newClient(ctx)
 }
 
 func (p *provider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LLMEmbedClient, error) {
-	if !EmbedAvailable() {
+	if !p.isTargeted() && !EmbedAvailable() {
 		return nil, p.notWired("embed")
 	}
-	dir := filepath.Join(p.modelDir, p.name)
-	profile, err := loadModelProfile(dir)
-	if err != nil {
-		return nil, err
+	var dir string
+	if p.modelDir != "" {
+		dir = filepath.Join(p.modelDir, p.name)
 	}
-	modelPath := filepath.Join(dir, "model.gguf")
+	var profile modelProfile
+	var loadErr error
+	if dir != "" {
+		profile, loadErr = loadModelProfile(dir)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+	}
+	modelPath := ""
+	if dir != "" {
+		modelPath = filepath.Join(dir, "model.gguf")
+	}
 	modelDigest := profile.ModelDigest
-	if modelDigest == "" {
+	if modelDigest == "" && modelPath != "" {
+		var err error
 		modelDigest, err = modelFileDigest(modelPath)
 		if err != nil {
 			return nil, err
@@ -79,14 +143,27 @@ func (p *provider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LL
 		modelPath:   modelPath,
 		modelDigest: modelDigest,
 		cfg:         profile.config(),
+		target:      p.target,
 	}, nil
 }
 
 func (p *provider) newClient(ctx context.Context) (*client, error) {
-	dir := filepath.Join(p.modelDir, p.name)
-	profile, err := loadModelProfile(dir)
-	if err != nil {
-		return nil, err
+	var profile modelProfile
+	var dir string
+	var err error
+	if p.modelDir != "" {
+		dir = filepath.Join(p.modelDir, p.name)
+		profile, err = loadModelProfile(dir)
+		if err != nil {
+			return nil, err
+		}
+	} else if p.target.Endpoint != "" {
+		// Remote or explicit modeld node. No local FS required for the model bits.
+		// Profiles (tool/reasoning hints) can be minimal; rich info (context, chat template)
+		// comes from the node's Describe (capacity + template probe).
+		profile = modelProfile{}
+	} else {
+		return nil, fmt.Errorf("llama provider for %q has no modelDir and no target endpoint", p.name)
 	}
 	if profile.ToolCalls.Protocol == "" {
 		profile.ToolCalls.Protocol = curatedToolProtocol(ctx, p.name, "llama")
@@ -96,17 +173,23 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 	} else if profile.Reasoning.Format == "" {
 		_, profile.Reasoning.Format = curatedReasoning(ctx, p.name, "llama")
 	}
-	modelPath := filepath.Join(dir, "model.gguf")
+	var modelPath string
+	if dir != "" {
+		modelPath = filepath.Join(dir, "model.gguf")
+	}
 	modelDigest := profile.ModelDigest
-	if modelDigest == "" {
+	if modelDigest == "" && modelPath != "" {
 		modelDigest, err = modelFileDigest(modelPath)
 		if err != nil {
 			return nil, err
 		}
 	}
-	adapters, err := resolveProfileAdapters(dir, profile.Adapters)
-	if err != nil {
-		return nil, err
+	var adapters []AdapterSpec
+	if dir != "" {
+		adapters, err = resolveProfileAdapters(dir, profile.Adapters)
+		if err != nil {
+			return nil, err
+		}
 	}
 	profileID := profile.ProfileID
 	if profileID == "" {
@@ -150,7 +233,14 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		if p.caps.ContextLength > 0 && describeCfg.NumCtx > p.caps.ContextLength {
 			describeCfg.NumCtx = p.caps.ContextLength
 		}
-		if info, derr := modeldconn.Describe(ctx, ref, transport.Config(describeCfg)); derr == nil {
+		var derr error
+		var info transport.ModelInfo
+		if p.target.Endpoint != "" {
+			info, derr = modeldconn.DescribeTarget(ctx, p.target, ref, transport.Config(describeCfg))
+		} else {
+			info, derr = modeldconn.Describe(ctx, ref, transport.Config(describeCfg))
+		}
+		if derr == nil {
 			deviceKind = info.DeviceKind
 			freeBytes = info.FreeBytes
 			describedEffectiveContext = info.EffectiveContext
@@ -189,6 +279,7 @@ func (p *provider) newClient(ctx context.Context) (*client, error) {
 		describedEffectiveContext: describedEffectiveContext,
 		describedPlannerContext:   describedPlannerContext,
 		describedModelMaxContext:  describedModelMaxContext,
+		target:                    p.target,
 	}, nil
 }
 

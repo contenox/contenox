@@ -22,6 +22,7 @@ import {
   ModeldStatusResponse,
   ModeldUnloadResponse,
   ModelRegistryEntry,
+  PushModelResult,
   RemoteHook,
   SetupStatus,
   StateResponse,
@@ -129,6 +130,24 @@ export const api = {
   updateBackend: (id: string, data: Partial<Backend>) =>
     apiFetch<Backend>(`/api/backends/${id}`, options('PUT', data)),
   deleteBackend: (id: string) => apiFetch<void>(`/api/backends/${id}`, options('DELETE')),
+  /**
+   * Streams a local GGUF file to a modeld backend's model store (local or
+   * remote) — the HTTP twin of `contenox model push`. The file is sent as
+   * the raw request body (not multipart/form-data or JSON) so it streams
+   * straight through instead of being buffered in memory; timeoutMs is
+   * disabled since a multi-gigabyte upload can run far longer than the
+   * default API timeout.
+   */
+  pushModel: (backendId: string, name: string, file: File) =>
+    apiFetch<PushModelResult>(
+      `/api/backends/${backendId}/models/push?${new URLSearchParams({ name }).toString()}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+        timeoutMs: null,
+      },
+    ),
 
   getSetupStatus: async (): Promise<SetupStatus> =>
     normalizeSetupStatus(await apiFetch<SetupStatus>('/api/setup-status')),

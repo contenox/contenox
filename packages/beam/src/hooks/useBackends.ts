@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { backendKeys, setupKeys } from '../lib/queryKeys';
-import { Backend } from '../lib/types';
+import { Backend, PushModelResult } from '../lib/types';
 
 export function useBackends() {
   return useSuspenseQuery<Backend[]>({
@@ -47,6 +47,20 @@ export function useUpdateBackend() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: backendKeys.all });
       queryClient.invalidateQueries({ queryKey: setupKeys.status() });
+    },
+  });
+}
+
+export function usePushModel(
+  backendId: string,
+): UseMutationResult<PushModelResult, Error, { name: string; file: File }, unknown> {
+  const queryClient = useQueryClient();
+  return useMutation<PushModelResult, Error, { name: string; file: File }>({
+    mutationFn: ({ name, file }) => api.pushModel(backendId, name, file),
+    onSuccess: () => {
+      // The pushed model only shows up in this backend's pulledModels once the
+      // runtime reconciles the node again; invalidating just prompts an earlier refetch.
+      queryClient.invalidateQueries({ queryKey: backendKeys.all });
     },
   });
 }

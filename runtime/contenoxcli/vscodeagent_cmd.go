@@ -182,7 +182,7 @@ func buildVSCodeAgentRuntime(ctx context.Context, cmd *cobra.Command, db libdb.D
 		return nil, err
 	}
 	reportChange("phase", "resolve_max_tokens")
-	think, err = resolveEffectiveThink(cfgCtx, store, flags)
+	think, err := resolveEffectiveThink(cfgCtx, store, flags)
 	if err != nil {
 		reportErr(err)
 		return nil, err

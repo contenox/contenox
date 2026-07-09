@@ -14,6 +14,7 @@ import (
 	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/backendservice"
+	"github.com/contenox/runtime/runtime/modelrepo"
 	"github.com/contenox/runtime/runtime/modelrepo/modeldconn"
 	"github.com/contenox/runtime/runtime/runtimestate"
 	"github.com/contenox/runtime/runtime/runtimetypes"
@@ -264,7 +265,16 @@ var backendListCmd = &cobra.Command{
 		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "NAME\tTYPE\tURL")
 		for _, b := range backends {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", b.Name, b.Type, b.BaseURL)
+			url := b.BaseURL
+			typ := b.Type
+			if modelrepo.CanonicalBackendType(b.Type) == "modeld" {
+				if b.BaseURL == modeldconn.LocalSentinel || b.BaseURL == "" {
+					typ = "modeld (local)"
+				} else {
+					typ = "modeld (remote)"
+				}
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\n", b.Name, typ, url)
 		}
 		return w.Flush()
 	},

@@ -11,6 +11,10 @@ type NodeModel struct {
 	Type      string `json:"type"`
 	Digest    string `json:"digest,omitempty"`
 	SizeBytes int64  `json:"size_bytes,omitempty"`
+	// ContextLength is the model's trained context ceiling, read from file
+	// metadata only (GGUF header / OpenVINO config.json) — no device query, no
+	// capacity planner. 0 means unknown (header parse failed or was skipped).
+	ContextLength int `json:"context_length,omitempty"`
 }
 
 // NodeDiskStats reports free/used/total bytes on the filesystem backing a

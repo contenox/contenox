@@ -506,12 +506,14 @@ func (s *State) processLocalBackend(ctx context.Context, backend *runtimetypes.B
 }
 
 // processModeldBackend reconciles a single modeld node — local or remote —
-// by dialing it and listing its models. This is observe-only: it does not
-// yet trigger a push for a declared-but-missing model (see the auto-ensure
-// reconcile phase) and its output is not yet consumed by provider
-// construction (see the provider-bridge phase); it exists so a registered
-// modeld backend is visible and health-checked the same way every other
-// backend type is.
+// by dialing it and listing its models. It does not yet trigger a push for a
+// declared-but-missing model (see the auto-ensure reconcile phase). Its
+// output — ResolvedEndpoint/ResolvedInstance/LiveEngine on the stored
+// BackendRuntimeState — is what LocalProviderAdapter reads to build targeted
+// llama/openvino providers for this backend without any per-request network
+// I/O, so a registered modeld backend is both visible/health-checked and
+// actually reachable for chat/prompt/embed the same way every other backend
+// type is.
 //
 // backend.BaseURL == modeldconn.LocalSentinel means "this row is the local
 // daemon" — its address is resolved via the lease (the same daemon the hot
@@ -543,14 +545,31 @@ func (s *State) processModeldBackend(ctx context.Context, backend *runtimetypes.
 	}
 
 	stateservice := &statetype.BackendRuntimeState{
-		ID:      backend.ID,
-		Name:    backend.Name,
-		Backend: *backend,
-		Models:  make([]string, 0, len(nodeModels)),
+		ID:               backend.ID,
+		Name:             backend.Name,
+		Backend:          *backend,
+		Models:           make([]string, 0, len(nodeModels)),
+		ResolvedEndpoint: addr,
+		ResolvedInstance: ep.InstanceID,
+		LiveEngine:       ep.Backend,
 	}
 	pulledModels := make([]statetype.ModelPullStatus, 0, len(nodeModels))
 	for _, m := range nodeModels {
-		pulledModels = append(pulledModels, s.applyCapabilityOverrides(ctx, backend.Type, modelPullStatusFromNodeModel(m)))
+		pull := modelPullStatusFromNodeModel(m)
+		// Reached only because ListModels just succeeded against this live,
+		// single-slot, single-engine node — every model it reports is
+		// chat/prompt/stream-capable by construction (mirrors the same
+		// reasoning LocalProviderAdapter's modeld loop uses to populate the
+		// providers that actually serve these requests; this keeps `model
+		// list`'s displayed capability flags from contradicting what is
+		// actually servable). Embed is safe to advertise because
+		// modeldconn.EmbedTarget routes to this specific node, not the
+		// ambient local lease.
+		pull.CanChat = true
+		pull.CanPrompt = true
+		pull.CanStream = true
+		pull.CanEmbed = true
+		pulledModels = append(pulledModels, s.applyCapabilityOverrides(ctx, backend.Type, pull))
 	}
 	stateservice.PulledModels = pulledModels
 	if s.autoDiscoverModels {
@@ -562,16 +581,19 @@ func (s *State) processModeldBackend(ctx context.Context, backend *runtimetypes.
 }
 
 // modelPullStatusFromNodeModel converts a node's raw model inventory entry
-// into the state's pull-status shape. A modeld node's ListModels reports
-// only identity (name/type/digest/size) — capability fields (context length,
-// CanChat, …) are zero here; enriching them requires a per-model Describe
-// call, added when provider construction actually needs them.
+// into the state's pull-status shape. ContextLength comes from a cheap,
+// header-only parse Admin.ListModels already performs (modeld/llama.ContextLength
+// / modeld/openvino.ContextLength) — no live Describe RPC needed here. Other
+// capability fields (CanChat, …) are set unconditionally by
+// LocalProviderAdapter's modeld loop instead (see runtime/runtimestate/adapter.go),
+// since a single-slot, already-reconciled node serves every listed model.
 func modelPullStatusFromNodeModel(m transport.NodeModel) statetype.ModelPullStatus {
 	return statetype.ModelPullStatus{
-		Name:   m.Name,
-		Model:  m.Name,
-		Size:   m.SizeBytes,
-		Digest: m.Digest,
+		Name:          m.Name,
+		Model:         m.Name,
+		Size:          m.SizeBytes,
+		Digest:        m.Digest,
+		ContextLength: m.ContextLength,
 	}
 }
 

@@ -13,6 +13,7 @@ import {
 } from '@contenox/ui';
 import { Play, Power, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatBytes } from '../../../../lib/format';
 import type {
   ModeldAdapterInfo,
   ModeldCapacityResponse,
@@ -76,18 +77,6 @@ const presentRows = (rows: DetailRow[]): DetailRow[] =>
     if (Array.isArray(row.value) && row.value.length === 0) return false;
     return true;
   });
-
-const formatBytes = (value: number | undefined): string | undefined => {
-  if (!value || value <= 0) return undefined;
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-  let next = value;
-  let unit = 0;
-  while (next >= 1024 && unit < units.length - 1) {
-    next /= 1024;
-    unit += 1;
-  }
-  return `${next >= 10 || unit === 0 ? next.toFixed(0) : next.toFixed(1)} ${units[unit]}`;
-};
 
 const formatAdapters = (adapters: ModeldAdapterInfo[] | undefined): string | undefined => {
   if (!adapters || adapters.length === 0) return undefined;

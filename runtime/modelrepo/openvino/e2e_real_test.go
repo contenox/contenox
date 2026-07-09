@@ -126,6 +126,75 @@ func TestSystem_RuntimeOpenVINOReasoningEndToEndOnDevice(t *testing.T) {
 	t.Logf("visible=%q thinking_prefix=%q", res.Message.Content, firstRunes(res.Message.Thinking, 80))
 }
 
+// TestSystem_RuntimeOpenVINOTargetedProviderEndToEnd is the real-hardware
+// regression test for the two modeld remote-backend bugs that were specific
+// to this package: (1) newClient computed dir := filepath.Join(p.modelDir, p.name)
+// unconditionally, so a targeted provider (p.modelDir == "") sent a bogus
+// non-empty relative Path instead of "" — modeld's resolvePath uses a
+// non-empty incoming Path as-is instead of resolving by name, so this would
+// have failed to find the model at all; (2) CanChat/GetChatConnection gated
+// on this process's own local modeld lease state via SessionAvailable(),
+// unrelated to a remote target. This drives NewProviderForTarget through
+// real inference to prove both are fixed together.
+func TestSystem_RuntimeOpenVINOTargetedProviderEndToEnd(t *testing.T) {
+	modelDir := os.Getenv("CONTENOX_OPENVINO_TEST_MODEL")
+	if modelDir == "" {
+		t.Skip("set CONTENOX_OPENVINO_TEST_MODEL (see Makefile.openvino)")
+	}
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	endpoint := lis.Addr().String()
+	instance := "instance-targeted-e2e"
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() { _ = transportgrpc.Serve(ctx, lis, modeldopenvino.NewService(), instance, "openvino") }()
+
+	// Deliberately NOT calling modeldconn.SetDataRoot / acquiring a local
+	// lease: this process has no local modeld, proving CanChat/GetChatConnection
+	// do not depend on one for a targeted provider.
+	target := modeldconn.ModeldTarget{BackendID: "remote-box", Endpoint: endpoint, Instance: instance}
+	p := &openvinoProvider{
+		name:   "targeted-e2e",
+		caps:   modelrepo.CapabilityConfig{CanChat: true, CanPrompt: true, CanStream: true, CanEmbed: true},
+		target: target,
+	}
+
+	if !p.CanChat() {
+		t.Fatal("targeted provider CanChat() = false, want true from caps regardless of local machine state")
+	}
+	chatClient, err := p.GetChatConnection(context.Background(), "")
+	if err != nil {
+		t.Fatalf("GetChatConnection: %v", err)
+	}
+	c := chatClient.(*client)
+	// Before the fix, newClient would have set c.modelPath to the bogus
+	// relative path "targeted-e2e" (p.name) instead of "" — assert directly on
+	// the constructed client, then point it at the real model to drive
+	// inference through the rest of the stack.
+	if c.modelPath != "" {
+		t.Fatalf("client.modelPath = %q, want empty for a targeted provider with no local modelDir", c.modelPath)
+	}
+	modelDigest, templateDigest := modelIdentity(modelDir)
+	c.modelPath = modelDir
+	c.modelDigest = modelDigest
+	c.cfg.PromptFormat = "openvino-chat-template"
+	c.cfg.PromptTemplateDigest = templateDigest
+
+	res, err := c.Chat(context.Background(), []modelrepo.Message{
+		{Role: "user", Content: "Write one short line of Go that prints hello."},
+	})
+	if err != nil {
+		t.Fatalf("Chat end-to-end (targeted provider): %v", err)
+	}
+	if strings.TrimSpace(res.Message.Content) == "" {
+		t.Fatal("end-to-end targeted chat produced no tokens")
+	}
+	t.Logf("targeted provider chat -> %q", res.Message.Content)
+}
+
 func serveRealOpenVINOModeld(t *testing.T) {
 	t.Helper()
 

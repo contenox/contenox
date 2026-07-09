@@ -64,6 +64,34 @@ func TestUnit_Admin_ListModels_MixedTypes(t *testing.T) {
 	}
 }
 
+// TestUnit_Admin_ListModels_ContextLengthUnknownWithoutNativeBackend documents
+// the expected default-build behavior of the new ContextLength enrichment:
+// modeld/llama.ContextLength and modeld/openvino.ContextLength both delegate
+// to a native (CGo, build-tag-gated) header parser that reports "not compiled
+// in" outside a real llamacpp_direct/openvino_genai build — so ContextLength
+// must stay 0 ("unknown") here, and, critically, that failure must not hide
+// the model from the inventory or fail the whole scan (skip-this-model-only
+// semantics, exercised for both engine types).
+func TestUnit_Admin_ListModels_ContextLengthUnknownWithoutNativeBackend(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "llm", "model.gguf"), []byte("weights"))
+	writeFile(t, filepath.Join(dir, "vision", "openvino_model.xml"), []byte("<ir/>"))
+
+	admin := NewAdmin(dir)
+	models, err := admin.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("ListModels = %+v, want both models present despite unavailable header parse", models)
+	}
+	for _, m := range models {
+		if m.ContextLength != 0 {
+			t.Fatalf("model %q ContextLength = %d, want 0 (native backend not compiled into the test binary)", m.Name, m.ContextLength)
+		}
+	}
+}
+
 func TestUnit_Admin_ListModels_SkipsStagingDirs(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, stagingPrefix+"leftover-abc123"), 0o755); err != nil {

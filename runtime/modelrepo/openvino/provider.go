@@ -14,30 +14,81 @@ import (
 // openvinoProvider implements modelrepo.Provider. A model lives at
 // <modelDir>/<name>/ as an OpenVINO IR. Inference runs in modeld: the provider
 // builds the prompt plan and drives the session over the transport.
+//
+// When target.Endpoint != "", sessions and Describe are routed to that specific
+// modeld node (supports remote specialist GPU nodes registered as "modeld" backends).
 type openvinoProvider struct {
 	name     string
 	modelDir string
 	caps     modelrepo.CapabilityConfig
+	target   modeldconn.ModeldTarget
 }
 
 func newProvider(name, modelDir string, caps modelrepo.CapabilityConfig) modelrepo.Provider {
 	return &openvinoProvider{name: name, modelDir: modelDir, caps: caps}
 }
 
-func (p *openvinoProvider) GetBackendIDs() []string { return []string{"openvino"} }
+// NewProviderForTarget used for providers backed by a specific (possibly remote) modeld node.
+// modelDir may be "" (the node resolves by name/digest).
+func NewProviderForTarget(name, modelDir string, caps modelrepo.CapabilityConfig, target modeldconn.ModeldTarget) modelrepo.Provider {
+	return &openvinoProvider{name: name, modelDir: modelDir, caps: caps, target: target}
+}
+
+func (p *openvinoProvider) GetBackendIDs() []string {
+	if p.target.BackendID != "" {
+		return []string{p.target.BackendID}
+	}
+	return []string{"openvino"}
+}
 func (p *openvinoProvider) ModelName() string       { return p.name }
 func (p *openvinoProvider) GetID() string           { return "openvino:" + p.name }
 func (p *openvinoProvider) GetType() string         { return "openvino" }
 func (p *openvinoProvider) GetContextLength() int   { return p.caps.ContextLength }
 func (p *openvinoProvider) GetMaxOutputTokens() int { return p.caps.MaxOutputTokens }
-func (p *openvinoProvider) CanChat() bool           { return p.caps.CanChat && SessionAvailable() }
-func (p *openvinoProvider) CanEmbed() bool          { return p.caps.CanEmbed && SessionAvailable() }
-func (p *openvinoProvider) CanStream() bool         { return p.caps.CanStream && SessionAvailable() }
-func (p *openvinoProvider) CanPrompt() bool         { return p.caps.CanPrompt && SessionAvailable() }
-func (p *openvinoProvider) CanThink() bool          { return p.caps.CanThink }
+
+// isTargeted reports whether this provider is bound to a specific (possibly
+// remote) modeld node rather than the implicit local lease. SessionAvailable
+// only reflects THIS machine's own modeld lease state (modeldconn.ServeableBackend())
+// — meaningless for a remote or otherwise explicit target, whose actual
+// availability was already proven at reconcile time (see
+// runtime/runtimestate/adapter.go, which only constructs a targeted provider
+// once ListModels succeeded against that live node) and is carried here via p.caps.
+func (p *openvinoProvider) isTargeted() bool {
+	return p.target.BackendID != "" || p.target.Endpoint != ""
+}
+
+func (p *openvinoProvider) CanChat() bool {
+	if p.isTargeted() {
+		return p.caps.CanChat
+	}
+	return p.caps.CanChat && SessionAvailable()
+}
+
+func (p *openvinoProvider) CanEmbed() bool {
+	if p.isTargeted() {
+		return p.caps.CanEmbed
+	}
+	return p.caps.CanEmbed && SessionAvailable()
+}
+
+func (p *openvinoProvider) CanStream() bool {
+	if p.isTargeted() {
+		return p.caps.CanStream
+	}
+	return p.caps.CanStream && SessionAvailable()
+}
+
+func (p *openvinoProvider) CanPrompt() bool {
+	if p.isTargeted() {
+		return p.caps.CanPrompt
+	}
+	return p.caps.CanPrompt && SessionAvailable()
+}
+
+func (p *openvinoProvider) CanThink() bool { return p.caps.CanThink }
 
 func (p *openvinoProvider) GetChatConnection(ctx context.Context, _ string) (modelrepo.LLMChatClient, error) {
-	if !SessionAvailable() {
+	if !p.isTargeted() && !SessionAvailable() {
 		return nil, p.notWired("chat")
 	}
 	if !p.caps.CanChat {
@@ -47,7 +98,7 @@ func (p *openvinoProvider) GetChatConnection(ctx context.Context, _ string) (mod
 }
 
 func (p *openvinoProvider) GetStreamConnection(ctx context.Context, _ string) (modelrepo.LLMStreamClient, error) {
-	if !SessionAvailable() {
+	if !p.isTargeted() && !SessionAvailable() {
 		return nil, p.notWired("stream")
 	}
 	if !p.caps.CanStream {
@@ -57,7 +108,7 @@ func (p *openvinoProvider) GetStreamConnection(ctx context.Context, _ string) (m
 }
 
 func (p *openvinoProvider) GetPromptConnection(ctx context.Context, _ string) (modelrepo.LLMPromptExecClient, error) {
-	if !SessionAvailable() {
+	if !p.isTargeted() && !SessionAvailable() {
 		return nil, p.notWired("prompt")
 	}
 	if !p.caps.CanPrompt {
@@ -67,7 +118,7 @@ func (p *openvinoProvider) GetPromptConnection(ctx context.Context, _ string) (m
 }
 
 func (p *openvinoProvider) GetEmbedConnection(_ context.Context, _ string) (modelrepo.LLMEmbedClient, error) {
-	if !SessionAvailable() {
+	if !p.isTargeted() && !SessionAvailable() {
 		return nil, p.notWired("embed")
 	}
 	if !p.caps.CanEmbed {
@@ -81,7 +132,12 @@ func (p *openvinoProvider) notWired(kind string) error {
 }
 
 func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
-	dir := filepath.Join(p.modelDir, p.name)
+	var dir string
+	if p.modelDir != "" {
+		dir = filepath.Join(p.modelDir, p.name)
+	} else if p.target.Endpoint == "" {
+		return nil, fmt.Errorf("openvino provider for %q has no modelDir and no target endpoint", p.name)
+	}
 	profile, err := loadModelProfile(dir)
 	if err != nil {
 		return nil, err
@@ -98,10 +154,17 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	// Identity comes from the model's own files (no hardcoded format): the digest
 	// content-addresses the model, and the template digest tracks its Jinja chat
 	// template, which modeld applies via the IR tokenizer.
-	modelDigest, templateDigest := modelIdentity(dir)
-	adapters, err := resolveProfileAdapters(dir, profile.Adapters)
-	if err != nil {
-		return nil, err
+	var modelDigest, templateDigest string
+	var adapters []transport.AdapterSpec
+	if dir != "" {
+		modelDigest, templateDigest = modelIdentity(dir)
+		var err error
+		adapters, err = resolveProfileAdapters(dir, profile.Adapters)
+		if err != nil {
+			return nil, err
+		}
+	} else if p.target.Endpoint != "" {
+		// Remote: rely on wire identity + node; adapters carried in ModelRef when known.
 	}
 	profileID := p.name
 	// NumCtx stays 0 (auto) end-to-end: modeld's authoritative, post-eviction
@@ -126,7 +189,14 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 	var deviceKind string
 	var freeBytes int64
 	var describedEffectiveContext, describedPlannerContext, describedModelMaxContext int
-	if info, derr := modeldconn.Describe(ctx, ref, transport.Config(cfg)); derr == nil {
+	var derr error
+	var info transport.ModelInfo
+	if p.target.Endpoint != "" {
+		info, derr = modeldconn.DescribeTarget(ctx, p.target, ref, transport.Config(cfg))
+	} else {
+		info, derr = modeldconn.Describe(ctx, ref, transport.Config(cfg))
+	}
+	if derr == nil {
 		deviceKind = info.DeviceKind
 		freeBytes = info.FreeBytes
 		describedEffectiveContext = info.EffectiveContext
@@ -155,6 +225,7 @@ func (p *openvinoProvider) newClient(ctx context.Context) (*client, error) {
 		describedEffectiveContext: describedEffectiveContext,
 		describedPlannerContext:   describedPlannerContext,
 		describedModelMaxContext:  describedModelMaxContext,
+		target:                    p.target,
 	}, nil
 }
 
@@ -176,15 +247,22 @@ func curatedToolProtocol(ctx context.Context, modelName, backendType string) str
 }
 
 func (p *openvinoProvider) newEmbedClient() (*embedClient, error) {
-	dir := filepath.Join(p.modelDir, p.name)
-	if _, err := loadModelProfile(dir); err != nil {
-		return nil, err
+	var dir string
+	if p.modelDir != "" {
+		dir = filepath.Join(p.modelDir, p.name)
+		if _, err := loadModelProfile(dir); err != nil {
+			return nil, err
+		}
 	}
-	modelDigest, _ := modelIdentity(dir)
+	var modelDigest string
+	if dir != "" {
+		modelDigest, _ = modelIdentity(dir)
+	}
 	return &embedClient{
 		modelName:   p.name,
 		modelPath:   dir,
 		modelDigest: modelDigest,
+		target:      p.target,
 	}, nil
 }
 

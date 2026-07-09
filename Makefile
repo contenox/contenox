@@ -236,6 +236,9 @@ bundle-llama-libs:
 		mkdir -p "$(LLAMA_LIBS_DIR)"; \
 		cp -a "$(LLAMA_RUNTIME_LIB_SRC)"/. "$(LLAMA_LIBS_DIR)/"; \
 		echo "bundled direct llama.cpp runtime (copies) -> $(LLAMA_LIBS_DIR)"; \
+		if [ "$(LLAMA_CUDA)" = "ON" ]; then \
+			bash "$(PROJECT_ROOT)scripts/modeld-vendor-cuda-libs.sh" "$(LLAMA_LIBS_DIR)"; \
+		fi; \
 	else \
 		ln -s "$(LLAMA_RUNTIME_LIB_SRC)" "$(LLAMA_LIBS_DIR)"; \
 		echo "bundled direct llama.cpp runtime (symlink) -> $(LLAMA_LIBS_DIR)"; \
@@ -480,6 +483,11 @@ check-modeld-deps-bundle:
 		ls "$(MODELD_DEPS_ROOT)"/openvino/genai/*openvino_genai* >/dev/null 2>&1 || { echo "bundle missing openvino_genai lib"; exit 1; }; \
 		ls "$(MODELD_DEPS_ROOT)"/openvino/tokenizers/lib/*openvino_tokenizers* >/dev/null 2>&1 || { echo "bundle missing openvino_tokenizers lib"; exit 1; }; \
 		ls "$(MODELD_DEPS_ROOT)"/openvino/openvino/libs/*openvino.* >/dev/null 2>&1 || { echo "bundle missing openvino runtime lib"; exit 1; }; \
+	fi
+	@if grep -q '"cuda": *true' "$(MODELD_DEPS_ROOT)/manifest.json"; then \
+		for lib in libcudart libcublas libcublasLt; do \
+			ls "$(MODELD_DEPS_ROOT)"/llama/runtime/lib/$$lib.so.* >/dev/null 2>&1 || { echo "bundle manifest declares cuda:true but is missing vendored $$lib (a CUDA-driver-only target host would silently fall back to CPU); rebuild with the fixed bundle-llama-libs/modeld-deps-bundle-linux.sh"; exit 1; }; \
+		done; \
 	fi
 	@echo "modeld deps bundle OK: $(MODELD_DEPS_ROOT) (openvino required=$(MODELD_RELEASE_OPENVINO))"
 

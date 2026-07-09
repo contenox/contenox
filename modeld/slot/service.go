@@ -824,7 +824,7 @@ func (s *Service) ListModels(ctx context.Context) ([]transport.NodeModel, error)
 	}
 	out := make([]transport.NodeModel, len(models))
 	for i, m := range models {
-		out[i] = transport.NodeModel{Name: m.Name, Type: m.Type, Digest: m.Digest, SizeBytes: m.SizeBytes}
+		out[i] = transport.NodeModel{Name: m.Name, Type: m.Type, Digest: m.Digest, SizeBytes: m.SizeBytes, ContextLength: m.ContextLength}
 	}
 	return out, nil
 }
