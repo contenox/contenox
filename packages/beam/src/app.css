@@ -1,6 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* Bring in @contenox/ui theme definitions (the @theme block that registers
+   --color-surface-*, etc.) so that Tailwind v4 knows about custom classes
+   like `bg-surface-50` when processing @apply and source files. */
+@import '@contenox/ui/theme.css';
+
 @import 'tailwindcss';
 
 @custom-variant dark (&:where(.dark, .dark *));

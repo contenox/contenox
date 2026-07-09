@@ -51,7 +51,8 @@
       "types": "./tailwind.config.d.ts",
       "import": "./tailwind.config.js"
     },
-    "./styles.css": "./dist/index.css"
+    "./styles.css": "./dist/index.css",
+    "./theme.css": "./src/index.css"
   },
   "files": [
     "dist",
