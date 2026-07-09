@@ -19,3 +19,33 @@
     width: 100%;
   }
 }
+
+@layer base {
+  html, body, #root {
+    @apply h-screen overflow-hidden bg-surface-50 text-text m-0 p-0;
+  }
+  
+  .dark body {
+    @apply bg-dark-surface-100 text-dark-text;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-300 rounded-full transition-colors;
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-dark-surface-300;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-400;
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-dark-surface-400;
+  }
+}

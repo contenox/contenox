@@ -129,6 +129,7 @@ export class BridgeProcess implements vscode.Disposable {
       this.extensionUri,
     );
 
+    const startAt = Date.now();
     this.status.setStarting();
     this.output.info(
       `Starting Contenox runtime: ${binaryPath} ${args.join(" ")}`,
@@ -207,6 +208,9 @@ export class BridgeProcess implements vscode.Disposable {
         };
         child.once("error", spawnErrorHandler);
       });
+      const initTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Contenox runtime initialize timed out after 60s")), 60_000),
+      );
       const initialize = await Promise.race([
         client.initialize({
           clientInfo: {
@@ -217,6 +221,7 @@ export class BridgeProcess implements vscode.Disposable {
           workspacePath: cwd,
         }),
         spawnError,
+        initTimeout,
       ]);
       if (spawnErrorHandler) {
         child.off("error", spawnErrorHandler);
@@ -224,6 +229,7 @@ export class BridgeProcess implements vscode.Disposable {
       const health = await client.health();
       this.state = { initialize, health };
       this.status.setReady(health);
+      const durationMs = Date.now() - startAt;
       this.telemetry.event("runtime.spawn.ready", {
         protocolVersion: initialize.protocolVersion,
         serverVersion: initialize.serverVersion,
@@ -233,7 +239,9 @@ export class BridgeProcess implements vscode.Disposable {
         configured: health.configured,
         defaultProvider: health.defaultProvider,
         defaultModel: health.defaultModel,
+        durationMs,
       });
+      this.output.info(`Contenox runtime ready in ${durationMs}ms`);
       return this.state;
     } catch (error) {
       if (spawnErrorHandler) {

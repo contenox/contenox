@@ -38,6 +38,9 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		tracker = libtracker.NewLogActivityTracker(slog.Default())
 	}
 
+	reportErr, reportChange, end := tracker.Start(ctx, "build", "engine")
+	defer end()
+
 	tools := map[string]taskengine.ToolsRepo{
 		"echo":     localtools.NewEchoTools(),
 		"print":    localtools.NewPrint(tracker),
@@ -63,7 +66,8 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 
 	readinessModel, readinessProvider := readinessDefaults(opts)
 
-	return enginesvc.Build(ctx, db, enginesvc.Config{
+	reportChange("phase", "tools_prepared")
+	engine, err := enginesvc.Build(ctx, db, enginesvc.Config{
 		DefaultModel:             opts.EffectiveDefaultModel,
 		DefaultProvider:          opts.EffectiveDefaultProvider,
 		AltDefaultModel:          opts.EffectiveAltDefaultModel,
@@ -82,6 +86,12 @@ func BuildEngine(ctx context.Context, db libdbexec.DBManager, opts chatOpts) (*E
 		HITLPolicySource:         hitlPolicySource(opts.ContenoxDir),
 		TaskEventSink:            opts.EffectiveTaskEventSink,
 	})
+	if err != nil {
+		reportErr(err)
+		return nil, err
+	}
+	reportChange("phase", "enginesvc_built")
+	return engine, nil
 }
 
 // readinessDefaults derives the effective default model/provider to credit during

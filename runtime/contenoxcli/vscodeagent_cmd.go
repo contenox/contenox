@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -54,33 +55,54 @@ func runVSCodeAgent(cmd *cobra.Command, _ []string) error {
 	// hook is registered.
 	defer func() { _ = modelrepo.Shutdown() }()
 
+	trace, _ := cmd.Flags().GetBool("trace")
+
+	var tracker libtracker.ActivityTracker = libtracker.NoopTracker{}
+	if trace {
+		tracker = libtracker.NewLogActivityTracker(slog.Default())
+	}
+
+	reportErr, reportChange, end := tracker.Start(ctx, "startup", "vscode_agent")
+	defer end()
+
 	contenoxDir, err := resolveVSCodeAgentContenoxDir(cmd)
 	if err != nil {
+		reportErr(err)
 		return err
 	}
+	reportChange("phase", "resolve_contenox_dir")
 
 	dbPath, err := resolveVSCodeAgentDBPath(cmd, contenoxDir)
 	if err != nil {
+		reportErr(err)
 		return err
 	}
 	db, err := OpenDBAt(libtracker.WithNewRequestID(ctx), dbPath)
 	if err != nil {
+		reportErr(err)
 		return fmt.Errorf("open database %q: %w", dbPath, err)
 	}
 	defer db.Close()
+	reportChange("phase", "open_db")
 
 	if err := writeEmbeddedHITLPolicies(contenoxDir, false); err != nil {
+		reportErr(err)
 		return fmt.Errorf("seed HITL policy presets: %w", err)
 	}
+	reportChange("phase", "seed_hitl")
+
 	if err := seedVSCodeAgentChainsIfMissing(contenoxDir); err != nil {
+		reportErr(err)
 		return fmt.Errorf("seed VS Code chain presets: %w", err)
 	}
+	reportChange("phase", "seed_chains")
 
 	workspaceID, _ := cmd.Flags().GetString("workspace-id")
 	if workspaceID == "" {
 		workspaceID = ResolveWorkspaceID(contenoxDir)
 	}
 	workspaceCWD, _ := os.Getwd()
+	reportChange("phase", "prep_done")
 
 	server, err := vscodeagent.New(vscodeagent.ServerConfig{
 		DB:           db,
@@ -94,10 +116,13 @@ func runVSCodeAgent(cmd *cobra.Command, _ []string) error {
 		PolicyNames: embeddedPolicyNames(),
 	})
 	if err != nil {
+		reportErr(err)
 		return err
 	}
+	reportChange("phase", "server_created")
 
 	if err := server.Run(ctx, os.Stdin, os.Stdout); err != nil && err != io.EOF && err != context.Canceled {
+		reportErr(err)
 		return fmt.Errorf("vscode-agent run: %w", err)
 	}
 	return nil
@@ -107,6 +132,15 @@ func buildVSCodeAgentRuntime(ctx context.Context, cmd *cobra.Command, db libdb.D
 	store := runtimetypes.New(db.WithoutTransaction())
 	cfgCtx := libtracker.WithNewRequestID(ctx)
 	flags := cmd.Root().Flags()
+
+	trace, _ := flags.GetBool("trace")
+	var buildTracker libtracker.ActivityTracker = libtracker.NoopTracker{}
+	if trace {
+		buildTracker = libtracker.NewLogActivityTracker(slog.Default())
+	}
+
+	reportErr, reportChange, end := buildTracker.Start(ctx, "build", "vscode_agent_runtime")
+	defer end()
 
 	model, _ := flags.GetString("model")
 	if !flags.Changed("model") || model == defaultModel {
@@ -122,8 +156,11 @@ func buildVSCodeAgentRuntime(ctx context.Context, cmd *cobra.Command, db libdb.D
 		provider, _ = flags.GetString("provider")
 	}
 	if model == "" || provider == "" {
-		return nil, vscodeagent.ErrSetupRequired
+		err := vscodeagent.ErrSetupRequired
+		reportErr(err)
+		return nil, err
 	}
+	reportChange("phase", "resolve_defaults")
 
 	altModel := ""
 	if kv, _ := getConfigKV(cfgCtx, store, "default-alt-model"); kv != "" {
@@ -141,15 +178,18 @@ func buildVSCodeAgentRuntime(ctx context.Context, cmd *cobra.Command, db libdb.D
 	}
 	maxTokens, err := resolveEffectiveMaxTokens(cfgCtx, store, flags)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
-	think, err := resolveEffectiveThink(cfgCtx, store, flags)
+	reportChange("phase", "resolve_max_tokens")
+	think, err = resolveEffectiveThink(cfgCtx, store, flags)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
+	reportChange("phase", "resolve_think")
 	contextLength, _ := flags.GetInt("context")
 	noDeleteModels, _ := flags.GetBool("no-delete-models")
-	trace, _ := flags.GetBool("trace")
 	shellEnabled := true
 	if flags.Changed("shell") {
 		shellEnabled, _ = flags.GetBool("shell")
@@ -169,28 +209,40 @@ func buildVSCodeAgentRuntime(ctx context.Context, cmd *cobra.Command, db libdb.D
 
 	chainPath, err := resolveVSCodeAgentChainPath(cmd, contenoxDir, "default-acp-chain.json")
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
+	reportChange("phase", "resolve_acp_chain_path")
 	chain, err := loadChainFromFile(chainPath)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
+	reportChange("phase", "load_acp_chain")
 	fimPath, err := resolveVSCodeAgentChainPath(cmd, contenoxDir, "default-fim-chain.json")
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
+	reportChange("phase", "resolve_fim_chain_path")
 	fimChain, err := loadChainFromFile(fimPath)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
+	reportChange("phase", "load_fim_chain")
 	compactPath, err := resolveVSCodeAgentChainPath(cmd, contenoxDir, "chain-compact.json")
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
+	reportChange("phase", "resolve_compact_chain_path")
 	compactChain, err := loadChainFromFile(compactPath)
 	if err != nil {
+		reportErr(err)
 		return nil, err
 	}
+	reportChange("phase", "load_compact_chain")
 
 	opts := chatOpts{
 		EffectiveDefaultModel:        model,
@@ -209,16 +261,20 @@ func buildVSCodeAgentRuntime(ctx context.Context, cmd *cobra.Command, db libdb.D
 		EffectiveTaskEventSink:       hooks.EventSink,
 		ContenoxDir:                  contenoxDir,
 	}
+	reportChange("phase", "opts_prepared")
 	engine, err := BuildEngine(ctx, db, opts)
 	if err != nil {
+		reportErr(err)
 		return nil, fmt.Errorf("build engine: %w", err)
 	}
+	reportChange("phase", "engine_built")
 	agent := agentservice.New(agentservice.Deps{
 		Engine:      engine,
 		DB:          db,
 		WorkspaceID: workspaceID,
 		Identity:    vscodeagent.Identity,
 	})
+	reportChange("phase", "runtime_ready")
 	return &vscodeagent.Runtime{
 		Engine:       engine,
 		Agent:        agent,

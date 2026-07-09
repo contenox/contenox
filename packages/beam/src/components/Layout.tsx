@@ -62,6 +62,13 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
       ? sidebarContent({ isOpen: isSidebarOpen, setIsOpen: setSidebarIsOpen })
       : sidebarContent;
 
+  const headerTitle = useMemo(() => {
+    if (location.pathname.startsWith('/settings')) return 'Settings';
+    if (location.pathname.startsWith('/backends')) return 'Backends';
+    if (location.pathname.startsWith('/control')) return 'Control Plane';
+    return 'Contenox Chat';
+  }, [location.pathname]);
+
   const dismissWizard = () => {
     try {
       localStorage.setItem(ONBOARDING_KEY, '1');
@@ -94,7 +101,7 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
         <div className="flex min-w-0 items-center gap-2">
           <img src={logoUrl} alt="" aria-hidden className="h-7 w-7 shrink-0" />
           <span className="text-text dark:text-dark-text truncate text-sm font-semibold tracking-normal sm:text-base">
-            Contenox Chat
+            {headerTitle}
           </span>
         </div>
       </div>

@@ -121,16 +121,28 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 
 	workspaceFlag, _ := cmd.Flags().GetString("workspace-id")
 
+	// Create tracker early for full startup telemetry (using text to stderr for ACP/CLI).
+	// This instruments the entire launch so we can see phase timings and errors on freezes.
+	var tracker libtracker.ActivityTracker = libtracker.NewTextActivityTracker(os.Stderr)
+
+	reportErr, reportChange, endStartup := tracker.Start(ctx, "startup", "acp")
+	defer endStartup()
+	reportChange("phase", "flags_parsed")
+
 	dbPath, err := resolveDBPath(cmd)
 	if err != nil {
+		reportErr(err)
 		return err
 	}
+	reportChange("phase", "resolve_db_path")
 	dbCtx := libtracker.WithNewRequestID(ctx)
 	db, err := OpenDBAt(dbCtx, dbPath)
 	if err != nil {
+		reportErr(err)
 		return fmt.Errorf("open database %q: %w", dbPath, err)
 	}
 	defer db.Close()
+	reportChange("phase", "open_db")
 
 	// Anchor seeding/telemetry to the SAME directory the ACP runtime reads from.
 	// The DB (globalDBPath), the chain (LoadChainRegistryFrom) and HITL policies
@@ -142,28 +154,35 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	// silently absent and `acp` hard-errored before serving initialize.
 	contenoxDir, err := globalContenoxDir()
 	if err != nil {
+		reportErr(err)
 		return fmt.Errorf("resolve contenox dir: %w", err)
 	}
+	reportChange("phase", "resolve_contenox_dir")
 	workspaceID := workspaceFlag
 	if workspaceID == "" {
 		workspaceID = ResolveWorkspaceID(contenoxDir)
 	}
 	if err := writeEmbeddedHITLPolicies(contenoxDir, false); err != nil {
+		reportErr(err)
 		return fmt.Errorf("seed HITL policy presets: %w", err)
 	}
+	reportChange("phase", "seed_hitl")
 	if profile.seedChain != nil {
 		if err := profile.seedChain(contenoxDir); err != nil {
+			reportErr(err)
 			return fmt.Errorf("seed ACP chain preset: %w", err)
 		}
 	}
+	reportChange("phase", "seed_chain")
 
 	closeLogs, err := setupTelemetryLogging(ctx, runtimetypes.New(db.WithoutTransaction()), contenoxDir)
 	if err != nil {
+		reportErr(err)
 		return fmt.Errorf("setup telemetry logging: %w", err)
 	}
 	defer closeLogs()
+	reportChange("phase", "setup_telemetry")
 
-	var tracker libtracker.ActivityTracker = libtracker.NewTextActivityTracker(os.Stderr)
 	var transport *acpsvc.Transport
 
 	defaultModel := acpsvc.ReadConfigValue(ctx, db, "default-model")

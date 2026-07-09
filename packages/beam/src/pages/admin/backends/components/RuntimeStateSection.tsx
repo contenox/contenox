@@ -59,8 +59,17 @@ export default function RuntimeStateSection({
               <TableCell className="max-w-[220px] truncate font-mono text-xs">
                 {row.backend?.baseUrl ?? '—'}
               </TableCell>
-              <TableCell className="max-w-[240px] text-sm text-error">
-                {row.error?.trim() ? row.error : '—'}
+              <TableCell className="max-w-[300px]">
+                {row.error?.trim() ? (
+                  <div 
+                    className="line-clamp-3 overflow-hidden rounded-md bg-red-500/10 px-2 py-1 text-xs font-mono text-red-600 dark:text-red-400" 
+                    title={row.error}
+                  >
+                    {row.error}
+                  </div>
+                ) : (
+                  <span className="text-sm text-text-muted dark:text-dark-text-muted">—</span>
+                )}
               </TableCell>
               <TableCell>{row.pulledModels?.length ?? row.models?.length ?? 0}</TableCell>
             </TableRow>

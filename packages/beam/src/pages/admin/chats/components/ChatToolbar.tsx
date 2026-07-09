@@ -140,16 +140,16 @@ export function ChatToolbar({
           const size = contextSize;
           const pct = Math.round((used / size) * 100);
           const cls = pct > 90 ? 'text-red-500' : pct > 70 ? 'text-yellow-500' : 'text-text-muted dark:text-dark-text-muted';
-          const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-primary-500';
+          const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-indigo-500 to-violet-500';
           const usedLabel = used > 0 ? `${used.toLocaleString()}/` : '';
           const title = used > 0
             ? `Context: ${used.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`
             : `Context window: ${size.toLocaleString()} tokens`;
           return (
-            <div className="ml-3 flex shrink-0 items-center gap-1.5 text-[10px] tabular-nums" title={title}>
+            <div className="ml-3 flex shrink-0 items-center gap-2 text-xs font-medium tabular-nums" title={title}>
               <span className={cls}>{usedLabel}{size.toLocaleString()}</span>
-              <div className="w-12 h-1.5 rounded bg-surface-200 dark:bg-dark-surface-300 overflow-hidden" aria-hidden>
-                <div className={`h-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+              <div className="w-24 h-2 rounded-full bg-surface-200 dark:bg-dark-surface-300 overflow-hidden shadow-inner" aria-hidden>
+                <div className={`h-full transition-all duration-500 ease-out ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
               </div>
               <span className={cls}>{pct}%</span>
             </div>
