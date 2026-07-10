@@ -33,7 +33,7 @@ Docs: **[contenox.com](https://contenox.com)**
 ## Install
 
 <!-- Release tooling: keep next line in sync with runtime/version/version.txt (updated by `make -f Makefile.version bump-*`). -->
-<!-- TAG=v0.34.1 -->
+<!-- TAG=v0.34.2 -->
 
 ```bash
 curl -fsSL https://contenox.com/install.sh | sh
