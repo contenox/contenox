@@ -157,6 +157,10 @@ make bundle-modeld-deps
 make push-modeld-deps
 ```
 
+See `docs/development/windows-development.md` for the Windows-specific
+development guide and the focused SSH-only steps to run just the bundler
+script on a remote Windows worker (no `make` required on the worker).
+
 `push-modeld-deps` uploads to:
 
 ```text

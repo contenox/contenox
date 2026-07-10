@@ -134,6 +134,7 @@ Keep these files in sync when changing public surface area:
 - `docs/development/blueprints/v1-feature-map.md`
 - `docs/contenox-cli.md`
 - `docs/development/modeld-source-build.md`
+- `docs/development/windows-development.md`
 - `packages/vscode/README.md`
 - `docs/development/blueprints/acp/registry-submission/README.md`
 
@@ -148,6 +149,8 @@ Keep these files in sync when changing public surface area:
 - Optional: Python 3 for OpenVINO backend dependency setup
 - Optional: CUDA toolkit with `nvcc` on `PATH` for direct llama.cpp CUDA builds
 - Optional: an LLM provider key or local server. The default local path is a GGUF model under `~/.contenox/models/`.
+
+Windows users: most Go, CLI, test, UI, and VS Code extension work is best done inside WSL2 (treat it like a Linux dev box). A native Windows checkout or dedicated Windows worker is mainly needed for verifying real Windows shell behavior and for producing official Windows `modeld` native dependency bundles. See `docs/development/windows-development.md` for the full Windows guide, WSL recommendations, toolchain notes, and the SSH flow for bundle production.
 
 ### Go binary path
 
@@ -259,6 +262,14 @@ targets dispatch to the host:
 The Windows packager selects its toolchain with `MODELD_WINDOWS_TOOLCHAIN=mingw`
 (default) or `msvc` (links the OpenVINO/llama import libraries with Clang/`lld`).
 
+For Windows bundle production you normally use a dedicated Windows build worker
+(even if your daily development happens on Linux). The worker runs the bash
+bundler script (`scripts/modeld-deps-bundle-windows.sh`) after its native
+toolchain has already produced the llama.cpp DLLs (and optional OpenVINO pieces).
+See `docs/development/windows-development.md` (section on the Windows worker via
+SSH) for the focused "just build the bundle" steps. The final packaging and
+publishing steps are still driven from a `make` + credentials host.
+
 For Windows, bundle the VC++ runtime so the package runs on a clean machine: copy
 `msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`, and `vcomp140.dll` into
 `modeld-libs/` (the launcher already has it on `PATH`). `package-modeld-release-windows`
@@ -354,6 +365,13 @@ Notes:
 - The Windows box has no `make`, so its package is built with the checked-in device
   script rather than `make package-modeld-release`; the dep-bundle production and all
   publishing still go through the standard targets from a `make`-capable host.
+- For the narrow task of **building the Windows modeld dependency bundle on a
+  remote Windows worker via SSH** (just the bundler script part, no packaging or
+  publishing), see the focused instructions and example command lines in
+  `docs/development/windows-development.md`. SSH in, run the script with the
+  appropriate `LLAMA_*` / `OPENVINO_*` paths after the native toolchain work is
+  already done on the worker, then copy the resulting bundle dir back and
+  `make push-modeld-deps` from the Linux host.
 
 ### VS Code extension development
 

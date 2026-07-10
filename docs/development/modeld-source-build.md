@@ -271,7 +271,7 @@ dependency handoff, release assembly, upload, and verification. See
 | --- | --- | --- |
 | linux | llama.cpp (CPU/CUDA/HIP) + OpenVINO | verified end-to-end |
 | darwin (Apple Silicon) | llama.cpp + Metal | **llama-only — no OpenVINO** (not supported on Apple Silicon) |
-| windows | llama.cpp (CPU/CUDA) + OpenVINO | MinGW/UCRT toolchain; `.dll` + DLL-next-to-exe; unverified |
+| windows | llama.cpp (CPU/CUDA) + OpenVINO | MinGW/UCRT or MSVC toolchain; `.dll` + DLL-next-to-exe; unverified. See `docs/development/windows-development.md` for Windows dev setup and the SSH "just build the bundle" flow on a Windows worker. |
 
 The Makefile automatically loads a repo-root `.env` when present. A dependency
 producer device needs:
