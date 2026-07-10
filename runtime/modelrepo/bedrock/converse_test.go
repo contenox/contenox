@@ -102,7 +102,7 @@ func TestUnit_RegionFromURL(t *testing.T) {
 	require.Equal(t, "", regionFromURL(""))
 }
 
-func TestUnit_BedrockCatalog_RegisteredAndChatCapable(t *testing.T) {
+func TestSystem_BedrockCatalog_RegisteredAndChatCapable(t *testing.T) {
 	cp, err := modelrepo.NewCatalogProvider(modelrepo.BackendSpec{
 		Type:    "bedrock",
 		BaseURL: "https://bedrock-runtime.us-east-1.amazonaws.com",
