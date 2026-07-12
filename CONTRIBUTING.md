@@ -143,27 +143,40 @@ Keep these files in sync when changing public surface area:
 ### Prerequisites
 
 - [Go](https://go.dev/doc/install) 1.25+
-- `make`
-- `curl`, `git`, `gcc`, `g++`, and `cmake` for direct llama.cpp builds
+- `make` (helpful; individual `go build` / `npm` commands also work)
+- `curl`, `git`, `gcc`/`g++` (or MinGW/clang), and `cmake` for direct llama.cpp builds
 - Node.js 22+ and npm for the VS Code extension
 - Optional: Python 3 for OpenVINO backend dependency setup
 - Optional: CUDA toolkit with `nvcc` on `PATH` for direct llama.cpp CUDA builds
 - Optional: an LLM provider key or local server. The default local path is a GGUF model under `~/.contenox/models/`.
 
-Windows users: most Go, CLI, test, UI, and VS Code extension work is best done inside WSL2 (treat it like a Linux dev box). A native Windows checkout or dedicated Windows worker is mainly needed for verifying real Windows shell behavior and for producing official Windows `modeld` native dependency bundles. See `docs/development/windows-development.md` for the full Windows guide, WSL recommendations, toolchain notes, and the SSH flow for bundle production.
+Native Windows development is a first-class supported path. Use Git for Windows (brings Git Bash), the official Go MSI, Node.js 22+, and a MinGW-w64 toolchain (e.g. from https://winlibs.com/ or Visual Studio Build Tools + Clang/lld) for C/C++ work. Place tools, GOPATH, caches, and scratch data on a secondary drive (e.g. `D:`) for performance and cleanliness. Git Bash can run the bash-based bundler and build scripts.
+
+WSL2 remains a convenient option for a Linux-like workflow or when you primarily need to produce Linux artifacts.
+
+See `docs/development/windows-development.md` for the complete native Windows guide (including environment setup on a secondary drive, Windows Terminal profiles for Git Bash, PATH wiring, and producing Windows modeld dependency bundles) plus WSL recommendations.
 
 ### Go binary path
 
-`go install` puts binaries in `$GOPATH/bin`, usually `~/go/bin`. Add it to your
-shell:
+`go install` puts binaries in `$GOPATH/bin` (or `%GOPATH%\bin` on Windows), usually `~/go/bin`.
+
+Unix shells:
 
 ```bash
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
-Add that line to `~/.bashrc` or `~/.zshrc` if you want it permanently.
+PowerShell:
+
+```powershell
+$env:Path += ";$(go env GOPATH)\bin"
+```
+
+On Windows you can centralize GOPATH, caches, and PATH on a secondary drive using a small environment script (example patterns are shown in `docs/development/windows-development.md`).
 
 ### Building the CLI
+
+Unix / Git Bash:
 
 ```bash
 # Build the binary into ./bin/contenox
@@ -173,8 +186,18 @@ make build-contenox
 ./bin/contenox "list files in this repository"
 ```
 
-Optional: `make dev-install` symlinks `contenox` to
-`~/.local/bin/contenox` for development.
+PowerShell (native Windows checkout):
+
+```powershell
+go build -o bin\contenox.exe .\cmd\contenox
+# or, if make is available
+make build-contenox-windows
+.\bin\contenox.exe "list files in this repository"
+```
+
+Optional (Unix): `make dev-install` symlinks `contenox` to `~/.local/bin/contenox`.
+
+On Windows you can add the output directory or use the environment setup script to put the binary on your PATH.
 
 ### Building modeld with local LLM inference
 
@@ -183,6 +206,10 @@ separate `modeld` daemon. The llama backend uses the Contenox-owned direct
 llama.cpp shim and links against generated `.llamacpp-runtime/<profile>`
 libraries. The OpenVINO backend uses the `.openvino` virtualenv plus matching
 OpenVINO GenAI C++ headers.
+
+### Platform notes for modeld builds
+
+**Linux (Debian/Ubuntu example):**
 
 On Debian/Ubuntu:
 
@@ -199,20 +226,48 @@ CONTENOX_MODELD_BACKEND=llama make run-modeld
 
 For a CUDA-backed llama daemon, install the CUDA toolkit first (`nvcc` must be
 on `PATH`). The same targets include the CUDA llama.cpp backend when it is
-available:
-
-```bash
-make build-modeld
-CONTENOX_MODELD_BACKEND=llama make run-modeld
-```
+available.
 
 For an OpenVINO daemon:
 
 ```bash
-make deps-modeld
+make deps-modeld   # creates .openvino/venv + pulls GenAI headers
 make build-modeld
 CONTENOX_MODELD_BACKEND=openvino make run-modeld
 ```
+
+(Note: on Windows the venv must be created with native CPython — see the Windows section below.)
+
+**Native Windows (using Git Bash + standalone MinGW-w64 or VS Build Tools + Clang):**
+
+Install Git for Windows (provides Git Bash for running .sh scripts).
+
+For the C/C++ toolchain:
+- Standalone MinGW-w64 (e.g. from https://winlibs.com/ — add its `bin` to your PATH), **or**
+- Visual Studio Build Tools + Clang/LLD.
+
+**Important: OpenVINO setup order on Windows**
+
+The `.openvino` virtualenv **must** be created with a *native* Windows Python (the one from python.org or the Microsoft Store). The official `openvino` wheels are only built for real CPython.
+
+**Easiest:**
+
+```powershell
+cd D:\workspace\contenox.com\runtime
+.\scripts\setup-openvino-windows.ps1
+```
+
+(First time? The script will try to find Python 3.12 in the usual location. Pass `-PythonPath` if yours is elsewhere.)
+
+Then build:
+
+```bash
+# (MinGW in PATH)
+make -f Makefile.llamacpp-direct runtime
+make build-modeld
+```
+
+See `docs/development/windows-development.md` for the complete guide.
 
 Relocatable daemon bundles are built from the same root Makefile:
 
@@ -257,7 +312,7 @@ targets dispatch to the host:
 | --- | --- | --- |
 | linux | llama.cpp (CPU/CUDA/HIP) + OpenVINO | verified |
 | darwin (Apple Silicon) | llama.cpp + Metal (no OpenVINO) | scripts in place, native build chain unported |
-| windows | llama.cpp (CPU/CUDA) + OpenVINO (MinGW or Clang/MSVC) | scripts in place, unverified |
+| windows | llama.cpp (CPU/CUDA) + OpenVINO (MinGW or Clang/MSVC) | supported (see windows-development.md for full flow + Python ordering) |
 
 The Windows packager selects its toolchain with `MODELD_WINDOWS_TOOLCHAIN=mingw`
 (default) or `msvc` (links the OpenVINO/llama import libraries with Clang/`lld`).

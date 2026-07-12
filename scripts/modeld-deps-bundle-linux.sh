@@ -114,6 +114,20 @@ if [ "$HAVE_OPENVINO" = "1" ]; then
   cp -a "$OPENVINO_PKG/include" "$BUNDLE/openvino/openvino/include"
   cp -a "$OPENVINO_PKG/libs"    "$BUNDLE/openvino/openvino/libs"
 
+  # Populate license texts for OpenVINO components (Apache-2.0 requires LICENSE + NOTICE for redistribution).
+  # This is critical for public releases (VS Code marketplace, ACP/Zed registries, Windows Store app).
+  for srcdir in "$OPENVINO_PKG" "$GENAI_PKG" "$TOKENIZERS_LIB" "$GENAI_SRC"; do
+    if [ -d "$srcdir" ]; then
+      for f in LICENSE LICENSE.txt LICENSE.md NOTICE NOTICE.txt COPYING EULA EULA.txt; do
+        if [ -f "$srcdir/$f" ]; then
+          cp -a "$srcdir/$f" "$BUNDLE/licenses/openvino/" 2>/dev/null || true
+          cp -a "$srcdir/$f" "$BUNDLE/licenses/openvino-genai/" 2>/dev/null || true
+          cp -a "$srcdir/$f" "$BUNDLE/licenses/openvino-tokenizers/" 2>/dev/null || true
+        fi
+      done
+    fi
+  done
+
   # OpenVINO GenAI: the source the CGo bridge compiles against, the bundled minja /
   # gguflib headers, and the prebuilt libopenvino_genai.so.*.
   cp -a "$GENAI_SRC/src/cpp/include" "$BUNDLE/openvino/genai/src/cpp/include"

@@ -88,12 +88,21 @@ MODELD_OPENVINO_LD_FLAGS = -X 'github.com/contenox/runtime/modeld/openvino.build
 # at runtime to pin backend selection.
 MODELD_HAVE_OPENVINO := $(shell test -n "$(strip $(OPENVINO_PKG))" && test -d "$(OPENVINO_GENAI_SRC)/src/cpp/include" && echo 1)
 
+# Per-OS dev/runtime linker flags for OpenVINO (rpath only makes sense on Unix).
+ifeq ($(shell go env GOOS 2>/dev/null),windows)
+MODELD_OV_DEV_RPATH :=
+MODELD_OV_PKG_RPATH :=
+else
+MODELD_OV_DEV_RPATH = -Wl,-rpath,\$$ORIGIN/modeld-libs
+MODELD_OV_PKG_RPATH = -Wl,-rpath,\$$ORIGIN/modeld-libs
+endif
+
 ifeq ($(MODELD_HAVE_OPENVINO),1)
 MODELD_TAGS := llamanode llamacpp_direct openvino openvino_genai
 MODELD_LD_FLAGS := $(MODELD_VERSION_LD_FLAGS) $(MODELD_LLAMA_LD_FLAGS) $(MODELD_OPENVINO_LD_FLAGS)
 MODELD_OV_CXXFLAGS = $(OPENVINO_GENAI_CGO_CXXFLAGS)
-MODELD_OV_DEV_LDFLAGS = $(OPENVINO_GENAI_LINK_FLAGS) -Wl,-rpath,\$$ORIGIN/modeld-libs
-MODELD_OV_PKG_LDFLAGS = $(OPENVINO_GENAI_LINK_FLAGS)
+MODELD_OV_DEV_LDFLAGS = $(OPENVINO_GENAI_LINK_FLAGS) $(MODELD_OV_DEV_RPATH)
+MODELD_OV_PKG_LDFLAGS = $(OPENVINO_GENAI_LINK_FLAGS) $(MODELD_OV_PKG_RPATH)
 else
 MODELD_TAGS := llamanode llamacpp_direct
 MODELD_LD_FLAGS := $(MODELD_VERSION_LD_FLAGS) $(MODELD_LLAMA_LD_FLAGS)
@@ -193,18 +202,25 @@ check-modeld-llama-deps:
 	@test -f "$(LLAMA_CPP_REF_DIR)/common/chat.h" || { echo "missing pinned llama.cpp common headers ($(LLAMA_CPP_REF_DIR)) — run: make deps-llamacpp-ref"; exit 1; }
 	@ls "$(LLAMA_RUNTIME_LIB_DIR)"/libllama-common.* >/dev/null 2>&1 || ls "$(LLAMA_RUNTIME_LIB_DIR)"/llama-common.dll >/dev/null 2>&1 || ls "$(LLAMA_RUNTIME_LIB_DIR)"/common.dll >/dev/null 2>&1 || { echo "missing direct llama.cpp common library ($(LLAMA_RUNTIME_LIB_DIR)/libllama-common.* / common.dll) — run: make build-llamacpp-runtime"; exit 1; }
 
+# OS-aware output name for the dev build of modeld.
+MODELD_BIN_NAME := $(if $(filter windows,$(shell go env GOOS 2>/dev/null)),modeld.exe,modeld)
+
 # Build modeld with llama.cpp and, when available, OpenVINO GenAI.
 # Run `make deps-modeld` before building with OpenVINO support.
 build-modeld: build-llamacpp-runtime check-modeld-llama-deps
-	@echo "building modeld: tags=[$(MODELD_TAGS)] openvino=$(if $(MODELD_HAVE_OPENVINO),yes,no)"
+	@echo "building modeld: tags=[$(MODELD_TAGS)] openvino=$(if $(MODELD_HAVE_OPENVINO),yes,no) target=$(MODELD_BIN_NAME)"
 	CGO_ENABLED=1 \
 	CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
 	CGO_CXXFLAGS="$(MODELD_OV_CXXFLAGS)" \
 	CGO_LDFLAGS="$(LLAMA_DIRECT_LDFLAGS) $(MODELD_OV_DEV_LDFLAGS)" \
 	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_TAGS)' \
 		-ldflags "$(MODELD_LD_FLAGS)" \
-		-o $(PROJECT_ROOT)/bin/modeld $(PROJECT_ROOT)/cmd/modeld
-	@if [ "$(MODELD_HAVE_OPENVINO)" = "1" ]; then $(MAKE) --no-print-directory MODELD_LIBS_DIR=$(PROJECT_ROOT)/bin/modeld-libs MODELD_LIBS_COPY= bundle-modeld-libs; fi
+		-o "$(PROJECT_ROOT)/bin/$(MODELD_BIN_NAME)" $(PROJECT_ROOT)/cmd/modeld
+	@if [ "$(MODELD_HAVE_OPENVINO)" = "1" ]; then \
+		COPYFLAG=; \
+		if [ "$(shell go env GOOS 2>/dev/null)" = "windows" ]; then COPYFLAG=1; fi; \
+		$(MAKE) --no-print-directory MODELD_LIBS_DIR=$(PROJECT_ROOT)/bin/modeld-libs MODELD_LIBS_COPY="$$COPYFLAG" bundle-modeld-libs; \
+	fi
 
 # Place OpenVINO runtime libraries next to modeld.
 # MODELD_LIBS_COPY=1 copies files instead of symlinking them.
@@ -225,6 +241,13 @@ bundle-modeld-libs:
 		ln -sf "$$tokenizers_lib" "$(MODELD_LIBS_DIR)/"; \
 		echo "bundled OpenVINO runtime (symlinks) -> $(MODELD_LIBS_DIR)"; \
 	fi
+	# Stage OV license texts alongside libs for dev packages (compliance).
+	@mkdir -p "$(MODELD_LIBS_DIR)/../licenses/openvino" "$(MODELD_LIBS_DIR)/../licenses/openvino-genai" "$(MODELD_LIBS_DIR)/../licenses/openvino-tokenizers" 2>/dev/null || true
+	@for d in "$(OPENVINO_PKG)" "$(OPENVINO_GENAI_PKG)" "$(OPENVINO_TOKENIZERS_LIB)"; do \
+		for f in LICENSE LICENSE.txt NOTICE COPYING; do \
+			[ -f "$$d/$$f" ] && cp -a "$$d/$$f" "$(MODELD_LIBS_DIR)/../licenses/openvino/" 2>/dev/null || true; \
+		done; \
+	done || true
 
 # Place llama.cpp runtime libraries next to modeld.
 bundle-llama-libs:
@@ -238,6 +261,11 @@ bundle-llama-libs:
 		echo "bundled direct llama.cpp runtime (copies) -> $(LLAMA_LIBS_DIR)"; \
 		if [ "$(LLAMA_CUDA)" = "ON" ]; then \
 			bash "$(PROJECT_ROOT)scripts/modeld-vendor-cuda-libs.sh" "$(LLAMA_LIBS_DIR)"; \
+			# Stage CUDA EULA if vendored (for compliance in dev packages).
+			mkdir -p "$(LLAMA_LIBS_DIR)/../licenses/cuda" 2>/dev/null || true; \
+			for cand in "$${CUDA_HOME:-}/EULA.txt" "$${CUDA_PATH:-}/EULA.txt" /usr/local/cuda/EULA.txt; do \
+				[ -f "$$cand" ] && cp -a "$$cand" "$(LLAMA_LIBS_DIR)/../licenses/cuda/" 2>/dev/null || true; \
+			done || true; \
 		fi; \
 	else \
 		ln -s "$(LLAMA_RUNTIME_LIB_SRC)" "$(LLAMA_LIBS_DIR)"; \
@@ -248,7 +276,12 @@ bundle-llama-libs:
 # The bundle contains the wrapper, native binary, llama.cpp runtime libraries,
 # and OpenVINO libraries when that backend is compiled in.
 # CUDA hosts need libcudart.so.12 available to the bundled llama.cpp plugin.
+# NOTE: This target is Linux-oriented. On Windows prefer the full release flow
+# (bundle-modeld-deps-windows + package-modeld-release-windows using a MODELD_DEPS_ROOT).
 package-modeld: build-llamacpp-runtime check-modeld-llama-deps
+	@if [ "$(shell go env GOOS 2>/dev/null)" = "windows" ]; then \
+		echo "WARNING: package-modeld produces a Linux-style bundle. On Windows use: make package-modeld-release-windows MODELD_DEPS_ROOT=..."; \
+	fi
 	@rm -rf "$(MODELD_DIST_DIR)" && mkdir -p "$(MODELD_DIST_DIR)"
 	@echo "packaging modeld: tags=[$(MODELD_TAGS)] openvino=$(if $(MODELD_HAVE_OPENVINO),yes,no)"
 	CGO_ENABLED=1 \
@@ -490,6 +523,13 @@ check-modeld-deps-bundle:
 		done; \
 	fi
 	@echo "modeld deps bundle OK: $(MODELD_DEPS_ROOT) (openvino required=$(MODELD_RELEASE_OPENVINO))"
+	# License completeness check for public redistribution (VSCode, registries, Store).
+	@test -d "$(MODELD_DEPS_ROOT)/licenses" || { echo "bundle missing licenses/ dir"; exit 1; }
+	@ls "$(MODELD_DEPS_ROOT)/licenses"/* >/dev/null 2>&1 || { echo "bundle licenses/ appears empty"; exit 1; }
+	@if [ "$(MODELD_RELEASE_OPENVINO)" = "1" ]; then
+		ls "$(MODELD_DEPS_ROOT)/licenses/openvino"*/* 2>/dev/null | head -1 >/dev/null || { echo "openvino declared but no license texts under licenses/openvino*"; exit 1; }
+	fi
+	@echo "licenses/ present for declared components"
 
 # Package a release modeld bundle by linking against an extracted native dependency
 # bundle (MODELD_DEPS_ROOT) instead of rebuilding native deps. There is one target per
@@ -510,7 +550,7 @@ MODELD_PKG_RPATH_windows =
 MODELD_WINDOWS_TOOLCHAIN ?= mingw
 MODELD_PKG_LLAMA_LIBS_linux   = $(LLAMA_DIRECT_LINK_LIBS)
 MODELD_PKG_LLAMA_LIBS_darwin  = -lcommon -lllama -lggml -lggml-base -lstdc++
-MODELD_PKG_LLAMA_LIBS_windows_mingw = -l:libllama-common.dll -l:libllama.dll -l:ggml.dll -l:ggml-base.dll -lstdc++ -static-libgcc -static-libstdc++
+MODELD_PKG_LLAMA_LIBS_windows_mingw = -lllama-common -lllama -lggml -lggml-base -lstdc++ -static-libgcc -static-libstdc++
 MODELD_PKG_LLAMA_LIBS_windows_msvc = $(LLAMA_RUNTIME_LIB_DIR)/llama-common.lib $(LLAMA_RUNTIME_LIB_DIR)/llama.lib $(LLAMA_RUNTIME_LIB_DIR)/ggml.lib $(LLAMA_RUNTIME_LIB_DIR)/ggml-base.lib
 MODELD_PKG_LLAMA_LIBS_windows = $(MODELD_PKG_LLAMA_LIBS_windows_$(MODELD_WINDOWS_TOOLCHAIN))
 MODELD_PKG_OV_LIBS_linux   = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(OPENVINO_GENAI_LINK_FLAGS),)
@@ -538,13 +578,13 @@ package-modeld-release:
 
 # Bundle-path/tag overrides shared by every per-OS target.
 $(MODELD_RELEASE_TARGETS): MODELD_DIST_DIR := $(MODELD_RELEASE_DIST_DIR)/$(MODELD_RELEASE_NAME)
-$(MODELD_RELEASE_TARGETS): LLAMA_CPP_REF_DIR := $(MODELD_DEPS_ROOT)/llama/ref
-$(MODELD_RELEASE_TARGETS): LLAMA_RUNTIME_DIR := $(MODELD_DEPS_ROOT)/llama/runtime
-$(MODELD_RELEASE_TARGETS): LLAMA_RUNTIME_LIB_DIR := $(MODELD_DEPS_ROOT)/llama/runtime/lib
-$(MODELD_RELEASE_TARGETS): OPENVINO_PKG := $(MODELD_DEPS_ROOT)/openvino/openvino
-$(MODELD_RELEASE_TARGETS): OPENVINO_GENAI_SRC := $(MODELD_DEPS_ROOT)/openvino/genai
-$(MODELD_RELEASE_TARGETS): OPENVINO_GENAI_PKG := $(MODELD_DEPS_ROOT)/openvino/genai
-$(MODELD_RELEASE_TARGETS): OPENVINO_TOKENIZERS_LIB := $(MODELD_DEPS_ROOT)/openvino/tokenizers/lib
+$(MODELD_RELEASE_TARGETS): LLAMA_CPP_REF_DIR := $(abspath $(MODELD_DEPS_ROOT)/llama/ref)
+$(MODELD_RELEASE_TARGETS): LLAMA_RUNTIME_DIR := $(abspath $(MODELD_DEPS_ROOT)/llama/runtime)
+$(MODELD_RELEASE_TARGETS): LLAMA_RUNTIME_LIB_DIR := $(abspath $(MODELD_DEPS_ROOT)/llama/runtime/lib)
+$(MODELD_RELEASE_TARGETS): OPENVINO_PKG := $(abspath $(MODELD_DEPS_ROOT)/openvino/openvino)
+$(MODELD_RELEASE_TARGETS): OPENVINO_GENAI_SRC := $(abspath $(MODELD_DEPS_ROOT)/openvino/genai)
+$(MODELD_RELEASE_TARGETS): OPENVINO_GENAI_PKG := $(abspath $(MODELD_DEPS_ROOT)/openvino/genai)
+$(MODELD_RELEASE_TARGETS): OPENVINO_TOKENIZERS_LIB := $(abspath $(MODELD_DEPS_ROOT)/openvino/tokenizers/lib)
 # Recursive (=) so they honor a per-target MODELD_RELEASE_OPENVINO (darwin sets 0).
 $(MODELD_RELEASE_TARGETS): MODELD_TAGS = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),llamanode llamacpp_direct openvino openvino_genai,llamanode llamacpp_direct)
 $(MODELD_RELEASE_TARGETS): MODELD_OV_CXXFLAGS = $(if $(filter 1,$(MODELD_RELEASE_OPENVINO)),$(OPENVINO_GENAI_CGO_CXXFLAGS),)
@@ -556,7 +596,7 @@ $(MODELD_RELEASE_TARGETS): package-modeld-release-%: check-modeld-deps-bundle
 	@rm -rf "$(MODELD_DIST_DIR)" && mkdir -p "$(MODELD_DIST_DIR)"
 	@echo "packaging modeld release ($*): $(MODELD_RELEASE_NAME) tags=[$(MODELD_TAGS)] openvino=$(MODELD_RELEASE_OPENVINO)"
 	CGO_ENABLED=1 \
-	CGO_CPPFLAGS="$(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS)" \
+	CGO_CPPFLAGS="$(if $(filter windows%,$*), -I$(shell cygpath -w $(LLAMA_CPP_REF_DIR)/common) -I$(shell cygpath -w $(LLAMA_CPP_REF_DIR)/vendor) -I$(shell cygpath -w $(LLAMA_RUNTIME_DIR)/include), $(LLAMA_COMMON_CPPFLAGS) $(LLAMA_DIRECT_CPPFLAGS))" \
 	CGO_CXXFLAGS="$(MODELD_OV_CXXFLAGS)" \
 	CGO_LDFLAGS="-L$(LLAMA_RUNTIME_LIB_DIR) $(MODELD_PKG_RPATH_$*) $(MODELD_PKG_LLAMA_LIBS_$*) $(MODELD_PKG_OV_LIBS_$*)" \
 	go build -a -p $(MODELD_BUILD_JOBS) -tags '$(MODELD_TAGS)' \
@@ -596,6 +636,10 @@ $(MODELD_RELEASE_TARGETS): package-modeld-release-%: check-modeld-deps-bundle
 		done; \
 	fi
 	@if [ -d "$(MODELD_DEPS_ROOT)/licenses" ]; then rm -rf "$(MODELD_DIST_DIR)/LICENSES"; cp -a "$(MODELD_DEPS_ROOT)/licenses" "$(MODELD_DIST_DIR)/LICENSES"; fi
+	# Ensure at minimum the project LICENSE and any vendored upstream are present (for public distribution compliance).
+	@mkdir -p "$(MODELD_DIST_DIR)/LICENSES"
+	@[ -f LICENSE ] && cp -a LICENSE "$(MODELD_DIST_DIR)/LICENSES/contenox-LICENSE" 2>/dev/null || true
+	@echo "LICENSES/ prepared in $(MODELD_DIST_DIR) (openvino=$(MODELD_RELEASE_OPENVINO) cuda=$(grep -q cuda=ON $(MODELD_DEPS_ROOT)/llama/runtime/.contenox-runtime-stamp 2>/dev/null && echo yes || echo no))"
 	@DIST_DIR="$(MODELD_DIST_DIR)" RELEASE_OUT="$(MODELD_RELEASE_DIST_DIR)" \
 	NAME="$(MODELD_RELEASE_NAME)" VERSION="$(MODELD_VERSION)" PLATFORM="$(MODELD_PLATFORM)" \
 	MIN_PROTOCOL="$(MODELD_MIN_PROTOCOL)" PROTOCOL_VERSION="$(MODELD_PROTOCOL_VERSION)" \

@@ -45,3 +45,21 @@ if [ "$found" -lt 3 ]; then
   echo "modeld-vendor-cuda-libs: expected libcudart/libcublas/libcublasLt, only vendored $found" >&2
   exit 1
 fi
+
+# Also stage NVIDIA CUDA EULA / license notice if discoverable near the toolkit.
+# Required for compliant redistribution of CUDA runtime libs in public modeld artifacts.
+CUDA_EULA_CANDIDATES=(
+  "${CUDA_HOME:-}/EULA.txt"
+  "${CUDA_PATH:-}/EULA.txt"
+  "/usr/local/cuda/EULA.txt"
+  "$(dirname "$(which nvcc 2>/dev/null || echo '')")/../../EULA.txt"
+)
+for cand in "${CUDA_EULA_CANDIDATES[@]}"; do
+  if [ -f "$cand" ]; then
+    mkdir -p "$LIB_DIR/../licenses/cuda"
+    cp -a "$cand" "$LIB_DIR/../licenses/cuda/" 2>/dev/null || cp -a "$cand" "$LIB_DIR/licenses/cuda/" 2>/dev/null || true
+    echo "modeld-vendor-cuda-libs: staged NVIDIA EULA from $cand"
+    break
+  fi
+done
+# On Windows the EULA is usually in the NVIDIA GPU Computing Toolkit dir; user/build host should ensure it lands in licenses/ via manual or extended logic.

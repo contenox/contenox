@@ -13,7 +13,7 @@ The codebase is primarily developed on Linux. Windows support exists for:
 | Path | Best for | Limitations |
 |------|----------|-------------|
 | **WSL2 (Ubuntu/Debian recommended)** | Day-to-day Go development, CLI work, running tests, UI/Beam packaging, VS Code extension builds | Produces Linux modeld artifacts only. Use a real Windows box or VM when you need to emit Windows DLL bundles. |
-| **Native Windows (PowerShell/cmd + Git Bash/MSYS2)** | Verifying Windows-specific behavior (paths, `local_shell`, PowerShell/cmd.exe execution), acting as a `modeld` Windows dependency producer | Tooling for native C/C++ (llama.cpp, OpenVINO) is more involved than on Linux. `make` is often unavailable or partial. |
+| **Native Windows (PowerShell/cmd + Git Bash)** | Verifying Windows-specific behavior (paths, `local_shell`, PowerShell/cmd.exe execution), acting as a `modeld` Windows dependency producer | Tooling for native C/C++ (llama.cpp, OpenVINO) is more involved than on Linux. `make` is often unavailable or partial. |
 | **Remote SSH / VS Code Remote** | Offloading heavy work (gopls, builds) to a Linux box while editing on Windows; or driving a Windows worker headlessly | See the SSH section below for bundle production. |
 
 For most contributors: install WSL2 and do the normal Linux flow inside it (see [CONTRIBUTING.md](../CONTRIBUTING.md) and `docs/development/modeld-source-build.md`). Drop to a native Windows checkout only when you need Windows-specific verification or when you are the designated Windows modeld builder.
@@ -39,7 +39,7 @@ This path gives you nearly identical behavior to a native Linux dev box for ever
   - Chocolatey: `choco install make`
   - Or just invoke the individual `go build` / `npm` commands.
 - For `modeld` Windows native work (see below):
-  - MinGW-w64 (via MSYS2 is easiest) **or** Visual Studio Build Tools + Clang/lld.
+  - Standalone MinGW-w64 (e.g. from https://winlibs.com/) **or** Visual Studio Build Tools + Clang/lld.
   - CMake.
   - For OpenVINO-inclusive bundles: matching OpenVINO SDK + GenAI sources built for your toolchain.
 - (Optional but recommended) Windows OpenSSH server so you can drive the box from your Linux dev machine.
@@ -86,7 +86,7 @@ The key script on the Windows side is:
 scripts/modeld-deps-bundle-windows.sh
 ```
 
-It is a bash script. Run it from Git Bash, MSYS2 bash, or any bash that has the repo on its filesystem. It does **not** compile llama.cpp or OpenVINO — it only packages already-built native outputs into the layout + `manifest.json` + `bundle.env` + fingerprint that the release system understands.
+It is a bash script. Run it from Git Bash (or any bash that has the repo on its filesystem, e.g. WSL). It does **not** compile llama.cpp or OpenVINO — it only packages already-built native outputs into the layout + `manifest.json` + `bundle.env` + fingerprint that the release system understands.
 
 The Makefile target that calls it (on a make-capable host) is:
 
@@ -103,6 +103,53 @@ See also:
 - `scripts/modeld-deps-bundle-windows.sh` (the script itself documents the expected inputs)
 - `mk/llama-flags.mk` and `Makefile.llamacpp-direct` (for how the llama runtime is produced)
 
+### License notices for public modeld distribution
+
+modeld packages are shipped publicly (CLI `modeld install`, VS Code users, ACP/Zed, planned Windows Store). Every package must ship `LICENSES/` with:
+
+- llama.cpp license (always)
+- OpenVINO/GenAI/Tokenizers licenses (when included)
+- NVIDIA CUDA EULA (for cuda variants)
+
+Bundlers now copy the texts (from pkg dirs and EULA candidates). After `package-modeld-release-windows` or dev `package-modeld`:
+
+ls the LICENSES/ in the dist dir.
+
+The packaging step and checks enforce this (see Makefile and updated bundlers). Failure to include notices would violate redistribution terms for CUDA and Apache components.
+
+Update the "unverified" note: with these changes, Windows CUDA+OV production is supported for releases.
+
+### Native Windows build (MinGW-w64 or MSVC)
+
+Use Git Bash (from Git for Windows) to run bash scripts like the bundler.
+
+For compilation toolchain:
+- Standalone MinGW-w64 (e.g. https://winlibs.com/ — add `bin` to PATH), **or**
+- Visual Studio Build Tools + Clang/LLD.
+
+#### OpenVINO venv + sources (use native PowerShell)
+
+```powershell
+cd D:\workspace\contenox.com\runtime
+.\scripts\setup-openvino-windows.ps1
+```
+
+(You can pass `-PythonPath` and `-Version` if needed.)
+
+#### Build
+
+```bash
+# (MinGW-w64 in PATH, or use MSVC tools)
+make -f Makefile.llamacpp-direct runtime
+make build-modeld
+```
+
+For full details and bundle production, see the "Producing Windows modeld dependency bundles" section above. The `scripts/setup-openvino-windows.ps1` helper handles the Python/GenAI part cleanly without any Unix emulation.
+
+You can point the URIs at real `s3://...` when you have credentials (same variables as the Linux release runbook).
+
+`make build-modeld` also works for local development of the daemon itself (produces `bin/modeld.exe` linked against the just-built runtime).
+
 ### Building the bundle on a Windows worker via SSH (just the building part)
 
 This is the narrow "via ssh" flow for producing the Windows dep bundle when your primary machine is Linux.
@@ -111,7 +158,7 @@ This is the narrow "via ssh" flow for producing the Windows dep bundle when your
 
 - It has a working MinGW or MSVC-based toolchain + CMake that can produce the llama.cpp DLLs (and optional OpenVINO pieces) for the desired variant (cpu / cuda).
 - The llama.cpp reference and built runtime directories are already populated from a previous native build step on this box (the heavy CMake work). The bundle script only packages them.
-- Git Bash (or MSYS2 bash) is on PATH and the repo is cloned at a matching commit.
+- Git Bash is on PATH and the repo is cloned at a matching commit.
 - OpenSSH server is enabled (or you use another remote execution method).
 
 **Steps (focused on the bundle production)**
@@ -122,7 +169,7 @@ This is the narrow "via ssh" flow for producing the Windows dep bundle when your
    ssh windows-builder
    ```
 
-2. On the Windows worker (Git Bash / MSYS2 session):
+2. On the Windows worker (Git Bash session):
 
    ```bash
    cd /c/Users/builder/src/github.com/contenox/enterprise/runtime
@@ -172,6 +219,9 @@ This is the narrow "via ssh" flow for producing the Windows dep bundle when your
 
 **Notes**
 
+- **MinGW limitations**: Newer MinGW GCC (16.x) + the vendored `cpp-httplib` inside some llama.cpp commits can fail with `CreateFile2` not declared. We added `-D_WIN32_WINNT=0x0A00` automatically in `Makefile.llamacpp-direct`. If you still hit it, either:
+  - Use a full Visual Studio + Clang/MSVC toolchain and `MODELD_WINDOWS_TOOLCHAIN=msvc`, or
+  - Build on the Windows box only the runtime + bundle step, then do final packaging on a Linux machine that has the pulled bundle.
 - The produced bundle records the runtime ABI (`dl-v1` for MinGW-style, `dl-v1-msvc` for the MSVC toolchain). Consumers must request a matching `MODELD_EXPECT_RUNTIME_ABI` when pulling.
 - For MSVC builds you must also include the VC++ redistributables (`msvcp140.dll`, `vcruntime140*.dll`, `vcomp140.dll`) in the final package (normally handled by `MODELD_MSVC_REDIST_DIR` during the Linux-side `package-modeld-release-windows` step, or manually when hand-rolling on the Windows box).
 - Keep the worker's llama.cpp build inputs in sync with the pinned commit used by the rest of the release (`LLAMA_CPP_COMMIT` from the build environment / `mk/llama-flags.mk`).

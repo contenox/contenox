@@ -49,6 +49,8 @@ function checkVSIX(file) {
     "extension/SUPPORT.md",
     "extension/LICENSE.txt",
     "extension/media/contenox-icon.png",
+    "extension/media/chat/webview.js",
+    "extension/media/chat/webview.css",
     "extension/dist/approval/nativeTool.js",
   ];
   for (const entry of required) {

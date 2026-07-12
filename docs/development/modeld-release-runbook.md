@@ -122,7 +122,7 @@ make -pn help | rg '^(AWS_REGION|AWS_DEFAULT_REGION|MODELD_DEPS_S3_URI|MODELD_RE
 | `linux-arm64` | llama.cpp + OpenVINO | Same release contract as Linux, subject to available native toolchain and OpenVINO support. |
 | `darwin-arm64` | llama.cpp + Metal | OpenVINO is off by default; package target sets `MODELD_RELEASE_OPENVINO=0`. |
 | `darwin-amd64` | llama.cpp | Requires a matching macOS Intel build host/toolchain if released. |
-| `windows-amd64` | llama.cpp + OpenVINO | Requires a Windows/MSYS2 or equivalent native CGO build host; this path is still marked unverified. |
+| `windows-amd64` | llama.cpp + OpenVINO | Requires a Windows MinGW-w64 or MSVC+Clang native CGO build host. |
 
 ## Build and Upload a Dependency Bundle
 

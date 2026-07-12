@@ -13,6 +13,7 @@ how-to docs live one level up in `docs/`.
 | [vscode/](vscode/README.md) | VS Code extension: permission bridge, review/UX findings, Marketplace release |
 | [beam/](beam/README.md) | The embedded browser UI: restoration, cockpit direction, R&D visions |
 | [providers/](providers/README.md) | Cloud/hosted provider integrations and context-caching strategy |
+| [windows/](windows/README.md) | Windows product surface, distribution (Store + PowerShell), MSIX packaging, GUI-first / desktop agent experience |
 
 ## Product
 
@@ -24,6 +25,7 @@ how-to docs live one level up in `docs/`.
 | [product-surface-audit-20260702.md](product-surface-audit-20260702.md) | working doc | The full-E2E audit driving the niche-down decision |
 | [chat-modes-context.md](chat-modes-context.md) | R&D / vision | Chat modes and context injection for editor surfaces |
 | [ci-release-hardening.md](ci-release-hardening.md) | plan | Promotion-based release workflow hardening |
+| [windows/windows-product-surface.md](windows/windows-product-surface.md) | initial | Windows GUI-first shift, Store-primary distribution, PowerShell fallback, launch + local GPU agent experience |
 
 ## Historical records
 

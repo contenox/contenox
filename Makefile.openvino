@@ -22,11 +22,20 @@ help:
 
 deps:
 	$(PYTHON) -m venv "$(OPENVINO_VENV)"
-	"$(OPENVINO_VENV)/bin/pip" install -q --upgrade pip
-	"$(OPENVINO_VENV)/bin/pip" install -q openvino huggingface_hub
+	@if [ "$(shell go env GOOS 2>/dev/null)" = "windows" ]; then \
+		"$(OPENVINO_VENV)/Scripts/python.exe" -m pip install -q --upgrade pip; \
+		"$(OPENVINO_VENV)/Scripts/pip" install -q openvino huggingface_hub; \
+	else \
+		"$(OPENVINO_VENV)/bin/pip" install -q --upgrade pip; \
+		"$(OPENVINO_VENV)/bin/pip" install -q openvino huggingface_hub; \
+	fi
 
 deps-genai: deps
-	"$(OPENVINO_VENV)/bin/pip" install -q openvino-genai
+	@if [ "$(shell go env GOOS 2>/dev/null)" = "windows" ]; then \
+		"$(OPENVINO_VENV)/Scripts/pip" install -q openvino-genai; \
+	else \
+		"$(OPENVINO_VENV)/bin/pip" install -q openvino-genai; \
+	fi
 
 genai-src:
 	test -d "$(OPENVINO_GENAI_REPO)/.git" || git clone https://github.com/openvinotoolkit/openvino.genai.git "$(OPENVINO_GENAI_REPO)"

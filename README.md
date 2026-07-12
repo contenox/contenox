@@ -2,306 +2,156 @@
 
 **AI workflows you can run, review, and own.**
 
-Use AI for development without unlearning how to do it yourself.
+AI is becoming an integral part of software engineering. The critical question is whether it makes you sharper or merely more dependent.
 
-Contenox is an open-source, local-first AI workflow runtime for engineers. It
-packages repeatable AI-assisted work into versioned Chains: files that declare the
-prompt, model route, tool allowlist, command policy, retry behavior, branches,
-budgets, and human approval gates.
+Naive AI usage risks turning engineering judgment into **rented fluency**—highly useful while the model is strong, reachable, and affordable, but ephemeral. The durable value in software engineering has never been the typing; it is knowing *what* to build, knowing *what* changed, and maintaining the capacity to own the system when it breaks.
 
-The agent loop does the work. The Chain is the contract.
+Contenox is built as an **exoskeleton, not an autopilot**. It amplifies the engineer doing the work. You remain firmly in the loop because the workflows, tools, state, and approval policies are entirely authored and reviewed by you.
 
-Contenox is for work where AI may touch a terminal, repository, internal API,
-ticket system, browser, or production-adjacent data, and where "the model decided"
-is not an acceptable control boundary.
-
-Run the same Chain from the CLI, VS Code, or any ACP client. Route inference to a
-local model, a private-network backend, or a hosted provider. Sessions, config,
-run logs, and runtime state stay on your machine. No hosted Contenox service
-required.
-
-![A natural-language task in the terminal: contenox reads the repo and answers](website/public/hero.gif)
-
-[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/contenox/runtime?label=version&logo=github)](https://github.com/contenox/runtime/releases)
+> **What Contenox is not:** It is not an autonomous coding employee, a hosted autopilot, or a prompt habit hidden away in your shell history.
+> It is a **local runtime** for AI-assisted work that keeps an engineer in control.
 
 Docs: **[contenox.com](https://contenox.com)**
 
 ---
 
-## Install
+## For Work That Touches Real Systems
 
-<!-- Release tooling: keep next line in sync with runtime/version/version.txt (updated by `make -f Makefile.version bump-*`). -->
-<!-- TAG=v0.34.2 -->
+Contenox is purpose-built for high-consequence engineering environments: production repositories, internal APIs, infrastructure scripts, operational dashboards, release pipelines, and systems of record.
+
+In these environments, an "AI agent" cannot mean "give a model broad credentials and hope for the best." It requires a strict runtime boundary:
+
+* **Explicit tools & policies** to govern actions.
+* **Local state** to preserve privacy.
+* **Human-in-the-loop (HITL) approval** for execution.
+* **Reviewable evidence** for auditing.
+
+The core issue is not that agents can act; it is agents acting outside a boundary you author. The model can reason, inspect, and propose—but the **Chain** decides what it may touch, and the **operator** decides what it may change.
+
+---
+
+## Install
 
 ```bash
 curl -fsSL https://contenox.com/install.sh | sh
+
 ```
 
-Prefer to inspect first?
+### Inspect Before Installing
+
+If you prefer to audit the installation script first:
 
 ```bash
 curl -fsSLO https://contenox.com/install.sh
 less install.sh
 sh install.sh
+
 ```
 
-Release downloads and source builds are available from the
-[releases page](https://github.com/contenox/runtime/releases).
+*Pre-built release downloads and source builds are also available on the [releases page](https://github.com/contenox/runtime/releases).*
 
 ---
 
 ## Quick Start
 
 ```bash
-contenox setup                          # choose a provider/model for this machine
-contenox "say hello world in python"    # use it from the CLI
-contenox chat -e                        # open $EDITOR to compose a prompt
+contenox setup                    # Choose a provider/model for this machine
+contenox "say hello world in python"    # Query directly from the CLI
+contenox chat -e                         # Open $EDITOR to compose a rich prompt
+
 ```
 
-Resume past work with `contenox session list` and `contenox session switch <name>`.
+Manage past contexts effortlessly using `contenox session list` and `contenox session switch <name>`.
 
-![contenox backend list showing local and hosted providers, then a first chat on a local model](website/public/quickstart.gif)
+### Smart Dual-Model Routing
 
-Inline editor autocomplete is intentionally a separate model from chat, so ghost
-text can stay local and low-latency while chat uses a larger model:
+Inline autocomplete runs on a dedicated model separate from the main chat. This ensures editor ghost text stays entirely local and ultra-low latency, while complex chat queries can leverage larger frontier models:
 
 ```bash
-contenox config set default-provider              openai          # chat on a hosted model
-contenox config set default-model                 gpt-5-mini
-contenox config set default-autocomplete-provider llama           # ghost text on local modeld
+# Rich chat routed to a hosted model
+contenox config set default-provider          openai
+contenox config set default-model             gpt-5-mini
+
+# Ghost text routed to a local model
+contenox config set default-autocomplete-provider llama
 contenox config set default-autocomplete-model    qwen3-coder-30b-a3b
+
 ```
 
-In VS Code, enable it with `Contenox: Enable Autocomplete`.
+*To enable autocomplete in VS Code, run the command:* `Contenox: Enable Autocomplete`.
 
 ---
 
-## Why Chains?
+## Core Use Cases
 
-A naked agent loop is useful, but it is not enough when AI can touch real tools.
+Contenox excels when workflows are specific, repeatable, and require explicit guardrails:
 
-A Chain answers the questions a serious team has to ask before letting a model
-act:
+* **Reviewing Diffs:** Run tests, summarize architectural risks, and gate destructive operations behind manual approvals.
+* **Drafting Release Evidence:** Automatically aggregate git logs, PRs, issue tickets, and CI outputs into clean changelogs, deployment checklists, and reviewer packets.
+* **Wrapping Internal APIs:** Safely expose subsets of OpenAPI specs while masking sensitive tenant/environment arguments and requiring authorization for mutating calls.
+* **Automating Repo Chores:** Ingest an issue tracking item, generate a patch, run local validation checks, and draft the PR description.
+* **Inspecting Live Operations:** Query diagnostic dashboards, shell scripts, or Model Context Protocol (MCP) tools via tightly scoped policies rather than broad, persistent credentials.
+* **Edge Autocomplete:** Offload editor suggestions to local workstation models while maintaining high-powered reasoning in chat.
 
-- What is the task?
-- Which model or provider may be used?
-- Which tools may the model call?
-- Which commands or API operations are allowed?
-- What must stop for human approval?
-- What state, trace, and evidence does the run leave behind?
-- Can the workflow be reviewed, committed, diffed, and run again?
-
-In Contenox, a Chain is not a prompt pipeline. It is the reviewed execution
-contract around an agent loop.
-
-![A sudo command is refused because the chain's command policy denies it; the policy is plain JSON](website/public/chain-blocked.gif)
+The exact same Chain runs seamlessly across the **Terminal, VS Code, Zed, JetBrains, AionUi,** or any standard ACP client.
 
 ---
 
-## What You Author
+## Security & Runtime Protection
 
-The unit of work is a Chain: a single versioned file where every decision is a
-visible JSON key. Prompts, provider routing, tool scope, command policy, retry
-policy, token limits, loop budgets, and branches are part of the artifact you
-review.
-
-```json
-{
-  "id": "review",
-  "token_limit": 65536,
-  "tasks": [
-    {
-      "id": "review",
-      "handler": "chat_completion",
-      "system_instruction": "You are a code reviewer. Analyze the diff, run tests if tools are available, then give a concise review.",
-      "execute_config": {
-        "model": "{{var:model}}",
-        "provider": "{{var:provider}}",
-        "tools": ["local_shell", "local_fs"],
-        "tools_policies": {
-          "local_shell": {
-            "_allowed_commands": "go,make,npm,cargo,grep,cat",
-            "_denied_commands": "sudo,su,dd,mkfs,fdisk,parted,shred"
-          },
-          "local_fs": {
-            "_allowed_dir": ".",
-            "_max_read_bytes": "262144"
-          }
-        },
-        "retry_policy": {
-          "max_attempts": 4,
-          "initial_backoff": "1s",
-          "max_backoff": "30s",
-          "jitter": 0.25,
-          "rate_limit_min_wait": "10s"
-        }
-      },
-      "transition": {
-        "branches": [
-          {
-            "operator": "edge_traversed_at_least",
-            "edge": "review->run_tools",
-            "when": "6",
-            "goto": "end"
-          },
-          { "operator": "equals", "when": "tool_call", "goto": "run_tools" },
-          { "operator": "default", "goto": "end" }
-        ]
-      }
-    },
-    {
-      "id": "run_tools",
-      "handler": "execute_tool_calls",
-      "input_var": "review",
-      "execute_config": {
-        "tools": ["local_shell", "local_fs"]
-      },
-      "transition": {
-        "branches": [
-          { "operator": "default", "goto": "review" }
-        ]
-      }
-    }
-  ]
-}
-```
-
-Save it, then pipe your work into it. It speaks Unix:
-
-```bash
-git diff | contenox run --chain ./review.json
-```
-
-HITL is not a hidden toggle. Gated tool calls route through policy files such as
-`hitl-policy-default.json`, `hitl-policy-strict.json`, and editor-specific ACP
-policies. The Chain defines what the workflow can ask for; the active policy
-decides what must pause for approval before execution.
-
-Walk through your first chain:
-**[contenox.com/docs/guide/first-chain](https://contenox.com/docs/guide/first-chain/)**.
-
----
-
-## What It Is Good For
-
-Contenox is strongest when the workflow is specific and repeatable: known inputs,
-known tools, known output shape, and explicit review gates.
-
-- **Review a diff** - run tests, summarize risk, and gate on approval before
-  anything destructive runs.
-- **Draft release evidence** - turn git log, PRs, tickets, and CI output into a
-  changelog, risk notes, deployment checklist, and reviewer packet.
-- **Wrap an internal API** - expose a safe OpenAPI subset with hidden tenant/env
-  args and approval required on mutating calls.
-- **Automate repo chores** - take an issue, produce a patch, run checks, and write
-  the PR description.
-- **Inspect operational systems** - query dashboards, shell scripts, or MCP tools
-  through scoped policies instead of broad credentials.
-- **Use edge autocomplete** - keep VS Code ghost text on a local or local-network
-  coder model while chat uses a larger hosted model.
-
-The same Chain runs from the terminal, VS Code, Zed, JetBrains, AionUi, or any ACP
-client. Provider choice is config: local `modeld`, Ollama, vLLM, OpenAI,
-OpenRouter, Anthropic, Mistral, Gemini, AWS Bedrock, or Vertex.
-
----
-
-## For Work That Touches Real Systems
-
-Contenox is built for high-consequence engineering workflows: production repos,
-internal APIs, infrastructure scripts, operational dashboards, release processes,
-and systems of record.
-
-In those environments, "AI agent" cannot mean "give a model broad credentials and
-hope." It needs a runtime boundary: explicit tools, explicit policy, local state,
-human approval, and reviewable evidence.
-
-The problem is not that agents can act. The problem is agents acting outside a
-boundary you authored.
-
-The model can reason, inspect, and propose. The Chain decides what it may touch.
-The operator decides what it may change.
-
----
-
-## What the Runtime Protects
-
-| Risk | Contenox mechanism |
+| Identified Risk | Contenox Mitigation |
 | --- | --- |
-| Agent behavior disappears into chat history | Chains are files: reviewable, versionable, repeatable |
-| The model can touch too much | Tool allowlists, command policies, and scoped API specs |
-| Human review happens after damage | Destructive actions stop at approval gates before execution |
-| Internal APIs become broad agent tools | Curated OpenAPI subsets with hidden environment/tenant args |
-| Vendor choice becomes workflow lock-in | Provider/model routing is config, not application logic |
-| Routine work burns frontier-model budget | Route simple work to local or private-network models |
-| Team knowledge leaves the workstation | Sessions, state, config, and run logs stay local |
-
-![A destructive rm command stops at a human approval gate before it runs](website/public/hitl-approve.gif)
+| **Fleeting Agent History** | Chains are declarative files: easily reviewable, version-controlled, and repeatable. |
+| **Unbounded Agent Access** | Enforced via strict tool allowlists, localized command policies, and tightly scoped API definitions. |
+| **Post-Damage Review** | Destructive actions are systematically blocked by human-in-the-loop approval gates prior to execution. |
+| **Leaky Internal APIs** | Curated OpenAPI subsets encapsulate hidden environment variables, auth tokens, and tenant arguments. |
+| **Vendor Lock-in** | Provider and model routing live in configuration files, entirely decoupled from application logic. |
+| **Frontier Model Budget Burn** | Routine tasks and linting checks are automatically routed to local or private-network infrastructure. |
+| **Exfiltration of Team Data** | All interactive sessions, states, configs, and runtime logs remain completely local. |
 
 ---
 
-## The Stance: Exoskeleton, Not Autopilot
+## Architectural Fit
 
-AI is becoming part of software work. The question is whether it makes you sharper
-or more dependent.
+Contenox serves as the local agent runtime layer running between your interface and your infrastructure.
 
-Naive AI use turns engineering judgment into rented fluency: useful while the
-model is good, reachable, current, and affordable. But the durable value in
-software was never the typing. It was knowing what to build, knowing what changed,
-and being able to own the system when it breaks.
-
-Contenox is built as an exoskeleton, not an autopilot. It amplifies the person
-doing the work. You stay in the loop because the workflow, tools, state, and
-approval policy are things you author and review.
-
-Contenox is not an autonomous coding employee. It is not a hosted autopilot. It is
-not a prompt habit hidden in your shell history.
-
-It is a local runtime for AI-assisted work that still has an owner.
-
----
-
-## Where Contenox Fits
-
-Contenox is the agent layer you control from terminal to editor.
-
-| Nearby world | Contenox stance |
+| Ecosystem | The Contenox Paradigm |
 | --- | --- |
-| IDE copilots | Editor assistance is not enough. The workflow should run from terminal, VS Code, and ACP clients. |
-| CLI coding agents | A single coding loop is not a runtime. Contenox adds sessions, tool policy, provider routing, and review gates. |
-| LangChain / agent frameworks | Libraries are not the product. Contenox is an executable local runtime for end users and teams. |
-| Dify / n8n / web workflow tools | AI workflows that touch local code and tools should not require a SaaS control plane. |
-| Ollama wrappers | A model host is not a workflow boundary. Contenox adds Chains, tools, HITL policy, and routing across local, private, and hosted models. |
+| **IDE Copilots** | Editor assistance is only one piece of the puzzle. Workflows must execute uniformly across the terminal, IDEs, and independent headless scripts. |
+| **CLI Coding Agents** | A single coding loop is not a structured runtime. Contenox adds multi-session persistence, strict tool authorization, explicit model routing, and human gates. |
+| **LangChain / Frameworks** | Software development libraries are not end-user products. Contenox provides an out-of-the-box executable runtime tailored for engineers and teams. |
+| **Dify / n8n / Web Tools** | Workflows touching local source code and specialized internal infrastructure should never depend on a third-party SaaS control plane. |
+| **Ollama Wrappers** | A model provider is not a workflow boundary. Contenox introduces native Chains, secure tool definitions, and dynamic routing across hybrid infrastructure. |
 
 ---
 
 ## Connect Your Stack
 
-Anything reachable over MCP, an OpenAPI spec, or a shell command can become a
-scoped tool in a Chain:
+Any asset accessible via an OpenAPI spec, a shell command, or an MCP server can be transformed into a secure tool inside a Contenox Chain:
 
 ```bash
-# Any MCP-compatible server
+# Connect any Model Context Protocol (MCP) server
 contenox mcp add notion https://mcp.notion.com/mcp --auth-type oauth
 
-# Any HTTP API with an OpenAPI spec
+# Wrap an internal HTTP API using its OpenAPI specification
 contenox tools add erp_billing \
   --url https://erp.internal.example.com \
   --spec ./billing-subset.yaml
 
-# The shell, with your own command policy declared in the Chain
+# Bind the local shell under a strictly defined Chain policy
 contenox --shell "check Proxmox and flag anything red"
+
 ```
 
 ---
 
-## Use It From Your Editor
+## Editor Integration
 
-Contenox speaks the [Agent Client Protocol](https://github.com/zed-industries/agent-client-protocol)
-over stdio, so the same local Chains run inside Zed, JetBrains, AionUi, and other
-ACP clients. For Zed, drop this into `~/.config/zed/settings.json`:
+Contenox natively communicates via the [Agent Client Protocol (ACP)](https://github.com/zed-industries/agent-client-protocol) over standard I/O.
+
+### Zed Integration
+
+Add the following snippet to your `~/.config/zed/settings.json`:
 
 ```json
 {
@@ -313,154 +163,104 @@ ACP clients. For Zed, drop this into `~/.config/zed/settings.json`:
     }
   }
 }
+
 ```
 
-Tool calls render as cards with the real command/path, HITL prompts route through
-the editor's permission UI, and session history replays when you reopen the
-project.
+Tool invocations render dynamically as interactive UI cards showing the underlying paths, human-in-the-loop prompts hook directly into the editor's native permissions, and full session history replays automatically upon reopening projects.
 
-For VS Code, install the
-[Contenox extension from the Marketplace](https://marketplace.visualstudio.com/items?itemName=contenox.contenox-runtime)
-(`ext install contenox.contenox-runtime`).
+### Other Environments
 
-Full guides: [Zed](https://contenox.com/docs/integrations/editors/zed/),
-[JetBrains](https://contenox.com/docs/integrations/editors/jetbrains/),
-[AionUi](https://contenox.com/docs/integrations/editors/aionui/).
+* **VS Code:** Install the official [Contenox Extension](https://marketplace.visualstudio.com/items?itemName=contenox.contenox-runtime) (`ext install contenox.contenox-runtime`).
+* **Web Interface:** Running `contenox serve` mounts your active sessions, chains, and backends locally inside **Beam**, the bundled web UI.
 
-Prefer a browser? `contenox serve` opens the same sessions, chains, and backends
-in Beam, the bundled local web UI:
-
-![Beam web UI: a shell tool call passed a human approval gate and the agent reports the result](website/public/beam-chat.png)
+*Step-by-step guides:* [Zed](https://contenox.com/docs/integrations/editors/zed/) | [JetBrains](https://contenox.com/docs/integrations/editors/jetbrains/) | [AionUi](https://contenox.com/docs/integrations/editors/aionui/).
 
 ---
 
-## Backends
+## Managing Backends
 
-Provider/model routing is configuration, not application logic. Add local,
-private-network, or hosted backends the same way:
-
-![Beam's modeld console: pick a local model, load it into the GPU slot, watch it go resident, unload it](website/public/modeld-console.gif)
+Routing rules are treated as system configuration, not application logic. Add hosted, local, or private network backends seamlessly:
 
 ```bash
-# Private network / self-hosted inference
+# Private infrastructure & local inference
 contenox backend add ollama --type ollama
 contenox backend add myvllm --type vllm --url http://gpu-host:8000
 
-# Hosted AI vendors
-contenox backend add openai \
-  --type openai \
-  --api-key-env OPENAI_API_KEY
-contenox backend add openrouter \
-  --type openrouter \
-  --api-key-env OPENROUTER_API_KEY
-contenox backend add anthropic \
-  --type anthropic \
-  --api-key-env ANTHROPIC_API_KEY
-contenox backend add mistral \
-  --type mistral \
-  --api-key-env MISTRAL_API_KEY
-contenox backend add gemini \
-  --type gemini \
-  --api-key-env GEMINI_API_KEY
-contenox backend add bedrock \
-  --type bedrock \
-  --url https://bedrock-runtime.us-east-1.amazonaws.com
-contenox backend add vertex \
-  --type vertex-google \
-  --url "https://us-central1-aiplatform.googleapis.com/v1/projects/$GOOGLE_CLOUD_PROJECT/locations/us-central1"
+# Commercial cloud providers
+contenox backend add openai    --type openai    --api-key-env OPENAI_API_KEY
+contenox backend add anthropic --type anthropic --api-key-env ANTHROPIC_API_KEY
+contenox backend add gemini    --type gemini    --api-key-env GEMINI_API_KEY
 
-# Set your defaults
-contenox config set default-model    qwen3-8b
-contenox config set default-provider llama
+# Set global operational routing defaults
+contenox config set default-model     qwen3-8b
+contenox config set default-provider  llama
+
 ```
 
-The `llama` and `openvino` backends are local `modeld`-backed providers.
-`contenox init` registers them and `contenox model pull <name>` downloads
-artifacts into `~/.contenox/models/<backend>/`. Current normal CLI and VS Code
-release packages do not bundle `modeld` yet, so local `modeld` providers require
-a source build:
-[modeld Source Build and Packaging](docs/development/modeld-source-build.md).
+> **Note on Local Inference:** The native `llama` and `openvino` backends are driven by `modeld`, Contenox's local inference engine. While `contenox init` registers them, standard pre-compiled binary distributions do not yet bundle `modeld` out of the box. Using local `modeld` engines currently requires compiling from source: see the [modeld Source Build Guide](https://www.google.com/search?q=docs/development/modeld-source-build.md).
 
 ---
 
-## modeld North Star
+## `modeld` System Architecture
 
-Routine tokens should be local or private by default.
+> **The North Star:** Routine tokens must be kept local, private, and cheap.
 
-`modeld` is Contenox's local-inference north star: one owner, one active local
-model, many persistent sessions, and resident coding context on a workstation
-accelerator.
+`modeld` represents Contenox’s vision for local inference: an architecture defined by a single owner, an active local model, persistent work sessions, and zero-latency resident context optimized for consumer workstation hardware.
 
-This is the direction of the local backend, not a guarantee for every model,
-device, or release package today.
+Rather than treating context as an expensive prompt resent on every single turn, `modeld` optimizes for long-context execution via resident state:
 
-`modeld` is shaped around one specific bet: a local coding agent on a single
-consumer accelerator that serves real, long-context work. The goal is an
-effective context far beyond a model's native window on limited hardware by
-treating context as resident state kept hot rather than a prompt resent every
-turn.
+* **Dedicated Compute Allocation:** Device memory and KV budgets focus entirely on running a single model deep and fast, bypassing multi-tenant multiplexing penalties.
+* **Warm-Reuse Sessions:** Stably prefixed KV states are kept hot in memory. Only newly altered trailing suffixes are re-prefilled, radically dropping execution costs on massive repositories.
+* **Durable Snapshot & Restore:** Session graphs are branchable and persist across process Restarts, letting code context outlive terminal sessions.
+* **Zero-Configuration Acceleration:** Automatical detection of hardware capability at runtime ensures optimal offloading ratios and context window bounds with zero manual tuning.
 
-- **One model, one user, many sessions.** The device's whole memory and KV budget
-  go to making that model deep and fast instead of multiplexing several.
-- **Warm-reuse sessions.** Each session keeps its stable prefix's KV hot and
-  re-prefills only the changed suffix, so a long working context is paid for once.
-- **Snapshot / restore.** Session state is durable and branchable, so effective
-  context outlives a single live process.
-- **Accelerator-driven, no knobs.** `modeld` detects the accelerator and derives
-  offload and the effective window from the device at runtime.
+### Architecture Deep-Dives
 
-Longer term, `modeld` is also where Contenox can make local models adapt to the
-workstation: resident context, reusable sessions, and optional adaptation such as
-LoRA where it makes sense.
-
-How it maps onto the code:
-[Effective-Context Runtime Strategy](docs/development/blueprints/modeld/effective-context/README.md).
-How it relates to nearby local and serving projects:
-[modeld Local Inference Landscape](docs/development/modeld-local-inference-landscape.md).
+* [Effective-Context Runtime Strategy](https://www.google.com/search?q=docs/development/blueprints/modeld/effective-context/README.md)
+* [modeld Local Inference Landscape](https://www.google.com/search?q=docs/development/modeld-local-inference-landscape.md)
 
 ---
 
-## Build from Source
+## Building From Source
 
-Requires Go 1.25+.
+### Prerequisites
+
+* **Go 1.25+**
+* C/C++ compiler toolchain (for local engine bindings)
 
 ```bash
+# Clone the repository
 git clone https://github.com/contenox/runtime
 cd runtime
+
+# Build the main core CLI
 make build-contenox
 
-# Build and run local modeld (llama.cpp)
+# Compile and run modeld with the llama.cpp backend
 CONTENOX_MODELD_BACKEND=llama make run-modeld
 
-# Build and run local modeld (OpenVINO)
+# Compile and run modeld with the Intel OpenVINO backend
 make deps-modeld
 CONTENOX_MODELD_BACKEND=openvino make run-modeld
+
 ```
 
-See [modeld Source Build and Packaging](docs/development/modeld-source-build.md) for the
-complete local modeld flow and relocatable bundles.
-
 ---
 
-## Built on
+## Core Dependencies
 
-The `contenox` CLI is pure Go. Local inference lives in the separate `modeld`
-daemon, which links these upstream projects at build time (pinned in
-`mk/llama-flags.mk` and `mk/openvino-flags.mk`) and ships their runtime libraries
-inside each release package:
+The `contenox` core CLI is written entirely in pure Go. Local inference runs out-of-process via the C/C++ `modeld` daemon, linking against the following upstream libraries:
 
-| Project | Role | License |
+| Dependency | System Role | Licensing |
 | --- | --- | --- |
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) | GGUF inference and the ggml CPU/CUDA/HIP/Metal backends | MIT |
-| [OpenVINO](https://github.com/openvinotoolkit/openvino) | Inference runtime (CPU / iGPU / NPU) | Apache-2.0 |
-| [OpenVINO GenAI](https://github.com/openvinotoolkit/openvino.genai) | LLM pipeline over OpenVINO | Apache-2.0 |
-| [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) | Tokenizer extension for OpenVINO GenAI | Apache-2.0 |
-| [minja](https://github.com/google/minja) | Chat-template engine (vendored by OpenVINO GenAI) | MIT |
-| [gguf-tools](https://github.com/Lourdle/gguf-tools) | GGUF parsing headers (vendored by OpenVINO GenAI) | see upstream |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | GGUF inference optimization across CPU, CUDA, HIP, and Metal | MIT |
+| [OpenVINO](https://github.com/openvinotoolkit/openvino) | Hardware-accelerated runtime for CPU, iGPU, and NPU chips | Apache-2.0 |
+| [OpenVINO GenAI](https://github.com/openvinotoolkit/openvino.genai) | LLM pipelines built over foundational OpenVINO runtimes | Apache-2.0 |
+| [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers) | Specialized execution parsing for OpenVINO GenAI | Apache-2.0 |
+| [minja](https://github.com/google/minja) | Jinja-style chat template engine (bundled in GenAI) | MIT |
 
-Upstream license texts travel with the artifacts (`licenses/` in dependency
-bundles, `LICENSES/` in modeld packages). Other Go dependencies are in `go.mod`.
+*Upstream license notices accompany all compiled artifacts in the `/licenses` and `/LICENSES` directories inside modeld packages (llama.cpp + OpenVINO components + NVIDIA CUDA EULA when applicable). This ensures compliance for public distribution via VS Code, registries, and Windows Store. Go dependencies are maintained standardly in `go.mod`.*
 
 ---
 
-> Questions: **hello@contenox.com**
+Questions? Reach out at **hello@contenox.com**
