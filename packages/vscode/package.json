@@ -2,7 +2,7 @@
   "name": "contenox-runtime",
   "displayName": "Contenox",
   "description": "Run local, reviewable AI workflows in VS Code with chat, autocomplete, sessions, tools, and human approval gates.",
-  "version": "0.35.0",
+  "version": "0.35.1",
   "publisher": "contenox",
   "license": "Apache-2.0",
   "pricing": "Free",
