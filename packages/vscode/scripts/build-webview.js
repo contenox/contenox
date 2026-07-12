@@ -28,6 +28,11 @@ async function buildScript() {
     alias: {
       react: path.join(root, "node_modules", "react"),
       "react-dom": path.join(root, "node_modules", "react-dom"),
+      "lucide-react": path.join(root, "node_modules", "lucide-react"),
+      "react-markdown": path.join(root, "node_modules", "react-markdown"),
+      "remark-gfm": path.join(root, "node_modules", "remark-gfm"),
+      clsx: path.join(root, "node_modules", "clsx"),
+      "tailwind-merge": path.join(root, "node_modules", "tailwind-merge"),
     },
   });
 }
