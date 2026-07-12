@@ -54,6 +54,8 @@ sh install.sh
 
 ## Quick Start
 
+<!-- TAG=v0.34.2 -->
+
 ```bash
 contenox setup                    # Choose a provider/model for this machine
 contenox "say hello world in python"    # Query directly from the CLI
