@@ -68,6 +68,12 @@ jobs:
           name: beam-dist
           path: runtime/internal/web/beam/dist
 
+      - name: Upload UI dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+
   build:
     needs: [verify, web]
     strategy:
@@ -184,6 +190,12 @@ jobs:
           name: beam-dist
           path: runtime/internal/web/beam/dist
 
+      - name: Download UI dist
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: packages/ui/dist
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -222,6 +234,10 @@ jobs:
       - name: Compile extension
         working-directory: packages/vscode
         run: npm run compile
+
+      - name: Build webview (for embedded chat)
+        working-directory: packages/vscode
+        run: npm run build:webview
 
       - name: Build target Contenox binary
         working-directory: packages/vscode
