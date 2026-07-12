@@ -54,7 +54,7 @@ sh install.sh
 
 ## Quick Start
 
-<!-- TAG=v0.35.2 -->
+<!-- TAG=v0.35.3 -->
 
 ```bash
 contenox setup                    # Choose a provider/model for this machine
