@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { spawn } from "node:child_process";
 import * as vscode from "vscode";
 import {
   registerAutocomplete,
@@ -51,6 +52,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.extensionUri,
     telemetry,
   );
+  let hasShownSetupPrompt = false;
   const sessions = new SessionTreeProvider(bridge);
   const sessionDocuments = new SessionDocumentProvider(telemetry);
   const diffStore = new DiffStore(telemetry);
@@ -245,6 +247,20 @@ export function activate(context: vscode.ExtensionContext): void {
       "contenox.openToolDiff",
       (arg?: OpenDiffArgs | StoredDiff) => openToolDiff(diffStore, arg),
     ),
+    vscode.commands.registerCommand("contenox.doctor", () =>
+      runDoctor(bridge, output, telemetry),
+    ),
+    vscode.commands.registerCommand("contenox.refreshDefaults", async () => {
+      await ensureInitUpdate(bridge, output, telemetry);
+      vscode.window.showInformationMessage("Contenox defaults refreshed via init --update.");
+      // Restart bridge so new chains/policies take effect immediately
+      try {
+        await bridge.restart();
+        await chatWebview.refreshRuntimeSummary();
+      } catch (e) {
+        output.warn(`refreshDefaults restart warning: ${errorMessage(e)}`);
+      }
+    }),
   );
   updateDiagnosticsContext();
   context.subscriptions.push(
@@ -263,7 +279,27 @@ export function activate(context: vscode.ExtensionContext): void {
   if (readBridgeSettings().startOnActivation) {
     void bridge
       .ensureStarted()
-      .then(() => chatWebview.refreshRuntimeSummary())
+      .then(async (state) => {
+        chatWebview.refreshRuntimeSummary();
+        if (!state.health.configured && !hasShownSetupPrompt) {
+          hasShownSetupPrompt = true;
+          // Proactive but non-intrusive for new store users (addresses "no way to setup")
+          const remoteNote = vscode.env.remoteName ? ` (on ${vscode.env.remoteName})` : "";
+          const choice = await vscode.window.showInformationMessage(
+            `Contenox runtime needs setup${remoteNote} (choose provider + model).`,
+            "Run Guided Setup",
+            "Show Status",
+            "Open Walkthrough",
+          );
+          if (choice === "Run Guided Setup") {
+            vscode.commands.executeCommand("contenox.runSetup");
+          } else if (choice === "Show Status") {
+            vscode.commands.executeCommand("contenox.showStatus");
+          } else if (choice === "Open Walkthrough") {
+            vscode.commands.executeCommand("contenox.openWalkthrough");
+          }
+        }
+      })
       .catch((error) => {
         output.warn(errorMessage(error));
       });
@@ -308,7 +344,7 @@ async function showStatus(
       model,
     });
     vscode.window.showInformationMessage(
-      `Contenox ${health.status}: ${provider} / ${model}`,
+      `Contenox ${health.status}: ${provider} / ${model}. Use "Contenox: Doctor" for detailed checks.`,
     );
   } catch (error) {
     telemetry.error("command.show_status.failed", error);
@@ -354,6 +390,52 @@ async function restartRuntime(
   }
 }
 
+/**
+ * Runs `contenox init --update` (non-destructive refresh of default chains/policies/workspace files).
+ * Streams output to the Contenox channel. Safe to call on fresh or existing installs.
+ */
+async function ensureInitUpdate(bridge: BridgeProcess, output: ContenoxOutput, telemetry: TelemetryLogger): Promise<void> {
+  const binary = bridge.commandBinaryPath();
+  const settings = readBridgeSettings();
+  const cwd = bridge.commandCwd();
+  const args: string[] = [];
+  if (settings.dataDir) {
+    args.push("--data-dir", settings.dataDir);
+  }
+  args.push("init", "--update");
+
+  telemetry.event("setup.ensure_init_update", { binary, args });
+
+  output.info(`Refreshing Contenox defaults (init --update): ${binary} ${args.join(" ")}`);
+
+  return new Promise((resolve) => {
+    const child = spawn(binary, args, {
+      cwd: cwd || undefined,
+      env: { ...process.env, NO_COLOR: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8").trimEnd();
+      if (text) output.info(`[init --update] ${text}`);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8").trimEnd();
+      if (text) output.warn(`[init --update] ${text}`);
+    });
+    child.on("error", (err) => {
+      output.warn(`init --update spawn error: ${err.message}`);
+      // non-fatal for guided flow
+      resolve();
+    });
+    child.on("close", (code) => {
+      output.info(`init --update completed (code ${code})`);
+      resolve();
+    });
+  });
+}
+
 function runSetup(
   bridge: BridgeProcess,
   chatWebview: ChatWebviewViewProvider,
@@ -369,38 +451,42 @@ function runSetup(
     cwd: bridge.commandCwd(),
     dataDir: settings.dataDir,
   });
-  const terminal = vscode.window.createTerminal({
-    name: "Contenox Setup",
-    cwd: bridge.commandCwd(),
-  });
-  const closeSubscription = vscode.window.onDidCloseTerminal((closed) => {
-    if (closed !== terminal) {
-      return;
-    }
-    closeSubscription.dispose();
-    telemetry.event("command.run_setup.terminal_closed", {
-      exitCode: terminal.exitStatus?.code,
-      reason: terminal.exitStatus?.reason,
+
+  // First ensure defaults are fresh (init --update is safe + addresses stale chains/policies)
+  void ensureInitUpdate(bridge, output, telemetry).finally(() => {
+    const terminal = vscode.window.createTerminal({
+      name: "Contenox Setup",
+      cwd: bridge.commandCwd(),
     });
-    void vscode.commands.executeCommand("contenox.internal.setupComplete");
-    void bridge
-      .restart()
-      .then(async (state) => {
-        await chatWebview.refreshRuntimeSummary();
-        vscode.window.showInformationMessage(
-          `Contenox setup finished. Runtime refreshed: ${state.health.defaultProvider || "no provider"} / ${state.health.defaultModel || "no model"}`,
-        );
-      })
-      .catch((error) => {
-        telemetry.error("command.run_setup.refresh_failed", error);
-        output.show();
-        vscode.window.showErrorMessage(
-          `Contenox setup finished, but runtime refresh failed: ${errorMessage(error)}`,
-        );
+    const closeSubscription = vscode.window.onDidCloseTerminal((closed) => {
+      if (closed !== terminal) {
+        return;
+      }
+      closeSubscription.dispose();
+      telemetry.event("command.run_setup.terminal_closed", {
+        exitCode: terminal.exitStatus?.code,
+        reason: terminal.exitStatus?.reason,
       });
+      void vscode.commands.executeCommand("contenox.internal.setupComplete");
+      void bridge
+        .restart()
+        .then(async (state) => {
+          await chatWebview.refreshRuntimeSummary();
+          vscode.window.showInformationMessage(
+            `Contenox setup finished. Runtime refreshed: ${state.health.defaultProvider || "no provider"} / ${state.health.defaultModel || "no model"}`,
+          );
+        })
+        .catch((error) => {
+          telemetry.error("command.run_setup.refresh_failed", error);
+          output.show();
+          vscode.window.showErrorMessage(
+            `Contenox setup finished, but runtime refresh failed: ${errorMessage(error)}`,
+          );
+        });
+    });
+    terminal.show();
+    terminal.sendText([shellQuote(binary), ...args.map(shellQuote)].join(" "));
   });
-  terminal.show();
-  terminal.sendText([shellQuote(binary), ...args.map(shellQuote)].join(" "));
 }
 
 async function toggleAutocomplete(status: AutocompleteStatus): Promise<void> {
@@ -563,6 +649,27 @@ async function openToolDiff(
     return;
   }
   await diffStore.open(arg);
+}
+
+function runDoctor(
+  bridge: BridgeProcess,
+  output: ContenoxOutput,
+  telemetry: TelemetryLogger,
+): void {
+  const settings = readBridgeSettings();
+  const binary = bridge.commandBinaryPath();
+  const args = bridgeCommandArgs(settings.dataDir, "doctor");
+  telemetry.event("command.doctor", { binary, args });
+
+  // Surface doctor in its own terminal for rich text + hints (user-friendly)
+  // Future: can parse --json and render structured with action buttons
+  const terminal = vscode.window.createTerminal({
+    name: "Contenox Doctor",
+    cwd: bridge.commandCwd(),
+  });
+  terminal.show();
+  terminal.sendText([shellQuote(binary), ...args.map(shellQuote)].join(" "));
+  output.info("Contenox doctor launched in terminal (includes backend reachability + setup issues).");
 }
 
 function refreshMCPServers(provider: MCPServerProviderRegistration): void {

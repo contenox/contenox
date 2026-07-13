@@ -21,6 +21,8 @@ export class ContenoxStatusBar implements vscode.Disposable {
     const configured = health.configured ? "ready" : "setup";
     this.item.text = `$(plug) Contenox ${configured}`;
     this.item.tooltip = statusTooltip(health);
+    // When unconfigured, clicking the status item directly launches setup (user friendly)
+    this.item.command = health.configured ? "contenox.showStatus" : "contenox.runSetup";
     void setBridgeContext(true, health.status === "ok");
   }
 

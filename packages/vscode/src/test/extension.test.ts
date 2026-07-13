@@ -26,9 +26,13 @@ suite("Contenox VS Code extension", () => {
       "contenox.openRuntimeSettings",
       "contenox.runSetup",
       "contenox.showStatus",
+      "contenox.doctor",
+      "contenox.refreshDefaults",
       "contenox.showExtensionRuntimeInfo",
       "contenox.restartRuntime",
       "contenox.testAutocompleteAtCursor",
+      "contenox.doctor",
+      "contenox.refreshDefaults",
     ]) {
       assert.ok(commands.includes(command), `${command} should be registered`);
     }
@@ -67,6 +71,8 @@ suite("Contenox VS Code extension", () => {
     for (const command of ["contenox.selectProvider", "contenox.selectChatModel", "contenox.selectHitlPolicy", "contenox.selectThinkLevel"]) {
       assert.ok(commandTitles.has(command), `${command} should be contributed for the sessions sidebar`);
     }
+    assert.ok(commandTitles.has("contenox.doctor"), "contenox.doctor should be contributed");
+    assert.ok(commandTitles.has("contenox.refreshDefaults"), "contenox.refreshDefaults should be contributed");
 
     const approvalTool = contributes.languageModelTools?.find((tool) => tool.name === approvalToolName);
     assert.ok(approvalTool, `${approvalToolName} should be contributed`);

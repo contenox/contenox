@@ -313,39 +313,61 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
     }));
     const provider = summary.provider || "not set";
     const model = summary.model || "not set";
-    const choice = await vscode.window.showQuickPick(
-      [
-        {
-          label: "Provider",
-          description: provider,
-          command: "contenox.selectProvider",
-        },
-        {
-          label: "Model",
-          description: model,
-          command: "contenox.selectChatModel",
-        },
-        {
-          label: "Thinking level",
-          description: summary.think || "auto",
-          command: "contenox.selectThinkLevel",
-        },
-        {
-          label: "HITL policy",
-          description: summary.hitlPolicy || "default",
-          command: "contenox.selectHitlPolicy",
-        },
-        {
-          label: "Open full Runtime panel",
-          description: "Detailed configuration in sidebar",
-          focusSettings: true,
-        },
-      ],
+    const isConfigured = summary.configured ?? (summary.provider && summary.model);
+
+    const picks: any[] = [];
+
+    if (!isConfigured) {
+      picks.push({
+        label: "$(play) Run Guided Setup (recommended)",
+        description: "Choose provider + model, refresh defaults",
+        command: "contenox.runSetup",
+        isSetup: true,
+      });
+      // separator
+      picks.push({ label: "", kind: -1 as any });
+    }
+
+    picks.push(
       {
-        title: "Contenox runtime",
-        placeHolder: "Choose a runtime setting to change",
+        label: "Provider",
+        description: provider,
+        command: "contenox.selectProvider",
+      },
+      {
+        label: "Model",
+        description: model,
+        command: "contenox.selectChatModel",
+      },
+      {
+        label: "Thinking level",
+        description: summary.think || "auto",
+        command: "contenox.selectThinkLevel",
+      },
+      {
+        label: "HITL policy",
+        description: summary.hitlPolicy || "default",
+        command: "contenox.selectHitlPolicy",
+      },
+      {
+        label: "Open full Runtime panel",
+        description: "Detailed configuration in sidebar",
+        focusSettings: true,
       },
     );
+
+    if (isConfigured) {
+      picks.push({
+        label: "Run Doctor (diagnostics)",
+        description: "Check backends, reachability and issues",
+        command: "contenox.doctor",
+      });
+    }
+
+    const choice = await vscode.window.showQuickPick(picks, {
+      title: "Contenox runtime",
+      placeHolder: isConfigured ? "Choose a runtime setting to change" : "Setup required — pick an action",
+    });
     if (!choice) {
       return;
     }
@@ -353,11 +375,10 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
       await vscode.commands.executeCommand("contenox.controls.focus");
       return;
     }
-    if (!("command" in choice) || !choice.command) {
-      return;
+    if ("command" in choice && choice.command) {
+      await vscode.commands.executeCommand(choice.command);
+      await this.pushRuntimeSummary();
     }
-    await vscode.commands.executeCommand(choice.command);
-    await this.pushRuntimeSummary();
   }
 
   private async pushRuntimeSummary(): Promise<void> {
@@ -392,12 +413,15 @@ export class ChatWebviewViewProvider implements vscode.WebviewViewProvider, vsco
     } catch {}
     const used = this.lastContextUsed;
     const size = this.lastContextSize ?? contextSize;
+    const health = state.health;
     return {
       provider: config.defaultProvider,
       model: config.defaultModel,
       think: config.defaultThink,
       hitlPolicy: config.hitlPolicyName,
-      connected: state.health.status === "ok",
+      connected: health.status === "ok",
+      configured: health.configured,
+      status: health.status,
       contextUsed: used,
       contextSize: size,
     };

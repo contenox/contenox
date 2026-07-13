@@ -161,7 +161,7 @@ const client: BeamChatClient = {
 };
 
 const readiness: BeamChatReadiness = {
-  aiReady: true,
+  aiReady: true, // default; will be overridden from runtimeConfig if available
   appCount: 0,
   canManage: false,
   enabledToolCount: 0,
@@ -174,14 +174,25 @@ function App() {
   const [composerAction, setComposerAction] = useState<BeamChatComposerAction | null>(null);
   const [selectSessionId, setSelectSessionId] = useState<string | null>(null);
   const [runtimeSummary, setRuntimeSummary] = useState<BeamChatRuntimeSummary | null>(null);
+  const [aiReady, setAiReady] = useState<boolean>(true);
 
   useEffect(() => {
     externalHandlers.onComposerAction = setComposerAction;
     externalHandlers.onSelectSession = setSelectSessionId;
-    externalHandlers.onRuntimeConfig = setRuntimeSummary;
+    externalHandlers.onRuntimeConfig = (s) => {
+      setRuntimeSummary(s);
+      // Compute real readiness: needs provider + model + connected (configured preferred)
+      const ready = !!(s.provider && s.model && s.connected && (s.configured ?? true));
+      setAiReady(ready);
+    };
     send({ type: "ready" });
     void request<WireRuntimeSummary>({ type: "getRuntimeSummary", requestId: nextRequestId() })
-      .then((summary) => setRuntimeSummary(toRuntimeSummary(summary)))
+      .then((summary) => {
+        const s = toRuntimeSummary(summary);
+        setRuntimeSummary(s);
+        const ready = !!(summary.provider && summary.model && summary.connected && (summary.configured ?? true));
+        setAiReady(ready);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -207,10 +218,12 @@ function App() {
     send({ type: "openRuntimeSettings" });
   }, []);
 
+  const dynamicReadiness: BeamChatReadiness = { ...readiness, aiReady };
+
   return (
     <BeamChat
       client={client}
-      readiness={readiness}
+      readiness={dynamicReadiness}
       embedded
       productName={PRODUCT_NAME}
       productIcon={<ContenoxIcon className="h-8 w-8 opacity-70" />}

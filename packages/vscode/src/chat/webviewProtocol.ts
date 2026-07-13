@@ -58,6 +58,8 @@ export type WireRuntimeSummary = {
   think?: string;
   hitlPolicy?: string;
   connected: boolean;
+  configured?: boolean; // from health.configured (has default provider + model)
+  status?: string;      // e.g. "ok" | "setup_required"
   // context usage indicator (from engine token events + session effective token_limit / chain budget)
   // size = the controllable session context budget (capped by model if reported >0)
   contextUsed?: number;

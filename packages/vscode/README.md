@@ -70,8 +70,8 @@ Contenox is designed around:
 ## Getting Started
 
 1. Install the extension.
-2. Run `Contenox: Run Setup` from the command palette.
-3. Choose or configure a model/provider.
+2. Run `Contenox: Run Setup` (or `Contenox: Doctor` to diagnose) from the command palette. The extension will run `init --update` automatically to keep your defaults/chains fresh, then guide provider + model selection.
+3. Choose or configure a model/provider (or use the Guided flow).
 4. Run `Contenox: Open Chat`.
 5. Ask `@contenox` about your code, or use the editor actions (`Ask About
    Selection`, `Explain Diagnostics`, `Review Workspace Changes`, `Draft Commit

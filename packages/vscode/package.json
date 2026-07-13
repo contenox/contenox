@@ -81,6 +81,8 @@
     "onCommand:contenox.showMCPServers",
     "onCommand:contenox.refreshMCPServers",
     "onCommand:contenox.openToolDiff",
+    "onCommand:contenox.doctor",
+    "onCommand:contenox.refreshDefaults",
     "onLanguageModelTool:approve_contenox_tool_call"
   ],
   "capabilities": {
@@ -128,11 +130,11 @@
     "viewsWelcome": [
       {
         "view": "contenox.controls",
-        "contents": "Full runtime configuration (provider, model, thinking, HITL policy).\nDay-to-day changes are also available by clicking the runtime info in the Chat header.\n[Run Setup](command:contenox.runSetup)\n[Show Status](command:contenox.showStatus)"
+        "contents": "Full runtime configuration (provider, model, thinking, HITL policy).\nDay-to-day changes are also available by clicking the runtime info in the Chat header.\n[Run Setup / Guided Setup](command:contenox.runSetup)\n[Doctor](command:contenox.doctor)\n[Show Status](command:contenox.showStatus)"
       },
       {
         "view": "contenox.sessions",
-        "contents": "Browse prior chats and resume them in Chat.\n[Open Chat](command:contenox.openChat)\n[Run Setup](command:contenox.runSetup)"
+        "contents": "Browse prior chats and resume them in Chat.\n[Open Chat](command:contenox.openChat)\n[Run Setup](command:contenox.runSetup)\n[Doctor](command:contenox.doctor)"
       }
     ],
     "walkthroughs": [
@@ -144,7 +146,7 @@
           {
             "id": "setup",
             "title": "Configure a local runtime",
-            "description": "Run setup to choose a provider and model for this machine.\n[Run Setup](command:contenox.runSetup)",
+            "description": "Run Guided Setup (refreshes defaults via init --update + picks provider/model).\n[Run Setup](command:contenox.runSetup)\n[Doctor](command:contenox.doctor)",
             "media": {
               "markdown": "walkthrough/setup.md"
             },
@@ -384,6 +386,16 @@
       {
         "command": "contenox.openToolDiff",
         "title": "Open Tool Diff",
+        "category": "Contenox"
+      },
+      {
+        "command": "contenox.doctor",
+        "title": "Doctor",
+        "category": "Contenox"
+      },
+      {
+        "command": "contenox.refreshDefaults",
+        "title": "Refresh Defaults (init --update)",
         "category": "Contenox"
       }
     ],
@@ -661,6 +673,12 @@
         },
         {
           "command": "contenox.refreshMCPServers"
+        },
+        {
+          "command": "contenox.doctor"
+        },
+        {
+          "command": "contenox.refreshDefaults"
         }
       ],
       "editor/context": [
