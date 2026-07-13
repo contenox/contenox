@@ -11,7 +11,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/terminalstore"
 	"golang.org/x/sys/windows"
 )
@@ -36,19 +35,9 @@ func (s *service) Attach(ctx context.Context, principal, id string, conn io.Read
 		_ = ts.Delete(ctx, id)
 		return ErrSessionNotFound
 	}
-	if !sess.busy.CompareAndSwap(false, true) {
-		return apiframework.BadRequest("session already has an active connection")
-	}
-	sess.touch()
 	if s.localByID(id) != sess {
-		sess.busy.Store(false)
 		return ErrSessionNotFound
 	}
-
-	defer func() {
-		sess.touch()
-		sess.busy.Store(false)
-	}()
 
 	input := sess.input
 	output := sess.output
@@ -56,8 +45,8 @@ func (s *service) Attach(ctx context.Context, principal, id string, conn io.Read
 		return ErrSessionNotFound
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel, release := sess.acquireAttach(ctx)
+	defer release()
 
 	outputDone := make(chan struct{})
 	go func() {

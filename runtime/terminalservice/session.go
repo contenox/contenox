@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -18,7 +19,39 @@ type session struct {
 	processHandle         uintptr
 	waitOwnsProcessHandle bool
 	busy                  atomic.Bool
+	attachMu              sync.Mutex
+	attachCancel          context.CancelFunc
+	attachGen             atomic.Uint64
 	lastActivityNanos     atomic.Int64
+}
+
+// acquireAttach marks the session busy and returns a context for this attachment.
+// If another client is already attached, the prior attachment is cancelled so the
+// new connection can take over (handles React Strict Mode remounts and tab refresh).
+func (s *session) acquireAttach(parent context.Context) (context.Context, context.CancelFunc, func()) {
+	s.attachMu.Lock()
+	if s.attachCancel != nil {
+		s.attachCancel()
+		s.attachCancel = nil
+	}
+	ctx, cancel := context.WithCancel(parent)
+	gen := s.attachGen.Add(1)
+	s.attachCancel = cancel
+	s.busy.Store(true)
+	s.touch()
+	s.attachMu.Unlock()
+
+	release := func() {
+		s.touch()
+		s.attachMu.Lock()
+		if s.attachGen.Load() == gen {
+			s.attachCancel = nil
+			s.busy.Store(false)
+		}
+		s.attachMu.Unlock()
+		cancel()
+	}
+	return ctx, cancel, release
 }
 
 func (s *session) touch() {

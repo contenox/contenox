@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/runtime/terminalstore"
 	"github.com/creack/pty"
 )
@@ -32,27 +31,17 @@ func (s *service) Attach(ctx context.Context, principal, id string, conn io.Read
 		_ = ts.Delete(ctx, id)
 		return ErrSessionNotFound
 	}
-	if !sess.busy.CompareAndSwap(false, true) {
-		return apiframework.BadRequest("session already has an active connection")
-	}
-	sess.touch()
 	if s.localByID(id) != sess {
-		sess.busy.Store(false)
 		return ErrSessionNotFound
 	}
-
-	defer func() {
-		sess.touch()
-		sess.busy.Store(false)
-	}()
 
 	tty := sess.tty
 	if tty == nil {
 		return ErrSessionNotFound
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel, release := sess.acquireAttach(ctx)
+	defer release()
 
 	ptyDone := make(chan struct{})
 	go func() {

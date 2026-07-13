@@ -4,6 +4,7 @@ package terminalservice
 
 import (
 	"context"
+	"net"
 	"path/filepath"
 	"testing"
 	"time"
@@ -79,6 +80,46 @@ func TestCloseOneLeavesOther(t *testing.T) {
 
 	_, err = svc.Get(ctx, principal, first.ID)
 	require.ErrorIs(t, err, ErrSessionNotFound)
+}
+
+func TestAttach_SecondConnectionPreemptsFirst(t *testing.T) {
+	ctx, svc := setupTerminalService(t, 0)
+	principal := "local-user"
+
+	out, err := svc.Create(ctx, principal, CreateRequest{CWD: ""})
+	require.NoError(t, err)
+
+	firstExited := make(chan struct{})
+	firstConn, firstPeer := net.Pipe()
+	go func() {
+		defer close(firstExited)
+		defer firstConn.Close()
+		defer firstPeer.Close()
+		_ = svc.Attach(context.Background(), principal, out.ID, firstConn, nil)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	secondConn, secondPeer := net.Pipe()
+	secondDone := make(chan error, 1)
+	go func() {
+		defer secondPeer.Close()
+		secondDone <- svc.Attach(context.Background(), principal, out.ID, secondConn, nil)
+	}()
+
+	select {
+	case err := <-secondDone:
+		require.NoError(t, err)
+	case <-time.After(500 * time.Millisecond):
+		require.NoError(t, secondConn.Close())
+		require.NoError(t, <-secondDone)
+	}
+
+	select {
+	case <-firstExited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first attach did not exit after preempt")
+	}
 }
 
 func TestReapIdle_OnlyDetached(t *testing.T) {
