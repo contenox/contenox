@@ -33,6 +33,7 @@ import (
 	"github.com/contenox/runtime/runtime/stateservice"
 	"github.com/contenox/runtime/runtime/taskchainservice"
 	"github.com/contenox/runtime/runtime/taskengine"
+	"github.com/contenox/runtime/runtime/terminalservice"
 	"github.com/contenox/runtime/runtime/toolsproviderservice"
 	"github.com/contenox/runtime/runtime/version"
 	"github.com/google/uuid"
@@ -55,7 +56,11 @@ Foundation routes:
 
 The product API is served under /api (state, models, model-registry, backends,
 setup-status, providers, tools, mcp-servers, task-chains, hitl-policies, chat,
-task execution, approvals, task events). The Beam web UI is served at /.
+task execution, approvals, task events, terminal sessions). The Beam web UI is served at /.
+
+Terminal routes are enabled by default on local serve under /api/terminal/sessions.
+Set TERMINAL_ENABLED=false to disable them. TERMINAL_ALLOWED_ROOT defaults to the
+workspace root. TERMINAL_MAX_SESSIONS defaults to 8 (0 = unlimited).
 
 The server binds to 127.0.0.1:32123 by default. Override with ADDR and PORT.
 Set TOKEN to require a bearer token on mutating API requests and cross-origin
@@ -200,6 +205,21 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	})
 	chatMgr := chatservice.NewManager(workspaceID)
 
+	terminalCfg, err := resolveTerminalConfig(config, workspaceRoot)
+	if err != nil {
+		return err
+	}
+	terminalSvc, err := terminalservice.New(terminalCfg, db, nodeID, workspaceID)
+	if err != nil {
+		return fmt.Errorf("create terminal service: %w", err)
+	}
+	if terminalCfg.Enabled {
+		terminalSvc = terminalservice.WithActivityTracker(terminalSvc, tracker)
+		defer func() { _ = terminalSvc.CloseAll(context.Background()) }()
+		stopTerminalReaper := startTerminalReaper(ctx, terminalSvc, terminalReapInterval(terminalCfg.IdleTimeout))
+		defer stopTerminalReaper()
+	}
+
 	apiMux := http.NewServeMux()
 	cleanupAPI, err := serverapi.New(ctx, apiMux, nodeID, "local", config, serverapi.Dependencies{
 		DB:                   db,
@@ -210,6 +230,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		ChatManager:          chatMgr,
 		Chains:               chains,
 		HITLService:          hitlSvc,
+		TerminalService:      terminalSvc,
+		TerminalEnabled:      terminalCfg.Enabled,
 		WorkspaceID:          workspaceID,
 		ProjectRoot:          workspaceRoot,
 		ContenoxDir:          contenoxDir,
@@ -285,4 +307,63 @@ func firstNonEmptyStr(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func resolveTerminalConfig(config *serverapi.Config, workspaceRoot string) (terminalservice.Config, error) {
+	if config == nil {
+		config = &serverapi.Config{}
+	}
+	terminalEnabled := strings.TrimSpace(config.TerminalEnabled)
+	if terminalEnabled == "" {
+		terminalEnabled = "true"
+	}
+	allowedRoot := strings.TrimSpace(config.TerminalAllowedRoot)
+	if terminalservice.IsEnabled(terminalEnabled) && allowedRoot == "" {
+		allowedRoot = workspaceRoot
+	}
+	cfg, err := terminalservice.ParseEnv(
+		terminalEnabled,
+		allowedRoot,
+		config.TerminalShell,
+		config.TerminalIdleTimeout,
+		config.TerminalMaxSessions,
+	)
+	if err != nil {
+		return terminalservice.Config{}, err
+	}
+	return cfg, nil
+}
+
+func terminalReapInterval(idleTimeout time.Duration) time.Duration {
+	if idleTimeout <= 0 {
+		return 0
+	}
+	interval := time.Minute
+	if half := idleTimeout / 2; half > 0 && half < interval {
+		interval = half
+	}
+	if interval < time.Second {
+		return time.Second
+	}
+	return interval
+}
+
+func startTerminalReaper(ctx context.Context, svc terminalservice.Service, interval time.Duration) func() {
+	if svc == nil || interval <= 0 {
+		return func() {}
+	}
+	reaperCtx, cancel := context.WithCancel(ctx)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-reaperCtx.Done():
+				return
+			case <-ticker.C:
+				_ = svc.ReapIdle(reaperCtx)
+			}
+		}
+	}()
+	return cancel
 }

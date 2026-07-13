@@ -30,7 +30,9 @@ import (
 	"github.com/contenox/runtime/runtime/internal/taskchainapi"
 	"github.com/contenox/runtime/runtime/internal/taskeventsapi"
 	"github.com/contenox/runtime/runtime/internal/taskexecapi"
+	"github.com/contenox/runtime/runtime/internal/terminalapi"
 	"github.com/contenox/runtime/runtime/internal/toolsapi"
+	"github.com/contenox/runtime/runtime/terminalservice"
 	"github.com/contenox/runtime/runtime/localfileservice"
 	"github.com/contenox/runtime/runtime/mcpserverservice"
 	"github.com/contenox/runtime/runtime/modelregistry"
@@ -52,7 +54,12 @@ type Config struct {
 	UIBaseURL         string `json:"ui_base_url"`
 	AllowedAPIOrigins string `json:"allowed_api_origins"`
 	ProxyOrigin       string `json:"proxy_origin"`
-	BeamDevProxyURL   string `json:"beam_dev_proxy_url"`
+	BeamDevProxyURL      string `json:"beam_dev_proxy_url"`
+	TerminalEnabled      string `json:"terminal_enabled"`
+	TerminalAllowedRoot  string `json:"terminal_allowed_root"`
+	TerminalShell        string `json:"terminal_shell"`
+	TerminalIdleTimeout  string `json:"terminal_idle_timeout"`
+	TerminalMaxSessions  string `json:"terminal_max_sessions"`
 }
 
 // Dependencies are the services the product routes are mounted on. All fields
@@ -72,6 +79,8 @@ type Dependencies struct {
 	ProjectRoot          string
 	ContenoxDir          string
 	Defaults             stateservice.RuntimeDefaults
+	TerminalService      terminalservice.Service
+	TerminalEnabled      bool
 }
 
 // New registers the spine routes (not-found shape, health, version) on mux and,
@@ -157,6 +166,10 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	}
 	if deps.HITLService != nil {
 		approvalapi.AddRoutes(mux, deps.HITLService, deps.Auth)
+	}
+
+	if deps.TerminalService != nil {
+		terminalapi.AddRoutes(mux, deps.TerminalService, deps.Auth, deps.TerminalEnabled, config.Token)
 	}
 
 	if deps.ToolsProviderService != nil {

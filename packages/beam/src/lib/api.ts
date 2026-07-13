@@ -1,4 +1,4 @@
-import { apiFetch } from './fetch';
+import { apiFetch, ApiError } from './fetch';
 import {
   AuthenticatedUser,
   Backend,
@@ -30,6 +30,8 @@ import {
   SupportedProvider,
   TaskExecutionRequest,
   TaskExecutionResponse,
+  TerminalSession,
+  TerminalSessionCreate,
 } from './types';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -302,6 +304,21 @@ export const api = {
     ),
   deleteChain: (path: string) =>
     apiFetch<void>(`/api/taskchains?path=${encodeURIComponent(path)}`, options('DELETE')),
+
+  // ── Terminal ──────────────────────────────────────────────────────
+  listTerminalSessions: () => apiFetch<TerminalSession[]>('/api/terminal/sessions'),
+  getTerminalSession: (id: string) =>
+    apiFetch<TerminalSession>(`/api/terminal/sessions/${encodeURIComponent(id)}`),
+  createTerminalSession: (body: { cwd: string; cols?: number; rows?: number }) =>
+    apiFetch<TerminalSessionCreate>('/api/terminal/sessions', options('POST', body)),
+  deleteTerminalSession: async (id: string) => {
+    try {
+      await apiFetch<void>(`/api/terminal/sessions/${encodeURIComponent(id)}`, options('DELETE'));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return;
+      throw e;
+    }
+  },
 
   // ── HITL approvals ───────────────────────────────────────────────
   /** Approve or deny a pending HITL tool call. Returns 204 on success, 404 if already resolved. */

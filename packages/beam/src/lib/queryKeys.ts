@@ -206,6 +206,12 @@ export const modelRegistryKeys = {
   all: ['model-registry'] as const,
 };
 
+export const terminalKeys = {
+  all: ['terminal'] as const,
+  sessions: () => [...terminalKeys.all, 'sessions'] as const,
+  session: (id: string) => [...terminalKeys.all, 'session', id] as const,
+};
+
 export const planKeys = {
   all: ['plans'] as const,
   list: () => [...planKeys.all, 'list'] as const,

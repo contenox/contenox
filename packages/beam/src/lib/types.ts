@@ -928,6 +928,24 @@ export type ExecutionHistory = {
   error?: string;
 }[];
 
+export type TerminalSessionCreate = {
+  id: string;
+  wsPath: string;
+};
+
+export type TerminalSession = {
+  id: string;
+  principal: string;
+  cwd: string;
+  shell: string;
+  cols: number;
+  rows: number;
+  status: string;
+  nodeInstanceId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 // Pagination Types
 export type PaginationParams = {
   limit?: number;

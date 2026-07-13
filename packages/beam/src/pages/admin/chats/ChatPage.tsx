@@ -1,5 +1,17 @@
-import { ApprovalCard, Button, Fill, InlineNotice, Page, Section } from '@contenox/ui';
+import {
+  ApprovalCard,
+  Button,
+  Fill,
+  InlineNotice,
+  Page,
+  ResizablePanel,
+  ResizablePanelGroup,
+  ResizablePanelHandle,
+  Section,
+} from '@contenox/ui';
+import { useQuery } from '@tanstack/react-query';
 import { t } from 'i18next';
+import { X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useListChains } from '../../../hooks/useChains';
@@ -20,7 +32,9 @@ import {
   useSlashCommand,
   useSlashCommandRegistry,
 } from '../../../lib/slashCommands';
+import { BEAM_LAYOUT_CHANGED_EVENT } from '../../../lib/beamLayout';
 import { createTaskEventRequestId } from '../../../lib/taskEvents';
+import { cn } from '../../../lib/utils';
 import {
   ChatMessage as ApiChatMessage,
   CapturedStateUnit,
@@ -33,8 +47,11 @@ import { buildChatThreadItems } from './chatThreadItems';
 import { ChatInterface } from './components/ChatInterface';
 import { ChatToolbar } from './components/ChatToolbar';
 import { MessageInputForm } from './components/MessageInputForm';
+import WorkspaceSplitPanel from './components/WorkspaceSplitPanel';
 
 const DEFAULT_CHAIN_PATH = 'default-chain.json';
+const WORKSPACE_PANEL_STORAGE_KEY = 'beam_chat_workspace_panel_open';
+const WORKSPACE_SPLIT_STORAGE_KEY = 'beam_chat_workspace_split_px';
 
 function formatChainLabel(path: string): string {
   return path.replace(/\.json$/i, '');
@@ -184,18 +201,73 @@ function ChatPageImpl() {
    * Used to persist the value after the live task stream is torn down on completion. */
   const lastKnownContextRef = useRef<{ used: number; size: number }>({ used: 0, size: 0 });
   const landingInitialSendKeyRef = useRef<string | null>(null);
+  const workspacePanelRef = useRef<HTMLDivElement | null>(null);
+  const [isLg, setIsLg] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)').matches : true,
+  );
+  const [workspacePanelOpen, setWorkspacePanelOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem(WORKSPACE_PANEL_STORAGE_KEY) !== '0';
+  });
+  const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
+
+  const workspaceSplitInitialPx = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = window.localStorage.getItem(WORKSPACE_SPLIT_STORAGE_KEY);
+      const n = raw ? parseInt(raw, 10) : NaN;
+      return Number.isFinite(n) && n >= 260 && n <= 900 ? n : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const persistWorkspacePanelOpen = useCallback((open: boolean) => {
+    setWorkspacePanelOpen(open);
+    try {
+      window.localStorage.setItem(WORKSPACE_PANEL_STORAGE_KEY, open ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const persistChatWorkspaceSplit = useCallback(() => {
+    const el = workspacePanelRef.current;
+    if (!el) return;
+    const w = Math.round(el.getBoundingClientRect().width);
+    if (w < 260 || w > 900) return;
+    try {
+      window.localStorage.setItem(WORKSPACE_SPLIT_STORAGE_KEY, String(w));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const onWorkspaceSplitResizeEnd = useCallback(() => {
+    persistChatWorkspaceSplit();
+    window.dispatchEvent(new CustomEvent(BEAM_LAYOUT_CHANGED_EVENT));
+  }, [persistChatWorkspaceSplit]);
 
   useEffect(() => {
-    const media = window.matchMedia('(min-width: 768px)');
+    const media = window.matchMedia('(min-width: 1024px)');
     const handleChange = () => {
+      setIsLg(media.matches);
       if (!media.matches) {
-        setStatePanelOpen(false);
+        setMobileWorkspaceOpen(false);
       }
     };
     handleChange();
     media.addEventListener('change', handleChange);
     return () => media.removeEventListener('change', handleChange);
   }, []);
+
+  const { isError: terminalUnavailable } = useQuery({
+    queryKey: ['terminal', 'probe'],
+    queryFn: () => api.listTerminalSessions(),
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const terminalAvailable = !terminalUnavailable;
 
   const { data: chainPaths = [], isLoading: chainsLoading } = useListChains();
   const sortedChainPaths = useMemo(
@@ -696,6 +768,11 @@ function ChatPageImpl() {
             })}
             contextUsed={contextUsed}
             contextSize={contextSize > 0 ? contextSize : fallbackContextSize}
+            terminalAvailable={terminalAvailable}
+            workspacePanelOpen={workspacePanelOpen}
+            onWorkspaceToggle={() => persistWorkspacePanelOpen(!workspacePanelOpen)}
+            onOpenMobileWorkspace={() => setMobileWorkspaceOpen(true)}
+            isLg={isLg}
           />
 
           <Fill className="flex flex-col">
@@ -853,7 +930,51 @@ function ChatPageImpl() {
     <Page bodyScroll="hidden" className="h-full">
       <Fill className="flex min-h-0">
         <div className="flex min-h-0 min-w-0 flex-1 flex-row">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatMainFill}</div>
+          {chatId && terminalAvailable && workspacePanelOpen && isLg ? (
+            <ResizablePanelGroup className="flex min-h-0 min-w-0 flex-1 flex-row">
+              <ResizablePanel minSize={280} className="flex min-h-0 min-w-0 flex-col">
+                {chatMainFill}
+              </ResizablePanel>
+              <ResizablePanelHandle onResizeEnd={onWorkspaceSplitResizeEnd} />
+              <ResizablePanel
+                ref={workspacePanelRef}
+                defaultSize={
+                  workspaceSplitInitialPx != null
+                    ? `${workspaceSplitInitialPx}px`
+                    : 'min(420px,38vw)'
+                }
+                minSize={260}
+                maxSize={900}
+                className="border-surface-300 dark:border-dark-surface-400 bg-surface-50 dark:bg-dark-surface-100 flex min-h-0 min-w-0 flex-col border-l">
+                <WorkspaceSplitPanel className="min-h-0 min-w-0 flex-1 border-0" />
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          ) : (
+            <>
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chatMainFill}</div>
+              {chatId && terminalAvailable && workspacePanelOpen && !isLg ? (
+                <div
+                  className={cn(
+                    'border-surface-300 dark:border-dark-surface-400 bg-surface-50 dark:bg-dark-surface-100 flex min-h-0 w-full shrink-0 flex-col border-l',
+                    mobileWorkspaceOpen ? 'fixed inset-0 z-50 flex flex-col' : 'hidden',
+                  )}>
+                  {mobileWorkspaceOpen ? (
+                    <div className="flex items-center justify-end gap-2 border-b px-2 py-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setMobileWorkspaceOpen(false)}
+                        aria-label={t('chat.workspace_close_mobile')}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : null}
+                  <WorkspaceSplitPanel className="min-h-0 min-w-0 flex-1 border-0" />
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </Fill>
     </Page>

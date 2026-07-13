@@ -10,7 +10,7 @@ import {
   ToolbarSection,
   Tooltip,
 } from '@contenox/ui';
-import { Pencil } from 'lucide-react';
+import { Pencil, TerminalSquare } from 'lucide-react';
 import { t } from 'i18next';
 import type { ChatModeId } from '../../../../lib/types';
 
@@ -39,6 +39,11 @@ interface ChatToolbarProps {
   /** When provided, shows a button to open the selected chain in the editor.
    * Omitted while the chain editor route is unwired. */
   onEditChain?: () => void;
+  terminalAvailable?: boolean;
+  workspacePanelOpen?: boolean;
+  onWorkspaceToggle?: () => void;
+  onOpenMobileWorkspace?: () => void;
+  isLg?: boolean;
 }
 
 export function ChatToolbar({
@@ -60,6 +65,11 @@ export function ChatToolbar({
   contextUsed,
   contextSize,
   onEditChain,
+  terminalAvailable = false,
+  workspacePanelOpen = false,
+  onWorkspaceToggle,
+  onOpenMobileWorkspace,
+  isLg = true,
 }: ChatToolbarProps) {
 
 
@@ -151,10 +161,34 @@ export function ChatToolbar({
               <div className="w-24 h-2 rounded-full bg-surface-200 dark:bg-dark-surface-300 overflow-hidden shadow-inner" aria-hidden>
                 <div className={`h-full transition-all duration-500 ease-out ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
               </div>
-              <span className={cls}>{pct}%</span>
+          <span className={cls}>{pct}%</span>
             </div>
           );
         })() : null}
+        {terminalAvailable && onWorkspaceToggle ? (
+          <Tooltip content={t('chat.workspace_toggle_tooltip')}>
+            <Button
+              type="button"
+              variant={workspacePanelOpen ? 'secondary' : 'outline'}
+              size="sm"
+              className="shrink-0"
+              onClick={onWorkspaceToggle}
+              aria-pressed={workspacePanelOpen}
+              aria-label={t('chat.workspace_toggle_aria')}>
+              <TerminalSquare className="h-4 w-4" />
+            </Button>
+          </Tooltip>
+        ) : null}
+        {terminalAvailable && workspacePanelOpen && !isLg && onOpenMobileWorkspace ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="lg:hidden"
+            onClick={onOpenMobileWorkspace}>
+            {t('chat.workspace_open_mobile')}
+          </Button>
+        ) : null}
       </ToolbarActions>
     </Toolbar>
   );
