@@ -204,7 +204,7 @@ func (h *handler) listSessions(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, err, apiframework.ListOperation)
 		return
 	}
-	_ = apiframework.Encode(w, r, http.StatusOK, items) // @response []*terminalservice.SessionInfo
+	_ = apiframework.Encode(w, r, http.StatusOK, items) // @response []terminalstore.Session
 }
 
 func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +228,7 @@ func (h *handler) getSession(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, err, apiframework.GetOperation)
 		return
 	}
-	_ = apiframework.Encode(w, r, http.StatusOK, sess) // @response *terminalservice.SessionInfo
+	_ = apiframework.Encode(w, r, http.StatusOK, sess) // @response terminalstore.Session
 }
 
 func (h *handler) patchSession(w http.ResponseWriter, r *http.Request) {

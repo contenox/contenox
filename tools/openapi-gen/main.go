@@ -56,6 +56,8 @@ var typeScanDirs = []string{
 	"runtime/mcpserverservice",
 	"runtime/providerservice",
 	"runtime/statetype",
+	"runtime/terminalstore",
+	"runtime/terminalservice",
 }
 
 const outPath = "runtime/internal/openapidocs/openapi.json"
@@ -197,7 +199,7 @@ func (g *generator) collectStructs(pkg string, file *ast.File) {
 
 var (
 	reRequest  = regexp.MustCompile(`@request\s+([\w./]+)`)
-	reResponse = regexp.MustCompile(`@response\s+([\w./]+)`)
+	reResponse = regexp.MustCompile(`@response\s+([\w./\[\]*]+)`)
 	reParam    = regexp.MustCompile(`@param\s+(\w+)\s+\w+`)
 )
 
@@ -387,8 +389,18 @@ func (g *generator) build(ver string) map[string]any {
 }
 
 // schemaForRef resolves a "pkg.Type" annotation reference to a schema (a $ref
-// when the type is a known struct, else a generic object).
+// when the type is a known struct, else a generic object). Supports "[]pkg.Type",
+// "[]*pkg.Type", and "*pkg.Type" prefixes used in route response annotations.
 func (g *generator) schemaForRef(ref string) map[string]any {
+	ref = strings.TrimSpace(ref)
+	if strings.HasPrefix(ref, "[]") {
+		inner := strings.TrimPrefix(ref, "[]")
+		inner = strings.TrimPrefix(inner, "*")
+		return map[string]any{"type": "array", "items": g.schemaForRef(inner)}
+	}
+	if strings.HasPrefix(ref, "*") {
+		return g.schemaForRef(ref[1:])
+	}
 	dot := strings.LastIndex(ref, ".")
 	if dot < 0 {
 		return map[string]any{"type": "object"}

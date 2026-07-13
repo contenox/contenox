@@ -9,12 +9,13 @@ import {
   ResizablePanelHandle,
   Section,
 } from '@contenox/ui';
-import { useQuery } from '@tanstack/react-query';
+
 import { t } from 'i18next';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useListChains } from '../../../hooks/useChains';
+import { useTerminalAvailable } from '../../../hooks/useTerminal';
 import { useChatHistory, useCreateChat, useSendMessage } from '../../../hooks/useChats';
 import { useListPolicies, useSetActivePolicy } from '../../../hooks/usePolicies';
 import { useRefreshSetupStatus } from '../../../hooks/useRefreshSetupStatus';
@@ -261,12 +262,7 @@ function ChatPageImpl() {
     return () => media.removeEventListener('change', handleChange);
   }, []);
 
-  const { isError: terminalUnavailable } = useQuery({
-    queryKey: ['terminal', 'probe'],
-    queryFn: () => api.listTerminalSessions(),
-    retry: false,
-    staleTime: 5 * 60 * 1000,
-  });
+  const { isError: terminalUnavailable } = useTerminalAvailable();
   const terminalAvailable = !terminalUnavailable;
 
   const { data: chainPaths = [], isLoading: chainsLoading } = useListChains();

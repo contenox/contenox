@@ -36,6 +36,32 @@
         },
         "type": "object"
       },
+      "backendapi_ObservedModel": {
+        "properties": {
+          "canChat": {
+            "type": "boolean"
+          },
+          "canEmbed": {
+            "type": "boolean"
+          },
+          "canPrompt": {
+            "type": "boolean"
+          },
+          "canStream": {
+            "type": "boolean"
+          },
+          "contextLength": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "backendapi_OpenAICompatibleModelList": {
         "properties": {
           "data": {
@@ -68,6 +94,43 @@
         "type": "object"
       },
       "backendapi_backendDetails": {
+        "properties": {
+          "baseUrl": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pulledModels": {
+            "$ref": "#/components/schemas/statetype_ModelPullStatus"
+          },
+          "type": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "backendapi_backendSummary": {
         "properties": {
           "baseUrl": {
             "type": "string"
@@ -792,6 +855,56 @@
         },
         "type": "object"
       },
+      "modelregistry_ModelDescriptor": {
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "curated": {
+            "type": "boolean"
+          },
+          "displayLabel": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "reasoningFormat": {
+            "type": "string"
+          },
+          "reasoningProtocol": {
+            "type": "string"
+          },
+          "recommendedVramGb": {
+            "type": "integer"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "integer"
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "toolProtocol": {
+            "type": "string"
+          },
+          "useCase": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "modelregistryapi_downloadRequest": {
         "properties": {
           "name": {
@@ -818,6 +931,26 @@
             "type": "boolean"
           },
           "upsert": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "providerservice_ProviderCapability": {
+        "properties": {
+          "defaultBaseUrl": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "recommendedApiKeyEnv": {
+            "type": "string"
+          },
+          "requiresBaseUrl": {
+            "type": "boolean"
+          },
+          "requiresSecretConfig": {
             "type": "boolean"
           }
         },
@@ -1162,6 +1295,41 @@
               "type": "string"
             },
             "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "statetype_BackendRuntimeState": {
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/runtimetypes_Backend"
+          },
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "liveEngine": {
+            "type": "string"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pulledModels": {
+            "$ref": "#/components/schemas/statetype_ModelPullStatus"
+          },
+          "resolvedEndpoint": {
+            "type": "string"
+          },
+          "resolvedInstance": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -1555,13 +1723,92 @@
           }
         },
         "type": "object"
+      },
+      "terminalapi_createSessionRequest": {
+        "properties": {
+          "cols": {
+            "type": "integer"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "integer"
+          },
+          "shell": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "terminalapi_createSessionResponse": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "wsPath": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "terminalapi_patchSessionRequest": {
+        "properties": {
+          "cols": {
+            "type": "integer"
+          },
+          "rows": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "terminalstore_Session": {
+        "properties": {
+          "cols": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "nodeInstanceId": {
+            "type": "string"
+          },
+          "principal": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "integer"
+          },
+          "shell": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
       }
     }
   },
   "info": {
     "description": "HTTP API served by `contenox serve` under /api. Generated from route annotations by tools/openapi-gen.",
     "title": "Contenox Runtime API",
-    "version": "v0.33.0"
+    "version": "v0.35.4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -1794,7 +2041,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/backendapi_backendSummary"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -2030,7 +2282,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/internalchatapi_chatSession"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -2107,7 +2364,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/internalchatapi_chatMessage"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -2287,7 +2549,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/localfileservice_Entry"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -2739,7 +3006,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -2768,7 +3040,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/runtimetypes_MCPServer"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -3083,7 +3360,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/modelregistry_ModelDescriptor"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -3389,7 +3671,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/modeldapi_LocalModel"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -3489,7 +3776,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/backendapi_ObservedModel"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -3755,7 +4047,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/providerservice_ProviderStatus"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -3784,7 +4081,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/providerservice_ProviderCapability"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -4046,7 +4348,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/statetype_BackendRuntimeState"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -4240,7 +4547,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
               }
             },
             "description": "OK"
@@ -4299,6 +4611,202 @@
         "summary": "POST /tasks",
         "tags": [
           "taskexec"
+        ]
+      }
+    },
+    "/terminal/sessions": {
+      "get": {
+        "operationId": "terminal_listSessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/terminalstore_Session"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /terminal/sessions",
+        "tags": [
+          "terminal"
+        ]
+      },
+      "post": {
+        "operationId": "terminal_createSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/terminalapi_createSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/terminalapi_createSessionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "POST /terminal/sessions",
+        "tags": [
+          "terminal"
+        ]
+      }
+    },
+    "/terminal/sessions/{id}": {
+      "delete": {
+        "operationId": "terminal_deleteSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "DELETE /terminal/sessions/{id}",
+        "tags": [
+          "terminal"
+        ]
+      },
+      "get": {
+        "operationId": "terminal_getSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/terminalstore_Session"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /terminal/sessions/{id}",
+        "tags": [
+          "terminal"
+        ]
+      },
+      "patch": {
+        "operationId": "terminal_patchSession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/terminalapi_patchSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "PATCH /terminal/sessions/{id}",
+        "tags": [
+          "terminal"
         ]
       }
     },

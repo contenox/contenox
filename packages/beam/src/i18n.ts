@@ -1115,6 +1115,12 @@ const resources = {
         close: 'Close',
         create: 'Open Terminal',
         no_session: 'No terminal session',
+        connect_failed:
+          'Could not connect to terminal after several attempts. Check that the backend is reachable and try again.',
+        attach_output: 'Attach most recent terminal output as context for the next message',
+        attached_label: 'Terminal output attached',
+        attached_pill: 'Attached',
+        detach_attached: 'Detach (clear attached output)',
       },
       backends: {
         section_title: 'Backends',
@@ -2439,6 +2445,12 @@ const resources = {
         close: 'Schließen',
         create: 'Terminal öffnen',
         no_session: 'Keine Terminal-Sitzung',
+        connect_failed:
+          'Verbindung zum Terminal nach mehreren Versuchen fehlgeschlagen. Prüfen Sie, ob das Backend erreichbar ist, und versuchen Sie es erneut.',
+        attach_output: 'Letzte Terminal-Ausgabe als Kontext für die nächste Nachricht anhängen',
+        attached_label: 'Terminal-Ausgabe angehängt',
+        attached_pill: 'Angehängt',
+        detach_attached: 'Anhang entfernen (angehängte Ausgabe löschen)',
       },
       backends: {
         section_title: 'Backends',

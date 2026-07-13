@@ -208,6 +208,7 @@ export const modelRegistryKeys = {
 
 export const terminalKeys = {
   all: ['terminal'] as const,
+  probe: () => [...terminalKeys.all, 'probe'] as const,
   sessions: () => [...terminalKeys.all, 'sessions'] as const,
   session: (id: string) => [...terminalKeys.all, 'session', id] as const,
 };

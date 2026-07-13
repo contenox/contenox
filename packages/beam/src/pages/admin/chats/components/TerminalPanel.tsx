@@ -1,15 +1,22 @@
 import { Button, InsetPanel, Span, Spinner } from '@contenox/ui';
+import { useQueryClient } from '@tanstack/react-query';
 import { Paperclip, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from 'i18next';
 import { XTerminal, type XTerminalHandle } from '../../../../components/XTerminal';
+import {
+  isTooManyTerminalSessionsError,
+  useCreateTerminalSession,
+  useDeleteTerminalSession,
+  usePruneTerminalSessions,
+} from '../../../../hooks/useTerminal';
 import { api } from '../../../../lib/api';
-import { ApiError } from '../../../../lib/fetch';
 import {
   Artifact,
   useArtifactSource,
   type ArtifactSource,
 } from '../../../../lib/artifacts';
+import { terminalKeys } from '../../../../lib/queryKeys';
 import { useSlashCommand, type SlashCommand } from '../../../../lib/slashCommands';
 import {
   getSharedTerminalSession,
@@ -34,6 +41,11 @@ function normalizeTerminalWsPath(path: string): string {
 }
 
 export function TerminalPanel({ className }: { className?: string }) {
+  const queryClient = useQueryClient();
+  const createSessionMutation = useCreateTerminalSession();
+  const deleteSessionMutation = useDeleteTerminalSession();
+  const pruneSessions = usePruneTerminalSessions();
+
   const sharedInit = getSharedTerminalSession();
   const [wsUrl, setWsUrl] = useState<string | null>(() => sharedInit?.wsUrl ?? null);
   const [initializing, setInitializing] = useState(() => !sharedInit);
@@ -63,7 +75,7 @@ export function TerminalPanel({ className }: { className?: string }) {
     if (!armedOutput) return null;
     return {
       id: 'terminal:last_output',
-      label: t('terminal.attached_label', 'Terminal output attached'),
+      label: t('terminal.attached_label'),
       collect: () => {
         const snapshot = armedOutput;
         // Defer the clear so React doesn't flush mid-render. Uses microtask
@@ -157,50 +169,53 @@ export function TerminalPanel({ className }: { className?: string }) {
     }
   }, []);
 
-  const createSession = useCallback(async (retryAfterPrune = true) => {
-    const gen = ++createGenRef.current;
-    setInitializing(true);
-    setError(null);
-    setWsUrl(null);
-    try {
-      const session = await reuseOrCreateTerminalSession(async () => {
-        let res: Awaited<ReturnType<typeof api.createTerminalSession>>;
-        try {
-          res = await api.createTerminalSession({ cwd: '' });
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Failed to create terminal session';
-          const tooMany =
-            e instanceof ApiError &&
-            e.status === 422 &&
-            (msg.toLowerCase().includes('too many') || msg.toLowerCase().includes('concurrent'));
-          if (tooMany && retryAfterPrune) {
-            try {
-              const list = await api.listTerminalSessions();
-              await Promise.all(list.map(s => api.deleteTerminalSession(s.id).catch(() => undefined)));
-            } catch {
-              /* ignore prune errors */
+  const deleteSession = useCallback(
+    async (id: string) => {
+      try {
+        await deleteSessionMutation.mutateAsync(id);
+      } catch {
+        /* session may already be gone */
+      }
+    },
+    [deleteSessionMutation],
+  );
+
+  const createSession = useCallback(
+    async (retryAfterPrune = true) => {
+      const gen = ++createGenRef.current;
+      setInitializing(true);
+      setError(null);
+      setWsUrl(null);
+      try {
+        const session = await reuseOrCreateTerminalSession(async () => {
+          try {
+            const res = await createSessionMutation.mutateAsync({ cwd: '' });
+            return { sessionId: res.id, wsUrl: normalizeTerminalWsPath(res.wsPath) };
+          } catch (e) {
+            if (isTooManyTerminalSessionsError(e) && retryAfterPrune) {
+              await pruneSessions();
+              const res = await createSessionMutation.mutateAsync({ cwd: '' });
+              return { sessionId: res.id, wsUrl: normalizeTerminalWsPath(res.wsPath) };
             }
-            res = await api.createTerminalSession({ cwd: '' });
-          } else {
             throw e;
           }
+        });
+        if (gen !== createGenRef.current) return;
+        persist(session.sessionId, session.wsUrl);
+        setWsUrl(session.wsUrl);
+        setError(null);
+      } catch (e) {
+        if (gen !== createGenRef.current) return;
+        const msg = e instanceof Error ? e.message : 'Failed to create terminal session';
+        setError(msg);
+      } finally {
+        if (gen === createGenRef.current) {
+          setInitializing(false);
         }
-        return { sessionId: res.id, wsUrl: normalizeTerminalWsPath(res.wsPath) };
-      });
-      if (gen !== createGenRef.current) return;
-      persist(session.sessionId, session.wsUrl);
-      setWsUrl(session.wsUrl);
-      setError(null);
-    } catch (e) {
-      if (gen !== createGenRef.current) return;
-      const msg = e instanceof Error ? e.message : 'Failed to create terminal session';
-      setError(msg);
-    } finally {
-      if (gen === createGenRef.current) {
-        setInitializing(false);
       }
-    }
-  }, [persist]);
+    },
+    [createSessionMutation, persist, pruneSessions],
+  );
 
   // On mount: reuse in-tab singleton if present (avoids duplicate network on remount); else try saved session, then create
   useEffect(() => {
@@ -226,13 +241,16 @@ export function TerminalPanel({ className }: { className?: string }) {
 
       if (savedId) {
         try {
-          const session = await api.getTerminalSession(savedId);
+          const session = await queryClient.fetchQuery({
+            queryKey: terminalKeys.session(savedId),
+            queryFn: () => api.getTerminalSession(savedId),
+          });
           if (cancelled) return;
           if (session.status === 'active') {
-            const wsUrl = `/api/terminal/sessions/${savedId}/ws`;
+            const nextWsUrl = `/api/terminal/sessions/${savedId}/ws`;
             sessionIdRef.current = savedId;
-            persist(savedId, wsUrl);
-            setWsUrl(wsUrl);
+            persist(savedId, nextWsUrl);
+            setWsUrl(nextWsUrl);
             setInitializing(false);
             return;
           }
@@ -251,13 +269,13 @@ export function TerminalPanel({ className }: { className?: string }) {
       cancelled = true;
       createGenRef.current++;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [createSession, persist, queryClient]);
 
   useEffect(
     () => () => {
       clearDisconnectDebounce();
     },
-    [clearDisconnectDebounce]
+    [clearDisconnectDebounce],
   );
 
   const handleDisconnect = useCallback(() => {
@@ -271,16 +289,12 @@ export function TerminalPanel({ className }: { className?: string }) {
       disconnectDebounceRef.current = null;
       void (async () => {
         if (id) {
-          try {
-            await api.deleteTerminalSession(id);
-          } catch {
-            /* session may already be gone */
-          }
+          await deleteSession(id);
         }
         await createSession();
       })();
     }, DISCONNECT_RECREATE_MS);
-  }, [persist, createSession, clearDisconnectDebounce]);
+  }, [persist, createSession, clearDisconnectDebounce, deleteSession]);
 
   /** Recreate the session on connection failure, up to {@link MAX_CONNECT_FAILURES} consecutive attempts. */
   const handleConnectionFailed = useCallback(() => {
@@ -289,12 +303,7 @@ export function TerminalPanel({ className }: { className?: string }) {
       persist(null);
       setWsUrl(null);
       setInitializing(false);
-      setError(
-        t(
-          'terminal.connect_failed',
-          'Could not connect to terminal after several attempts. Check that the backend is reachable and try again.',
-        ),
-      );
+      setError(t('terminal.connect_failed'));
       return;
     }
     persist(null);
@@ -313,14 +322,10 @@ export function TerminalPanel({ className }: { className?: string }) {
     persist(null);
     setWsUrl(null);
     if (oldId) {
-      try {
-        await api.deleteTerminalSession(oldId);
-      } catch {
-        /* already gone */
-      }
+      await deleteSession(oldId);
     }
     await createSession();
-  }, [persist, createSession, clearDisconnectDebounce]);
+  }, [persist, createSession, clearDisconnectDebounce, deleteSession]);
 
   const handleClose = useCallback(async () => {
     clearDisconnectDebounce();
@@ -329,13 +334,9 @@ export function TerminalPanel({ className }: { className?: string }) {
     setWsUrl(null);
     setInitializing(false);
     if (oldId) {
-      try {
-        await api.deleteTerminalSession(oldId);
-      } catch {
-        /* already gone */
-      }
+      await deleteSession(oldId);
     }
-  }, [persist, clearDisconnectDebounce]);
+  }, [persist, clearDisconnectDebounce, deleteSession]);
 
   const handleOpenTerminal = useCallback(() => {
     clearDisconnectDebounce();
@@ -358,7 +359,7 @@ export function TerminalPanel({ className }: { className?: string }) {
           {error}
         </Span>
         <Button variant="secondary" size="sm" onClick={handleOpenTerminal}>
-          {t('terminal.retry', 'Retry')}
+          {t('terminal.retry')}
         </Button>
       </div>
     );
@@ -368,10 +369,10 @@ export function TerminalPanel({ className }: { className?: string }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-4">
         <Span variant="muted" className="text-sm">
-          {t('terminal.no_session', 'No terminal session')}
+          {t('terminal.no_session')}
         </Span>
         <Button variant="primary" size="sm" onClick={handleOpenTerminal}>
-          {t('terminal.create', 'Open Terminal')}
+          {t('terminal.create')}
         </Button>
       </div>
     );
@@ -383,7 +384,7 @@ export function TerminalPanel({ className }: { className?: string }) {
       <InsetPanel tone="strip" className="flex-row items-center justify-between gap-2 px-2 py-1.5">
         <div className="flex items-center gap-2">
           <Span variant="muted" className="text-xs font-medium">
-            {t('terminal.title', 'Terminal')}
+            {t('terminal.title')}
           </Span>
           {armedOutput && (
             <Button
@@ -391,11 +392,11 @@ export function TerminalPanel({ className }: { className?: string }) {
               variant="ghost"
               size="xs"
               onClick={handleClearAttached}
-              title={t('terminal.detach_attached', 'Detach (clear attached output)')}
+              title={t('terminal.detach_attached')}
               className="bg-success/10 text-success hover:bg-success/20 gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
             >
               <Paperclip className="h-3 w-3" />
-              {t('terminal.attached_pill', 'Attached')}
+              {t('terminal.attached_pill')}
               <X className="h-3 w-3" />
             </Button>
           )}
@@ -406,10 +407,7 @@ export function TerminalPanel({ className }: { className?: string }) {
             variant="ghost"
             size="xs"
             onClick={handleAttachOutput}
-            title={t(
-              'terminal.attach_output',
-              'Attach most recent terminal output as context for the next message',
-            )}
+            title={t('terminal.attach_output')}
           >
             <Paperclip className="h-3.5 w-3.5" />
           </Button>
@@ -418,7 +416,7 @@ export function TerminalPanel({ className }: { className?: string }) {
             variant="ghost"
             size="xs"
             onClick={handleRestart}
-            title={t('terminal.restart', 'Restart')}
+            title={t('terminal.restart')}
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </Button>
@@ -427,7 +425,7 @@ export function TerminalPanel({ className }: { className?: string }) {
             variant="ghost"
             size="xs"
             onClick={handleClose}
-            title={t('terminal.close', 'Close')}
+            title={t('terminal.close')}
           >
             <X className="h-3.5 w-3.5" />
           </Button>
