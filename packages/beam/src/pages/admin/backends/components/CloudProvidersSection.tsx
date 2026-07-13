@@ -36,7 +36,7 @@ export default function CloudProvidersSection() {
   return (
     <GridLayout variant="body">
       {setups.map(setup => (
-        <Section key={setup.provider} title={t(setup.titleKey as Parameters<typeof t>[0])}>
+        <Section key={setup.provider} title={t(setup.titleKey)}>
           <ProviderForm setup={setup} />
         </Section>
       ))}

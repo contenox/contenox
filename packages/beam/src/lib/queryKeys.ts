@@ -107,6 +107,7 @@ export const activityKeys = {
   operationsByType: (operation: string, subject: string) =>
     ['activity', 'operations', 'detail', operation, subject] as const,
   state: (requestID: string) => ['activity', 'state', requestID] as const,
+  events: (requestID: string) => ['activity', 'events', requestID] as const,
   statefulRequests: () => ['activity', 'statefulRequests'] as const,
   alerts: (limit?: number) => ['activity', 'alerts', { limit }] as const,
 };

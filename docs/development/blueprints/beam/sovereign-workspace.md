@@ -1,10 +1,7 @@
 # Blueprint: Sovereign Workspace
 
-> **Status:** decision blueprint (2026-07)  
 > **Owner:** runtime / beam  
 > **Companions:** [chat-canvas.md](../beam/chat-canvas.md), [local-runtime-cockpit.md](../beam/local-runtime-cockpit.md), [http-ui-revival.md](../beam/http-ui-revival.md), [../chat-modes-context.md](../chat-modes-context.md), [../local-coding-node-goals.md](../local-coding-node-goals.md), [../product-surface-truth-blueprint.md](../product-surface-truth-blueprint.md), [../windows/windows-product-surface.md](../windows/windows-product-surface.md), [multi-client-coordination.md](../modeld/multi-client-coordination.md)  
-> **Author:** (to be filled by owner)  
-> **Date:** 2026-07-13  
 > **Supersedes (positioning):** portions of `v1-feature-map.md` that excluded `contenox serve` + Beam from primary surface.
 
 ## Overview
@@ -19,7 +16,7 @@ This document formalizes the decision record, concrete architecture, data flows,
 
 ## Background & Motivation
 
-### Current State (as of 2026-07)
+### Current State (verify against code before relying on this)
 
 - **Brain is strong and complete:** `runtime/taskengine` + `hitlservice` + `agentservice` + `chatservice` + `messagestore` + `enginesvc` + `modeld/*` + `localtools` + `libacp` deliver durable chains, policy-gated execution, warm local context via `modeldconn`, tool/MCP wrapping, and streaming task events over `libbus` + SSE.
 - **Glass exists but is secondary:** `packages/beam` (React/TS, Vite, `@contenox/ui` shared components, Monaco via `@monaco-editor/react`) serves chat (`packages/beam/src/pages/admin/chats/ChatPage.tsx`, `packages/beam/src/pages/admin/chats/components/ChatInterface.tsx`, `packages/beam/src/pages/admin/chats/components/WorkspaceSplitPanel.tsx`), admin pages, modeld cockpit hooks (`packages/beam/src/hooks/useModeldStatus.ts`), artifact registry (`packages/beam/src/lib/artifacts/registry.ts`), and task event reduction (`packages/beam/src/lib/taskEvents.ts`). It is served at `/` by `runtime/internal/web` + `runtime/contenoxcli/serve_cmd.go`.
@@ -36,7 +33,7 @@ This document formalizes the decision record, concrete architecture, data flows,
 
 The "build our own IDE" conclusion was initially perplexing because full editors are millions of LoC with custom buffers. The insight: **we do not need a text buffer as the product**. We need ownership of the governance surface.
 
-### Implementation Readiness Matrix (as of 2026-07)
+### Implementation Readiness Matrix (verify against code before relying on this)
 
 | Component                  | Client (Beam/React)          | Server (Go)                          | Notes |
 |----------------------------|------------------------------|--------------------------------------|-------|
@@ -50,19 +47,15 @@ The "build our own IDE" conclusion was initially perplexing because full editors
 
 All "glass" innovations before PR 2 are view-only or will be inert until server wire lands.
 
-### Current Gaps (verified by code inspection)
+### Current Gaps (verify against code before relying on this)
 
-Context injection, mode resolution, and event attachments for canvas are **client scaffolding only** today:
-
-- `runtime/internal/internalchatapi/chatroutes.go:76`: `type chatRequest struct { Message string `json:"message"` }` — no `mode` or `context` fields. Handler (lines ~302-380) only reads `req.Message` + query params (`chainId`, `model` etc.); body extras are ignored.
-- `runtime/agentservice/agent.go:237` (`buildChatInput`) + `Prompt`: appends only plain user message + history. No `ChatContextArtifact` processing, no mode dispatch.
-- `runtime/taskengine/events.go:35`: `TaskEvent` has no `attachments`, `WidgetHint`, or artifact fields (only approval_*, `token_*`, `ToolDiff*` etc.).
+- `chatRequest` in `runtime/internal/internalchatapi/chatroutes.go` accepts `mode` + `context`, passes them to `agentservice.Prompt`, and `agentservice.ComposeUserInput` injects them into the model-visible user message (mode prefix + "Additional context" block). Truth-tested in `chatroutes_test.go` (`TestUnit_ChatPassesModeAndContextToAgent`) and `agentservice/composeinput_test.go`. Full mode→chain dispatch is still open.
+- `taskengine.TaskEvent` has no `attachments`/`WidgetHint` fields — deliberately: no producer exists yet, and speculative plumbing was removed. Add the field together with its first real producer.
 - No Go-side artifact kind renderers or `chatsessionmodes/artifact_kinds.go` exist (TS comments in `packages/beam/src/lib/artifacts/types.ts` reference planned Go parity).
-- Client (`packages/beam/src/pages/admin/chats/ChatPage.tsx:478` `buildTurnContext`, `packages/beam/src/lib/api.ts:201` body) **does** send `mode` + `context: {artifacts[]}` and defensively reduces attachments in `reduceTaskEventState`. These are forward-compatible but produce no server effect until PR 2/5.
-- `ExecutionTimeline` ( `packages/ui/src/components/visualization/ExecutionTimeline.tsx` ) is only rendered inside `packages/beam/src/pages/admin/chats/components/ChatMessage.tsx`; not a top-level column.
-- `ChatRunLog` component exists (`packages/beam/src/pages/admin/chats/components/ChatRunLog.tsx`) but is not the active side-rail in current `ChatPage.tsx` (the conditional uses `WorkspaceSplitPanel` for terminal when available).
+- `ExecutionTimeline` (`packages/ui/src/components/visualization/ExecutionTimeline.tsx`) renders inside chat messages and the workspace rail's `TimelinePanel`; not a top-level column.
+- `ChatRunLog` component exists (`packages/beam/src/pages/admin/chats/components/ChatRunLog.tsx`) but is not the active side-rail in current `ChatPage.tsx`.
 
-See `chat-modes-context.md` for the planned server injection design. A small spike to echo received `context`/`mode` server-side + passthrough attachments on events is recommended before heavy renderer work.
+See `chat-modes-context.md` for the fuller mode-resolution design.
 
 ## Goals & Non-Goals
 

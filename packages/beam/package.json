@@ -18,6 +18,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "typecheck": "tsc -b --force",
     "format": "npm run prettier:check && npm run prettier:write",
     "prettier:check": "prettier --check \"**/*.{ts,tsx,js,json,md}\"",
     "prettier": "prettier --write \"**/*.{ts,tsx,js,json,md}\""

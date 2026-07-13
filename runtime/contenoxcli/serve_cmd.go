@@ -160,7 +160,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	toolsRepo := internaltools.NewPersistentRepo(localTools, db, http.DefaultClient, bus, tracker)
 	toolsProviderSvc := toolsproviderservice.New(db, toolsRepo, tracker)
 
-	taskEventSink := taskengine.NewBusTaskEventSink(bus)
+	// Journal events durably per request (console scrollback evidence: diffs,
+	// approvals, tool calls) in addition to the live bus stream served by SSE.
+	taskEventSink := taskengine.NewKVJournalTaskEventSink(
+		taskengine.NewBusTaskEventSink(bus), kvMgr, tracker)
 	hitlSource := hitlPolicySource(contenoxDir)
 	hitlSvc := hitlservice.NewWithDefaultPolicy(hitlSource, runtimetypes.LocalTenantID, store, tracker, "")
 

@@ -1,16 +1,17 @@
+import type { TranslationKey } from '../i18n';
 import type { CloudProviderType } from './types';
 
 export type ProviderSecretKind = 'api-key' | 'service-account-json' | 'aws-credentials-json' | 'none';
 
 export type CloudProviderSetup = {
   provider: CloudProviderType;
-  titleKey: string;
-  descriptionKey: string;
+  titleKey: TranslationKey;
+  descriptionKey: TranslationKey;
   secretKind: ProviderSecretKind;
   secretRequired: boolean;
-  secretLabelKey?: string;
-  secretPlaceholderKey?: string;
-  baseUrlLabelKey?: string;
+  secretLabelKey?: TranslationKey;
+  secretPlaceholderKey?: TranslationKey;
+  baseUrlLabelKey?: TranslationKey;
   baseUrlPlaceholder?: string;
   baseUrlRequired?: boolean;
   defaultBaseUrl?: string;

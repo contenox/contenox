@@ -1,13 +1,14 @@
 import { Cpu, Database, Settings, type LucideIcon } from 'lucide-react';
 import { lazy } from 'react';
 import { Navigate } from 'react-router-dom';
-import i18n from '../i18n';
+import i18n, { type TranslationKey } from '../i18n';
 import HomeRedirect from '../pages/HomeRedirect.tsx';
 import { LOGIN_ROUTE } from './routeConstants.ts';
 
 const BackendsPage = lazy(() => import('../pages/admin/backends/BackendPage.tsx'));
 const ChatPage = lazy(() => import('../pages/admin/chats/ChatPage.tsx'));
 const ChatLandingPage = lazy(() => import('../pages/admin/chats/ChatLandingPage.tsx'));
+const ConsolePage = lazy(() => import('../pages/admin/console/ConsolePage.tsx'));
 const ControlPlanePage = lazy(() => import('../pages/admin/control/ControlPlanePage.tsx'));
 const SettingsPage = lazy(() => import('../pages/admin/settings/SettingsPage.tsx'));
 const ByePage = lazy(() => import('../pages/public/bye/Bye.tsx'));
@@ -35,7 +36,7 @@ export type AdminNavItem = {
 type AdminRouteDefinition = {
   path: string;
   element: React.ComponentType;
-  labelKey: string;
+  labelKey: TranslationKey;
   Icon: LucideIcon;
 };
 
@@ -95,8 +96,17 @@ export const routes: RouteConfig[] = [
   },
   {
     path: '/chat/:chatId',
-    element: ChatPage,
+    element: ConsolePage,
     label: i18n.t('navbar.chat'),
+    showInNav: false,
+    protected: true,
+    showInShelf: false,
+  },
+  {
+    // Pre-console chat surface, kept reachable during the transition.
+    path: '/chat-legacy/:chatId',
+    element: ChatPage,
+    label: '',
     showInNav: false,
     protected: true,
     showInShelf: false,
@@ -104,6 +114,22 @@ export const routes: RouteConfig[] = [
   {
     path: '/chats',
     element: LegacyChatsRedirect,
+    label: '',
+    showInNav: false,
+    protected: true,
+    showInShelf: false,
+  },
+  {
+    path: '/console',
+    element: ConsolePage,
+    label: '',
+    showInNav: false,
+    protected: true,
+    showInShelf: false,
+  },
+  {
+    path: '/console/:chatId',
+    element: ConsolePage,
     label: '',
     showInNav: false,
     protected: true,

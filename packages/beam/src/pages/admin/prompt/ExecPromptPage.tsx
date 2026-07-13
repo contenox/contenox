@@ -24,7 +24,9 @@ export default function ExecPromptPage() {
   const cancelledRef = useRef(false);
 
   const { mutate: executePrompt, data, isPending, isError, error } = useExecPrompt();
-  const liveTask = useTaskEvents(activeRequestId, { enabled: !!activeRequestId && isPending });
+  const { state: liveTask } = useTaskEvents(activeRequestId, {
+    enabled: !!activeRequestId && isPending,
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

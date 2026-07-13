@@ -71,13 +71,16 @@ type chatMessage struct {
 	IsLatest   bool                  `json:"isLatest"`
 	CallTools  []taskengine.ToolCall `json:"callTools,omitempty" openapi_include_type:"taskengine.ToolCall"`
 	ToolCallID string                `json:"toolCallId,omitempty"`
+	// Turn provenance: the run that produced this message (joins to
+	// GET /execution-state?requestId=...) and the chain that ran.
+	RequestID string `json:"requestId,omitempty"`
+	ChainRef  string `json:"chainRef,omitempty"`
 }
 
 type chatRequest struct {
-	Message string         `json:"message"`
-	// mode and context are accepted for the Sovereign Workspace / Beam primary surface.
-	// Full resolution + injection is implemented in follow-up slices (see chat-modes-context.md).
-	Mode    string         `json:"mode,omitempty"`
+	Message string `json:"message"`
+	// Per-turn context artifacts from Beam's ArtifactRegistry; injected into the
+	// model-visible user message by agentservice.ComposeUserInput.
 	Context map[string]any `json:"context,omitempty"`
 }
 
@@ -260,6 +263,8 @@ func (h *chatHandler) history(w http.ResponseWriter, r *http.Request) {
 			IsUser:     m.Role == "user",
 			CallTools:  m.CallTools,
 			ToolCallID: m.ToolCallID,
+			RequestID:  m.RequestID,
+			ChainRef:   m.ChainRef,
 		})
 	}
 	if len(resp) > 0 {
@@ -314,9 +319,6 @@ func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {
 		_ = apiframework.Error(w, r, apiframework.BadRequest("message is required"), apiframework.CreateOperation)
 		return
 	}
-
-	// Sovereign workspace: pass mode and context through to the agent for injection.
-	// See architecture plan and chat-modes-context intent.
 
 	defaults := stateservice.ResolveRuntimeDefaults(ctx, h.deps.StateService, h.deps.Defaults)
 	if chainRef == "" {
@@ -376,8 +378,8 @@ func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {
 		Chain:         chain,
 		TemplateVars:  templateVars,
 		ContextLength: contextLen,
-		Mode:          req.Mode,
 		Context:       req.Context,
+		ChainRef:      chainRef,
 	})
 	if err != nil {
 		if isMissingModelProvider(err) {

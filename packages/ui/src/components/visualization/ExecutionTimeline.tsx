@@ -153,7 +153,9 @@ function HistoricalState({
   state: CapturedStateUnit[];
   l: Required<ExecutionTimelineLabels>;
 }) {
-  const formatDuration = (ms: number): string => {
+  // duration is a Go time.Duration serialized as nanoseconds; pick a readable unit.
+  const formatDuration = (ns: number): string => {
+    const ms = ns / 1_000_000;
     if (ms < 1000) return `${Math.round(ms)} ms`;
     return `${(ms / 1000).toFixed(2)} s`;
   };
@@ -173,7 +175,7 @@ function HistoricalState({
           {state.map((unit, index) => (
             <TableRow key={index}>
               <TableCell className="font-mono text-xs">{unit.taskID}</TableCell>
-              <TableCell className="text-xs">{unit.taskType}</TableCell>
+              <TableCell className="text-xs">{unit.taskHandler}</TableCell>
               <TableCell className="max-w-xs truncate text-xs">{unit.transition || "-"}</TableCell>
               <TableCell className="text-xs">{formatDuration(unit.duration)}</TableCell>
               <TableCell className="text-xs">

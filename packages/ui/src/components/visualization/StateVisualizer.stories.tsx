@@ -13,7 +13,7 @@ type Story = StoryObj<typeof StateVisualizer>;
 const sampleState: CapturedStateUnit[] = [
   {
     taskID: "ingest",
-    taskType: "compose",
+    taskHandler: "compose",
     inputType: "string",
     outputType: "messages",
     transition: "next",
@@ -22,7 +22,7 @@ const sampleState: CapturedStateUnit[] = [
   },
   {
     taskID: "embed",
-    taskType: "model_exec",
+    taskHandler: "model_exec",
     inputType: "messages",
     outputType: "vector",
     transition: "next",
@@ -31,7 +31,7 @@ const sampleState: CapturedStateUnit[] = [
   },
   {
     taskID: "retrieve",
-    taskType: "retriever",
+    taskHandler: "retriever",
     inputType: "vector",
     outputType: "documents",
     transition: "next",
@@ -40,7 +40,7 @@ const sampleState: CapturedStateUnit[] = [
   },
   {
     taskID: "summarize",
-    taskType: "model_exec",
+    taskHandler: "model_exec",
     inputType: "documents",
     outputType: "string",
     transition: "done",

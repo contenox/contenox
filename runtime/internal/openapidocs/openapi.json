@@ -181,6 +181,28 @@
         },
         "type": "object"
       },
+      "execstateapi_executionEventsResponse": {
+        "properties": {
+          "events": {
+            "$ref": "#/components/schemas/taskengine_TaskEvent"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "execstateapi_executionStateResponse": {
+        "properties": {
+          "requestId": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/taskengine_CapturedStateUnit"
+          }
+        },
+        "type": "object"
+      },
       "hitlservice_Condition": {
         "properties": {
           "key": {
@@ -240,6 +262,9 @@
           "callTools": {
             "$ref": "#/components/schemas/taskengine_ToolCall"
           },
+          "chainRef": {
+            "type": "string"
+          },
           "content": {
             "type": "string"
           },
@@ -251,6 +276,9 @@
           },
           "isUser": {
             "type": "boolean"
+          },
+          "requestId": {
+            "type": "string"
           },
           "role": {
             "type": "string"
@@ -270,6 +298,10 @@
       },
       "internalchatapi_chatRequest": {
         "properties": {
+          "context": {
+            "additionalProperties": {},
+            "type": "object"
+          },
           "message": {
             "type": "string"
           }
@@ -1609,6 +1641,112 @@
         },
         "type": "object"
       },
+      "taskengine_TaskEvent": {
+        "properties": {
+          "approval_args": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "approval_diff": {
+            "type": "string"
+          },
+          "approval_id": {
+            "type": "string"
+          },
+          "backend_id": {
+            "type": "string"
+          },
+          "chain_id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "hitl_action": {
+            "type": "string"
+          },
+          "hitl_approval_requested": {
+            "type": "boolean"
+          },
+          "hitl_args_summary": {
+            "type": "string"
+          },
+          "hitl_matched_rule": {
+            "type": "integer"
+          },
+          "hitl_policy_name": {
+            "type": "string"
+          },
+          "hitl_policy_path": {
+            "type": "string"
+          },
+          "hitl_reason": {
+            "type": "string"
+          },
+          "hitl_timeout_s": {
+            "type": "integer"
+          },
+          "hook_name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "model_name": {
+            "type": "string"
+          },
+          "output_type": {
+            "type": "string"
+          },
+          "provider_type": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "retry": {
+            "type": "integer"
+          },
+          "task_handler": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "thinking": {
+            "type": "string"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "token_size": {
+            "type": "integer"
+          },
+          "token_used": {
+            "type": "integer"
+          },
+          "tool_diff_new_text": {
+            "type": "string"
+          },
+          "tool_diff_old_text": {
+            "type": "string"
+          },
+          "tool_diff_path": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "transition": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "taskengine_TaskTransition": {
         "properties": {
           "branches": {
@@ -2510,6 +2648,88 @@
         "summary": "PUT /cli-config",
         "tags": [
           "setup"
+        ]
+      }
+    },
+    "/execution-events": {
+      "get": {
+        "operationId": "execstate_getEvents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "requestId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/execstateapi_executionEventsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /execution-events",
+        "tags": [
+          "execstate"
+        ]
+      }
+    },
+    "/execution-state": {
+      "get": {
+        "operationId": "execstate_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "requestId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/execstateapi_executionStateResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIError"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "GET /execution-state",
+        "tags": [
+          "execstate"
         ]
       }
     },

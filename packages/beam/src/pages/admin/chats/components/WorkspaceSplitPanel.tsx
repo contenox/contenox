@@ -4,9 +4,9 @@ import { forwardRef, lazy, Suspense, useImperativeHandle, useState } from 'react
 import type { ChatContextPayload, TaskEvent } from '../../../../lib/types';
 import { cn } from '../../../../lib/utils';
 import { TimelinePanel } from './TimelinePanel';
-import { CanvasPanel, type CanvasArtifact } from './CanvasPanel';
+import { CanvasPanel } from './CanvasPanel';
 import { useCanvas } from '../../../../hooks/useCanvas';
-import type { CanvasArtifact } from '../../../lib/artifacts/canvas';
+import type { CanvasArtifact } from '../../../../lib/artifacts/canvas';
 
 const TerminalPanel = lazy(() =>
   import('./TerminalPanel').then(m => ({ default: m.TerminalPanel })),
@@ -43,11 +43,6 @@ const WorkspaceSplitPanel = forwardRef<WorkspaceSplitHandle, Props>(function Wor
 
   const canvas = useCanvas(events);
 
-  // Wire external selection (from top level or timeline) into the hook
-  // For this slice we prefer the hook's current, but allow prop-driven selection.
-  const effectiveSelected = selectedEvent;
-  // If parent selects, we could sync, but for simplicity use hook's current driven by internal timeline clicks.
-  // Timeline inside will call onSelectEvent which parent can forward.
   const canvasArtifact: CanvasArtifact | null = canvas.current;
 
   return (
@@ -58,14 +53,14 @@ const WorkspaceSplitPanel = forwardRef<WorkspaceSplitHandle, Props>(function Wor
       )}>
       <div className="flex items-center gap-1 border-b border-surface-300 p-1 text-xs dark:border-dark-surface-400">
         <Button
-          variant={mode === 'canvas' ? 'default' : 'ghost'}
+          variant={mode === 'canvas' ? 'primary' : 'ghost'}
           size="sm"
           onClick={() => setMode('canvas')}
         >
           Canvas
         </Button>
         <Button
-          variant={mode === 'terminal' ? 'default' : 'ghost'}
+          variant={mode === 'terminal' ? 'primary' : 'ghost'}
           size="sm"
           onClick={() => setMode('terminal')}
         >

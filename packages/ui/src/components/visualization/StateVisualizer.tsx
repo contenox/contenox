@@ -58,7 +58,7 @@ export const StateVisualizer = ({ state, labels }: StateVisualizerProps) => {
       {state.map((unit, index) => (
         <TableRow key={index} className={unit.error ? "bg-error/10" : ""}>
           <TableCell>{unit.taskID}</TableCell>
-          <TableCell>{unit.taskType}</TableCell>
+          <TableCell>{unit.taskHandler}</TableCell>
           <TableCell>{unit.inputType}</TableCell>
           <TableCell>{unit.outputType}</TableCell>
           <TableCell className="max-w-xs truncate">{unit.transition || "-"}</TableCell>

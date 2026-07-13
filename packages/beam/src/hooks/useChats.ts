@@ -1,13 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { chatKeys } from '../lib/queryKeys';
-import {
-  ChatContextPayload,
-  ChatMessage,
-  ChatModeId,
-  ChatSession,
-  StateResponse,
-} from '../lib/types';
+import { ChatContextPayload, ChatMessage, ChatSession, StateResponse } from '../lib/types';
 
 export function useChats() {
   return useQuery<ChatSession[]>({
@@ -46,17 +40,15 @@ export function useSendMessage(chatId: string) {
       provider?: string;
       signal?: AbortSignal;
       requestId?: string;
-      mode?: ChatModeId;
       context?: ChatContextPayload;
     }
   >({
-    mutationFn: ({ message, chainId, model, provider, signal, requestId, mode, context }) =>
+    mutationFn: ({ message, chainId, model, provider, signal, requestId, context }) =>
       api.sendMessage(chatId, message, chainId, {
         model,
         provider,
         signal,
         requestId,
-        mode,
         context,
       }),
     onSuccess: () => {

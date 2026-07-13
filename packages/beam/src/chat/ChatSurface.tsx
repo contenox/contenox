@@ -11,7 +11,6 @@ import {
   Pencil,
   RefreshCw,
   Search,
-  Settings2,
   SlidersHorizontal,
   Trash2,
   Wrench,
@@ -626,6 +625,7 @@ export function BeamChat({
       onResolveApproval={resolveApproval}
       onOpenDiff={client.openDiff}
       productName={productName}
+      productIcon={productIcon}
       embedded={embedded}
     />
   );
@@ -897,6 +897,7 @@ function ConversationPane({
   onResolveApproval,
   onOpenDiff,
   productName,
+  productIcon,
   embedded = false,
 }: {
   links: BeamChatLinks;
@@ -911,6 +912,7 @@ function ConversationPane({
   onResolveApproval: (optionId: string | undefined) => void;
   onOpenDiff?: (call: BeamChatToolCall) => void;
   productName: string;
+  productIcon?: React.ReactNode;
   embedded?: boolean;
 }) {
   const { containerRef, endRef, scrollToEnd, isNearBottom } = useChatScroll({
@@ -932,6 +934,7 @@ function ConversationPane({
           links={links}
           readiness={readiness}
           productName={productName}
+          productIcon={productIcon}
           embedded={embedded}
         />
       </div>
@@ -1355,11 +1358,13 @@ function UnavailableState({
   links,
   readiness,
   productName,
+  productIcon,
   embedded = false,
 }: {
   links: BeamChatLinks;
   readiness: BeamChatReadiness;
   productName: string;
+  productIcon?: React.ReactNode;
   embedded?: boolean;
 }) {
   return (

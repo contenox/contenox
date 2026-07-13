@@ -2,9 +2,11 @@ import { useMemo, useState, useCallback } from 'react';
 import type { TaskEvent } from '../lib/types';
 import { projectEventToCanvas, type CanvasArtifact } from '../lib/artifacts/canvas';
 
+type ProjectedArtifact = Exclude<CanvasArtifact, { kind: 'empty' }>;
+
 export type UseCanvasResult = {
-  artifacts: CanvasArtifact[];
-  current: CanvasArtifact | null;
+  artifacts: ProjectedArtifact[];
+  current: ProjectedArtifact | null;
   select: (event: TaskEvent | null) => void;
   clear: () => void;
 };
@@ -20,7 +22,7 @@ export function useCanvas(events: TaskEvent[]): UseCanvasResult {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const artifacts = useMemo(() => {
-    const projected: CanvasArtifact[] = [];
+    const projected: ProjectedArtifact[] = [];
     for (const ev of events) {
       const art = projectEventToCanvas(ev);
       if (art && art.kind !== 'empty') {

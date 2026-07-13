@@ -1,4 +1,4 @@
-import type { InlineAttachment } from '@contenox/ui';
+import type { CapturedStateUnit, InlineAttachment, TaskEvent } from '@contenox/ui';
 export type { InlineAttachment };
 
 export type ModelDescriptor = {
@@ -205,9 +205,6 @@ export type StateResponse = {
   error?: string;
 };
 
-/** POST /api/chats/:id/chat — optional body fields (server resolves chain from mode when chainId omitted). */
-export type ChatModeId = 'chat' | 'prompt';
-
 export type ChatContextArtifact = {
   kind: string;
   /** JSON value serialized per artifact */
@@ -218,52 +215,10 @@ export type ChatContextPayload = {
   artifacts?: ChatContextArtifact[];
 };
 
-export type TaskEventKind =
-  | 'chain_started'
-  | 'step_started'
-  | 'step_chunk'
-  | 'step_completed'
-  | 'step_failed'
-  | 'chain_completed'
-  | 'chain_failed'
-  | 'approval_requested'
-  | 'token_usage';
-
-export type TaskEvent = {
-  kind: TaskEventKind;
-  timestamp: string;
-  request_id?: string;
-  chain_id?: string;
-  task_id?: string;
-  task_handler?: string;
-  retry?: number;
-  model_name?: string;
-  provider_type?: string;
-  backend_id?: string;
-  output_type?: string;
-  transition?: string;
-  content?: string;
-  thinking?: string;
-  error?: string;
-  /**
-   * Widget hints emitted by hooks during the just-completed step (Phase 5
-   * of the Beam canvas-vision plan). Mirrors taskengine.WidgetHint on the
-   * Go side. The shape matches ChatContextArtifact so the same artifact →
-   * inline-attachment mapping handles both directions of state flow.
-   */
-  attachments?: Array<{ kind: string; payload?: unknown }>;
-
-  // Approval fields — only present on approval_requested events.
-  approval_id?: string;
-  hook_name?: string;
-  tool_name?: string;
-  approval_args?: Record<string, unknown>;
-  approval_diff?: string;
-
-  // token_usage event fields (from taskengine for context window usage vs model ctx)
-  token_used?: number;
-  token_size?: number;
-};
+// TaskEvent mirrors taskengine.TaskEvent on the Go side. The canonical client
+// type lives in @contenox/ui (shared with ExecutionTimeline and TaskEventFeed);
+// beam re-exports it so there is a single definition.
+export type { TaskEvent, TaskEventKind } from '@contenox/ui';
 
 export type SetupIssue = {
   code: string;
@@ -413,15 +368,10 @@ export type ChatSession = {
   lastMessage?: ChatMessage;
 };
 
-export type CapturedStateUnit = {
-  taskID: string;
-  taskType: string;
-  inputType: string;
-  outputType: string;
-  transition: string;
-  duration: number;
-  error: ErrorState;
-};
+// CapturedStateUnit mirrors taskengine.CapturedStateUnit on the Go side.
+// The canonical client type lives in @contenox/ui (shared with
+// ExecutionTimeline and StateVisualizer); beam re-exports it.
+export type { CapturedStateUnit } from '@contenox/ui';
 
 export type ErrorState = {
   error: string | null;
@@ -457,6 +407,10 @@ export type ChatMessage = {
   toolCallId?: string;
   /** Task events streamed during the generation of this message. */
   events?: TaskEvent[];
+  /** Turn provenance: the run that produced this message (joins to GET /api/execution-state). */
+  requestId?: string;
+  /** Turn provenance: the chain path that ran this turn. */
+  chainRef?: string;
 };
 
 export type QueueItem = {

@@ -1,7 +1,6 @@
 import { Badge, Button, EmptyState, Span } from '@contenox/ui';
-import { t } from 'i18next';
 import { X } from 'lucide-react';
-import type { CanvasArtifact } from '../../../lib/artifacts/canvas';
+import type { CanvasArtifact } from '../../../../lib/artifacts/canvas';
 
 interface CanvasPanelProps {
   className?: string;
@@ -39,7 +38,7 @@ function renderArtifact(artifact: CanvasArtifact) {
         <div className="space-y-2">
           {artifact.title && <div className="font-medium text-sm">{artifact.title}</div>}
           <div className="rounded bg-surface-100 p-3 text-xs dark:bg-dark-surface-200 whitespace-pre-wrap overflow-auto max-h-[420px]">
-            {('content' in artifact ? artifact.content : artifact.body) || '(no content)'}
+            {artifact.content || '(no content)'}
           </div>
         </div>
       );
@@ -48,12 +47,12 @@ function renderArtifact(artifact: CanvasArtifact) {
         <div>
           <div className="mb-1 font-medium text-sm">{artifact.title || 'Diff'}</div>
           <pre className="overflow-auto rounded bg-black/5 p-2 text-[10px] dark:bg-white/5">
-            {('content' in artifact ? artifact.content : artifact.body) || ''}
+            {artifact.content || ''}
           </pre>
         </div>
       );
     default:
-      return <div className="text-text-muted text-xs">{artifact.body || ''}</div>;
+      return null;
   }
 }
 

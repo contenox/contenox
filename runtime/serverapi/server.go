@@ -18,6 +18,7 @@ import (
 	"github.com/contenox/runtime/runtime/hitlservice"
 	"github.com/contenox/runtime/runtime/internal/approvalapi"
 	"github.com/contenox/runtime/runtime/internal/backendapi"
+	"github.com/contenox/runtime/runtime/internal/execstateapi"
 	"github.com/contenox/runtime/runtime/internal/hitlpolicyapi"
 	"github.com/contenox/runtime/runtime/internal/internalchatapi"
 	"github.com/contenox/runtime/runtime/internal/localfileapi"
@@ -163,6 +164,9 @@ func registerProductRoutes(ctx context.Context, mux *http.ServeMux, config *Conf
 	}
 	if deps.Agent != nil {
 		taskexecapi.AddRoutes(mux, deps.Agent, deps.Auth, stateSvc, deps.Defaults)
+	}
+	if deps.DB != nil {
+		execstateapi.AddRoutes(mux, deps.DB, nil, deps.Auth)
 	}
 	if deps.HITLService != nil {
 		approvalapi.AddRoutes(mux, deps.HITLService, deps.Auth)

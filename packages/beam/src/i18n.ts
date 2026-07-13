@@ -1,4 +1,5 @@
 import i18n from 'i18next';
+import type { ParseKeys } from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 
@@ -10,6 +11,9 @@ declare module 'i18next' {
     };
   }
 }
+
+/** A valid key into the typed translation resources, for config objects that carry i18n keys. */
+export type TranslationKey = ParseKeys;
 
 const resources = {
   en: {
@@ -1425,6 +1429,11 @@ const resources = {
         error_fetching: 'Failed to fetch task state',
         no_data: 'No state data available',
       },
+      console: {
+        empty: 'Type a task below — the agent works here, visibly.',
+        placeholder: 'Task, question, or /command — Esc stops a run',
+        awaiting_approval: 'Waiting for approval — y approve · n deny · Esc stop',
+      },
       chat: {
         stop: 'Stop',
         task_id: 'Task ID',
@@ -1433,6 +1442,11 @@ const resources = {
         run_log: 'Run log',
         show_run_log: 'Show run log',
         hide_run_log: 'Hide run log',
+        execution_timeline: 'Timeline',
+        show_timeline: 'Show timeline',
+        hide_timeline: 'Hide timeline',
+        timeline_waiting: 'Waiting for execution events…',
+        timeline_empty: 'Run a chain to see the execution timeline here.',
         stats_compact: '{{messages}} msgs · {{state}} steps',
         sse_connecting: 'Connecting to task event stream…',
         sse_sending_http: 'Sending message…',
@@ -2744,6 +2758,11 @@ const resources = {
         error_fetching: 'Fehler beim Abrufen des Aufgabenstatus',
         no_data: 'Keine Statusdaten verfügbar',
       },
+      console: {
+        empty: 'Gib unten eine Aufgabe ein — der Agent arbeitet hier sichtbar.',
+        placeholder: 'Aufgabe, Frage oder /Befehl — Esc stoppt einen Lauf',
+        awaiting_approval: 'Warte auf Freigabe — y freigeben · n ablehnen · Esc stoppen',
+      },
       chat: {
         stop: 'Stop',
         task_id: 'Task ID',
@@ -2753,6 +2772,11 @@ const resources = {
         run_log: 'Ablauf',
         show_run_log: 'Ablauf einblenden',
         hide_run_log: 'Ablauf ausblenden',
+        execution_timeline: 'Zeitleiste',
+        show_timeline: 'Zeitleiste einblenden',
+        hide_timeline: 'Zeitleiste ausblenden',
+        timeline_waiting: 'Warte auf Ausführungsereignisse…',
+        timeline_empty: 'Führe eine Chain aus, um hier die Zeitleiste zu sehen.',
         stats_compact: '{{messages}} Nachr. · {{state}} Schritte',
         sse_connecting: 'Verbinde mit Aufgaben-Ereignisstrom…',
         sse_sending_http: 'Nachricht wird gesendet…',

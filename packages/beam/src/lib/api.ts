@@ -3,10 +3,10 @@ import {
   AuthenticatedUser,
   Backend,
   BackendRuntimeState,
+  CapturedStateUnit,
   ChainDefinition,
   ChatContextPayload,
   ChatMessage,
-  ChatModeId,
   ChatSession,
   CLIConfigUpdateRequest,
   CLIConfigUpdateResponse,
@@ -28,6 +28,7 @@ import {
   StateResponse,
   StatusResponse,
   SupportedProvider,
+  TaskEvent,
   TaskExecutionRequest,
   TaskExecutionResponse,
   TerminalSession,
@@ -188,7 +189,6 @@ export const api = {
       provider?: string;
       signal?: AbortSignal;
       requestId?: string;
-      mode?: ChatModeId;
       context?: ChatContextPayload;
     },
   ) => {
@@ -198,7 +198,6 @@ export const api = {
     if (opts?.provider) params.append('provider', opts.provider);
 
     const body: Record<string, unknown> = { message };
-    if (opts?.mode) body.mode = opts.mode;
     if (opts?.context && Object.keys(opts.context).length > 0) body.context = opts.context;
 
     const requestOptions = options('POST', body);
@@ -246,6 +245,18 @@ export const api = {
     // /chat/api/... and hits the SPA shell instead of the API mux.
     return new EventSource(`/api/task-events?requestId=${encodeURIComponent(requestId)}`);
   },
+
+  /** Durable per-run execution evidence (empty state = never captured or evicted). */
+  getExecutionState: (requestId: string) =>
+    apiFetch<{ requestId: string; state: CapturedStateUnit[] }>(
+      `/api/execution-state?requestId=${encodeURIComponent(requestId)}`,
+    ),
+
+  /** Durable per-run event journal: the full work log (tool calls, diffs, approvals). */
+  getExecutionEvents: (requestId: string) =>
+    apiFetch<{ requestId: string; events: TaskEvent[] }>(
+      `/api/execution-events?requestId=${encodeURIComponent(requestId)}`,
+    ),
 
   configureProvider: (provider: CloudProviderType, data: ConfigureProviderInput) =>
     apiFetch<StatusResponse>(`/api/providers/${provider}/configure`, options('POST', data)),

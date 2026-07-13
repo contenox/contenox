@@ -1,7 +1,6 @@
 import {
   Button,
   InlineNotice,
-  ProgressBar,
   Select,
   Span,
   Spinner,
@@ -13,51 +12,7 @@ import {
 } from '@contenox/ui';
 import { Pencil, TerminalSquare } from 'lucide-react';
 import { t } from 'i18next';
-import type { ChatModeId } from '../../../../lib/types';
-import { cn } from '../../../../lib/utils';
-
-function contextUsagePalette(pct: number): 'primary' | 'warning' | 'error' {
-  if (pct > 90) return 'error';
-  if (pct > 70) return 'warning';
-  return 'primary';
-}
-
-function contextUsageTextClass(pct: number): string | undefined {
-  if (pct > 90) return 'text-error dark:text-dark-error';
-  if (pct > 70) return 'text-warning dark:text-dark-warning';
-  return undefined;
-}
-
-function ContextUsageMeter({ used, size }: { used: number; size: number }) {
-  const safeUsed = Math.max(0, used);
-  const pct = Math.round((safeUsed / size) * 100);
-  const palette = contextUsagePalette(pct);
-  const textClass = contextUsageTextClass(pct);
-  const usedLabel = safeUsed > 0 ? `${safeUsed.toLocaleString()}/` : '';
-  const title =
-    safeUsed > 0
-      ? `Context: ${safeUsed.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`
-      : `Context window: ${size.toLocaleString()} tokens`;
-
-  return (
-    <div
-      className="ml-3 flex shrink-0 items-center gap-2 text-xs font-medium tabular-nums"
-      title={title}>
-      <Span variant={textClass ? undefined : 'muted'} className={cn(textClass, 'tabular-nums')}>
-        {usedLabel}
-        {size.toLocaleString()}
-      </Span>
-      <ProgressBar
-        value={Math.min(100, Math.max(0, pct))}
-        palette={palette}
-        className="h-2 w-24 bg-surface-200 shadow-inner dark:bg-dark-surface-300"
-      />
-      <Span variant={textClass ? undefined : 'muted'} className={cn(textClass, 'tabular-nums')}>
-        {pct}%
-      </Span>
-    </div>
-  );
-}
+import { ContextUsageMeter } from '../../../../components/ContextUsageMeter';
 
 interface ChatToolbarProps {
   chainOptions: { value: string; label: string }[];
@@ -65,10 +20,6 @@ interface ChatToolbarProps {
   onChainChange: (id: string) => void;
   chainsLoading: boolean;
 
-  modeOptions: { value: ChatModeId; label: string }[];
-  selectedMode: ChatModeId;
-  onModeChange: (mode: ChatModeId) => void;
-  isProcessing: boolean;
   policyNames: string[];
   activePolicyName: string;
   onPolicyChange: (name: string) => void;
@@ -97,10 +48,6 @@ export function ChatToolbar({
   onChainChange,
   chainsLoading,
 
-  modeOptions,
-  selectedMode,
-  onModeChange,
-  isProcessing,
   policyNames,
   activePolicyName,
   onPolicyChange,
@@ -151,15 +98,6 @@ export function ChatToolbar({
               </Button>
             </Tooltip>
           )}
-        </ToolbarItem>
-        <ToolbarItem label={t('chat.mode')} tooltip={t('chat.mode_tooltip')}>
-          <Select
-            options={modeOptions}
-            value={selectedMode}
-            onChange={e => onModeChange(e.target.value as ChatModeId)}
-            className="min-w-[7rem] max-w-[12rem] shrink-0"
-            disabled={isProcessing}
-          />
         </ToolbarItem>
         {policyNames.length > 0 && (
           <ToolbarItem

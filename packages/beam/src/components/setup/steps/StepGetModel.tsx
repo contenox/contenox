@@ -41,7 +41,7 @@ export default function StepGetModel({ provider, onRefreshStatus: _onRefreshStat
       {provider === 'ollama' && <BackendsSection />}
 
       {setup && (
-        <Section title={t(setup.titleKey as Parameters<typeof t>[0])}>
+        <Section title={t(setup.titleKey)}>
           <ProviderForm setup={setup} />
         </Section>
       )}

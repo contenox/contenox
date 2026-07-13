@@ -7,6 +7,7 @@ function status(partial: Partial<SetupStatus>): SetupStatus {
     defaultModel: '',
     defaultProvider: '',
     defaultChain: '',
+    hitlPolicyName: '',
     backendCount: 0,
     reachableBackendCount: 0,
     issues: [],

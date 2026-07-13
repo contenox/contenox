@@ -179,19 +179,19 @@ const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
       key: 'transition',
       label: t('workflow.transitions'),
       type: 'custom' as const,
-      render: (value: ChainTask['transition']) => renderTransitionData(value),
+      render: (value: unknown) => renderTransitionData(value as ChainTask['transition']),
     },
     {
       key: 'execute_config',
       label: t('chains.execute_configuration'),
       type: 'custom' as const,
-      render: (value: ExecuteConfigDisplay | null | undefined) => renderExecuteConfig(value),
+      render: (value: unknown) => renderExecuteConfig(value as ExecuteConfigDisplay | null | undefined),
     },
     {
       key: 'hook',
       label: t('chains.hook_configuration'),
       type: 'custom' as const,
-      render: (value: HookConfigDisplay | null | undefined) => renderHookConfig(value),
+      render: (value: unknown) => renderHookConfig(value as HookConfigDisplay | null | undefined),
     },
   ];
 
@@ -236,7 +236,7 @@ const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
   return (
     <DetailsPanel
       title={editedTask.id}
-      data={editedTask}
+      data={editedTask as unknown as Record<string, unknown>}
       fields={extendedFields}
       onClose={onClose}
       onSave={handleSave}

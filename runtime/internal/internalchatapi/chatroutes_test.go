@@ -177,6 +177,94 @@ func TestCreateListAndPromptChat(t *testing.T) {
 	require.Equal(t, "medium", agent.lastPrompt.TemplateVars["think"])
 }
 
+// TestUnit_ChatPassesContextToAgent is the truth gate for the console server
+// wire: context artifacts sent by Beam must reach the agent, and via
+// agentservice.ComposeUserInput end up in the model-visible prompt.
+func TestUnit_ChatPassesContextToAgent(t *testing.T) {
+	agent := &fakeAgent{newID: "chat-ctx"}
+	chain := &taskengine.TaskChainDefinition{
+		ID:    "default",
+		Tasks: []taskengine.TaskDefinition{{ID: "one", Handler: taskengine.HandleNoop}},
+	}
+	mux := http.NewServeMux()
+	AddChatRoutes(mux, ChatDeps{
+		Agent:  agent,
+		Chains: fakeChains{chain: chain},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "default-chain.json",
+			Model:    "model-a",
+			Provider: "provider-a",
+		},
+	}, nil)
+	handler := apiframework.RequestIDMiddleware(mux)
+
+	body := bytes.NewBufferString(`{"name":"work"}`)
+	req := httptest.NewRequest(http.MethodPost, "/chats", body)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	require.Equal(t, http.StatusCreated, res.Code)
+
+	body = bytes.NewBufferString(`{
+		"message": "what does this do?",
+		"context": {"artifacts": [{"kind": "file_excerpt", "payload": "func main() {}"}]}
+	}`)
+	req = httptest.NewRequest(http.MethodPost, "/chats/chat-ctx/chat", body)
+	req.Header.Set("X-Request-ID", "req-ctx")
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	require.Equal(t, http.StatusOK, res.Code)
+
+	require.NotNil(t, agent.lastPrompt.Context)
+	arts, ok := agent.lastPrompt.Context["artifacts"].([]any)
+	require.True(t, ok, "context artifacts should round-trip as a list")
+	require.Len(t, arts, 1)
+
+	// The composed prompt the model would see must contain the artifact and
+	// end with the raw user message (client dedup relies on the suffix).
+	effective := agentservice.ComposeUserInput(agent.lastPrompt.Input, agent.lastPrompt.Context)
+	require.Contains(t, effective, "Additional context:")
+	require.Contains(t, effective, "[file_excerpt] func main() {}")
+	require.True(t, len(effective) > len("what does this do?"))
+	require.Contains(t, effective, "\n\nwhat does this do?")
+}
+
+// TestUnit_ChatPlainMessageUnaffectedByWorkspaceFields proves the plain path
+// (no mode/context) stays byte-identical — the VS Code webview and CLI depend on it.
+func TestUnit_ChatPlainMessageUnaffectedByWorkspaceFields(t *testing.T) {
+	agent := &fakeAgent{newID: "chat-plain"}
+	chain := &taskengine.TaskChainDefinition{
+		ID:    "default",
+		Tasks: []taskengine.TaskDefinition{{ID: "one", Handler: taskengine.HandleNoop}},
+	}
+	mux := http.NewServeMux()
+	AddChatRoutes(mux, ChatDeps{
+		Agent:  agent,
+		Chains: fakeChains{chain: chain},
+		Defaults: stateservice.RuntimeDefaults{
+			ChainRef: "default-chain.json",
+			Model:    "model-a",
+			Provider: "provider-a",
+		},
+	}, nil)
+	handler := apiframework.RequestIDMiddleware(mux)
+
+	body := bytes.NewBufferString(`{"name":"plain"}`)
+	req := httptest.NewRequest(http.MethodPost, "/chats", body)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	require.Equal(t, http.StatusCreated, res.Code)
+
+	body = bytes.NewBufferString(`{"message":"hi"}`)
+	req = httptest.NewRequest(http.MethodPost, "/chats/chat-plain/chat", body)
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	require.Equal(t, http.StatusOK, res.Code)
+
+	require.Nil(t, agent.lastPrompt.Context)
+	require.Equal(t, "hi",
+		agentservice.ComposeUserInput(agent.lastPrompt.Input, agent.lastPrompt.Context))
+}
+
 func TestChatUsesCurrentCLIConfigDefaults(t *testing.T) {
 	agent := &fakeAgent{newID: "chat-current"}
 	chain := &taskengine.TaskChainDefinition{

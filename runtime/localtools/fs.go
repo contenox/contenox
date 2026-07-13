@@ -96,7 +96,17 @@ func (h *LocalFSTools) Exec(ctx context.Context, startTime time.Time, input any,
 
 	args, ok := input.(map[string]any)
 	if !ok {
-		return nil, taskengine.DataTypeAny, errors.New("local_fs: input must be a map")
+		// Declarative `tools` tasks carry their arguments on the ToolsCall
+		// (like local_shell); fall back to them when the chain input isn't
+		// an args map (e.g. chat history flowing through a gated tool task).
+		if len(toolsCall.Args) > 0 {
+			args = make(map[string]any, len(toolsCall.Args))
+			for k, v := range toolsCall.Args {
+				args[k] = v
+			}
+		} else {
+			return nil, taskengine.DataTypeAny, errors.New("local_fs: input must be a map (or provide tools.args)")
+		}
 	}
 
 	toolName := toolsCall.ToolName

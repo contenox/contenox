@@ -83,7 +83,7 @@ export default function ProviderForm({ provider, setup: setupProp }: ProviderFor
         </Button>
       }>
       <P variant="muted" className="text-sm">
-        {t(setup.descriptionKey as Parameters<typeof t>[0])}
+        {t(setup.descriptionKey)}
       </P>
 
       {isLoading && <Panel variant="body">{t('common.loading')}</Panel>}
@@ -92,7 +92,7 @@ export default function ProviderForm({ provider, setup: setupProp }: ProviderFor
       {configureMutation.error && <Panel variant="error">{configureMutation.error.message}</Panel>}
 
       {setup.baseUrlLabelKey && (
-        <FormField label={t(setup.baseUrlLabelKey as Parameters<typeof t>[0])} required={setup.baseUrlRequired}>
+        <FormField label={t(setup.baseUrlLabelKey)} required={setup.baseUrlRequired}>
           <Input
             type="text"
             value={baseUrl}
@@ -104,13 +104,13 @@ export default function ProviderForm({ provider, setup: setupProp }: ProviderFor
 
       {setup.secretKind !== 'none' && (
         <FormField
-          label={t(setup.secretLabelKey as Parameters<typeof t>[0])}
+          label={setup.secretLabelKey ? t(setup.secretLabelKey) : ''}
           required={secretIsNeeded}>
           {secretFieldIsMultiline ? (
             <Textarea
               value={secret}
               onChange={e => setSecret(e.target.value)}
-              placeholder={t(setup.secretPlaceholderKey as Parameters<typeof t>[0])}
+              placeholder={setup.secretPlaceholderKey ? t(setup.secretPlaceholderKey) : undefined}
               rows={6}
             />
           ) : (
@@ -118,7 +118,7 @@ export default function ProviderForm({ provider, setup: setupProp }: ProviderFor
               type="password"
               value={secret}
               onChange={e => setSecret(e.target.value)}
-              placeholder={t(setup.secretPlaceholderKey as Parameters<typeof t>[0])}
+              placeholder={setup.secretPlaceholderKey ? t(setup.secretPlaceholderKey) : undefined}
             />
           )}
         </FormField>

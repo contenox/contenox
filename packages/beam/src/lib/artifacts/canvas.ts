@@ -4,8 +4,10 @@
  * This is deliberately separate from ChatContextArtifact (which is per-turn model input
  * collected via the ArtifactRegistry for prompt injection).
  *
- * See sovereign-workspace.md and sovereign-workspace-architecture-2026-07.md.
+ * See sovereign-workspace.md and sovereign-workspace-architecture.md.
  */
+
+import type { TaskEvent } from '../types';
 
 export type CanvasArtifactId = string;
 
@@ -55,7 +57,7 @@ export interface CanvasState {
  * This will grow into the full table from the blueprint.
  * Prefers `content` for structured kinds to match CanvasArtifact spec.
  */
-export function projectEventToCanvas(event: any): CanvasArtifact | null {
+export function projectEventToCanvas(event: TaskEvent | null | undefined): CanvasArtifact | null {
   if (!event) return null;
 
   const id = `${event.timestamp || Date.now()}-${event.kind}`;
@@ -95,7 +97,7 @@ export function projectEventToCanvas(event: any): CanvasArtifact | null {
       kind: 'message',
       id,
       title: event.kind,
-      body: event.content || event.thinking,
+      body: event.content || event.thinking || '',
     };
   }
 

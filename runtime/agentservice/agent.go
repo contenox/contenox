@@ -173,7 +173,7 @@ func (a *agent) Prompt(ctx context.Context, req PromptRequest) (*PromptResponse,
 		}
 
 		if !isPoisonPill {
-			a.persistHistory(ctx, req.SessionID, inputVal, stateUnits, execErr)
+			a.persistHistory(ctx, req.SessionID, inputVal, stateUnits, execErr, req.ChainRef)
 		}
 	}
 
@@ -235,6 +235,35 @@ func (a *agent) startObserving(ctx context.Context, obs Observer) func() {
 	}
 }
 
+// ComposeUserInput renders the effective user message the model sees:
+// per-turn context artifacts (from Beam's ArtifactRegistry, sent as
+// {artifacts: [{kind, payload}, ...]}) are prepended as an
+// "Additional context" block. Plain input passes through unchanged.
+func ComposeUserInput(input string, contextBundle map[string]any) string {
+	content := input
+
+	if contextBundle != nil {
+		if arts, ok := contextBundle["artifacts"].([]any); ok && len(arts) > 0 {
+			var ctxParts []string
+			for _, a := range arts {
+				if m, ok := a.(map[string]any); ok {
+					kind := ""
+					if k, ok := m["kind"].(string); ok {
+						kind = k
+					}
+					payload := m["payload"]
+					ctxParts = append(ctxParts, fmt.Sprintf("[%s] %v", kind, payload))
+				}
+			}
+			if len(ctxParts) > 0 {
+				content = "Additional context:\n" + strings.Join(ctxParts, "\n") + "\n\n" + content
+			}
+		}
+	}
+
+	return content
+}
+
 func (a *agent) buildChatInput(ctx context.Context, req PromptRequest) (any, taskengine.DataType, error) {
 	var history []taskengine.Message
 
@@ -260,34 +289,7 @@ func (a *agent) buildChatInput(ctx context.Context, req PromptRequest) (any, tas
 		end()
 	}
 
-	// Sovereign workspace wiring: inject per-turn context artifacts (from Beam's ArtifactRegistry)
-	// and respect mode. This makes client-sent context actually visible to the model.
-	// See sovereign-workspace-architecture and chat-modes-context intent.
-	inputContent := req.Input
-	if req.Mode != "" {
-		// For now, surface mode in the input for observability / chain behavior.
-		// Full mode->chain dispatch can be added later.
-		inputContent = "[mode:" + req.Mode + "] " + inputContent
-	}
-
-	if req.Context != nil {
-		if arts, ok := req.Context["artifacts"].([]any); ok && len(arts) > 0 {
-			var ctxParts []string
-			for _, a := range arts {
-				if m, ok := a.(map[string]any); ok {
-					kind := ""
-					if k, ok := m["kind"].(string); ok {
-						kind = k
-					}
-					payload := m["payload"]
-					ctxParts = append(ctxParts, fmt.Sprintf("[%s] %v", kind, payload))
-				}
-			}
-			if len(ctxParts) > 0 {
-				inputContent = "Additional context:\n" + strings.Join(ctxParts, "\n") + "\n\n" + inputContent
-			}
-		}
-	}
+	inputContent := ComposeUserInput(req.Input, req.Context)
 
 	userMsg := taskengine.Message{ID: uuid.NewString(), Role: "user", Content: inputContent, Timestamp: time.Now().UTC()}
 	chatInput := taskengine.ChatHistory{
@@ -297,13 +299,31 @@ func (a *agent) buildChatInput(ctx context.Context, req PromptRequest) (any, tas
 	return chatInput, taskengine.DataTypeChatHistory, nil
 }
 
-func (a *agent) persistHistory(ctx context.Context, sessionID string, input any, stateUnits []taskengine.CapturedStateUnit, chainErr error) {
+// stampTurnProvenance sets RequestID/ChainRef on messages that don't carry
+// provenance yet (i.e. the messages produced by this turn). Messages from
+// prior turns already have their own provenance — or, for pre-provenance
+// history, get transiently stamped here but are dropped by PersistDiff's
+// ID-based dedupe before reaching storage.
+func stampTurnProvenance(msgs []taskengine.Message, requestID, chainRef string) {
+	for i := range msgs {
+		if msgs[i].RequestID != "" {
+			continue
+		}
+		msgs[i].RequestID = requestID
+		msgs[i].ChainRef = chainRef
+	}
+}
+
+func (a *agent) persistHistory(ctx context.Context, sessionID string, input any, stateUnits []taskengine.CapturedStateUnit, chainErr error, chainRef string) {
 	chatInput, ok := input.(taskengine.ChatHistory)
 	if !ok {
 		return
 	}
 
 	synthesized := taskengine.SynthesizeHistory(chatInput.Messages, stateUnits, chainErr)
+	if requestID, ok := ctx.Value(libtracker.ContextKeyRequestID).(string); ok && requestID != "" {
+		stampTurnProvenance(synthesized, requestID, chainRef)
+	}
 	cleanCtx := context.WithoutCancel(ctx)
 
 	persistReportErr, persistReportChange, persistEnd := a.tracker().Start(cleanCtx, "persist", "chat_history", "sessionID", sessionID)

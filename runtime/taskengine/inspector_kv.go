@@ -89,6 +89,10 @@ func (i *KVInspector) GetExecutionStateByRequestID(ctx context.Context, reqID st
 		}
 		out = append(out, u)
 	}
+	// ListPush prepends (LPUSH); reverse so callers get execution order.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
 	return out, nil
 }
 

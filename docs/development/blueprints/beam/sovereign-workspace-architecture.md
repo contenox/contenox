@@ -1,14 +1,6 @@
-# Sovereign Workspace: Architecture Plan (July 2026)
+# Sovereign Workspace: Architecture Plan
 
-**Status:** In progress — client slice + server wiring landed (2026-07)  
-**Supersedes (temporarily):** ad-hoc changes; aligns with sovereign-workspace.md blueprint  
-
-**What was landed in this pass:**
-- `useCanvas` hook + centralized `canvas.ts` types + projection (no more page useMemos).
-- Evolved `WorkspaceSplitPanel` to host live Timeline + selectable Canvas (with terminal tab coexistence).
-- Full server wire: `PromptRequest` carries Mode + Context; `buildChatInput` injects formatted context + mode prefix into the user message the model sees.
-- TaskEvent now has `Attachments` field for passthrough.
-- Build verified, follows "evolve inside existing split" + brain/glass.
+Companion to [sovereign-workspace.md](sovereign-workspace.md) — that document holds the decision record and PR plan; this one holds the engineering boundaries.
 
 **Goal:** Define clean boundaries so every slice is intentional, not "just add a useMemo".
 
@@ -171,5 +163,3 @@ User action (composer)
 - Adding useMemo "just to make the demo work" without a hook or type for the concept.
 
 This document exists so the next code change has an explicit target and boundaries.
-
-Update this file + the main blueprint with status as slices land.

@@ -1,5 +1,6 @@
 import { H2, P } from '@contenox/ui';
 import { useTranslation } from 'react-i18next';
+import type { TranslationKey } from '../../../i18n';
 import { ONBOARDING_PROVIDER_SETUPS } from '../../../lib/providerCatalog';
 import type { CloudProviderType } from '../../../lib/types';
 import { cn } from '../../../lib/utils';
@@ -53,7 +54,7 @@ type Props = {
 export default function StepChooseProvider({ value, onChange }: Props) {
   const { t } = useTranslation();
 
-  const providers: { id: ProviderChoice; titleKey: string; descKey: string }[] = [
+  const providers: { id: ProviderChoice; titleKey: TranslationKey; descKey: TranslationKey }[] = [
     {
       id: 'local',
       titleKey: 'onboarding.step_choose_provider.local_title',
@@ -84,8 +85,8 @@ export default function StepChooseProvider({ value, onChange }: Props) {
           <ProviderCard
             key={p.id}
             id={p.id}
-            title={t(p.titleKey as Parameters<typeof t>[0])}
-            desc={t(p.descKey as Parameters<typeof t>[0])}
+            title={t(p.titleKey)}
+            desc={t(p.descKey)}
             selected={value === p.id}
             onSelect={onChange}
           />

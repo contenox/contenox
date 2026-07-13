@@ -41,10 +41,10 @@ import {
   CapturedStateUnit,
   type ChatContextArtifact,
   type ChatContextPayload,
-  type ChatModeId,
   type InlineAttachment,
   type TaskEvent,
 } from '../../../lib/types';
+import { isOptimisticEcho } from '../../../lib/optimisticEcho';
 import { buildChatThreadItems } from './chatThreadItems';
 import { ChatInterface } from './components/ChatInterface';
 import { ChatToolbar } from './components/ChatToolbar';
@@ -175,7 +175,6 @@ function ChatPageImpl() {
   const [message, setMessage] = useState('');
   const [operationError, setOperationError] = useState<string | null>(null);
   const [selectedChainId, setSelectedChainId] = useState('');
-  const [selectedMode, setSelectedMode] = useState<ChatModeId>('chat');
   const [latestState, setLatestState] = useState<CapturedStateUnit[]>([]);
   const [contextUsed, setContextUsed] = useState<number>(0);
   const [contextSize, setContextSize] = useState<number>(0);
@@ -186,14 +185,11 @@ function ChatPageImpl() {
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
   const activeRequestIdRef = useRef<string | null>(null);
-  const lastFailedSendRef = useRef<{ text: string; chainId: string; mode: ChatModeId } | null>(
-    null,
-  );
+  const lastFailedSendRef = useRef<{ text: string; chainId: string } | null>(null);
   const pendingSendRef = useRef<{
     requestId: string;
     message: string;
     chainId: string;
-    mode: ChatModeId;
     signal: AbortSignal;
     context?: ChatContextPayload;
   } | null>(null);
@@ -321,7 +317,6 @@ function ChatPageImpl() {
       {
         message: pending.message,
         chainId: pending.chainId,
-        mode: pending.mode,
         signal: pending.signal,
         requestId: pending.requestId,
         context: pending.context,
@@ -350,7 +345,6 @@ function ChatPageImpl() {
               ? {
                   text: pendingSendRef.current.message,
                   chainId: pendingSendRef.current.chainId,
-                  mode: pendingSendRef.current.mode,
                 }
               : null;
             setOperationError(response.error);
@@ -381,7 +375,6 @@ function ChatPageImpl() {
               ? {
                   text: pendingSendRef.current.message,
                   chainId: pendingSendRef.current.chainId,
-                  mode: pendingSendRef.current.mode,
                 }
               : null;
           }
@@ -455,7 +448,7 @@ function ChatPageImpl() {
   }, [httpDispatched, isProcessing, liveTask.error, liveTask.status, sseConnection, t]);
 
   const submitOutgoingMessage = useCallback(
-    (text: string, chainIdForSend: string, modeForSend: ChatModeId) => {
+    (text: string, chainIdForSend: string) => {
       setOperationError(null);
       if (!text.trim()) return;
 
@@ -496,7 +489,6 @@ function ChatPageImpl() {
         requestId,
         message: trimmed,
         chainId: chainIdForSend.trim(),
-        mode: modeForSend,
         signal: controller.signal,
         context,
       };
@@ -512,7 +504,7 @@ function ChatPageImpl() {
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    submitOutgoingMessage(message, selectedChainId, selectedMode);
+    submitOutgoingMessage(message, selectedChainId);
   };
 
   /** After `/chat` creates a session and navigates here with state, send the first message once. */
@@ -530,7 +522,7 @@ function ChatPageImpl() {
     navigate({ pathname: location.pathname }, { replace: true, state: null });
     setSelectedChainId(chain);
     queueMicrotask(() => {
-      submitOutgoingMessage(text, chain, 'chat');
+      submitOutgoingMessage(text, chain);
     });
   }, [paramChatId, location.state, location.pathname, navigate, submitOutgoingMessage]);
 
@@ -586,10 +578,6 @@ function ChatPageImpl() {
     }
     return 0;
   }, [contextSize, runtimeState, setupStatus?.defaultModel]);
-  const modeOptions: { value: ChatModeId; label: string }[] = [
-    { value: 'chat', label: t('chat.mode_chat') },
-    { value: 'prompt', label: t('chat.mode_prompt') },
-  ];
   const displayHistory = useMemo<ApiChatMessage[]>(() => {
     const base = chatHistory ?? [];
 
@@ -631,7 +619,7 @@ function ChatPageImpl() {
       const optAt = Date.parse(optimisticOutgoing.sentAt);
       const matched = base.some(m => {
         if (m.role !== 'user') return false;
-        if (m.content !== optimisticOutgoing.content) return false;
+        if (!isOptimisticEcho(m.content, optimisticOutgoing.content)) return false;
         const persistedAt = Date.parse(m.sentAt);
         return Math.abs(persistedAt - optAt) < 5 * 60_000;
       });
@@ -684,7 +672,7 @@ function ChatPageImpl() {
     const matched = persisted.some(
       m =>
         m.role === 'user' &&
-        m.content === optimisticOutgoing.content &&
+        isOptimisticEcho(m.content, optimisticOutgoing.content) &&
         Math.abs(Date.parse(m.sentAt) - optAt) < 5 * 60_000,
     );
     if (matched) setOptimisticOutgoing(null);
@@ -748,10 +736,6 @@ function ChatPageImpl() {
             selectedChainId={selectedChainId}
             onChainChange={setSelectedChainId}
             chainsLoading={chainsLoading}
-            modeOptions={modeOptions}
-            selectedMode={selectedMode}
-            onModeChange={setSelectedMode}
-            isProcessing={isProcessing}
             policyNames={policyNames}
             activePolicyName={activePolicyName}
             onPolicyChange={name => setActivePolicy.mutate(name)}
@@ -798,7 +782,7 @@ function ChatPageImpl() {
                       if (!failed) return;
                       setOperationError(null);
                       lastFailedSendRef.current = null;
-                      submitOutgoingMessage(failed.text, failed.chainId, failed.mode);
+                      submitOutgoingMessage(failed.text, failed.chainId);
                     }}>
                     {t('plan.retry', 'Retry')}
                   </Button>

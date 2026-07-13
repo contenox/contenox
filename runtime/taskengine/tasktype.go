@@ -552,6 +552,13 @@ type Message struct {
 	CallTools []ToolCall `json:"callTools,omitempty"`
 	// Timestamp is the time the message was sent.
 	Timestamp time.Time `json:"timestamp" example:"2023-11-15T14:30:45Z"`
+	// RequestID is the turn provenance: the X-Request-ID of the run that
+	// produced this message. Not used by the engine; it joins persisted
+	// messages to the captured execution state for that run.
+	RequestID string `json:"requestId,omitempty"`
+	// ChainRef is the turn provenance: the chain path that ran this turn.
+	// Not used by the engine.
+	ChainRef string `json:"chainRef,omitempty"`
 }
 
 // Tool represents a tool that can be called by the model.

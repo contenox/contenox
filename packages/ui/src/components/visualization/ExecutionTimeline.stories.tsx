@@ -27,7 +27,7 @@ const events: TaskEvent[] = [
 const state: CapturedStateUnit[] = [
   {
     taskID: "ingest",
-    taskType: "compose",
+    taskHandler: "compose",
     inputType: "string",
     outputType: "messages",
     transition: "next",
@@ -36,7 +36,7 @@ const state: CapturedStateUnit[] = [
   },
   {
     taskID: "embed",
-    taskType: "model_exec",
+    taskHandler: "model_exec",
     inputType: "messages",
     outputType: "vector",
     transition: "next",
@@ -45,7 +45,7 @@ const state: CapturedStateUnit[] = [
   },
   {
     taskID: "retrieve",
-    taskType: "retriever",
+    taskHandler: "retriever",
     inputType: "vector",
     outputType: "documents",
     transition: "done",

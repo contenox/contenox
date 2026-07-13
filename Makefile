@@ -686,6 +686,7 @@ test-api: build-ui
 	@CONTENOX_BIN=$(PROJECT_ROOT)/bin/contenox $(PROJECT_ROOT)/scripts/run_apitests.sh $(PYTEST_ARGS)
 
 test-ui: deps-ui
+	cd $(BEAM_DIR) && npm run typecheck
 	cd $(BEAM_DIR) && npm test
 
 verify-ui-embed:
