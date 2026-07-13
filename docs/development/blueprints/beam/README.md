@@ -6,6 +6,7 @@ restoration, current scope, and R&D directions.
 
 | Doc | Status | What it covers |
 | --- | --- | --- |
+| [sovereign-workspace.md](sovereign-workspace.md) | decision blueprint | **Primary product framing:** Beam as UX-sovereign control center (not an IDE fork); brain/glass split, positioning, concrete PR plan, readiness matrix, and truth-gated implementation slices |
 | [http-ui-revival.md](http-ui-revival.md) | executed | Migration plan that restored the HTTP API + Beam UI |
 | [local-runtime-cockpit.md](local-runtime-cockpit.md) | direction | Beam as the modeld cockpit: status, capacity/fit diagnostics, KV residency, model variants |
 | [chat-canvas.md](chat-canvas.md) | R&D / vision | Chat/canvas split: renderer-agnostic artifact panel as the second pane |

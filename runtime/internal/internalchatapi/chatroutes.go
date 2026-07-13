@@ -74,7 +74,11 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Message string `json:"message"`
+	Message string         `json:"message"`
+	// mode and context are accepted for the Sovereign Workspace / Beam primary surface.
+	// Full resolution + injection is implemented in follow-up slices (see chat-modes-context.md).
+	Mode    string         `json:"mode,omitempty"`
+	Context map[string]any `json:"context,omitempty"`
 }
 
 type chatResponse struct {
@@ -311,6 +315,9 @@ func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sovereign workspace: pass mode and context through to the agent for injection.
+	// See architecture plan and chat-modes-context intent.
+
 	defaults := stateservice.ResolveRuntimeDefaults(ctx, h.deps.StateService, h.deps.Defaults)
 	if chainRef == "" {
 		chainRef = defaults.ChainRef
@@ -369,6 +376,8 @@ func (h *chatHandler) chat(w http.ResponseWriter, r *http.Request) {
 		Chain:         chain,
 		TemplateVars:  templateVars,
 		ContextLength: contextLen,
+		Mode:          req.Mode,
+		Context:       req.Context,
 	})
 	if err != nil {
 		if isMissingModelProvider(err) {

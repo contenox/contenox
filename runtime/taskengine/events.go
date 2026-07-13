@@ -71,6 +71,10 @@ type TaskEvent struct {
 	// For token_usage
 	TokenUsed  int `json:"token_used,omitempty"`
 	TokenSize  int `json:"token_size,omitempty"`
+
+	// Attachments for canvas / sovereign workspace (passthrough from steps/hooks).
+	// Mirrors client-side ChatContextArtifact shape for round-tripping.
+	Attachments []map[string]any `json:"attachments,omitempty"`
 }
 
 type TaskEventScope struct {

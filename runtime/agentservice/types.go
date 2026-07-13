@@ -21,6 +21,10 @@ type PromptRequest struct {
 	Observer       Observer
 	AgentsMD       string
 	AgentsMDSource string
+
+	// Sovereign workspace fields (from Beam primary surface)
+	Mode    string
+	Context map[string]any // {artifacts: []ChatContextArtifact-like}
 }
 
 type PromptResponse struct {

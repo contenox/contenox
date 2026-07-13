@@ -43,6 +43,7 @@ import {
   type ChatContextPayload,
   type ChatModeId,
   type InlineAttachment,
+  type TaskEvent,
 } from '../../../lib/types';
 import { buildChatThreadItems } from './chatThreadItems';
 import { ChatInterface } from './components/ChatInterface';
@@ -211,6 +212,9 @@ function ChatPageImpl() {
     return window.localStorage.getItem(WORKSPACE_PANEL_STORAGE_KEY) !== '0';
   });
   const [mobileWorkspaceOpen, setMobileWorkspaceOpen] = useState(false);
+
+  // Minimal state for the workspace slice (selection drives canvas inside the right panel)
+  const [selectedEvent, setSelectedEvent] = useState<TaskEvent | null>(null);
 
   const workspaceSplitInitialPx = useMemo(() => {
     if (typeof window === 'undefined') return null;
@@ -922,6 +926,11 @@ function ChatPageImpl() {
     </Fill>
   );
 
+  // Restore original layout structure + evolve the right workspace area.
+  // Per the architecture plan, we evolve *inside* the existing split (WorkspaceSplitPanel)
+  // rather than big-bang three-column rewrite. Timeline + Canvas live in the right rail for now.
+  // A full left Timeline column comes in a later slice once this is truthful.
+
   return (
     <Page bodyScroll="hidden" className="h-full">
       <Fill className="flex min-h-0">
@@ -942,7 +951,14 @@ function ChatPageImpl() {
                 minSize={260}
                 maxSize={900}
                 className="border-surface-300 dark:border-dark-surface-400 bg-surface-50 dark:bg-dark-surface-100 flex min-h-0 min-w-0 flex-col border-l">
-                <WorkspaceSplitPanel className="min-h-0 min-w-0 flex-1 border-0" />
+                <WorkspaceSplitPanel
+                  className="min-h-0 min-w-0 flex-1 border-0"
+                  events={liveTask.events}
+                  isProcessing={isProcessing}
+                  selectedEvent={selectedEvent}
+                  onSelectEvent={setSelectedEvent}
+                  currentRunStatus={liveTask.status}
+                />
               </ResizablePanel>
             </ResizablePanelGroup>
           ) : (
@@ -966,7 +982,14 @@ function ChatPageImpl() {
                       </Button>
                     </div>
                   ) : null}
-                  <WorkspaceSplitPanel className="min-h-0 min-w-0 flex-1 border-0" />
+                  <WorkspaceSplitPanel
+                    className="min-h-0 min-w-0 flex-1 border-0"
+                    events={liveTask.events}
+                    isProcessing={isProcessing}
+                    selectedEvent={selectedEvent}
+                    onSelectEvent={setSelectedEvent}
+                    currentRunStatus={liveTask.status}
+                  />
                 </div>
               ) : null}
             </>

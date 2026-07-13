@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	libdb "github.com/contenox/runtime/libdbexec"
@@ -259,7 +260,36 @@ func (a *agent) buildChatInput(ctx context.Context, req PromptRequest) (any, tas
 		end()
 	}
 
-	userMsg := taskengine.Message{ID: uuid.NewString(), Role: "user", Content: req.Input, Timestamp: time.Now().UTC()}
+	// Sovereign workspace wiring: inject per-turn context artifacts (from Beam's ArtifactRegistry)
+	// and respect mode. This makes client-sent context actually visible to the model.
+	// See sovereign-workspace-architecture and chat-modes-context intent.
+	inputContent := req.Input
+	if req.Mode != "" {
+		// For now, surface mode in the input for observability / chain behavior.
+		// Full mode->chain dispatch can be added later.
+		inputContent = "[mode:" + req.Mode + "] " + inputContent
+	}
+
+	if req.Context != nil {
+		if arts, ok := req.Context["artifacts"].([]any); ok && len(arts) > 0 {
+			var ctxParts []string
+			for _, a := range arts {
+				if m, ok := a.(map[string]any); ok {
+					kind := ""
+					if k, ok := m["kind"].(string); ok {
+						kind = k
+					}
+					payload := m["payload"]
+					ctxParts = append(ctxParts, fmt.Sprintf("[%s] %v", kind, payload))
+				}
+			}
+			if len(ctxParts) > 0 {
+				inputContent = "Additional context:\n" + strings.Join(ctxParts, "\n") + "\n\n" + inputContent
+			}
+		}
+	}
+
+	userMsg := taskengine.Message{ID: uuid.NewString(), Role: "user", Content: inputContent, Timestamp: time.Now().UTC()}
 	chatInput := taskengine.ChatHistory{
 		Messages: append(history, userMsg),
 	}
