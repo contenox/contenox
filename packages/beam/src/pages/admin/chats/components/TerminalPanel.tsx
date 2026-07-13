@@ -393,7 +393,7 @@ export function TerminalPanel({ className }: { className?: string }) {
               size="xs"
               onClick={handleClearAttached}
               title={t('terminal.detach_attached')}
-              className="bg-success/10 text-success hover:bg-success/20 gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+              className="bg-success/10 text-success hover:bg-success/20 dark:bg-dark-success/10 dark:text-dark-success dark:hover:bg-dark-success/20 gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
             >
               <Paperclip className="h-3 w-3" />
               {t('terminal.attached_pill')}

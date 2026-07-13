@@ -955,7 +955,7 @@ function ChatPageImpl() {
                     mobileWorkspaceOpen ? 'fixed inset-0 z-50 flex flex-col' : 'hidden',
                   )}>
                   {mobileWorkspaceOpen ? (
-                    <div className="flex items-center justify-end gap-2 border-b px-2 py-1.5">
+                    <div className="border-surface-300 dark:border-dark-surface-400 bg-surface-50 dark:bg-dark-surface-200 flex items-center justify-end gap-2 border-b px-2 py-1.5">
                       <Button
                         type="button"
                         variant="ghost"

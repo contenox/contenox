@@ -49,7 +49,9 @@ export const ChatMessage = ({ message, isLatest = false, streamThinking, toolNam
                 {message.content}
               </ReactMarkdown>
             )}
-            {message.error && <div className="text-error-600 dark:text-dark-error-400">{message.error}</div>}
+            {message.error && (
+              <div className="text-error dark:text-dark-error text-sm">{message.error}</div>
+            )}
             <InlineAttachments attachments={message.attachments} />
             <ExecutionTimeline events={message.events} state={message.state} />
           </div>

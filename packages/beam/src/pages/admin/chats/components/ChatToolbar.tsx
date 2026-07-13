@@ -1,6 +1,7 @@
 import {
   Button,
   InlineNotice,
+  ProgressBar,
   Select,
   Span,
   Spinner,
@@ -13,6 +14,50 @@ import {
 import { Pencil, TerminalSquare } from 'lucide-react';
 import { t } from 'i18next';
 import type { ChatModeId } from '../../../../lib/types';
+import { cn } from '../../../../lib/utils';
+
+function contextUsagePalette(pct: number): 'primary' | 'warning' | 'error' {
+  if (pct > 90) return 'error';
+  if (pct > 70) return 'warning';
+  return 'primary';
+}
+
+function contextUsageTextClass(pct: number): string | undefined {
+  if (pct > 90) return 'text-error dark:text-dark-error';
+  if (pct > 70) return 'text-warning dark:text-dark-warning';
+  return undefined;
+}
+
+function ContextUsageMeter({ used, size }: { used: number; size: number }) {
+  const safeUsed = Math.max(0, used);
+  const pct = Math.round((safeUsed / size) * 100);
+  const palette = contextUsagePalette(pct);
+  const textClass = contextUsageTextClass(pct);
+  const usedLabel = safeUsed > 0 ? `${safeUsed.toLocaleString()}/` : '';
+  const title =
+    safeUsed > 0
+      ? `Context: ${safeUsed.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`
+      : `Context window: ${size.toLocaleString()} tokens`;
+
+  return (
+    <div
+      className="ml-3 flex shrink-0 items-center gap-2 text-xs font-medium tabular-nums"
+      title={title}>
+      <Span variant={textClass ? undefined : 'muted'} className={cn(textClass, 'tabular-nums')}>
+        {usedLabel}
+        {size.toLocaleString()}
+      </Span>
+      <ProgressBar
+        value={Math.min(100, Math.max(0, pct))}
+        palette={palette}
+        className="h-2 w-24 bg-surface-200 shadow-inner dark:bg-dark-surface-300"
+      />
+      <Span variant={textClass ? undefined : 'muted'} className={cn(textClass, 'tabular-nums')}>
+        {pct}%
+      </Span>
+    </div>
+  );
+}
 
 interface ChatToolbarProps {
   chainOptions: { value: string; label: string }[];
@@ -140,31 +185,12 @@ export function ChatToolbar({
         )}
       </ToolbarSection>
       <ToolbarActions>
-        <Span
-          className="text-text-muted dark:text-dark-text-muted shrink-0 text-xs"
-          title={statsLabel}>
+        <Span variant="muted" className="shrink-0 text-xs" title={statsLabel}>
           {statsLabel}
         </Span>
-        {contextSize && contextSize > 0 ? (() => {
-          const used = Math.max(0, contextUsed || 0);
-          const size = contextSize;
-          const pct = Math.round((used / size) * 100);
-          const cls = pct > 90 ? 'text-red-500' : pct > 70 ? 'text-yellow-500' : 'text-text-muted dark:text-dark-text-muted';
-          const barColor = pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-yellow-500' : 'bg-gradient-to-r from-indigo-500 to-violet-500';
-          const usedLabel = used > 0 ? `${used.toLocaleString()}/` : '';
-          const title = used > 0
-            ? `Context: ${used.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`
-            : `Context window: ${size.toLocaleString()} tokens`;
-          return (
-            <div className="ml-3 flex shrink-0 items-center gap-2 text-xs font-medium tabular-nums" title={title}>
-              <span className={cls}>{usedLabel}{size.toLocaleString()}</span>
-              <div className="w-24 h-2 rounded-full bg-surface-200 dark:bg-dark-surface-300 overflow-hidden shadow-inner" aria-hidden>
-                <div className={`h-full transition-all duration-500 ease-out ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-              </div>
-          <span className={cls}>{pct}%</span>
-            </div>
-          );
-        })() : null}
+        {contextSize && contextSize > 0 ? (
+          <ContextUsageMeter used={contextUsed ?? 0} size={contextSize} />
+        ) : null}
         {terminalAvailable && onWorkspaceToggle ? (
           <Tooltip content={t('chat.workspace_toggle_tooltip')}>
             <Button

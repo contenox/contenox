@@ -46,7 +46,7 @@ export function ChatRunLog({ open, onToggle, isProcessing, events, state }: Chat
     <SidePanelColumn className="max-md:absolute max-md:inset-0 max-md:z-20 max-md:w-full max-md:border-l-0 max-md:shadow-xl">
       <SidePanelHeader>
         <div className="flex min-w-0 items-center gap-2">
-          <Span variant="body" className="text-text dark:text-dark-text truncate font-medium">
+          <Span className="text-text dark:text-dark-text truncate text-sm font-medium">
             {t('chat.run_log')}
           </Span>
           <Badge variant={hasData ? 'success' : 'secondary'} size="sm">
@@ -88,7 +88,7 @@ export function ChatRunLog({ open, onToggle, isProcessing, events, state }: Chat
             icon="📊"
             orientation="vertical"
             iconSize="md"
-            className="text-text dark:text-dark-text-muted h-full"
+            className="text-text-muted dark:text-dark-text-muted h-full"
           />
         ) : null}
       </SidePanelBody>
