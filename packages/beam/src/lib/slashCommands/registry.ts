@@ -171,7 +171,7 @@ export function parseSlashInvocation(text: string): {
   const body = newlineIdx >= 0 ? text.slice(newlineIdx + 1) : '';
   // Trigger is consumed by the regex. Name allows letters/digits/-/_, must
   // start with a letter so '@1' is left alone.
-  const re = trigger === '/' ? /^\/([a-zA-Z][a-zA-Z0-9_\-]*)\s*(.*)$/ : /^@([a-zA-Z][a-zA-Z0-9_\-]*)\s*(.*)$/;
+  const re = trigger === '/' ? /^\/([a-zA-Z][a-zA-Z0-9_-]*)\s*(.*)$/ : /^@([a-zA-Z][a-zA-Z0-9_-]*)\s*(.*)$/;
   const match = firstLine.match(re);
   if (!match) return null;
   return {

@@ -557,7 +557,10 @@ function ChatPageImpl() {
   const fallbackContextSize = useMemo(() => {
     if (contextSize > 0) return contextSize;
     const preferred = setupStatus?.defaultModel || '';
-    const states: any[] = Array.isArray(runtimeState) ? runtimeState : [];
+    type PulledModelInfo = { model?: string; name?: string; contextLength?: number };
+    const states = (Array.isArray(runtimeState) ? runtimeState : []) as Array<{
+      pulledModels?: PulledModelInfo[];
+    }>;
     // prefer match on default model
     if (preferred) {
       for (const s of states) {

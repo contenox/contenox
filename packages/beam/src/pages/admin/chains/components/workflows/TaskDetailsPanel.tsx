@@ -202,29 +202,30 @@ const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
     }
   };
 
-  const handleFieldUpdate = (updates: Record<string, any>) => {
+  const handleFieldUpdate = (updates: Record<string, unknown>) => {
     setEditedTask(prev => ({
       ...prev,
-      ...updates,
+      ...(updates as Partial<ChainTask>),
     }));
   };
 
-  const handleSave = (data: Record<string, any>) => {
+  const handleSave = (data: Record<string, unknown>) => {
     // Convert the generic data back to ChainTask
+    const d = data as Partial<ChainTask>;
     const updatedTask: ChainTask = {
-      id: data.id || editedTask.id,
-      description: data.description || editedTask.description,
-      handler: data.handler || editedTask.handler,
-      prompt_template: data.prompt_template || editedTask.prompt_template,
-      transition: data.transition || editedTask.transition,
-      system_instruction: data.system_instruction,
-      execute_config: data.execute_config,
-      hook: data.hook,
-      print: data.print,
-      output_template: data.output_template,
-      input_var: data.input_var,
-      timeout: data.timeout,
-      retry_on_failure: data.retry_on_failure,
+      id: d.id || editedTask.id,
+      description: d.description || editedTask.description,
+      handler: d.handler || editedTask.handler,
+      prompt_template: d.prompt_template || editedTask.prompt_template,
+      transition: d.transition || editedTask.transition,
+      system_instruction: d.system_instruction,
+      execute_config: d.execute_config,
+      hook: d.hook,
+      print: d.print,
+      output_template: d.output_template,
+      input_var: d.input_var,
+      timeout: d.timeout,
+      retry_on_failure: d.retry_on_failure,
     };
 
     onSave(updatedTask);

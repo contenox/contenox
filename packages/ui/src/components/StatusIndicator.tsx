@@ -35,23 +35,23 @@ export function StatusIndicator({
       icon: "○",
     },
     "in-progress": {
-      color: "bg-yellow-500 dark:bg-dark-warning-500",
-      text: "text-yellow-700 dark:text-dark-warning-300",
+      color: "bg-warning-500 dark:bg-dark-warning-500",
+      text: "text-warning-700 dark:text-dark-warning-700",
       icon: "⟳",
     },
     completed: {
-      color: "bg-green-500 dark:bg-dark-success-500",
-      text: "text-green-700 dark:text-dark-success-300",
+      color: "bg-success-500 dark:bg-dark-success-500",
+      text: "text-success-700 dark:text-dark-success-700",
       icon: "✓",
     },
     error: {
-      color: "bg-red-500 dark:bg-dark-error-500",
-      text: "text-red-700 dark:text-dark-error-300",
+      color: "bg-error-500 dark:bg-dark-error-500",
+      text: "text-error-700 dark:text-dark-error-700",
       icon: "✗",
     },
     warning: {
-      color: "bg-orange-500 dark:bg-dark-warning-500",
-      text: "text-orange-700 dark:text-dark-warning-300",
+      color: "bg-warning-600 dark:bg-dark-warning-500",
+      text: "text-warning-700 dark:text-dark-warning-700",
       icon: "⚠",
     },
     info: {

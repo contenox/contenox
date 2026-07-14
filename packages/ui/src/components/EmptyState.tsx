@@ -31,17 +31,19 @@ export function EmptyState({
       "text-text dark:text-dark-text",
       "bg-surface-50 dark:bg-dark-surface-50",
     ),
+    /* Dark semantic ramps are inverted (50 = darkest, 900 = palest):
+       dark bg wants a LOW step, dark text a HIGH step. */
     success: cn(
-      "text-[var(--color-success-800)] dark:text-[var(--color-dark-success-200)]",
-      "bg-[var(--color-success-50)] dark:bg-[var(--color-dark-success-900)]",
+      "text-[var(--color-success-800)] dark:text-[var(--color-dark-success-700)]",
+      "bg-[var(--color-success-50)] dark:bg-[var(--color-dark-success-100)]",
     ),
     warning: cn(
-      "text-[var(--color-warning-800)] dark:text-[var(--color-dark-warning-200)]",
-      "bg-[var(--color-warning-50)] dark:bg-[var(--color-dark-warning-900)]",
+      "text-[var(--color-warning-800)] dark:text-[var(--color-dark-warning-700)]",
+      "bg-[var(--color-warning-50)] dark:bg-[var(--color-dark-warning-100)]",
     ),
     error: cn(
-      "text-[var(--color-error-800)] dark:text-[var(--color-dark-error-200)]",
-      "bg-[var(--color-error-50)] dark:bg-[var(--color-dark-error-900)]",
+      "text-[var(--color-error-800)] dark:text-[var(--color-dark-error-700)]",
+      "bg-[var(--color-error-50)] dark:bg-[var(--color-dark-error-100)]",
     ),
   };
 

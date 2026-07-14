@@ -90,7 +90,7 @@ export default function ComposeEditor({ taskId, compose, onChange }: ComposeEdit
         <Button
           type="button"
           onClick={() => onChange(undefined)}
-          className="text-error hover:text-error-dark text-sm">
+          className="text-error hover:text-error-700 dark:hover:text-dark-error-700 text-sm">
           {t('chains.task_form.disable_compose')}
         </Button>
       </div>

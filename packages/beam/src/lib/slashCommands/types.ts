@@ -69,4 +69,20 @@ export interface SlashCommand {
    * implementation can just `throw new Error('nope')`.
    */
   execute: (ctx: SlashCommandContext) => void | Promise<void>;
+
+  /**
+   * Optional argument completions, e.g. the available chains for `/chain`.
+   * The console composer renders these as a clickable + keyboard-navigable
+   * list so the user can pick a value instead of typing it. `partial` is the
+   * argument text typed so far (empty when just the command is entered).
+   */
+  argCompletions?: (partial: string) => CommandCompletion[];
+}
+
+/** A pickable argument value shown in the console composer's completion list. */
+export interface CommandCompletion {
+  /** The value inserted as the command argument (e.g. a chain filename). */
+  value: string;
+  /** Optional right-aligned hint (e.g. "current", "active"). */
+  hint?: string;
 }

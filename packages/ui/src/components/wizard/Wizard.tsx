@@ -24,7 +24,7 @@ export function Wizard({
     <Panel
       variant="bordered"
       className={cn(
-        "border-amber-500/60 bg-amber-500/5 text-inherit shrink-0 px-4 py-4",
+        "border-warning-500/60 bg-warning-500/5 text-inherit shrink-0 px-4 py-4",
         className,
       )}
     >

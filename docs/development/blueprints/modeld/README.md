@@ -56,7 +56,6 @@ backends and versions independently of the runtime.
 | [llama/coding-node-plan.md](llama/coding-node-plan.md) | graduation plan | The local coding node on llama.cpp |
 | [llama/plumbing-log.md](llama/plumbing-log.md) | log | Implementation record of the llama provider plumbing |
 | [openvino/coding-node-plan.md](openvino/coding-node-plan.md) | research plan | The local coding node on OpenVINO; proven out by the S-series logs |
-| [openvino/plumbing-handover.md](openvino/plumbing-handover.md) | handover | Locked decisions and state of the OpenVINO provider plumbing |
 | [openvino/s1-embedded-controls.md](openvino/s1-embedded-controls.md) | log | S1: embedded pipeline controls |
 | [openvino/s1-5-genai-provider.md](openvino/s1-5-genai-provider.md) | log | S1.5: GenAI provider |
 | [openvino/s2-prefix-reuse.md](openvino/s2-prefix-reuse.md) | log | S2: prefix-cache reuse proof |

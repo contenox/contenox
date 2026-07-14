@@ -152,7 +152,7 @@ export default function HITLPoliciesPage() {
             className="flex-1"
           />
         ) : (
-          <div className="flex flex-1 items-center justify-center text-sm text-neutral-500">
+          <div className="flex flex-1 items-center justify-center text-sm text-text-muted dark:text-dark-text-muted">
             {t('hitl_policies.select_or_create')}
           </div>
         )}

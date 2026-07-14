@@ -8,6 +8,26 @@ export interface DiffLine {
   newLineNumber?: number;
 }
 
+/**
+ * Builds `DiffLine[]` from old→new file text for `DiffView`. Whole-block
+ * (removed lines then added lines) — adequate for tool-diff payloads that are
+ * already size-capped, and cheap. Empty `oldText` yields a pure addition.
+ */
+export function diffLinesFromTexts(oldText: string, newText: string): DiffLine[] {
+  const lines: DiffLine[] = [];
+  let oldNo = 1;
+  let newNo = 1;
+  if (oldText) {
+    for (const content of oldText.split("\n")) {
+      lines.push({ type: "remove", content, oldLineNumber: oldNo++ });
+    }
+  }
+  for (const content of newText.split("\n")) {
+    lines.push({ type: "add", content, newLineNumber: newNo++ });
+  }
+  return lines;
+}
+
 export interface DiffViewProps extends React.HTMLAttributes<HTMLDivElement> {
   /** The file path shown in the header. */
   filePath: string;

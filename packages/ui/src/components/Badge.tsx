@@ -44,17 +44,19 @@ export function Badge({
       "bg-[var(--color-accent-100)] text-[var(--color-accent-800)]",
       "dark:bg-[var(--color-dark-accent-900)] dark:text-[var(--color-dark-accent-300)]",
     ),
+    /* Dark semantic ramps are inverted (50 = darkest): dark chips use a LOW
+       step for bg and a HIGH step for text. */
     success: cn(
       "bg-[var(--color-success-100)] text-[var(--color-success-800)]",
-      "dark:bg-[var(--color-dark-success-900)] dark:text-[var(--color-dark-success-300)]",
+      "dark:bg-[var(--color-dark-success-100)] dark:text-[var(--color-dark-success-700)]",
     ),
     error: cn(
       "bg-[var(--color-error-100)] text-[var(--color-error-800)]",
-      "dark:bg-[var(--color-dark-error-900)] dark:text-[var(--color-dark-error-300)]",
+      "dark:bg-[var(--color-dark-error-100)] dark:text-[var(--color-dark-error-700)]",
     ),
     warning: cn(
       "bg-[var(--color-warning-100)] text-[var(--color-warning-800)]",
-      "dark:bg-[var(--color-dark-warning-900)] dark:text-[var(--color-dark-warning-300)]",
+      "dark:bg-[var(--color-dark-warning-100)] dark:text-[var(--color-dark-warning-700)]",
     ),
     secondary: cn(
       "bg-[var(--color-secondary-100)] text-[var(--color-secondary-800)]",

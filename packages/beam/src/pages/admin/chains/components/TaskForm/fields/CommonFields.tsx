@@ -29,7 +29,7 @@ export default function CommonFields({ task, onChange, availableVariables = ['in
       <FormField label={t('workflow.task_type')} required>
         <Select
           value={task.handler || ''}
-          onChange={e => onChange({ handler: e.target.value as any })}
+          onChange={e => onChange({ handler: e.target.value as FormTask['handler'] })}
           options={handlerOptions}
           placeholder={t('workflow.task_type')}
         />

@@ -68,19 +68,6 @@
   --color-accent-900: #171717;
   --color-accent: var(--color-accent-500);
 
-  /* Dark Mode Secondary — graphite neutral */
-  --color-dark-secondary-50: #f4f5f7;
-  --color-dark-secondary-100: #e5e7eb;
-  --color-dark-secondary-200: #cdd0d5;
-  --color-dark-secondary-300: #a4a8b0;
-  --color-dark-secondary-400: #7a7f88;
-  --color-dark-secondary-500: #585d66;
-  --color-dark-secondary-600: #40444b;
-  --color-dark-secondary-700: #292c32;
-  --color-dark-secondary-800: #191b20;
-  --color-dark-secondary-900: #0e1014;
-  --color-dark-secondary: var(--color-dark-secondary-500);
-
   /* ========== Light Mode Error Colors ========== */
   --color-error-50: #fef2f2; /* Very light red */
   --color-error-100: #fee2e2; /* Soft pinkish red */
@@ -227,6 +214,21 @@
   --color-dark-warning-900: #fef9c3; /* Very light yellow */
   --color-dark-warning: var(--color-dark-warning-500);
 
+  /* ========== Dark Mode Info Colors ========== */
+  /* Info is neutral graphite; the dark ramp aliases dark-primary
+     (matches StatusIndicator's existing info -> dark-primary mapping). */
+  --color-dark-info-50: var(--color-dark-primary-50);
+  --color-dark-info-100: var(--color-dark-primary-100);
+  --color-dark-info-200: var(--color-dark-primary-200);
+  --color-dark-info-300: var(--color-dark-primary-300);
+  --color-dark-info-400: var(--color-dark-primary-400);
+  --color-dark-info-500: var(--color-dark-primary-500);
+  --color-dark-info-600: var(--color-dark-primary-600);
+  --color-dark-info-700: var(--color-dark-primary-700);
+  --color-dark-info-800: var(--color-dark-primary-800);
+  --color-dark-info-900: var(--color-dark-primary-900);
+  --color-dark-info: var(--color-dark-info-500);
+
   /* ========== Text Color Additions ========== */
   --color-text-success: var(--color-success-700);
   --color-text-warning: var(--color-warning-700);
@@ -254,31 +256,26 @@
   );
 
   /* ========== Typography ========== */
-  --font-display: "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --color-text: var(--color-dark-text);
+  --color-text: #2b2f33; /* Darker text for better contrast */
   --color-dark-text: #e8eaed; /* Near-white, cool neutral */
-  --color-dark-text-surface: var(--color-dark-text);
-  --color-dark-text-surface-inverted: var(--color-dark-text-inverted);
 
   /* ========== Light Mode Text Colors ========== */
-  --color-text-primary: var(--color-dark-text-primary);
+  --color-text-primary: var(--color-primary-600);
   --color-text-primary-hover: var(--color-primary-700);
   --color-text-secondary: var(--color-secondary-600);
-  --color-text-accent: var(--color-dark-text-accent);
+  --color-text-accent: var(--color-accent-600);
   --color-text-error: var(--color-error-600);
   --color-text-muted: #5a6268; /* Was #6b7280 */
   --color-text-inverted: var(
     --color-surface-50
   ); /* White text for dark surfaces */
-  --color-text-surface: var(--color-secondary-800); /* Surface text */
+  --color-text-surface: var(--color-text); /* Surface text */
   --color-text-surface-inverted: var(--color-text-inverted);
 
   /* ========== Dark Mode Text Colors ========== */
   --color-dark-text-primary: var(--color-dark-primary-500);
   --color-dark-text-primary-hover: var(--color-dark-primary-200);
-  --color-dark-text-secondary: var(--color-dark-secondary-700);
+  --color-dark-text-secondary: var(--color-dark-secondary-300);
   --color-dark-text-accent: #d4d4d4;
   --color-dark-text-error: var(--color-dark-error-400);
   --color-dark-text-muted: #787c85; /* Muted — cool graphite */
@@ -313,17 +310,10 @@
   --color-dark-surface-900: #757980; /* Lightest surface */
   --color-dark-surface: var(--color-dark-surface-200);
 
-  /* ========== Text Surface Colors ========== */
-  --color-surface: var(--color-surface-50);
-  --color-text-surface: var(--color-text);
-  --color-text-surface-inverted: var(--color-text-inverted);
-  --color-dark-text-surface: var(--color-dark-text);
-  --color-dark-text-surface-inverted: var(--color-dark-text-inverted);
-
   /* ========== Fonts, Spacing, Radius, Easing ========== */
-  --font-display: "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Geist", system-ui, sans-serif;
+  --font-body: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
   --spacing-18: 4.5rem;
   --spacing-22: 5.5rem;
   --spacing-30: 7.5rem;
@@ -337,13 +327,18 @@
   --ease-fluid: cubic-bezier(0.3, 0, 0, 1);
   --ease-snappy: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-
-  --color-text: #2b2f33; /* Darker text for better contrast */
 }
 
-@dark {
+/* Dark theme: re-point the bare semantic tokens at their dark twins whenever
+   the `.dark` class is set (ThemeProvider puts it on <html>, Storybook on
+   <body>). Deliberately unlayered so it beats the @layer theme :root values.
+   Explicit `dark:*-dark-*` utilities still win over the auto-flip (variants
+   sort after bare utilities). Class-driven only — a prefers-color-scheme
+   fallback would break an explicit light toggle under a dark OS. */
+.dark {
   /* Core color overrides */
   --color-primary: var(--color-dark-primary);
+  --color-brand: var(--color-dark-brand);
   --color-primary-50: var(--color-dark-primary-50);
   --color-primary-100: var(--color-dark-primary-100);
   --color-primary-200: var(--color-dark-primary-200);
@@ -354,9 +349,6 @@
   --color-primary-700: var(--color-dark-primary-700);
   --color-primary-800: var(--color-dark-primary-800);
   --color-primary-900: var(--color-dark-primary-900);
-
-  --color-dark-ghost: var(--color-dark-primary-400);
-  --color-dark-ghost-hover: var(--color-dark-surface-200);
 
   --color-secondary: var(--color-dark-secondary);
   --color-secondary-50: var(--color-dark-secondary-50);
@@ -394,6 +386,18 @@
   --color-error-800: var(--color-dark-error-800);
   --color-error-900: var(--color-dark-error-900);
 
+  --color-info: var(--color-dark-info);
+  --color-info-50: var(--color-dark-info-50);
+  --color-info-100: var(--color-dark-info-100);
+  --color-info-200: var(--color-dark-info-200);
+  --color-info-300: var(--color-dark-info-300);
+  --color-info-400: var(--color-dark-info-400);
+  --color-info-500: var(--color-dark-info-500);
+  --color-info-600: var(--color-dark-info-600);
+  --color-info-700: var(--color-dark-info-700);
+  --color-info-800: var(--color-dark-info-800);
+  --color-info-900: var(--color-dark-info-900);
+
   /* Background system */
   --color-background-light: var(--color-dark-background-light);
   --color-background-dark: var(--color-dark-background-dark);
@@ -413,9 +417,9 @@
   --color-text-error: var(--color-dark-text-error);
   --color-text-muted: var(--color-dark-text-muted);
   --color-text-inverted: var(--color-dark-text-inverted);
-
-  --color-ghost: var(--color-dark-ghost);
-  --color-ghost-hover: var(--color-dark-ghost-hover);
+  --color-text-success: var(--color-dark-text-success);
+  --color-text-warning: var(--color-dark-text-warning);
+  --color-text-info: var(--color-dark-text-info);
 
   /* Surface overrides */
   --color-surface-50: var(--color-dark-surface-50);
@@ -466,17 +470,11 @@
     --foreground: var(--color-text);
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --background: var(--color-dark-background-light);
-      --foreground: var(--color-dark-text-primary);
-    }
-    input:-webkit-autofill,
-    input:-webkit-autofill:focus,
-    input:-webkit-autofill:hover {
-      background-color: var(--dark-background, var(--background)) !important;
-      color: var(--dark-foreground, var(--foreground)) !important;
-    }
+  /* Class-driven, matching the token flip above — the OS media query would
+     desync from an explicit theme toggle. */
+  .dark {
+    --background: var(--color-dark-background-light);
+    --foreground: var(--color-dark-text-primary);
   }
 
   input:-webkit-autofill,
@@ -487,21 +485,6 @@
     -webkit-text-fill-color: var(--foreground) !important;
   }
 
-  /* Dark mode overrides */
-  @media (prefers-color-scheme: dark) {
-    input:-webkit-autofill,
-    input:-webkit-autofill:focus,
-    input:-webkit-autofill:hover {
-      background-color: var(--dark-background, var(--background)) !important;
-      -webkit-box-shadow: 0 0 0px 1000px
-        var(--dark-background, var(--background)) inset !important;
-      -webkit-text-fill-color: var(
-        --dark-foreground,
-        var(--foreground)
-      ) !important;
-    }
-  }
-
   body {
     @apply bg-[var(--background)] text-[var(--foreground)];
     font-family: var(--font-body);
@@ -509,7 +492,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
   html {
-    color-scheme: light dark;
+    color-scheme: light;
   }
 
   html.dark {
@@ -530,14 +513,18 @@
     linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
 }
 
-:focus-visible {
-  outline: 2px solid var(--color-primary-500);
-  outline-offset: 2px;
-  transition: outline-offset 0.2s ease;
-}
+/* In @layer base so per-component utilities (e.g. a terminal prompt's
+   outline-none) can override the default focus ring. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: 2px;
+    transition: outline-offset 0.2s ease;
+  }
 
-.dark :focus-visible {
-  outline-color: var(--color-dark-primary-500);
+  .dark :focus-visible {
+    outline-color: var(--color-dark-primary-500);
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -571,4 +558,15 @@
 /* dark */
 .dark .bg-dot-pattern {
   --dot-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Terminal block cursor (TerminalPromptInput). */
+@keyframes contenoxTerminalCursorBlink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.contenox-terminal-cursor {
+  display: inline-block;
+  width: 0.6ch;
+  animation: contenoxTerminalCursorBlink 1.05s steps(1) infinite;
 }

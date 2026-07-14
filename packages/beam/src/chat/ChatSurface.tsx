@@ -734,7 +734,7 @@ export function BeamChat({
               const used = runtimeSummary.contextUsed || 0;
               const size = runtimeSummary.contextSize;
               const pct = Math.round((used / size) * 100);
-              const cls = pct > 90 ? 'text-red-500' : pct > 70 ? 'text-yellow-500' : 'text-text-muted dark:text-dark-text-muted';
+              const cls = pct > 90 ? 'text-error dark:text-dark-error' : pct > 70 ? 'text-warning dark:text-dark-warning' : 'text-text-muted dark:text-dark-text-muted';
               return (
                 <span className={`ml-1 text-[10px] tabular-nums ${cls}`} title={`Context: ${used.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`}>
                   {used.toLocaleString()}/{size.toLocaleString()} ({pct}%)
@@ -853,7 +853,7 @@ export function BeamChat({
                 const used = runtimeSummary.contextUsed || 0;
                 const size = runtimeSummary.contextSize;
                 const pct = Math.round((used / size) * 100);
-                const cls = pct > 90 ? 'text-red-500' : pct > 70 ? 'text-yellow-500' : 'text-text-muted dark:text-dark-text-muted';
+                const cls = pct > 90 ? 'text-error dark:text-dark-error' : pct > 70 ? 'text-warning dark:text-dark-warning' : 'text-text-muted dark:text-dark-text-muted';
                 return (
                   <span className={`ml-1 text-[10px] tabular-nums ${cls}`} title={`Context: ${used.toLocaleString()} / ${size.toLocaleString()} tokens (${pct}%)`}>
                     {used.toLocaleString()}/{size.toLocaleString()} ({pct}%)
@@ -1268,7 +1268,7 @@ function ContextReadiness({
       value: `${used.toLocaleString()}/${size.toLocaleString()} (${pct}%)`,
       href: '#',
       disabled: true,
-    } as any);
+    });
   }
 
   return (

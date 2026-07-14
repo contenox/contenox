@@ -70,6 +70,7 @@ export function Dropdown({
     } as React.HTMLAttributes<HTMLElement>)
   ) : options ? (
     <Button
+      variant="ghost"
       onClick={toggle}
       aria-haspopup="true"
       aria-expanded={isOpen}
@@ -91,6 +92,7 @@ export function Dropdown({
     : options
       ? options.map((option) => (
           <Button
+            variant="ghost"
             key={option.value}
             role="menuitem"
             onClick={() => {

@@ -121,7 +121,6 @@ export function Span({
   return (
     <span
       className={cn(
-        "text-[var(--color-text)] dark:text-[var(--color-dark-text)]",
         {
           "text-xs uppercase tracking-wider font-medium": variant === "status",
           "text-sm text-text-muted dark:text-dark-text-muted":

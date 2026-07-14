@@ -46,7 +46,7 @@ function StepIndicator({
       <span
         className={cn(
           base,
-          "border-error bg-error/10 text-error dark:border-red-500 dark:text-red-400",
+          "border-error bg-error/10 text-error dark:border-dark-error-600 dark:text-dark-error-800",
         )}
         aria-hidden
       >

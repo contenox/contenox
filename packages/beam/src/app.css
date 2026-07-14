@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
+/* Self-hosted Geist fonts (served from public/fonts — no CDN, works offline) */
+@import '@contenox/ui/fonts.css';
 
 /* Bring in @contenox/ui theme definitions (the @theme block that registers
    --color-surface-*, etc.) so that Tailwind v4 knows about custom classes
@@ -7,6 +7,12 @@
 @import '@contenox/ui/theme.css';
 
 @import 'tailwindcss';
+
+/* Tailwind skips node_modules when scanning for class names, so classes used
+   only inside @contenox/ui components (e.g. the terminal prompt's
+   outline-none) would never be generated. Scan the workspace package source
+   directly. */
+@source '../../ui/src';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -54,3 +60,4 @@
     @apply bg-dark-surface-400;
   }
 }
+

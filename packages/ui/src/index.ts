@@ -63,6 +63,7 @@ export * from "./components/FileTree";
 export * from "./components/ToolCallCard";
 export * from "./components/DiffView";
 export * from "./components/TerminalOutput";
+export * from "./components/terminal";
 export * from "./components/NavItem";
 export * from "./components/InlineAttachmentRenderer";
 export * from "./components/ErrorBoundary";

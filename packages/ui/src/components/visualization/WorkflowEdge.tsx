@@ -69,19 +69,22 @@ const rectsOverlap = (
   );
 };
 
-// Color + short label per compose strategy
-const STRATEGY_STYLE: Record<
-  string,
-  { fill: string; stroke: string; short: string }
-> = {
-  override: { fill: "#525252", stroke: "#171717", short: "OVR" },
-  merge_chat_histories: { fill: "#737373", stroke: "#262626", short: "MERGE" },
+// Chip token classes + short label per compose strategy (mirrors beam's
+// ComposeEdgeBadge mapping; bare semantic tokens flip via the .dark rule)
+const STRATEGY_STYLE: Record<string, { chipClass: string; short: string }> = {
+  override: { chipClass: "fill-primary-500 stroke-primary-900", short: "OVR" },
+  merge_chat_histories: {
+    chipClass: "fill-secondary-500 stroke-secondary-800",
+    short: "MERGE",
+  },
   append_string_to_chat_history: {
-    fill: "#a3a3a3",
-    stroke: "#404040",
+    chipClass: "fill-accent-400 stroke-accent-700",
     short: "APPEND",
   },
-  default: { fill: "#64748b", stroke: "#334155", short: "DEFAULT" },
+  default: {
+    chipClass: "fill-secondary-500 stroke-secondary-700",
+    short: "DEFAULT",
+  },
 };
 
 const getStyleForStrategy = (s?: string) =>
@@ -155,11 +158,7 @@ export const WorkflowEdge: React.FC<WorkflowEdgeProps> = ({
   );
 
   // Determine chip style from compose strategy
-  const {
-    fill: chipFill,
-    stroke: chipStroke,
-    short: shortStrat,
-  } = getStyleForStrategy(composeStrategy);
+  const { chipClass, short: shortStrat } = getStyleForStrategy(composeStrategy);
 
   // Two-line content when composed
   const line1 = (label || "default").trim();
@@ -347,9 +346,7 @@ export const WorkflowEdge: React.FC<WorkflowEdgeProps> = ({
           height={chipHeight}
           rx="12"
           strokeWidth={1.25}
-          fill={chipFill}
-          stroke={chipStroke}
-          className="shadow-sm"
+          className={cn("shadow-sm", chipClass)}
         />
 
         {/* Text: one or two lines */}

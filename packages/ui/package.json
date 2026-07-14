@@ -52,7 +52,8 @@
       "import": "./tailwind.config.js"
     },
     "./styles.css": "./dist/index.css",
-    "./theme.css": "./src/index.css"
+    "./theme.css": "./src/index.css",
+    "./fonts.css": "./src/fonts.css"
   },
   "files": [
     "dist",

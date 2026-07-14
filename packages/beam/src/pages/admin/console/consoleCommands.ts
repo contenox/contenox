@@ -42,6 +42,10 @@ export function useConsoleCommands(deps: ConsoleCommandDeps): void {
         deps.setSelectedChainId(match);
         ctx.notify('info', `Chain set to ${match}.`);
       },
+      argCompletions: partial =>
+        deps.chainPaths
+          .filter(p => p.toLowerCase().includes(partial.toLowerCase()))
+          .map(p => ({ value: p, hint: p === deps.selectedChainId ? 'current' : undefined })),
     }),
     [deps],
   );
@@ -75,6 +79,13 @@ export function useConsoleCommands(deps: ConsoleCommandDeps): void {
         }
         deps.setActivePolicy(match);
         ctx.notify('info', `Policy set to ${match}.`);
+      },
+      argCompletions: partial => {
+        const items = deps.policyNames
+          .filter(p => p.toLowerCase().includes(partial.toLowerCase()))
+          .map(p => ({ value: p, hint: p === deps.activePolicyName ? 'active' : undefined }));
+        if ('none'.includes(partial.toLowerCase())) items.push({ value: 'none', hint: 'clear' });
+        return items;
       },
     }),
     [deps],

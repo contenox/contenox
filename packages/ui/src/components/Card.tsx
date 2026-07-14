@@ -35,13 +35,13 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
           "rounded-xl border p-6 transition-colors shadow-sm dark:shadow-none",
           "dark:border-dark-surface-700",
           {
-            "bg-surface-50 border-surface-200 dark:bg-dark-surface-800":
+            "bg-surface-50 border-surface-200 dark:bg-dark-surface-200":
               variant === "default",
             "bg-secondary-100 border-secondary-200 dark:bg-dark-surface-600":
               variant === "filled",
-            "bg-surface-100 border-surface-300 dark:bg-dark-surface-900 dark:border-dark-surface-600":
+            "bg-surface-100 border-surface-300 dark:bg-dark-surface-300 dark:border-dark-surface-600":
               variant === "surface",
-            "bg-error-50 dark:bg-dark-error-900 text-error dark:text-dark-error":
+            "bg-error-50 dark:bg-dark-error-100 text-error dark:text-dark-error-700":
               variant === "error",
             "border border-surface-400 dark:border-dark-surface-500":
               variant === "bordered",

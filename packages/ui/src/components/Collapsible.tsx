@@ -119,6 +119,7 @@ export const CollapsibleTrigger = ({
 
   return (
     <Button
+      variant="ghost"
       type="button"
       onClick={handleClick}
       aria-expanded={open}

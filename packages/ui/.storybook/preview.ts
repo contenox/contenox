@@ -1,6 +1,7 @@
 import type { Preview } from "@storybook/react-vite";
 import { withThemeByClassName } from "@storybook/addon-themes";
 import React from "react";
+import "../src/fonts.css";
 import "../src/index.css";
 
 const preview: Preview = {
@@ -14,27 +15,20 @@ const preview: Preview = {
     backgrounds: { disable: true },
   },
   decorators: [
+    // Apply .dark to <html> — same element beam's ThemeProvider targets, so
+    // the .dark token flip AND html.dark color-scheme both engage.
     withThemeByClassName({
       themes: { light: "", dark: "dark" },
       defaultTheme: "light",
-      parentSelector: "body",
+      parentSelector: "html",
     }),
-    (Story, context) => {
-      const isDark = context.globals.theme === "dark";
-      const themeVars = isDark
-        ? {
-            ["--background" as string]: "var(--color-dark-background-light)",
-            ["--foreground" as string]: "var(--color-dark-text-primary)",
-          }
-        : {
-            ["--background" as string]: "var(--color-surface-50)",
-            ["--foreground" as string]: "var(--color-text)",
-          };
-      return React.createElement(
+    (Story) =>
+      // --background/--foreground come from index.css (:root / .dark); no
+      // manual overrides here or broken dark styling gets masked.
+      React.createElement(
         "div",
         {
           style: {
-            ...themeVars,
             minHeight: "100vh",
             padding: "1.5rem",
             background: "var(--background)",
@@ -43,8 +37,7 @@ const preview: Preview = {
           },
         },
         React.createElement(Story),
-      );
-    },
+      ),
   ],
 };
 

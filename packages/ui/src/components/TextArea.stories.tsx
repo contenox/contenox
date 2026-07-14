@@ -28,7 +28,7 @@ type Story = StoryObj<typeof Textarea>;
 export const Default: Story = {};
 
 export const Placeholder: Story = {
-  args: { placeholder: "Describe the issue...", value: "" },
+  args: { placeholder: "Describe the issue..." },
 };
 
 export const Filled: Story = {

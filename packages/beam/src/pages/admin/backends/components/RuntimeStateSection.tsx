@@ -62,7 +62,7 @@ export default function RuntimeStateSection({
               <TableCell className="max-w-[300px]">
                 {row.error?.trim() ? (
                   <div 
-                    className="line-clamp-3 overflow-hidden rounded-md bg-red-500/10 px-2 py-1 text-xs font-mono text-red-600 dark:text-red-400" 
+                    className="line-clamp-3 overflow-hidden rounded-md bg-error/10 px-2 py-1 text-xs font-mono text-error-600 dark:text-dark-error-800"
                     title={row.error}
                   >
                     {row.error}

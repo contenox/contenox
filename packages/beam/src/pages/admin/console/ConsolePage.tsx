@@ -1,10 +1,9 @@
-import { Button, Fill, InlineNotice, Page, Spinner } from '@contenox/ui';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fill, Page, Spinner } from '@contenox/ui';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAgentTurn } from '../../../hooks/useAgentTurn';
 import { useChatHistory, useChats, useCreateChat } from '../../../hooks/useChats';
-import { useTerminalAvailable } from '../../../hooks/useTerminal';
 import { useListChains } from '../../../hooks/useChains';
 import { useListPolicies, useSetActivePolicy } from '../../../hooks/usePolicies';
 import { useSetupStatus } from '../../../hooks/useSetupStatus';
@@ -19,15 +18,13 @@ import {
   useSlashCommandRegistry,
 } from '../../../lib/slashCommands/registry';
 import type { ChatContextArtifact, ChatContextPayload } from '../../../lib/types';
-import { MessageInputForm } from '../chats/components/MessageInputForm';
 import { useConsoleCommands } from './consoleCommands';
+import { useConsoleShell, type ShellEntry } from './useConsoleShell';
 import { buildConsoleTurns } from './consoleTurns';
+import { ConsoleComposer } from './components/ConsoleComposer';
 import { StatusLine } from './components/StatusLine';
 import { TurnBlock } from './components/TurnBlock';
-
-const TerminalPanel = lazy(() =>
-  import('../chats/components/TerminalPanel').then(m => ({ default: m.TerminalPanel })),
-);
+import { TERM } from './term';
 
 const DEFAULT_CHAIN_PATH = 'default-chain.json';
 
@@ -51,6 +48,15 @@ function buildTurnContext(artifacts: ChatContextArtifact[]): ChatContextPayload 
   return { artifacts: [...artifacts] };
 }
 
+/** Raw PTY scrollback from a `!command` — the PTY's own echo is the header. */
+function ShellBlock({ entry }: { entry: ShellEntry }) {
+  return (
+    <pre className={`whitespace-pre-wrap break-words py-1 ${TERM.font} ${TERM.text}`}>
+      {entry.text || <span className={TERM.dim}>…</span>}
+    </pre>
+  );
+}
+
 function ConsolePageImpl() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -59,7 +65,6 @@ function ConsolePageImpl() {
 
   const [message, setMessage] = useState('');
   const [selectedChainId, setSelectedChainId] = useState('');
-  const [terminalOpen, setTerminalOpen] = useState(false);
 
   const artifactRegistry = useArtifactRegistry();
   const slashRegistry = useSlashCommandRegistry();
@@ -73,7 +78,6 @@ function ConsolePageImpl() {
   const { data: chainPaths = [] } = useListChains();
   const { data: policyNames = [] } = useListPolicies();
   const { data: setupStatus } = useSetupStatus(true);
-  const { isError: terminalUnavailable } = useTerminalAvailable();
   const activePolicyName = setupStatus?.hitlPolicyName ?? '';
   const setActivePolicy = useSetActivePolicy();
   const { mutate: createChat, isPending: isCreating } = useCreateChat();
@@ -174,34 +178,57 @@ function ConsolePageImpl() {
     [chatHistory, agent.optimistic, agent.activeRequestId],
   );
 
+  const shell = useConsoleShell();
+
+  // Shell entries interleave after the turn they were anchored to at exec
+  // time; entries whose anchor vanished (optimistic echo) trail at the end.
+  const shellByAnchor = useMemo(() => {
+    const known = new Set(turns.map(turn => turn.key));
+    const map = new Map<string, ShellEntry[]>();
+    for (const entry of shell.entries) {
+      const slot =
+        entry.anchorKey === null ? '<head>' : known.has(entry.anchorKey) ? entry.anchorKey : '<tail>';
+      const list = map.get(slot);
+      if (list) list.push(entry);
+      else map.set(slot, [entry]);
+    }
+    return map;
+  }, [turns, shell.entries]);
+
   const pendingApproval = agent.activeRun?.pendingApproval ?? null;
 
   // Pin scroll to the bottom as turns stream in (and to the approval card).
   const endRef = useRef<HTMLDivElement | null>(null);
-  const scrollSignature = `${turns.length}:${agent.activeRun?.events.length ?? 0}:${pendingApproval?.approvalId ?? ''}`;
+  const shellChars = shell.entries.reduce((n, e) => n + e.text.length, 0);
+  const scrollSignature = `${turns.length}:${agent.activeRun?.events.length ?? 0}:${pendingApproval?.approvalId ?? ''}:${shell.entries.length}:${shellChars}`;
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [scrollSignature]);
 
-  const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!message.trim()) return;
-      const collected = artifactRegistry.collectWithSources();
-      const allArtifacts = collected.map(p => p.artifact);
-      const explicitArtifacts = collected
-        .filter(p => p.source.id.startsWith('mention:') || p.source.id.startsWith('slash:'))
-        .map(p => p.artifact);
-      agent.submit(
-        message,
-        selectedChainId,
-        buildTurnContext(allArtifacts),
-        artifactsToInlineAttachments(explicitArtifacts),
-      );
+  const sendCurrent = useCallback(() => {
+    if (!message.trim()) return;
+    // Bang-escape: `!cmd` runs in the console's inline PTY, TUI-style.
+    if (message.trimStart().startsWith('!')) {
+      const command = message.trimStart().slice(1).trim();
+      if (command) {
+        shell.exec(command, turns.length > 0 ? turns[turns.length - 1].key : null);
+      }
       setMessage('');
-    },
-    [agent, artifactRegistry, message, selectedChainId],
-  );
+      return;
+    }
+    const collected = artifactRegistry.collectWithSources();
+    const allArtifacts = collected.map(p => p.artifact);
+    const explicitArtifacts = collected
+      .filter(p => p.source.id.startsWith('mention:') || p.source.id.startsWith('slash:'))
+      .map(p => p.artifact);
+    agent.submit(
+      message,
+      selectedChainId,
+      buildTurnContext(allArtifacts),
+      artifactsToInlineAttachments(explicitArtifacts),
+    );
+    setMessage('');
+  }, [agent, artifactRegistry, message, selectedChainId, shell, turns]);
 
   const respondApproval = useCallback((approvalId: string, approved: boolean) => {
     api.respondToApproval(approvalId, approved).catch(() => {
@@ -239,86 +266,76 @@ function ConsolePageImpl() {
 
   return (
     <Page bodyScroll="hidden" className="h-full">
-      <Fill className="flex min-h-0 flex-col">
+      <Fill className={`flex min-h-0 flex-col ${TERM.surface} ${TERM.text}`}>
         <StatusLine
           selectedChainId={selectedChainId}
           activePolicyName={activePolicyName}
+          model={setupStatus?.defaultModel}
           contextUsed={agent.contextUsed}
           contextSize={agent.contextSize}
           sseConnection={agent.sseConnection}
           isProcessing={agent.isProcessing}
-          terminalAvailable={!terminalUnavailable}
-          terminalOpen={terminalOpen}
-          onToggleTerminal={() => setTerminalOpen(open => !open)}
         />
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+        <div className={`min-h-0 flex-1 overflow-y-auto px-3 py-2 ${TERM.font}`}>
           {historyLoading || isCreating ? (
             <div className="flex h-full items-center justify-center">
               <Spinner size="md" />
             </div>
-          ) : turns.length === 0 ? (
-            <div className="text-text-muted flex h-full items-center justify-center font-mono text-sm">
+          ) : turns.length === 0 && shell.entries.length === 0 ? (
+            <div className={`flex h-full items-center justify-center ${TERM.dim}`}>
               {t('console.empty', 'Type a task below — the agent works here, visibly.')}
             </div>
           ) : (
-            turns.map(turn => (
-              <TurnBlock
-                key={turn.key}
-                turn={turn}
-                run={turn.requestId ? (agent.runs[turn.requestId] ?? null) : null}
-                onRespondApproval={respondApproval}
-              />
-            ))
+            <div className={`divide-y divide-surface-200/60 dark:divide-dark-surface-300/50`}>
+              {shellByAnchor.get('<head>')?.map(entry => (
+                <ShellBlock key={`shell-${entry.id}`} entry={entry} />
+              ))}
+              {turns.map(turn => (
+                <div key={turn.key}>
+                  <TurnBlock
+                    turn={turn}
+                    run={turn.requestId ? (agent.runs[turn.requestId] ?? null) : null}
+                    onRespondApproval={respondApproval}
+                  />
+                  {shellByAnchor.get(turn.key)?.map(entry => (
+                    <ShellBlock key={`shell-${entry.id}`} entry={entry} />
+                  ))}
+                </div>
+              ))}
+              {shellByAnchor.get('<tail>')?.map(entry => (
+                <ShellBlock key={`shell-${entry.id}`} entry={entry} />
+              ))}
+            </div>
           )}
           <div ref={endRef} />
         </div>
 
-        {terminalOpen && (
-          <div className="border-surface-300 dark:border-dark-surface-400 h-72 shrink-0 border-t">
-            <Suspense
-              fallback={
-                <div className="flex h-full items-center justify-center">
-                  <Spinner size="md" />
-                </div>
-              }>
-              <TerminalPanel className="h-full min-h-0 min-w-0" />
-            </Suspense>
+        {agent.operationError && (
+          <div className={`flex items-center gap-2 border-t ${TERM.border} ${TERM.surface} px-3 py-1 ${TERM.small} ${TERM.err}`}>
+            <span className="min-w-0 flex-1 break-words">{agent.operationError}</span>
+            {agent.canRetry && (
+              <button type="button" className={`${TERM.dim} hover:${TERM.text}`} onClick={agent.retryLastFailed}>
+                [retry]
+              </button>
+            )}
+            <button type="button" className={`${TERM.dim} hover:${TERM.text}`} onClick={agent.clearOperationError}>
+              [dismiss]
+            </button>
           </div>
         )}
 
-        {agent.operationError && (
-          <InlineNotice
-            variant="error"
-            className="mx-4 mb-1"
-            onDismiss={agent.clearOperationError}>
-            <span className="break-words">{agent.operationError}</span>
-            {agent.canRetry && (
-              <Button variant="ghost" size="sm" className="ml-2" onClick={agent.retryLastFailed}>
-                {t('plan.retry', 'Retry')}
-              </Button>
-            )}
-          </InlineNotice>
-        )}
-
-        <div className="bg-surface-50 dark:bg-dark-surface-200 shrink-0 border-t border-surface-300 dark:border-dark-surface-400">
-          <MessageInputForm
-            value={message}
-            onChange={setMessage}
-            onSubmit={handleSubmit}
-            placeholder={
-              pendingApproval
-                ? t(
-                    'console.awaiting_approval',
-                    'Waiting for approval — y approve · n deny · Esc stop',
-                  )
-                : t('console.placeholder', 'Task, question, or /command — Esc stops a run')
-            }
-            isPending={agent.isProcessing}
-            canSubmit={!pendingApproval}
-            variant="workbench"
-          />
-        </div>
+        <ConsoleComposer
+          value={message}
+          onChange={setMessage}
+          onSend={sendCurrent}
+          disabled={!!pendingApproval}
+          hint={
+            pendingApproval
+              ? t('console.awaiting_approval', 'awaiting approval — y approve · n deny · esc stop')
+              : t('console.hint', 'type a task · ! shell · / commands · @ mentions · enter to run · esc stops')
+          }
+        />
       </Fill>
     </Page>
   );

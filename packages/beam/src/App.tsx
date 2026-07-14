@@ -1,5 +1,4 @@
 import { ErrorBoundary, Spinner } from '@contenox/ui';
-import '@contenox/ui/styles.css';
 import { Suspense } from 'react';
 import { Route, HashRouter as Router, Routes } from 'react-router-dom';
 import './app.css';

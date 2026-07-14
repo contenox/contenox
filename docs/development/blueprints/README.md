@@ -32,4 +32,3 @@ how-to docs live one level up in `docs/`.
 | Doc | What it decided |
 | --- | --- |
 | [local-mode-spec.md](local-mode-spec.md) | The original local-mode plan (SQLite, in-memory bus, estimate tokenizer) that became the `contenox` CLI |
-| [remaining-work.md](remaining-work.md) | Roadmap notes from the modeld refactor |

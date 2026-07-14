@@ -22,6 +22,7 @@ export function Pagination({
       className={cn("flex items-center justify-between px-4 py-3", className)}
     >
       <Button
+        variant="ghost"
         onClick={() => onPageChange(Math.max(1, currentPage - 1))}
         disabled={currentPage === 1}
         className={cn(
@@ -40,6 +41,7 @@ export function Pagination({
       </Span>
 
       <Button
+        variant="ghost"
         onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
         disabled={currentPage === totalPages}
         className={cn(

@@ -22,6 +22,7 @@ export function Accordion({ title, children, className }: AccordionProps) {
       )}
     >
       <Button
+        variant="ghost"
         onClick={() => setIsOpen(!isOpen)}
         className="flex w-full items-center justify-between p-4"
       >

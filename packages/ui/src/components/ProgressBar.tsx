@@ -21,10 +21,10 @@ export function ProgressBar({
       <div
         className={cn("h-full transition-all duration-500 ease-out", {
           "bg-surface-300": palette === "neutral",
-          "bg-green-500 dark:bg-dark-success-500": palette === "success",
-          "bg-yellow-500 dark:bg-dark-warning-500": palette === "warning",
+          "bg-success-500 dark:bg-dark-success-500": palette === "success",
+          "bg-warning-500 dark:bg-dark-warning-500": palette === "warning",
           "bg-primary-500": palette === "primary",
-          "bg-red-500 dark:bg-dark-error-500": palette === "error",
+          "bg-error-500 dark:bg-dark-error-500": palette === "error",
         })}
         style={{ width: `${value}%` }}
       />

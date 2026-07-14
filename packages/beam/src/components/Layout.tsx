@@ -72,7 +72,9 @@ export function Layout({ defaultOpen = true, mainContent, sidebarContent, classN
   const dismissWizard = () => {
     try {
       localStorage.setItem(ONBOARDING_KEY, '1');
-    } catch {}
+    } catch {
+      /* best-effort: localStorage may be unavailable (private mode) */
+    }
     setWizardDismissed(true);
   };
 

@@ -91,13 +91,15 @@ export const TerminalOutput = forwardRef<HTMLDivElement, TerminalOutputProps>(
 /* ------------------------------------------------------------------ */
 
 const ANSI_CLASSES: Record<string, string> = {
-  "30": "text-surface-900 dark:text-dark-surface-900",       // black
-  "31": "text-error dark:text-dark-error",                   // red
+  /* The terminal surface is dark in BOTH themes (bg-surface-900 /
+     dark-surface-50), so the light-theme classes must also read on dark. */
+  "30": "text-surface-600 dark:text-dark-surface-900",       // black (dim)
+  "31": "text-error-400 dark:text-dark-error",               // red
   "32": "text-success dark:text-dark-success",               // green
   "33": "text-warning dark:text-dark-warning",               // yellow
-  "34": "text-primary dark:text-dark-primary",               // blue
-  "35": "text-accent dark:text-dark-accent",                 // magenta → accent
-  "36": "text-info dark:text-dark-info",                     // cyan → info
+  "34": "text-primary-300 dark:text-dark-primary",           // blue
+  "35": "text-accent-400 dark:text-dark-accent",             // magenta → accent
+  "36": "text-info-300 dark:text-dark-info",                 // cyan → info
   "37": "text-surface-100 dark:text-dark-text",              // white
   "1": "font-bold",
   "2": "opacity-60",

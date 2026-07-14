@@ -1,22 +1,23 @@
 import {
   ApprovalCard,
-  chatTranscriptMarkdownComponents,
-  ExecutionTimeline,
+  DiffView,
+  diffLinesFromTexts,
   InlineAttachments,
-  Span,
-  Spinner,
+  TerminalLine,
+  TerminalMeta,
+  TERMINAL_GLYPH,
+  terminalMarkdownComponents,
 } from '@contenox/ui';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChatMessage } from '../../chats/components/ChatMessage';
 import { useExecutionEvents } from '../../../../hooks/useExecutionEvents';
 import { useExecutionState } from '../../../../hooks/useExecutionState';
 import { deriveApprovals } from '../../../../lib/approvals';
 import { extractDiffs } from '../../../../lib/diffs';
 import type { TaskEventViewState } from '../../../../lib/taskEvents';
-import type { ChatMessage as ChatMessageModel } from '../../../../lib/types';
+import type { CapturedStateUnit, ChatMessage as ChatMessageModel } from '../../../../lib/types';
 import { isFailureAnnotation, type ConsoleTurn } from '../consoleTurns';
-import { DiffBlock } from './DiffBlock';
+import { summarizeArgs } from '../term';
 
 type TurnBlockProps = {
   turn: ConsoleTurn;
@@ -25,30 +26,54 @@ type TurnBlockProps = {
   onRespondApproval?: (approvalId: string, approved: boolean) => void;
 };
 
-/** toolCallId → function name, resolved from the turn's assistant tool-call requests. */
-function buildToolNameLookup(work: ChatMessageModel[]): Map<string, string> {
-  const map = new Map<string, string>();
+type WorkLine =
+  | { kind: 'call'; id?: string; head: string }
+  | { kind: 'result'; text: string; error?: boolean }
+  | { kind: 'error'; text: string };
+
+/** Flattens the turn's persisted tool interactions into terminal scrollback lines. */
+function buildWorkLines(work: ChatMessageModel[]): WorkLine[] {
+  const lines: WorkLine[] = [];
   for (const m of work) {
-    for (const call of m.callTools ?? []) {
-      if (call.id && call.function?.name) {
-        map.set(call.id, call.function.name);
+    if (m.role === 'assistant' && m.callTools && m.callTools.length > 0) {
+      for (const call of m.callTools) {
+        const name = call.function?.name ?? 'tool';
+        const args = summarizeArgs(call.function?.arguments);
+        lines.push({ kind: 'call', id: call.id, head: `${name}(${args})` });
       }
+      continue;
+    }
+    if (m.role === 'tool') {
+      lines.push({ kind: 'result', text: m.content || '(no output)', error: !!m.error });
+      continue;
+    }
+    if (m.role === 'assistant' && isFailureAnnotation(m.content)) {
+      lines.push({ kind: 'error', text: m.content });
     }
   }
-  return map;
+  return lines;
+}
+
+/** Compact per-step summary line from hydrated captured state (no live events). */
+function stateLines(state: CapturedStateUnit[]): string[] {
+  return state
+    .filter(u => u.taskHandler !== 'route' || u.error?.error)
+    .map(u => {
+      const ms = Math.round(u.duration / 1_000_000);
+      const status = u.error?.error ? `✗ ${u.error.error}` : (u.transition || 'ok');
+      return `${u.taskID} · ${status} · ${ms}ms`;
+    });
 }
 
 /**
- * One console turn: command echo → work log → result.
- * The terminal-agent scrollback unit; work stays visible after completion.
+ * One console turn rendered as terminal scrollback: `❯ command`, a dim meta
+ * line, glyph-led work lines, unified diffs, approval verdicts, then the
+ * result. Line-oriented and dense — no card chrome.
  */
 export function TurnBlock({ turn, run, onRespondApproval }: TurnBlockProps) {
-  const toolNames = buildToolNameLookup(turn.work);
   const retainedEvents = run?.events && run.events.length > 0 ? run.events : undefined;
 
-  // Hydration precedence for past turns: retained live events (this session)
-  // → durable event journal (full work log: tool calls, diffs, approvals)
-  // → captured state units (step summaries) → graceful absence note.
+  // Hydration precedence: retained live events → durable journal → state summary → note.
   const wantsHydration = !retainedEvents && !turn.live && !!turn.requestId;
   const { data: journalEvents, isSuccess: journalDone } = useExecutionEvents(
     turn.requestId,
@@ -66,88 +91,103 @@ export function TurnBlock({ turn, run, onRespondApproval }: TurnBlockProps) {
   const state = !events && hydratedState && hydratedState.length > 0 ? hydratedState : undefined;
   const headerUnit = state?.find(u => u.modelName) ?? state?.[state.length - 1];
   const tokenTotal = state?.reduce((sum, u) => sum + (u.tokenUsage?.total ?? 0), 0) ?? 0;
+
+  const workLines = buildWorkLines(turn.work);
   const diffs = events ? extractDiffs(events) : [];
+  const approvals = events
+    ? deriveApprovals(events, run?.pendingApproval ?? null).filter(a => a.status !== 'pending')
+    : [];
+  const metaBits = [turn.chainRef, headerUnit?.modelName, tokenTotal > 0 ? `${tokenTotal.toLocaleString()} tok` : '']
+    .filter(Boolean)
+    .join('  ·  ');
+
+  const resultIsError = turn.result ? isFailureAnnotation(turn.result.content) : false;
 
   return (
-    <div className="border-surface-200 dark:border-dark-surface-300 border-b py-3 first:pt-1 last:border-b-0">
+    <div className="py-1.5 text-[13px]">
+      {/* Command line */}
       {turn.command && (
-        <div className="flex items-start gap-2 font-mono text-sm">
-          <Span variant="muted" className="select-none pt-px font-mono">
-            &gt;
-          </Span>
-          <div className="min-w-0 flex-1 whitespace-pre-wrap break-words">
-            {turn.command.content}
-            <InlineAttachments attachments={turn.command.attachments} />
-          </div>
-        </div>
+        <TerminalLine glyph={TERMINAL_GLYPH.prompt}>
+          {turn.command.content}
+          <InlineAttachments attachments={turn.command.attachments} />
+        </TerminalLine>
       )}
 
-      {(turn.chainRef || headerUnit || tokenTotal > 0) && (
-        <div className="mt-1 flex flex-wrap items-center gap-x-3 pl-4 font-mono text-[10px]">
-          {turn.chainRef && <Span variant="muted">{turn.chainRef}</Span>}
-          {headerUnit?.modelName && <Span variant="muted">{headerUnit.modelName}</Span>}
-          {tokenTotal > 0 && <Span variant="muted">{tokenTotal.toLocaleString()} tok</Span>}
-        </div>
-      )}
+      {metaBits && <TerminalMeta>{metaBits}</TerminalMeta>}
 
-      {(turn.work.length > 0 || events || state || hydrating) && (
-        <div className="mt-2 space-y-2 pl-4">
-          {turn.work.map((m, idx) =>
-            m.role === 'assistant' && isFailureAnnotation(m.content) ? (
-              <div
-                key={m.id ?? idx}
-                className="text-error dark:text-dark-error font-mono text-xs whitespace-pre-wrap">
-                {m.content}
-              </div>
+      {/* Work log */}
+      {(workLines.length > 0 || approvals.length > 0 || diffs.length > 0) && (
+        <div className="mt-1 space-y-0.5">
+          {workLines.map((l, i) =>
+            l.kind === 'call' ? (
+              <TerminalLine key={i} glyph={TERMINAL_GLYPH.tool} indent={1}>
+                {l.head}
+              </TerminalLine>
+            ) : l.kind === 'error' ? (
+              <TerminalLine key={i} tone="error" indent={2}>
+                {l.text}
+              </TerminalLine>
             ) : (
-              <ChatMessage
-                key={m.id ?? idx}
-                message={m}
-                toolName={m.toolCallId ? toolNames.get(m.toolCallId) : undefined}
-              />
+              <TerminalLine
+                key={i}
+                glyph={TERMINAL_GLYPH.cont}
+                glyphTone="muted"
+                tone={l.error ? 'error' : 'muted'}
+                indent={1}>
+                {l.text.length > 600 ? l.text.slice(0, 600) + '…' : l.text}
+              </TerminalLine>
             ),
           )}
-          {events && <ExecutionTimeline events={events} />}
-          {diffs.map((d, idx) => (
-            <DiffBlock key={`${d.path}-${idx}`} diff={d} />
+
+          {diffs.map((d, i) => (
+            <DiffView
+              key={`${d.path}-${i}`}
+              filePath={d.path}
+              lines={diffLinesFromTexts(d.oldText, d.newText)}
+              className="my-1 ml-3"
+            />
           ))}
-          {events &&
-            deriveApprovals(events, run?.pendingApproval ?? null)
-              .filter(a => a.status !== 'pending')
-              .map(a => (
-                <div key={a.approvalId} className="font-mono text-[11px]">
-                  <Span variant="muted">
-                    ⏸ approval · {a.toolName || 'tool'} —{' '}
-                  </Span>
-                  <Span
-                    variant={a.status === 'resolved' ? 'muted' : undefined}
-                    className={
-                      a.status === 'denied'
-                        ? 'text-error dark:text-dark-error'
-                        : a.status === 'approved'
-                          ? 'text-success'
-                          : undefined
-                    }>
-                    {a.status}
-                  </Span>
-                </div>
-              ))}
-          {state && <ExecutionTimeline state={state} />}
-          {!events && !state && hydrating && (
-            <Span variant="muted" className="font-mono text-[10px]">
-              loading execution log…
-            </Span>
-          )}
-          {!events && !state && hydrated && (
-            <Span variant="muted" className="font-mono text-[10px]">
-              execution log unavailable (expired or pre-upgrade turn)
-            </Span>
-          )}
+
+          {approvals.map(a => (
+            <TerminalLine key={a.approvalId} glyph={TERMINAL_GLYPH.approval} glyphTone="muted" indent={1}>
+              <span className="text-text-muted dark:text-dark-text-muted">
+                {a.toolName || 'tool'} —{' '}
+              </span>
+              <span
+                className={
+                  a.status === 'denied'
+                    ? 'text-error dark:text-dark-error'
+                    : a.status === 'approved'
+                      ? 'text-success dark:text-dark-success'
+                      : 'text-text-muted dark:text-dark-text-muted'
+                }>
+                {a.status}
+              </span>
+            </TerminalLine>
+          ))}
         </div>
       )}
 
+      {/* Hydrated state summary (no journaled events available) */}
+      {state && (
+        <div className="mt-1">
+          {stateLines(state).map((l, i) => (
+            <TerminalMeta key={i}>{l}</TerminalMeta>
+          ))}
+        </div>
+      )}
+      {!events && !state && hydrating && (
+        <TerminalMeta className="mt-1">loading execution log…</TerminalMeta>
+      )}
+      {!events && !state && hydrated && !turn.live && (
+        <TerminalMeta className="mt-1">
+          execution log unavailable (expired or pre-upgrade turn)
+        </TerminalMeta>
+      )}
+
+      {/* Inline approval prompt (live) */}
       {turn.live && run?.pendingApproval && onRespondApproval && (
-        <div className="mt-2 pl-4">
+        <div className="mt-1.5 pl-3">
           <ApprovalCard
             approval={run.pendingApproval}
             onRespond={async approved => {
@@ -158,29 +198,27 @@ export function TurnBlock({ turn, run, onRespondApproval }: TurnBlockProps) {
         </div>
       )}
 
-      {turn.live && !turn.result && (
-        <div className="mt-2 flex items-center gap-2 pl-4">
-          <Spinner size="sm" />
-          <Span variant="muted" className="font-mono text-xs">
-            {run?.status || '…'}
-          </Span>
-        </div>
+      {/* Live running indicator */}
+      {turn.live && !turn.result && !run?.pendingApproval && (
+        <TerminalMeta className="mt-1 text-[12px]">
+          <span className="animate-pulse">{TERMINAL_GLYPH.running}</span> {run?.status || 'working…'}
+        </TerminalMeta>
       )}
 
-      {turn.result && (
-        <div className="mt-2 pl-4 text-sm">
-          {isFailureAnnotation(turn.result.content) ? (
-            <div className="text-error dark:text-dark-error font-mono text-xs whitespace-pre-wrap">
-              {turn.result.content}
-            </div>
-          ) : (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatTranscriptMarkdownComponents}>
+      {/* Result */}
+      {turn.result &&
+        (resultIsError ? (
+          <TerminalLine tone="error" indent={2} className="mt-1">
+            {turn.result.content}
+          </TerminalLine>
+        ) : (
+          <div className="mt-1 pl-5 font-mono text-[13px] text-text dark:text-dark-text">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={terminalMarkdownComponents}>
               {turn.result.content}
             </ReactMarkdown>
-          )}
-          <InlineAttachments attachments={turn.result.attachments} />
-        </div>
-      )}
+            <InlineAttachments attachments={turn.result.attachments} />
+          </div>
+        ))}
     </div>
   );
 }

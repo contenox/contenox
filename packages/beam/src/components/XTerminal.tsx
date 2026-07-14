@@ -108,7 +108,9 @@ export const XTerminal = forwardRef<XTerminalHandle, XTerminalProps>(function XT
     const term = new Terminal({
       cursorBlink: true,
       fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
-      fontSize: 14,
+      // Matches the console's TERM.font scale (13px mono) so PTY output and
+      // agent scrollback read as one surface.
+      fontSize: 13,
       lineHeight: 1.2,
       theme: themeRef.current,
       allowProposedApi: true,
