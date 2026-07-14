@@ -96,14 +96,53 @@ func (t *Transport) tokenLimitConfigOption(ctx context.Context, sess *sessionEnt
 	if cap > 0 {
 		desc += fmt.Sprintf(" Capped to model max %d if larger.", cap)
 	}
+	// The ACP v1 schema only knows "select" and "boolean" option types (an
+	// earlier revision here invented type:"text", which conformant clients may
+	// drop or mis-render). Offer a ladder of budgets clamped to the model cap;
+	// set_config_option still accepts any non-negative integer, so a custom
+	// current value is folded into the list.
 	return libacp.SessionConfigOption{
 		ID:           configIDTokenLimit,
 		Name:         "Token Limit",
 		Description:  desc,
 		Category:     "context",
-		Type:         "text",
+		Type:         configTypeSelect,
 		CurrentValue: current,
+		Options:      tokenLimitConfigValues(cap, limit),
 	}
+}
+
+func tokenLimitConfigValues(cap, current int) libacp.SessionConfigValues {
+	values := []libacp.SessionConfigValue{{Value: "0", Name: "Chain default", Description: "Use the chain's token limit (or unlimited)"}}
+	seen := map[int]struct{}{0: {}}
+	add := func(n int, name, desc string) {
+		if n <= 0 {
+			return
+		}
+		if _, ok := seen[n]; ok {
+			return
+		}
+		seen[n] = struct{}{}
+		values = append(values, libacp.SessionConfigValue{Value: strconv.Itoa(n), Name: name, Description: desc})
+	}
+	for _, n := range []int{4096, 8192, 16384, 32768, 65536, 131072, 262144} {
+		if cap > 0 && n >= cap {
+			break
+		}
+		add(n, formatTokenCount(n), "")
+	}
+	if cap > 0 {
+		add(cap, formatTokenCount(cap)+" (model max)", "The model's reported context length")
+	}
+	add(current, formatTokenCount(current)+" (current)", "Session's current custom budget")
+	return libacp.NewSessionConfigValues(values)
+}
+
+func formatTokenCount(n int) string {
+	if n >= 1024 && n%1024 == 0 {
+		return strconv.Itoa(n/1024) + "k tokens"
+	}
+	return strconv.Itoa(n) + " tokens"
 }
 
 // modelContextCap returns the hard cap for the session's current model (0 if unknown/unreported).
@@ -324,12 +363,12 @@ func (t *Transport) SetSessionConfigOption(ctx context.Context, req libacp.SetSe
 		return libacp.SetSessionConfigOptionResponse{}, err
 	}
 
-	if err := t.setSessionConfigOption(ctx, sess, req.ConfigID, req.Value); err != nil {
+	if err := t.setSessionConfigOption(ctx, sess, req.ConfigID, req.Value.AsString()); err != nil {
 		reportErr(err)
 		return libacp.SetSessionConfigOptionResponse{}, err
 	}
 
-	reportChange(req.ConfigID, req.Value)
+	reportChange(req.ConfigID, req.Value.AsString())
 	return libacp.SetSessionConfigOptionResponse{
 		ConfigOptions: t.sessionConfigOptions(ctx, sess),
 	}, nil

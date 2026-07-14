@@ -93,6 +93,47 @@ describe('buildConsoleTurns', () => {
     expect(byContent).toHaveLength(1);
   });
 
+  it('keeps the optimistic turn live when an old unstamped message has identical text', () => {
+    // Regression: re-running a command matched the earlier persisted copy by
+    // bare content suffix and suppressed the fresh optimistic turn entirely.
+    const optimistic = {
+      requestId: 'req-new',
+      content: '/chain default-chain.json',
+      attachments: [],
+      sentAt: '2026-07-13T12:00:00Z',
+    };
+    const turns = buildConsoleTurns(
+      [
+        msg({ role: 'user', content: '/chain default-chain.json', sentAt: '2026-07-13T09:00:00Z' }),
+        msg({ role: 'assistant', content: 'ok', sentAt: '2026-07-13T09:00:01Z' }),
+      ],
+      optimistic,
+      'req-new',
+    );
+    expect(turns).toHaveLength(2);
+    expect(turns[1].requestId).toBe('req-new');
+    expect(turns[1].command?.content).toBe('/chain default-chain.json');
+    expect(turns[1].live).toBe(true);
+  });
+
+  it('keeps the optimistic turn when an identical command is stamped with another requestId', () => {
+    // A recent-but-provably-different run (same text, different provenance)
+    // must not swallow the fresh turn either.
+    const optimistic = {
+      requestId: 'req-new',
+      content: 'run it again',
+      attachments: [],
+      sentAt: '2026-07-13T12:00:30Z',
+    };
+    const turns = buildConsoleTurns(
+      [msg({ role: 'user', content: 'run it again', requestId: 'req-old', sentAt: '2026-07-13T12:00:00Z' })],
+      optimistic,
+      'req-new',
+    );
+    expect(turns).toHaveLength(2);
+    expect(turns[1].live).toBe(true);
+  });
+
   it('treats failure annotations as the result when the run failed', () => {
     const turns = buildConsoleTurns([
       msg({ role: 'user', content: 'break' }),

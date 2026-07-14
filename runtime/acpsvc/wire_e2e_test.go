@@ -1,0 +1,334 @@
+package acpsvc
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"path/filepath"
+	"testing"
+	"time"
+
+	libacp "github.com/contenox/runtime/libacp"
+	libdb "github.com/contenox/runtime/libdbexec"
+	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func taskEventForTool(toolName, taskID string) taskengine.TaskEvent {
+	return taskengine.TaskEvent{ToolName: toolName, TaskID: taskID}
+}
+
+// wirePipe adapts one end of an io.Pipe pair to io.ReadWriteCloser.
+type wirePipe struct {
+	r *io.PipeReader
+	w *io.PipeWriter
+}
+
+func (p *wirePipe) Read(b []byte) (int, error)  { return p.r.Read(b) }
+func (p *wirePipe) Write(b []byte) (int, error) { return p.w.Write(b) }
+func (p *wirePipe) Close() error {
+	_ = p.r.Close()
+	return p.w.Close()
+}
+
+type wireClient struct {
+	t    *testing.T
+	rw   io.ReadWriteCloser
+	buf  []byte
+	next int64
+}
+
+func (c *wireClient) call(method string, params any) (libacp.Response, []libacp.Notification) {
+	c.t.Helper()
+	c.next++
+	raw, err := json.Marshal(params)
+	require.NoError(c.t, err)
+	req := libacp.NewRequest(libacp.NewRequestIDNumber(c.next), method, raw)
+	line, err := json.Marshal(req)
+	require.NoError(c.t, err)
+	_, err = c.rw.Write(append(line, '\n'))
+	require.NoError(c.t, err)
+
+	// Collect notifications until the response for this id arrives; they are
+	// returned so callers can assert on ordering (everything before the
+	// response was written before it).
+	var notes []libacp.Notification
+	for {
+		in := c.read()
+		switch in.Kind {
+		case libacp.IncomingKindNotification:
+			notes = append(notes, in.Notification)
+		case libacp.IncomingKindResponse:
+			require.Equal(c.t, libacp.NewRequestIDNumber(c.next), in.Response.ID)
+			return in.Response, notes
+		default:
+			c.t.Fatalf("unexpected incoming kind %d", in.Kind)
+		}
+	}
+}
+
+// drainNotifications reads notifications already flushed after a response
+// (AfterResponse ordering) until `want` have been seen or the deadline hits.
+func (c *wireClient) drainNotifications(want int) []libacp.Notification {
+	c.t.Helper()
+	var notes []libacp.Notification
+	deadline := time.After(3 * time.Second)
+	done := make(chan libacp.Incoming, want)
+	go func() {
+		for i := 0; i < want; i++ {
+			done <- c.read()
+		}
+	}()
+	for len(notes) < want {
+		select {
+		case in := <-done:
+			require.Equal(c.t, libacp.IncomingKindNotification, in.Kind)
+			notes = append(notes, in.Notification)
+		case <-deadline:
+			c.t.Fatalf("timed out waiting for %d notifications (got %d)", want, len(notes))
+		}
+	}
+	return notes
+}
+
+func (c *wireClient) read() libacp.Incoming {
+	c.t.Helper()
+	tmp := make([]byte, 4096)
+	for {
+		for i, b := range c.buf {
+			if b == '\n' {
+				line := append([]byte{}, c.buf[:i]...)
+				c.buf = append([]byte{}, c.buf[i+1:]...)
+				in, err := libacp.ParseIncoming(line)
+				require.NoError(c.t, err, "wire: %s", line)
+				return in
+			}
+		}
+		n, err := c.rw.Read(tmp)
+		if n > 0 {
+			c.buf = append(c.buf, tmp[:n]...)
+		}
+		require.NoError(c.t, err)
+	}
+}
+
+// TestE2E_Wire_SessionNewListLoadRoundTrip drives the real Transport through a
+// real libacp.AgentSideConnection over NDJSON: initialize → session/new →
+// session/list → session/load. It pins the contract that broke in production:
+// every id returned by session/list must be loadable by session/load, and list
+// must report the session's cwd.
+func TestE2E_Wire_SessionNewListLoadRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	db, err := libdb.NewSQLiteDBManager(ctx, filepath.Join(t.TempDir(), "wire-e2e.db"), runtimetypes.SchemaSQLite)
+	require.NoError(t, err)
+	defer db.Close()
+
+	agentR, clientW := io.Pipe()
+	clientR, agentW := io.Pipe()
+	agentSide := &wirePipe{r: agentR, w: agentW}
+	clientSide := &wirePipe{r: clientR, w: clientW}
+
+	factory := New(Deps{
+		// A bare engine is enough for the session lifecycle (its services are
+		// nil-checked); prompting is not exercised here.
+		Engine:      &enginesvc.Engine{},
+		DB:          db,
+		WorkspaceID: "wire-test-ws",
+	})
+	conn := libacp.NewAgentSideConnection(agentSide, func(c *libacp.AgentSideConnection) libacp.Agent {
+		return factory(c)
+	})
+	runDone := make(chan error, 1)
+	go func() { runDone <- conn.Run(ctx) }()
+	defer func() {
+		_ = clientSide.Close()
+		select {
+		case <-runDone:
+		case <-time.After(2 * time.Second):
+			t.Error("connection did not shut down")
+		}
+	}()
+
+	client := &wireClient{t: t, rw: clientSide}
+
+	resp, _ := client.call(libacp.MethodInitialize, libacp.InitializeRequest{
+		ProtocolVersion: libacp.ProtocolVersion,
+		ClientInfo:      &libacp.Implementation{Name: "wiretest", Version: "0"},
+	})
+	require.Nil(t, resp.Error)
+	var initResp libacp.InitializeResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &initResp))
+	require.Equal(t, libacp.ProtocolVersion, initResp.ProtocolVersion)
+	require.NotNil(t, initResp.AgentCapabilities.SessionCapabilities.List, "session/list capability must be advertised")
+
+	const cwd = "/tmp/wire-e2e-project"
+	resp, notes := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{
+		Cwd:        cwd,
+		McpServers: []libacp.McpServer{},
+	})
+	require.Nil(t, resp.Error)
+	assert.Empty(t, notes, "no session/update may precede the session/new result (Zed drops updates for unknown sessions)")
+	var newResp libacp.NewSessionResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &newResp))
+	require.NotEmpty(t, newResp.SessionID)
+
+	// The deferred available_commands_update must follow the result.
+	after := client.drainNotifications(1)
+	require.Equal(t, libacp.MethodSessionUpdate, after[0].Method)
+	var cmdNote libacp.SessionNotification
+	require.NoError(t, json.Unmarshal(after[0].Params, &cmdNote))
+	assert.Equal(t, libacp.SessionUpdateAvailableCommands, cmdNote.Update.SessionUpdate)
+	assert.Equal(t, newResp.SessionID, cmdNote.SessionID)
+
+	// session/list must return the id session/load resolves — the name, not
+	// the internal UUID — and the persisted cwd.
+	resp, _ = client.call(libacp.MethodSessionList, libacp.ListSessionsRequest{})
+	require.Nil(t, resp.Error)
+	var listResp libacp.ListSessionsResponse
+	require.NoError(t, json.Unmarshal(resp.Result, &listResp))
+	require.Len(t, listResp.Sessions, 1)
+	assert.Equal(t, newResp.SessionID, listResp.Sessions[0].SessionID,
+		"list must return the loadable session id (mi.name), not the internal UUID")
+	assert.Equal(t, cwd, listResp.Sessions[0].Cwd, "list must report the session's cwd")
+
+	// cwd filter: a different cwd excludes the session, the matching one keeps it.
+	resp, _ = client.call(libacp.MethodSessionList, libacp.ListSessionsRequest{Cwd: "/somewhere/else"})
+	require.Nil(t, resp.Error)
+	require.NoError(t, json.Unmarshal(resp.Result, &listResp))
+	assert.Empty(t, listResp.Sessions)
+
+	// The round trip: load what list returned.
+	resp, notes = client.call(libacp.MethodSessionLoad, libacp.LoadSessionRequest{
+		SessionID:  newResp.SessionID,
+		Cwd:        cwd,
+		McpServers: []libacp.McpServer{},
+	})
+	require.Nil(t, resp.Error, "session/load must resolve every id session/list returned")
+	for _, n := range notes {
+		assert.Equal(t, libacp.MethodSessionUpdate, n.Method, "history replay precedes the load result")
+	}
+	client.drainNotifications(1) // deferred available_commands_update after load
+}
+
+// TestUnit_Initialize_AdvertisesEnvVarAuth_InSetupOnlyMode pins the env-based
+// setup route: with no engine and an EnvSetup spec, initialize must offer the
+// env_var auth method with its variable contract.
+func TestUnit_Initialize_AdvertisesEnvVarAuth_InSetupOnlyMode(t *testing.T) {
+	tr := &Transport{
+		deps: Deps{EnvSetup: &EnvSetupSpec{
+			Vars: []libacp.AuthEnvVar{{Name: "CONTENOX_DEFAULT_PROVIDER"}},
+		}},
+		sessions:        make(map[libacp.SessionID]*sessionEntry),
+		contenoxToACPID: make(map[string]libacp.SessionID),
+	}
+	resp, err := tr.Initialize(context.Background(), libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.NoError(t, err)
+
+	var envMethod *libacp.AuthMethod
+	for i := range resp.AuthMethods {
+		if resp.AuthMethods[i].Type == libacp.AuthMethodTypeEnvVar {
+			envMethod = &resp.AuthMethods[i]
+		}
+	}
+	require.NotNil(t, envMethod, "setup-only mode must advertise the env_var auth method")
+	assert.Equal(t, "env", envMethod.ID)
+	require.Len(t, envMethod.Vars, 1)
+	assert.Equal(t, "CONTENOX_DEFAULT_PROVIDER", envMethod.Vars[0].Name)
+}
+
+// TestUnit_Initialize_AdvertisesBrowserSetup pins the browser setup route:
+// terminal-auth-capable clients get BOTH the terminal wizard and the Beam
+// browser variant (`acp --setup-web`), and authenticate accepts either id.
+func TestUnit_Initialize_AdvertisesBrowserSetup(t *testing.T) {
+	tr := transportWithMeta(`{"terminal-auth":true}`)
+	resp, err := tr.Initialize(context.Background(), libacp.InitializeRequest{
+		ProtocolVersion:    libacp.ProtocolVersion,
+		ClientCapabilities: libacp.ClientCapabilities{Meta: tr.clientCaps.Meta},
+	})
+	require.NoError(t, err)
+
+	byID := map[string]libacp.AuthMethod{}
+	for _, m := range resp.AuthMethods {
+		byID[m.ID] = m
+	}
+	browser, ok := byID["browser"]
+	require.True(t, ok, "browser setup method must be advertised alongside the terminal wizard")
+	assert.Equal(t, libacp.AuthMethodTypeTerminal, browser.Type)
+	assert.Contains(t, browser.Args, "--setup-web")
+
+	_, err = tr.Authenticate(context.Background(), libacp.AuthenticateRequest{MethodID: "browser"})
+	require.NoError(t, err, "authenticate must accept the advertised browser method")
+}
+
+func TestUnit_Authenticate_EnvMethod(t *testing.T) {
+	completed := 0
+	tr := &Transport{
+		deps: Deps{EnvSetup: &EnvSetupSpec{
+			Complete: func(context.Context) error { completed++; return nil },
+		}},
+	}
+
+	_, err := tr.Authenticate(context.Background(), libacp.AuthenticateRequest{MethodID: "env"})
+	require.NoError(t, err)
+	assert.Equal(t, 1, completed)
+
+	// Failure surfaces as auth_required with the reason, so the client can
+	// show what is missing.
+	tr.deps.EnvSetup.Complete = func(context.Context) error {
+		return assert.AnError
+	}
+	_, err = tr.Authenticate(context.Background(), libacp.AuthenticateRequest{MethodID: "env"})
+	require.Error(t, err)
+	var e *libacp.Error
+	require.ErrorAs(t, err, &e)
+	assert.Equal(t, libacp.ErrAuthRequired, e.Code)
+
+	// Once configured (engine present) the method is no longer advertised and
+	// must be rejected.
+	tr.deps.Engine = &enginesvc.Engine{}
+	_, err = tr.Authenticate(context.Background(), libacp.AuthenticateRequest{MethodID: "env"})
+	require.Error(t, err)
+	require.ErrorAs(t, err, &e)
+	assert.Equal(t, libacp.ErrInvalidParams, e.Code)
+}
+
+// TestUnit_ToolCallWireID_DisambiguatesRepeatedInvocations pins the fix for
+// tool-call card collisions: without an ApprovalID, repeated runs of one tool
+// must get distinct wire ids, while a pending/result pair of one invocation
+// shares its id.
+func TestUnit_ToolCallWireID_DisambiguatesRepeatedInvocations(t *testing.T) {
+	tr := &Transport{}
+	sid := libacp.SessionID("s1")
+	ev := taskEventForTool("web_search", "task-1")
+
+	// Invocation 1: pending opens, result closes with the same id.
+	first := tr.toolCallWireID(sid, ev, false)
+	assert.Equal(t, "web_search", first, "first invocation keeps the bare name (wire-compatible with prior behavior)")
+	assert.Equal(t, first, tr.toolCallWireID(sid, ev, true), "result must correlate with its pending card")
+
+	// Invocation 2 of the same tool: a distinct card.
+	second := tr.toolCallWireID(sid, ev, false)
+	assert.NotEqual(t, first, second, "repeated invocations must not merge into one card")
+	assert.Equal(t, second, tr.toolCallWireID(sid, ev, true))
+
+	// A result without any pending (declarative tools path) is its own invocation.
+	third := tr.toolCallWireID(sid, ev, true)
+	assert.NotEqual(t, second, third)
+
+	// ApprovalID short-circuits everything.
+	withApproval := taskEventForTool("web_search", "task-1")
+	withApproval.ApprovalID = "appr-42"
+	assert.Equal(t, "appr-42", tr.toolCallWireID(sid, withApproval, false))
+
+	// Session isolation: another session starts fresh.
+	assert.Equal(t, "web_search", tr.toolCallWireID(libacp.SessionID("s2"), ev, false))
+
+	// clearToolCallState resets the counters for the session.
+	tr.clearToolCallState(sid)
+	assert.Equal(t, "web_search", tr.toolCallWireID(sid, ev, false))
+}

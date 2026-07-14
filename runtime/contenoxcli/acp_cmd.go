@@ -2,6 +2,7 @@ package contenoxcli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -63,6 +64,7 @@ func init() {
 	for _, c := range []*cobra.Command{acpCmd, acpxCmd} {
 		c.Flags().Bool("auto", false, "Non-interactive mode: disable HITL permission prompts (gated tools run unattended)")
 		c.Flags().Bool("setup", false, "Run interactive setup wizard to configure provider and model, then exit.")
+		c.Flags().Bool("setup-web", false, "Serve the Beam setup wizard in the browser, exit once configured.")
 		c.Flags().String("workspace-id", "", "Workspace ID for new ACP sessions (default: the stable workspace from ~/.contenox/workspace.id, same as the CLI). Existing sessions are always located by their session ID regardless of workspace.")
 	}
 	acpCmd.Flags().Bool("experimental-acp", false, "Accepted for compatibility with ACP clients that hardcode this launch flag (e.g. AionUi); no effect.")
@@ -110,6 +112,10 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	}
 	ctx, stop := signal.NotifyContext(parentCtx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if setupWeb, _ := cmd.Flags().GetBool("setup-web"); setupWeb {
+		return runSetupWeb(ctx, cmd.OutOrStdout(), true)
+	}
 	// Deferred before the engine is built so it runs after engine teardown
 	// (LIFO): drain registered model-backend shutdown hooks (e.g. native
 	// in-process inference sessions) deterministically on exit. No-op when no
@@ -185,16 +191,32 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 
 	var transport *acpsvc.Transport
 
-	defaultModel := acpsvc.ReadConfigValue(ctx, db, "default-model")
-	defaultProvider := acpsvc.ReadConfigValue(ctx, db, "default-provider")
-	defaultAltModel := acpsvc.ReadConfigValue(ctx, db, "default-alt-model")
-	defaultAltProvider := acpsvc.ReadConfigValue(ctx, db, "default-alt-provider")
-	defaultMaxTokens, err := normalizeMaxTokensConfig(acpsvc.ReadConfigValue(ctx, db, "default-max-tokens"))
+	// Environment-based setup: when nothing is configured yet but the launch
+	// environment names a provider/model (an editor config or the ACP env_var
+	// auth flow relaunching us), persist that configuration exactly as the
+	// interactive wizard would. A failure is not fatal — we fall through to
+	// setup-only mode, whose auth methods explain what is missing.
+	if acpsvc.ReadConfigValue(ctx, db, "default-model") == "" &&
+		(os.Getenv(envDefaultProvider) != "" || os.Getenv(envDefaultModel) != "") {
+		if err := completeEnvSetup(ctx, db); err != nil {
+			fmt.Fprintf(os.Stderr, "contenox acp: environment-based setup incomplete: %v\n", err)
+		} else {
+			fmt.Fprintln(os.Stderr, "contenox acp: configured provider/model from environment.")
+		}
+	}
+
+	// Config reads are environment-first: a CONTENOX_DEFAULT_* variable
+	// overrides the stored value for this process without persisting.
+	defaultModel := configValueWithEnv(ctx, db, "default-model", envDefaultModel)
+	defaultProvider := configValueWithEnv(ctx, db, "default-provider", envDefaultProvider)
+	defaultAltModel := configValueWithEnv(ctx, db, "default-alt-model", envDefaultAltModel)
+	defaultAltProvider := configValueWithEnv(ctx, db, "default-alt-provider", envDefaultAltProvider)
+	defaultMaxTokens, err := normalizeMaxTokensConfig(configValueWithEnv(ctx, db, "default-max-tokens", envDefaultMaxTokens))
 	if err != nil {
 		return err
 	}
 	defaultThink := reasoning.Default
-	if configuredThink := acpsvc.ReadConfigValue(ctx, db, "default-think"); configuredThink != "" {
+	if configuredThink := configValueWithEnv(ctx, db, "default-think", envDefaultThink); configuredThink != "" {
 		level, err := reasoning.Normalize(configuredThink)
 		if err != nil {
 			return fmt.Errorf("config default-think: %w", err)
@@ -288,6 +310,12 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 		KnownPolicies:         embeddedPolicyNames(),
 		HITLDefaultPolicyName: profile.hitlPolicy,
 		UpdateBanner:          updateBanner,
+		EnvSetup: &acpsvc.EnvSetupSpec{
+			Vars: acpEnvSetupVars(),
+			Complete: func(cctx context.Context) error {
+				return completeEnvSetup(cctx, db)
+			},
+		},
 	})
 
 	conn := libacp.NewAgentSideConnection(acpStdio{}, func(c *libacp.AgentSideConnection) libacp.Agent {
@@ -300,7 +328,7 @@ func runACPProfile(cmd *cobra.Command, profile acpProfile) error {
 	if transport != nil {
 		_ = transport.Close(context.Background())
 	}
-	if runErr != nil && runErr != io.EOF && runErr != context.Canceled {
+	if runErr != nil && !errors.Is(runErr, io.EOF) && !errors.Is(runErr, context.Canceled) {
 		return fmt.Errorf("acp run: %w", runErr)
 	}
 	return nil

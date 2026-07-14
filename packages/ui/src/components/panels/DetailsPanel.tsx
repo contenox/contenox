@@ -19,6 +19,12 @@ export interface DetailsPanelProps {
   onEditToggle?: (editing: boolean) => void;
   onFieldUpdate?: (updates: Record<string, unknown>) => void;
   className?: string;
+  viewModeLabel?: string;
+  editLabel?: string;
+  deleteLabel?: string;
+  closeLabel?: string;
+  cancelLabel?: string;
+  saveLabel?: string;
 }
 
 export const DetailsPanel: React.FC<DetailsPanelProps> = ({
@@ -32,6 +38,12 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
   onEditToggle,
   onFieldUpdate,
   className,
+  viewModeLabel = "View Mode",
+  editLabel = "Edit",
+  deleteLabel = "Delete",
+  closeLabel = "Close",
+  cancelLabel = "Cancel",
+  saveLabel = "Save Changes",
 }) => {
   const [editedData, setEditedData] = useState<Record<string, unknown>>({});
   const [isEditMode, setIsEditMode] = useState(isEditing);
@@ -116,7 +128,7 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
           <h4 className="text-lg font-semibold text-text dark:text-dark-text">
             {title}
           </h4>
-          {!isEditMode && <Badge className="mt-1">View Mode</Badge>}
+          {!isEditMode && <Badge className="mt-1">{viewModeLabel}</Badge>}
         </div>
         <div className="flex gap-1">
           {!isEditMode && onSave && (
@@ -128,15 +140,25 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
                 onEditToggle?.(true);
               }}
             >
-              Edit
+              {editLabel}
             </Button>
           )}
           {onDelete && (
-            <Button size="sm" variant="ghost" onClick={onDelete}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onDelete}
+              aria-label={deleteLabel}
+            >
               <Trash2 className="h-4 w-4 text-error-500 dark:text-dark-error-500" />
             </Button>
           )}
-          <Button size="icon" variant="ghost" onClick={onClose}>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onClose}
+            aria-label={closeLabel}
+          >
             <X className="h-4 w-4 text-text dark:text-dark-text" />
           </Button>
         </div>
@@ -163,11 +185,11 @@ export const DetailsPanel: React.FC<DetailsPanelProps> = ({
               onClick={handleCancel}
               className="flex-1"
             >
-              Cancel
+              {cancelLabel}
             </Button>
             <Button variant="primary" onClick={handleSave} className="flex-1">
               <Save className="mr-2 h-4 w-4" />
-              Save Changes
+              {saveLabel}
             </Button>
           </div>
         </div>

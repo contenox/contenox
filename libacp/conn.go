@@ -19,18 +19,27 @@ var (
 // one per request and flushes it after the result, so notifications a handler
 // emits are ordered AFTER the response.
 type afterResponseSink struct {
-	mu  sync.Mutex
-	fns []func()
+	mu      sync.Mutex
+	flushed bool
+	fns     []func()
 }
 
 func (s *afterResponseSink) add(fn func()) {
 	s.mu.Lock()
+	if s.flushed {
+		// The handler's result is already on the wire; run immediately instead
+		// of appending to a sink that will never be flushed again.
+		s.mu.Unlock()
+		fn()
+		return
+	}
 	s.fns = append(s.fns, fn)
 	s.mu.Unlock()
 }
 
 func (s *afterResponseSink) run() {
 	s.mu.Lock()
+	s.flushed = true
 	fns := s.fns
 	s.fns = nil
 	s.mu.Unlock()
@@ -71,11 +80,22 @@ type AgentSideConnection struct {
 	nextID atomic.Int64
 
 	cancelMu       sync.Mutex
-	sessionCancels map[SessionID]context.CancelFunc
+	sessionCancels map[SessionID]*promptCancel
 
 	closeOnce sync.Once
 	closed    chan struct{}
 	closeErr  error
+}
+
+// promptCancel tracks the cancelable context of one in-flight session/prompt.
+// Entries are compared by pointer identity so a prompt's cleanup can never
+// remove a successor prompt's registration (context.CancelFunc values are not
+// comparable — printing them with %p yields the shared code pointer, so any
+// func-value comparison degenerates to "always equal").
+type promptCancel struct {
+	sessionID SessionID
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func NewAgentSideConnection(rw io.ReadWriteCloser, factory AgentFactory) *AgentSideConnection {
@@ -84,7 +104,7 @@ func NewAgentSideConnection(rw io.ReadWriteCloser, factory AgentFactory) *AgentS
 		writer:         newNDJSONWriter(rw),
 		closer:         rw,
 		pending:        make(map[int64]chan *Response),
-		sessionCancels: make(map[SessionID]context.CancelFunc),
+		sessionCancels: make(map[SessionID]*promptCancel),
 		closed:         make(chan struct{}),
 	}
 	c.agent = factory(c)
@@ -95,13 +115,25 @@ func (c *AgentSideConnection) Run(ctx context.Context) error {
 	defer c.shutdown(nil)
 
 	go func() {
-		<-ctx.Done()
-		c.shutdown(ctx.Err())
+		select {
+		case <-ctx.Done():
+			c.shutdown(ctx.Err())
+		case <-c.closed:
+			// Connection ended on its own (EOF, transport error); exit instead
+			// of leaking until the caller's ctx dies.
+		}
 	}()
 
 	for {
 		line, err := c.reader.Next()
 		if err != nil {
+			// A canceled ctx closes the transport out from under the reader, so
+			// the reader's error is a side effect ("file already closed"), not
+			// the cause. Report the cancellation itself.
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				c.shutdown(ctxErr)
+				return ctxErr
+			}
 			if errors.Is(err, io.EOF) {
 				c.shutdown(nil)
 				return nil
@@ -133,8 +165,8 @@ func (c *AgentSideConnection) shutdown(err error) {
 		c.pendingMu.Unlock()
 
 		c.cancelMu.Lock()
-		for sid, cancel := range c.sessionCancels {
-			cancel()
+		for sid, pc := range c.sessionCancels {
+			pc.cancel()
 			delete(c.sessionCancels, sid)
 		}
 		c.cancelMu.Unlock()
@@ -146,23 +178,107 @@ func (c *AgentSideConnection) shutdown(err error) {
 func (c *AgentSideConnection) dispatch(ctx context.Context, line []byte) {
 	msg, err := ParseIncoming(line)
 	if err != nil {
+		c.respondToMalformed(line, err)
 		return
 	}
 	switch msg.Kind {
 	case IncomingKindResponse:
 		c.deliverResponse(msg.Response)
 	case IncomingKindRequest:
-		go c.handleRequest(ctx, msg.Request)
+		var pc *promptCancel
+		if msg.Request.Method == MethodSessionPrompt {
+			pc = c.registerPromptCancel(ctx, msg.Request.Params)
+		}
+		go c.handleRequest(ctx, msg.Request, pc)
 	case IncomingKindNotification:
+		// session/cancel is applied inline on the read loop so wire order is
+		// preserved: a cancel that arrives after its prompt request always
+		// observes the prompt's registration (both happen on this goroutine),
+		// instead of racing it across handler goroutines.
+		if msg.Notification.Method == MethodSessionCancel {
+			c.applySessionCancel(msg.Notification.Params)
+		}
 		go c.handleNotification(ctx, msg.Notification)
 	}
 }
 
-func (c *AgentSideConnection) handleRequest(ctx context.Context, req Request) {
+// respondToMalformed answers input the dispatcher could not parse. Silently
+// dropping it would leave a requesting peer waiting forever on a response that
+// never comes; JSON-RPC 2.0 prescribes -32700 for invalid JSON and -32600 for
+// structurally invalid messages (id null when it cannot be salvaged).
+func (c *AgentSideConnection) respondToMalformed(line []byte, parseErr error) {
+	if !json.Valid(line) {
+		_ = c.writer.Write(NewErrorResponse(NewRequestIDNull(), ParseError(parseErr.Error())))
+		return
+	}
+	id := NewRequestIDNull()
+	var probe struct {
+		ID *json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(line, &probe); err == nil && probe.ID != nil {
+		var rid RequestID
+		if rid.UnmarshalJSON(*probe.ID) == nil {
+			id = rid
+		}
+	}
+	_ = c.writer.Write(NewErrorResponse(id, InvalidRequest(parseErr.Error())))
+}
+
+// registerPromptCancel creates and registers the cancelable context for a
+// session/prompt request at dispatch time — on the read loop, before the
+// handler goroutine is spawned — so a later session/cancel is guaranteed to
+// observe it. Returns nil when params carry no usable sessionId; the handler
+// will reject those with InvalidParams anyway.
+func (c *AgentSideConnection) registerPromptCancel(ctx context.Context, params json.RawMessage) *promptCancel {
+	var probe struct {
+		SessionID SessionID `json:"sessionId"`
+	}
+	if len(params) == 0 || json.Unmarshal(params, &probe) != nil || probe.SessionID == "" {
+		return nil
+	}
+	promptCtx, cancel := context.WithCancel(ctx)
+	pc := &promptCancel{sessionID: probe.SessionID, ctx: promptCtx, cancel: cancel}
+	c.cancelMu.Lock()
+	if prev, ok := c.sessionCancels[probe.SessionID]; ok {
+		// Spec-discouraged but possible: a second prompt on a busy session
+		// supersedes the first turn.
+		prev.cancel()
+	}
+	c.sessionCancels[probe.SessionID] = pc
+	c.cancelMu.Unlock()
+	return pc
+}
+
+// unregisterPromptCancel removes pc's registration if — and only if — it is
+// still the current one for its session (pointer identity), then cancels its
+// context to release resources.
+func (c *AgentSideConnection) unregisterPromptCancel(pc *promptCancel) {
+	c.cancelMu.Lock()
+	if existing, ok := c.sessionCancels[pc.sessionID]; ok && existing == pc {
+		delete(c.sessionCancels, pc.sessionID)
+	}
+	c.cancelMu.Unlock()
+	pc.cancel()
+}
+
+func (c *AgentSideConnection) applySessionCancel(params json.RawMessage) {
+	var p CancelNotification
+	if len(params) == 0 || json.Unmarshal(params, &p) != nil {
+		return
+	}
+	c.cancelMu.Lock()
+	if pc, ok := c.sessionCancels[p.SessionID]; ok {
+		pc.cancel()
+		delete(c.sessionCancels, p.SessionID)
+	}
+	c.cancelMu.Unlock()
+}
+
+func (c *AgentSideConnection) handleRequest(ctx context.Context, req Request, pc *promptCancel) {
 	sink := &afterResponseSink{}
 	ctx = context.WithValue(ctx, afterResponseKey{}, sink)
 
-	result, rpcErr := c.callMethod(ctx, req)
+	result, rpcErr := c.safeCallMethod(ctx, req, pc)
 	if rpcErr != nil {
 		_ = c.writer.Write(NewErrorResponse(req.ID, rpcErr))
 		return
@@ -179,28 +295,43 @@ func (c *AgentSideConnection) handleRequest(ctx context.Context, req Request) {
 	sink.run()
 }
 
+// safeCallMethod converts a panicking Agent handler into an InternalError
+// response instead of tearing down the whole process (and with it every other
+// in-flight session on this connection).
+func (c *AgentSideConnection) safeCallMethod(ctx context.Context, req Request, pc *promptCancel) (result any, rpcErr *Error) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = nil
+			rpcErr = InternalError(fmt.Sprintf("panic in %s handler: %v", req.Method, r))
+		}
+	}()
+	return c.callMethod(ctx, req, pc)
+}
+
 func (c *AgentSideConnection) handleNotification(ctx context.Context, n Notification) {
 	switch n.Method {
 	case MethodSessionCancel:
+		// The cancel itself was already applied inline by dispatch; this only
+		// informs the agent.
 		var p CancelNotification
 		if err := json.Unmarshal(n.Params, &p); err != nil {
 			return
 		}
-		c.cancelMu.Lock()
-		if cancel, ok := c.sessionCancels[p.SessionID]; ok {
-			cancel()
-			delete(c.sessionCancels, p.SessionID)
-		}
-		c.cancelMu.Unlock()
 		_ = c.agent.Cancel(ctx, p)
 	}
 }
 
-func (c *AgentSideConnection) callMethod(ctx context.Context, req Request) (any, *Error) {
+func (c *AgentSideConnection) callMethod(ctx context.Context, req Request, pc *promptCancel) (any, *Error) {
+	params := req.Params
+	if len(params) == 0 {
+		// JSON-RPC allows omitting params entirely; treat that as {} so methods
+		// whose params are all optional (session/list) don't fail to unmarshal.
+		params = []byte("{}")
+	}
 	switch req.Method {
 	case MethodInitialize:
 		var p InitializeRequest
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, InvalidParams(err.Error())
 		}
 		resp, err := c.agent.Initialize(ctx, p)
@@ -211,7 +342,7 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request) (any,
 
 	case MethodAuthenticate:
 		var p AuthenticateRequest
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, InvalidParams(err.Error())
 		}
 		resp, err := c.agent.Authenticate(ctx, p)
@@ -222,7 +353,7 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request) (any,
 
 	case MethodSessionNew:
 		var p NewSessionRequest
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, InvalidParams(err.Error())
 		}
 		resp, err := c.agent.NewSession(ctx, p)
@@ -233,7 +364,7 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request) (any,
 
 	case MethodSessionLoad:
 		var p LoadSessionRequest
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, InvalidParams(err.Error())
 		}
 		resp, err := c.agent.LoadSession(ctx, p)
@@ -244,7 +375,7 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request) (any,
 
 	case MethodSessionList:
 		var p ListSessionsRequest
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, InvalidParams(err.Error())
 		}
 		resp, err := c.agent.ListSessions(ctx, p)
@@ -255,7 +386,7 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request) (any,
 
 	case MethodSessionSetConfigOption:
 		var p SetSessionConfigOptionRequest
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		if err := json.Unmarshal(params, &p); err != nil {
 			return nil, InvalidParams(err.Error())
 		}
 		resp, err := c.agent.SetSessionConfigOption(ctx, p)
@@ -266,27 +397,29 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request) (any,
 
 	case MethodSessionPrompt:
 		var p PromptRequest
-		if err := json.Unmarshal(req.Params, &p); err != nil {
+		if err := json.Unmarshal(params, &p); err != nil {
+			if pc != nil {
+				c.unregisterPromptCancel(pc)
+			}
 			return nil, InvalidParams(err.Error())
 		}
-		promptCtx, cancel := context.WithCancel(ctx)
-		c.cancelMu.Lock()
-		if prev, ok := c.sessionCancels[p.SessionID]; ok {
-			prev()
+		// The cancelable context was registered by dispatch (read-loop order);
+		// pc is nil only when the params were unusable, which the unmarshal
+		// above already rejects for the sessionId-less case.
+		promptCtx := ctx
+		if pc != nil {
+			promptCtx = pc.ctx
+			defer c.unregisterPromptCancel(pc)
 		}
-		c.sessionCancels[p.SessionID] = cancel
-		c.cancelMu.Unlock()
 
 		resp, err := c.agent.Prompt(promptCtx, p)
-
-		c.cancelMu.Lock()
-		if existing, ok := c.sessionCancels[p.SessionID]; ok && fmt.Sprintf("%p", existing) == fmt.Sprintf("%p", cancel) {
-			delete(c.sessionCancels, p.SessionID)
-		}
-		c.cancelMu.Unlock()
-		cancel()
-
 		if err != nil {
+			// Spec: after session/cancel the prompt MUST resolve with the
+			// cancelled stop reason, never a JSON-RPC error. Agents that return
+			// their context's error are translated here as a safety net.
+			if promptCtx.Err() == context.Canceled && errors.Is(err, context.Canceled) {
+				return PromptResponse{StopReason: StopReasonCancelled}, nil
+			}
 			return nil, AsError(err)
 		}
 		return resp, nil

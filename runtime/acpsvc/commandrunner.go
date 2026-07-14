@@ -85,22 +85,33 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 
 	exitResp, waitErr := t.conn.WaitForTerminalExit(ctx, libacp.WaitForTerminalExitRequest{SessionID: req.SessionID, TerminalID: termID})
 
+	// Distinguish why the wait ended early: a deadline is a timeout, a plain
+	// cancellation is the user (session/cancel) stopping the turn. Reporting
+	// user cancellation as "timeout exceeded" gives the model and the user a
+	// wrong causal story about what happened to the command.
 	timedOut := false
+	cancelled := false
 	if waitErr != nil {
-		if ctx.Err() != nil {
+		switch {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
 			timedOut = true
-			kctx, kcancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer kcancel()
-			_, _ = t.conn.KillTerminal(kctx, libacp.KillTerminalRequest{SessionID: req.SessionID, TerminalID: termID})
-		} else {
+		case ctx.Err() != nil:
+			cancelled = true
+		default:
 			return -1, fmt.Errorf("acpsvc terminal: wait: %w", waitErr)
 		}
+		kctx, kcancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer kcancel()
+		_, _ = t.conn.KillTerminal(kctx, libacp.KillTerminalRequest{SessionID: req.SessionID, TerminalID: termID})
 	}
 
 	octx, ocancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer ocancel()
 	outputResp, oerr := t.conn.TerminalOutput(octx, libacp.TerminalOutputRequest{SessionID: req.SessionID, TerminalID: termID})
 	if oerr != nil {
+		if cancelled {
+			return -1, fmt.Errorf("acpsvc terminal: command cancelled: %w", context.Canceled)
+		}
 		if timedOut {
 			return -1, fmt.Errorf("acpsvc terminal: command timed out")
 		}
@@ -121,6 +132,10 @@ func (a *acpCommandRunner) Run(ctx context.Context, spec localtools.CommandSpec,
 		_, _ = io.WriteString(stdout, output)
 	}
 
+	if cancelled {
+		_, _ = io.WriteString(stdout, "\n[command killed: cancelled by user]")
+		return -1, fmt.Errorf("acpsvc terminal: command cancelled: %w", context.Canceled)
+	}
 	if timedOut {
 		_, _ = io.WriteString(stdout, "\n[command killed: timeout exceeded]")
 		return -1, fmt.Errorf("acpsvc terminal: command timed out")

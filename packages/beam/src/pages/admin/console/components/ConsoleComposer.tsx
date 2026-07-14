@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { TerminalPromptInput } from '@contenox/ui';
-import {
-  parseSlashInvocation,
-  useSlashCommandRegistry,
-  useSlashCommands,
-  type SlashCommandContext,
-} from '../../../../lib/slashCommands';
+import { useSlashCommandRegistry, useSlashCommands } from '../../../../lib/slashCommands';
 import { useArtifactRegistry, type ArtifactSource } from '../../../../lib/artifacts';
 import type { ChatContextArtifact } from '../../../../lib/types';
+import { runComposerInvocation } from '../composerInvocation';
 import { TERM } from '../term';
 
 type ConsoleComposerProps = {
@@ -99,39 +95,23 @@ export function ConsoleComposer({ value, onChange, onSend, disabled, hint }: Con
     armedUnregisters.current.set(sourceId, artifacts.register(source));
   };
 
-  const runInvocation = async () => {
-    const inv = parseSlashInvocation(value);
-    if (!inv) {
-      onSend();
-      return;
-    }
-    const cmd = registry.get(inv.trigger, inv.name);
-    if (!cmd) {
-      setNotice({ level: 'error', message: `unknown ${inv.trigger}${inv.name} — try /help` });
-      return;
-    }
-    const ctx: SlashCommandContext = {
-      commandName: inv.name,
-      rawArgs: inv.rawArgs,
-      armArtifact,
+  // `text` is explicit: accepting a completion must run the inserted text,
+  // not the (stale) `value` prop of the render that handled the click.
+  const runInvocation = (text: string) =>
+    runComposerInvocation(text, {
+      registry,
+      onSend,
+      onChange,
       notify: (level, message) => setNotice({ level, message }),
-    };
-    try {
-      await cmd.execute(ctx);
-    } catch (err) {
-      setNotice({ level: 'error', message: `${inv.trigger}${inv.name}: ${err instanceof Error ? err.message : String(err)}` });
-      return;
-    }
-    onChange(inv.body);
-  };
+      armArtifact,
+    });
 
   const accept = (s: Suggestion) => {
     onChange(s.insert);
     setDismissed(false);
     taRef.current?.focus();
     if (s.execute) {
-      // Run on the next tick so `value` reflects the inserted text.
-      setTimeout(() => void runInvocation(), 0);
+      void runInvocation(s.insert);
     }
   };
 
@@ -141,7 +121,7 @@ export function ConsoleComposer({ value, onChange, onSend, disabled, hint }: Con
       accept(suggestions[Math.min(selected, suggestions.length - 1)]);
       return;
     }
-    void runInvocation();
+    void runInvocation(value);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

@@ -44,6 +44,7 @@ func TestUnit_NewSession_SetupOnly_ReturnsActionableError(t *testing.T) {
 	require.Error(t, err)
 	var e *libacp.Error
 	require.ErrorAs(t, err, &e)
-	require.Equal(t, libacp.ErrInvalidParams, e.Code)
+	require.Equal(t, libacp.ErrAuthRequired, e.Code,
+		"setup-only must signal auth_required (-32000) so conformant clients offer the advertised auth methods — that IS the setup flow")
 	require.Contains(t, err.Error(), "not configured")
 }

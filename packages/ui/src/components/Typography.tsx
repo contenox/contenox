@@ -20,6 +20,8 @@ type TypographyProps = {
   children: ReactNode;
   className?: string;
   variant?: TypographyVariant;
+  /** DOM id, e.g. as an aria-labelledby target. */
+  id?: string;
 };
 
 export function H1({ children, className, variant }: TypographyProps) {
@@ -60,9 +62,10 @@ export function H2({ children, className, variant }: TypographyProps) {
   );
 }
 
-export function H3({ children, className, variant }: TypographyProps) {
+export function H3({ children, className, variant, id }: TypographyProps) {
   return (
     <h3
+      id={id}
       className={cn(
         "text-text dark:text-dark-text",
         variant === "subsectionTitle"

@@ -57,9 +57,11 @@ func (t *Transport) publishEvent(ctx context.Context, sid libacp.SessionID, payl
 			})
 		}
 	case taskengine.TaskEventToolCallPending:
-		t.sendToolCallUpdateGuarded(ctx, sid, toolCallID(ev), toolCallPendingNotification(sid, ev))
+		id := t.toolCallWireID(sid, ev, false)
+		t.sendToolCallUpdateGuarded(ctx, sid, id, toolCallPendingNotification(sid, ev, id))
 	case taskengine.TaskEventToolCall:
-		t.sendToolCallUpdateGuarded(ctx, sid, toolCallID(ev), toolCallUpdateNotification(sid, ev))
+		id := t.toolCallWireID(sid, ev, true)
+		t.sendToolCallUpdateGuarded(ctx, sid, id, toolCallUpdateNotification(sid, ev, id))
 	case taskengine.TaskEventTokenUsage:
 		used := ev.TokenUsed
 		size := ev.TokenSize
@@ -99,7 +101,7 @@ func toolCallInProgressNotification(sid libacp.SessionID, ev taskengine.TaskEven
 		SessionID: sid,
 		Update: libacp.SessionUpdate{
 			SessionUpdate: libacp.SessionUpdateToolCallUpdate,
-			ToolCallID:    toolCallID(ev),
+			ToolCallID:    fallbackToolCallID(ev),
 			Kind:          toolKindFor(ev.ToolName),
 			Status:        libacp.ToolCallStatusInProgress,
 		},
@@ -120,10 +122,10 @@ func toolCallNotification(sid libacp.SessionID, ev taskengine.TaskEvent, status 
 	return libacp.SessionNotification{SessionID: sid, Update: update}
 }
 
-func toolCallPendingNotification(sid libacp.SessionID, ev taskengine.TaskEvent) libacp.SessionNotification {
+func toolCallPendingNotification(sid libacp.SessionID, ev taskengine.TaskEvent, toolCallID string) libacp.SessionNotification {
 	update := libacp.SessionUpdate{
 		SessionUpdate: libacp.SessionUpdateToolCall,
-		ToolCallID:    toolCallID(ev),
+		ToolCallID:    toolCallID,
 		Title:         toolCallTitle(ev),
 		Kind:          toolKindFor(ev.ToolName),
 		Status:        libacp.ToolCallStatusPending,
@@ -137,7 +139,7 @@ func toolCallPendingNotification(sid libacp.SessionID, ev taskengine.TaskEvent) 
 	return libacp.SessionNotification{SessionID: sid, Update: update}
 }
 
-func toolCallUpdateNotification(sid libacp.SessionID, ev taskengine.TaskEvent) libacp.SessionNotification {
+func toolCallUpdateNotification(sid libacp.SessionID, ev taskengine.TaskEvent, toolCallID string) libacp.SessionNotification {
 	status := libacp.ToolCallStatusCompleted
 	if ev.Error != "" {
 		status = libacp.ToolCallStatusFailed
@@ -145,7 +147,7 @@ func toolCallUpdateNotification(sid libacp.SessionID, ev taskengine.TaskEvent) l
 
 	update := libacp.SessionUpdate{
 		SessionUpdate: libacp.SessionUpdateToolCallUpdate,
-		ToolCallID:    toolCallID(ev),
+		ToolCallID:    toolCallID,
 		Title:         toolCallTitle(ev),
 		Kind:          toolKindFor(ev.ToolName),
 		Status:        status,
@@ -199,7 +201,10 @@ func terminalAttachNotification(sid libacp.SessionID, toolCallID, terminalID, ti
 	}
 }
 
-func toolCallID(ev taskengine.TaskEvent) string {
+// fallbackToolCallID is the name-derived id used when the engine minted no
+// per-invocation ApprovalID. It is NOT invocation-unique on its own — see
+// Transport.toolCallWireID, which layers an invocation counter on top.
+func fallbackToolCallID(ev taskengine.TaskEvent) string {
 	if ev.ApprovalID != "" {
 		return ev.ApprovalID
 	}

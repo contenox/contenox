@@ -18,6 +18,21 @@ export interface JsonEditorProps {
   validate?: (json: object) => { isValid: boolean; error?: string };
   exampleJson?: string;
   className?: string;
+  jsonDataLabel?: string;
+  jsonLabel?: string;
+  formatButtonLabel?: string;
+  placeholder?: string;
+  validLabel?: string;
+  invalidLabel?: string;
+  cancelLabel?: string;
+  saveLabel?: string;
+  exampleTitle?: string;
+  initializeErrorText?: string;
+  emptyJsonErrorText?: string;
+  validationFailedText?: string;
+  invalidJsonErrorPrefix?: string;
+  saveErrorPrefix?: string;
+  formatErrorPrefix?: string;
 }
 
 export const JsonEditor: React.FC<JsonEditorProps> = ({
@@ -31,6 +46,21 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
   "key": "value"
 }`,
   className,
+  jsonDataLabel = "JSON Data",
+  jsonLabel = "JSON",
+  formatButtonLabel = "Format JSON",
+  placeholder = "Enter JSON here...",
+  validLabel = "✓ Valid JSON",
+  invalidLabel = "✗ Invalid JSON",
+  cancelLabel = "Cancel",
+  saveLabel = "Save",
+  exampleTitle = "Example JSON Structure",
+  initializeErrorText = "Failed to initialize JSON editor",
+  emptyJsonErrorText = "JSON cannot be empty",
+  validationFailedText = "Validation failed",
+  invalidJsonErrorPrefix = "Invalid JSON",
+  saveErrorPrefix = "Failed to save JSON",
+  formatErrorPrefix = "Failed to format JSON",
 }) => {
   const [jsonInput, setJsonInput] = useState("");
   const [error, setError] = useState<string | undefined>(undefined);
@@ -42,7 +72,7 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
       setError(undefined);
       setIsValid(true);
     } catch {
-      setError("Failed to initialize JSON editor");
+      setError(initializeErrorText);
       setIsValid(false);
     }
   }, [value]);
@@ -50,7 +80,7 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
   const validateJson = (jsonString: string): boolean => {
     try {
       if (!jsonString.trim()) {
-        setError("JSON cannot be empty");
+        setError(emptyJsonErrorText);
         return false;
       }
       const parsed = JSON.parse(jsonString);
@@ -58,7 +88,7 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
       if (validate) {
         const res = validate(parsed);
         if (!res.isValid) {
-          setError(res.error || "Validation failed");
+          setError(res.error || validationFailedText);
           return false;
         }
       }
@@ -66,7 +96,7 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
       setError(undefined);
       return true;
     } catch (err) {
-      setError(`Invalid JSON: ${(err as Error).message}`);
+      setError(`${invalidJsonErrorPrefix}: ${(err as Error).message}`);
       return false;
     }
   };
@@ -82,7 +112,7 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
       const parsedJson = JSON.parse(jsonInput);
       onSave(parsedJson);
     } catch (err) {
-      setError(`Failed to save JSON: ${(err as Error).message}`);
+      setError(`${saveErrorPrefix}: ${(err as Error).message}`);
     }
   };
 
@@ -93,7 +123,7 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
       setIsValid(true);
       setError(undefined);
     } catch (err) {
-      setError(`Failed to format JSON: ${(err as Error).message}`);
+      setError(`${formatErrorPrefix}: ${(err as Error).message}`);
       setIsValid(false);
     }
   };
@@ -119,17 +149,17 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
           )}
         </div>
         <FormField
-          label="JSON Data"
+          label={jsonDataLabel}
           error={error}
           className="flex min-h-0 flex-1 flex-col"
         >
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-text dark:text-dark-text">
-                JSON
+                {jsonLabel}
               </span>
               <Button size="sm" variant="outline" onClick={handleFormat}>
-                Format JSON
+                {formatButtonLabel}
               </Button>
             </div>
 
@@ -138,7 +168,7 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
                 value={jsonInput}
                 onChange={(e) => handleJsonChange(e.target.value)}
                 className="h-full w-full font-mono text-sm whitespace-pre overflow-auto"
-                placeholder="Enter JSON here..."
+                placeholder={placeholder}
               />
             </div>
           </div>
@@ -147,21 +177,21 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
           <div className="flex items-center gap-2">
             {isValid ? (
               <span className="text-success-500 dark:text-dark-success-500 text-sm">
-                ✓ Valid JSON
+                {validLabel}
               </span>
             ) : (
               <span className="text-error-500 dark:text-dark-error-500 text-sm">
-                ✗ Invalid JSON
+                {invalidLabel}
               </span>
             )}
           </div>
 
           <div className="flex gap-2">
             <Button variant="secondary" onClick={onCancel}>
-              Cancel
+              {cancelLabel}
             </Button>
             <Button variant="primary" onClick={handleSave} disabled={!isValid}>
-              Save
+              {saveLabel}
             </Button>
           </div>
         </div>
@@ -173,7 +203,7 @@ export const JsonEditor: React.FC<JsonEditorProps> = ({
           className="flex h-full min-h-0 flex-col overflow-hidden p-4 gap-2"
         >
           <h4 className="flex-shrink-0 font-medium text-text dark:text-dark-text">
-            Example JSON Structure
+            {exampleTitle}
           </h4>
           <div className="min-h-0 flex-1 overflow-hidden">
             <pre className="min-h-full rounded bg-surface-100 p-3 font-mono text-xs text-text dark:bg-dark-surface-100 dark:text-dark-text">

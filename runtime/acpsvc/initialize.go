@@ -22,7 +22,8 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 			ID:          terminalAuthMethodID,
 			Name:        "Setup Contenox",
 			Description: "Opens an interactive terminal to configure your LLM provider and model.",
-			Type:        "terminal",
+			Type:        libacp.AuthMethodTypeTerminal,
+			Args:        []string{"acp", "--setup"},
 			Meta: mustJSON(map[string]any{
 				"terminal-auth": map[string]any{
 					"command": command,
@@ -30,6 +31,36 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 					"label":   "Contenox Setup",
 				},
 			}),
+		})
+		// The browser sibling: same terminal-auth launch mechanics, but the
+		// command serves the Beam onboarding UI, opens the browser, and exits
+		// once setup is complete.
+		authMethods = append(authMethods, libacp.AuthMethod{
+			ID:          browserAuthMethodID,
+			Name:        "Setup Contenox in browser",
+			Description: "Opens the Beam web UI to configure your LLM provider and model, then exits when setup is complete.",
+			Type:        libacp.AuthMethodTypeTerminal,
+			Args:        []string{"acp", "--setup-web"},
+			Meta: mustJSON(map[string]any{
+				"terminal-auth": map[string]any{
+					"command": command,
+					"args":    []string{"acp", "--setup-web"},
+					"label":   "Contenox Setup (browser)",
+				},
+			}),
+		})
+	}
+	// The env_var method is the non-interactive setup route: the client
+	// collects the listed variables and relaunches the agent with them set (or
+	// they are already set, and authenticate completes setup in place). Only
+	// meaningful while unconfigured.
+	if t.deps.Engine == nil && t.deps.EnvSetup != nil {
+		authMethods = append(authMethods, libacp.AuthMethod{
+			ID:          envAuthMethodID,
+			Name:        "Configure from environment",
+			Description: "Set the CONTENOX_DEFAULT_* variables (plus a provider API key for cloud providers); contenox completes setup non-interactively.",
+			Type:        libacp.AuthMethodTypeEnvVar,
+			Vars:        t.deps.EnvSetup.Vars,
 		})
 	}
 
@@ -67,6 +98,11 @@ func negotiateProtocolVersion(client int) int {
 }
 
 func clientSupportsTerminalAuth(caps libacp.ClientCapabilities) bool {
+	// The spec's (unstable) capability field, and Zed's earlier _meta
+	// convention — honor both.
+	if caps.Auth.Terminal {
+		return true
+	}
 	if caps.Meta == nil {
 		return false
 	}

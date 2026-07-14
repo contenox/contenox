@@ -34,7 +34,7 @@ func TestUnit_ToolCallUpdate_FsWriteResultProducesDiff(t *testing.T) {
 		ToolDiffNewText: fw.NewText,
 	}
 
-	note := toolCallUpdateNotification(libacp.SessionID("sess-1"), ev)
+	note := toolCallUpdateNotification(libacp.SessionID("sess-1"), ev, fallbackToolCallID(ev))
 	upd := note.Update
 
 	require.Equal(t, libacp.SessionUpdateToolCallUpdate, upd.SessionUpdate)
@@ -68,7 +68,7 @@ func TestUnit_ToolCallUpdate_NonFsResultHasNoDiff(t *testing.T) {
 		ToolName: "echo",
 		Content:  "\"hello\"",
 	}
-	note := toolCallUpdateNotification(libacp.SessionID("sess-1"), ev)
+	note := toolCallUpdateNotification(libacp.SessionID("sess-1"), ev, fallbackToolCallID(ev))
 	require.Len(t, note.Update.ToolContent, 0)
 	require.Equal(t, libacp.ToolKindOther, note.Update.Kind)
 }
@@ -80,7 +80,7 @@ func TestUnit_ToolCallUpdate_ErrorMarksFailed(t *testing.T) {
 		Error:    "boom",
 		Content:  "stderr: boom",
 	}
-	note := toolCallUpdateNotification(libacp.SessionID("sess-1"), ev)
+	note := toolCallUpdateNotification(libacp.SessionID("sess-1"), ev, fallbackToolCallID(ev))
 	require.Equal(t, libacp.ToolCallStatusFailed, note.Update.Status)
 	require.Equal(t, libacp.ToolKindExecute, note.Update.Kind)
 }

@@ -12,6 +12,8 @@ type UserMenuProps = {
   mail?: string;
   onToggle?: (isOpen: boolean) => void;
   logout?: () => void;
+  logoutLabel?: string;
+  menuLabel?: string;
   className?: string;
   children?: ReactNode;
 };
@@ -21,6 +23,8 @@ export function UserMenu({
   friendlyName,
   mail,
   logout,
+  logoutLabel = "logout",
+  menuLabel = "User Menu",
   onToggle,
   className,
   children,
@@ -30,7 +34,7 @@ export function UserMenu({
       isOpen={isOpen}
       onToggle={onToggle}
       trigger={
-        <Button variant="ghost" size="icon" aria-label="User Menu">
+        <Button variant="ghost" size="icon" aria-label={menuLabel}>
           <User2Icon className="h-6 w-6" />
         </Button>
       }
@@ -44,7 +48,7 @@ export function UserMenu({
             {mail && <P>{mail}</P>}
           </Span>
         )}
-        <Span>{logout && <Button onClick={logout}>logout</Button>}</Span>
+        <Span>{logout && <Button onClick={logout}>{logoutLabel}</Button>}</Span>
         <Span>{children && children}</Span>
       </Section>
     </Dropdown>

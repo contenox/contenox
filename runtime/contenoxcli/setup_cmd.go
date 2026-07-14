@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 
 	libdb "github.com/contenox/runtime/libdbexec"
@@ -38,11 +40,28 @@ var setupCmd = &cobra.Command{
 Gemini, or local llama/OpenVINO through modeld), enter credentials, and set defaults.
 This is the same wizard that runs inside IDE terminals via ACP.
 
+Pass --web to run the same onboarding in the browser via the Beam UI instead
+of the terminal; the command exits once setup is complete.
+
 Examples:
-  contenox setup`,
+  contenox setup
+  contenox setup --web`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if web, _ := cmd.Flags().GetBool("web"); web {
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+			defer stop()
+			return runSetupWeb(ctx, cmd.OutOrStdout(), true)
+		}
 		return runSetup(cmd, cmd.OutOrStdout())
 	},
+}
+
+func init() {
+	setupCmd.Flags().Bool("web", false, "Run the onboarding in the browser (Beam UI) instead of the terminal.")
 }
 
 type setupProvider struct {

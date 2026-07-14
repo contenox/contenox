@@ -112,6 +112,7 @@ func (t *Transport) LoadSession(ctx context.Context, req libacp.LoadSessionReque
 	t.sessions[req.SessionID] = entry
 	t.contenoxToACPID[contenoxSessionID] = req.SessionID
 	t.sessionMu.Unlock()
+	t.persistSessionCwd(ctx, store, req.SessionID, req.Cwd)
 
 	t.clearToolCallState(req.SessionID)
 	t.replayMessages(ctx, req.SessionID, messages)
@@ -230,9 +231,12 @@ func toolCallUpdateFromResult(m taskengine.Message) libacp.SessionUpdate {
 // running setup-only (no default-model was configured at launch, so the engine
 // is nil). It gives the ACP client an actionable message instead of letting the
 // nil engine panic on first use. initialize/authenticate stay available so the
-// "Setup Contenox" terminal auth method can configure a model.
+// "Setup Contenox" terminal auth method (or the env_var method) can configure a
+// model. The code is the spec's -32000 auth_required: a conformant client
+// reacts by offering the advertised auth methods, which is exactly the setup
+// flow.
 func errSetupRequired() error {
-	return libacp.NewError(libacp.ErrInvalidParams, "contenox is not configured yet: no default-model is set. Run the \"Setup Contenox\" auth method (or `contenox acp --setup`), then reconnect.")
+	return libacp.NewError(libacp.ErrAuthRequired, "contenox is not configured yet: no default-model is set. Run the \"Setup Contenox\" auth method, set the CONTENOX_DEFAULT_* environment variables (or run `contenox acp --setup`), then reconnect.")
 }
 
 func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest) (libacp.NewSessionResponse, error) {
@@ -291,6 +295,7 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 	t.sessions[sessionID] = entry
 	t.contenoxToACPID[contenoxSessionID] = sessionID
 	t.sessionMu.Unlock()
+	t.persistSessionCwd(ctx, store, sessionID, req.Cwd)
 	t.clearToolCallState(sessionID)
 
 	// A client learns this new session's id only from the session/new result;
@@ -541,49 +546,43 @@ func (t *Transport) resolveSessionWorkspace(ctx context.Context, name string) (s
 func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsRequest) (libacp.ListSessionsResponse, error) {
 	exec := t.deps.DB.WithoutTransaction()
 
+	// The ACP session id is the message-index NAME (session/new mints it and
+	// agentservice resolves loads by name); mi.id is contenox-internal. Rows
+	// without a name predate ACP naming and cannot be loaded, so they are not
+	// listed.
 	rows, err := exec.QueryContext(ctx, `
-		SELECT mi.id, mi.workspace_id, COALESCE(mi.name, ''),
-		       COALESCE(
-		         (SELECT MAX(m.added_at) FROM messages m WHERE m.idx_id = mi.id),
-		         ''
-		       )
+		SELECT mi.name,
+		       (SELECT MAX(m.added_at) FROM messages m WHERE m.idx_id = mi.id)
 		FROM message_indices mi
 		WHERE mi.workspace_id = $1
 		  AND mi.identity = 'acp-client'
+		  AND mi.name IS NOT NULL AND mi.name != ''
 		ORDER BY mi.id DESC`, t.workspaceID())
 	if err != nil {
 		return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: list sessions: %w", err)
 	}
 	defer rows.Close()
 
+	store := runtimetypes.New(exec)
 	var sessions []libacp.SessionInfo
 	for rows.Next() {
-		var id, workspaceID, name, updatedAt string
-		if err := rows.Scan(&id, &workspaceID, &name, &updatedAt); err != nil {
+		var name string
+		var updatedAt any
+		if err := rows.Scan(&name, &updatedAt); err != nil {
 			return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: scan session: %w", err)
 		}
 
 		info := libacp.SessionInfo{
-			SessionID: libacp.SessionID(id),
+			SessionID: libacp.SessionID(name),
+			Title:     name,
+			Cwd:       t.sessionCwd(ctx, store, libacp.SessionID(name)),
 		}
-		if name != "" {
-			info.Title = name
-		}
-		if updatedAt != "" {
-			info.UpdatedAt = updatedAt
+		if ts, ok := parseDBTime(updatedAt); ok {
+			info.UpdatedAt = ts.UTC().Format(time.RFC3339)
 		}
 
-		// Filter by cwd if requested.
-		if req.Cwd != "" {
-			t.sessionMu.Lock()
-			entry, ok := t.sessions[info.SessionID]
-			t.sessionMu.Unlock()
-			if ok {
-				info.Cwd = entry.Cwd
-				if info.Cwd != req.Cwd {
-					continue
-				}
-			}
+		if req.Cwd != "" && info.Cwd != "" && info.Cwd != req.Cwd {
+			continue
 		}
 
 		sessions = append(sessions, info)
@@ -593,4 +592,78 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 	}
 
 	return libacp.ListSessionsResponse{Sessions: sessions}, nil
+}
+
+const acpSessionCwdKVPrefix = "acp:session_cwd:"
+
+type sessionCwdRecord struct {
+	Cwd string `json:"cwd"`
+}
+
+// persistSessionCwd records the session's cwd durably so session/list can
+// report it (the spec requires cwd on SessionInfo) and filter by it across
+// process restarts — the in-memory session map is empty in a fresh process.
+func (t *Transport) persistSessionCwd(ctx context.Context, store runtimetypes.Store, sid libacp.SessionID, cwd string) {
+	if cwd == "" {
+		return
+	}
+	raw, err := json.Marshal(sessionCwdRecord{Cwd: cwd})
+	if err != nil {
+		return
+	}
+	if err := store.SetKV(ctx, acpSessionCwdKVPrefix+string(sid), raw); err != nil {
+		reportErr, _, end := t.tracker().Start(ctx, "persist_cwd", "acp_session", "session_id", string(sid))
+		reportErr(err)
+		end()
+	}
+}
+
+// sessionCwd resolves a session's cwd: live entry first, then the durable KV
+// record. Empty when neither knows (sessions created before cwd persistence).
+func (t *Transport) sessionCwd(ctx context.Context, store runtimetypes.Store, sid libacp.SessionID) string {
+	t.sessionMu.Lock()
+	entry, ok := t.sessions[sid]
+	t.sessionMu.Unlock()
+	if ok && entry.Cwd != "" {
+		return entry.Cwd
+	}
+	var rec sessionCwdRecord
+	if err := store.GetKV(ctx, acpSessionCwdKVPrefix+string(sid), &rec); err != nil {
+		return ""
+	}
+	return rec.Cwd
+}
+
+// parseDBTime normalizes MAX(added_at) across drivers: SQLite hands back
+// strings (layout depends on how the value was written), Postgres a time.Time.
+func parseDBTime(v any) (time.Time, bool) {
+	switch tv := v.(type) {
+	case nil:
+		return time.Time{}, false
+	case time.Time:
+		return tv, true
+	case []byte:
+		return parseDBTimeString(string(tv))
+	case string:
+		return parseDBTimeString(tv)
+	}
+	return time.Time{}, false
+}
+
+func parseDBTimeString(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+	} {
+		if ts, err := time.Parse(layout, s); err == nil {
+			return ts, true
+		}
+	}
+	return time.Time{}, false
 }

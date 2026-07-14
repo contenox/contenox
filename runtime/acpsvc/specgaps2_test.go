@@ -17,7 +17,7 @@ func TestUnit_ToolCallLocations_FromPathArg(t *testing.T) {
 		ApprovalID:   "c1",
 		ApprovalArgs: map[string]any{"path": "/abs/src/main.go"},
 	}
-	note := toolCallUpdateNotification(libacp.SessionID("s"), ev)
+	note := toolCallUpdateNotification(libacp.SessionID("s"), ev, fallbackToolCallID(ev))
 	require.Equal(t, []libacp.ToolCallLocation{{Path: "/abs/src/main.go"}}, note.Update.Locations)
 
 	wire, err := json.Marshal(note.Update)
@@ -36,7 +36,7 @@ func TestUnit_ToolCallLocations_PrefersResolvedDiffPath(t *testing.T) {
 		ToolDiffOldText: "a",
 		ToolDiffNewText: "b",
 	}
-	note := toolCallUpdateNotification(libacp.SessionID("s"), ev)
+	note := toolCallUpdateNotification(libacp.SessionID("s"), ev, fallbackToolCallID(ev))
 	require.Equal(t, []libacp.ToolCallLocation{{Path: "/abs/resolved.go"}}, note.Update.Locations,
 		"the resolved absolute path from the write result must win over the raw model arg")
 }
@@ -47,7 +47,7 @@ func TestUnit_ToolCallLocations_PendingEmitsLocation(t *testing.T) {
 		ToolName:     "local_fs.write_file",
 		ApprovalArgs: map[string]any{"path": "/abs/x.go", "content": "hi"},
 	}
-	note := toolCallPendingNotification(libacp.SessionID("s"), ev)
+	note := toolCallPendingNotification(libacp.SessionID("s"), ev, fallbackToolCallID(ev))
 	require.Equal(t, []libacp.ToolCallLocation{{Path: "/abs/x.go"}}, note.Update.Locations)
 }
 
@@ -57,7 +57,7 @@ func TestUnit_ToolCallLocations_NoneForCommandOnlyTool(t *testing.T) {
 		ToolName:     "local_shell.exec",
 		ApprovalArgs: map[string]any{"command": "ls"},
 	}
-	note := toolCallUpdateNotification(libacp.SessionID("s"), ev)
+	note := toolCallUpdateNotification(libacp.SessionID("s"), ev, fallbackToolCallID(ev))
 	require.Empty(t, note.Update.Locations)
 }
 
@@ -107,7 +107,7 @@ func TestUnit_ToolCallInProgressNotification(t *testing.T) {
 		ToolName:   "local_fs.write_file",
 		ApprovalID: "call-3",
 	}
-	pending := toolCallPendingNotification(libacp.SessionID("s"), ev)
+	pending := toolCallPendingNotification(libacp.SessionID("s"), ev, fallbackToolCallID(ev))
 	inprog := toolCallInProgressNotification(libacp.SessionID("s"), ev)
 
 	require.Equal(t, libacp.SessionUpdateToolCall, pending.Update.SessionUpdate)

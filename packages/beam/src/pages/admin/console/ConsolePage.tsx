@@ -10,7 +10,7 @@ import { useSetupStatus } from '../../../hooks/useSetupStatus';
 import { api } from '../../../lib/api';
 import { ArtifactRegistryProvider, useArtifactRegistry } from '../../../lib/artifacts';
 import { artifactsToInlineAttachments } from '../../../lib/inlineAttachments';
-import { isOptimisticEcho } from '../../../lib/optimisticEcho';
+import { matchesOptimisticEcho } from '../../../lib/optimisticEcho';
 import { createHelpCommand } from '../../../lib/slashCommands/builtins';
 import {
   SlashCommandRegistryProvider,
@@ -160,16 +160,14 @@ function ConsolePageImpl() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramChatId, location.state]);
 
-  // Drop the optimistic turn once the history echoes it (by provenance or content).
+  // Drop the optimistic turn once the history echoes it — by requestId when
+  // the persisted row is stamped, else by windowed content match, so an older
+  // persisted copy of a repeated command never clears the fresh turn.
   useEffect(() => {
-    if (!agent.optimistic) return;
+    const optimistic = agent.optimistic;
+    if (!optimistic) return;
     const persisted = chatHistory ?? [];
-    const echoed = persisted.some(
-      m =>
-        m.role === 'user' &&
-        (m.requestId === agent.optimistic?.requestId ||
-          isOptimisticEcho(m.content, agent.optimistic?.content ?? '')),
-    );
+    const echoed = persisted.some(m => m.role === 'user' && matchesOptimisticEcho(m, optimistic));
     if (echoed) agent.clearOptimistic();
   }, [chatHistory, agent]);
 

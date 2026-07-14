@@ -194,5 +194,16 @@ func ParseIncoming(data []byte) (Incoming, error) {
 			},
 		}, nil
 	}
+	if !hasMethod && (raw.Error != nil || raw.Result != nil) {
+		// A response with "id":null — JSON-RPC uses it for errors answering
+		// requests whose id could not be determined (parse errors). The null id
+		// unmarshals to a nil pointer above, so hasID is false here.
+		return Incoming{
+			Kind: IncomingKindResponse,
+			Response: Response{
+				JSONRPC: "2.0", ID: NewRequestIDNull(), Result: raw.Result, Error: raw.Error,
+			},
+		}, nil
+	}
 	return Incoming{}, fmt.Errorf("libacp: message has neither method nor id")
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,8 +79,27 @@ func TestUnit_FormatTraceUnit_Cancelled(t *testing.T) {
 	assert.Contains(t, got, "CANCELLED")
 }
 
+// syncBuffer guards a bytes.Buffer so the renderer goroutine's writes and the
+// test's Eventually reads don't race.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func TestUnit_RenderTraceUnits_StreamsAndExitsOnContext(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

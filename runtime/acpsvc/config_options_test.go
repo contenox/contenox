@@ -105,7 +105,7 @@ func TestUnit_SetSessionConfigOptionUpdatesSessionAndPolicyConfig(t *testing.T) 
 	resp, err := tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
 		ConfigID:  configIDModel,
-		Value:     "anthropic/claude-sonnet-4",
+		Value:     libacp.StringConfigValue("anthropic/claude-sonnet-4"),
 	})
 	require.NoError(t, err)
 	require.Equal(t, "openai", tr.provider(), "ACP selector changes the session, not the persistent default provider")
@@ -119,7 +119,7 @@ func TestUnit_SetSessionConfigOptionUpdatesSessionAndPolicyConfig(t *testing.T) 
 	resp, err = tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
 		ConfigID:  configIDHITLPolicy,
-		Value:     "dev",
+		Value:     libacp.StringConfigValue("dev"),
 	})
 	require.NoError(t, err)
 	require.Equal(t, "dev", clikv.ReadHITLPolicy(ctx, runtimetypes.New(db.WithoutTransaction())))
@@ -128,7 +128,7 @@ func TestUnit_SetSessionConfigOptionUpdatesSessionAndPolicyConfig(t *testing.T) 
 	resp, err = tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
 		ConfigID:  configIDHITLPolicy,
-		Value:     hitlPolicyDefaultValue,
+		Value:     libacp.StringConfigValue(hitlPolicyDefaultValue),
 	})
 	require.NoError(t, err)
 	require.Empty(t, clikv.ReadHITLPolicy(ctx, runtimetypes.New(db.WithoutTransaction())))
@@ -137,7 +137,7 @@ func TestUnit_SetSessionConfigOptionUpdatesSessionAndPolicyConfig(t *testing.T) 
 	resp, err = tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
 		ConfigID:  configIDThink,
-		Value:     "xhigh",
+		Value:     libacp.StringConfigValue("xhigh"),
 	})
 	require.NoError(t, err)
 	require.Equal(t, "xhigh", sess.think())
@@ -160,7 +160,7 @@ func TestUnit_SetSessionConfigOptionRejectsUnknownValue(t *testing.T) {
 	_, err := tr.SetSessionConfigOption(ctx, libacp.SetSessionConfigOptionRequest{
 		SessionID: sid,
 		ConfigID:  configIDModel,
-		Value:     "openai/not-advertised",
+		Value:     libacp.StringConfigValue("openai/not-advertised"),
 	})
 	require.Error(t, err)
 	var rpcErr *libacp.Error

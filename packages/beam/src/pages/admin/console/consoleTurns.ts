@@ -1,4 +1,4 @@
-import { isOptimisticEcho } from '../../../lib/optimisticEcho';
+import { matchesOptimisticEcho } from '../../../lib/optimisticEcho';
 import type { ChatMessage } from '../../../lib/types';
 import type { OptimisticTurn } from '../../../hooks/useAgentTurn';
 
@@ -93,11 +93,14 @@ export function buildConsoleTurns(
   }
 
   // Append the optimistic turn unless the persisted history already echoes it.
+  // A turn with provenance (own or adopted) matches by requestId only — an
+  // earlier run of the same command must not swallow the fresh turn. Unstamped
+  // turns fall back to windowed content matching (see matchesOptimisticEcho).
   if (optimistic) {
-    const echoed = turns.some(
-      turn =>
-        turn.requestId === optimistic.requestId ||
-        (turn.command && isOptimisticEcho(turn.command.content, optimistic.content)),
+    const echoed = turns.some(turn =>
+      turn.requestId
+        ? turn.requestId === optimistic.requestId
+        : !!turn.command && matchesOptimisticEcho(turn.command, optimistic),
     );
     if (!echoed) {
       turns.push({

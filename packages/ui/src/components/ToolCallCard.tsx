@@ -4,7 +4,7 @@ import { cn } from "../utils";
 import { Badge } from "./Badge";
 import { Span } from "./Typography";
 
-type ToolCallStatus = "pending" | "running" | "success" | "error";
+export type ToolCallStatus = "pending" | "running" | "success" | "error";
 
 export interface ToolCallCardProps
   extends React.HTMLAttributes<HTMLDivElement> {
@@ -22,6 +22,12 @@ export interface ToolCallCardProps
   detail?: React.ReactNode;
   /** Duration string (e.g. "1.2s"). */
   duration?: string;
+  /** Override the status badge labels (defaults: "Pending" / "Running" / "Done" / "Error"). */
+  statusLabels?: Partial<Record<ToolCallStatus, string>>;
+  /** Accessible label for the external link (default: "Open in external tool"). */
+  externalLinkLabel?: string;
+  /** Accessible label for the detail toggle button (default: "Toggle detail"). */
+  toggleDetailLabel?: string;
 }
 
 const statusBadge: Record<ToolCallStatus, { variant: "secondary" | "primary" | "success" | "error"; label: string }> = {
@@ -42,12 +48,16 @@ export const ToolCallCard = forwardRef<HTMLDivElement, ToolCallCardProps>(
       href,
       detail,
       duration,
+      statusLabels,
+      externalLinkLabel = "Open in external tool",
+      toggleDetailLabel = "Toggle detail",
       ...props
     },
     ref,
   ) {
     const [open, setOpen] = useState(false);
     const badge = statusBadge[status];
+    const badgeLabel = statusLabels?.[status] ?? badge.label;
 
     return (
       <div
@@ -82,7 +92,7 @@ export const ToolCallCard = forwardRef<HTMLDivElement, ToolCallCardProps>(
           </Span>
 
           <Badge variant={badge.variant} size="sm">
-            {badge.label}
+            {badgeLabel}
           </Badge>
 
           {duration && (
@@ -97,7 +107,7 @@ export const ToolCallCard = forwardRef<HTMLDivElement, ToolCallCardProps>(
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary dark:text-dark-primary hover:text-primary-600 dark:hover:text-dark-primary-400 shrink-0"
-              aria-label="Open in external tool"
+              aria-label={externalLinkLabel}
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
@@ -113,7 +123,7 @@ export const ToolCallCard = forwardRef<HTMLDivElement, ToolCallCardProps>(
                 "hover:bg-surface-100 dark:hover:bg-dark-surface-300",
               )}
               aria-expanded={open}
-              aria-label="Toggle detail"
+              aria-label={toggleDetailLabel}
             >
               <ChevronDown
                 className={cn(

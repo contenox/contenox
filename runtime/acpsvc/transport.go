@@ -2,6 +2,7 @@ package acpsvc
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/contenox/runtime/runtime/enginesvc"
 	"github.com/contenox/runtime/runtime/internal/clikv"
 	"github.com/contenox/runtime/runtime/runtimetypes"
+	"github.com/contenox/runtime/runtime/taskengine"
 )
 
 type Deps struct {
@@ -39,6 +41,19 @@ type Deps struct {
 	// UpdateBanner is an optional one-shot message sent to the client as an
 	// agent_message_chunk on the first session created or loaded. Empty = no banner.
 	UpdateBanner string
+
+	// EnvSetup enables the env_var auth method: in setup-only mode initialize
+	// advertises Vars as the environment the client should collect/set, and
+	// authenticate with the env method calls Complete to finish setup
+	// non-interactively from the current environment. Nil disables the method.
+	EnvSetup *EnvSetupSpec
+}
+
+// EnvSetupSpec describes environment-variable-based setup (the non-interactive
+// sibling of the terminal setup wizard).
+type EnvSetupSpec struct {
+	Vars     []libacp.AuthEnvVar
+	Complete func(ctx context.Context) error
 }
 
 type sessionEntry struct {
@@ -88,6 +103,12 @@ type Transport struct {
 
 	toolCallMu     sync.Mutex
 	toolCallStatus map[string]libacp.ToolCallStatus
+	// toolCallSeq / toolCallOpen disambiguate repeated invocations of a tool
+	// that has no engine-minted ApprovalID (declarative `tools` tasks): the
+	// name alone would reuse one wire id for every run, merging their cards and
+	// pinning the status at the never-downgrade rank of the first completion.
+	toolCallSeq  map[string]int
+	toolCallOpen map[string]int
 
 	bannerMu      sync.Mutex
 	pendingBanner string
@@ -397,15 +418,68 @@ func (t *Transport) normalizeToolCallNotification(notif libacp.SessionNotificati
 func (t *Transport) clearToolCallState(sid libacp.SessionID) {
 	t.toolCallMu.Lock()
 	defer t.toolCallMu.Unlock()
-	if len(t.toolCallStatus) == 0 {
-		return
-	}
 	prefix := string(sid) + "\x00"
 	for key := range t.toolCallStatus {
 		if strings.HasPrefix(key, prefix) {
 			delete(t.toolCallStatus, key)
 		}
 	}
+	for key := range t.toolCallSeq {
+		if strings.HasPrefix(key, prefix) {
+			delete(t.toolCallSeq, key)
+		}
+	}
+	for key := range t.toolCallOpen {
+		if strings.HasPrefix(key, prefix) {
+			delete(t.toolCallOpen, key)
+		}
+	}
+}
+
+// toolCallWireID resolves the ACP tool-call id for an event. The engine's
+// ApprovalID is already per-invocation; the name-derived fallback gets an
+// invocation counter so repeated runs of one tool stay distinct cards. A
+// pending event opens an invocation, the result event closes it (matching by
+// key when one is open, else it is a result without a pending — its own
+// invocation). The first invocation keeps the bare name, so single-run flows
+// are wire-identical to before.
+func (t *Transport) toolCallWireID(sid libacp.SessionID, ev taskengine.TaskEvent, closes bool) string {
+	if ev.ApprovalID != "" {
+		return ev.ApprovalID
+	}
+	base := fallbackToolCallID(ev)
+	if base == "" {
+		return ""
+	}
+	key := permKey(sid, ev.TaskID+"\x1f"+base)
+
+	t.toolCallMu.Lock()
+	defer t.toolCallMu.Unlock()
+	if t.toolCallSeq == nil {
+		t.toolCallSeq = make(map[string]int)
+	}
+	if t.toolCallOpen == nil {
+		t.toolCallOpen = make(map[string]int)
+	}
+
+	if closes {
+		if n, ok := t.toolCallOpen[key]; ok {
+			delete(t.toolCallOpen, key)
+			return invocationToolCallID(base, n)
+		}
+		t.toolCallSeq[key]++
+		return invocationToolCallID(base, t.toolCallSeq[key])
+	}
+	t.toolCallSeq[key]++
+	t.toolCallOpen[key] = t.toolCallSeq[key]
+	return invocationToolCallID(base, t.toolCallSeq[key])
+}
+
+func invocationToolCallID(base string, n int) string {
+	if n <= 1 {
+		return base
+	}
+	return base + "#" + strconv.Itoa(n)
 }
 
 func toolCallStatusRank(status libacp.ToolCallStatus) int {

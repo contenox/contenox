@@ -68,9 +68,13 @@ type SessionUpdate struct {
 	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
 
 	// For usage_update (ACP session context indicator)
-	Used int       `json:"used,omitempty"`
-	Size int       `json:"size,omitempty"`
+	Used int        `json:"used,omitempty"`
+	Size int        `json:"size,omitempty"`
 	Cost *UsageCost `json:"cost,omitempty"`
+
+	// MessageID groups streamed chunks into messages: all chunks of one message
+	// share an id; a change marks a new message. Optional in the spec.
+	MessageID string `json:"messageId,omitempty"`
 
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }
@@ -96,10 +100,13 @@ type sessionUpdateWire struct {
 
 	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
 
-	// For usage_update (ACP session context indicator)
-	Used int       `json:"used,omitempty"`
-	Size int       `json:"size,omitempty"`
+	// Pointers: the spec REQUIRES used and size on usage_update (zero values
+	// must reach the wire there), while every other update kind must omit them.
+	Used *int       `json:"used,omitempty"`
+	Size *int       `json:"size,omitempty"`
 	Cost *UsageCost `json:"cost,omitempty"`
+
+	MessageID string `json:"messageId,omitempty"`
 
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }
@@ -123,10 +130,13 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		AvailableCommands: u.AvailableCommands,
 		CurrentModeID:     u.CurrentModeID,
 		ConfigOptions:     u.ConfigOptions,
-		Used:              u.Used,
-		Size:              u.Size,
 		Cost:              u.Cost,
+		MessageID:         u.MessageID,
 		Meta:              u.Meta,
+	}
+	if u.SessionUpdate == SessionUpdateUsageUpdate {
+		used, size := u.Used, u.Size
+		w.Used, w.Size = &used, &size
 	}
 	switch u.SessionUpdate {
 	case SessionUpdateToolCall, SessionUpdateToolCallUpdate:
@@ -167,10 +177,15 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 		AvailableCommands: w.AvailableCommands,
 		CurrentModeID:     w.CurrentModeID,
 		ConfigOptions:     w.ConfigOptions,
-		Used:              w.Used,
-		Size:              w.Size,
 		Cost:              w.Cost,
+		MessageID:         w.MessageID,
 		Meta:              w.Meta,
+	}
+	if w.Used != nil {
+		u.Used = *w.Used
+	}
+	if w.Size != nil {
+		u.Size = *w.Size
 	}
 	if len(w.Content) == 0 {
 		return nil
