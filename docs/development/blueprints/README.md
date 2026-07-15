@@ -9,7 +9,8 @@ how-to docs live one level up in `docs/`.
 | Area | What it covers |
 | --- | --- |
 | [modeld/](modeld/README.md) | The local inference daemon: ownership model, session boundary, effective context, llama.cpp and OpenVINO backends, release artifacts |
-| [acp/](acp/README.md) | Agent Client Protocol surface: registry listing, submission artifacts, editor integrations |
+| [acp/](acp/README.md) | Agent Client Protocol surface: contenox as agent (registry listing, submission artifacts, editor integrations) and as client (the client-side engine capability) |
+| [opsclient/](opsclient/README.md) | Contenox as the operated-system agent: the modeld/contenox product split, session-scoped to a host, remote topologies, beam as the operator console |
 | [vscode/](vscode/README.md) | VS Code extension: permission bridge, review/UX findings, Marketplace release |
 | [beam/](beam/README.md) | The embedded browser UI: restoration, cockpit direction, R&D visions |
 | [providers/](providers/README.md) | Cloud/hosted provider integrations and context-caching strategy |

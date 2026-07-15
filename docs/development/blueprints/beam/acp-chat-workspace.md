@@ -38,6 +38,15 @@ without divergence — beam's embedded chat, a future standalone ACP client, and
 live demos on the website. None of them is privileged; contenox is one agent in
 a list.
 
+This "ACP client" is the browser/beam side driving contenox upward — not to be
+confused with the Go runtime's own downward ACP client capability (contenox
+driving *other* agents, including other contenox instances), which lives in
+the runtime rather than in beam or any web client; see
+`../acp/acp-client-engine.md`. The "future standalone ACP client" above is
+scoped to this chat surface; it is not the shape the operator/ops console
+takes — beam is the settled screen for that, see
+`../opsclient/operator-console.md`.
+
 ---
 
 ## Part A — The reusable component library
@@ -318,6 +327,12 @@ Zone rules, ordered by the productivity moments they serve:
    the chain-as-contract opens in `ChainJsonEditor` + `ChainVisualizer`, the
    policy in `PolicyEditor`. Editing is diffable; local-first, no round-trip to a
    service.
+7. **The permission gate is phone-usable.** Layout is desktop-first, but the
+   gate is not desktop-only: on narrow viewports the workspace collapses to
+   transcript + gate, with the option list from `session/request_permission`
+   rendered as thumb-reachable accept/deny controls. This is what makes beam
+   viable as the operator console for remote-administration sessions, not just
+   coding sessions — see `../opsclient/operator-console.md`.
 
 ### B.4 Interaction & visual language (what makes it feel productive)
 
@@ -475,6 +490,11 @@ With C.1–C.3 done, a standalone client is the same `chat-kit` + `acp-web-clien
 in a different shell (web build, or Electron/desktop with a stdio adapter), and a
 website demo is the same packages pointed at a hosted, hardened (`acpx` profile,
 rate-limited) contenox over `/acp`. No new UI, no new protocol surface.
+
+Scope note: this is a standalone *chat* client — a different shell for the same
+components. It is not a standalone ops/administration app; that surface's
+answer is beam itself, served from the operated box (see
+`../opsclient/operator-console.md`), not a second client product.
 
 ---
 

@@ -13,6 +13,16 @@ Out of scope: a standalone agent-agnostic client product, desktop packaging,
 and public demo hosting. The extraction in Part A is deliberately shaped so
 those remain possible later without rework, but nothing here commits to them.
 
+Also out of scope, settled elsewhere rather than open: the Go runtime's own
+downward ACP client capability — contenox driving *other* ACP agents as a
+taskengine step or a modelprovider implementation — is not a Beam feature and
+is not built as a new client app; it lives in the runtime
+(`../acp/acp-client-engine.md`). Where that capability needs a human screen
+(reviewing a driven agent's permission requests, e.g. for remote-host
+administration), Beam is that screen — the same ACP chat workspace this
+document specifies, not a separate ops client
+(`../opsclient/operator-console.md`).
+
 ## The rule that forces this
 
 Beam's chat historically consumed a private REST+SSE surface
