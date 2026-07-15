@@ -5,6 +5,7 @@ import i18n, { type TranslationKey } from '../i18n';
 import HomeRedirect from '../pages/HomeRedirect.tsx';
 import { LOGIN_ROUTE } from './routeConstants.ts';
 
+const AcpChatPage = lazy(() => import('../pages/admin/acpchat/AcpChatPage.tsx'));
 const BackendsPage = lazy(() => import('../pages/admin/backends/BackendPage.tsx'));
 const ChatPage = lazy(() => import('../pages/admin/chats/ChatPage.tsx'));
 const ChatLandingPage = lazy(() => import('../pages/admin/chats/ChatLandingPage.tsx'));
@@ -138,6 +139,16 @@ export const routes: RouteConfig[] = [
   {
     path: '/control',
     element: ControlPlanePage,
+    label: '',
+    showInNav: false,
+    protected: true,
+    showInShelf: false,
+  },
+  {
+    // Opt-in ACP chat surface: proves browser -> /acp -> runtime -> React,
+    // built alongside (not replacing) the console. No nav entry yet.
+    path: '/chat-acp',
+    element: AcpChatPage,
     label: '',
     showInNav: false,
     protected: true,

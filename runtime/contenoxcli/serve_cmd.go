@@ -16,9 +16,11 @@ import (
 
 	"github.com/contenox/runtime/apiframework"
 	"github.com/contenox/runtime/apiframework/middleware"
+	"github.com/contenox/runtime/libacp"
 	libbus "github.com/contenox/runtime/libbus"
 	"github.com/contenox/runtime/libkvstore"
 	"github.com/contenox/runtime/libtracker"
+	"github.com/contenox/runtime/runtime/acpsvc"
 	"github.com/contenox/runtime/runtime/agentservice"
 	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
@@ -223,6 +225,36 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		defer stopTerminalReaper()
 	}
 
+	// /acp serves the same acpsvc agent `contenox acp` speaks over stdio, over
+	// a WebSocket instead — see acp_ws.go. It reuses the engine/db/workspace
+	// already built above; only the ACP chain registry is looked up fresh
+	// (it lives outside enginesvc.Config). A missing chain file must not take
+	// serve down: log and skip registering /acp rather than failing startup.
+	var acpAgentFactory libacp.AgentFactory
+	if acpChains, err := acpsvc.LoadChainRegistry(); err != nil {
+		slog.Warn("contenox serve: /acp transport disabled: ACP chain registry unavailable", "error", err)
+	} else {
+		acpAgentFactory = acpsvc.New(acpsvc.Deps{
+			Engine:             engine,
+			DB:                 db,
+			ChainRegistry:      acpChains,
+			DefaultModel:       opts.EffectiveDefaultModel,
+			DefaultProvider:    opts.EffectiveDefaultProvider,
+			DefaultAltModel:    opts.EffectiveAltDefaultModel,
+			DefaultAltProvider: opts.EffectiveAltDefaultProvider,
+			DefaultMaxTokens:   opts.EffectiveMaxTokens,
+			DefaultThink:       opts.EffectiveThink,
+			WorkspaceID:        workspaceID,
+			ContenoxDir:        contenoxDir,
+			KnownPolicies:      embeddedPolicyNames(),
+			// serve passes no fallbackPolicy to hitlservice.NewWithDefaultPolicy
+			// above ("" = the service's own built-in default), so there is no
+			// named policy to report here either; HITLDefaultPolicyName is
+			// display-only (the ACP /policy command).
+			HITLDefaultPolicyName: "",
+		})
+	}
+
 	apiMux := http.NewServeMux()
 	cleanupAPI, err := serverapi.New(ctx, apiMux, nodeID, "local", config, serverapi.Dependencies{
 		DB:                   db,
@@ -261,6 +293,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// browser-originated mutations must be same-origin or explicitly allowed.
 	// StripPrefix lets route packages register clean paths (/state, /models, ...).
 	rootMux.Handle("/api/", http.StripPrefix("/api", serverapi.ProtectMutatingAPIWithAllowedOrigins(config.Token, config.AllowedAPIOrigins, apiMux)))
+	if acpAgentFactory != nil {
+		rootMux.Handle("/acp", acpWebSocketHandler(acpAgentFactory, config.Token))
+	}
 	uiHandler := internalweb.SPAHandler()
 	if strings.TrimSpace(config.BeamDevProxyURL) != "" {
 		devProxy, err := internalweb.DevProxyHandler(config.BeamDevProxyURL)

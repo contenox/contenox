@@ -389,11 +389,32 @@ the UI is asked to consume it.
 The UI cannot render what the protocol does not emit. These land first, each
 wire-verified against a conformant client:
 
-- **Live token streaming over ACP.** Today `acpsvc` emits `agent_message_chunk`
-  exactly once at end-of-turn — the agent side does not stream. Until the chain
-  engine's token stream is forwarded incrementally, *no* ACP client (beam, Zed,
-  or the demo) can show live generation. This is the highest-value repair and
-  gates the transcript's defining feature.
+- **Live token streaming over ACP** — DEFERRED BY DESIGN, not a repair. Contenox
+  was designed for *managed agents running in the background with no human
+  watching*, where a chain is a sequence of **steps that act as guardrails**: the
+  next step (validator, router, policy gate, HITL check) evaluates the *complete*
+  output of the previous one before anything proceeds. Streaming tokens to a
+  human mid-step would surface output that has **not yet passed its guardrail** —
+  which is antithetical to "reviewable, gated, repeatable work." So the blocking
+  whole-message path is the architecturally honest default, not a bug: it is what
+  makes a step's output a reviewable unit. Do not "fix" it thinking it is an
+  oversight.
+  Mechanically: the streaming branch (`taskexec.go` `executeLLM`) is gated on
+  `len(tools) == 0`; ACP answer tasks carry `"tools": ["*"]`, so they take the
+  blocking path and emit one `agent_message_chunk` at end-of-turn. Streaming
+  works and is per-token at the provider; the gate (not the provider) is what
+  turns it off. The gate is provider-agnostic — ALL providers are affected — and
+  `StreamParcel` already carries a `ToolCalls` field for the eventual fix, but
+  local llama's `Stream()` returns `UnsupportedFeatureError` for tool calls, so
+  even opening the gate is real per-provider work.
+  Interactive chat and the guardrail model are in genuine tension, not a missing
+  feature. **Build streaming only when interactive UX actually demands it**, and
+  when it does, the philosophically-aligned answer is chain-shaped, not
+  core-shaped: stream ONLY the final, user-facing answer step — the one step with
+  no downstream guardrail to feed — via a dedicated streaming answer task, while
+  every intermediate (guardrail-feeding) step stays blocking. That avoids the
+  high-blast-radius change to core `executeLLM` entirely. Decoupled from C.1–C.4:
+  the UI renders the final answer without it, exactly as the console does today.
 - **`/acp` transport on `contenox serve`.** A WebSocket endpoint that wraps the
   connection as an `io.ReadWriteCloser` and hands it to
   `libacp.NewAgentSideConnection(conn, acpsvc.New(deps))`. Serve already hosts a
