@@ -30,8 +30,10 @@ type AvailableCommandInput struct {
 }
 
 type AvailableCommand struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description,omitempty"`
+	Name string `json:"name"`
+	// Description is spec-required (strict clients reject commands without
+	// it), so no omitempty: an empty string still reaches the wire.
+	Description string                 `json:"description"`
 	Input       *AvailableCommandInput `json:"input,omitempty"`
 	Meta        json.RawMessage        `json:"_meta,omitempty"`
 }

@@ -708,21 +708,30 @@ func (t *Transport) resolveSessionWorkspace(ctx context.Context, name string) (s
 	return workspaceID, true
 }
 
+// listSessionsPageSize bounds one session/list page; a var so tests can
+// exercise paging without minting hundreds of sessions.
+var listSessionsPageSize = 100
+
 func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsRequest) (libacp.ListSessionsResponse, error) {
 	exec := t.deps.DB.WithoutTransaction()
 
 	// The ACP session id is the message-index NAME (session/new mints it and
 	// agentservice resolves loads by name); mi.id is contenox-internal. Rows
 	// without a name predate ACP naming and cannot be loaded, so they are not
-	// listed.
+	// listed. The cursor is the mi.id of the last row the previous page
+	// scanned (opaque to clients); scanning one row past the page size tells
+	// us whether a next page exists. The cwd filter applies after the scan, so
+	// a filtered page may carry fewer items but the cursor still advances.
 	rows, err := exec.QueryContext(ctx, `
-		SELECT mi.name,
+		SELECT mi.id, mi.name,
 		       (SELECT MAX(m.added_at) FROM messages m WHERE m.idx_id = mi.id)
 		FROM message_indices mi
 		WHERE mi.workspace_id = $1
 		  AND mi.identity = 'acp-client'
 		  AND mi.name IS NOT NULL AND mi.name != ''
-		ORDER BY mi.id DESC`, t.workspaceID())
+		  AND ($2 = '' OR mi.id < $2)
+		ORDER BY mi.id DESC
+		LIMIT $3`, t.workspaceID(), req.Cursor, listSessionsPageSize+1)
 	if err != nil {
 		return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: list sessions: %w", err)
 	}
@@ -730,12 +739,21 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 
 	store := runtimetypes.New(exec)
 	var sessions []libacp.SessionInfo
+	var lastScannedID string
+	scanned := 0
+	hasMore := false
 	for rows.Next() {
-		var name string
+		var internalID, name string
 		var updatedAt any
-		if err := rows.Scan(&name, &updatedAt); err != nil {
+		if err := rows.Scan(&internalID, &name, &updatedAt); err != nil {
 			return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: scan session: %w", err)
 		}
+		scanned++
+		if scanned > listSessionsPageSize {
+			hasMore = true
+			break
+		}
+		lastScannedID = internalID
 
 		info := libacp.SessionInfo{
 			SessionID: libacp.SessionID(name),
@@ -756,7 +774,11 @@ func (t *Transport) ListSessions(ctx context.Context, req libacp.ListSessionsReq
 		return libacp.ListSessionsResponse{}, fmt.Errorf("acpsvc: rows: %w", err)
 	}
 
-	return libacp.ListSessionsResponse{Sessions: sessions}, nil
+	resp := libacp.ListSessionsResponse{Sessions: sessions}
+	if hasMore {
+		resp.NextCursor = lastScannedID
+	}
+	return resp, nil
 }
 
 const acpSessionCwdKVPrefix = "acp:session_cwd:"

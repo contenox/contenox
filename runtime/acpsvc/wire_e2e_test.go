@@ -243,6 +243,71 @@ func TestE2E_Wire_SessionNewListLoadRoundTrip(t *testing.T) {
 	require.Nil(t, resp.Error, "spec: deleting a nonexistent session SHOULD succeed silently")
 }
 
+// TestE2E_Wire_SessionListPagination pins the cursor contract: pages are
+// bounded, nextCursor resumes exactly where the previous page ended, no
+// session is duplicated or skipped, and the last page carries no cursor.
+func TestE2E_Wire_SessionListPagination(t *testing.T) {
+	prev := listSessionsPageSize
+	listSessionsPageSize = 2
+	t.Cleanup(func() { listSessionsPageSize = prev })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	db, err := libdb.NewSQLiteDBManager(ctx, filepath.Join(t.TempDir(), "wire-paging.db"), runtimetypes.SchemaSQLite)
+	require.NoError(t, err)
+	defer db.Close()
+
+	agentR, clientW := io.Pipe()
+	clientR, agentW := io.Pipe()
+	agentSide := &wirePipe{r: agentR, w: agentW}
+	clientSide := &wirePipe{r: clientR, w: clientW}
+	factory := New(Deps{Engine: &enginesvc.Engine{}, DB: db, WorkspaceID: "paging-ws"})
+	conn := libacp.NewAgentSideConnection(agentSide, func(c *libacp.AgentSideConnection) libacp.Agent { return factory(c) })
+	go func() { _ = conn.Run(ctx) }()
+	defer clientSide.Close()
+
+	client := &wireClient{t: t, rw: clientSide}
+	resp, _ := client.call(libacp.MethodInitialize, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	require.Nil(t, resp.Error)
+
+	created := map[libacp.SessionID]bool{}
+	for i := 0; i < 5; i++ {
+		resp, _ := client.call(libacp.MethodSessionNew, libacp.NewSessionRequest{Cwd: "/tmp/paging", McpServers: []libacp.McpServer{}})
+		require.Nil(t, resp.Error)
+		var nr libacp.NewSessionResponse
+		require.NoError(t, json.Unmarshal(resp.Result, &nr))
+		created[nr.SessionID] = true
+		client.drainNotifications(1) // available_commands_update
+	}
+
+	seen := map[libacp.SessionID]int{}
+	cursor := ""
+	pages := 0
+	for {
+		resp, _ := client.call(libacp.MethodSessionList, libacp.ListSessionsRequest{Cursor: cursor})
+		require.Nil(t, resp.Error)
+		var list libacp.ListSessionsResponse
+		require.NoError(t, json.Unmarshal(resp.Result, &list))
+		require.LessOrEqual(t, len(list.Sessions), 2, "pages must respect the page size")
+		for _, s := range list.Sessions {
+			seen[s.SessionID]++
+		}
+		pages++
+		require.LessOrEqual(t, pages, 10, "paging must terminate")
+		if list.NextCursor == "" {
+			break
+		}
+		cursor = list.NextCursor
+	}
+	require.Equal(t, 3, pages, "5 sessions at page size 2 = 3 pages")
+	require.Len(t, seen, 5, "every session appears")
+	for sid, n := range seen {
+		require.Equal(t, 1, n, "session %s must appear exactly once across pages", sid)
+		require.True(t, created[sid])
+	}
+}
+
 // TestUnit_PlanTracker pins the chain→plan translation: every chain task is an
 // entry, step events advance statuses, chain end prunes never-taken branches,
 // and trivial chains produce no plan at all.

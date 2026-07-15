@@ -19,6 +19,11 @@ const (
 
 	MethodSessionRequestPermission = "session/request_permission"
 
+	// MethodCancelRequest is the protocol-level "$/cancel_request"
+	// notification: either side may signal it no longer awaits the response to
+	// an in-flight request. "$/"-prefixed methods are always safe to ignore.
+	MethodCancelRequest = "$/cancel_request"
+
 	MethodFSReadTextFile  = "fs/read_text_file"
 	MethodFSWriteTextFile = "fs/write_text_file"
 

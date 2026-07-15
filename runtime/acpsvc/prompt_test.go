@@ -137,6 +137,25 @@ func TestUnit_Prompt_CancelledParentContextFallback(t *testing.T) {
 	requireSpan(t, rt, 0, 1)
 }
 
+// A cancelled ctx with a "successful" engine response (recovery chains absorb
+// cancellation) must still resolve as cancelled — clients judge cancel
+// conformance by the stop reason, not by what the engine salvaged.
+func TestUnit_Prompt_CancelledCtxOverridesSuccessfulStopReason(t *testing.T) {
+	tr, sid, rt := transportWithFakeAgent(&fakeAgent{
+		resp: &agentservice.PromptResponse{StopReason: agentservice.StopEndTurn},
+		err:  nil,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	resp, err := tr.Prompt(ctx, promptReq(sid))
+
+	require.NoError(t, err)
+	require.Equal(t, libacp.StopReasonCancelled, resp.StopReason)
+	requireSpan(t, rt, 0, 1)
+}
+
 func TestUnit_Prompt_GenuineFailureStaysAnError(t *testing.T) {
 	tr, sid, rt := transportWithFakeAgent(&fakeAgent{
 		resp: &agentservice.PromptResponse{StopReason: agentservice.StopEndTurn},

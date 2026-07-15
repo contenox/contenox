@@ -243,6 +243,13 @@ type CancelNotification struct {
 	Meta      json.RawMessage `json:"_meta,omitempty"`
 }
 
+// CancelRequestNotification is the payload of "$/cancel_request": the JSON-RPC
+// id of the request whose response is no longer awaited.
+type CancelRequestNotification struct {
+	RequestID RequestID       `json:"requestId"`
+	Meta      json.RawMessage `json:"_meta,omitempty"`
+}
+
 type ListSessionsRequest struct {
 	Cwd    string          `json:"cwd,omitempty"`
 	Cursor string          `json:"cursor,omitempty"`

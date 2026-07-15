@@ -147,6 +147,13 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		return libacp.PromptResponse{}, libacp.InternalError(err.Error())
 	}
 	stopReason := mapStopReason(resp.StopReason)
+	// A cancelled turn MUST resolve with the cancelled stop reason even when
+	// the engine absorbed the cancellation and handed back a "successful"
+	// partial result (e.g. via a recovery task) — the client sent
+	// session/cancel or $/cancel_request and judges conformance by this field.
+	if promptCtx.Err() != nil {
+		stopReason = libacp.StopReasonCancelled
+	}
 	// Session pickers key freshness off updatedAt; push it after the turn so
 	// clients don't need to re-list to notice activity.
 	libacp.AfterResponse(ctx, func() {

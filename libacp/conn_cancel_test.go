@@ -166,6 +166,107 @@ func TestUnit_CancelImmediatelyAfterPrompt_PreservesWireOrder(t *testing.T) {
 	requireCancelledStop(t, h.expectResponse(1))
 }
 
+// $/cancel_request aborts the request with that JSON-RPC id — session-agnostic
+// protocol-level cancellation, wire-ordered like session/cancel.
+func TestUnit_CancelRequest_AbortsInFlightPromptByRequestID(t *testing.T) {
+	agent := &blockingAgent{started: make(chan libacp.SessionID, 2)}
+	h := newCancelHarness(t, agent)
+
+	h.send(libacp.MethodSessionPrompt, 7, promptParams("sess-1"))
+	select {
+	case <-agent.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt never started")
+	}
+
+	h.notify(libacp.MethodCancelRequest, libacp.CancelRequestNotification{RequestID: libacp.NewRequestIDNumber(7)})
+	requireCancelledStop(t, h.expectResponse(7))
+
+	// Unknown ids are ignored, and the connection stays healthy.
+	h.notify(libacp.MethodCancelRequest, libacp.CancelRequestNotification{RequestID: libacp.NewRequestIDNumber(999)})
+	h.send(libacp.MethodInitialize, 8, libacp.InitializeRequest{ProtocolVersion: libacp.ProtocolVersion})
+	resp := h.expectResponse(8)
+	require.Nil(t, resp.Error)
+}
+
+// permissionAgent's Prompt blocks on an agent→client RequestPermission call;
+// used to observe outbound $/cancel_request when the turn dies mid-approval.
+type permissionAgent struct {
+	libacp.UnimplementedAgent
+	conn    *libacp.AgentSideConnection
+	started chan struct{}
+}
+
+func (a *permissionAgent) Initialize(_ context.Context, _ libacp.InitializeRequest) (libacp.InitializeResponse, error) {
+	return libacp.InitializeResponse{ProtocolVersion: libacp.ProtocolVersion}, nil
+}
+
+func (a *permissionAgent) Prompt(ctx context.Context, req libacp.PromptRequest) (libacp.PromptResponse, error) {
+	close(a.started)
+	_, err := a.conn.RequestPermission(ctx, libacp.RequestPermissionRequest{SessionID: req.SessionID})
+	if err != nil {
+		return libacp.PromptResponse{}, err
+	}
+	return libacp.PromptResponse{StopReason: libacp.StopReasonEndTurn}, nil
+}
+
+func TestUnit_AbandonedClientCall_SendsCancelRequest(t *testing.T) {
+	agent := &permissionAgent{started: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	agentSide, clientSide := newPipePair()
+	conn := libacp.NewAgentSideConnection(agentSide, func(c *libacp.AgentSideConnection) libacp.Agent {
+		agent.conn = c
+		return agent
+	})
+	runErr := make(chan error, 1)
+	go func() { runErr <- conn.Run(ctx) }()
+	defer clientSide.Close()
+
+	h := &cancelHarness{t: t, writer: bufWriter(clientSide), reader: bufReader(clientSide), clientSide: clientSide, runErr: runErr}
+
+	h.send(libacp.MethodSessionPrompt, 1, promptParams("sess-1"))
+	select {
+	case <-agent.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("prompt never started")
+	}
+
+	// The client sees the permission request but never answers it; instead it
+	// cancels the turn. The agent must abandon the awaited call AND tell the
+	// client via $/cancel_request so the dialog can be torn down.
+	line, err := h.reader()
+	require.NoError(t, err)
+	in, err := libacp.ParseIncoming(line)
+	require.NoError(t, err)
+	require.Equal(t, libacp.IncomingKindRequest, in.Kind)
+	require.Equal(t, libacp.MethodSessionRequestPermission, in.Request.Method)
+	permReqID := in.Request.ID
+
+	h.notify(libacp.MethodSessionCancel, libacp.CancelNotification{SessionID: "sess-1"})
+
+	var sawCancelRequest bool
+	for i := 0; i < 4; i++ {
+		line, err := h.reader()
+		require.NoError(t, err)
+		in, err := libacp.ParseIncoming(line)
+		require.NoError(t, err)
+		if in.Kind == libacp.IncomingKindNotification && in.Notification.Method == libacp.MethodCancelRequest {
+			var p libacp.CancelRequestNotification
+			require.NoError(t, json.Unmarshal(in.Notification.Params, &p))
+			require.True(t, p.RequestID.Equal(permReqID), "the cancel must target the abandoned permission request")
+			sawCancelRequest = true
+			continue
+		}
+		if in.Kind == libacp.IncomingKindResponse {
+			requireCancelledStop(t, in.Response)
+			break
+		}
+	}
+	require.True(t, sawCancelRequest, "abandoning an awaited client call must emit $/cancel_request")
+}
+
 func TestUnit_MalformedInput_GetsJSONRPCErrorResponses(t *testing.T) {
 	agent := &blockingAgent{started: make(chan libacp.SessionID, 1)}
 	h := newCancelHarness(t, agent)

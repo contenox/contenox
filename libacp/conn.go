@@ -82,9 +82,20 @@ type AgentSideConnection struct {
 	cancelMu       sync.Mutex
 	sessionCancels map[SessionID]*promptCancel
 
+	// requestCancels tracks every in-flight incoming request's cancelable
+	// context by JSON-RPC id, so "$/cancel_request" can abort it.
+	reqCancelMu    sync.Mutex
+	requestCancels map[string]context.CancelFunc
+
 	closeOnce sync.Once
 	closed    chan struct{}
 	closeErr  error
+}
+
+// requestCancelKey disambiguates the JSON-RPC id namespace: a string id "1"
+// and a numeric id 1 render identically via String_().
+func requestCancelKey(id RequestID) string {
+	return fmt.Sprintf("%d:%s", id.Kind, id.String_())
 }
 
 // promptCancel tracks the cancelable context of one in-flight session/prompt.
@@ -105,6 +116,7 @@ func NewAgentSideConnection(rw io.ReadWriteCloser, factory AgentFactory) *AgentS
 		closer:         rw,
 		pending:        make(map[int64]chan *Response),
 		sessionCancels: make(map[SessionID]*promptCancel),
+		requestCancels: make(map[string]context.CancelFunc),
 		closed:         make(chan struct{}),
 	}
 	c.agent = factory(c)
@@ -171,6 +183,13 @@ func (c *AgentSideConnection) shutdown(err error) {
 		}
 		c.cancelMu.Unlock()
 
+		c.reqCancelMu.Lock()
+		for key, cancel := range c.requestCancels {
+			cancel()
+			delete(c.requestCancels, key)
+		}
+		c.reqCancelMu.Unlock()
+
 		close(c.closed)
 	})
 }
@@ -185,20 +204,56 @@ func (c *AgentSideConnection) dispatch(ctx context.Context, line []byte) {
 	case IncomingKindResponse:
 		c.deliverResponse(msg.Response)
 	case IncomingKindRequest:
+		// Every request runs under its own cancelable context, registered by
+		// JSON-RPC id before the handler goroutine spawns (read-loop order), so
+		// a later $/cancel_request is guaranteed to observe it.
+		reqCtx, cancelReq := context.WithCancel(ctx)
+		key := requestCancelKey(msg.Request.ID)
+		c.reqCancelMu.Lock()
+		c.requestCancels[key] = cancelReq
+		c.reqCancelMu.Unlock()
+
 		var pc *promptCancel
 		if msg.Request.Method == MethodSessionPrompt {
-			pc = c.registerPromptCancel(ctx, msg.Request.Params)
+			pc = c.registerPromptCancel(reqCtx, msg.Request.Params)
 		}
-		go c.handleRequest(ctx, msg.Request, pc)
+		go func() {
+			defer func() {
+				c.reqCancelMu.Lock()
+				delete(c.requestCancels, key)
+				c.reqCancelMu.Unlock()
+				cancelReq()
+			}()
+			c.handleRequest(reqCtx, msg.Request, pc)
+		}()
 	case IncomingKindNotification:
-		// session/cancel is applied inline on the read loop so wire order is
-		// preserved: a cancel that arrives after its prompt request always
-		// observes the prompt's registration (both happen on this goroutine),
-		// instead of racing it across handler goroutines.
-		if msg.Notification.Method == MethodSessionCancel {
+		// session/cancel and $/cancel_request are applied inline on the read
+		// loop so wire order is preserved: a cancel that arrives after its
+		// request always observes the request's registration (both happen on
+		// this goroutine), instead of racing it across handler goroutines.
+		switch msg.Notification.Method {
+		case MethodSessionCancel:
 			c.applySessionCancel(msg.Notification.Params)
+		case MethodCancelRequest:
+			c.applyCancelRequest(msg.Notification.Params)
 		}
 		go c.handleNotification(ctx, msg.Notification)
+	}
+}
+
+// applyCancelRequest aborts the in-flight request the peer no longer awaits.
+// Unknown ids are ignored ("$/" methods are always safe to ignore) — the
+// request may simply have completed already.
+func (c *AgentSideConnection) applyCancelRequest(params json.RawMessage) {
+	var p CancelRequestNotification
+	if len(params) == 0 || json.Unmarshal(params, &p) != nil {
+		return
+	}
+	c.reqCancelMu.Lock()
+	cancel, ok := c.requestCancels[requestCancelKey(p.RequestID)]
+	c.reqCancelMu.Unlock()
+	if ok {
+		cancel()
 	}
 }
 
@@ -509,6 +564,10 @@ func (c *AgentSideConnection) call(ctx context.Context, method string, params an
 		c.pendingMu.Lock()
 		delete(c.pending, id)
 		c.pendingMu.Unlock()
+		// Tell the peer this response is no longer awaited so it can abort the
+		// work — most visibly, tear down a permission dialog whose prompt turn
+		// was cancelled. Best effort by design.
+		_ = c.notify(MethodCancelRequest, CancelRequestNotification{RequestID: rid})
 		return ctx.Err()
 	case <-c.closed:
 		return ErrConnectionClosed
