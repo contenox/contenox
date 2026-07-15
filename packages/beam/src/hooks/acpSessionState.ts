@@ -1,6 +1,9 @@
 import type {
+  AvailableCommand,
   PlanEntry,
   RequestPermissionRequest,
+  SessionConfigOption,
+  StopReason,
   ToolCallContent,
   ToolCallLocation,
   ToolCallStatus,
@@ -9,21 +12,40 @@ import type {
 import type { ToolCallEvent, UsageEvent } from '../lib/acp';
 
 /**
- * Pure, framework-free state for one ACP chat session: reducer + types only,
- * no React, no WebSocket. `useAcpSession.ts` wires this reducer into
- * `useReducer`; `acpSessionController.ts` dispatches actions in response to
+ * Pure, framework-free state for the ACP workspace's currently-open session:
+ * reducer + types only, no React, no WebSocket. Exactly one instance of this
+ * state is live at a time — the session `acpWorkspaceController.ts` currently
+ * has subscribed — and it is reset (`session_reset`) whenever the workspace
+ * switches which session is open. `useAcpWorkspace.ts` wires this reducer into
+ * `useReducer`; `acpWorkspaceController.ts` dispatches actions in response to
  * `AcpClient` events. Kept separate so both can be unit-tested without
- * mounting a component (see `useAcpSession.test.tsx`).
+ * mounting a component (see `acpSessionState.test.ts`).
+ *
+ * Unified timeline (D4): `items` records arrival order across BOTH messages
+ * and tool calls — this is what lets the UI render one interleaved thread
+ * instead of two separately-ordered lists. Thought chunks are NOT separate
+ * timeline items; they attach to their parent message (by `messageId`) as
+ * collapsible block data, exactly like the text itself.
  */
 
-export type AcpConnectionStatus = 'connecting' | 'ready' | 'error';
+export type AcpTimelineItemKind = 'message' | 'tool_call';
+
+/** One entry in `AcpSessionState.items`, in arrival order. Look the full record up in `messages`/`toolCalls` by `id`. */
+export interface AcpTimelineItem {
+  kind: AcpTimelineItemKind;
+  id: string;
+}
 
 export interface AcpChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
-  /** True while more `agent_message_chunk`s are still expected for this message. */
+  /** True while more `agent_message_chunk`/`user_message_chunk`s are still expected for this message. */
   streaming?: boolean;
+  /** Collapsible "thinking" block (`agent_thought_chunk`s sharing this message's id). Assistant-only. */
+  thinking?: string;
+  /** True while more `agent_thought_chunk`s are still expected for this message. */
+  thinkingStreaming?: boolean;
 }
 
 export interface AcpToolCallState {
@@ -42,96 +64,136 @@ export interface AcpUsageState {
   size: number;
 }
 
+/**
+ * Transient banner state for the currently-open session, driven by the
+ * workspace controller's reconnect supervisor: `'disconnected'` while the
+ * transport is down and this session's live updates may be stale,
+ * `'resumed'` once the session has been successfully re-bound (via
+ * `session/resume` or a `session/load` replay fallback) after a drop.
+ */
+export type AcpSessionConnectionBanner = 'disconnected' | 'resumed' | null;
+
 export interface AcpSessionState {
-  status: AcpConnectionStatus;
-  /** Set on a `connection_error`/`prompt_error`; cleared on the next successful transition. */
-  error: string | null;
-  agentName: string | null;
   sessionId: string | null;
-  messages: AcpChatMessage[];
+  /** Arrival-ordered index into `messages`/`toolCalls` — the single source of truth for render order. */
+  items: AcpTimelineItem[];
+  messages: Record<string, AcpChatMessage>;
   toolCalls: Record<string, AcpToolCallState>;
-  /** Insertion order of `toolCalls` keys, so the UI can render cards in arrival order. */
-  toolCallOrder: string[];
   plan: PlanEntry[];
   usage: AcpUsageState | null;
+  configOptions: SessionConfigOption[];
+  availableCommands: AvailableCommand[];
   pendingPermission: RequestPermissionRequest | null;
   /** True for the duration of one `session/prompt` call. */
   isPrompting: boolean;
+  /** The most recently completed turn's stop reason, if any. */
+  stopReason: StopReason | null;
+  /** Set on a `prompt_error`; cleared on the next `session_reset`/`prompt_start`. */
+  error: string | null;
+  connectionBanner: AcpSessionConnectionBanner;
 }
 
 export const initialAcpSessionState: AcpSessionState = {
-  status: 'connecting',
-  error: null,
-  agentName: null,
   sessionId: null,
-  messages: [],
+  items: [],
+  messages: {},
   toolCalls: {},
-  toolCallOrder: [],
   plan: [],
   usage: null,
+  configOptions: [],
+  availableCommands: [],
   pendingPermission: null,
   isPrompting: false,
+  stopReason: null,
+  error: null,
+  connectionBanner: null,
 };
 
 export type AcpSessionAction =
-  | { type: 'connecting' }
-  | { type: 'ready'; sessionId: string; agentName: string | null }
-  | { type: 'connection_error'; message: string }
-  | { type: 'user_message'; id: string; text: string }
-  | { type: 'prompt_start' }
+  /** Clears all timeline/turn state and points it at a (possibly null) session — dispatched whenever the workspace opens/creates/deletes-the-active session. */
+  | { type: 'session_reset'; sessionId: string | null }
+  | { type: 'user_message_chunk'; id: string; text: string }
   | { type: 'message_chunk'; id: string; text: string }
+  | { type: 'thought_chunk'; id: string; text: string }
   | { type: 'tool_call'; event: ToolCallEvent }
   | { type: 'plan'; entries: PlanEntry[] }
   | { type: 'usage'; usage: UsageEvent }
+  | { type: 'available_commands'; commands: AvailableCommand[] }
+  | { type: 'config_options'; configOptions: SessionConfigOption[] }
   | { type: 'permission_request'; request: RequestPermissionRequest }
   | { type: 'permission_resolved' }
-  | { type: 'prompt_end' }
-  | { type: 'prompt_error'; message: string };
+  | { type: 'prompt_start' }
+  | { type: 'prompt_end'; stopReason: StopReason }
+  | { type: 'prompt_error'; message: string }
+  /** Transport dropped: this session's live updates are stale until a resume/reload lands. */
+  | { type: 'connection_lost' }
+  /** The workspace controller re-bound this session after a drop (resume or reload fallback). */
+  | { type: 'connection_resumed' };
 
-function endStreaming(messages: AcpChatMessage[]): AcpChatMessage[] {
-  if (!messages.some(m => m.streaming)) return messages;
-  return messages.map(m => (m.streaming ? { ...m, streaming: false } : m));
+function ensureItem(items: AcpTimelineItem[], kind: AcpTimelineItemKind, id: string): AcpTimelineItem[] {
+  if (items.some(it => it.kind === kind && it.id === id)) return items;
+  return [...items, { kind, id }];
+}
+
+function upsertMessage(
+  messages: Record<string, AcpChatMessage>,
+  id: string,
+  role: 'user' | 'assistant',
+  patch: { text?: string; thinking?: string },
+): Record<string, AcpChatMessage> {
+  const existing = messages[id];
+  const next: AcpChatMessage = existing ? { ...existing } : { id, role, text: '' };
+  if (patch.text !== undefined) {
+    next.text = next.text + patch.text;
+    next.streaming = true;
+  }
+  if (patch.thinking !== undefined) {
+    next.thinking = (next.thinking ?? '') + patch.thinking;
+    next.thinkingStreaming = true;
+  }
+  return { ...messages, [id]: next };
+}
+
+/** Clears `streaming`/`thinkingStreaming` on every message once a turn ends (success or error). */
+function endStreaming(messages: Record<string, AcpChatMessage>): Record<string, AcpChatMessage> {
+  let changed = false;
+  const next: Record<string, AcpChatMessage> = {};
+  for (const [id, m] of Object.entries(messages)) {
+    if (m.streaming || m.thinkingStreaming) {
+      changed = true;
+      next[id] = { ...m, streaming: false, thinkingStreaming: false };
+    } else {
+      next[id] = m;
+    }
+  }
+  return changed ? next : messages;
 }
 
 export function acpSessionReducer(state: AcpSessionState, action: AcpSessionAction): AcpSessionState {
   switch (action.type) {
-    case 'connecting':
-      return { ...state, status: 'connecting', error: null };
+    case 'session_reset':
+      return { ...initialAcpSessionState, sessionId: action.sessionId };
 
-    case 'ready':
+    case 'user_message_chunk':
       return {
         ...state,
-        status: 'ready',
-        error: null,
-        sessionId: action.sessionId,
-        agentName: action.agentName,
+        items: ensureItem(state.items, 'message', action.id),
+        messages: upsertMessage(state.messages, action.id, 'user', { text: action.text }),
       };
 
-    case 'connection_error':
-      return { ...state, status: 'error', error: action.message };
-
-    case 'user_message':
+    case 'message_chunk':
       return {
         ...state,
-        messages: [...state.messages, { id: action.id, role: 'user', text: action.text }],
+        items: ensureItem(state.items, 'message', action.id),
+        messages: upsertMessage(state.messages, action.id, 'assistant', { text: action.text }),
       };
 
-    case 'prompt_start':
-      return { ...state, isPrompting: true, error: null };
-
-    case 'message_chunk': {
-      const idx = state.messages.findIndex(m => m.id === action.id);
-      if (idx === -1) {
-        return {
-          ...state,
-          messages: [...state.messages, { id: action.id, role: 'assistant', text: action.text, streaming: true }],
-        };
-      }
-      const messages = state.messages.slice();
-      const existing = messages[idx];
-      messages[idx] = { ...existing, text: existing.text + action.text, streaming: true };
-      return { ...state, messages };
-    }
+    case 'thought_chunk':
+      return {
+        ...state,
+        items: ensureItem(state.items, 'message', action.id),
+        messages: upsertMessage(state.messages, action.id, 'assistant', { thinking: action.text }),
+      };
 
     case 'tool_call': {
       const { event } = action;
@@ -148,8 +210,8 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
       };
       return {
         ...state,
+        items: ensureItem(state.items, 'tool_call', event.toolCallId),
         toolCalls: { ...state.toolCalls, [event.toolCallId]: merged },
-        toolCallOrder: existing ? state.toolCallOrder : [...state.toolCallOrder, event.toolCallId],
       };
     }
 
@@ -159,14 +221,23 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
     case 'usage':
       return { ...state, usage: { used: action.usage.used, size: action.usage.size } };
 
+    case 'available_commands':
+      return { ...state, availableCommands: action.commands };
+
+    case 'config_options':
+      return { ...state, configOptions: action.configOptions };
+
     case 'permission_request':
       return { ...state, pendingPermission: action.request };
 
     case 'permission_resolved':
       return { ...state, pendingPermission: null };
 
+    case 'prompt_start':
+      return { ...state, isPrompting: true, error: null };
+
     case 'prompt_end':
-      return { ...state, isPrompting: false, messages: endStreaming(state.messages) };
+      return { ...state, isPrompting: false, stopReason: action.stopReason, messages: endStreaming(state.messages) };
 
     case 'prompt_error':
       return {
@@ -175,6 +246,12 @@ export function acpSessionReducer(state: AcpSessionState, action: AcpSessionActi
         error: action.message,
         messages: endStreaming(state.messages),
       };
+
+    case 'connection_lost':
+      return { ...state, connectionBanner: 'disconnected', pendingPermission: null, isPrompting: false };
+
+    case 'connection_resumed':
+      return { ...state, connectionBanner: 'resumed' };
 
     default:
       return state;

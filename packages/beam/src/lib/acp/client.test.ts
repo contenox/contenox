@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AcpClient, type PromptHandlers, type ToolCallEvent } from './client';
+import { AcpClient, type PromptHandlers, type SessionEventHandlers, type ToolCallEvent } from './client';
+import { createAcpClient, type AcpCapabilityProvider } from './clientFactory';
 import type { Transport } from './transport';
 
 /**
@@ -450,5 +451,498 @@ describe('AcpClient: transport close', () => {
     const client = new AcpClient(transport);
     client.close();
     expect(transport.closeCalls).toBe(1);
+  });
+});
+
+describe('AcpClient: subscribe() out-of-turn routing', () => {
+  it('delivers session/update notifications to a subscription with no prompt ever started for that session', () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const events: string[] = [];
+
+    client.subscribe('sess-sub-none', {
+      onMessageChunk: (text) => events.push(`message:${text}`),
+    });
+
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-sub-none',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hello' } },
+      },
+    });
+
+    expect(events).toEqual(['message:hello']);
+  });
+
+  it('delivers to a subscription registered before a prompt for that session ever starts', async () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const events: string[] = [];
+
+    client.subscribe('sess-sub-before', {
+      onMessageChunk: (text) => events.push(`message:${text}`),
+    });
+
+    // Arrives before any prompt() call for this session exists.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-sub-before',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'pre-turn' } },
+      },
+    });
+
+    const promptPromise = client.prompt('sess-sub-before', [{ type: 'text', text: 'hi' }]);
+    const req = transport.lastSent();
+    transport.feed({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
+    await promptPromise;
+
+    expect(events).toEqual(['message:pre-turn']);
+  });
+
+  it('routes to the subscription instead of the per-prompt handlers while a prompt is in flight', async () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const subEvents: string[] = [];
+    const promptEvents: string[] = [];
+
+    client.subscribe('sess-sub-during', {
+      onMessageChunk: (text) => subEvents.push(text),
+    });
+
+    const promptPromise = client.prompt('sess-sub-during', [{ type: 'text', text: 'hi' }], {
+      onMessageChunk: (text) => promptEvents.push(text),
+    });
+    const req = transport.lastSent();
+
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-sub-during',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'during turn' } },
+      },
+    });
+
+    transport.feed({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
+    await promptPromise;
+
+    expect(subEvents).toEqual(['during turn']);
+    expect(promptEvents).toEqual([]);
+  });
+
+  it('never delivers the same event to both an active subscription and per-prompt handlers', async () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const subCall = vi.fn();
+    const promptCall = vi.fn();
+
+    client.subscribe('sess-sub-nodouble', { onMessageChunk: subCall });
+    const promptPromise = client.prompt('sess-sub-nodouble', [{ type: 'text', text: 'hi' }], {
+      onMessageChunk: promptCall,
+    });
+    const req = transport.lastSent();
+
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-sub-nodouble',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'only once' } },
+      },
+    });
+
+    transport.feed({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
+    await promptPromise;
+
+    expect(subCall).toHaveBeenCalledTimes(1);
+    expect(subCall).toHaveBeenCalledWith('only once', undefined);
+    expect(promptCall).not.toHaveBeenCalled();
+  });
+
+  it('delivers a post-turn session_info_update to a subscription after the prompt has resolved (matches acpsvc/prompt.go)', async () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const infos: Array<{ title?: string; updatedAt?: string }> = [];
+
+    client.subscribe('sess-sub-after', { onSessionInfo: (info) => infos.push(info) });
+
+    const promptPromise = client.prompt('sess-sub-after', [{ type: 'text', text: 'hi' }]);
+    const req = transport.lastSent();
+    transport.feed({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
+    await promptPromise;
+
+    // acpsvc/prompt.go sends session_info_update via libacp.AfterResponse — i.e.
+    // only once the session/prompt result is already on the wire.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-sub-after',
+        update: { sessionUpdate: 'session_info_update', updatedAt: '2026-07-15T00:00:00Z' },
+      },
+    });
+
+    expect(infos).toEqual([{ updatedAt: '2026-07-15T00:00:00Z' }]);
+  });
+
+  it('stops delivering once unsubscribed, falling back to per-prompt handlers when a prompt is still active', async () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const subEvents: string[] = [];
+    const promptEvents: string[] = [];
+
+    const unsubscribe = client.subscribe('sess-unsub', {
+      onMessageChunk: (text) => subEvents.push(text),
+    });
+
+    const promptPromise = client.prompt('sess-unsub', [{ type: 'text', text: 'hi' }], {
+      onMessageChunk: (text) => promptEvents.push(text),
+    });
+    const req = transport.lastSent();
+
+    // While both are registered, the subscription wins.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-unsub',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'via-sub' } },
+      },
+    });
+
+    unsubscribe();
+
+    // With the subscription gone but the prompt still in flight, the per-prompt
+    // handlers take over — the event is not silently dropped.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-unsub',
+        update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'via-prompt' } },
+      },
+    });
+
+    // Calling the unsubscribe function again is a no-op, not an error.
+    expect(() => unsubscribe()).not.toThrow();
+
+    transport.feed({ jsonrpc: '2.0', id: req.id, result: { stopReason: 'end_turn' } });
+    await promptPromise;
+
+    expect(subEvents).toEqual(['via-sub']);
+    expect(promptEvents).toEqual(['via-prompt']);
+  });
+
+  it('routes session/request_permission to an active subscription, taking priority over per-prompt handlers', async () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const subPermission = vi.fn().mockResolvedValue('opt-from-sub');
+    const promptPermission = vi.fn().mockResolvedValue('opt-from-prompt');
+
+    client.subscribe('sess-perm-sub', { onPermissionRequest: subPermission });
+    const promptPromise = client.prompt('sess-perm-sub', [{ type: 'text', text: 'do it' }], {
+      onPermissionRequest: promptPermission,
+    });
+    const promptReq = transport.lastSent();
+
+    transport.feed({
+      jsonrpc: '2.0',
+      id: 42,
+      method: 'session/request_permission',
+      params: {
+        sessionId: 'sess-perm-sub',
+        toolCall: { toolCallId: 'tc-perm' },
+        options: [{ optionId: 'opt-from-sub', name: 'Allow', kind: 'allow_once' }],
+      },
+    });
+
+    await flushMicrotasks();
+
+    expect(subPermission).toHaveBeenCalledTimes(1);
+    expect(promptPermission).not.toHaveBeenCalled();
+
+    const responseFrame = transport.sent.find((m) => (m as Record<string, unknown>).id === 42) as Record<
+      string,
+      unknown
+    >;
+    expect(responseFrame).toEqual({
+      jsonrpc: '2.0',
+      id: 42,
+      result: { outcome: { outcome: 'selected', optionId: 'opt-from-sub' } },
+    });
+
+    transport.feed({ jsonrpc: '2.0', id: promptReq.id, result: { stopReason: 'end_turn' } });
+    await promptPromise;
+  });
+});
+
+describe('AcpClient: session/load replay routing (matches acpsvc/session.go)', () => {
+  it('delivers a full replay sequence to a subscription, in wire-arrival order', async () => {
+    const transport = new MockTransport();
+    const client = new AcpClient(transport);
+    const events: string[] = [];
+    let capturedCommands: Array<{ name: string }> | undefined;
+
+    const handlers: SessionEventHandlers = {
+      onUserMessageChunk: (text, messageId) => events.push(`user:${messageId}:${text}`),
+      onMessageChunk: (text, messageId) => events.push(`message:${messageId}:${text}`),
+      onThoughtChunk: (text, messageId) => events.push(`thought:${messageId}:${text}`),
+      onToolCall: (event) => events.push(`tool:${event.updateKind}:${event.toolCallId}:${event.status}`),
+      onUsage: (usage) => events.push(`usage:${usage.used}/${usage.size}`),
+      onAvailableCommands: (commands) => {
+        capturedCommands = commands;
+        events.push(`commands:${commands.map((c) => c.name).join(',')}`);
+      },
+    };
+    // The caller already knows the sessionId for session/load (unlike session/new,
+    // where it's minted server-side), so it can subscribe before issuing the call —
+    // this is exactly what lets a subscription observe acpsvc/session.go's
+    // replayMessages() notifications, which reach the wire BEFORE the session/load
+    // response itself (replayMessages runs synchronously inside the handler, before
+    // it returns; only available_commands_update is deferred via libacp.AfterResponse
+    // until after the response).
+    client.subscribe('sess-replay', handlers);
+
+    const loadPromise = client.loadSession('sess-replay', '/work/replay');
+    const req = transport.lastSent();
+    expect(req.method).toBe('session/load');
+
+    // One messageId per historical message (acpsvc/session.go: replayMessages).
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-replay',
+        update: {
+          sessionUpdate: 'user_message_chunk',
+          content: { type: 'text', text: 'hi there' },
+          messageId: 'replay-0',
+        },
+      },
+    });
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-replay',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          content: { type: 'text', text: 'thinking about it' },
+          messageId: 'replay-1',
+        },
+      },
+    });
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-replay',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'here is my answer' },
+          messageId: 'replay-1',
+        },
+      },
+    });
+    // toolCallUpdateFromCall: no messageId, status forced to "completed" for replay.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-replay',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc-1',
+          title: 'search: foo',
+          kind: 'search',
+          status: 'completed',
+          rawInput: { query: 'foo' },
+        },
+      },
+    });
+    // toolCallUpdateFromResult: the tool's result message.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-replay',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc-1',
+          status: 'completed',
+          rawOutput: 'result content',
+        },
+      },
+    });
+    // sendInitialUsageUpdate, called at the end of replayMessages; used/size always
+    // present on the wire for usage_update.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-replay',
+        update: { sessionUpdate: 'usage_update', used: 0, size: 8000 },
+      },
+    });
+
+    // The session/load JSON-RPC response reaches the wire only after the replay
+    // notifications above (acpsvc/session.go emits them synchronously before
+    // returning the response).
+    transport.feed({
+      jsonrpc: '2.0',
+      id: req.id,
+      result: {
+        configOptions: [{ id: 'model', name: 'Model', type: 'string', currentValue: 'demo-model', options: [] }],
+      },
+    });
+    const loadResult = await loadPromise;
+
+    // available_commands_update is scheduled via libacp.AfterResponse — it must
+    // only reach the client once the session/load result is already resolvable.
+    transport.feed({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'sess-replay',
+        update: {
+          sessionUpdate: 'available_commands_update',
+          availableCommands: [
+            { name: 'help', description: 'List the available commands.' },
+            { name: 'clear', description: "Clear this session's conversation history." },
+          ],
+        },
+      },
+    });
+
+    expect(events).toEqual([
+      'user:replay-0:hi there',
+      'thought:replay-1:thinking about it',
+      'message:replay-1:here is my answer',
+      'tool:tool_call:tc-1:completed',
+      'tool:tool_call_update:tc-1:completed',
+      'usage:0/8000',
+      'commands:help,clear',
+    ]);
+    expect(loadResult.configOptions).toEqual([
+      { id: 'model', name: 'Model', type: 'string', currentValue: 'demo-model', options: [] },
+    ]);
+    expect(capturedCommands).toHaveLength(2);
+  });
+});
+
+describe('AcpClient: capability provider (clientFactory.ts)', () => {
+  it("merges the capability provider's capabilities() into initialize()'s clientCapabilities", () => {
+    const transport = new MockTransport();
+    const provider: AcpCapabilityProvider = {
+      capabilities: () => ({ terminal: true, fs: { readTextFile: true } }),
+      handleRequest: vi.fn(),
+    };
+    const client = createAcpClient(transport, { capabilities: provider });
+
+    void client.initialize({ session: { configOptions: { boolean: {} } } });
+
+    const req = transport.lastSent();
+    expect((req.params as Record<string, unknown>).clientCapabilities).toEqual({
+      terminal: true,
+      fs: { readTextFile: true },
+      session: { configOptions: { boolean: {} } },
+    });
+  });
+
+  it('lets explicit initialize() capabilities override the provider per top-level key', () => {
+    const transport = new MockTransport();
+    const provider: AcpCapabilityProvider = {
+      capabilities: () => ({ terminal: true }),
+      handleRequest: vi.fn(),
+    };
+    const client = createAcpClient(transport, { capabilities: provider });
+
+    void client.initialize({ terminal: false });
+
+    const req = transport.lastSent();
+    expect((req.params as Record<string, unknown>).clientCapabilities).toEqual({ terminal: false });
+  });
+
+  it('sends clientCapabilities unchanged when no provider is registered', () => {
+    const transport = new MockTransport();
+    const client = createAcpClient(transport);
+
+    void client.initialize({ terminal: true });
+
+    const req = transport.lastSent();
+    expect((req.params as Record<string, unknown>).clientCapabilities).toEqual({ terminal: true });
+  });
+
+  it('round-trips terminal/create through a capability provider', async () => {
+    const transport = new MockTransport();
+    const handleRequest = vi.fn(async (method: string, params: unknown) => {
+      expect(method).toBe('terminal/create');
+      expect(params).toMatchObject({ command: 'ls' });
+      return { terminalId: 'term-1' };
+    });
+    const provider: AcpCapabilityProvider = {
+      capabilities: () => ({ terminal: true }),
+      handleRequest,
+    };
+    const client = createAcpClient(transport, { capabilities: provider });
+    void client; // constructed for its onMessage side effects only
+
+    transport.feed({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'terminal/create',
+      params: { sessionId: 'sess-1', command: 'ls' },
+    });
+
+    await flushMicrotasks();
+
+    expect(handleRequest).toHaveBeenCalledTimes(1);
+    expect(transport.lastSent()).toEqual({ jsonrpc: '2.0', id: 1, result: { terminalId: 'term-1' } });
+  });
+
+  it('still refuses terminal/create exactly as today when no provider is registered', async () => {
+    const transport = new MockTransport();
+    const client = createAcpClient(transport);
+    void client;
+
+    transport.feed({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'terminal/create',
+      params: { sessionId: 'sess-1', command: 'ls' },
+    });
+
+    await flushMicrotasks();
+
+    const resp = transport.lastSent();
+    expect(resp.result).toBeUndefined();
+    expect((resp.error as Record<string, unknown>).code).toBe(-32601);
+    expect((resp.error as Record<string, unknown>).message).toBe('not supported by this client: terminal/create');
+  });
+
+  it('falls back to the standard refusal when the provider declines the method', async () => {
+    const transport = new MockTransport();
+    const provider: AcpCapabilityProvider = {
+      capabilities: () => ({}),
+      handleRequest: vi.fn().mockRejectedValue(new Error('not implemented')),
+    };
+    const client = createAcpClient(transport, { capabilities: provider });
+    void client;
+
+    transport.feed({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'terminal/create',
+      params: { sessionId: 'sess-1', command: 'ls' },
+    });
+
+    await flushMicrotasks();
+
+    const resp = transport.lastSent();
+    expect((resp.error as Record<string, unknown>).code).toBe(-32601);
   });
 });

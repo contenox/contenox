@@ -7,42 +7,30 @@
  * This module knows nothing about contenox, beam, or any specific agent. It is
  * a plain description of the protocol and may be lifted into its own package
  * unchanged.
+ *
+ * As of Stage 2.5, this module leans on the official `@agentclientprotocol/sdk`
+ * (pinned in package.json) where it safely can — see client.ts's header
+ * comment for the full account of what the SDK owns vs. what stays local, and
+ * why (short version: the SDK's `Stream`/`Connection`/`ClientApp` engine is
+ * incompatible with two hard constraints this client must meet — synchronous
+ * send-on-call, and libacp's actual wire traffic being more lenient than the
+ * SDK's generated schema marks as "required" — so the JSON-RPC dispatch loop
+ * stays hand-rolled in client.ts; the SDK is a compile-time-only dependency —
+ * a handful of byte-identical leaf enums are re-exported as types here, at
+ * zero bundle cost). The JSON-RPC
+ * envelope types (`JsonRpcRequest`/`JsonRpcNotification`/`JsonRpcResponse`)
+ * that used to live in this file are gone — they're now private to client.ts.
  */
+import type {
+  PermissionOptionKind as SdkPermissionOptionKind,
+  PlanEntryPriority as SdkPlanEntryPriority,
+  PlanEntryStatus as SdkPlanEntryStatus,
+  StopReason as SdkStopReason,
+  ToolCallStatus as SdkToolCallStatus,
+} from '@agentclientprotocol/sdk';
 
 /** The ACP protocol version this client speaks (libacp.ProtocolVersion). */
 export const ACP_PROTOCOL_VERSION = 1;
-
-// ---------------------------------------------------------------------------
-// JSON-RPC 2.0 envelope
-// ---------------------------------------------------------------------------
-
-export type JsonRpcId = number | string | null;
-
-export interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  method: string;
-  params?: unknown;
-}
-
-export interface JsonRpcNotification {
-  jsonrpc: '2.0';
-  method: string;
-  params?: unknown;
-}
-
-export interface JsonRpcErrorObject {
-  code: number;
-  message: string;
-  data?: unknown;
-}
-
-export interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  result?: unknown;
-  error?: JsonRpcErrorObject;
-}
 
 // ---------------------------------------------------------------------------
 // initialize
@@ -187,7 +175,8 @@ export type ToolKind =
   | 'fetch'
   | 'other';
 
-export type ToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+/** Byte-identical to `@agentclientprotocol/sdk`'s `ToolCallStatus` — re-exported rather than redeclared. */
+export type ToolCallStatus = SdkToolCallStatus;
 
 export interface ToolCallLocation {
   path: string;
@@ -209,8 +198,9 @@ export interface ToolCallContent {
 // plan / available commands
 // ---------------------------------------------------------------------------
 
-export type PlanEntryPriority = 'high' | 'medium' | 'low';
-export type PlanEntryStatus = 'pending' | 'in_progress' | 'completed';
+/** Byte-identical to the SDK's `PlanEntryPriority`/`PlanEntryStatus` — re-exported rather than redeclared. */
+export type PlanEntryPriority = SdkPlanEntryPriority;
+export type PlanEntryStatus = SdkPlanEntryStatus;
 
 export interface PlanEntry {
   content: string;
@@ -331,12 +321,8 @@ export interface ListSessionsResponse {
 // session/prompt
 // ---------------------------------------------------------------------------
 
-export type StopReason =
-  | 'end_turn'
-  | 'max_tokens'
-  | 'max_turn_requests'
-  | 'refusal'
-  | 'cancelled';
+/** Byte-identical to the SDK's `StopReason` — re-exported rather than redeclared. */
+export type StopReason = SdkStopReason;
 
 export interface TokenUsage {
   inputTokens?: number;
@@ -409,11 +395,8 @@ export interface SessionNotification {
 // session/request_permission (server -> client request)
 // ---------------------------------------------------------------------------
 
-export type PermissionOptionKind =
-  | 'allow_once'
-  | 'allow_always'
-  | 'reject_once'
-  | 'reject_always';
+/** Byte-identical to the SDK's `PermissionOptionKind` — re-exported rather than redeclared. */
+export type PermissionOptionKind = SdkPermissionOptionKind;
 
 export interface PermissionOption {
   optionId: string;

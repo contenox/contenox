@@ -1,63 +1,106 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
-import { AcpClient, WebSocketTransport } from '../lib/acp';
-import { getStoredApiToken } from '../lib/fetch';
-import { createAcpSessionController, type AcpSessionController } from './acpSessionController';
-import { acpSessionReducer, initialAcpSessionState, type AcpSessionState } from './acpSessionState';
+import { useEffect, useMemo, useRef } from 'react';
+import type { PlanEntry, RequestPermissionRequest } from '../lib/acp';
+import type { AcpChatMessage, AcpTimelineItem, AcpToolCallState, AcpUsageState } from './acpSessionState';
+import type { AcpWorkspaceStatus } from './acpWorkspaceState';
+import { useAcpWorkspace } from './useAcpWorkspace';
 
-/** `ws(s)://<host>/acp[?token=...]` — the browser can't set a WS Authorization header, so the stored API token (if any) travels as a query param instead. */
-function buildAcpWsUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const base = `${protocol}://${window.location.host}/acp`;
-  const token = getStoredApiToken();
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
-}
+/**
+ * @deprecated Thin single-session adapter kept only so `pages/admin/acpchat/AcpChatPage.tsx`
+ * (Stage 3 rebuilds it against `useAcpWorkspace` directly) keeps compiling and
+ * behaving the way it did before the workspace layer landed. All protocol/state
+ * logic now lives in `useAcpWorkspace.ts` / `acpWorkspaceController.ts` /
+ * `acpSessionState.ts` — this file only adapts their multi-session,
+ * unified-timeline shape back down to the single-session, flat-lists shape
+ * the page was written against:
+ *  - `workspace.status` (6 values) collapses to the old 3-value status.
+ *  - `session.items`/`session.messages` (unified timeline) splits back into
+ *    `messages`/`toolCallOrder`/`toolCalls`.
+ *  - Session creation, lazy by default in the workspace layer (D5), is forced
+ *    eager here (on first `ready`) to match the old auto-connect UX.
+ */
 
-export interface UseAcpSessionResult extends AcpSessionState {
+export type AcpConnectionStatus = 'connecting' | 'ready' | 'error';
+
+export interface UseAcpSessionResult {
+  status: AcpConnectionStatus;
+  error: string | null;
+  agentName: string | null;
+  sessionId: string | null;
+  messages: AcpChatMessage[];
+  toolCalls: Record<string, AcpToolCallState>;
+  toolCallOrder: string[];
+  plan: PlanEntry[];
+  usage: AcpUsageState | null;
+  pendingPermission: RequestPermissionRequest | null;
+  isPrompting: boolean;
   sendPrompt: (text: string) => void;
   respondPermission: (optionId: string) => void;
   cancel: () => void;
 }
 
-/**
- * Owns one ACP client/session lifecycle over the browser `/acp` WebSocket
- * endpoint: on mount, connects, calls `initialize()` then `session/new('/')`,
- * and exposes the running turn's state — messages, tool calls, plan, usage,
- * and the permission gate — plus the three actions a chat surface needs.
- *
- * All protocol logic lives in `src/lib/acp`; this hook only wires it up (via
- * the framework-free `acpSessionController`) and re-renders on
- * `acpSessionReducer` state. It has no contenox-API coupling beyond reading
- * the stored bearer token for the WS URL.
- */
+/** Collapses the workspace's 6-value status onto the page's original 3-value one. Exported (pure, no React) so it can be unit-tested directly — see useAcpSession.test.ts. */
+export function mapStatus(workspaceStatus: AcpWorkspaceStatus): AcpConnectionStatus {
+  switch (workspaceStatus) {
+    case 'ready':
+      return 'ready';
+    case 'connecting':
+    case 'reconnecting':
+      return 'connecting';
+    default: // 'disconnected' | 'setup_required' | 'error'
+      return 'error';
+  }
+}
+
+/** Un-interleaves the unified timeline's message items back into a flat, arrival-ordered list — the shape the page was written against. Pure, exported for direct testing. */
+export function deriveMessages(items: AcpTimelineItem[], messages: Record<string, AcpChatMessage>): AcpChatMessage[] {
+  return items
+    .filter(item => item.kind === 'message')
+    .map(item => messages[item.id])
+    .filter((m): m is AcpChatMessage => m !== undefined);
+}
+
+/** Un-interleaves the unified timeline's tool-call items back into arrival order. Pure, exported for direct testing. */
+export function deriveToolCallOrder(items: AcpTimelineItem[]): string[] {
+  return items.filter(item => item.kind === 'tool_call').map(item => item.id);
+}
+
 export function useAcpSession(): UseAcpSessionResult {
-  const [state, dispatch] = useReducer(acpSessionReducer, initialAcpSessionState);
-  const controllerRef = useRef<AcpSessionController | null>(null);
+  const acp = useAcpWorkspace();
+  const { workspace, session } = acp;
 
+  // The old hook auto-created one session on mount; the workspace layer's
+  // newSession() is deliberately lazy (D5) so callers choose when — this
+  // adapter is the caller, forcing it eager exactly once per connection to
+  // preserve the page's original UX.
+  const createdRef = useRef(false);
   useEffect(() => {
-    const transport = new WebSocketTransport(buildAcpWsUrl());
-    const client = new AcpClient(transport);
-    const controller = createAcpSessionController(client, dispatch);
-    controllerRef.current = controller;
-    void controller.connect('/');
+    if (workspace.status === 'ready' && workspace.activeSessionId === null && !createdRef.current) {
+      createdRef.current = true;
+      void acp.newSession();
+    }
+    if (workspace.status !== 'ready') {
+      createdRef.current = false;
+    }
+  }, [workspace.status, workspace.activeSessionId, acp]);
 
-    return () => {
-      controller.dispose();
-      client.close();
-      controllerRef.current = null;
-    };
-  }, []);
+  const messages = useMemo(() => deriveMessages(session.items, session.messages), [session.items, session.messages]);
 
-  const sendPrompt = useCallback((text: string) => {
-    controllerRef.current?.sendPrompt(text);
-  }, []);
+  const toolCallOrder = useMemo(() => deriveToolCallOrder(session.items), [session.items]);
 
-  const respondPermission = useCallback((optionId: string) => {
-    controllerRef.current?.respondPermission(optionId);
-  }, []);
-
-  const cancel = useCallback(() => {
-    controllerRef.current?.cancel();
-  }, []);
-
-  return { ...state, sendPrompt, respondPermission, cancel };
+  return {
+    status: mapStatus(workspace.status),
+    error: workspace.error ?? session.error,
+    agentName: workspace.agentName,
+    sessionId: session.sessionId,
+    messages,
+    toolCalls: session.toolCalls,
+    toolCallOrder,
+    plan: session.plan,
+    usage: session.usage,
+    pendingPermission: session.pendingPermission,
+    isPrompting: session.isPrompting,
+    sendPrompt: acp.sendPrompt,
+    respondPermission: acp.respondPermission,
+    cancel: acp.cancel,
+  };
 }
