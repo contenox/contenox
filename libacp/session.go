@@ -204,6 +204,40 @@ type SetSessionConfigOptionResponse struct {
 	Meta          json.RawMessage       `json:"_meta,omitempty"`
 }
 
+// ResumeSessionRequest reconnects to an existing session WITHOUT history
+// replay (the client kept its transcript). McpServers is optional here,
+// unlike session/new and session/load.
+type ResumeSessionRequest struct {
+	SessionID  SessionID       `json:"sessionId"`
+	Cwd        string          `json:"cwd"`
+	McpServers []McpServer     `json:"mcpServers,omitempty"`
+	Meta       json.RawMessage `json:"_meta,omitempty"`
+}
+
+type ResumeSessionResponse struct {
+	Modes         *SessionModeState     `json:"modes,omitempty"`
+	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
+	Meta          json.RawMessage       `json:"_meta,omitempty"`
+}
+
+type CloseSessionRequest struct {
+	SessionID SessionID       `json:"sessionId"`
+	Meta      json.RawMessage `json:"_meta,omitempty"`
+}
+
+type CloseSessionResponse struct {
+	Meta json.RawMessage `json:"_meta,omitempty"`
+}
+
+type DeleteSessionRequest struct {
+	SessionID SessionID       `json:"sessionId"`
+	Meta      json.RawMessage `json:"_meta,omitempty"`
+}
+
+type DeleteSessionResponse struct {
+	Meta json.RawMessage `json:"_meta,omitempty"`
+}
+
 type CancelNotification struct {
 	SessionID SessionID       `json:"sessionId"`
 	Meta      json.RawMessage `json:"_meta,omitempty"`

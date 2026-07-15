@@ -36,6 +36,8 @@ func (m *mockAgent) SessionLoad(context.Context, string) (string, []taskengine.M
 	return "", nil, nil
 }
 
+func (m *mockAgent) SessionResume(context.Context, string) (string, error) { return "", nil }
+func (m *mockAgent) SessionDelete(context.Context, string) error           { return nil }
 func (m *mockAgent) SessionEnsureDefault(context.Context) (string, error) {
 	return "", nil
 }

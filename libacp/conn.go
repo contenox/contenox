@@ -373,6 +373,39 @@ func (c *AgentSideConnection) callMethod(ctx context.Context, req Request, pc *p
 		}
 		return resp, nil
 
+	case MethodSessionResume:
+		var p ResumeSessionRequest
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, InvalidParams(err.Error())
+		}
+		resp, err := c.agent.ResumeSession(ctx, p)
+		if err != nil {
+			return nil, AsError(err)
+		}
+		return resp, nil
+
+	case MethodSessionClose:
+		var p CloseSessionRequest
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, InvalidParams(err.Error())
+		}
+		resp, err := c.agent.CloseSession(ctx, p)
+		if err != nil {
+			return nil, AsError(err)
+		}
+		return resp, nil
+
+	case MethodSessionDelete:
+		var p DeleteSessionRequest
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, InvalidParams(err.Error())
+		}
+		resp, err := c.agent.DeleteSession(ctx, p)
+		if err != nil {
+			return nil, AsError(err)
+		}
+		return resp, nil
+
 	case MethodSessionList:
 		var p ListSessionsRequest
 		if err := json.Unmarshal(params, &p); err != nil {

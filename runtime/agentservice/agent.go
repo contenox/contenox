@@ -12,6 +12,7 @@ import (
 	"github.com/contenox/runtime/libtracker"
 	"github.com/contenox/runtime/runtime/chatservice"
 	"github.com/contenox/runtime/runtime/enginesvc"
+	"github.com/contenox/runtime/runtime/messagestore"
 	"github.com/contenox/runtime/runtime/runtimetypes"
 	"github.com/contenox/runtime/runtime/sessionservice"
 	"github.com/contenox/runtime/runtime/taskengine"
@@ -23,6 +24,13 @@ type Agent interface {
 	SessionNew(ctx context.Context, name string) (string, error)
 	SessionList(ctx context.Context) ([]*SessionInfo, error)
 	SessionLoad(ctx context.Context, name string) (contenoxSessionID string, messages []taskengine.Message, err error)
+	// SessionResume switches to an existing session without loading its
+	// message history — the reconnect path for clients that kept their
+	// transcript.
+	SessionResume(ctx context.Context, name string) (contenoxSessionID string, err error)
+	// SessionDelete removes a session and its messages by name; missing
+	// sessions are not an error (delete is idempotent).
+	SessionDelete(ctx context.Context, name string) error
 	SessionEnsureDefault(ctx context.Context) (string, error)
 	Prompt(ctx context.Context, req PromptRequest) (*PromptResponse, error)
 }
@@ -97,6 +105,30 @@ func (a *agent) SessionLoad(ctx context.Context, name string) (string, []taskeng
 		return "", nil, err
 	}
 	return sessionID, msgs, nil
+}
+
+func (a *agent) SessionResume(ctx context.Context, name string) (string, error) {
+	if err := a.sessionSvc().Switch(ctx, a.deps.Identity, name); err != nil {
+		return "", err
+	}
+	sessionID, err := a.sessionSvc().GetActiveID(ctx)
+	if err != nil {
+		return "", err
+	}
+	if sessionID == "" {
+		return "", fmt.Errorf("no active session after switch")
+	}
+	return sessionID, nil
+}
+
+func (a *agent) SessionDelete(ctx context.Context, name string) error {
+	_, err := a.sessionSvc().Delete(ctx, a.deps.Identity, name)
+	if err != nil && errors.Is(err, messagestore.ErrNotFound) {
+		// Deleting a session that does not exist is a success: the desired
+		// state (no such session) already holds.
+		return nil
+	}
+	return err
 }
 
 func (a *agent) SessionEnsureDefault(ctx context.Context) (string, error) {

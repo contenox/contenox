@@ -8,6 +8,9 @@ const (
 
 	MethodSessionNew             = "session/new"
 	MethodSessionLoad            = "session/load"
+	MethodSessionResume          = "session/resume"
+	MethodSessionClose           = "session/close"
+	MethodSessionDelete          = "session/delete"
 	MethodSessionList            = "session/list"
 	MethodSessionPrompt          = "session/prompt"
 	MethodSessionCancel          = "session/cancel"

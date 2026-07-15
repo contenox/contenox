@@ -58,8 +58,11 @@ type McpCapabilities struct {
 }
 
 type SessionCapabilities struct {
-	List *struct{}       `json:"list,omitempty"`
-	Meta json.RawMessage `json:"_meta,omitempty"`
+	List   *struct{}       `json:"list,omitempty"`
+	Resume *struct{}       `json:"resume,omitempty"`
+	Close  *struct{}       `json:"close,omitempty"`
+	Delete *struct{}       `json:"delete,omitempty"`
+	Meta   json.RawMessage `json:"_meta,omitempty"`
 }
 
 type AgentCapabilities struct {

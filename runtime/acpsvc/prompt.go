@@ -3,6 +3,7 @@ package acpsvc
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/contenox/runtime/libacp"
 	"github.com/contenox/runtime/libtracker"
@@ -42,6 +43,10 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 	promptCtx := libtracker.WithNewRequestID(ctx)
 	reqID, _ := promptCtx.Value(libtracker.ContextKeyRequestID).(string)
 
+	// The chain is the turn's plan: surface it as ACP plan entries that the
+	// event translator advances as steps run. Nil for single-task chains.
+	plan := newPlanTracker(t.deps.ChainRegistry.Default())
+
 	rawCh := make(chan []byte, 64)
 	bus := t.deps.Engine.Bus
 	if bus != nil && reqID != "" {
@@ -53,10 +58,13 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 			subErr(err)
 			subEnd()
 		} else {
+			if plan != nil {
+				t.sendPlanUpdate(promptCtx, req.SessionID, plan)
+			}
 			translateDone := make(chan struct{})
 			go func() {
 				defer close(translateDone)
-				t.translateEvents(promptCtx, req.SessionID, rawCh)
+				t.translateEvents(promptCtx, req.SessionID, rawCh, plan)
 			}()
 			defer func() {
 				_ = sub.Unsubscribe()
@@ -139,6 +147,17 @@ func (t *Transport) Prompt(ctx context.Context, req libacp.PromptRequest) (libac
 		return libacp.PromptResponse{}, libacp.InternalError(err.Error())
 	}
 	stopReason := mapStopReason(resp.StopReason)
+	// Session pickers key freshness off updatedAt; push it after the turn so
+	// clients don't need to re-list to notice activity.
+	libacp.AfterResponse(ctx, func() {
+		t.sendUpdate(ctx, libacp.SessionNotification{
+			SessionID: req.SessionID,
+			Update: libacp.SessionUpdate{
+				SessionUpdate: libacp.SessionUpdateSessionInfo,
+				UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+			},
+		})
+	})
 	reportChange(string(req.SessionID), map[string]any{
 		"stop_reason":           string(stopReason),
 		"request_id":            reqID,

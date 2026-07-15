@@ -134,7 +134,7 @@ func (s *service) Delete(ctx context.Context, identity, name string) (bool, erro
 	si, err := messagestore.New(exec, s.workspaceID).GetSessionByName(ctx, identity, name)
 	if err != nil {
 		if errors.Is(err, messagestore.ErrNotFound) {
-			return false, fmt.Errorf("session %q not found", name)
+			return false, fmt.Errorf("session %q not found: %w", name, err)
 		}
 		return false, fmt.Errorf("failed to look up session: %w", err)
 	}

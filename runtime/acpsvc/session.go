@@ -140,28 +140,38 @@ func (t *Transport) replayMessages(ctx context.Context, sessionID libacp.Session
 	defer end()
 
 	var users, assistantText, toolCalls, toolResults int
-	for _, m := range messages {
+	// One messageId per historical message: the spec groups replayed chunks by
+	// id, so thinking + text of one assistant turn render as one message and a
+	// change of id marks the next.
+	for i, m := range messages {
+		messageID := fmt.Sprintf("replay-%d", i)
 		switch m.Role {
 		case "user":
 			if m.Content == "" {
 				continue
 			}
+			update := libacp.NewUserMessageChunk(m.Content)
+			update.MessageID = messageID
 			t.sendUpdate(ctx, libacp.SessionNotification{
 				SessionID: sessionID,
-				Update:    libacp.NewUserMessageChunk(m.Content),
+				Update:    update,
 			})
 			users++
 		case "assistant":
 			if m.Thinking != "" {
+				update := libacp.NewAgentThoughtChunk(m.Thinking)
+				update.MessageID = messageID
 				t.sendUpdate(ctx, libacp.SessionNotification{
 					SessionID: sessionID,
-					Update:    libacp.NewAgentThoughtChunk(m.Thinking),
+					Update:    update,
 				})
 			}
 			if m.Content != "" {
+				update := libacp.NewAgentMessageChunk(m.Content)
+				update.MessageID = messageID
 				t.sendUpdate(ctx, libacp.SessionNotification{
 					SessionID: sessionID,
-					Update:    libacp.NewAgentMessageChunk(m.Content),
+					Update:    update,
 				})
 				assistantText++
 			}
@@ -321,6 +331,161 @@ func (t *Transport) NewSession(ctx context.Context, req libacp.NewSessionRequest
 		SessionID:     sessionID,
 		ConfigOptions: t.sessionConfigOptions(ctx, entry),
 	}, nil
+}
+
+// ResumeSession is session/load without the history replay: the client kept
+// its transcript and only needs the server-side session re-bound.
+func (t *Transport) ResumeSession(ctx context.Context, req libacp.ResumeSessionRequest) (libacp.ResumeSessionResponse, error) {
+	reportErr, reportChange, end := t.tracker().Start(ctx, "resume", "acp_session", "session_id", string(req.SessionID))
+	defer end()
+
+	if req.SessionID == "" {
+		err := libacp.NewError(libacp.ErrInvalidParams, "sessionId is required")
+		reportErr(err)
+		return libacp.ResumeSessionResponse{}, err
+	}
+	if !filepath.IsAbs(req.Cwd) {
+		err := libacp.NewErrorf(libacp.ErrInvalidParams, "cwd must be an absolute path, got %q", req.Cwd)
+		reportErr(err)
+		return libacp.ResumeSessionResponse{}, err
+	}
+	if t.deps.Engine == nil {
+		err := errSetupRequired()
+		reportErr(err)
+		return libacp.ResumeSessionResponse{}, err
+	}
+	workspaceID := t.workspaceID()
+	if resolved, ok := t.resolveSessionWorkspace(ctx, string(req.SessionID)); ok {
+		workspaceID = resolved
+	}
+
+	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+	registered, err := t.registerMcpServers(ctx, store, req.SessionID, req.McpServers)
+	if err != nil {
+		reportErr(err)
+		return libacp.ResumeSessionResponse{}, err
+	}
+
+	ag := agentservice.New(agentservice.Deps{
+		Engine:      t.deps.Engine,
+		DB:          t.deps.DB,
+		WorkspaceID: workspaceID,
+		Identity:    "acp-client",
+	})
+
+	contenoxSessionID, err := ag.SessionResume(ctx, string(req.SessionID))
+	if err != nil {
+		t.cleanupMcpServers(ctx, store, registered)
+		wrapped := libacp.NewErrorf(libacp.ErrInvalidParams, "resume session %q: %v", req.SessionID, err)
+		reportErr(wrapped)
+		return libacp.ResumeSessionResponse{}, wrapped
+	}
+
+	entry := &sessionEntry{
+		WorkspaceID:       workspaceID,
+		Cwd:               req.Cwd,
+		InternalSessionID: contenoxSessionID,
+		Agent:             ag,
+		McpServerNames:    registered,
+		Provider:          t.provider(),
+		Model:             t.model(),
+		Think:             t.thinkDefault(),
+	}
+	t.sessionMu.Lock()
+	t.sessions[req.SessionID] = entry
+	t.contenoxToACPID[contenoxSessionID] = req.SessionID
+	t.sessionMu.Unlock()
+	t.persistSessionCwd(ctx, store, req.SessionID, req.Cwd)
+	t.clearToolCallState(req.SessionID)
+
+	libacp.AfterResponse(ctx, func() {
+		t.sendAvailableCommands(ctx, req.SessionID)
+	})
+
+	reportChange(string(req.SessionID), map[string]any{
+		"contenox_session_id": contenoxSessionID,
+	})
+	return libacp.ResumeSessionResponse{ConfigOptions: t.sessionConfigOptions(ctx, entry)}, nil
+}
+
+// CloseSession releases the connection-local resources of a session without
+// touching its stored history. Closing an unknown session succeeds: the
+// desired state (not open here) already holds.
+func (t *Transport) CloseSession(ctx context.Context, req libacp.CloseSessionRequest) (libacp.CloseSessionResponse, error) {
+	_, reportChange, end := t.tracker().Start(ctx, "close", "acp_session", "session_id", string(req.SessionID))
+	defer end()
+
+	if req.SessionID == "" {
+		return libacp.CloseSessionResponse{}, libacp.NewError(libacp.ErrInvalidParams, "sessionId is required")
+	}
+	entry := t.dropSessionEntry(req.SessionID)
+	if entry != nil && t.deps.DB != nil {
+		store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+		t.cleanupMcpServers(ctx, store, entry.McpServerNames)
+	}
+	t.clearToolCallState(req.SessionID)
+	reportChange(string(req.SessionID), map[string]any{"was_open": entry != nil})
+	return libacp.CloseSessionResponse{}, nil
+}
+
+// DeleteSession removes the session's stored history (and any connection-local
+// state). Per spec, deleting a nonexistent session succeeds silently, and the
+// session disappears from session/list.
+func (t *Transport) DeleteSession(ctx context.Context, req libacp.DeleteSessionRequest) (libacp.DeleteSessionResponse, error) {
+	reportErr, reportChange, end := t.tracker().Start(ctx, "delete", "acp_session", "session_id", string(req.SessionID))
+	defer end()
+
+	if req.SessionID == "" {
+		err := libacp.NewError(libacp.ErrInvalidParams, "sessionId is required")
+		reportErr(err)
+		return libacp.DeleteSessionResponse{}, err
+	}
+	if t.deps.Engine == nil {
+		err := errSetupRequired()
+		reportErr(err)
+		return libacp.DeleteSessionResponse{}, err
+	}
+
+	workspaceID := t.workspaceID()
+	if resolved, ok := t.resolveSessionWorkspace(ctx, string(req.SessionID)); ok {
+		workspaceID = resolved
+	}
+
+	entry := t.dropSessionEntry(req.SessionID)
+	store := runtimetypes.New(t.deps.DB.WithoutTransaction())
+	if entry != nil {
+		t.cleanupMcpServers(ctx, store, entry.McpServerNames)
+	}
+	t.clearToolCallState(req.SessionID)
+
+	ag := agentservice.New(agentservice.Deps{
+		Engine:      t.deps.Engine,
+		DB:          t.deps.DB,
+		WorkspaceID: workspaceID,
+		Identity:    "acp-client",
+	})
+	if err := ag.SessionDelete(ctx, string(req.SessionID)); err != nil {
+		reportErr(err)
+		return libacp.DeleteSessionResponse{}, libacp.InternalError(err.Error())
+	}
+	_ = store.DeleteKV(ctx, acpSessionCwdKVPrefix+string(req.SessionID))
+
+	reportChange(string(req.SessionID), map[string]any{"was_open": entry != nil})
+	return libacp.DeleteSessionResponse{}, nil
+}
+
+// dropSessionEntry removes a session from the in-memory maps and returns the
+// removed entry (nil if it was not open on this connection).
+func (t *Transport) dropSessionEntry(sid libacp.SessionID) *sessionEntry {
+	t.sessionMu.Lock()
+	defer t.sessionMu.Unlock()
+	entry, ok := t.sessions[sid]
+	if !ok {
+		return nil
+	}
+	delete(t.sessions, sid)
+	delete(t.contenoxToACPID, entry.InternalSessionID)
+	return entry
 }
 
 func (t *Transport) registerMcpServers(ctx context.Context, store runtimetypes.Store, sessionID libacp.SessionID, servers []libacp.McpServer) ([]string, error) {

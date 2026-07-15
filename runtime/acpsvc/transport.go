@@ -365,6 +365,9 @@ func (t *Transport) workspaceID() string {
 }
 
 func (t *Transport) sendUpdate(ctx context.Context, notif libacp.SessionNotification) {
+	if t.conn == nil {
+		return
+	}
 	notif = t.normalizeToolCallNotification(notif)
 	kind := string(notif.Update.SessionUpdate)
 	kv := []any{"kind", kind, "session_id", string(notif.SessionID)}

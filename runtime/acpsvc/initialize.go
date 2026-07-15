@@ -83,7 +83,10 @@ func (t *Transport) Initialize(_ context.Context, req libacp.InitializeRequest) 
 				SSE:  false,
 			},
 			SessionCapabilities: libacp.SessionCapabilities{
-				List: &struct{}{},
+				List:   &struct{}{},
+				Resume: &struct{}{},
+				Close:  &struct{}{},
+				Delete: &struct{}{},
 			},
 		},
 		AuthMethods: authMethods,

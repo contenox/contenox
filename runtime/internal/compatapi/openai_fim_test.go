@@ -240,7 +240,9 @@ func (s *sentinelCapture) SessionList(_ context.Context) ([]*agentservice.Sessio
 func (s *sentinelCapture) SessionLoad(_ context.Context, _ string) (string, []taskengine.Message, error) {
 	return "", nil, nil
 }
-func (s *sentinelCapture) SessionEnsureDefault(_ context.Context) (string, error) { return "", nil }
+func (s *sentinelCapture) SessionResume(_ context.Context, _ string) (string, error) { return "", nil }
+func (s *sentinelCapture) SessionDelete(_ context.Context, _ string) error           { return nil }
+func (s *sentinelCapture) SessionEnsureDefault(_ context.Context) (string, error)    { return "", nil }
 func (s *sentinelCapture) Prompt(_ context.Context, req agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
 	if hist, ok := req.InputValue.(taskengine.ChatHistory); ok && len(hist.Messages) > 0 {
 		s.lastContent = hist.Messages[0].Content

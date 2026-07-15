@@ -63,7 +63,9 @@ func (f *fakeAgent) SessionList(context.Context) ([]*agentservice.SessionInfo, e
 func (f *fakeAgent) SessionLoad(context.Context, string) (string, []taskengine.Message, error) {
 	return "", nil, nil
 }
-func (f *fakeAgent) SessionEnsureDefault(context.Context) (string, error) { return "", nil }
+func (f *fakeAgent) SessionResume(context.Context, string) (string, error) { return "", nil }
+func (f *fakeAgent) SessionDelete(context.Context, string) error           { return nil }
+func (f *fakeAgent) SessionEnsureDefault(context.Context) (string, error)  { return "", nil }
 func (f *fakeAgent) Prompt(_ context.Context, req agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
 	f.mu.Lock()
 	f.lastReq = req

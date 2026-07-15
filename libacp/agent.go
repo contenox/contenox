@@ -7,6 +7,9 @@ type Agent interface {
 	Authenticate(ctx context.Context, req AuthenticateRequest) (AuthenticateResponse, error)
 	NewSession(ctx context.Context, req NewSessionRequest) (NewSessionResponse, error)
 	LoadSession(ctx context.Context, req LoadSessionRequest) (LoadSessionResponse, error)
+	ResumeSession(ctx context.Context, req ResumeSessionRequest) (ResumeSessionResponse, error)
+	CloseSession(ctx context.Context, req CloseSessionRequest) (CloseSessionResponse, error)
+	DeleteSession(ctx context.Context, req DeleteSessionRequest) (DeleteSessionResponse, error)
 	ListSessions(ctx context.Context, req ListSessionsRequest) (ListSessionsResponse, error)
 	SetSessionConfigOption(ctx context.Context, req SetSessionConfigOptionRequest) (SetSessionConfigOptionResponse, error)
 	Prompt(ctx context.Context, req PromptRequest) (PromptResponse, error)
@@ -28,6 +31,15 @@ func (UnimplementedAgent) NewSession(context.Context, NewSessionRequest) (NewSes
 }
 func (UnimplementedAgent) LoadSession(context.Context, LoadSessionRequest) (LoadSessionResponse, error) {
 	return LoadSessionResponse{}, MethodNotFound(MethodSessionLoad)
+}
+func (UnimplementedAgent) ResumeSession(context.Context, ResumeSessionRequest) (ResumeSessionResponse, error) {
+	return ResumeSessionResponse{}, MethodNotFound(MethodSessionResume)
+}
+func (UnimplementedAgent) CloseSession(context.Context, CloseSessionRequest) (CloseSessionResponse, error) {
+	return CloseSessionResponse{}, MethodNotFound(MethodSessionClose)
+}
+func (UnimplementedAgent) DeleteSession(context.Context, DeleteSessionRequest) (DeleteSessionResponse, error) {
+	return DeleteSessionResponse{}, MethodNotFound(MethodSessionDelete)
 }
 func (UnimplementedAgent) ListSessions(context.Context, ListSessionsRequest) (ListSessionsResponse, error) {
 	return ListSessionsResponse{}, MethodNotFound(MethodSessionList)

@@ -43,6 +43,7 @@ const (
 	SessionUpdateCurrentMode       SessionUpdateKind = "current_mode_update"
 	SessionUpdateConfigOption      SessionUpdateKind = "config_option_update"
 	SessionUpdateUsageUpdate       SessionUpdateKind = "usage_update"
+	SessionUpdateSessionInfo       SessionUpdateKind = "session_info_update"
 )
 
 type SessionUpdate struct {
@@ -76,6 +77,10 @@ type SessionUpdate struct {
 	// share an id; a change marks a new message. Optional in the spec.
 	MessageID string `json:"messageId,omitempty"`
 
+	// UpdatedAt is the session_info_update timestamp (ISO 8601); Title above is
+	// shared with tool_call updates (same wire key).
+	UpdatedAt string `json:"updatedAt,omitempty"`
+
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }
 
@@ -107,6 +112,7 @@ type sessionUpdateWire struct {
 	Cost *UsageCost `json:"cost,omitempty"`
 
 	MessageID string `json:"messageId,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
 
 	Meta json.RawMessage `json:"_meta,omitempty"`
 }
@@ -132,6 +138,7 @@ func (u SessionUpdate) MarshalJSON() ([]byte, error) {
 		ConfigOptions:     u.ConfigOptions,
 		Cost:              u.Cost,
 		MessageID:         u.MessageID,
+		UpdatedAt:         u.UpdatedAt,
 		Meta:              u.Meta,
 	}
 	if u.SessionUpdate == SessionUpdateUsageUpdate {
@@ -179,6 +186,7 @@ func (u *SessionUpdate) UnmarshalJSON(data []byte) error {
 		ConfigOptions:     w.ConfigOptions,
 		Cost:              w.Cost,
 		MessageID:         w.MessageID,
+		UpdatedAt:         w.UpdatedAt,
 		Meta:              w.Meta,
 	}
 	if w.Used != nil {

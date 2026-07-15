@@ -423,7 +423,9 @@ func (s *stubAgent) SessionList(_ context.Context) ([]*agentservice.SessionInfo,
 func (s *stubAgent) SessionLoad(_ context.Context, _ string) (string, []taskengine.Message, error) {
 	return "", nil, nil
 }
-func (s *stubAgent) SessionEnsureDefault(_ context.Context) (string, error) { return "sess", nil }
+func (s *stubAgent) SessionResume(_ context.Context, _ string) (string, error) { return "", nil }
+func (s *stubAgent) SessionDelete(_ context.Context, _ string) error           { return nil }
+func (s *stubAgent) SessionEnsureDefault(_ context.Context) (string, error)    { return "sess", nil }
 func (s *stubAgent) Prompt(_ context.Context, req agentservice.PromptRequest) (*agentservice.PromptResponse, error) {
 	s.lastReq = req
 	hist := taskengine.ChatHistory{
