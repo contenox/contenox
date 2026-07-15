@@ -6,11 +6,9 @@ restoration, current scope, and R&D directions.
 
 | Doc | Status | What it covers |
 | --- | --- | --- |
-| [sovereign-workspace.md](sovereign-workspace.md) | decision blueprint | **Primary product framing:** Beam as UX-sovereign control center (not an IDE fork); brain/glass split, positioning, concrete PR plan, readiness matrix, and truth-gated implementation slices |
-| [sovereign-workspace-architecture.md](sovereign-workspace-architecture.md) | engineering boundaries | Component/state ownership rules, event→canvas data flow, and anti-patterns for implementing sovereign-workspace slices |
+| [acp-chat-workspace.md](acp-chat-workspace.md) | primary direction | **The workspace blueprint.** Beam chat re-engineered as an ACP client: the productivity model (run/review/own; governance-surface sovereignty), reusable `chat-kit` + `acp-web-client` packages, the three-zone + command-palette layout, reclaimed assets (Monaco, canvas, visualizer, FileTree, Cmdbar), downward-repair rule, and truth-gated migration. Supersedes and folds in the former sovereign-workspace and chat-canvas blueprints. |
 | [http-ui-revival.md](http-ui-revival.md) | executed | Migration plan that restored the HTTP API + Beam UI |
 | [local-runtime-cockpit.md](local-runtime-cockpit.md) | direction | Beam as the modeld cockpit: status, capacity/fit diagnostics, KV residency, model variants |
-| [chat-canvas.md](chat-canvas.md) | R&D / vision | Chat/canvas split: renderer-agnostic artifact panel as the second pane |
 | [remote-connector.md](remote-connector.md) | R&D / vision | Headless `contenox-connector` for controlling a remote engine from a local client |
 | [auth.md](auth.md) | R&D / vision | Single-operator password auth for Beam; builds on the loopback + bearer `TOKEN` model |
 
